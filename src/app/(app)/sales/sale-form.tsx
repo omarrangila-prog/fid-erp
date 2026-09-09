@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { Plus, Trash2, AlertCircle, PackageX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, MoneyInput, Select, Textarea } from '@/components/ui/input';
-import { Field } from '@/components/ui/field';
+import { Field, FormSection } from '@/components/ui/field';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Combobox, type ComboOption } from '@/components/ui/combobox';
 import { Callout, EmptyState } from '@/components/ui/feedback';
@@ -72,6 +72,7 @@ export function SaleForm({
   localCurrency,
   defaultCurrency,
   defaultLocalRate,
+  ratesByCurrency,
   taxCodes = [],
   taxLabel = 'VAT',
   taxEnabled = false,
@@ -82,6 +83,8 @@ export function SaleForm({
   localCurrency: string;
   defaultCurrency: string;
   defaultLocalRate: string;
+  /** The rate on file for each currency, so choosing one proposes its rate. */
+  ratesByCurrency?: Record<string, string>;
   taxCodes?: Array<{ id: string; code: string; name: string; ratePct: string }>;
   taxLabel?: string;
   taxEnabled?: boolean;
@@ -304,38 +307,19 @@ export function SaleForm({
               id="currency"
               value={header.currency}
               onChange={(e) =>
-                setHeader({ ...header, currency: e.target.value, rateToUsd: e.target.value === 'USD' ? '1' : '' })
+                setHeader({
+                  ...header,
+                  currency: e.target.value,
+                  // Propose the rate on file rather than blanking it and
+                  // making somebody look it up.
+                  rateToUsd: ratesByCurrency?.[e.target.value] ?? (e.target.value === 'USD' ? '1' : ''),
+                })
               }
             >
               <option value="USD">USD — US Dollar</option>
               <option value="AED">AED — UAE Dirham</option>
               <option value="MAD">MAD — Moroccan Dirham</option>
             </Select>
-          </Field>
-
-          <Field
-            label="Rate to USD"
-            htmlFor="rateToUsd"
-            required
-            hint={isForeign ? `Units of ${header.currency} per 1 USD.` : 'USD is always 1.'}
-            error={fieldIssues.rateToUsd}
-          >
-            <Input
-              id="rateToUsd"
-              value={header.rateToUsd}
-              disabled={!isForeign}
-              onChange={(e) => setHeader({ ...header, rateToUsd: e.target.value })}
-              className="tnum text-right"
-            />
-          </Field>
-
-          <Field label={`Rate to ${localCurrency}`} htmlFor="rateLocalPerUsd" required>
-            <Input
-              id="rateLocalPerUsd"
-              value={header.rateLocalPerUsd}
-              onChange={(e) => setHeader({ ...header, rateLocalPerUsd: e.target.value })}
-              className="tnum text-right"
-            />
           </Field>
 
           <Field label="Customer reference" htmlFor="reference">
@@ -474,6 +458,48 @@ export function SaleForm({
 
       <Card>
         <CardContent className="pt-5">
+          <FormSection
+            title="Exchange rates"
+            description={
+              isForeign
+                ? `${header.currency} ${header.rateToUsd || '—'} per USD · ${localCurrency} ${header.rateLocalPerUsd || '—'} per USD. Taken from the rates on file; change them if this invoice was agreed at a different one.`
+                : `${localCurrency} ${header.rateLocalPerUsd || '—'} per USD, used for this company's own reporting.`
+            }
+            collapsible
+            className="sm:col-span-2 lg:col-span-3"
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              {isForeign ? (
+                <Field
+                  label={`${header.currency} per 1 USD`}
+                  htmlFor="rateToUsd"
+                  error={fieldIssues.rateToUsd}
+                  hint="What this invoice was agreed at. Stored on the voucher and never recalculated later."
+                >
+                  <Input
+                    id="rateToUsd"
+                    value={header.rateToUsd}
+                    onChange={(e) => setHeader({ ...header, rateToUsd: e.target.value })}
+                    className="tnum text-right"
+                  />
+                </Field>
+              ) : null}
+
+              <Field
+                label={`${localCurrency} per 1 USD`}
+                htmlFor="rateLocalPerUsd"
+                hint="Used for this company's own reporting, whatever the invoice currency."
+              >
+                <Input
+                  id="rateLocalPerUsd"
+                  value={header.rateLocalPerUsd}
+                  onChange={(e) => setHeader({ ...header, rateLocalPerUsd: e.target.value })}
+                  className="tnum text-right"
+                />
+              </Field>
+            </div>
+          </FormSection>
+
           <Field label="Notes" htmlFor="notes">
             <Textarea
               id="notes"

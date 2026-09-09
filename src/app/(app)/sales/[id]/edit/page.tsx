@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
+import { getRateDefaults } from '@/lib/services/exchange-rate';
 import { getTaxSettings, listTaxCodes } from '@/lib/services/tax';
 import { prisma } from '@/lib/db';
 import { dec } from '@/lib/money';
@@ -95,6 +96,8 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
     ratePct: code.ratePct.toString(),
   }));
 
+  const rates = await getRateDefaults(user.activeCompany.id);
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -119,6 +122,7 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
         localCurrency={user.activeCompany.localCurrency}
         defaultCurrency={invoice.currency}
         defaultLocalRate={invoice.rateLocalPerUsd.toString()}
+        ratesByCurrency={rates.byCurrency}
         taxCodes={taxCodes}
         taxLabel={taxSettings.label}
         taxEnabled={taxSettings.enabled}

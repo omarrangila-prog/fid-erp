@@ -39,14 +39,14 @@ export default async function RevaluationPage({
     distinct: ['quoteCurrency'],
     select: { quoteCurrency: true, rate: true },
   });
-  const fallback: Record<string, string> = { AED: '3.6725', MAD: '9.85' };
-
+  // No literal fallback. A revaluation run against a made-up rate would post
+  // a real gain or loss from a number nobody chose; 1 is obviously wrong on an
+  // AED balance and gets noticed.
   const rates = currencies.map((currency) => ({
     currency,
     rate:
       params[`rate_${currency}`] ??
       latest.find((row) => row.quoteCurrency === currency)?.rate.toString() ??
-      fallback[currency] ??
       '1',
   }));
 

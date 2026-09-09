@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
+import { getRateDefaults } from '@/lib/services/exchange-rate';
 import { getTaxSettings, listTaxCodes } from '@/lib/services/tax';
 import { prisma } from '@/lib/db';
 import { getSellableStock } from '@/lib/services/stock';
@@ -84,6 +85,8 @@ export default async function NewSalePage() {
 
   const defaultCurrency = user.activeCompany.localCurrency === 'MAD' ? 'MAD' : 'USD';
 
+  const rates = await getRateDefaults(user.activeCompany.id);
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -103,7 +106,8 @@ export default async function NewSalePage() {
         stock={stockOptions}
         localCurrency={user.activeCompany.localCurrency}
         defaultCurrency={defaultCurrency}
-        defaultLocalRate={user.activeCompany.localCurrency === 'AED' ? '3.6725' : '9.85'}
+        defaultLocalRate={rates.local}
+        ratesByCurrency={rates.byCurrency}
         taxCodes={taxCodes}
         taxLabel={taxSettings.label}
         taxEnabled={taxSettings.enabled}

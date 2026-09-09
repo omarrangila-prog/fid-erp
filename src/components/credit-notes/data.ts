@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db';
 import { dec, toMoney } from '@/lib/money';
 import { formatMoney, formatDate, formatQuantityKg } from '@/lib/format';
 import { getTaxSettings, listTaxCodes } from '@/lib/services/tax';
+import { getRateDefaults } from '@/lib/services/exchange-rate';
 import type { CreditNoteRow } from '@/components/credit-notes/credit-notes-client';
 import type {
   CreditParty,
@@ -56,7 +57,8 @@ export async function loadCreditNoteRows(
 export async function loadCreditNoteFormData(companyId: string, type: 'CUSTOMER' | 'VENDOR') {
   const taxSettings = await getTaxSettings(companyId);
 
-  const [parties, warehouses, taxCodes, company] = await Promise.all([
+  const [rates, parties, warehouses, taxCodes, company] = await Promise.all([
+    getRateDefaults(companyId),
     type === 'CUSTOMER'
       ? prisma.customer
           .findMany({
@@ -211,7 +213,7 @@ export async function loadCreditNoteFormData(companyId: string, type: 'CUSTOMER'
     taxLabel: taxSettings.label,
     taxEnabled: taxSettings.enabled,
     localCurrency: company.localCurrency,
-    defaultRateLocalPerUsd: company.localCurrency === 'AED' ? '3.6725' : '9.85',
+    defaultRateLocalPerUsd: rates.local,
   };
 }
 

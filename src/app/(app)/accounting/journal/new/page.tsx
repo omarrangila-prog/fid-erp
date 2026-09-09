@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
+import { getRateDefaults } from '@/lib/services/exchange-rate';
 import { prisma } from '@/lib/db';
 import { toDateInputValue } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
@@ -26,6 +27,8 @@ export default async function NewJournalEntryPage() {
     accountType: account.type,
   }));
 
+  const rates = await getRateDefaults(user.activeCompany.id);
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -40,7 +43,7 @@ export default async function NewJournalEntryPage() {
       <JournalForm
         accounts={options}
         localCurrency={user.activeCompany.localCurrency}
-        defaultLocalRate={user.activeCompany.localCurrency === 'AED' ? '3.6725' : '9.85'}
+        defaultLocalRate={rates.local}
         today={toDateInputValue(new Date())}
       />
     </div>
