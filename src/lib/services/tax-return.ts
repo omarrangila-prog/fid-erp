@@ -427,7 +427,7 @@ export async function getTaxReturnById(companyId: string, id: string) {
 
 /**
  * The period a return is being prepared for: the most recent complete filing
- * period, counted back from today in the company's own cadence.
+ * period, counted back from a given date in the company's own cadence.
  */
 export function currentTaxPeriod(periodMonths: number, today = new Date()): { from: Date; to: Date } {
   const months = Math.max(1, periodMonths);
@@ -440,4 +440,57 @@ export function currentTaxPeriod(periodMonths: number, today = new Date()): { fr
   const from = new Date(Date.UTC(year, startMonth - months, 1));
   const to = new Date(Date.UTC(year, startMonth, 0));
   return { from, to };
+}
+
+/** The period containing a given date, in the company's cadence. */
+function periodContaining(periodMonths: number, date: Date): { from: Date; to: Date } {
+  const months = Math.max(1, periodMonths);
+  const year = date.getUTCFullYear();
+  const startMonth = Math.floor(date.getUTCMonth() / months) * months;
+  return {
+    from: new Date(Date.UTC(year, startMonth, 1)),
+    to: new Date(Date.UTC(year, startMonth + months, 0)),
+  };
+}
+
+/**
+ * Which period the screen should open on.
+ *
+ * Normally the last complete one — that is the return an accountant is sitting
+ * down to prepare. But a business that has just registered, or one whose last
+ * quarter happened to be quiet, would be shown an empty return and reasonably
+ * conclude the screen was broken. When the default period contains nothing at
+ * all, this falls back to the period holding the most recent posted document.
+ *
+ * The chosen dates are shown in the page heading and are editable, so this
+ * helps rather than misleads: nobody can file a period without seeing which
+ * one they are filing.
+ */
+export async function suggestedTaxPeriod(
+  companyId: string,
+  periodMonths: number,
+  today = new Date(),
+): Promise<{ from: Date; to: Date }> {
+  const latest = currentTaxPeriod(periodMonths, today);
+
+  const activity = await prisma.$queryRaw<Array<{ count: bigint }>>`
+    SELECT (
+      (SELECT COUNT(*) FROM sales_invoices si
+        WHERE si."companyId" = ${companyId} AND si."postedAt" IS NOT NULL
+          AND si."invoiceDate" BETWEEN ${latest.from}::date AND ${latest.to}::date)
+      +
+      (SELECT COUNT(*) FROM purchase_contracts pc
+        WHERE pc."companyId" = ${companyId} AND pc."postedAt" IS NOT NULL
+          AND pc."contractDate" BETWEEN ${latest.from}::date AND ${latest.to}::date)
+    ) AS count`;
+
+  if (Number(activity[0]?.count ?? 0) > 0) return latest;
+
+  const mostRecent = await prisma.salesInvoice.findFirst({
+    where: { companyId, postedAt: { not: null } },
+    orderBy: { invoiceDate: 'desc' },
+    select: { invoiceDate: true },
+  });
+
+  return mostRecent ? periodContaining(periodMonths, mostRecent.invoiceDate) : latest;
 }

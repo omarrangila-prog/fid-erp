@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getTaxSettings } from '@/lib/services/tax';
-import { getTaxReturn, listTaxReturns, currentTaxPeriod } from '@/lib/services/tax-return';
+import { getTaxReturn, listTaxReturns, suggestedTaxPeriod } from '@/lib/services/tax-return';
 import { formatDate, formatDateTime } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrintButton } from '@/components/shared/print-button';
@@ -51,7 +51,7 @@ export default async function TaxReturnPage({
     );
   }
 
-  const suggested = currentTaxPeriod(settings.periodMonths);
+  const suggested = await suggestedTaxPeriod(companyId, settings.periodMonths);
   const from = params.from ? new Date(`${params.from}T00:00:00.000Z`) : suggested.from;
   const to = params.to ? new Date(`${params.to}T00:00:00.000Z`) : suggested.to;
 
