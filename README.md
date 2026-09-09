@@ -291,16 +291,29 @@ transactions. Sign in and the dashboard's setup checklist takes it from there.
 This matters more than anything above. Every query costs a network round-trip,
 and a page that runs a dozen of them pays that latency a dozen times:
 
-| Server ↔ database | Round-trip | Typical page |
-|---|---|---|
-| Same region | 1–5 ms | under 100 ms |
-| Different continent | 150–250 ms | 1.5–3 s |
+| Server ↔ database | Round-trip | Typical page | Posting a contract |
+|---|---|---|---|
+| Same region | 1–5 ms | under 100 ms | well under a second |
+| Different continent | 150–250 ms | 1.5–3 s | 5–9 s |
+
+Those figures are measured, not estimated: a three-container purchase contract
+posts in about 8 seconds from Pakistan to a database in Tokyo, against a
+fraction of a second locally. The books come out identical — it is only slow.
 
 If the application feels slow, it is almost always geography, not the code.
 Deploy to the region your Supabase project lives in — or create the project in
-the region you deploy to. `DATABASE_TRANSACTION_TIMEOUT_MS` raises the ceiling
-on posting transactions if you are stuck with a distant database, but it treats
-the symptom.
+the region you deploy to. `DATABASE_TRANSACTION_TIMEOUT_MS` raises the 20-second
+ceiling on posting transactions if you are stuck with a distant database — a
+large document could otherwise run out of time mid-post — but it treats the
+symptom.
+
+### Connection limits
+
+Keep `DATABASE_POOL_MAX` well inside your project's pooler allowance, and be
+aware that a script run alongside the server draws from the same budget. When a
+free-tier project runs out of client connections, Supavisor reports it as
+`password authentication failed` rather than as a limit — misleading enough to
+be worth knowing before you start doubting your password.
 
 ### What not to point at Supabase
 
