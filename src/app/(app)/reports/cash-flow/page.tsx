@@ -7,6 +7,8 @@ import { PageHeader } from '@/components/shared/page-header';
 import { DateRangePicker } from '@/components/shared/date-range';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
+import { PrintButton } from '@/components/shared/print-button';
+import { PrintHeader } from '@/components/shared/print-header';
 
 export const metadata: Metadata = { title: 'Cash Flow' };
 export const dynamic = 'force-dynamic';
@@ -26,6 +28,12 @@ export default async function CashFlowPage({ searchParams }: { searchParams: Pro
         title="Cash Flow"
         description={`Money in and out of every cash and bank account · ${formatDate(fromDate)} to ${formatDate(toDate)}`}
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Cash Flow' }]}
+        actions={<PrintButton />}
+      />
+      <PrintHeader
+        title="Cash Flow"
+        companyName={user.activeCompany.name}
+        country={user.activeCompany.country}
       />
 
       <DateRangePicker defaultFrom={fromDate.toISOString().slice(0, 10)} defaultTo={toDate.toISOString().slice(0, 10)} />

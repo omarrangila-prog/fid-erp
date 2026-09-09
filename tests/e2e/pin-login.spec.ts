@@ -34,13 +34,13 @@ test('the administrator signs in with a PIN', async ({ page }) => {
 test('Dubai staff land in Dubai', async ({ page }) => {
   await pinIn(page, 'Dubai Staff', DUBAI_PIN);
   await page.waitForURL(/dashboard/, { timeout: 20_000 });
-  await expect(page.getByRole('heading', { name: /FID Trading L\.L\.C\./ })).toBeVisible();
+  await expect(page.getByText(/happening at FID Trading L\.L\.C\./)).toBeVisible();
 });
 
 test('Morocco staff land in Morocco', async ({ page }) => {
   await pinIn(page, 'Morocco Staff', MOROCCO_PIN);
   await page.waitForURL(/dashboard/, { timeout: 20_000 });
-  await expect(page.getByRole('heading', { name: /International SARL/ })).toBeVisible();
+  await expect(page.getByText(/happening at FID Trading International SARL/)).toBeVisible();
 });
 
 test('a wrong PIN is refused and does not sign anybody in', async ({ page }) => {

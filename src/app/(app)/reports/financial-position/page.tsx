@@ -9,6 +9,8 @@ import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
+import { PrintButton } from '@/components/shared/print-button';
+import { PrintHeader } from '@/components/shared/print-header';
 
 export const metadata: Metadata = { title: 'Financial Position' };
 export const dynamic = 'force-dynamic';
@@ -30,6 +32,12 @@ export default async function FinancialPositionPage() {
         description={`${position.companyName} — what the company holds, owes and is owed, right now.`}
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Financial Position' }]}
         meta={<span className="text-xs text-ink-subtle">As at {formatDateTime(new Date())}</span>}
+        actions={<PrintButton />}
+      />
+      <PrintHeader
+        title="Financial Position"
+        companyName={user.activeCompany.name}
+        country={user.activeCompany.country}
       />
 
       <div className="grid gap-4 lg:grid-cols-2">

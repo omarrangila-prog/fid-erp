@@ -10,6 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { Callout } from '@/components/ui/feedback';
 import { Badge } from '@/components/ui/badge';
+import { PrintButton } from '@/components/shared/print-button';
+import { PrintHeader } from '@/components/shared/print-header';
 
 export const metadata: Metadata = { title: 'Trial Balance' };
 export const dynamic = 'force-dynamic';
@@ -33,6 +35,12 @@ export default async function TrialBalancePage({ searchParams }: { searchParams:
             {trial.isBalanced ? 'Balanced' : 'Out of balance'}
           </Badge>
         }
+        actions={<PrintButton />}
+      />
+      <PrintHeader
+        title="Trial Balance"
+        companyName={user.activeCompany.name}
+        country={user.activeCompany.country}
       />
 
       <AsOfPicker defaultDate={asOfDate.toISOString().slice(0, 10)} />

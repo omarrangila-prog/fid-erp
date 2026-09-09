@@ -8,6 +8,8 @@ import { AsOfPicker } from '@/components/shared/date-range';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { Callout } from '@/components/ui/feedback';
+import { PrintButton } from '@/components/shared/print-button';
+import { PrintHeader } from '@/components/shared/print-header';
 import type { BalanceSheetSection } from '@/lib/services/reports';
 
 export const metadata: Metadata = { title: 'Balance Sheet' };
@@ -59,6 +61,12 @@ export default async function BalanceSheetPage({ searchParams }: { searchParams:
         title="Balance Sheet"
         description={`${user.activeCompany.name} · as at ${formatDate(asOfDate)}`}
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Balance Sheet' }]}
+        actions={<PrintButton />}
+      />
+      <PrintHeader
+        title="Balance Sheet"
+        companyName={user.activeCompany.name}
+        country={user.activeCompany.country}
       />
 
       <AsOfPicker defaultDate={asOfDate.toISOString().slice(0, 10)} />

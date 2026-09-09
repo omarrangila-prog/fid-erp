@@ -60,21 +60,21 @@ export function MobileNav({ permissions, isSuperAdmin }: { permissions: string[]
       <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
         <DialogPrimitive.Portal>
           <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-forest-950/30 backdrop-blur-[1px] lg:hidden" />
-          <DialogPrimitive.Content className="animate-in-soft fixed inset-y-0 left-0 z-50 flex w-[17rem] flex-col bg-surface shadow-overlay lg:hidden">
+          <DialogPrimitive.Content className="animate-in-soft fixed inset-y-0 left-0 z-50 flex w-[17rem] flex-col bg-forest-900 shadow-overlay lg:hidden">
             <DialogPrimitive.Title className="sr-only">Navigation</DialogPrimitive.Title>
             <DialogPrimitive.Description className="sr-only">
               All application sections available to you
             </DialogPrimitive.Description>
-            <div className="flex h-14 shrink-0 items-center justify-between border-b border-line px-4">
+            <div className="flex h-14 shrink-0 items-center justify-between border-b border-forest-800 px-4">
               <div className="flex items-center gap-2.5">
-                <div className="grid size-7 place-items-center rounded-md bg-forest-800 text-xs font-bold text-white">
+                <div className="grid size-7 place-items-center rounded-md bg-gold-500 text-xs font-bold text-forest-950">
                   FID
                 </div>
-                <p className="text-sm font-semibold text-ink">FID Trading</p>
+                <p className="text-sm font-semibold text-white">FID Trading</p>
               </div>
               <DialogPrimitive.Close
                 aria-label="Close navigation"
-                className="rounded-md p-1 text-ink-muted hover:bg-forest-50 hover:text-ink"
+                className="rounded-md p-1 text-forest-300 hover:bg-forest-800 hover:text-white"
               >
                 <X className="size-5" />
               </DialogPrimitive.Close>

@@ -38,16 +38,16 @@ test('an administrator can reach both companies', async ({ page }) => {
     await page.getByRole('menuitem', { name: /FID Trading International SARL/ }).click();
   }
 
-  await expect(page.getByRole('heading', { name: /FID Trading International SARL/ })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/happening at FID Trading International SARL/)).toBeVisible({ timeout: 15_000 });
 });
 
 test('the company switcher changes which books are shown', async ({ page }) => {
   await signInToDubai(page);
-  await expect(page.getByRole('heading', { name: /FID Trading L\.L\.C\./ })).toBeVisible();
+  await expect(page.getByText(/happening at FID Trading L\.L\.C\./)).toBeVisible();
 
   await page.getByRole('button', { name: /FID Trading L\.L\.C\./ }).first().click();
   await page.getByRole('menuitem', { name: /FID Trading International SARL/ }).click();
-  await expect(page.getByRole('heading', { name: /FID Trading International SARL/ })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/happening at FID Trading International SARL/)).toBeVisible({ timeout: 15_000 });
 });
 
 test('a customer can be created through the interface', async ({ page }) => {

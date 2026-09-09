@@ -9,6 +9,8 @@ import { PageHeader } from '@/components/shared/page-header';
 import { DateRangePicker } from '@/components/shared/date-range';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
+import { PrintButton } from '@/components/shared/print-button';
+import { PrintHeader } from '@/components/shared/print-header';
 import { cn } from '@/lib/utils';
 
 export const metadata: Metadata = { title: 'Expense Report' };
@@ -47,6 +49,12 @@ export default async function ExpenseReportPage({
         title="Expense Report"
         description={`Posted costs · ${formatDate(fromDate)} to ${formatDate(toDate)}`}
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Expenses' }]}
+        actions={<PrintButton />}
+      />
+      <PrintHeader
+        title="Expense Report"
+        companyName={user.activeCompany.name}
+        country={user.activeCompany.country}
       />
 
       <div className="flex flex-wrap items-end justify-between gap-3">

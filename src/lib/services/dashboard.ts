@@ -16,6 +16,67 @@ import { SHIPMENT_STATUSES_IN_TRANSIT } from '@/lib/constants';
 
 export type DashboardData = Awaited<ReturnType<typeof getDashboard>>;
 
+/**
+ * The last dozen documents of any kind, newest first.
+ *
+ * A trader opening the dashboard wants to see that this morning's work landed,
+ * without hunting through five separate lists — so invoices, receipts, payments,
+ * expenses, goods receipts and transfers are gathered into one stream.
+ */
+export async function getRecentActivity(companyId: string, limit = 6) {
+  return prisma.$queryRaw<
+    Array<{ date: Date; kind: string; reference: string; party: string; amount: string; currency: string; status: string; href: string }>
+  >`
+    SELECT si."invoiceDate" AS date, 'Invoice' AS kind, si."invoiceNumber" AS reference,
+           c."customerName" AS party, si."totalAmount"::text AS amount, si."currency",
+           si."status"::text AS status, '/sales/' || si."id" AS href
+      FROM sales_invoices si JOIN customers c ON c."id" = si."customerId"
+     WHERE si."companyId" = ${companyId}
+    UNION ALL
+    SELECT r."receiptDate", 'Receipt', r."receiptNumber", c."customerName",
+           r."amount"::text, r."currency", r."status"::text, '/finance/receipts/' || r."id"
+      FROM receipts r JOIN customers c ON c."id" = r."customerId"
+     WHERE r."companyId" = ${companyId}
+    UNION ALL
+    SELECT p."paymentDate", 'Payment', p."paymentNumber", v."vendorName",
+           p."amount"::text, p."currency", p."status"::text, '/finance/payments/' || p."id"
+      FROM payments p JOIN vendors v ON v."id" = p."vendorId"
+     WHERE p."companyId" = ${companyId}
+    UNION ALL
+    SELECT e."expenseDate", 'Expense', e."expenseNumber", ec."name",
+           e."amount"::text, e."currency", e."status"::text, '/finance/expenses/' || e."id"
+      FROM expenses e JOIN expense_categories ec ON ec."id" = e."expenseCategoryId"
+     WHERE e."companyId" = ${companyId}
+    UNION ALL
+    SELECT gr."receiptDate", 'Goods Receipt', gr."grnNumber", w."name",
+           COALESCE((SELECT SUM(grl."quantityKg") FROM goods_receipt_lines grl
+                      WHERE grl."goodsReceiptId" = gr."id"), 0)::text,
+           'KG', gr."status"::text, '/goods-receipts'
+      FROM goods_receipts gr JOIN warehouses w ON w."id" = gr."warehouseId"
+     WHERE gr."companyId" = ${companyId}
+    ORDER BY date DESC
+    LIMIT ${limit}`;
+}
+
+/**
+ * Batches running low, so somebody can chase a replacement before a customer
+ * asks for coffee that is not there.
+ */
+export async function getLowStock(companyId: string, thresholdKg = 5000, limit = 5) {
+  return prisma.$queryRaw<
+    Array<{ itemName: string; warehouseName: string; warehouseCode: string; batchNumber: string; availableKg: string }>
+  >`
+    SELECT ci."itemName", w."name" AS "warehouseName", w."code" AS "warehouseCode",
+           b."batchNumber", ib."onHandKg"::text AS "availableKg"
+      FROM inventory_balances ib
+      JOIN batches b ON b."id" = ib."batchId"
+      JOIN coffee_items ci ON ci."id" = b."itemId"
+      JOIN warehouses w ON w."id" = ib."warehouseId"
+     WHERE ib."companyId" = ${companyId} AND ib."onHandKg" > 0 AND ib."onHandKg" <= ${thresholdKg}
+     ORDER BY ib."onHandKg" ASC
+     LIMIT ${limit}`;
+}
+
 export async function getDashboard(params: { companyId: string; from?: Date; to?: Date }) {
   const [position, profit, receivables, payables, monthly, shipments, warehouseStock, itemStock, alerts] =
     await Promise.all([

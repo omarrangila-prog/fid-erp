@@ -10,6 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/feedback';
+import { PrintButton } from '@/components/shared/print-button';
+import { PrintHeader } from '@/components/shared/print-header';
 
 export const metadata: Metadata = { title: 'Journal' };
 export const dynamic = 'force-dynamic';
@@ -30,6 +32,12 @@ export default async function JournalPage({ searchParams }: { searchParams: Prom
         title="Journal"
         description={`Every posted entry with its lines · ${formatDate(fromDate)} to ${formatDate(toDate)}`}
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Journal' }]}
+        actions={<PrintButton />}
+      />
+      <PrintHeader
+        title="Journal"
+        companyName={user.activeCompany.name}
+        country={user.activeCompany.country}
       />
 
       <DateRangePicker defaultFrom={fromDate.toISOString().slice(0, 10)} defaultTo={toDate.toISOString().slice(0, 10)} />

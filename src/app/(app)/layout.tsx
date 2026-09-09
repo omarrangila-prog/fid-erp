@@ -28,6 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     id: c.id,
     code: c.code,
     name: c.name,
+    country: c.country,
     localCurrency: c.localCurrency,
   }));
 
@@ -74,6 +75,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             id: user.activeCompany.id,
             code: user.activeCompany.code,
             name: user.activeCompany.name,
+            country: user.activeCompany.country,
             localCurrency: user.activeCompany.localCurrency,
           }}
           unreadCount={unreadCount}

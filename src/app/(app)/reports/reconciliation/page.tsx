@@ -8,6 +8,8 @@ import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Callout } from '@/components/ui/feedback';
+import { PrintButton } from '@/components/shared/print-button';
+import { PrintHeader } from '@/components/shared/print-header';
 import { cn } from '@/lib/utils';
 
 export const metadata: Metadata = { title: 'Reconciliation' };
@@ -35,6 +37,12 @@ export default async function ReconciliationPage() {
             </Badge>
           </>
         }
+        actions={<PrintButton />}
+      />
+      <PrintHeader
+        title="Reconciliation"
+        companyName={user.activeCompany.name}
+        country={user.activeCompany.country}
       />
 
       {result.healthy ? (

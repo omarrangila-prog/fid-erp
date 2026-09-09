@@ -7,6 +7,8 @@ import { companyFlag } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { PrintButton } from '@/components/shared/print-button';
+import { PrintHeader } from '@/components/shared/print-header';
 import { cn } from '@/lib/utils';
 
 export const metadata: Metadata = { title: 'Business Overview' };
@@ -43,6 +45,12 @@ export default async function BusinessOverviewPage() {
             <Badge tone="info">Local {user.activeCompany.localCurrency} · Group USD</Badge>
           </>
         }
+        actions={<PrintButton />}
+      />
+      <PrintHeader
+        title="Business Overview"
+        companyName={user.activeCompany.name}
+        country={user.activeCompany.country}
       />
 
       {overview.sections.map((section) => (

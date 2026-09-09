@@ -116,6 +116,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Balance Sheet', href: '/reports/balance-sheet', icon: Scale, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
       { label: 'Trial Balance', href: '/reports/trial-balance', icon: ListChecks, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
       { label: 'Cash Flow', href: '/reports/cash-flow', icon: ArrowLeftRight, permissions: [PERMISSIONS.CASHBANK_VIEW] },
+      { label: 'Analysis', href: '/reports/analytics', icon: BarChart3, permissions: [PERMISSIONS.PROFITS_VIEW] },
       { label: 'Profitability', href: '/profitability', icon: TrendingUp, permissions: [PERMISSIONS.PROFITS_VIEW] },
     ],
   },

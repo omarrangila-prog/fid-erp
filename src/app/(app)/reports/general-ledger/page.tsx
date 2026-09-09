@@ -8,6 +8,8 @@ import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/feedback';
+import { PrintButton } from '@/components/shared/print-button';
+import { PrintHeader } from '@/components/shared/print-header';
 import { AccountPicker } from '@/app/(app)/reports/general-ledger/account-picker';
 
 export const metadata: Metadata = { title: 'General Ledger' };
@@ -45,6 +47,12 @@ export default async function GeneralLedgerPage({
         title="General Ledger"
         description="Every movement through a chosen account, with a running balance in USD."
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'General Ledger' }]}
+        actions={<PrintButton />}
+      />
+      <PrintHeader
+        title="General Ledger"
+        companyName={user.activeCompany.name}
+        country={user.activeCompany.country}
       />
 
       <AccountPicker accounts={accounts} selectedId={selectedId ?? ''} from={from ?? ''} to={to ?? ''} />

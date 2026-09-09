@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import {
-  Search, Bell, ChevronDown, Check, LogOut, KeyRound, Building2, Loader2,
+  Search, Bell, ChevronDown, Check, LogOut, KeyRound, Loader2,
   Plus, CornerDownLeft, Compass, HelpCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -15,7 +15,21 @@ import { searchAction, switchCompanyAction, logoutAction } from '@/server/action
 import { filterQuickCreate, navDestinations } from '@/components/layout/nav-config';
 import type { SearchResult } from '@/lib/services/search';
 
-export type TopbarCompany = { id: string; code: string; name: string; localCurrency: string };
+export type TopbarCompany = {
+  id: string;
+  code: string;
+  name: string;
+  country: string;
+  localCurrency: string;
+};
+
+/** A small country marker so the active company is never in doubt. */
+function flagFor(country: string): string {
+  const name = (country ?? '').toLowerCase();
+  if (name.includes('emirat') || name.includes('uae') || name.includes('dubai')) return '\u{1F1E6}\u{1F1EA}';
+  if (name.includes('morocco') || name.includes('maroc')) return '\u{1F1F2}\u{1F1E6}';
+  return '';
+}
 
 export type TopbarUser = {
   id: string;
@@ -270,10 +284,15 @@ function CompanySwitcher({ companies, active }: { companies: TopbarCompany[]; ac
 
   if (companies.length === 1) {
     return (
-      <div className="flex min-w-0 items-center gap-2 rounded-lg border border-line bg-forest-50 px-2.5 py-1.5">
-        <Building2 className="size-4 shrink-0 text-forest-500" />
-        <span className="truncate text-xs font-semibold text-forest-800">{active.name}</span>
-        <span className="hidden rounded bg-forest-200 px-1.5 py-0.5 text-[11px] font-medium text-forest-700 sm:inline">
+      <div className="flex min-w-0 items-center gap-2.5 rounded-lg border border-line bg-surface px-3 py-1.5">
+        <span className="text-base leading-none" aria-hidden>
+          {flagFor(active.country)}
+        </span>
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-semibold leading-tight text-ink">{active.name}</span>
+          <span className="block truncate text-[11px] leading-tight text-ink-subtle">Coffee Connects Worlds</span>
+        </span>
+        <span className="hidden rounded bg-forest-50 px-1.5 py-0.5 text-[11px] font-medium text-forest-700 sm:inline">
           {active.localCurrency}
         </span>
       </div>
@@ -287,12 +306,19 @@ function CompanySwitcher({ companies, active }: { companies: TopbarCompany[]; ac
         className="flex min-w-0 items-center gap-2 rounded-lg border border-line-strong bg-surface px-2.5 py-1.5 transition-colors hover:border-forest-300 disabled:opacity-60"
       >
         {pending ? (
-          <Loader2 className="size-4 shrink-0 animate-spin text-forest-500" />
+          <Loader2 className="size-4 shrink-0 animate-spin text-forest-600" />
         ) : (
-          <Building2 className="size-4 shrink-0 text-forest-500" />
+          <span className="text-base leading-none" aria-hidden>
+            {flagFor(active.country)}
+          </span>
         )}
-        <span className="max-w-28 truncate text-xs font-semibold text-forest-800 sm:max-w-none">{active.name}</span>
-        <span className="hidden rounded bg-forest-100 px-1.5 py-0.5 text-[11px] font-medium text-forest-700 sm:inline">
+        <span className="min-w-0 text-left">
+          <span className="block max-w-32 truncate text-sm font-semibold leading-tight text-ink sm:max-w-none">
+            {active.name}
+          </span>
+          <span className="hidden text-[11px] leading-tight text-ink-subtle sm:block">Coffee Connects Worlds</span>
+        </span>
+        <span className="hidden rounded bg-forest-50 px-1.5 py-0.5 text-[11px] font-medium text-forest-700 sm:inline">
           {active.localCurrency}
         </span>
         <ChevronDown className="size-3.5 shrink-0 text-ink-subtle" />
@@ -319,7 +345,7 @@ function CompanySwitcher({ companies, active }: { companies: TopbarCompany[]; ac
               <span className="min-w-0">
                 <span className="block truncate font-medium text-ink">{company.name}</span>
                 <span className="block truncate text-xs text-ink-subtle">
-                  {company.code} · {company.localCurrency}
+                  {flagFor(company.country)} {company.code} · {company.localCurrency}
                 </span>
               </span>
               {company.id === active.id ? <Check className="size-4 shrink-0 text-gold-600" /> : null}
@@ -334,9 +360,15 @@ function CompanySwitcher({ companies, active }: { companies: TopbarCompany[]; ac
 function UserMenu({ user }: { user: TopbarUser }) {
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger className="flex shrink-0 items-center gap-2 rounded-lg p-1 transition-colors hover:bg-forest-50">
-        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-forest-800 text-xs font-semibold text-white">
+      <DropdownMenu.Trigger className="flex shrink-0 items-center gap-2 rounded-lg p-1 pr-2 transition-colors hover:bg-forest-50">
+        <span className="grid size-9 shrink-0 place-items-center rounded-full bg-forest-800 text-xs font-semibold text-white">
           {initials(user.name)}
+        </span>
+        <span className="hidden min-w-0 text-left lg:block">
+          <span className="block truncate text-sm font-medium leading-tight text-ink">{user.name}</span>
+          <span className="block truncate text-[11px] leading-tight text-ink-subtle">
+            {user.isSuperAdmin ? 'Admin' : (user.roleNames[0] ?? 'No role')}
+          </span>
         </span>
         <ChevronDown className="hidden size-3.5 text-ink-subtle sm:block" />
       </DropdownMenu.Trigger>
@@ -421,7 +453,7 @@ export function Topbar({
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface/95 px-3 backdrop-blur sm:gap-3 sm:px-5">
+    <header className="sticky top-0 z-30 flex h-[4.5rem] shrink-0 items-center gap-2 border-b border-line bg-surface/95 px-3 backdrop-blur sm:gap-3 sm:px-5">
       <div className="flex items-center gap-2 lg:hidden">
         <div className="grid size-7 shrink-0 place-items-center rounded-md bg-forest-800 text-[11px] font-bold text-white">
           FID
@@ -437,7 +469,7 @@ export function Topbar({
         className="hidden h-9 flex-1 items-center gap-2 rounded-lg border border-line-strong bg-surface px-3 text-sm text-ink-subtle transition-colors hover:border-forest-300 sm:flex sm:max-w-md"
       >
         <Search className="size-4 shrink-0" />
-        <span className="truncate">Search or jump to…</span>
+        <span className="truncate">Search anything…</span>
         <kbd className="ml-auto hidden shrink-0 rounded border border-line-strong px-1.5 py-0.5 text-[11px] font-medium text-ink-subtle sm:block">
           ⌘K
         </kbd>

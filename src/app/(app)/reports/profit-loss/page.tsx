@@ -7,6 +7,8 @@ import { PageHeader } from '@/components/shared/page-header';
 import { DateRangePicker } from '@/components/shared/date-range';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
+import { PrintButton } from '@/components/shared/print-button';
+import { PrintHeader } from '@/components/shared/print-header';
 import type { PnlLine } from '@/lib/services/reports';
 
 export const metadata: Metadata = { title: 'Profit & Loss' };
@@ -70,6 +72,12 @@ export default async function ProfitLossPage({
         title="Profit & Loss"
         description={`${user.activeCompany.name} · ${formatDate(fromDate)} to ${formatDate(toDate)}`}
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Profit & Loss' }]}
+        actions={<PrintButton />}
+      />
+      <PrintHeader
+        title="Profit & Loss"
+        companyName={user.activeCompany.name}
+        country={user.activeCompany.country}
       />
 
       <DateRangePicker defaultFrom={fromDate.toISOString().slice(0, 10)} defaultTo={toDate.toISOString().slice(0, 10)} />
