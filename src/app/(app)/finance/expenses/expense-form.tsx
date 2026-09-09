@@ -148,6 +148,7 @@ export function ExpenseForm({
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Category" required error={fieldIssues.expenseCategoryId}>
             <Combobox
+              autoFocus
               options={categories}
               value={form.expenseCategoryId}
               onChange={(value) => {

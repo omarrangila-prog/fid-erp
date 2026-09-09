@@ -223,6 +223,7 @@ export function PurchaseForm({
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <Field label="Contract reference" htmlFor="contractReference" required error={errors.contractReference} hint="Your own reference. Must be unique.">
                 <Input
+                  autoFocus
                   id="contractReference"
                   value={header.contractReference}
                   onChange={(e) => setField('contractReference', e.target.value)}

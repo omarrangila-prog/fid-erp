@@ -159,6 +159,7 @@ export function PaymentForm({
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Supplier" required error={fieldIssues.vendorId}>
             <Combobox
+              autoFocus
               options={vendors}
               value={form.vendorId}
               onChange={(value) => {

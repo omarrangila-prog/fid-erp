@@ -232,6 +232,7 @@ export function SaleForm({
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Customer" htmlFor="customerId" required error={fieldIssues.customerId}>
             <Combobox
+              autoFocus
               id="customerId"
               options={customers}
               value={header.customerId}

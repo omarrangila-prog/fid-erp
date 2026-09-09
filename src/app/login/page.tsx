@@ -12,14 +12,14 @@ export default async function LoginPage() {
   return (
     <main className="grid min-h-dvh lg:grid-cols-2">
       {/* Brand panel — hidden on phones, where it would just push the form down. */}
-      <section className="relative hidden flex-col justify-between bg-forest-900 p-10 text-white lg:flex">
+      <section className="relative hidden flex-col justify-between bg-gradient-to-br from-forest-50 via-paper to-gold-50 p-10 text-ink lg:flex">
         <div className="flex items-center gap-3">
-          <div className="grid size-9 place-items-center rounded-lg bg-gold-500 text-sm font-bold text-forest-950">
+          <div className="grid size-9 place-items-center rounded-lg bg-forest-800 text-sm font-bold text-white">
             FID
           </div>
           <div>
             <p className="text-sm font-semibold">FID Trading</p>
-            <p className="text-xs text-forest-300">Coffee Trading Management</p>
+            <p className="text-xs text-ink-subtle">Coffee Trading Management</p>
           </div>
         </div>
 
@@ -27,7 +27,7 @@ export default async function LoginPage() {
           <h1 className="text-3xl font-semibold leading-tight tracking-tight">
             From green bean to ledger, in one place.
           </h1>
-          <p className="text-sm leading-relaxed text-forest-300">
+          <p className="text-sm leading-relaxed text-ink-muted">
             Purchase contracts, lots and batches, containers, shipments, warehouse stock, landed cost, customer
             receivables and full double-entry accounting — for Dubai and Morocco, kept strictly separate.
           </p>
@@ -39,14 +39,14 @@ export default async function LoginPage() {
               ['Accounting', 'Double-entry, always balanced'],
             ].map(([term, detail]) => (
               <div key={term}>
-                <dt className="text-xs font-semibold text-gold-300">{term}</dt>
-                <dd className="mt-0.5 text-xs text-forest-300">{detail}</dd>
+                <dt className="text-xs font-semibold text-forest-700">{term}</dt>
+                <dd className="mt-0.5 text-xs text-ink-muted">{detail}</dd>
               </div>
             ))}
           </dl>
         </div>
 
-        <p className="text-[11px] text-forest-200">
+        <p className="text-[11px] text-ink-subtle">
           FID Trading L.L.C. · Dubai &nbsp;·&nbsp; FID Trading International SARL · Casablanca
         </p>
       </section>
@@ -55,7 +55,7 @@ export default async function LoginPage() {
         <div className="w-full max-w-sm space-y-8">
           <div className="space-y-2 lg:hidden">
             <div className="flex items-center gap-2.5">
-              <div className="grid size-8 place-items-center rounded-lg bg-forest-900 text-[11px] font-bold text-gold-300">
+              <div className="grid size-8 place-items-center rounded-lg bg-forest-800 text-[11px] font-bold text-white">
                 FID
               </div>
               <p className="text-sm font-semibold text-ink">FID Trading</p>

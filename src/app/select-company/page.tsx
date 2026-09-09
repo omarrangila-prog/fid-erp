@@ -34,16 +34,16 @@ export default async function SelectCompanyPage() {
   );
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-forest-900 px-5 py-12">
+    <main className="flex min-h-dvh items-center justify-center bg-gradient-to-br from-forest-50 via-paper to-gold-50 px-5 py-12">
       <div className="w-full max-w-3xl space-y-8">
         <div className="space-y-2 text-center">
           <div className="mx-auto grid size-10 place-items-center rounded-lg bg-gold-500 text-sm font-bold text-forest-950">
             FID
           </div>
-          <h1 className="text-xl font-semibold tracking-tight text-white">
+          <h1 className="text-xl font-semibold tracking-tight text-ink">
             Welcome back, {user.name.split(' ')[0]}
           </h1>
-          <p className="text-sm text-forest-300">Choose the company you want to work in.</p>
+          <p className="text-sm text-ink-muted">Choose the company you want to work in.</p>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -52,7 +52,7 @@ export default async function SelectCompanyPage() {
           ))}
         </div>
 
-        <p className="flex items-center justify-center gap-1.5 text-center text-xs text-forest-300">
+        <p className="flex items-center justify-center gap-1.5 text-center text-xs text-ink-muted">
           <Building2 className="size-3.5" />
           You can switch companies at any time from the top bar.
           <ArrowRight className="size-3.5" />

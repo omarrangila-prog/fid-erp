@@ -104,7 +104,12 @@ test.describe('mobile ergonomics', () => {
         for (const el of Array.from(targets)) {
           const r = el.getBoundingClientRect();
           if (r.width === 0 || r.height === 0) continue;
-          if (getComputedStyle(el).visibility === 'hidden') continue;
+          const style = getComputedStyle(el);
+          if (style.visibility === 'hidden') continue;
+          // Screen-reader-only affordances (a skip link, for instance) are
+          // clipped to a pixel on purpose and are not tap targets.
+          if (style.clipPath === 'inset(50%)' || style.clip === 'rect(0px, 0px, 0px, 0px)') continue;
+          if (r.width <= 1 && r.height <= 1) continue;
           if (r.height < 30 || r.width < 24) {
             out.push(`${el.tagName.toLowerCase()}.${el.className?.toString().slice(0, 50)} ${Math.round(r.width)}x${Math.round(r.height)}`);
           }

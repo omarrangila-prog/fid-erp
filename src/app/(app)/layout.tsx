@@ -33,6 +33,27 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-dvh bg-paper">
+      {/*
+        Without this a keyboard user tabs through every navigation link — more
+        than fifty of them — before reaching the first field of a form. For
+        someone entering documents all day that is the difference between the
+        keyboard being usable and not.
+      */}
+      <a
+        href="#main-content"
+        className={[
+          // Hidden until focused. The visual styling has to be focus-scoped:
+          // padding on the base class overrides sr-only's own `padding: 0` and
+          // leaves a small clipped element sitting in the page.
+          'sr-only',
+          'focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60]',
+          'focus:rounded-lg focus:bg-forest-800 focus:px-4 focus:py-2.5',
+          'focus:text-sm focus:font-medium focus:text-white focus:shadow-overlay',
+        ].join(' ')}
+      >
+        Skip to main content
+      </a>
+
       <DesktopSidebar
         permissions={permissions}
         isSuperAdmin={user.isSuperAdmin}
@@ -60,7 +81,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         />
 
         {/* The bottom padding clears the mobile tab bar. */}
-        <main className="min-w-0 flex-1 px-3 pb-24 pt-5 sm:px-5 lg:px-8 lg:pb-10">
+        <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 px-3 pb-24 pt-5 sm:px-5 lg:px-8 lg:pb-10">
           <div className="mx-auto w-full max-w-[100rem]">{children}</div>
         </main>
       </div>

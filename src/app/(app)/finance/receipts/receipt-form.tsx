@@ -188,6 +188,7 @@ export function ReceiptForm({
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Customer" required error={fieldIssues.customerId}>
             <Combobox
+              autoFocus
               options={customers}
               value={form.customerId}
               onChange={(value) => {

@@ -145,7 +145,7 @@ export function JournalForm({
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Entry date" htmlFor="jv-date" required>
-            <Input id="jv-date" type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} />
+            <Input id="jv-date" autoFocus type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} />
           </Field>
           <Field label="Currency" htmlFor="jv-currency" required>
             <Select

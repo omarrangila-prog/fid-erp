@@ -29,6 +29,7 @@ export function Combobox({
   id,
   className,
   invalid,
+  autoFocus,
   'aria-label': ariaLabel,
 }: {
   options: ComboOption[];
@@ -43,6 +44,8 @@ export function Combobox({
   invalid?: boolean;
   /** Needed where the visible label appears only on the first row of a list. */
   'aria-label'?: string;
+  /** Entry forms focus their first field so typing can start immediately. */
+  autoFocus?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState('');
@@ -70,6 +73,7 @@ export function Combobox({
         <button
           id={id}
           aria-label={ariaLabel}
+          autoFocus={autoFocus}
           role="combobox"
           aria-expanded={open}
           aria-haspopup="listbox"

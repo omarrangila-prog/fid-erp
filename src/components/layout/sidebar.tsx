@@ -72,14 +72,14 @@ export function SidebarNav({
         return (
           <div key={group.label} className="pb-2">
             {collapsed ? (
-              <div className="mx-auto mb-1 h-px w-6 bg-forest-800" aria-hidden />
+              <div className="mx-auto mb-1 h-px w-6 bg-line-strong" aria-hidden />
             ) : (
               <button
                 type="button"
                 onClick={() => toggleGroup(group.label)}
                 aria-expanded={!isClosed}
                 aria-controls={bodyId}
-                className="flex w-full items-center gap-1 rounded-md px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-forest-300 transition-colors hover:text-forest-100"
+                className="flex w-full items-center gap-1 rounded-md px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-subtle transition-colors hover:text-ink"
               >
                 <ChevronRight
                   className={cn('size-3 shrink-0 transition-transform', !isClosed && 'rotate-90')}
@@ -104,17 +104,17 @@ export function SidebarNav({
                         'group/nav relative flex items-center rounded-lg py-2 text-sm transition-colors',
                         collapsed ? 'justify-center px-2' : 'gap-2.5 pl-3 pr-3',
                         active
-                          ? 'bg-forest-800 font-medium text-white'
-                          : 'text-forest-200 hover:bg-forest-800/60 hover:text-white',
+                          ? 'bg-forest-50 font-medium text-forest-800'
+                          : 'text-ink-muted hover:bg-forest-50/70 hover:text-ink',
                       )}
                     >
                       {active ? (
                         <span
-                          className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-gold-400"
+                          className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-gold-600"
                           aria-hidden
                         />
                       ) : null}
-                      <Icon className={cn('size-4 shrink-0', active ? 'text-gold-300' : 'text-forest-400')} />
+                      <Icon className={cn('size-4 shrink-0', active ? 'text-forest-700' : 'text-ink-subtle')} />
                       {collapsed ? (
                         <span className="sr-only">{item.label}</span>
                       ) : (
@@ -125,7 +125,7 @@ export function SidebarNav({
                       {collapsed ? (
                         <span
                           role="presentation"
-                          className="pointer-events-none absolute left-full z-50 ml-2 hidden whitespace-nowrap rounded-md bg-forest-950 px-2 py-1 text-xs font-medium text-white shadow-overlay group-hover/nav:block"
+                          className="pointer-events-none absolute left-full z-50 ml-2 hidden whitespace-nowrap rounded-md bg-forest-900 px-2 py-1 text-xs font-medium text-white shadow-overlay group-hover/nav:block"
                         >
                           {item.label}
                         </span>
@@ -163,23 +163,23 @@ export function DesktopSidebar({
   return (
     <aside
       className={cn(
-        'hidden shrink-0 flex-col border-r border-forest-800 bg-forest-900 transition-[width] duration-200 lg:flex',
+        'hidden shrink-0 flex-col border-r border-line bg-surface transition-[width] duration-200 lg:flex',
         collapsed ? 'w-[4.25rem]' : 'w-64',
       )}
     >
       <div
         className={cn(
-          'flex h-14 shrink-0 items-center border-b border-forest-800',
+          'flex h-14 shrink-0 items-center border-b border-line',
           collapsed ? 'justify-center px-2' : 'gap-2.5 px-5',
         )}
       >
-        <div className="grid size-7 shrink-0 place-items-center rounded-md bg-gold-500 text-xs font-bold text-forest-950">
+        <div className="grid size-7 shrink-0 place-items-center rounded-md bg-forest-800 text-xs font-bold text-white">
           FID
         </div>
         {collapsed ? null : (
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-white">FID Trading</p>
-            <p className="truncate text-[11px] text-forest-300">Business Management</p>
+            <p className="truncate text-sm font-semibold text-ink">FID Trading</p>
+            <p className="truncate text-[11px] text-ink-subtle">Business Management</p>
           </div>
         )}
       </div>
@@ -188,14 +188,14 @@ export function DesktopSidebar({
         <SidebarNav permissions={permissions} isSuperAdmin={isSuperAdmin} collapsed={collapsed} />
       </div>
 
-      <div className="shrink-0 border-t border-forest-800 p-2">
+      <div className="shrink-0 border-t border-line p-2">
         <button
           type="button"
           onClick={toggle}
           aria-label={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
           title={collapsed ? 'Expand' : 'Collapse'}
           className={cn(
-            'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-forest-300 transition-colors hover:bg-forest-800 hover:text-white',
+            'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-ink-muted transition-colors hover:bg-forest-50 hover:text-ink',
             collapsed && 'justify-center px-2',
           )}
         >
