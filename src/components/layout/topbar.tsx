@@ -227,6 +227,7 @@ function QuickCreate({ permissions, isSuperAdmin }: { permissions: string[]; isS
 
       <DropdownMenu.Portal>
         <DropdownMenu.Content
+          data-fid-pop
           align="end"
           sideOffset={6}
           className="animate-in-soft z-50 w-72 rounded-lg border border-line bg-surface p-1 shadow-xl"
@@ -326,6 +327,7 @@ function CompanySwitcher({ companies, active }: { companies: TopbarCompany[]; ac
 
       <DropdownMenu.Portal>
         <DropdownMenu.Content
+          data-fid-pop
           align="start"
           sideOffset={4}
           className="animate-in-soft z-50 w-64 rounded-lg border border-line bg-surface p-1 shadow-lg"
@@ -375,6 +377,7 @@ function UserMenu({ user }: { user: TopbarUser }) {
 
       <DropdownMenu.Portal>
         <DropdownMenu.Content
+          data-fid-pop
           align="end"
           sideOffset={4}
           className="animate-in-soft z-50 w-64 rounded-lg border border-line bg-surface p-1 shadow-lg"

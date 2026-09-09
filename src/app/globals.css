@@ -185,6 +185,25 @@
   }
 }
 
+/* ---------------------------------------------------------------------------
+ * Motion
+ *
+ * Fast and short. This is a system somebody uses for eight hours: an animation
+ * that delights on the first viewing is an obstruction on the four-hundredth,
+ * so nothing here runs longer than 180ms and nothing blocks a click.
+ *
+ * Overlays animate on the way out as well as in, driven by Radix's
+ * `data-state` attribute — an element that fades in and then vanishes reads as
+ * a glitch, not as speed.
+ *
+ * Everything is disabled wholesale under prefers-reduced-motion, at the bottom
+ * of this file.
+ * ------------------------------------------------------------------------- */
+
+:root {
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 @keyframes fid-fade-in {
   from {
     opacity: 0;
@@ -197,7 +216,187 @@
 }
 
 .animate-in-soft {
-  animation: fid-fade-in 160ms ease-out;
+  animation: fid-fade-in 160ms var(--ease-out-soft);
+}
+
+/* Page content, on navigation. Deliberately tiny: it should register as the
+   page having changed, not as something arriving. */
+@keyframes fid-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-page {
+  animation: fid-page-in 180ms var(--ease-out-soft);
+}
+
+/* --- Overlays ------------------------------------------------------------ */
+
+@keyframes fid-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes fid-overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+[data-fid-overlay][data-state='open'] {
+  animation: fid-overlay-in 140ms ease-out;
+}
+[data-fid-overlay][data-state='closed'] {
+  animation: fid-overlay-out 120ms ease-in;
+}
+
+/*
+ * A centred dialog is positioned with translate(-50%, -50%), so its keyframes
+ * have to carry that translation too — animating `transform` from a keyframe
+ * that omits it makes the dialog jump to the corner for the duration and snap
+ * back, which is exactly the sort of thing that looks like a broken build.
+ */
+@keyframes fid-dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+@keyframes fid-dialog-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.98);
+  }
+}
+
+/* Below `sm` the same dialog is a sheet anchored to the bottom edge, with no
+   centring transform to preserve. */
+@keyframes fid-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fid-sheet-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+[data-fid-dialog][data-state='open'] {
+  animation: fid-sheet-in 170ms var(--ease-out-soft);
+}
+[data-fid-dialog][data-state='closed'] {
+  animation: fid-sheet-out 130ms ease-in;
+}
+
+@media (min-width: 640px) {
+  [data-fid-dialog][data-state='open'] {
+    animation: fid-dialog-in 170ms var(--ease-out-soft);
+  }
+  [data-fid-dialog][data-state='closed'] {
+    animation: fid-dialog-out 130ms ease-in;
+  }
+}
+
+/*
+ * Popovers and menus grow from the edge they are anchored to, so the movement
+ * points back at the control that opened them.
+ */
+@keyframes fid-pop-in-top {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fid-pop-in-bottom {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fid-pop-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fid-pop-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fid-pop-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+[data-fid-pop][data-state='open'][data-side='bottom'] {
+  animation: fid-pop-in-bottom 150ms var(--ease-out-soft);
+}
+[data-fid-pop][data-state='open'][data-side='top'] {
+  animation: fid-pop-in-top 150ms var(--ease-out-soft);
+}
+[data-fid-pop][data-state='open'][data-side='right'] {
+  animation: fid-pop-in-right 150ms var(--ease-out-soft);
+}
+[data-fid-pop][data-state='open'][data-side='left'] {
+  animation: fid-pop-in-left 150ms var(--ease-out-soft);
+}
+[data-fid-pop][data-state='closed'] {
+  animation: fid-pop-out 110ms ease-in;
 }
 
 @keyframes fid-shimmer {

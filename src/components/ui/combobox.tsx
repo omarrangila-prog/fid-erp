@@ -97,6 +97,7 @@ export function Combobox({
 
       <Popover.Portal>
         <Popover.Content
+          data-fid-pop
           align="start"
           sideOffset={4}
           className="animate-in-soft z-50 w-[var(--radix-popover-trigger-width)] min-w-56 overflow-hidden rounded-lg border border-line bg-surface shadow-lg"

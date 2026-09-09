@@ -443,6 +443,78 @@ export const SYSTEM_ROLES: Array<{
     ],
   },
   {
+    code: 'DATA_ENTRY',
+    name: 'Data Entry',
+    description:
+      'Types documents into the system and nothing else. Can raise every kind of draft, but cannot post one, cannot see cost or margin, and cannot reach anything administrative.',
+    permissions: [
+      // --- What they need to work ---------------------------------------
+      P.DASHBOARD_VIEW,
+      P.CUSTOMERS_VIEW,
+      P.CUSTOMERS_CREATE,
+      P.CUSTOMERS_EDIT,
+      P.VENDORS_VIEW,
+      P.VENDORS_CREATE,
+      P.VENDORS_EDIT,
+      P.AGENTS_VIEW,
+      P.ITEMS_VIEW,
+      P.ITEMS_CREATE,
+      P.ITEMS_EDIT,
+      P.WAREHOUSES_VIEW,
+      P.SHIPPING_LINES_VIEW,
+      P.EXPENSE_CATEGORIES_VIEW,
+
+      // Every document can be *raised*. None can be approved or posted:
+      // that is a second pair of eyes, and it is the whole point of the role.
+      P.PURCHASES_VIEW,
+      P.PURCHASES_CREATE,
+      P.PURCHASES_EDIT,
+      P.SALES_VIEW,
+      P.SALES_CREATE,
+      P.SALES_EDIT,
+      P.RECEIPTS_VIEW,
+      P.RECEIPTS_CREATE,
+      P.PAYMENTS_VIEW,
+      P.PAYMENTS_CREATE,
+      P.EXPENSES_VIEW,
+      P.EXPENSES_CREATE,
+      P.CHEQUES_VIEW,
+      P.CHEQUES_CREATE,
+      P.CREDIT_NOTES_VIEW,
+      P.CREDIT_NOTES_CREATE,
+
+      // Enough of the operational picture to enter a document correctly.
+      P.SHIPMENTS_VIEW,
+      P.SHIPMENTS_UPDATE,
+      P.INVENTORY_VIEW,
+      P.STOCK_COUNT_VIEW,
+      P.STOCK_COUNT_MANAGE,
+      P.CASHBANK_VIEW,
+      P.RECEIVABLES_VIEW,
+      P.PAYABLES_VIEW,
+      P.REPORTS_VIEW,
+      P.ATTACHMENTS_VIEW,
+      P.ATTACHMENTS_MANAGE,
+
+      // --- Deliberately absent ------------------------------------------
+      // Every *_APPROVE, *_POST, *_REVERSE and *_DELETE: a person who types a
+      // document must not also be the one who commits it to the ledger.
+      //
+      // PURCHASE_COST_VIEW and PROFITS_VIEW: what the coffee cost and what it
+      // earned are the owner's business, and a data-entry operator has no
+      // reason to see either.
+      //
+      // ACCOUNTING_VIEW, ACCOUNTING_POST, PERIODS_CLOSE, BANK_RECONCILE,
+      // LEDGERS_VIEW: the books themselves.
+      //
+      // INVENTORY_ADJUST, INVENTORY_TRANSFER, INVENTORY_NEGATIVE_OVERRIDE:
+      // moving or writing off stock without a counted sheet behind it.
+      //
+      // USERS_MANAGE, ROLES_MANAGE, COMPANIES_MANAGE, SETTINGS_MANAGE,
+      // AUDIT_VIEW, BACKUP_MANAGE: administration.
+    ],
+  },
+  {
     code: 'STAFF',
     name: 'Staff',
     description: 'General staff: can view operational data and raise drafts, but cannot post.',

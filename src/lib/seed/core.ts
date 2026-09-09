@@ -284,7 +284,7 @@ export async function seedPinAccounts(): Promise<Array<{ name: string; company: 
       email: 'dubai.staff@fidtrading.local',
       isAdmin: false,
       name: process.env.DUBAI_STAFF_NAME ?? 'Dubai Staff',
-      roleCode: 'ACCOUNTS',
+      roleCode: 'DATA_ENTRY',
       companyCode: 'FID-DXB',
     },
     {
@@ -292,7 +292,7 @@ export async function seedPinAccounts(): Promise<Array<{ name: string; company: 
       email: 'morocco.staff@fidtrading.local',
       isAdmin: false,
       name: process.env.MOROCCO_STAFF_NAME ?? 'Morocco Staff',
-      roleCode: 'ACCOUNTS',
+      roleCode: 'DATA_ENTRY',
       companyCode: 'FID-MA',
     },
   ];
@@ -336,9 +336,35 @@ export async function seedPinAccounts(): Promise<Array<{ name: string; company: 
         },
       }));
 
+    // Re-point the role on every run. Without this an account created under an
+    // earlier, more powerful role would keep it forever, and a tightened role
+    // definition would silently not apply to the people it was tightened for.
+    await prisma.userRole.deleteMany({ where: { userId: user.id, roleId: { not: role.id } } });
+    await prisma.userRole.upsert({
+      where: { userId_roleId: { userId: user.id, roleId: role.id } },
+      update: {},
+      create: { userId: user.id, roleId: role.id },
+    });
+
+    // One company, and only one: a Dubai operator must never be able to reach
+    // Morocco's books, so any other company access is removed rather than left.
+    await prisma.userCompany.deleteMany({ where: { userId: user.id, companyId: { not: company.id } } });
+    await prisma.userCompany.upsert({
+      where: { userId_companyId: { userId: user.id, companyId: company.id } },
+      update: {},
+      create: { userId: user.id, companyId: company.id },
+    });
+
     await prisma.user.update({
       where: { id: user.id },
-      data: { pinHash: await hashPassword(spec.pin), pinSetAt: new Date(), pinFailedAttempts: 0, pinLockedUntil: null },
+      data: {
+        pinHash: await hashPassword(spec.pin),
+        pinSetAt: new Date(),
+        pinFailedAttempts: 0,
+        pinLockedUntil: null,
+        defaultCompanyId: company.id,
+        isSuperAdmin: false,
+      },
     });
     created.push({ name: user.name, company: company.name });
   }

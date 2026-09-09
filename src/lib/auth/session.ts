@@ -1,4 +1,5 @@
 import 'server-only';
+import { cache } from 'react';
 import { randomBytes, createHash } from 'node:crypto';
 import { cookies, headers } from 'next/headers';
 import { prisma } from '@/lib/db';
@@ -85,7 +86,7 @@ export async function destroyAllSessionsForUser(userId: string): Promise<void> {
  * Loads the current user with resolved permissions and company access.
  * Returns null when there is no valid session.
  */
-export async function getCurrentUser(): Promise<SessionUser | null> {
+async function loadCurrentUser(): Promise<SessionUser | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(COOKIE_NAME)?.value;
   if (!token) return null;
@@ -158,6 +159,20 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
     activeCompany,
   };
 }
+
+/**
+ * The session, resolved once per request.
+ *
+ * Every page resolves it twice — the layout renders the sidebar and topbar
+ * from it, then the page's own permission guard asks again — and each
+ * resolution is a round trip to a database on the other side of the world.
+ * `cache` is React's per-request memo: the second and later calls within one
+ * render return the first result rather than issuing the query again. It is
+ * scoped to a single request, so one user's session can never be handed to
+ * another, and it is not a cache in the sense of surviving a request: a
+ * permission change still takes effect on the very next page load.
+ */
+export const getCurrentUser = cache(loadCurrentUser);
 
 export async function requireUser(): Promise<SessionUser> {
   const user = await getCurrentUser();

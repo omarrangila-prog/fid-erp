@@ -240,6 +240,7 @@ function CollapsedRail({ groups, activeHref }: { groups: NavGroup[]; activeHref:
 
             <Popover.Portal>
               <Popover.Content
+                data-fid-pop
                 side="right"
                 align="start"
                 sideOffset={8}
