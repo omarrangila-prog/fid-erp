@@ -296,7 +296,7 @@ export async function getShipmentSettlement(
   const rows = await client.$queryRaw<Array<{ invoiced: string | null; received: string | null }>>`
     SELECT
       COALESCE((
-        SELECT SUM(si."totalAmountUsd") FROM sales_invoices si
+        SELECT SUM(si."subtotalUsd") FROM sales_invoices si
         WHERE si."companyId" = ${companyId} AND si."shipmentId" = ${shipmentId} AND si."status" = 'POSTED'
       ), 0)::text AS invoiced,
       COALESCE((

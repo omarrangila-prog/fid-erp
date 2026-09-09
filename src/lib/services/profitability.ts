@@ -139,7 +139,7 @@ export async function getShipmentProfitability(params: {
       -- Landed cost of what actually sold, at each batch's current landed rate.
       COALESCE((SELECT SUM(b."soldQuantityKg" * b."landedUnitCostUsd")
                   FROM batches b WHERE b."shipmentId" = s."id"), 0)::text AS "allocatedLandedCostUsd",
-      COALESCE((SELECT SUM(si."totalAmountUsd") FROM sales_invoices si
+      COALESCE((SELECT SUM(si."subtotalUsd") FROM sales_invoices si
                  WHERE si."shipmentId" = s."id" AND si."status" = 'POSTED'), 0)::text AS "salesRevenueUsd",
       -- Only period costs. Capitalised costs already sit inside landed cost.
       COALESCE((SELECT SUM(e."amountUsd") FROM expenses e
@@ -171,11 +171,11 @@ export async function getShipmentProfitabilityById(
 export async function getCompanyProfitSummary(params: { companyId: string; from?: Date; to?: Date }) {
   const rows = await prisma.$queryRaw<Array<{ revenue: string; cogs: string; expenses: string; soldKg: string }>>`
     SELECT
-      (COALESCE((SELECT SUM(si."totalAmountUsd") FROM sales_invoices si
+      (COALESCE((SELECT SUM(si."subtotalUsd") FROM sales_invoices si
                  WHERE si."companyId" = ${params.companyId} AND si."status" = 'POSTED'
                    AND (${params.from ?? null}::date IS NULL OR si."invoiceDate" >= ${params.from ?? null}::date)
                    AND (${params.to ?? null}::date IS NULL OR si."invoiceDate" <= ${params.to ?? null}::date)), 0)
-      - COALESCE((SELECT SUM(cn."totalAmountUsd") FROM credit_notes cn
+      - COALESCE((SELECT SUM(cn."subtotalAmountUsd") FROM credit_notes cn
                  WHERE cn."companyId" = ${params.companyId} AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'
                    AND (${params.from ?? null}::date IS NULL OR cn."creditDate" >= ${params.from ?? null}::date)
                    AND (${params.to ?? null}::date IS NULL OR cn."creditDate" <= ${params.to ?? null}::date)), 0))::text AS revenue,
@@ -330,7 +330,7 @@ export async function getMonthlyProfitability(params: { companyId: string; month
       )::date AS month
     )
     SELECT to_char(p."month", 'YYYY-MM') AS month,
-      COALESCE((SELECT SUM(si."totalAmountUsd") FROM sales_invoices si
+      COALESCE((SELECT SUM(si."subtotalUsd") FROM sales_invoices si
                  WHERE si."companyId" = ${params.companyId} AND si."status" = 'POSTED'
                    AND date_trunc('month', si."invoiceDate") = p."month"), 0)::text AS revenue,
       COALESCE((SELECT SUM(si."costOfGoodsUsd") FROM sales_invoices si

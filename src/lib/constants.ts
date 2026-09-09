@@ -664,6 +664,10 @@ export const ACCOUNT_KEYS = {
   SALES_RETURNS: 'SALES_RETURNS',
   /// Contra-cost for supplier credits that do not relate to stock.
   PURCHASE_RETURNS: 'PURCHASE_RETURNS',
+  /// Tax charged to customers and owed to the authority.
+  VAT_OUTPUT: 'VAT_OUTPUT',
+  /// Tax paid to suppliers and reclaimable from the authority.
+  VAT_INPUT: 'VAT_INPUT',
 } as const;
 
 export type AccountKey = (typeof ACCOUNT_KEYS)[keyof typeof ACCOUNT_KEYS];
@@ -693,6 +697,48 @@ export const SETTING_KEYS = {
   /** ISO date. Nothing may post on or before this date. Empty means open. */
   PERIOD_CLOSED_UNTIL: 'accounting.periodClosedUntil',
 } as const;
+
+/**
+ * Standard tax codes, seeded the moment a company is registered for tax.
+ *
+ * A zero-rated export and an exempt supply both charge nothing, but they are
+ * reported on different lines of the return and treated differently for input
+ * recovery, so they are separate codes rather than one "0%".
+ */
+export const TAX_CODE_SEEDS: Array<{
+  code: string;
+  name: string;
+  ratePct: number;
+  treatment: 'STANDARD' | 'ZERO_RATED' | 'EXEMPT' | 'OUT_OF_SCOPE' | 'REVERSE_CHARGE';
+  appliesTo: 'SALES' | 'PURCHASE' | 'BOTH';
+  isDefault?: boolean;
+}> = [
+  { code: 'STD', name: 'Standard rate', ratePct: 0, treatment: 'STANDARD', appliesTo: 'BOTH', isDefault: true },
+  { code: 'ZERO', name: 'Zero-rated export', ratePct: 0, treatment: 'ZERO_RATED', appliesTo: 'SALES' },
+  { code: 'EXEMPT', name: 'Exempt supply', ratePct: 0, treatment: 'EXEMPT', appliesTo: 'BOTH' },
+  { code: 'OOS', name: 'Out of scope', ratePct: 0, treatment: 'OUT_OF_SCOPE', appliesTo: 'BOTH' },
+  { code: 'RC', name: 'Reverse charge (import)', ratePct: 0, treatment: 'REVERSE_CHARGE', appliesTo: 'PURCHASE' },
+];
+
+/**
+ * Statutory standard rate and local name, by country of registration.
+ *
+ * Matched on substrings of the company's country because that field holds a
+ * name ("United Arab Emirates") rather than an ISO code, and a company created
+ * by hand may say "UAE" or "Maroc" instead.
+ */
+export const TAX_REGIMES: Array<{
+  match: string[];
+  label: string;
+  standardRatePct: number;
+  periodMonths: number;
+}> = [
+  { match: ['emirat', 'uae', 'dubai', 'ae'], label: 'VAT', standardRatePct: 5, periodMonths: 3 },
+  { match: ['morocco', 'maroc', 'ma'], label: 'TVA', standardRatePct: 20, periodMonths: 1 },
+];
+
+/** Somewhere we hold no statutory knowledge about: the rate has to be entered. */
+export const DEFAULT_TAX_REGIME = { label: 'VAT', standardRatePct: 0, periodMonths: 3 };
 
 export const DOC_TYPES = {
   PURCHASE_CONTRACT: 'PO',

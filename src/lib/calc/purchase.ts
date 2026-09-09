@@ -34,6 +34,9 @@ export type PurchaseLineInput = {
   unitPrice: string | number;
   bags?: number;
   bagWeightKg?: string | number;
+  /** Chosen on the form; the server re-resolves it and overrides the rate. */
+  taxCodeId?: string | null;
+  taxRatePct?: string | number;
   notes?: string | null;
 };
 
@@ -78,6 +81,10 @@ type ComputedLine = {
   lineTotal: Decimal;
   unitCostKg: Decimal;
   containers: number;
+  taxCodeId: string | null;
+  taxRatePct: Decimal;
+  taxAmount: Decimal;
+  taxAmountUsd: Decimal;
   notes: string | null;
 };
 
@@ -153,6 +160,8 @@ export function computePurchaseTotals(input: {
       unitPriceKg: unitPriceToPricePerKg(unitPrice, line.unit, bagWeightKg),
       lineSubtotal: toMoney(quantity.times(unitPrice)),
       containers: line.containerNumber?.trim() ? 1 : 0,
+      taxCodeId: line.taxCodeId ?? null,
+      taxRatePct: toMoney(line.taxRatePct ?? 0),
       notes: line.notes ?? null,
     };
   });
@@ -168,17 +177,27 @@ export function computePurchaseTotals(input: {
 
   const lines: ComputedLine[] = base.map((l, i) => {
     const lineTotal = toMoney(l.lineSubtotal.plus(freightSplit[i]).plus(otherSplit[i]));
+    // Tax sits on what the supplier charges for the line, freight included,
+    // and is deliberately *outside* unitCostKg: input tax is reclaimable, so
+    // letting it into the cost per kilogram would overstate every margin the
+    // batch ever earns.
+    const taxAmount = l.taxRatePct.isZero()
+      ? new Decimal(0)
+      : toMoney(lineTotal.times(l.taxRatePct).dividedBy(100));
     return {
       ...l,
       freightAllocated: freightSplit[i],
       otherChargesAllocated: otherSplit[i],
       lineTotal,
       unitCostKg: toUnitCost(lineTotal.dividedBy(l.quantityKg)),
+      taxAmount,
+      taxAmountUsd: convertToUsd(taxAmount, input.rateToUsd, input.currency),
     };
   });
 
   const subtotal = toMoney(sum(lines.map((l) => l.lineSubtotal)));
   const totalValue = toMoney(subtotal.plus(freightAmount).plus(otherCharges));
+  const taxAmount = toMoney(sum(lines.map((l) => l.taxAmount)));
 
   return {
     lines,
@@ -187,6 +206,10 @@ export function computePurchaseTotals(input: {
     otherCharges,
     totalValue,
     totalValueUsd: convertToUsd(totalValue, input.rateToUsd, input.currency),
+    taxAmount,
+    taxAmountUsd: toMoney(sum(lines.map((l) => l.taxAmountUsd))),
+    /** What the supplier is actually owed: goods and charges, plus tax. */
+    grossPayable: toMoney(totalValue.plus(taxAmount)),
     totalQuantityKg: toQuantity(sum(lines.map((l) => l.quantityKg))),
     totalBags: lines.reduce((acc, l) => acc + l.bags, 0),
     totalContainers: new Set(lines.map((l) => l.containerNumber).filter(Boolean)).size,

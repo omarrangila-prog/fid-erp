@@ -14,6 +14,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { StatusBadge, Badge } from '@/components/ui/badge';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { Callout } from '@/components/ui/feedback';
+import { AttachmentPanel } from '@/components/attachments/attachment-panel';
+import { loadAttachments } from '@/components/attachments/load';
 import { PurchaseDetailToolbar } from '@/app/(app)/purchases/[id]/detail-toolbar';
 
 export const dynamic = 'force-dynamic';
@@ -49,6 +51,10 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
   });
 
   if (!contract) notFound();
+
+  const attachments = can(user, PERMISSIONS.ATTACHMENTS_VIEW)
+    ? await loadAttachments(user.activeCompany.id, 'PurchaseContract', contract.id)
+    : [];
 
   const [receiptStatus, outstanding, warehouses] = await Promise.all([
     transaction((tx) => getReceiptStatus(tx, contract.id)),
@@ -368,6 +374,15 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
           </CardContent>
         </Card>
       ) : null}
+
+      <div className="max-w-md">
+        <AttachmentPanel
+          entityType="PurchaseContract"
+          entityId={contract.id}
+          attachments={attachments}
+          canManage={can(user, PERMISSIONS.ATTACHMENTS_MANAGE)}
+        />
+      </div>
     </div>
   );
 }

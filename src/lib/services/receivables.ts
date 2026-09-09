@@ -185,8 +185,11 @@ export async function getPayables(params: {
   >`
     SELECT pc."id" AS "contractId", pc."contractNumber", pc."contractReference", pc."contractDate", pc."dueDate",
            pc."vendorId", v."vendorName", pc."currency",
-           pc."totalValue"::text AS "purchaseValue",
-           pc."totalValueUsd"::text AS "purchaseValueUsd",
+           -- Gross of tax: the payable is what the supplier invoiced, and
+           -- recoverable input tax is part of that even though it never
+           -- reached the cost of the coffee.
+           (pc."totalValue" + pc."taxAmount")::text AS "purchaseValue",
+           (pc."totalValueUsd" + pc."taxAmountUsd")::text AS "purchaseValueUsd",
            (SELECT string_agg(s."shipmentNumber", ', ' ORDER BY s."shipmentNumber")
               FROM shipments s WHERE s."purchaseContractId" = pc."id") AS "shipmentNumbers",
            (

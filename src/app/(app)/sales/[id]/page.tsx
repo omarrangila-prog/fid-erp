@@ -15,6 +15,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { StatusBadge, Badge } from '@/components/ui/badge';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { Callout } from '@/components/ui/feedback';
+import { AttachmentPanel } from '@/components/attachments/attachment-panel';
+import { loadAttachments } from '@/components/attachments/load';
 import { SaleActions } from '@/app/(app)/sales/[id]/sale-actions';
 
 export const dynamic = 'force-dynamic';
@@ -78,6 +80,9 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
     : dec(0);
 
   const livePayments = invoice.allocations.filter((a) => a.receipt.status === 'POSTED');
+  const attachments = can(user, PERMISSIONS.ATTACHMENTS_VIEW)
+    ? await loadAttachments(user.activeCompany.id, 'SalesInvoice', invoice.id)
+    : [];
   const settlement = outstanding
     ? outstanding.amount.lessThanOrEqualTo(0)
       ? 'PAID'
@@ -310,6 +315,13 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
               )}
             </CardContent>
           </Card>
+
+          <AttachmentPanel
+            entityType="SalesInvoice"
+            entityId={invoice.id}
+            attachments={attachments}
+            canManage={can(user, PERMISSIONS.ATTACHMENTS_MANAGE)}
+          />
         </div>
       </div>
     </div>

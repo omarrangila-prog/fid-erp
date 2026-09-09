@@ -220,20 +220,30 @@ enum BackupTrigger {
 // ---------------------------------------------------------------------------
 
 model Company {
-  id            String       @id @default(cuid())
-  code          String       @unique
-  name          String
-  legalName     String?
-  country       String
-  localCurrency String       @db.VarChar(3)
-  baseCurrency  String       @default("USD") @db.VarChar(3)
-  timezone      String       @default("UTC")
-  address       String?
+  id                    String       @id @default(cuid())
+  code                  String       @unique
+  name                  String
+  legalName             String?
+  country               String
+  localCurrency         String       @db.VarChar(3)
+  baseCurrency          String       @default("USD") @db.VarChar(3)
+  timezone              String       @default("UTC")
+  address               String?
   /// Prefix used in every document number, e.g. "FID-DXB" -> FID-DXB-PO-000001.
-  docPrefix     String       @default("FID")
-  status        RecordStatus @default(ACTIVE)
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  docPrefix             String       @default("FID")
+  /// True once the company is registered for VAT/TVA. Until then no tax is
+  /// calculated and no tax lines are posted, so an unregistered company sees
+  /// nothing about tax anywhere in the system.
+  taxEnabled            Boolean      @default(false)
+  /// What the tax is called locally: "VAT" in the UAE, "TVA" in Morocco.
+  taxLabel              String       @default("VAT") @db.VarChar(12)
+  /// The registration number printed on every tax invoice.
+  taxRegistrationNumber String?
+  /// First day of the current filing period, used to default the VAT return.
+  taxPeriodMonths       Int          @default(3)
+  status                RecordStatus @default(ACTIVE)
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
 
   users               UserCompany[]
   customers           Customer[]
@@ -271,6 +281,8 @@ model Company {
   stockCounts         StockCount[]
   bankReconciliations BankReconciliation[]
   backupRuns          BackupRun[]
+  taxCodes            TaxCode[]
+  taxReturns          TaxReturn[]
   defaultForUsers     User[]                 @relation("UserDefaultCompany")
 
   @@index([status])
@@ -330,6 +342,8 @@ model User {
   stockCountsApproved StockCount[]                    @relation("StockCountApprovedBy")
   reconciliations     BankReconciliation[]            @relation("ReconciliationCreatedBy")
   backupRuns          BackupRun[]                     @relation("BackupCreatedBy")
+  taxReturnsCreated   TaxReturn[]                     @relation("TaxReturnCreatedBy")
+  taxReturnsFiled     TaxReturn[]                     @relation("TaxReturnFiledBy")
 
   @@index([isActive])
   @@map("users")
@@ -775,6 +789,11 @@ model PurchaseContract {
   rateLocalPerUsd      Decimal           @default(1) @db.Decimal(18, 8)
   subtotal             Decimal           @default(0) @db.Decimal(18, 4)
   freightAmount        Decimal           @default(0) @db.Decimal(18, 4)
+  /// Recoverable input tax. Deliberately outside totalValue: tax you can claim
+  /// back is not part of what the coffee cost you, so it must never reach the
+  /// landed cost of a batch.
+  taxAmount            Decimal           @default(0) @db.Decimal(18, 4)
+  taxAmountUsd         Decimal           @default(0) @db.Decimal(18, 4)
   totalValue           Decimal           @default(0) @db.Decimal(18, 4)
   totalValueUsd        Decimal           @default(0) @db.Decimal(18, 4)
   containers           Int               @default(0)
@@ -844,8 +863,13 @@ model PurchaseContractLine {
   containerType         ContainerType @default(FT20)
   bags                  Int           @default(0)
   bagWeightKg           Decimal       @default(60) @db.Decimal(18, 3)
+  taxCodeId             String?
+  taxRatePct            Decimal       @default(0) @db.Decimal(9, 4)
+  taxAmount             Decimal       @default(0) @db.Decimal(18, 4)
+  taxAmountUsd          Decimal       @default(0) @db.Decimal(18, 4)
   notes                 String?
 
+  taxCode          TaxCode?           @relation(fields: [taxCodeId], references: [id])
   purchaseContract PurchaseContract   @relation(fields: [purchaseContractId], references: [id], onDelete: Cascade)
   item             CoffeeItem         @relation(fields: [itemId], references: [id])
   shipments        Shipment[]
@@ -1240,6 +1264,12 @@ model SalesInvoice {
   rateToUsd          Decimal           @default(1) @db.Decimal(18, 8)
   rateLocalPerUsd    Decimal           @default(1) @db.Decimal(18, 8)
   subtotal           Decimal           @default(0) @db.Decimal(18, 4)
+  /// Output tax charged on this invoice, in the invoice currency.
+  taxAmount          Decimal           @default(0) @db.Decimal(18, 4)
+  taxAmountUsd       Decimal           @default(0) @db.Decimal(18, 4)
+  /// Goods value before tax, in USD. Kept so the tax return can state the
+  /// taxable base without re-deriving it from the lines.
+  subtotalUsd        Decimal           @default(0) @db.Decimal(18, 4)
   totalAmount        Decimal           @default(0) @db.Decimal(18, 4)
   totalAmountUsd     Decimal           @default(0) @db.Decimal(18, 4)
   costOfGoodsUsd     Decimal           @default(0) @db.Decimal(18, 4)
@@ -1296,8 +1326,13 @@ model SalesInvoiceLine {
   lineTotalUsd   Decimal       @db.Decimal(18, 4)
   unitCostUsd    Decimal       @default(0) @db.Decimal(18, 8)
   costTotalUsd   Decimal       @default(0) @db.Decimal(18, 4)
+  taxCodeId      String?
+  taxRatePct     Decimal       @default(0) @db.Decimal(9, 4)
+  taxAmount      Decimal       @default(0) @db.Decimal(18, 4)
+  taxAmountUsd   Decimal       @default(0) @db.Decimal(18, 4)
   notes          String?
 
+  taxCode      TaxCode?     @relation(fields: [taxCodeId], references: [id])
   salesInvoice SalesInvoice @relation(fields: [salesInvoiceId], references: [id], onDelete: Cascade)
   item         CoffeeItem   @relation(fields: [itemId], references: [id])
   batch        Batch        @relation(fields: [batchId], references: [id])
@@ -1448,6 +1483,12 @@ model Expense {
   /// When true the amount is added to the shipment's landed cost instead of
   /// being written straight to the profit and loss account.
   capitaliseToLandedCost Boolean           @default(false)
+  /// Recoverable input tax on top of `amount`. `amount` stays the net cost, so
+  /// a capitalised expense never pushes reclaimable tax into landed cost.
+  taxCodeId              String?
+  taxRatePct             Decimal           @default(0) @db.Decimal(9, 4)
+  taxAmount              Decimal           @default(0) @db.Decimal(18, 4)
+  taxAmountUsd           Decimal           @default(0) @db.Decimal(18, 4)
   reference              String?
   description            String?
   status                 TransactionStatus @default(DRAFT)
@@ -1465,6 +1506,7 @@ model Expense {
   vendor           Vendor?           @relation(fields: [vendorId], references: [id])
   agent            Agent?            @relation(fields: [agentId], references: [id])
   cashBankAccount  CashBankAccount?  @relation(fields: [cashBankAccountId], references: [id])
+  taxCode          TaxCode?          @relation(fields: [taxCodeId], references: [id])
   createdBy        User              @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
 
   @@unique([companyId, expenseNumber])
@@ -1558,7 +1600,15 @@ model Attachment {
   fileName     String
   mimeType     String
   sizeBytes    Int
-  storageKey   String   @unique
+  /// The file itself.
+  ///
+  /// Held in the database rather than on disk because the application runs on
+  /// a serverless host, where the filesystem is read-only and each request gets
+  /// a container that is thrown away — a file written during an upload would
+  /// not survive to be downloaded. Keeping the bytes here also means an
+  /// attachment is inside every database backup, rather than being a second
+  /// thing to remember to copy.
+  bytes        Bytes
   checksum     String?
   uploadedById String
   createdAt    DateTime @default(now())
@@ -1737,6 +1787,11 @@ model CreditNote {
   currency           String            @db.VarChar(3)
   rateToUsd          Decimal           @default(1) @db.Decimal(18, 8)
   rateLocalPerUsd    Decimal           @default(1) @db.Decimal(18, 8)
+  subtotalAmount     Decimal           @default(0) @db.Decimal(18, 4)
+  subtotalAmountUsd  Decimal           @default(0) @db.Decimal(18, 4)
+  taxAmount          Decimal           @default(0) @db.Decimal(18, 4)
+  taxAmountUsd       Decimal           @default(0) @db.Decimal(18, 4)
+  /// Gross, including tax — what actually comes off the party's balance.
   totalAmount        Decimal           @default(0) @db.Decimal(18, 4)
   totalAmountUsd     Decimal           @default(0) @db.Decimal(18, 4)
   /// Cost of any stock returned to the warehouse, reversed out of COGS.
@@ -1787,7 +1842,12 @@ model CreditNoteLine {
   lineTotal    Decimal @default(0) @db.Decimal(18, 4)
   lineTotalUsd Decimal @default(0) @db.Decimal(18, 4)
   costTotalUsd Decimal @default(0) @db.Decimal(18, 4)
+  taxCodeId    String?
+  taxRatePct   Decimal @default(0) @db.Decimal(9, 4)
+  taxAmount    Decimal @default(0) @db.Decimal(18, 4)
+  taxAmountUsd Decimal @default(0) @db.Decimal(18, 4)
 
+  taxCode    TaxCode?    @relation(fields: [taxCodeId], references: [id])
   creditNote CreditNote  @relation(fields: [creditNoteId], references: [id], onDelete: Cascade)
   batch      Batch?      @relation(fields: [batchId], references: [id])
   warehouse  Warehouse?  @relation(fields: [warehouseId], references: [id])
@@ -1938,4 +1998,91 @@ model ExchangeRate {
   @@unique([companyId, quoteCurrency, effectiveDate])
   @@index([quoteCurrency, effectiveDate])
   @@map("exchange_rates")
+}
+
+// ---------------------------------------------------------------------------
+// Tax (VAT in the UAE, TVA in Morocco)
+// ---------------------------------------------------------------------------
+
+enum TaxAppliesTo {
+  SALES
+  PURCHASE
+  BOTH
+}
+
+/// Why a supply carries the rate it does. A tax return has to separate a
+/// zero-rated export from an exempt supply even though both charge nothing,
+/// because they are reported on different lines and treated differently for
+/// input-tax recovery.
+enum TaxTreatment {
+  STANDARD
+  ZERO_RATED
+  EXEMPT
+  OUT_OF_SCOPE
+  REVERSE_CHARGE
+}
+
+model TaxCode {
+  id        String       @id @default(cuid())
+  companyId String
+  code      String       @db.VarChar(12)
+  name      String
+  ratePct   Decimal      @default(0) @db.Decimal(9, 4)
+  treatment TaxTreatment @default(STANDARD)
+  appliesTo TaxAppliesTo @default(BOTH)
+  /// Chosen automatically on new lines. At most one per direction.
+  isDefault Boolean      @default(false)
+  isSystem  Boolean      @default(false)
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  company           Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  salesInvoiceLines SalesInvoiceLine[]
+  purchaseLines     PurchaseContractLine[]
+  creditNoteLines   CreditNoteLine[]
+  expenses          Expense[]
+
+  @@unique([companyId, code])
+  @@index([companyId, status])
+  @@map("tax_codes")
+}
+
+enum TaxReturnStatus {
+  DRAFT
+  FILED
+}
+
+/// A filed period. Filing freezes the figures as submitted so a later
+/// correction is visible as a difference rather than silently rewriting
+/// history the authority has already seen.
+model TaxReturn {
+  id             String          @id @default(cuid())
+  companyId      String
+  periodStart    DateTime        @db.Date
+  periodEnd      DateTime        @db.Date
+  status         TaxReturnStatus @default(DRAFT)
+  /// Every figure below is in the company's local currency.
+  outputTax      Decimal         @default(0) @db.Decimal(18, 4)
+  inputTax       Decimal         @default(0) @db.Decimal(18, 4)
+  netPayable     Decimal         @default(0) @db.Decimal(18, 4)
+  standardSales  Decimal         @default(0) @db.Decimal(18, 4)
+  zeroRatedSales Decimal         @default(0) @db.Decimal(18, 4)
+  exemptSales    Decimal         @default(0) @db.Decimal(18, 4)
+  purchases      Decimal         @default(0) @db.Decimal(18, 4)
+  reference      String?
+  notes          String?
+  filedAt        DateTime?
+  filedById      String?
+  createdById    String
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy User    @relation("TaxReturnCreatedBy", fields: [createdById], references: [id])
+  filedBy   User?   @relation("TaxReturnFiledBy", fields: [filedById], references: [id])
+
+  @@unique([companyId, periodStart, periodEnd])
+  @@index([companyId, status])
+  @@map("tax_returns")
 }

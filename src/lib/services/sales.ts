@@ -15,6 +15,7 @@ import { consumeStock, releaseReservations, reserveStock, returnStock } from '@/
 import { getCompanyContext } from '@/lib/services/company';
 import { computeSalesLine } from '@/lib/calc/sales';
 import { writeAudit } from '@/lib/services/audit';
+import { resolveTaxCode, computeLineTax } from '@/lib/services/tax';
 
 /**
  * SalesService.
@@ -48,6 +49,8 @@ export type SalesLineInput = {
   unit: EntryUnit;
   unitPrice: string | number;
   bags?: number;
+  /** Omitted means "use the company default", which is nil when unregistered. */
+  taxCodeId?: string | null;
   notes?: string | null;
 };
 
@@ -82,6 +85,10 @@ type ResolvedLine = {
   lineTotal: Decimal;
   lineTotalUsd: Decimal;
   unitCostUsd: Decimal;
+  taxCodeId: string | null;
+  taxRatePct: Decimal;
+  taxAmount: Decimal;
+  taxAmountUsd: Decimal;
   notes: string | null;
 };
 
@@ -91,6 +98,11 @@ async function resolveLines(tx: Tx, input: SalesInvoiceInput): Promise<ResolvedL
   if (input.lines.length === 0) {
     throw new BusinessRuleError('A sales invoice needs at least one line.');
   }
+
+  const company = await tx.company.findUniqueOrThrow({
+    where: { id: input.companyId },
+    select: { taxEnabled: true },
+  });
 
   const resolved: ResolvedLine[] = [];
 
@@ -143,6 +155,19 @@ async function resolveLines(tx: Tx, input: SalesInvoiceInput): Promise<ResolvedL
           ? Number(math.quantityKg.dividedBy(bagWeight).toFixed(0))
           : 0);
 
+    const taxCode = await resolveTaxCode(tx, {
+      companyId: input.companyId,
+      taxEnabled: company.taxEnabled,
+      taxCodeId: line.taxCodeId,
+      appliesTo: 'SALES',
+    });
+    const tax = computeLineTax({
+      netAmount: math.lineTotal,
+      ratePct: taxCode.ratePct,
+      rateToUsd: input.rateToUsd,
+      currency: input.currency,
+    });
+
     resolved.push({
       lineNumber: i + 1,
       batchId: batch.id,
@@ -157,6 +182,10 @@ async function resolveLines(tx: Tx, input: SalesInvoiceInput): Promise<ResolvedL
         : dec(batch.unitCostUsd),
       notes: line.notes ?? null,
       unit: line.unit,
+      taxCodeId: taxCode.id,
+      taxRatePct: taxCode.ratePct,
+      taxAmount: tax.taxAmount,
+      taxAmountUsd: tax.taxAmountUsd,
       ...math,
     });
   }
@@ -164,10 +193,27 @@ async function resolveLines(tx: Tx, input: SalesInvoiceInput): Promise<ResolvedL
   return resolved;
 }
 
+/**
+ * Document totals.
+ *
+ * `subtotal` is the goods value, `taxAmount` is the sum of the per-line tax and
+ * `totalAmount` is what the customer owes. The tax total is the sum of amounts
+ * already rounded per line, never a fresh rounding of the net total, so the
+ * invoice adds up in the customer's hand.
+ */
 function invoiceTotals(lines: ResolvedLine[]) {
-  const totalAmount = toMoney(sum(lines.map((l) => l.lineTotal)));
-  const totalAmountUsd = toMoney(sum(lines.map((l) => l.lineTotalUsd)));
-  return { totalAmount, totalAmountUsd };
+  const subtotal = toMoney(sum(lines.map((l) => l.lineTotal)));
+  const subtotalUsd = toMoney(sum(lines.map((l) => l.lineTotalUsd)));
+  const taxAmount = toMoney(sum(lines.map((l) => l.taxAmount)));
+  const taxAmountUsd = toMoney(sum(lines.map((l) => l.taxAmountUsd)));
+  return {
+    subtotal,
+    subtotalUsd,
+    taxAmount,
+    taxAmountUsd,
+    totalAmount: toMoney(subtotal.plus(taxAmount)),
+    totalAmountUsd: toMoney(subtotalUsd.plus(taxAmountUsd)),
+  };
 }
 
 /**
@@ -194,7 +240,7 @@ export async function createSalesInvoice(input: SalesInvoiceInput, userId: strin
     const termDays = input.paymentTermDays ?? customer.paymentTermDays ?? 0;
 
     const lines = await resolveLines(tx, input);
-    const { totalAmount, totalAmountUsd } = invoiceTotals(lines);
+    const totals = invoiceTotals(lines);
 
     const invoiceNumber = await nextReference(tx, {
       companyId: input.companyId,
@@ -217,9 +263,12 @@ export async function createSalesInvoice(input: SalesInvoiceInput, userId: strin
         currency: input.currency.toUpperCase(),
         rateToUsd: dec(input.rateToUsd),
         rateLocalPerUsd: dec(input.rateLocalPerUsd),
-        subtotal: totalAmount,
-        totalAmount,
-        totalAmountUsd,
+        subtotal: totals.subtotal,
+        subtotalUsd: totals.subtotalUsd,
+        taxAmount: totals.taxAmount,
+        taxAmountUsd: totals.taxAmountUsd,
+        totalAmount: totals.totalAmount,
+        totalAmountUsd: totals.totalAmountUsd,
         paymentTermDays: termDays,
         dueDate,
         reference: input.reference ?? null,
@@ -243,6 +292,10 @@ export async function createSalesInvoice(input: SalesInvoiceInput, userId: strin
             unitPriceKg: l.unitPriceKg,
             lineTotal: l.lineTotal,
             lineTotalUsd: l.lineTotalUsd,
+            taxCodeId: l.taxCodeId,
+            taxRatePct: l.taxRatePct,
+            taxAmount: l.taxAmount,
+            taxAmountUsd: l.taxAmountUsd,
             notes: l.notes,
           })),
         },
@@ -270,7 +323,7 @@ export async function createSalesInvoice(input: SalesInvoiceInput, userId: strin
       action: 'SALES_INVOICE_CREATED',
       entityType: 'SalesInvoice',
       entityId: invoice.id,
-      after: { invoiceNumber, customer: customer.customerName, totalAmount, currency: invoice.currency },
+      after: { invoiceNumber, customer: customer.customerName, totalAmount: totals.totalAmount, currency: invoice.currency },
     });
 
     return invoice;
@@ -304,7 +357,7 @@ export async function updateSalesInvoice(id: string, input: SalesInvoiceInput, u
     if (!customer) throw new NotFoundError('Customer');
 
     const lines = await resolveLines(tx, input);
-    const { totalAmount, totalAmountUsd } = invoiceTotals(lines);
+    const totals = invoiceTotals(lines);
     const termDays = input.paymentTermDays ?? customer.paymentTermDays ?? 0;
     const dueDate = dueDateFor(input.invoiceDate, termDays);
     const distinctShipments = [...new Set(lines.map((l) => l.shipmentId))];
@@ -321,9 +374,12 @@ export async function updateSalesInvoice(id: string, input: SalesInvoiceInput, u
         currency: input.currency.toUpperCase(),
         rateToUsd: dec(input.rateToUsd),
         rateLocalPerUsd: dec(input.rateLocalPerUsd),
-        subtotal: totalAmount,
-        totalAmount,
-        totalAmountUsd,
+        subtotal: totals.subtotal,
+        subtotalUsd: totals.subtotalUsd,
+        taxAmount: totals.taxAmount,
+        taxAmountUsd: totals.taxAmountUsd,
+        totalAmount: totals.totalAmount,
+        totalAmountUsd: totals.totalAmountUsd,
         paymentTermDays: termDays,
         dueDate,
         reference: input.reference ?? null,
@@ -345,6 +401,10 @@ export async function updateSalesInvoice(id: string, input: SalesInvoiceInput, u
             unitPriceKg: l.unitPriceKg,
             lineTotal: l.lineTotal,
             lineTotalUsd: l.lineTotalUsd,
+            taxCodeId: l.taxCodeId,
+            taxRatePct: l.taxRatePct,
+            taxAmount: l.taxAmount,
+            taxAmountUsd: l.taxAmountUsd,
             notes: l.notes,
           })),
         },
@@ -462,7 +522,9 @@ export async function postSalesInvoice(params: { id: string; companyId: string; 
         accountKey: ACCOUNT_KEYS.SALES_REVENUE,
         direction: 'CREDIT' as const,
         currency: invoice.currency,
-        amount: invoice.totalAmount,
+        // Revenue is the goods value. Tax collected is the authority's money
+        // passing through, so it never touches the top line.
+        amount: invoice.subtotal,
         rateToUsd: invoice.rateToUsd,
         description: `Sales invoice ${invoice.invoiceNumber}`,
         customerId: invoice.customerId,
@@ -470,6 +532,19 @@ export async function postSalesInvoice(params: { id: string; companyId: string; 
         shipmentId: invoice.shipmentId,
       },
     ];
+
+    if (dec(invoice.taxAmount).greaterThan(0)) {
+      journalLines.push({
+        accountKey: ACCOUNT_KEYS.VAT_OUTPUT,
+        direction: 'CREDIT' as const,
+        currency: invoice.currency,
+        amount: invoice.taxAmount,
+        rateToUsd: invoice.rateToUsd,
+        description: `Output tax on ${invoice.invoiceNumber}`,
+        customerId: invoice.customerId,
+        salesInvoiceId: invoice.id,
+      });
+    }
 
     if (costOfGoodsUsd.greaterThan(0)) {
       journalLines.push(

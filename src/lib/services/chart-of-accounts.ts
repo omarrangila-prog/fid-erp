@@ -5,6 +5,7 @@ import { toMoney } from '@/lib/money';
 import { BusinessRuleError, ConflictError, NotFoundError } from '@/lib/errors';
 import { postJournalEntry } from '@/lib/services/accounting';
 import { getCompanyContext } from '@/lib/services/company';
+import { ensureTaxCodes } from '@/lib/services/tax';
 import type { AccountType, CashBankAccountType, SubledgerType } from '@prisma/client';
 
 /**
@@ -83,6 +84,20 @@ const STANDARD_ACCOUNTS: AccountSeed[] = [
     reportGroup: REPORT_GROUPS.CURRENT_LIABILITY,
     systemKey: ACCOUNT_KEYS.CUSTOMER_ADVANCES,
     subledgerType: 'CUSTOMER',
+  },
+  {
+    code: '1350',
+    name: 'VAT Recoverable (Input Tax)',
+    type: 'ASSET',
+    reportGroup: REPORT_GROUPS.CURRENT_ASSET,
+    systemKey: ACCOUNT_KEYS.VAT_INPUT,
+  },
+  {
+    code: '2150',
+    name: 'VAT Payable (Output Tax)',
+    type: 'LIABILITY',
+    reportGroup: REPORT_GROUPS.CURRENT_LIABILITY,
+    systemKey: ACCOUNT_KEYS.VAT_OUTPUT,
   },
   {
     code: '2100',
@@ -386,4 +401,9 @@ export async function provisionCompany(tx: Tx, companyId: string): Promise<void>
   if (!company) throw new NotFoundError('Company');
   await ensureChartOfAccounts(tx, companyId);
   await ensureExpenseCategories(tx, companyId);
+  // The codes exist from day one so the tax settings screen has something to
+  // show, but nothing charges tax until an administrator enters a registration
+  // number: a company below the threshold must not be nudged into collecting
+  // tax it has no authority to collect.
+  await ensureTaxCodes(tx, companyId, company.country);
 }

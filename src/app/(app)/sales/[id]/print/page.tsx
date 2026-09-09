@@ -44,6 +44,8 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
   if (!invoice) notFound();
 
   const company = await prisma.company.findUniqueOrThrow({ where: { id: user.activeCompany.id } });
+  // A registered supplier issues a "tax invoice"; the wording is prescribed.
+  const hasTax = company.taxEnabled && dec(invoice.taxAmount).greaterThan(0);
   const outstanding =
     invoice.status === 'POSTED' ? await transaction((tx) => getInvoiceOutstanding(tx, invoice.id)) : null;
 
@@ -72,6 +74,11 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
             </span>
             <div>
               <p className="text-lg font-semibold tracking-tight text-ink">{company.legalName}</p>
+              {hasTax && company.taxRegistrationNumber ? (
+                <p className="text-[11px] font-medium text-ink-muted">
+                  {company.taxLabel} registration {company.taxRegistrationNumber}
+                </p>
+              ) : null}
               <p className="mt-0.5 text-xs leading-relaxed text-ink-muted">
                 {companyFlag(company.country)} {company.address}
                 <br />
@@ -81,7 +88,9 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
           </div>
 
           <div className="text-right">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gold-700">Commercial Invoice</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gold-700">
+              {hasTax ? 'Tax Invoice' : 'Commercial Invoice'}
+            </p>
             <p className="tnum mt-1 text-2xl font-semibold tracking-tight text-ink">{invoice.invoiceNumber}</p>
             {invoice.status !== 'POSTED' ? (
               <p className="mt-1 inline-block rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800">
@@ -208,15 +217,37 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
             <tfoot>
               <tr className="border-t-2 border-line-strong">
                 <td className="pt-3 pr-3 text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">
-                  Total
+                  {hasTax ? 'Goods total' : 'Total'}
                 </td>
                 <td className="tnum px-3 pt-3 text-right font-medium text-ink">{totalBags.toLocaleString()}</td>
                 <td className="tnum px-3 pt-3 text-right font-medium text-ink">{formatQuantityKg(totalKg)}</td>
                 <td />
                 <td className="tnum pt-3 pl-3 text-right text-base font-semibold text-ink">
-                  {formatMoney(invoice.totalAmount, invoice.currency)}
+                  {formatMoney(hasTax ? invoice.subtotal : invoice.totalAmount, invoice.currency)}
                 </td>
               </tr>
+              {hasTax ? (
+                <>
+                  <tr>
+                    <td className="pr-3 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">
+                      {company.taxLabel}
+                    </td>
+                    <td colSpan={3} />
+                    <td className="tnum pl-3 pt-1.5 text-right font-medium text-ink">
+                      {formatMoney(invoice.taxAmount, invoice.currency)}
+                    </td>
+                  </tr>
+                  <tr className="border-t border-line-strong">
+                    <td className="pr-3 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">
+                      Total due
+                    </td>
+                    <td colSpan={3} />
+                    <td className="tnum pl-3 pt-1.5 text-right text-base font-semibold text-ink">
+                      {formatMoney(invoice.totalAmount, invoice.currency)}
+                    </td>
+                  </tr>
+                </>
+              ) : null}
             </tfoot>
           </table>
         </section>

@@ -213,7 +213,7 @@ export async function seedExchangeRates(): Promise<void> {
  */
 export async function seedAdminUser(companyIds: string[]): Promise<{ email: string; created: boolean }> {
   const email = process.env.INITIAL_ADMIN_EMAIL;
-  const name = process.env.INITIAL_ADMIN_NAME ?? 'System Administrator';
+  const name = process.env.INITIAL_ADMIN_NAME ?? 'Ali Raza';
   const password = process.env.INITIAL_ADMIN_PASSWORD;
 
   if (!email || !password) {
@@ -236,6 +236,11 @@ export async function seedAdminUser(companyIds: string[]): Promise<{ email: stri
       update: {},
       create: { userId: existing.id, roleId: superAdminRole.id },
     });
+    // Keep the display name in step with the environment: it appears on every
+    // document this person approves, so a stale placeholder is not harmless.
+    if (existing.name !== name) {
+      await prisma.user.update({ where: { id: existing.id }, data: { name } });
+    }
     return { email, created: false };
   }
 
@@ -278,7 +283,7 @@ export async function seedPinAccounts(): Promise<Array<{ name: string; company: 
       pin: process.env.DUBAI_STAFF_PIN,
       email: 'dubai.staff@fidtrading.local',
       isAdmin: false,
-      name: 'Dubai Staff',
+      name: process.env.DUBAI_STAFF_NAME ?? 'Dubai Staff',
       roleCode: 'ACCOUNTS',
       companyCode: 'FID-DXB',
     },
@@ -286,7 +291,7 @@ export async function seedPinAccounts(): Promise<Array<{ name: string; company: 
       pin: process.env.MOROCCO_STAFF_PIN,
       email: 'morocco.staff@fidtrading.local',
       isAdmin: false,
-      name: 'Morocco Staff',
+      name: process.env.MOROCCO_STAFF_NAME ?? 'Morocco Staff',
       roleCode: 'ACCOUNTS',
       companyCode: 'FID-MA',
     },
@@ -314,6 +319,9 @@ export async function seedPinAccounts(): Promise<Array<{ name: string; company: 
     // Staff accounts still get a password, generated and never printed: the PIN
     // is the convenience, not the only credential the account possesses.
     const existing = await prisma.user.findUnique({ where: { email: spec.email } });
+    if (existing && existing.name !== spec.name) {
+      await prisma.user.update({ where: { id: existing.id }, data: { name: spec.name! } });
+    }
     const user =
       existing ??
       (await prisma.user.create({

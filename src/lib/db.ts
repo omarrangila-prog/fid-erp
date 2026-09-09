@@ -20,10 +20,28 @@ import type { PoolConfig } from 'pg';
  *   sslmode=no-verify  encrypted, certificate not checked (self-signed CA)
  *   anything else      encrypted, certificate chain verified
  *
- * `DATABASE_SSL_CA` may point at a root certificate file when the provider
- * uses its own CA; Supabase offers one to download, though its pooler
+ * `DATABASE_SSL_CA` may carry a root certificate when the provider uses its own
+ * CA. It accepts either a path to a `.crt` file or the PEM text itself, because
+ * a serverless host has no reliable working directory to resolve a path
+ * against, and pasting the certificate into an environment variable is the only
+ * option there. Supabase offers a CA to download, though its pooler
  * certificates verify against the public roots Node already trusts.
  */
+function resolveCertificate(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  // A PEM body is unmistakable, and never a valid path.
+  if (value.includes('-----BEGIN')) return value;
+  try {
+    return readFileSync(value, 'utf8');
+  } catch {
+    // A missing certificate file must not take the process down at import
+    // time. Verification below still applies; it simply falls back to the
+    // public roots, which is correct for Supabase's pooler.
+    console.warn(`DATABASE_SSL_CA points at ${value}, which could not be read. Falling back to the system roots.`);
+    return undefined;
+  }
+}
+
 function resolveConnection(rawUrl: string): PoolConfig {
   const url = new URL(rawUrl);
   const mode = url.searchParams.get('sslmode') ?? process.env.PGSSLMODE ?? null;
@@ -36,7 +54,7 @@ function resolveConnection(rawUrl: string): PoolConfig {
     return { connectionString };
   }
 
-  const ca = process.env.DATABASE_SSL_CA ? readFileSync(process.env.DATABASE_SSL_CA, 'utf8') : undefined;
+  const ca = resolveCertificate(process.env.DATABASE_SSL_CA);
 
   return {
     connectionString,

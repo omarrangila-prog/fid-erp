@@ -26,6 +26,8 @@ type ConfirmDialogProps = {
   variant?: 'primary' | 'danger' | 'accent';
   requireReason?: boolean;
   reasonLabel?: string;
+  /** Extra fields to collect alongside the confirmation, e.g. a reference. */
+  body?: React.ReactNode;
   onConfirm: (reason: string) => Promise<void> | void;
 };
 
@@ -38,6 +40,7 @@ function ConfirmDialogBody({
   variant = 'primary',
   requireReason = false,
   reasonLabel = 'Reason',
+  body,
   onConfirm,
 }: ConfirmDialogProps) {
   const [reason, setReason] = React.useState('');
@@ -64,6 +67,7 @@ function ConfirmDialogBody({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent title={title} description={description}>
+        {body}
         {requireReason ? (
           <Field label={reasonLabel} required error={error ?? undefined}>
             <Textarea

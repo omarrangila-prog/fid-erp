@@ -3,9 +3,10 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import * as Popover from '@radix-ui/react-popover';
 import { ChevronRight, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { NAV_GROUPS, filterNav } from '@/components/layout/nav-config';
+import { NAV_GROUPS, filterNav, type NavGroup } from '@/components/layout/nav-config';
 
 /**
  * The navigation is filtered on the client from permission codes rather than
@@ -13,17 +14,260 @@ import { NAV_GROUPS, filterNav } from '@/components/layout/nav-config';
  * server/client boundary. It is a convenience filter only — every route also
  * checks the same permission server-side.
  *
- * Groups collapse, because thirty-odd screens in one unbroken list is a lot to
- * scan when you only ever use six of them. The whole rail collapses too, for
- * people who work in wide tables all day and want the width back.
+ * Groups behave as dropdowns: forty screens in one unbroken list is a lot to
+ * scan when you only ever use six of them. Which groups you leave open is
+ * remembered, because re-opening the same two sections after every reload is
+ * the kind of small tax that makes software feel hostile.
+ *
+ * Collapsing the rail switches to one icon per *group*, not per screen. The
+ * earlier version kept every item icon, which made the collapsed rail taller
+ * than the expanded one and hid the labels inside a scrolling container that
+ * clipped them — collapsing cost you the width and gave you nothing. Now the
+ * rail is eight icons, and a group's screens open in a flyout that is
+ * portalled out of the scroll container so nothing can clip it.
  */
 
 const SIDEBAR_COOKIE = 'fid_sidebar';
+const OPEN_GROUPS_KEY = 'fid.nav.openGroups';
 
 function rememberWidth(collapsed: boolean) {
   // A cookie rather than localStorage so the server renders the right width on
   // the first paint — no flash of the wrong layout on every navigation.
   document.cookie = `${SIDEBAR_COOKIE}=${collapsed ? 'collapsed' : 'expanded'};path=/;max-age=31536000;samesite=lax`;
+}
+
+/**
+ * Which groups are open, read straight from localStorage.
+ *
+ * `useSyncExternalStore` rather than an effect that copies storage into state:
+ * the server has no localStorage, so the first client render has to agree with
+ * the server's, and setting state in an effect to correct it afterwards costs a
+ * second render on every navigation. This reads the real value at render time
+ * on the client and the server-safe empty set on the server.
+ */
+const NO_GROUPS: readonly string[] = [];
+const listeners = new Set<() => void>();
+
+let cachedRaw: string | null = null;
+let cachedValue: readonly string[] = NO_GROUPS;
+
+function readOpenGroups(): readonly string[] {
+  let raw: string | null = null;
+  try {
+    raw = window.localStorage.getItem(OPEN_GROUPS_KEY);
+  } catch {
+    // A blocked or full localStorage must not take the navigation down with it.
+    return NO_GROUPS;
+  }
+  // The snapshot has to be referentially stable or React re-renders forever.
+  if (raw === cachedRaw) return cachedValue;
+  cachedRaw = raw;
+  try {
+    const parsed = raw ? JSON.parse(raw) : null;
+    cachedValue = Array.isArray(parsed)
+      ? parsed.filter((entry): entry is string => typeof entry === 'string')
+      : NO_GROUPS;
+  } catch {
+    cachedValue = NO_GROUPS;
+  }
+  return cachedValue;
+}
+
+function subscribeOpenGroups(listener: () => void) {
+  listeners.add(listener);
+  window.addEventListener('storage', listener);
+  return () => {
+    listeners.delete(listener);
+    window.removeEventListener('storage', listener);
+  };
+}
+
+function writeOpenGroups(next: readonly string[]) {
+  try {
+    window.localStorage.setItem(OPEN_GROUPS_KEY, JSON.stringify(next));
+  } catch {
+    // Remembering is a convenience; failing to remember is not an error.
+  }
+  for (const listener of listeners) listener();
+}
+
+/** Longest-prefix match, so /inventory does not light up on /inventory/batches. */
+function useActiveHref(groups: NavGroup[]) {
+  const pathname = usePathname();
+  return React.useMemo(() => {
+    const candidates = groups.flatMap((group) => group.items.map((item) => item.href));
+    return candidates
+      .filter((href) => pathname === href || pathname.startsWith(`${href}/`))
+      .sort((a, b) => b.length - a.length)[0];
+  }, [groups, pathname]);
+}
+
+function NavLink({
+  href,
+  label,
+  icon: Icon,
+  active,
+  onNavigate,
+}: {
+  href: string;
+  label: string;
+  icon: NavGroup['items'][number]['icon'];
+  active: boolean;
+  onNavigate?: () => void;
+}) {
+  return (
+    <Link
+      href={href}
+      onClick={onNavigate}
+      aria-current={active ? 'page' : undefined}
+      className={cn(
+        'relative flex items-center gap-2.5 rounded-lg py-2 pl-5 pr-3 text-sm transition-colors',
+        active ? 'bg-forest-800 font-medium text-white' : 'text-forest-200 hover:bg-forest-800/60 hover:text-white',
+      )}
+    >
+      {active ? <span className="absolute inset-y-1 left-0 w-[3px] rounded-r bg-gold-400" aria-hidden /> : null}
+      <Icon className={cn('size-4 shrink-0', active ? 'text-gold-300' : 'text-forest-300')} />
+      <span className="truncate">{label}</span>
+    </Link>
+  );
+}
+
+/** The full-width navigation: accordion groups, one open section at a time or several. */
+function ExpandedNav({
+  groups,
+  activeHref,
+  onNavigate,
+}: {
+  groups: NavGroup[];
+  activeHref: string | undefined;
+  onNavigate?: () => void;
+}) {
+  const openGroups = React.useSyncExternalStore(subscribeOpenGroups, readOpenGroups, () => NO_GROUPS);
+
+  function toggleGroup(label: string) {
+    writeOpenGroups(
+      openGroups.includes(label) ? openGroups.filter((entry) => entry !== label) : [...openGroups, label],
+    );
+  }
+
+  return (
+    <nav className="flex flex-col gap-1 px-3 py-4" aria-label="Main">
+      {groups.map((group) => {
+        const holdsActive = group.items.some((item) => item.href === activeHref);
+        // The section you are working in is always open, so the rail shows
+        // where you are without you having to hunt for it.
+        const isOpen = holdsActive || openGroups.includes(group.label);
+        const bodyId = `nav-group-${group.label.replace(/\s+/g, '-').toLowerCase()}`;
+
+        return (
+          <div key={group.label} className="pb-2">
+            <button
+              type="button"
+              onClick={() => toggleGroup(group.label)}
+              aria-expanded={isOpen}
+              aria-controls={bodyId}
+              className={cn(
+                'flex w-full items-center gap-1.5 rounded-md px-2.5 py-2 text-[11px] font-semibold uppercase tracking-wider transition-colors',
+                holdsActive ? 'text-gold-300' : 'text-forest-300 hover:bg-forest-800/60 hover:text-forest-100',
+              )}
+            >
+              <ChevronRight className={cn('size-3.5 shrink-0 transition-transform', isOpen && 'rotate-90')} aria-hidden />
+              <span className="flex-1 truncate text-left">{group.label}</span>
+              {!isOpen ? (
+                <span className="tnum rounded-full bg-forest-800 px-1.5 text-[11px] font-medium text-forest-300">
+                  {group.items.length}
+                </span>
+              ) : null}
+            </button>
+
+            <ul id={bodyId} className={cn('space-y-0.5', !isOpen && 'hidden')}>
+              {group.items.map((item) => (
+                <li key={item.href}>
+                  <NavLink
+                    href={item.href}
+                    label={item.label}
+                    icon={item.icon}
+                    active={item.href === activeHref}
+                    onNavigate={onNavigate}
+                  />
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+    </nav>
+  );
+}
+
+/**
+ * The collapsed rail: one button per group, each opening a flyout of that
+ * group's screens.
+ *
+ * Radix portals the flyout to the document body, which is the point — the rail
+ * scrolls, and anything positioned inside a scrolling container gets clipped at
+ * its edge.
+ */
+function CollapsedRail({ groups, activeHref }: { groups: NavGroup[]; activeHref: string | undefined }) {
+  const [openGroup, setOpenGroup] = React.useState<string | null>(null);
+
+  return (
+    <nav className="flex flex-col gap-1 px-2 py-4" aria-label="Main">
+      {groups.map((group) => {
+        const holdsActive = group.items.some((item) => item.href === activeHref);
+        const GroupIcon = group.icon;
+
+        return (
+          <Popover.Root
+            key={group.label}
+            open={openGroup === group.label}
+            onOpenChange={(open) => setOpenGroup(open ? group.label : null)}
+          >
+            <Popover.Trigger asChild>
+              <button
+                type="button"
+                aria-label={`${group.label} — ${group.items.length} screens`}
+                className={cn(
+                  'flex w-full items-center justify-center rounded-lg p-2.5 transition-colors',
+                  holdsActive
+                    ? 'bg-forest-800 text-gold-300'
+                    : 'text-forest-300 hover:bg-forest-800/60 hover:text-white',
+                )}
+              >
+                <GroupIcon className="size-5" />
+              </button>
+            </Popover.Trigger>
+
+            <Popover.Portal>
+              <Popover.Content
+                side="right"
+                align="start"
+                sideOffset={8}
+                className="z-50 w-60 rounded-lg border border-forest-800 bg-forest-900 p-1.5 shadow-overlay"
+              >
+                <p className="px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-forest-300">
+                  {group.label}
+                </p>
+                <ul className="space-y-0.5">
+                  {group.items.map((item) => (
+                    <li key={item.href}>
+                      <NavLink
+                        href={item.href}
+                        label={item.label}
+                        icon={item.icon}
+                        active={item.href === activeHref}
+                        onNavigate={() => setOpenGroup(null)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover.Root>
+        );
+      })}
+    </nav>
+  );
 }
 
 export function SidebarNav({
@@ -37,122 +281,16 @@ export function SidebarNav({
   collapsed?: boolean;
   onNavigate?: () => void;
 }) {
-  const pathname = usePathname();
-  // Groups behave as dropdowns: shut until asked for. The section you are
-  // working in opens itself, so the rail shows where you are without
-  // presenting forty links at once.
-  const [openedGroups, setOpenedGroups] = React.useState<ReadonlySet<string>>(() => new Set<string>());
-
   const groups = React.useMemo(
     () => filterNav(NAV_GROUPS, permissions, isSuperAdmin),
     [permissions, isSuperAdmin],
   );
+  const activeHref = useActiveHref(groups);
 
-  // Longest-prefix match so /inventory does not light up on /inventory/batches.
-  const activeHref = React.useMemo(() => {
-    const candidates = groups.flatMap((g) => g.items.map((i) => i.href));
-    return candidates
-      .filter((c) => pathname === c || pathname.startsWith(`${c}/`))
-      .sort((a, b) => b.length - a.length)[0];
-  }, [groups, pathname]);
-
-  function toggleGroup(label: string) {
-    setOpenedGroups((current) => {
-      const next = new Set(current);
-      if (next.has(label)) next.delete(label);
-      else next.add(label);
-      return next;
-    });
-  }
-
-  return (
-    <nav className={cn('flex flex-col gap-1 py-4', collapsed ? 'px-2' : 'px-3')} aria-label="Main">
-      {groups.map((group) => {
-        const holdsActive = group.items.some((item) => item.href === activeHref);
-        // The group you are inside is always open; the rail is all icons when
-        // collapsed, so grouping does not apply there.
-        const isOpen = collapsed || holdsActive || openedGroups.has(group.label);
-        const bodyId = `nav-group-${group.label.replace(/\s+/g, '-').toLowerCase()}`;
-        const count = group.items.length;
-
-        return (
-          <div key={group.label} className="pb-2">
-            {collapsed ? (
-              <div className="mx-auto mb-1 h-px w-6 bg-forest-700" aria-hidden />
-            ) : (
-              <button
-                type="button"
-                onClick={() => toggleGroup(group.label)}
-                aria-expanded={isOpen}
-                aria-controls={bodyId}
-                className={cn(
-                  'flex w-full items-center gap-1.5 rounded-md px-2.5 py-2 text-[11px] font-semibold uppercase tracking-wider transition-colors',
-                  holdsActive ? 'text-gold-300' : 'text-forest-300 hover:bg-forest-800/60 hover:text-forest-100',
-                )}
-              >
-                <ChevronRight
-                  className={cn('size-3.5 shrink-0 transition-transform', isOpen && 'rotate-90')}
-                  aria-hidden
-                />
-                <span className="flex-1 truncate text-left">{group.label}</span>
-                {!isOpen ? (
-                  <span className="tnum rounded-full bg-forest-800 px-1.5 text-[11px] font-medium text-forest-300">
-                    {count}
-                  </span>
-                ) : null}
-              </button>
-            )}
-
-            <ul id={bodyId} className={cn('space-y-0.5', !isOpen && 'hidden')}>
-              {group.items.map((item) => {
-                const active = item.href === activeHref;
-                const Icon = item.icon;
-                return (
-                  <li key={item.href} className="relative">
-                    <Link
-                      href={item.href}
-                      onClick={onNavigate}
-                      aria-current={active ? 'page' : undefined}
-                      title={collapsed ? item.label : undefined}
-                      className={cn(
-                        'group/nav relative flex items-center rounded-lg py-2 text-sm transition-colors',
-                        collapsed ? 'justify-center px-2' : 'gap-2.5 pl-5 pr-3',
-                        active
-                          ? 'bg-forest-800 font-medium text-white'
-                          : 'text-forest-200 hover:bg-forest-800/60 hover:text-white',
-                      )}
-                    >
-                      {active ? (
-                        <span
-                          className="absolute inset-y-1 left-0 w-[3px] rounded-r bg-gold-400"
-                          aria-hidden
-                        />
-                      ) : null}
-                      <Icon className={cn('size-4 shrink-0', active ? 'text-gold-300' : 'text-forest-300')} />
-                      {collapsed ? (
-                        <span className="sr-only">{item.label}</span>
-                      ) : (
-                        <span className="truncate">{item.label}</span>
-                      )}
-
-                      {/* Collapsed rail: a real label on hover, not just a native tooltip delay. */}
-                      {collapsed ? (
-                        <span
-                          role="presentation"
-                          className="pointer-events-none absolute left-full z-50 ml-2 hidden whitespace-nowrap rounded-md bg-forest-900 px-2 py-1 text-xs font-medium text-white shadow-overlay group-hover/nav:block"
-                        >
-                          {item.label}
-                        </span>
-                      ) : null}
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        );
-      })}
-    </nav>
+  return collapsed ? (
+    <CollapsedRail groups={groups} activeHref={activeHref} />
+  ) : (
+    <ExpandedNav groups={groups} activeHref={activeHref} onNavigate={onNavigate} />
   );
 }
 
@@ -198,6 +336,8 @@ export function DesktopSidebar({
         )}
       </div>
 
+      {/* overflow-x-visible would be ignored next to overflow-y-auto, which is
+          exactly why the collapsed flyouts are portalled rather than nested. */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         <SidebarNav permissions={permissions} isSuperAdmin={isSuperAdmin} collapsed={collapsed} />
       </div>

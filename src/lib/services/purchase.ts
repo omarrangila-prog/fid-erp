@@ -13,6 +13,7 @@ import { nextReference } from '@/lib/services/numbering';
 import { postJournalEntry, reverseJournalEntry } from '@/lib/services/accounting';
 import { getCompanyContext } from '@/lib/services/company';
 import { writeAudit } from '@/lib/services/audit';
+import { resolveTaxCode } from '@/lib/services/tax';
 import { computePurchaseTotals } from '@/lib/calc/purchase';
 import type { PurchaseContractInput, PurchaseLineInput } from '@/lib/calc/purchase';
 
@@ -55,6 +56,31 @@ async function assertReferenceIsFree(tx: Tx, companyId: string, reference: strin
   }
 }
 
+/**
+ * Replaces whatever rate the browser sent with the rate the chosen code
+ * actually carries, and drops tax entirely when the company is not registered.
+ * The form computes the same figures for its preview, but only this result is
+ * ever saved.
+ */
+async function applyServerTaxRates(tx: Tx, input: PurchaseContractInput): Promise<PurchaseContractInput> {
+  const company = await tx.company.findUniqueOrThrow({
+    where: { id: input.companyId },
+    select: { taxEnabled: true },
+  });
+
+  const lines = [];
+  for (const line of input.lines) {
+    const code = await resolveTaxCode(tx, {
+      companyId: input.companyId,
+      taxEnabled: company.taxEnabled,
+      taxCodeId: line.taxCodeId,
+      appliesTo: 'PURCHASE',
+    });
+    lines.push({ ...line, taxCodeId: code.id, taxRatePct: code.ratePct.toString() });
+  }
+  return { ...input, lines };
+}
+
 function lineData(totals: ReturnType<typeof computePurchaseTotals>) {
   return totals.lines.map((l) => ({
     lineNumber: l.lineNumber,
@@ -76,6 +102,10 @@ function lineData(totals: ReturnType<typeof computePurchaseTotals>) {
     lineTotal: l.lineTotal,
     unitCostKg: l.unitCostKg,
     containers: l.containers,
+    taxCodeId: l.taxCodeId,
+    taxRatePct: l.taxRatePct,
+    taxAmount: l.taxAmount,
+    taxAmountUsd: l.taxAmountUsd,
     notes: l.notes,
   }));
 }
@@ -182,7 +212,7 @@ export async function createPurchaseContract(input: PurchaseContractInput, userI
     await assertReferenceIsFree(tx, input.companyId, input.contractReference);
     await assertTraceabilityNumbersAreFree(tx, input.companyId, input.lines);
 
-    const totals = computePurchaseTotals(input);
+    const totals = computePurchaseTotals(await applyServerTaxRates(tx, input));
     const contractNumber = await nextReference(tx, {
       companyId: input.companyId,
       docType: DOC_TYPES.PURCHASE_CONTRACT,
@@ -207,6 +237,8 @@ export async function createPurchaseContract(input: PurchaseContractInput, userI
         otherCharges: totals.otherCharges,
         totalValue: totals.totalValue,
         totalValueUsd: totals.totalValueUsd,
+        taxAmount: totals.taxAmount,
+        taxAmountUsd: totals.taxAmountUsd,
         containers: totals.totalContainers,
         totalBags: totals.totalBags,
         incoterm: input.incoterm ?? 'FOB',
@@ -256,7 +288,7 @@ export async function updatePurchaseContract(id: string, input: PurchaseContract
     });
     if (!vendor) throw new NotFoundError('Supplier');
 
-    const totals = computePurchaseTotals(input);
+    const totals = computePurchaseTotals(await applyServerTaxRates(tx, input));
     const termDays = input.paymentTermDays ?? vendor.paymentTermDays ?? 0;
     const dueDate = new Date(input.contractDate.getTime() + termDays * 86_400_000);
 
@@ -278,6 +310,8 @@ export async function updatePurchaseContract(id: string, input: PurchaseContract
         otherCharges: totals.otherCharges,
         totalValue: totals.totalValue,
         totalValueUsd: totals.totalValueUsd,
+        taxAmount: totals.taxAmount,
+        taxAmountUsd: totals.taxAmountUsd,
         containers: totals.totalContainers,
         totalBags: totals.totalBags,
         incoterm: input.incoterm ?? 'FOB',
@@ -492,11 +526,27 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
           vendorId: contract.vendorId,
           shipmentId: shipment.id,
         },
+        ...(dec(contract.taxAmount).greaterThan(0)
+          ? [
+              {
+                accountKey: ACCOUNT_KEYS.VAT_INPUT,
+                direction: 'DEBIT' as const,
+                currency: contract.currency,
+                amount: contract.taxAmount,
+                rateToUsd: contract.rateToUsd,
+                description: `Input tax on ${contract.contractNumber}`,
+                vendorId: contract.vendorId,
+                purchaseContractId: contract.id,
+              },
+            ]
+          : []),
         {
           accountKey: ACCOUNT_KEYS.ACCOUNTS_PAYABLE,
           direction: 'CREDIT',
           currency: contract.currency,
-          amount: contract.totalValue,
+          // Gross: the supplier is owed the goods and the tax on them. Only
+          // the goods reached inventory above; the tax went to VAT recoverable.
+          amount: toMoney(dec(contract.totalValue).plus(contract.taxAmount)),
           rateToUsd: contract.rateToUsd,
           description: `Payable to ${contract.vendor.vendorName}`,
           vendorId: contract.vendorId,

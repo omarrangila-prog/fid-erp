@@ -7,7 +7,8 @@ import { nextReference } from '@/lib/services/numbering';
 import { postJournalEntry, reverseJournalEntry } from '@/lib/services/accounting';
 import { getCompanyContext } from '@/lib/services/company';
 import { writeAudit } from '@/lib/services/audit';
-import { returnStock } from '@/lib/services/inventory';
+import { consumeStock, returnStock } from '@/lib/services/inventory';
+import { resolveTaxCode, computeLineTax } from '@/lib/services/tax';
 import { resolveSubledgerLeg } from '@/lib/services/subledger';
 
 /**
@@ -33,6 +34,8 @@ export type CreditNoteLineInput = {
   unitPrice?: string | number;
   /** Used when the line is a pure value credit with no stock behind it. */
   amount?: string | number;
+  /** Omitted means "use the company default", which is nil when unregistered. */
+  taxCodeId?: string | null;
 };
 
 export type CreditNoteInput = {
@@ -64,12 +67,21 @@ type ResolvedLine = {
   lineTotal: Decimal;
   lineTotalUsd: Decimal;
   costTotalUsd: Decimal;
+  taxCodeId: string | null;
+  taxRatePct: Decimal;
+  taxAmount: Decimal;
+  taxAmountUsd: Decimal;
 };
 
 async function resolveLines(tx: Tx, input: CreditNoteInput): Promise<ResolvedLine[]> {
   if (input.lines.length === 0) {
     throw new BusinessRuleError('A credit note needs at least one line.');
   }
+
+  const company = await tx.company.findUniqueOrThrow({
+    where: { id: input.companyId },
+    select: { taxEnabled: true },
+  });
 
   const resolved: ResolvedLine[] = [];
 
@@ -126,6 +138,21 @@ async function resolveLines(tx: Tx, input: CreditNoteInput): Promise<ResolvedLin
       costTotalUsd = toMoney(quantityKg.times(batch.landedUnitCostUsd));
     }
 
+    // A credit reverses the tax charged on the original supply, so it uses the
+    // same direction of code as the document it credits.
+    const taxCode = await resolveTaxCode(tx, {
+      companyId: input.companyId,
+      taxEnabled: company.taxEnabled,
+      taxCodeId: line.taxCodeId,
+      appliesTo: input.type === 'CUSTOMER' ? 'SALES' : 'PURCHASE',
+    });
+    const tax = computeLineTax({
+      netAmount: lineTotal,
+      ratePct: taxCode.ratePct,
+      rateToUsd: input.rateToUsd,
+      currency: input.currency,
+    });
+
     resolved.push({
       lineNumber: index + 1,
       description: line.description,
@@ -138,6 +165,10 @@ async function resolveLines(tx: Tx, input: CreditNoteInput): Promise<ResolvedLin
       lineTotal,
       lineTotalUsd: convertToUsd(lineTotal, input.rateToUsd, input.currency),
       costTotalUsd,
+      taxCodeId: taxCode.id,
+      taxRatePct: taxCode.ratePct,
+      taxAmount: tax.taxAmount,
+      taxAmountUsd: tax.taxAmountUsd,
     });
   }
 
@@ -157,8 +188,13 @@ export async function createCreditNote(input: CreditNoteInput, userId: string) {
     }
 
     const lines = await resolveLines(tx, input);
-    const totalAmount = lines.reduce((sum, line) => sum.plus(line.lineTotal), new Decimal(0));
-    const totalAmountUsd = lines.reduce((sum, line) => sum.plus(line.lineTotalUsd), new Decimal(0));
+    const subtotalAmount = toMoney(lines.reduce((sum, line) => sum.plus(line.lineTotal), new Decimal(0)));
+    const subtotalAmountUsd = toMoney(lines.reduce((sum, line) => sum.plus(line.lineTotalUsd), new Decimal(0)));
+    const taxAmount = toMoney(lines.reduce((sum, line) => sum.plus(line.taxAmount), new Decimal(0)));
+    const taxAmountUsd = toMoney(lines.reduce((sum, line) => sum.plus(line.taxAmountUsd), new Decimal(0)));
+    // Gross, because that is what comes off the customer's or supplier's balance.
+    const totalAmount = toMoney(subtotalAmount.plus(taxAmount));
+    const totalAmountUsd = toMoney(subtotalAmountUsd.plus(taxAmountUsd));
     const costOfGoodsUsd = lines.reduce((sum, line) => sum.plus(line.costTotalUsd), new Decimal(0));
 
     // A customer credit cannot exceed what the invoice it references is worth.
@@ -199,8 +235,12 @@ export async function createCreditNote(input: CreditNoteInput, userId: string) {
         currency: input.currency.toUpperCase(),
         rateToUsd: dec(input.rateToUsd),
         rateLocalPerUsd: dec(input.rateLocalPerUsd),
-        totalAmount: toMoney(totalAmount),
-        totalAmountUsd: toMoney(totalAmountUsd),
+        subtotalAmount,
+        subtotalAmountUsd,
+        taxAmount,
+        taxAmountUsd,
+        totalAmount,
+        totalAmountUsd,
         costOfGoodsUsd: toMoney(costOfGoodsUsd),
         reason: input.reason.trim(),
         reference: input.reference ?? null,
@@ -220,6 +260,10 @@ export async function createCreditNote(input: CreditNoteInput, userId: string) {
             lineTotal: line.lineTotal,
             lineTotalUsd: line.lineTotalUsd,
             costTotalUsd: line.costTotalUsd,
+            taxCodeId: line.taxCodeId,
+            taxRatePct: line.taxRatePct,
+            taxAmount: line.taxAmount,
+            taxAmountUsd: line.taxAmountUsd,
           })),
         },
       },
@@ -311,11 +355,26 @@ export async function postCreditNote(params: { id: string; companyId: string; us
               accountKey: ACCOUNT_KEYS.SALES_RETURNS,
               direction: 'DEBIT' as const,
               currency: note.currency,
-              amount: note.totalAmount,
+              // Net: the tax charged on the original supply is given back to
+              // the authority on the line below, not taken out of revenue.
+              amount: note.subtotalAmount,
               rateToUsd: note.rateToUsd,
               description: `Credit note ${note.creditNoteNumber} — ${note.reason}`,
               customerId: note.customerId,
             },
+            ...(dec(note.taxAmount).greaterThan(0)
+              ? [
+                  {
+                    accountKey: ACCOUNT_KEYS.VAT_OUTPUT,
+                    direction: 'DEBIT' as const,
+                    currency: note.currency,
+                    amount: note.taxAmount,
+                    rateToUsd: note.rateToUsd,
+                    description: `Output tax credited on ${note.creditNoteNumber}`,
+                    customerId: note.customerId,
+                  },
+                ]
+              : []),
             {
               accountKey: ACCOUNT_KEYS.ACCOUNTS_RECEIVABLE,
               direction: 'CREDIT' as const,
@@ -360,11 +419,24 @@ export async function postCreditNote(params: { id: string; companyId: string; us
               accountKey: ACCOUNT_KEYS.PURCHASE_RETURNS,
               direction: 'CREDIT' as const,
               currency: note.currency,
-              amount: note.totalAmount,
+              amount: note.subtotalAmount,
               rateToUsd: note.rateToUsd,
               description: `Supplier credit ${note.creditNoteNumber} — ${note.reason}`,
               vendorId: note.vendorId,
             },
+            ...(dec(note.taxAmount).greaterThan(0)
+              ? [
+                  {
+                    accountKey: ACCOUNT_KEYS.VAT_INPUT,
+                    direction: 'CREDIT' as const,
+                    currency: note.currency,
+                    amount: note.taxAmount,
+                    rateToUsd: note.rateToUsd,
+                    description: `Input tax reversed on ${note.creditNoteNumber}`,
+                    vendorId: note.vendorId,
+                  },
+                ]
+              : []),
           ];
 
     await postJournalEntry(tx, {
@@ -415,6 +487,33 @@ export async function reverseCreditNote(params: {
     }
     if (!params.reason.trim()) {
       throw new BusinessRuleError('A reason is required to reverse a credit note.');
+    }
+
+    // Stock first, and before the journal, so a reversal that cannot be made
+    // physically is refused before anything moves in the ledger.
+    //
+    // Reversing a credit note that brought coffee back has to take that coffee
+    // out again: leaving it on the shelf while the accounting says it was never
+    // returned puts the inventory account and the stock ledger out of step, and
+    // the reconciliation report would report it — correctly — as a break.
+    //
+    // consumeStock rather than a blind adjustment: if the returned coffee has
+    // since been sold on, there is nothing left to take back and the reversal
+    // must fail loudly rather than drive the batch negative.
+    for (const line of note.lines) {
+      if (!line.batchId || !line.warehouseId || dec(line.quantityKg).lessThanOrEqualTo(0)) continue;
+      await consumeStock(tx, {
+        companyId: params.companyId,
+        batchId: line.batchId,
+        warehouseId: line.warehouseId,
+        quantityKg: line.quantityKg,
+        bags: line.bags,
+        referenceType: 'CREDIT_NOTE_REVERSAL',
+        referenceId: note.id,
+        transactionDate: new Date(),
+        createdById: params.userId,
+        notes: `Reversal of credit note ${note.creditNoteNumber}`,
+      });
     }
 
     await reverseJournalEntry(tx, {

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
+import { getTaxSettings, listTaxCodes } from '@/lib/services/tax';
 import { prisma } from '@/lib/db';
 import { dec } from '@/lib/money';
 import { getSellableStock } from '@/lib/services/stock';
@@ -85,6 +86,15 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
     }
   }
 
+  const taxSettings = await getTaxSettings(user.activeCompany.id);
+  const taxCodeRows = taxSettings.enabled ? await listTaxCodes(user.activeCompany.id, 'SALES') : [];
+  const taxCodes = taxCodeRows.map((code) => ({
+    id: code.id,
+    code: code.code,
+    name: code.name,
+    ratePct: code.ratePct.toString(),
+  }));
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -109,6 +119,9 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
         localCurrency={user.activeCompany.localCurrency}
         defaultCurrency={invoice.currency}
         defaultLocalRate={invoice.rateLocalPerUsd.toString()}
+        taxCodes={taxCodes}
+        taxLabel={taxSettings.label}
+        taxEnabled={taxSettings.enabled}
         defaults={{
           id: invoice.id,
           invoiceDate: toDateInputValue(invoice.invoiceDate),
@@ -124,6 +137,7 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
             quantity: l.quantity.toString(),
             unit: l.unit as 'KG' | 'MT' | 'BAG',
             unitPrice: l.unitPrice.toString(),
+            taxCodeId: l.taxCodeId ?? '',
           })),
         }}
       />

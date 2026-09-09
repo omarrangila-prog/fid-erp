@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
+import { getTaxSettings, listTaxCodes } from '@/lib/services/tax';
 import { prisma } from '@/lib/db';
 import { getSellableStock } from '@/lib/services/stock';
 import { formatQuantityKg } from '@/lib/format';
@@ -57,6 +58,15 @@ export default async function NewSalePage() {
     );
   }
 
+  const taxSettings = await getTaxSettings(user.activeCompany.id);
+  const taxCodeRows = taxSettings.enabled ? await listTaxCodes(user.activeCompany.id, 'SALES') : [];
+  const taxCodes = taxCodeRows.map((code) => ({
+    id: code.id,
+    code: code.code,
+    name: code.name,
+    ratePct: code.ratePct.toString(),
+  }));
+
   const stockOptions: StockOption[] = stock.map((s) => ({
     value: `${s.batchId}:${s.warehouseId}`,
     label: `${s.batchNumber} · ${s.itemName}`,
@@ -94,6 +104,9 @@ export default async function NewSalePage() {
         localCurrency={user.activeCompany.localCurrency}
         defaultCurrency={defaultCurrency}
         defaultLocalRate={user.activeCompany.localCurrency === 'AED' ? '3.6725' : '9.85'}
+        taxCodes={taxCodes}
+        taxLabel={taxSettings.label}
+        taxEnabled={taxSettings.enabled}
       />
     </div>
   );

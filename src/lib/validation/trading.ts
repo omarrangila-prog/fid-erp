@@ -25,6 +25,7 @@ export const purchaseLineSchema = z.object({
   unitPrice: decimalString('Price', { allowZero: true }),
   bags: positiveInt('Bags').optional(),
   bagWeightKg: optionalDecimalString('Bag weight'),
+  taxCodeId: optionalCuid,
   notes: optionalText(300),
 });
 
@@ -73,6 +74,7 @@ export const salesLineSchema = z.object({
   unit: z.enum(['KG', 'MT', 'BAG']),
   unitPrice: decimalString('Price'),
   bags: positiveInt('Bags').optional(),
+  taxCodeId: optionalCuid,
   notes: optionalText(300),
 });
 
@@ -175,3 +177,100 @@ export type PurchaseContractFormInput = z.infer<typeof purchaseContractSchema>;
 export type GoodsReceiptFormInput = z.infer<typeof goodsReceiptSchema>;
 export type SalesInvoiceFormInput = z.infer<typeof salesInvoiceSchema>;
 export type StockTransferFormInput = z.infer<typeof stockTransferSchema>;
+
+// ---------------------------------------------------------------------------
+// Credit notes, stock counts and tax
+// ---------------------------------------------------------------------------
+
+export const creditNoteLineSchema = z
+  .object({
+    description: requiredText('Description', 300),
+    batchId: optionalCuid,
+    warehouseId: optionalCuid,
+    quantityKg: optionalDecimalString('Quantity'),
+    bags: positiveInt('Bags').optional(),
+    unitPrice: optionalDecimalString('Unit price'),
+    amount: optionalDecimalString('Amount'),
+    taxCodeId: optionalCuid,
+  })
+  .refine(
+    (line) => Number(line.amount) > 0 || (Number(line.quantityKg) > 0 && Number(line.unitPrice) > 0),
+    'Enter either a quantity and a price, or a flat amount.',
+  )
+  .refine(
+    (line) => !line.batchId || Boolean(line.warehouseId),
+    'Choose the warehouse the coffee comes back into.',
+  );
+
+export const creditNoteSchema = z
+  .object({
+    type: z.enum(['CUSTOMER', 'VENDOR']),
+    creditDate: dateString('Credit date'),
+    customerId: optionalCuid,
+    vendorId: optionalCuid,
+    salesInvoiceId: optionalCuid,
+    purchaseContractId: optionalCuid,
+    currency: currencyCode,
+    rateToUsd: decimalString('Exchange rate'),
+    rateLocalPerUsd: decimalString('Local exchange rate'),
+    reason: requiredText('Reason', 400),
+    reference: optionalText(60),
+    notes: optionalText(1000),
+    lines: z.array(creditNoteLineSchema).min(1, 'Add at least one line.'),
+  })
+  .refine(
+    (note) => (note.type === 'CUSTOMER' ? Boolean(note.customerId) : Boolean(note.vendorId)),
+    'Choose the customer or supplier the credit belongs to.',
+  );
+
+export const stockCountSchema = z.object({
+  warehouseId: cuid,
+  countDate: dateString('Count date'),
+  notes: optionalText(600),
+});
+
+export const stockCountLinesSchema = z.object({
+  lines: z
+    .array(
+      z.object({
+        batchId: cuid,
+        countedKg: decimalString('Counted quantity', { allowZero: true }),
+        reason: z.enum(['DAMAGE', 'LOSS', 'COUNT_ADJUSTMENT', 'CORRECTION', 'OTHER']).nullable().optional(),
+        notes: optionalText(300),
+      }),
+    )
+    .min(1, 'Record at least one counted quantity.'),
+});
+
+export const taxCodeSchema = z.object({
+  id: optionalCuid,
+  code: requiredText('Code', 12),
+  name: requiredText('Name', 120),
+  ratePct: optionalDecimalString('Rate'),
+  treatment: z.enum(['STANDARD', 'ZERO_RATED', 'EXEMPT', 'OUT_OF_SCOPE', 'REVERSE_CHARGE']),
+  appliesTo: z.enum(['SALES', 'PURCHASE', 'BOTH']),
+  isDefault: z.coerce.boolean().optional(),
+});
+
+export const taxRegistrationSchema = z.object({
+  registrationNumber: requiredText('Registration number', 60),
+  label: requiredText('Tax name', 12),
+  periodMonths: positiveInt('Filing period'),
+});
+
+export const taxReturnFilingSchema = z.object({
+  from: dateString('Period start'),
+  to: dateString('Period end'),
+  reference: optionalText(60),
+  notes: optionalText(600),
+});
+
+export const bankReconciliationSchema = z.object({
+  cashBankAccountId: cuid,
+  statementDate: dateString('Statement date'),
+  statementBalance: decimalString('Statement balance', { allowZero: true }),
+});
+
+export type CreditNoteFormInput = z.infer<typeof creditNoteSchema>;
+export type StockCountFormInput = z.infer<typeof stockCountSchema>;
+export type TaxCodeFormInput = z.infer<typeof taxCodeSchema>;

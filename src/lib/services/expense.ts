@@ -10,6 +10,7 @@ import { applyLandedCost } from '@/lib/services/landed-cost';
 import { getCompanyContext } from '@/lib/services/company';
 import { resolveSubledgerLeg } from '@/lib/services/subledger';
 import { writeAudit } from '@/lib/services/audit';
+import { resolveTaxCode, computeLineTax } from '@/lib/services/tax';
 
 /**
  * ExpenseService — shipment and operating costs.
@@ -40,6 +41,8 @@ export type ExpenseInput = {
   /** Overrides the category default. Direct shipment costs are capitalised
    *  into landed cost; period costs go straight to the profit and loss. */
   capitaliseToLandedCost?: boolean;
+  /** `amount` stays net of this. Omitted means the company default. */
+  taxCodeId?: string | null;
   reference?: string | null;
   description?: string | null;
 };
@@ -125,11 +128,50 @@ async function validateReferences(tx: Tx, input: ExpenseInput) {
   return { category, capitalise };
 }
 
+/**
+ * Recoverable tax on a bill.
+ *
+ * `amount` is deliberately the net cost, not the gross the supplier billed. A
+ * capitalised expense flows into the landed cost of a batch, and reclaimable
+ * tax is not a cost of that coffee: including it would inflate every margin the
+ * batch ever earns and the money would then be reclaimed a second time from the
+ * authority.
+ */
+async function resolveExpenseTax(
+  tx: Tx,
+  input: ExpenseInput,
+  amounts: { amount: ReturnType<typeof toMoney>; currency: string; rateToUsd: ReturnType<typeof dec> },
+) {
+  const company = await tx.company.findUniqueOrThrow({
+    where: { id: input.companyId },
+    select: { taxEnabled: true },
+  });
+  const code = await resolveTaxCode(tx, {
+    companyId: input.companyId,
+    taxEnabled: company.taxEnabled,
+    taxCodeId: input.taxCodeId,
+    appliesTo: 'PURCHASE',
+  });
+  const computed = computeLineTax({
+    netAmount: amounts.amount,
+    ratePct: code.ratePct,
+    rateToUsd: amounts.rateToUsd,
+    currency: amounts.currency,
+  });
+  return {
+    taxCodeId: code.id,
+    taxRatePct: code.ratePct,
+    taxAmount: computed.taxAmount,
+    taxAmountUsd: computed.taxAmountUsd,
+  };
+}
+
 export async function createExpense(input: ExpenseInput, userId: string) {
   return transaction(async (tx) => {
     const company = await getCompanyContext(tx, input.companyId);
     const { category, capitalise } = await validateReferences(tx, input);
     const amounts = computeExpenseAmounts({ ...input, localCurrency: company.localCurrency });
+    const tax = await resolveExpenseTax(tx, input, amounts);
 
     const expenseNumber = await nextReference(tx, {
       companyId: input.companyId,
@@ -155,6 +197,10 @@ export async function createExpense(input: ExpenseInput, userId: string) {
         cashBankAccountId: input.cashBankAccountId ?? null,
         paymentMethod: input.paymentMethod ?? 'BANK_TRANSFER',
         capitaliseToLandedCost: capitalise,
+        taxCodeId: tax.taxCodeId,
+        taxRatePct: tax.taxRatePct,
+        taxAmount: tax.taxAmount,
+        taxAmountUsd: tax.taxAmountUsd,
         reference: input.reference ?? null,
         description: input.description ?? null,
         status: 'DRAFT',
@@ -192,6 +238,7 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
     const company = await getCompanyContext(tx, input.companyId);
     const { capitalise } = await validateReferences(tx, input);
     const amounts = computeExpenseAmounts({ ...input, localCurrency: company.localCurrency });
+    const tax = await resolveExpenseTax(tx, input, amounts);
 
     const expense = await tx.expense.update({
       where: { id },
@@ -211,6 +258,10 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
         cashBankAccountId: input.cashBankAccountId ?? null,
         paymentMethod: input.paymentMethod ?? 'BANK_TRANSFER',
         capitaliseToLandedCost: capitalise,
+        taxCodeId: tax.taxCodeId,
+        taxRatePct: tax.taxRatePct,
+        taxAmount: tax.taxAmount,
+        taxAmountUsd: tax.taxAmountUsd,
         reference: input.reference ?? null,
         description: input.description ?? null,
       },
@@ -251,12 +302,17 @@ export async function postExpense(params: { id: string; companyId: string; userI
     // ---------------------------------------------------------------------
     // The credit side: paid from cash/bank, or owed to a supplier.
     // ---------------------------------------------------------------------
+    // Gross: the supplier is paid the bill including tax. Only the net reaches
+    // the expense or the batch below; the tax goes to VAT recoverable.
+    const grossAmount = toMoney(dec(expense.amount).plus(expense.taxAmount));
+    const grossAmountUsd = toMoney(dec(expense.amountUsd).plus(expense.taxAmountUsd));
+
     const creditLine: JournalLineInput = expense.cashBankAccountId
       ? {
           cashBankAccountId: expense.cashBankAccountId,
           direction: 'CREDIT',
           currency: expense.currency,
-          amount: expense.amount,
+          amount: grossAmount,
           rateToUsd: expense.rateToUsd,
           description: `Paid from ${expense.cashBankAccount?.name ?? 'cash/bank'}`,
           shipmentId: expense.shipmentId,
@@ -268,9 +324,9 @@ export async function postExpense(params: { id: string; companyId: string; userI
           const ap = resolveSubledgerLeg({
             partyCurrency: expense.vendor.primaryCurrency,
             voucherCurrency: expense.currency,
-            voucherAmount: expense.amount,
+            voucherAmount: grossAmount,
             voucherRateToUsd: expense.rateToUsd,
-            voucherAmountUsd: expense.amountUsd,
+            voucherAmountUsd: grossAmountUsd,
             localCurrency: company.localCurrency,
             rateLocalPerUsd: expense.rateLocalPerUsd,
             partyLabel: expense.vendor.vendorName,
@@ -296,6 +352,18 @@ export async function postExpense(params: { id: string; companyId: string; userI
     // goods sold so the ledger keeps agreeing with the profitability report.
     // ---------------------------------------------------------------------
     const debitLines: JournalLineInput[] = [];
+
+    if (dec(expense.taxAmount).greaterThan(0)) {
+      debitLines.push({
+        accountKey: ACCOUNT_KEYS.VAT_INPUT,
+        direction: 'DEBIT',
+        currency: expense.currency,
+        amount: expense.taxAmount,
+        rateToUsd: expense.rateToUsd,
+        description: `Input tax on ${expense.expenseNumber}`,
+        vendorId: expense.vendorId,
+      });
+    }
 
     if (expense.capitaliseToLandedCost && expense.shipmentId) {
       const landed = await applyLandedCost(tx, {

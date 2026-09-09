@@ -41,6 +41,7 @@ type LineState = {
   quantity: string;
   unit: 'KG' | 'MT' | 'BAG';
   unitPrice: string;
+  taxCodeId: string;
 };
 
 export type SaleFormDefaults = {
@@ -56,12 +57,13 @@ export type SaleFormDefaults = {
   lines?: Array<Omit<LineState, 'key'>>;
 };
 
-const newLine = (): LineState => ({
+const newLine = (taxCodeId = ''): LineState => ({
   key: Math.random().toString(36).slice(2),
   stockKey: null,
   quantity: '',
   unit: 'KG',
   unitPrice: '',
+  taxCodeId,
 });
 
 export function SaleForm({
@@ -70,6 +72,9 @@ export function SaleForm({
   localCurrency,
   defaultCurrency,
   defaultLocalRate,
+  taxCodes = [],
+  taxLabel = 'VAT',
+  taxEnabled = false,
   defaults,
 }: {
   customers: Array<ComboOption & { currency: string; paymentTermDays: number }>;
@@ -77,8 +82,12 @@ export function SaleForm({
   localCurrency: string;
   defaultCurrency: string;
   defaultLocalRate: string;
+  taxCodes?: Array<{ id: string; code: string; name: string; ratePct: string }>;
+  taxLabel?: string;
+  taxEnabled?: boolean;
   defaults?: SaleFormDefaults;
 }) {
+  const defaultTaxCodeId = taxCodes[0]?.id ?? '';
   const router = useRouter();
   const [pending, startTransition] = React.useTransition();
   const [error, setError] = React.useState<string | null>(null);
@@ -98,7 +107,7 @@ export function SaleForm({
   // Built in a lazy initialiser so the random keys are generated once, on mount,
   // rather than on every render.
   const [lines, setLines] = React.useState<LineState[]>(() =>
-    defaults?.lines?.length ? defaults.lines.map((l, i) => ({ ...l, key: `line-${i}` })) : [newLine()],
+    defaults?.lines?.length ? defaults.lines.map((l, i) => ({ ...l, key: `line-${i}` })) : [newLine(defaultTaxCodeId)],
   );
 
   function setLine(key: string, patch: Partial<LineState>) {
@@ -150,14 +159,35 @@ export function SaleForm({
     }
   });
 
+  // Tax is previewed here from the chosen code's rate, and computed again on
+  // the server from the code itself. Only the server's figure is ever saved —
+  // this one exists so the person typing sees what the customer will owe.
+  const rateFor = React.useCallback(
+    (taxCodeId: string) => dec(taxCodes.find((code) => code.id === taxCodeId)?.ratePct ?? 0),
+    [taxCodes],
+  );
+
   const totals = React.useMemo(() => {
     const valid = computed.filter((c) => c.math);
+    const net = toMoney(sum(valid.map((c) => c.math!.lineTotal)));
+    const tax = taxEnabled
+      ? toMoney(
+          sum(
+            valid.map((c) => {
+              const rate = rateFor(c.line.taxCodeId);
+              return rate.isZero() ? dec(0) : toMoney(c.math!.lineTotal.times(rate).dividedBy(100));
+            }),
+          ),
+        )
+      : dec(0);
     return {
       quantityKg: sum(valid.map((c) => c.math!.quantityKg)),
-      amount: toMoney(sum(valid.map((c) => c.math!.lineTotal))),
+      net,
+      tax,
+      amount: toMoney(net.plus(tax)),
       amountUsd: toMoney(sum(valid.map((c) => c.math!.lineTotalUsd))),
     };
-  }, [computed]);
+  }, [computed, rateFor, taxEnabled]);
 
   const hasOverdraw = computed.some((c) => c.over);
 
@@ -184,6 +214,7 @@ export function SaleForm({
             quantity: l.quantity,
             unit: l.unit,
             unitPrice: l.unitPrice,
+            taxCodeId: taxEnabled ? l.taxCodeId : '',
             notes: '',
           };
         }),
@@ -326,7 +357,7 @@ export function SaleForm({
               Each line draws from one batch in one warehouse. Availability is checked again when you post.
             </CardDescription>
           </div>
-          <Button variant="outline" size="sm" onClick={() => setLines((prev) => [...prev, newLine()])}>
+          <Button variant="outline" size="sm" onClick={() => setLines((prev) => [...prev, newLine(defaultTaxCodeId)])}>
             <Plus />
             Add line
           </Button>
@@ -395,6 +426,22 @@ export function SaleForm({
                   />
                 </Field>
 
+                {taxEnabled ? (
+                  <Field label={taxLabel}>
+                    <Select
+                      value={line.taxCodeId}
+                      onChange={(e) => setLine(line.key, { taxCodeId: e.target.value })}
+                      aria-label={`${taxLabel} code on this line`}
+                    >
+                      {taxCodes.map((code) => (
+                        <option key={code.id} value={code.id}>
+                          {code.code} — {Number(code.ratePct).toFixed(2)}%
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                ) : null}
+
                 {math ? (
                   <Field label="Line value">
                     <div className="tnum flex h-10 items-center justify-end rounded-lg border border-line bg-surface px-3 text-sm font-semibold">
@@ -445,6 +492,18 @@ export function SaleForm({
                 <dt className="text-xs text-ink-muted">Total quantity</dt>
                 <dd className="tnum text-base font-semibold">{formatQuantityKg(totals.quantityKg)}</dd>
               </div>
+              {taxEnabled ? (
+                <>
+                  <div>
+                    <dt className="text-xs text-ink-muted">Net of {taxLabel}</dt>
+                    <dd className="tnum text-base font-semibold">{formatMoney(totals.net, header.currency)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-ink-muted">{taxLabel}</dt>
+                    <dd className="tnum text-base font-semibold">{formatMoney(totals.tax, header.currency)}</dd>
+                  </div>
+                </>
+              ) : null}
               <div>
                 <dt className="text-xs text-ink-muted">Invoice value</dt>
                 <dd className="tnum text-base font-semibold text-forest-800">
