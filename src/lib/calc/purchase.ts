@@ -24,9 +24,9 @@ import type { ContainerType, Incoterm } from '@/lib/enums';
 
 export type PurchaseLineInput = {
   itemId: string;
-  /** Supplier traceability. Both are mandatory — coffee is always lot-traced. */
-  lotNumber: string;
-  batchNumber: string;
+  /** Supplier traceability. At least one; the other is derived from it. */
+  lotNumber?: string | null;
+  batchNumber?: string | null;
   containerNumber?: string | null;
   containerType?: ContainerType;
   quantity: string | number;
@@ -119,16 +119,30 @@ export function computePurchaseTotals(input: {
     if (unitPrice.lessThan(0)) {
       throw new BusinessRuleError(`Line ${index + 1}: price cannot be negative.`);
     }
-    if (!line.lotNumber?.trim()) {
-      throw new BusinessRuleError(`Line ${index + 1}: a lot number is required for traceability.`);
-    }
-    if (!line.batchNumber?.trim()) {
-      throw new BusinessRuleError(`Line ${index + 1}: a batch number is required for traceability.`);
+    /**
+     * A lot or a batch, not necessarily both.
+     *
+     * Suppliers label consignments differently: some quote a lot, some a batch
+     * mark, some both. Demanding both meant inventing one of them, and an
+     * invented reference is worse than none — it looks authoritative and
+     * matches nothing on the supplier's paperwork.
+     *
+     * One is enough to trace by. The server fills the other from it, so the
+     * inventory ledger still has the batch it needs to move stock against.
+     */
+    const lot = line.lotNumber?.trim() ?? '';
+    const batch = line.batchNumber?.trim() ?? '';
+    if (!lot && !batch) {
+      throw new BusinessRuleError(
+        `Line ${index + 1}: enter either a lot number or a batch number, whichever the supplier gave you.`,
+      );
     }
 
-    const batchKey = line.batchNumber.trim().toUpperCase();
+    const batchKey = (batch || lot).toUpperCase();
     if (seenBatches.has(batchKey)) {
-      throw new BusinessRuleError(`Batch number "${line.batchNumber}" is used on more than one line.`);
+      throw new BusinessRuleError(
+        `"${batch || lot}" is used on more than one line. Each line needs its own reference.`,
+      );
     }
     seenBatches.add(batchKey);
 
@@ -147,8 +161,10 @@ export function computePurchaseTotals(input: {
     return {
       lineNumber: index + 1,
       itemId: line.itemId,
-      lotNumber: line.lotNumber.trim(),
-      batchNumber: line.batchNumber.trim(),
+      // Whichever was given stands in for the other, so both stay populated
+      // and every downstream lookup keeps working unchanged.
+      lotNumber: lot || batch,
+      batchNumber: batch || lot,
       containerNumber: line.containerNumber?.trim() || null,
       containerType: line.containerType ?? ('FT20' as ContainerType),
       quantity,

@@ -14,20 +14,26 @@ import {
 
 /** Purchase, goods receipt, sales and transfer schemas. */
 
-export const purchaseLineSchema = z.object({
-  itemId: cuid,
-  lotNumber: requiredText('Lot number', 60),
-  batchNumber: requiredText('Batch number', 60),
-  containerNumber: optionalText(40),
-  containerType: z.enum(['FT20', 'FT40', 'FT40HC', 'LCL', 'BULK']).default('FT20'),
-  quantity: decimalString('Quantity'),
-  unit: z.enum(['KG', 'MT', 'BAG']),
-  unitPrice: decimalString('Price', { allowZero: true }),
-  bags: positiveInt('Bags').optional(),
-  bagWeightKg: optionalDecimalString('Bag weight'),
-  taxCodeId: optionalCuid,
-  notes: optionalText(300),
-});
+export const purchaseLineSchema = z
+  .object({
+    itemId: cuid,
+    // One or the other. Suppliers label consignments differently, and demanding
+    // both only made people invent the missing one.
+    lotNumber: optionalText(60),
+    batchNumber: optionalText(60),
+    containerNumber: optionalText(40),
+    quantity: decimalString('Quantity'),
+    unit: z.enum(['KG', 'MT', 'BAG']),
+    unitPrice: decimalString('Price', { allowZero: true }),
+    bags: positiveInt('Bags').optional(),
+    bagWeightKg: optionalDecimalString('Bag weight'),
+    taxCodeId: optionalCuid,
+    notes: optionalText(300),
+  })
+  .refine((line) => Boolean(line.lotNumber?.trim() || line.batchNumber?.trim()), {
+    message: 'Please enter either a Lot Number or a Batch Number.',
+    path: ['lotNumber'],
+  });
 
 export const purchaseContractSchema = z.object({
   contractReference: requiredText('Contract reference', 60),
@@ -43,7 +49,6 @@ export const purchaseContractSchema = z.object({
   incoterm: z.enum(['EXW', 'FCA', 'FOB', 'CFR', 'CIF', 'DAP', 'DDP']).default('FOB'),
   portOfLoading: optionalText(120),
   destination: optionalText(120),
-  expectedShipmentDate: optionalDateString,
   paymentTermDays: positiveInt('Payment terms'),
   notes: optionalText(1000),
   lines: z.array(purchaseLineSchema).min(1, 'Add at least one coffee line.'),

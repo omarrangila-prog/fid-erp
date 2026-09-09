@@ -137,7 +137,10 @@ async function assertTraceabilityNumbersAreFree(
   const seenContainers = new Set<string>();
 
   for (const line of lines) {
-    const batchNumber = line.batchNumber.trim();
+    // Whichever reference the supplier gave; the calc mirrors the missing one.
+    const batchNumber = (line.batchNumber?.trim() || line.lotNumber?.trim()) ?? '';
+    if (!batchNumber) continue;
+
     if (seenBatches.has(batchNumber)) {
       throw new ConflictError(`Batch number "${batchNumber}" appears more than once on this contract.`);
     }
@@ -158,7 +161,7 @@ async function assertTraceabilityNumbersAreFree(
     }
 
     const lot = await tx.lot.findFirst({
-      where: { companyId, lotNumber: line.lotNumber.trim() },
+      where: { companyId, lotNumber: (line.lotNumber?.trim() || batchNumber) },
       select: { itemId: true, lotNumber: true },
     });
     if (lot && lot.itemId !== line.itemId) {

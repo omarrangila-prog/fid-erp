@@ -20,12 +20,20 @@ export const decimalString = (label: string, options?: { min?: number; allowZero
       return options?.allowZero ? n >= 0 : n > 0;
     }, options?.allowZero ? `${label} cannot be negative.` : `${label} must be greater than zero.`);
 
+/**
+ * Optional really means optional.
+ *
+ * These used to require the key to be present, even if empty — fine while
+ * every form posted every field, and a trap the moment one stopped. A field
+ * the caller omits entirely now lands on the same value as one left blank.
+ */
 export const optionalDecimalString = (label: string) =>
   z
     .string()
     .trim()
     .refine((v) => v === '' || /^-?\d+(\.\d+)?$/.test(v), `${label} must be a number.`)
-    .transform((v) => (v === '' ? '0' : v));
+    .optional()
+    .transform((v) => (v === undefined || v === '' ? '0' : v));
 
 export const currencyCode = z
   .string()
@@ -44,7 +52,8 @@ export const dateString = (label: string) =>
 export const optionalDateString = z
   .string()
   .trim()
-  .transform((v) => (v === '' ? null : new Date(`${v.slice(0, 10)}T00:00:00.000Z`)))
+  .optional()
+  .transform((v) => (!v ? null : new Date(`${v.slice(0, 10)}T00:00:00.000Z`)))
   .refine((v) => v === null || !Number.isNaN(v.getTime()), 'That is not a valid date.');
 
 export const requiredText = (label: string, max = 200) =>
@@ -55,14 +64,16 @@ export const optionalText = (max = 500) =>
     .string()
     .trim()
     .max(max, 'That is too long.')
-    .transform((v) => (v === '' ? null : v));
+    .optional()
+    .transform((v) => (!v ? null : v));
 
 export const cuid = z.string().trim().min(1);
 
 export const optionalCuid = z
   .string()
   .trim()
-  .transform((v) => (v === '' ? null : v));
+  .optional()
+  .transform((v) => (!v ? null : v));
 
 export const positiveInt = (label: string) =>
   z.coerce.number().int(`${label} must be a whole number.`).min(0, `${label} cannot be negative.`);

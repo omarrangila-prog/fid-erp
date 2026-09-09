@@ -80,12 +80,43 @@ export function FormSection({
   description,
   children,
   className,
+  collapsible,
+  defaultOpen = false,
 }: {
   title: string;
   description?: string;
   children: React.ReactNode;
   className?: string;
+  /**
+   * Folds the section away until asked for.
+   *
+   * For information the business does not have yet. A shipping line and a
+   * port of loading are unknown the day a contract is agreed, and showing
+   * empty boxes for them makes the form look unfinished and the person
+   * filling it feel they have missed something.
+   *
+   * `<details>` rather than state: it works before hydration, the browser
+   * handles the keyboard, and find-in-page opens it.
+   */
+  collapsible?: boolean;
+  defaultOpen?: boolean;
 }) {
+  if (collapsible) {
+    return (
+      <details open={defaultOpen} className={cn('group rounded-lg border border-line bg-canvas', className)}>
+        <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
+          <span>
+            <span className="block text-sm font-semibold text-ink">{title}</span>
+            {description ? <span className="mt-0.5 block text-xs text-ink-muted">{description}</span> : null}
+          </span>
+          <span className="shrink-0 text-xs font-medium text-forest-700 group-open:hidden">Show</span>
+          <span className="hidden shrink-0 text-xs font-medium text-forest-700 group-open:inline">Hide</span>
+        </summary>
+        <div className="space-y-4 border-t border-line px-4 py-4">{children}</div>
+      </details>
+    );
+  }
+
   return (
     <section className={cn('space-y-4', className)}>
       <div>

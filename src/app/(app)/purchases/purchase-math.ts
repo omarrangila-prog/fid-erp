@@ -18,7 +18,6 @@ export type LineDraft = {
   lotNumber: string;
   batchNumber: string;
   containerNumber: string;
-  containerType: 'FT20' | 'FT40' | 'FT40HC' | 'LCL' | 'BULK';
   quantity: string;
   unit: 'KG' | 'MT' | 'BAG';
   unitPrice: string;

@@ -90,7 +90,6 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
           incoterm: contract.incoterm,
           portOfLoading: contract.portOfLoading ?? '',
           destination: contract.destination ?? '',
-          expectedShipmentDate: toDateInputValue(contract.expectedShipmentDate),
           paymentTermDays: String(contract.paymentTermDays),
           notes: contract.notes ?? '',
           lines: contract.lines.map((l) => ({
@@ -98,7 +97,6 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
             lotNumber: l.lotNumber,
             batchNumber: l.batchNumber,
             containerNumber: l.containerNumber ?? '',
-            containerType: l.containerType,
             quantity: l.quantity.toString(),
             unit: l.unit as 'KG' | 'MT' | 'BAG',
             unitPrice: l.unitPrice.toString(),

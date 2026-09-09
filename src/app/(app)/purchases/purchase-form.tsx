@@ -11,7 +11,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Combobox, type ComboOption } from '@/components/ui/combobox';
 import { Callout } from '@/components/ui/feedback';
 import { ConfirmDialog } from '@/components/ui/confirm';
-import { CONTAINER_TYPE_LABELS, INCOTERM_LABELS } from '@/lib/constants';
+import { INCOTERM_LABELS } from '@/lib/constants';
 import { savePurchaseContractAction, postPurchaseContractAction } from '@/server/actions/trading-actions';
 import { computePurchaseTotalsClient, type LineDraft } from '@/app/(app)/purchases/purchase-math';
 
@@ -46,7 +46,6 @@ export type PurchaseFormDefaults = {
   incoterm?: string;
   portOfLoading?: string;
   destination?: string;
-  expectedShipmentDate?: string;
   paymentTermDays?: string;
   notes?: string;
   lines?: LineDefaults[];
@@ -58,7 +57,6 @@ const emptyLine = (bagWeightKg = '60'): LineDraft => ({
   lotNumber: '',
   batchNumber: '',
   containerNumber: '',
-  containerType: 'FT20',
   quantity: '',
   unit: 'KG',
   unitPrice: '',
@@ -103,7 +101,6 @@ export function PurchaseForm({
     incoterm: defaults?.incoterm ?? 'FOB',
     portOfLoading: defaults?.portOfLoading ?? '',
     destination: defaults?.destination ?? '',
-    expectedShipmentDate: defaults?.expectedShipmentDate ?? '',
     paymentTermDays: defaults?.paymentTermDays ?? '60',
     notes: defaults?.notes ?? '',
   });
@@ -158,7 +155,6 @@ export function PurchaseForm({
         lotNumber: line.lotNumber,
         batchNumber: line.batchNumber,
         containerNumber: line.containerNumber,
-        containerType: line.containerType,
         quantity: line.quantity,
         unit: line.unit,
         unitPrice: line.unitPrice,
@@ -324,8 +320,12 @@ export function PurchaseForm({
             </div>
           </FormSection>
 
-          <FormSection title="Shipping terms">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <FormSection
+            title="Shipping terms"
+            description="Incoterm, ports and destination. Add them now if you know them, or leave them for the shipment."
+            collapsible
+          >
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <Field label="Incoterm" htmlFor="incoterm">
                 <Select id="incoterm" value={header.incoterm} onChange={(e) => setField('incoterm', e.target.value)}>
                   {Object.entries(INCOTERM_LABELS).map(([value, label]) => (
@@ -340,14 +340,6 @@ export function PurchaseForm({
               </Field>
               <Field label="Destination" htmlFor="destination">
                 <Input id="destination" value={header.destination} onChange={(e) => setField('destination', e.target.value)} placeholder="Jebel Ali" />
-              </Field>
-              <Field label="Expected shipment" htmlFor="expectedShipmentDate">
-                <Input
-                  id="expectedShipmentDate"
-                  type="date"
-                  value={header.expectedShipmentDate}
-                  onChange={(e) => setField('expectedShipmentDate', e.target.value)}
-                />
               </Field>
             </div>
           </FormSection>
@@ -423,15 +415,25 @@ export function PurchaseForm({
                       />
                     </Field>
 
-                    <Field label="Lot number" required error={lineError(index, 'lotNumber')}>
+                    {/*
+                      Whichever the supplier quoted. Demanding both meant
+                      inventing one, and an invented reference looks
+                      authoritative while matching nothing on their paperwork.
+                    */}
+                    <Field
+                      label="Lot number"
+                      error={lineError(index, 'lotNumber')}
+                      hint={!line.lotNumber && !line.batchNumber ? 'Lot or batch — either will do' : undefined}
+                    >
                       <Input
                         value={line.lotNumber}
                         onChange={(e) => updateLine(line.key, { lotNumber: e.target.value })}
                         placeholder="BR-001"
+                        aria-invalid={Boolean(lineError(index, 'lotNumber'))}
                       />
                     </Field>
 
-                    <Field label="Batch number" required error={lineError(index, 'batchNumber')}>
+                    <Field label="Batch number" error={lineError(index, 'batchNumber')}>
                       <Input
                         value={line.batchNumber}
                         onChange={(e) => updateLine(line.key, { batchNumber: e.target.value })}
@@ -445,19 +447,6 @@ export function PurchaseForm({
                         onChange={(e) => updateLine(line.key, { containerNumber: e.target.value })}
                         placeholder="MSCU1000001"
                       />
-                    </Field>
-
-                    <Field label="Container type">
-                      <Select
-                        value={line.containerType}
-                        onChange={(e) => updateLine(line.key, { containerType: e.target.value as LineDraft['containerType'] })}
-                      >
-                        {Object.entries(CONTAINER_TYPE_LABELS).map(([value, label]) => (
-                          <option key={value} value={value}>
-                            {label}
-                          </option>
-                        ))}
-                      </Select>
                     </Field>
 
                     <Field label="Quantity" required error={lineError(index, 'quantity')}>
