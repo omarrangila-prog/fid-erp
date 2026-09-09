@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Plus, Trash2, Info } from 'lucide-react';
+import { Plus, Trash2, Info, PackageOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Select, Textarea, MoneyInput, QuantityInput } from '@/components/ui/input';
 import { Field, FieldGroup } from '@/components/ui/field';
@@ -25,13 +25,20 @@ export type CreditDocument = {
 };
 export type CreditStock = {
   batchId: string;
-  warehouseId: string;
   batchNumber: string;
   itemName: string;
+  lotNumber: string | null;
+  containerNumber: string | null;
   soldKg: string;
   landedUnitCostUsd: string;
+  /** What it last sold for, so a return defaults to undoing that sale. */
+  lastUnitPriceKg: string | null;
+  lastWarehouseId: string | null;
+  lastCustomerId: string | null;
 };
 export type CreditTaxCode = { id: string; code: string; name: string; ratePct: string };
+
+type ReturnScope = 'CONTAINER' | 'LOT' | 'BATCH';
 
 type LineState = {
   key: string;
@@ -106,7 +113,85 @@ export function CreditNoteForm({
   const [notes, setNotes] = React.useState('');
   const [lines, setLines] = React.useState<LineState[]>([newLine(defaultTaxCode)]);
 
+  const [returnScope, setReturnScope] = React.useState<ReturnScope>('CONTAINER');
+  const [returnTarget, setReturnTarget] = React.useState<string | null>(null);
+
   const partyDocuments = documents.filter((d) => d.partyId === partyId);
+
+  /**
+   * The reference each batch would be grouped under for the chosen scope.
+   * A batch with no container cannot be returned "by container", so it is
+   * simply absent from that list rather than shown and then refused.
+   */
+  const groupKey = React.useCallback(
+    (item: CreditStock) =>
+      returnScope === 'CONTAINER' ? item.containerNumber : returnScope === 'LOT' ? item.lotNumber : item.batchNumber,
+    [returnScope],
+  );
+
+  const returnOptions = React.useMemo(() => {
+    const groups = new Map<string, { kg: Decimal; batches: number; items: Set<string> }>();
+    for (const item of stock) {
+      const key = groupKey(item);
+      if (!key) continue;
+      const entry = groups.get(key) ?? { kg: new Decimal(0), batches: 0, items: new Set<string>() };
+      entry.kg = entry.kg.plus(item.soldKg);
+      entry.batches += 1;
+      entry.items.add(item.itemName);
+      groups.set(key, entry);
+    }
+    return [...groups.entries()].map(([key, entry]) => ({
+      value: key,
+      label: key,
+      hint: `${formatQuantityKg(entry.kg)} sold · ${entry.batches} batch${entry.batches === 1 ? '' : 'es'}`,
+      keywords: [...entry.items].join(' '),
+    }));
+  }, [stock, groupKey]);
+
+  const matchingBatches = React.useMemo(
+    () => (returnTarget ? stock.filter((item) => groupKey(item) === returnTarget) : []),
+    [stock, groupKey, returnTarget],
+  );
+  const matchingKg = sum(matchingBatches.map((item) => dec(item.soldKg)));
+  const matchingUnpriced = matchingBatches.filter((item) => !item.lastUnitPriceKg).length;
+
+  /**
+   * Turns the chosen consignment into lines, one per batch, at the quantity
+   * sold and the price it was sold at. Anything already on the form stays: a
+   * partial return plus a whole container is a normal thing to raise.
+   */
+  function addWholeReturn() {
+    if (matchingBatches.length === 0) return;
+
+    const added: LineState[] = matchingBatches.map((item) => ({
+      key: Math.random().toString(36).slice(2),
+      description: `Returned — ${item.batchNumber}${item.containerNumber ? ` · ${item.containerNumber}` : ''}`,
+      mode: 'STOCK',
+      batchId: item.batchId,
+      warehouseId: item.lastWarehouseId ?? warehouses[0]?.id ?? '',
+      quantityKg: dec(item.soldKg).toFixed(3),
+      unitPrice: item.lastUnitPriceKg ? dec(item.lastUnitPriceKg).toFixed(4) : '',
+      amount: '',
+      taxCodeId: defaultTaxCode,
+    }));
+
+    // Drop the untouched starter line rather than leaving an empty row above
+    // the ones just added.
+    setLines((current) => {
+      const meaningful = current.filter(
+        (line) => line.description || line.batchId || line.amount || line.quantityKg,
+      );
+      return [...meaningful, ...added];
+    });
+
+    // The customer is almost always the one who bought it.
+    const buyer = matchingBatches.find((item) => item.lastCustomerId)?.lastCustomerId ?? null;
+    if (buyer && buyer !== partyId && parties.some((entry) => entry.id === buyer)) {
+      choosePartyId(buyer);
+    }
+
+    setReturnTarget(null);
+  }
 
   function choosePartyId(next: string | null) {
     setPartyId(next);
@@ -296,6 +381,67 @@ export function CreditNoteForm({
         </CardContent>
       </Card>
 
+      {type === 'CUSTOMER' && stock.length > 0 ? (
+        <Card className="border-forest-200 bg-forest-50/40">
+          <CardHeader>
+            <CardTitle>Return a whole batch, lot or container</CardTitle>
+            <CardDescription>
+              Coffee usually comes back by the container, not the batch. Choose one and every batch in it is added at
+              the quantity sold and the price it was sold at — then adjust any line that differs.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <FieldGroup className="sm:grid-cols-3">
+              <Field label="Return by">
+                <Select
+                  value={returnScope}
+                  onChange={(event) => {
+                    setReturnScope(event.target.value as ReturnScope);
+                    setReturnTarget(null);
+                  }}
+                >
+                  <option value="CONTAINER">Whole container</option>
+                  <option value="LOT">Whole lot</option>
+                  <option value="BATCH">One batch</option>
+                </Select>
+              </Field>
+
+              <Field label="Which one" className="sm:col-span-2">
+                <Combobox
+                  options={returnOptions}
+                  value={returnTarget}
+                  onChange={setReturnTarget}
+                  placeholder={
+                    returnScope === 'CONTAINER'
+                      ? 'Choose a container…'
+                      : returnScope === 'LOT'
+                        ? 'Choose a lot…'
+                        : 'Choose a batch…'
+                  }
+                  emptyText="Nothing sold under that reference yet"
+                />
+              </Field>
+            </FieldGroup>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" onClick={addWholeReturn} disabled={!returnTarget}>
+                <PackageOpen />
+                Add {matchingBatches.length || ''} line{matchingBatches.length === 1 ? '' : 's'}
+              </Button>
+              {returnTarget ? (
+                <p className="text-xs text-ink-muted">
+                  {formatQuantityKg(matchingKg)} across {matchingBatches.length} batch
+                  {matchingBatches.length === 1 ? '' : 'es'}
+                  {matchingUnpriced > 0
+                    ? ` · ${matchingUnpriced} without a recorded sale price — enter those by hand`
+                    : ''}
+                </p>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle>Lines</CardTitle>
@@ -351,8 +497,8 @@ export function CreditNoteForm({
                         options={stock.map((s) => ({
                           value: s.batchId,
                           label: `${s.batchNumber} · ${s.itemName}`,
-                          hint: `${formatQuantityKg(s.soldKg)} sold`,
-                          keywords: s.itemName,
+                          hint: `${formatQuantityKg(s.soldKg)} sold${s.containerNumber ? ` · ${s.containerNumber}` : ''}${s.lotNumber ? ` · Lot ${s.lotNumber}` : ''}`,
+                          keywords: `${s.itemName} ${s.lotNumber ?? ''} ${s.containerNumber ?? ''}`,
                         }))}
                         value={line.batchId}
                         onChange={(value) => setLine(line.key, { batchId: value })}

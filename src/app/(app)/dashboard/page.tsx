@@ -171,7 +171,7 @@ export default async function DashboardPage() {
             </dl>
             <Link
               href="/getting-started"
-              className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-gold-700 hover:underline"
+              className="mt-4 inline-flex min-h-8 items-center gap-1.5 text-sm font-medium text-gold-700 hover:underline"
             >
               Read how the pieces fit together
               <ArrowRight className="size-4" />

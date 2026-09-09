@@ -1,5 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
 
+// The dashboard greets you differently depending on whether the business has
+// started trading: an empty company gets the setup checklist instead. Both
+// name the company, which is what these tests are actually asserting.
+const onCompany = (name: string) => new RegExp(`(happening at|Welcome to) ${name}`);
+
 /**
  * The journeys a real user takes, driven through the interface rather than the
  * service layer — so a broken button, a form that will not submit or a company
@@ -38,16 +43,16 @@ test('an administrator can reach both companies', async ({ page }) => {
     await page.getByRole('menuitem', { name: /FID Trading International SARL/ }).click();
   }
 
-  await expect(page.getByText(/happening at FID Trading International SARL/)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(onCompany('FID Trading International SARL'))).toBeVisible({ timeout: 15_000 });
 });
 
 test('the company switcher changes which books are shown', async ({ page }) => {
   await signInToDubai(page);
-  await expect(page.getByText(/happening at FID Trading L\.L\.C\./)).toBeVisible();
+  await expect(page.getByText(onCompany('FID Trading L\\.L\\.C\\.'))).toBeVisible();
 
   await page.getByRole('button', { name: /FID Trading L\.L\.C\./ }).first().click();
   await page.getByRole('menuitem', { name: /FID Trading International SARL/ }).click();
-  await expect(page.getByText(/happening at FID Trading International SARL/)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(onCompany('FID Trading International SARL'))).toBeVisible({ timeout: 15_000 });
 });
 
 test('a customer can be created through the interface', async ({ page }) => {

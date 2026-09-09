@@ -143,31 +143,56 @@ export async function loadCreditNoteFormData(companyId: string, type: 'CUSTOMER'
           );
 
   // Only batches that have actually sold can be credited back into stock.
+  //
+  // The lot and container come along so a whole consignment can be returned in
+  // one action: coffee comes back by the container far more often than by the
+  // individual batch, and making somebody add fourteen lines by hand is how a
+  // return gets recorded wrongly or not at all.
+  //
+  // The price and warehouse are taken from the most recent posted sale of that
+  // batch, so the credit defaults to undoing the sale rather than inventing a
+  // new price.
   const stock: CreditStock[] =
     type === 'CUSTOMER'
-      ? await prisma.batch
-          .findMany({
-            where: { companyId, soldQuantityKg: { gt: 0 } },
-            orderBy: { batchNumber: 'asc' },
-            take: 500,
-            select: {
-              id: true,
-              batchNumber: true,
-              soldQuantityKg: true,
-              landedUnitCostUsd: true,
-              item: { select: { itemName: true } },
-            },
-          })
-          .then((rows) =>
-            rows.map((row) => ({
-              batchId: row.id,
-              warehouseId: '',
-              batchNumber: row.batchNumber,
-              itemName: row.item.itemName,
-              soldKg: row.soldQuantityKg.toString(),
-              landedUnitCostUsd: row.landedUnitCostUsd.toString(),
-            })),
-          )
+      ? await prisma.$queryRaw<
+          Array<{
+            batchId: string;
+            batchNumber: string;
+            itemName: string;
+            lotNumber: string | null;
+            containerNumber: string | null;
+            soldKg: string;
+            landedUnitCostUsd: string;
+            lastUnitPriceKg: string | null;
+            lastWarehouseId: string | null;
+            lastCustomerId: string | null;
+          }>
+        >`
+          SELECT b."id" AS "batchId",
+                 b."batchNumber",
+                 ci."itemName",
+                 l."lotNumber",
+                 c."containerNumber",
+                 b."soldQuantityKg"::text AS "soldKg",
+                 b."landedUnitCostUsd"::text AS "landedUnitCostUsd",
+                 last_sale."unitPriceKg"::text AS "lastUnitPriceKg",
+                 last_sale."warehouseId" AS "lastWarehouseId",
+                 last_sale."customerId" AS "lastCustomerId"
+          FROM batches b
+          JOIN coffee_items ci ON ci."id" = b."itemId"
+          LEFT JOIN lots l ON l."id" = b."lotId"
+          LEFT JOIN containers c ON c."id" = b."containerId"
+          LEFT JOIN LATERAL (
+            SELECT sil."unitPriceKg", sil."warehouseId", si."customerId"
+            FROM sales_invoice_lines sil
+            JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
+            WHERE sil."batchId" = b."id" AND si."status" = 'POSTED'
+            ORDER BY si."invoiceDate" DESC, si."invoiceNumber" DESC
+            LIMIT 1
+          ) last_sale ON true
+          WHERE b."companyId" = ${companyId}
+            AND b."soldQuantityKg" > 0
+          ORDER BY c."containerNumber" NULLS LAST, l."lotNumber" NULLS LAST, b."batchNumber"`
       : [];
 
   const taxCodeOptions: CreditTaxCode[] = taxCodes.map((code) => ({

@@ -1,5 +1,10 @@
 import { test, expect } from '@playwright/test';
 
+// The dashboard greets you differently depending on whether the business has
+// started trading: an empty company gets the setup checklist instead. Both
+// name the company, which is what these tests are actually asserting.
+const onCompany = (name: string) => new RegExp(`(happening at|Welcome to) ${name}`);
+
 /**
  * PIN sign-in, driven the way a person uses it: pick your name, tap four
  * digits, land in your own company.
@@ -9,6 +14,9 @@ import { test, expect } from '@playwright/test';
  * credentials belong.
  */
 const ADMIN_PIN = process.env.ADMIN_PIN ?? '';
+// The owner's display name comes from the environment, so the test must too —
+// hard-coding it made the suite fail the day the name was corrected.
+const ADMIN_NAME = process.env.INITIAL_ADMIN_NAME ?? 'Ali Raza';
 const DUBAI_PIN = process.env.DUBAI_STAFF_PIN ?? '';
 const MOROCCO_PIN = process.env.MOROCCO_STAFF_PIN ?? '';
 
@@ -26,7 +34,7 @@ async function pinIn(page: import('@playwright/test').Page, name: string, pin: s
 }
 
 test('the administrator signs in with a PIN', async ({ page }) => {
-  await pinIn(page, 'System Administrator', ADMIN_PIN);
+  await pinIn(page, ADMIN_NAME, ADMIN_PIN);
   await page.waitForURL(/dashboard|select-company/, { timeout: 20_000 });
   expect(page.url()).toMatch(/dashboard|select-company/);
 });
@@ -34,13 +42,13 @@ test('the administrator signs in with a PIN', async ({ page }) => {
 test('Dubai staff land in Dubai', async ({ page }) => {
   await pinIn(page, 'Dubai Staff', DUBAI_PIN);
   await page.waitForURL(/dashboard/, { timeout: 20_000 });
-  await expect(page.getByText(/happening at FID Trading L\.L\.C\./)).toBeVisible();
+  await expect(page.getByText(onCompany('FID Trading L\\.L\\.C\\.'))).toBeVisible();
 });
 
 test('Morocco staff land in Morocco', async ({ page }) => {
   await pinIn(page, 'Morocco Staff', MOROCCO_PIN);
   await page.waitForURL(/dashboard/, { timeout: 20_000 });
-  await expect(page.getByText(/happening at FID Trading International SARL/)).toBeVisible();
+  await expect(page.getByText(onCompany('FID Trading International SARL'))).toBeVisible();
 });
 
 test('a wrong PIN is refused and does not sign anybody in', async ({ page }) => {
