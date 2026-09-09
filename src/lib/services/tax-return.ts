@@ -120,7 +120,13 @@ export async function getTaxReturn(params: {
   });
   const settings = await getTaxSettings(params.companyId);
 
-  // Sales: invoices raised in the period, less credits raised in the period.
+  // A document belongs to the period its posting landed in, whatever its
+  // status today — a reversal is its own event, in its own period. So each
+  // query has two halves: what was posted in the period, and what was reversed
+  // in it. Filtering on `status = POSTED` instead would drop a document that
+  // was posted inside the period and reversed after it, while the ledger still
+  // carries the original entry, and the two would disagree at exactly the
+  // period boundary a filing cares about.
   //
   // Local currency comes from each document's own rateLocalPerUsd, the rate
   // captured when it was posted — the same rate its journal entry used, so the
@@ -135,9 +141,22 @@ export async function getTaxReturn(params: {
       JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
       LEFT JOIN tax_codes tc ON tc."id" = sil."taxCodeId"
       WHERE si."companyId" = ${params.companyId}
-        AND si."status" = 'POSTED'
+        AND si."postedAt" IS NOT NULL
         AND si."invoiceDate" >= ${params.from}::date
         AND si."invoiceDate" <= ${params.to}::date
+      UNION ALL
+      -- Invoices reversed during the period, undoing what they charged.
+      SELECT tc."code", tc."name", tc."treatment"::text, sil."taxRatePct"::text,
+             -sil."lineTotalUsd" * si."rateLocalPerUsd",
+             -sil."taxAmountUsd" * si."rateLocalPerUsd",
+             si."id"
+      FROM sales_invoice_lines sil
+      JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
+      LEFT JOIN tax_codes tc ON tc."id" = sil."taxCodeId"
+      WHERE si."companyId" = ${params.companyId}
+        AND si."reversedAt" IS NOT NULL
+        AND si."reversedAt"::date >= ${params.from}::date
+        AND si."reversedAt"::date <= ${params.to}::date
       UNION ALL
       SELECT tc."code", tc."name", tc."treatment"::text, cnl."taxRatePct"::text,
              -cnl."lineTotalUsd" * cn."rateLocalPerUsd",
@@ -147,20 +166,34 @@ export async function getTaxReturn(params: {
       JOIN credit_notes cn ON cn."id" = cnl."creditNoteId"
       LEFT JOIN tax_codes tc ON tc."id" = cnl."taxCodeId"
       WHERE cn."companyId" = ${params.companyId}
-        AND cn."status" = 'POSTED'
+        AND cn."postedAt" IS NOT NULL
         AND cn."type" = 'CUSTOMER'
         AND cn."creditDate" >= ${params.from}::date
         AND cn."creditDate" <= ${params.to}::date
+      UNION ALL
+      SELECT tc."code", tc."name", tc."treatment"::text, cnl."taxRatePct"::text,
+             cnl."lineTotalUsd" * cn."rateLocalPerUsd",
+             cnl."taxAmountUsd" * cn."rateLocalPerUsd",
+             cn."id"
+      FROM credit_note_lines cnl
+      JOIN credit_notes cn ON cn."id" = cnl."creditNoteId"
+      LEFT JOIN tax_codes tc ON tc."id" = cnl."taxCodeId"
+      WHERE cn."companyId" = ${params.companyId}
+        AND cn."reversedAt" IS NOT NULL
+        AND cn."type" = 'CUSTOMER'
+        AND cn."reversedAt"::date >= ${params.from}::date
+        AND cn."reversedAt"::date <= ${params.to}::date
     )
     SELECT "code", "name", treatment, "ratePct",
            SUM(net)::text AS net, SUM(tax)::text AS tax,
            COUNT(DISTINCT doc_id) AS documents
     FROM doc
     GROUP BY "code", "name", treatment, "ratePct"
+    HAVING SUM(net) <> 0 OR SUM(tax) <> 0
     ORDER BY treatment, "code"`;
 
-  // Purchases: contracts approved in the period and expenses posted in it,
-  // less supplier credits. Both are input tax the business can reclaim.
+  // Purchases: contracts approved and expenses posted in the period, less
+  // supplier credits, each with its reversals handled the same way.
   const purchaseRows = await prisma.$queryRaw<BandRow[]>`
     WITH doc AS (
       SELECT tc."code", tc."name", tc."treatment"::text AS treatment, pcl."taxRatePct"::text AS "ratePct",
@@ -171,9 +204,21 @@ export async function getTaxReturn(params: {
       JOIN purchase_contracts pc ON pc."id" = pcl."purchaseContractId"
       LEFT JOIN tax_codes tc ON tc."id" = pcl."taxCodeId"
       WHERE pc."companyId" = ${params.companyId}
-        AND pc."status" = 'POSTED'
+        AND pc."postedAt" IS NOT NULL
         AND pc."contractDate" >= ${params.from}::date
         AND pc."contractDate" <= ${params.to}::date
+      UNION ALL
+      SELECT tc."code", tc."name", tc."treatment"::text, pcl."taxRatePct"::text,
+             -(pcl."lineTotal" / NULLIF(pc."rateToUsd", 0)) * pc."rateLocalPerUsd",
+             -pcl."taxAmountUsd" * pc."rateLocalPerUsd",
+             pc."id"
+      FROM purchase_contract_lines pcl
+      JOIN purchase_contracts pc ON pc."id" = pcl."purchaseContractId"
+      LEFT JOIN tax_codes tc ON tc."id" = pcl."taxCodeId"
+      WHERE pc."companyId" = ${params.companyId}
+        AND pc."reversedAt" IS NOT NULL
+        AND pc."reversedAt"::date >= ${params.from}::date
+        AND pc."reversedAt"::date <= ${params.to}::date
       UNION ALL
       SELECT tc."code", tc."name", tc."treatment"::text, e."taxRatePct"::text,
              e."amountUsd" * e."rateLocalPerUsd",
@@ -182,9 +227,20 @@ export async function getTaxReturn(params: {
       FROM expenses e
       LEFT JOIN tax_codes tc ON tc."id" = e."taxCodeId"
       WHERE e."companyId" = ${params.companyId}
-        AND e."status" = 'POSTED'
+        AND e."postedAt" IS NOT NULL
         AND e."expenseDate" >= ${params.from}::date
         AND e."expenseDate" <= ${params.to}::date
+      UNION ALL
+      SELECT tc."code", tc."name", tc."treatment"::text, e."taxRatePct"::text,
+             -e."amountUsd" * e."rateLocalPerUsd",
+             -e."taxAmountUsd" * e."rateLocalPerUsd",
+             e."id"
+      FROM expenses e
+      LEFT JOIN tax_codes tc ON tc."id" = e."taxCodeId"
+      WHERE e."companyId" = ${params.companyId}
+        AND e."reversedAt" IS NOT NULL
+        AND e."reversedAt"::date >= ${params.from}::date
+        AND e."reversedAt"::date <= ${params.to}::date
       UNION ALL
       SELECT tc."code", tc."name", tc."treatment"::text, cnl."taxRatePct"::text,
              -cnl."lineTotalUsd" * cn."rateLocalPerUsd",
@@ -194,16 +250,30 @@ export async function getTaxReturn(params: {
       JOIN credit_notes cn ON cn."id" = cnl."creditNoteId"
       LEFT JOIN tax_codes tc ON tc."id" = cnl."taxCodeId"
       WHERE cn."companyId" = ${params.companyId}
-        AND cn."status" = 'POSTED'
+        AND cn."postedAt" IS NOT NULL
         AND cn."type" = 'VENDOR'
         AND cn."creditDate" >= ${params.from}::date
         AND cn."creditDate" <= ${params.to}::date
+      UNION ALL
+      SELECT tc."code", tc."name", tc."treatment"::text, cnl."taxRatePct"::text,
+             cnl."lineTotalUsd" * cn."rateLocalPerUsd",
+             cnl."taxAmountUsd" * cn."rateLocalPerUsd",
+             cn."id"
+      FROM credit_note_lines cnl
+      JOIN credit_notes cn ON cn."id" = cnl."creditNoteId"
+      LEFT JOIN tax_codes tc ON tc."id" = cnl."taxCodeId"
+      WHERE cn."companyId" = ${params.companyId}
+        AND cn."reversedAt" IS NOT NULL
+        AND cn."type" = 'VENDOR'
+        AND cn."reversedAt"::date >= ${params.from}::date
+        AND cn."reversedAt"::date <= ${params.to}::date
     )
     SELECT "code", "name", treatment, "ratePct",
            SUM(net)::text AS net, SUM(tax)::text AS tax,
            COUNT(DISTINCT doc_id) AS documents
     FROM doc
     GROUP BY "code", "name", treatment, "ratePct"
+    HAVING SUM(net) <> 0 OR SUM(tax) <> 0
     ORDER BY treatment, "code"`;
 
   const sales = toBands(salesRows);

@@ -516,18 +516,22 @@ export async function reverseCreditNote(params: {
       });
     }
 
+    // One date for both, so the reversal's ledger entry and the `reversedAt`
+    // stamp can never land on opposite sides of a period end.
+    const reversalDate = new Date();
+
     await reverseJournalEntry(tx, {
       companyId: params.companyId,
       sourceType: 'CREDIT_NOTE',
       sourceId: note.id,
-      entryDate: new Date(),
+      entryDate: reversalDate,
       createdById: params.userId,
       reason: params.reason.trim(),
     });
 
     const updated = await tx.creditNote.update({
       where: { id: note.id },
-      data: { status: 'REVERSED', reversedAt: new Date(), reversalReason: params.reason.trim() },
+      data: { status: 'REVERSED', reversedAt: reversalDate, reversalReason: params.reason.trim() },
     });
 
     await writeAudit(tx, {
