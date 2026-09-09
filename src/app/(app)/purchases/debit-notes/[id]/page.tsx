@@ -14,15 +14,17 @@ export default async function DebitNotePage({ params }: { params: Promise<{ id: 
   const user = await requirePageAccess(PERMISSIONS.CREDIT_NOTES_VIEW);
   const { id } = await params;
 
-  const detail = await loadCreditNoteDetail(user.activeCompany.id, id);
-  if (!detail) notFound();
-
-  const [attachments, taxSettings] = await Promise.all([
+  // All three in one round trip. The database is in another region, so a chain
+  // of dependent awaits is the difference between a page that opens and a page
+  // somebody watches a skeleton on.
+  const [detail, attachments, taxSettings] = await Promise.all([
+    loadCreditNoteDetail(user.activeCompany.id, id),
     can(user, PERMISSIONS.ATTACHMENTS_VIEW)
       ? loadAttachments(user.activeCompany.id, 'CreditNote', id)
       : Promise.resolve([]),
     getTaxSettings(user.activeCompany.id),
   ]);
+  if (!detail) notFound();
 
   return (
     <CreditNoteDetail

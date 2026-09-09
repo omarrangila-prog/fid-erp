@@ -3,7 +3,12 @@ import { test, expect } from '@playwright/test';
 // The dashboard greets you differently depending on whether the business has
 // started trading: an empty company gets the setup checklist instead. Both
 // name the company, which is what these tests are actually asserting.
-const onCompany = (name: string) => new RegExp(`(happening at|Welcome to) ${name}`);
+// Three legitimate homepages name the company three ways: the management
+// dashboard greets you, an empty company shows the setup checklist, and a
+// data-entry operator gets a work queue. All three say which company you are
+// in, which is what these tests are actually asserting.
+const onCompany = (name: string) =>
+  new RegExp(`(happening at|Welcome to|working in) ${name}`);
 
 /**
  * PIN sign-in, driven the way a person uses it: pick your name, tap four

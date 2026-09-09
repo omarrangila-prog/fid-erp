@@ -88,7 +88,7 @@ test('the money screens show the cash cycle', async ({ page }) => {
 test('the credit note and the coffee it returned are both visible', async ({ page }) => {
   await open(page, '/sales/credit-notes', /FID-DXB-CN-/);
   await page.getByRole('link', { name: /FID-DXB-CN-/ }).first().click();
-  await expect(page.getByText(/Quality claim/)).toBeVisible();
+  await expect(page.getByText(/Quality claim/)).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText(/Returned|returned/).first()).toBeVisible();
 });
 
