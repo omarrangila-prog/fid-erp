@@ -138,7 +138,9 @@ export async function seedCompanies(): Promise<string[]> {
       },
     });
 
-    await transaction((tx) => provisionCompany(tx, company.id));
+    // Provisioning writes the whole chart of accounts in one go; give it room
+    // on a slow link, since this runs once per company and never again.
+    await transaction((tx) => provisionCompany(tx, company.id), 120_000);
 
     for (const warehouse of seed.warehouses) {
       const existing = await prisma.warehouse.findFirst({

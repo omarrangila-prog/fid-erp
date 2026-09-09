@@ -148,7 +148,7 @@ at **/getting-started**.
 |---|---|
 | `DATABASE_URL` | PostgreSQL connection string used at runtime, and by migrations when `DIRECT_URL` is unset |
 | `DIRECT_URL` | Optional. Direct (non-pooled) connection used only by `prisma migrate`. Required behind a transaction pooler such as Supabase's port 6543 |
-| `DATABASE_SSL_CA` | Optional. Path to a root certificate when the provider uses its own CA |
+| `DATABASE_SSL_CA` | Optional. Path to a root certificate when the provider uses its own CA. Required for Supabase's poolers — `certs/supabase-prod-ca-2021.crt` ships with the repository |
 | `TEST_DATABASE_URL` | Separate database for the test suite. **It is truncated between runs** — never point it at real data |
 | `SESSION_COOKIE_NAME` | Name of the HTTP-only session cookie |
 | `SESSION_TTL_HOURS` | Session lifetime in hours |
@@ -156,6 +156,7 @@ at **/getting-started**.
 | `INITIAL_ADMIN_NAME` | Display name for that account |
 | `INITIAL_ADMIN_PASSWORD` | Initial password. Must pass the strength policy |
 | `DATABASE_POOL_MAX` | Optional. Connection pool size, default 10. Keep it small behind a pooler |
+| `DATABASE_TRANSACTION_TIMEOUT_MS` | Optional. Transaction ceiling, default 20000. Raise it only for a distant database |
 
 No credentials are committed to the repository, and `.env` is git-ignored.
 
@@ -221,35 +222,59 @@ on the way in.
 
 ## Using Supabase
 
-Supabase is plain PostgreSQL, so nothing in the application changes. Two
-settings need care: which connection string goes where, and TLS.
+Supabase is plain PostgreSQL, so none of the application logic changes. Three
+things need attention: which hostname you can actually reach, the certificate,
+and where you run the app relative to the database.
 
-### 1. Take both connection strings
+### 1. Use the pooler, not the direct host
 
-In your project, open **Connect**. You are offered three strings:
+Supabase offers three connection strings under **Connect**:
 
-| String | Port | Use it for |
-|---|---|---|
-| Direct connection | 5432 | Migrations. IPv6 only unless you have the IPv4 add-on |
-| Session pooler | 5432 | The application on a long-running server, and migrations if direct is unreachable |
-| Transaction pooler | 6543 | The application on serverless (Vercel functions) |
+| String | Host | Port | Notes |
+|---|---|---|---|
+| Direct | `db.<ref>.supabase.co` | 5432 | **IPv6 only** unless you buy the IPv4 add-on. Most machines and many hosts cannot reach it at all |
+| Session pooler | `aws-0-<region>.pooler.supabase.com` | 5432 | IPv4. A dedicated connection per client session — use this for a long-running server, and for migrations |
+| Transaction pooler | `aws-0-<region>.pooler.supabase.com` | 6543 | IPv4. Connection returned to the pool per transaction — use this for serverless |
 
-### 2. Set the environment
+The pooler username is `postgres.<project-ref>`, not `postgres`.
 
-```bash
-# The application. Session pooler for a normal server:
-DATABASE_URL="postgresql://postgres.PROJECTREF:PASSWORD@aws-0-REGION.pooler.supabase.com:5432/postgres?sslmode=require"
+If the direct hostname resolves only to an IPv6 address and `ip -6 route get
+2001:4860:4860::8888` says the network is unreachable, stop there — no
+connection-string tweak will fix it. Use the session pooler for both variables.
 
-# Migrations only. Direct connection, or the session pooler if IPv6 is a problem:
-DIRECT_URL="postgresql://postgres:PASSWORD@db.PROJECTREF.supabase.co:5432/postgres?sslmode=require"
+### 2. Supply Supabase's certificate
 
-DATABASE_POOL_MAX="10"     # 1–3 per instance if you deploy serverless
+Supabase's poolers present certificates signed by **Supabase's own root CA**,
+not by a public authority. Node rejects them out of the box:
+
+```
+self-signed certificate in certificate chain
 ```
 
-`prisma migrate` uses `DIRECT_URL` when it is set and `DATABASE_URL` otherwise.
-It will not work through the transaction pooler on 6543: migrations take
-advisory locks and set session state that a transaction-scoped pooler cannot
-carry.
+The CA is committed at [`certs/supabase-prod-ca-2021.crt`](certs/) — a root
+certificate is public information, so there is no secret in the repository.
+Point `DATABASE_SSL_CA` at it and the chain verifies properly.
+
+`prisma migrate` does **not** go through the application's driver adapter; the
+schema engine opens its own connection and reads TLS settings from the URL. So
+the CA is named twice, once per consumer:
+
+```bash
+# The application. TLS policy comes from DATABASE_SSL_CA.
+DATABASE_URL="postgresql://postgres.PROJECTREF:PASSWORD@aws-0-REGION.pooler.supabase.com:5432/postgres?sslmode=require"
+
+# Migrations only. Prisma's own engine, so the CA goes in the URL.
+DIRECT_URL="postgresql://postgres.PROJECTREF:PASSWORD@aws-0-REGION.pooler.supabase.com:5432/postgres?sslmode=require&sslcert=certs/supabase-prod-ca-2021.crt"
+
+DATABASE_SSL_CA="certs/supabase-prod-ca-2021.crt"
+DATABASE_POOL_MAX="10"
+```
+
+A password containing `@`, `#`, `/` or `?` must be percent-encoded in the URL —
+`@` becomes `%40`, `#` becomes `%23`.
+
+`sslmode=no-verify` also works and needs no certificate file, but it accepts
+any certificate presented to it, which defeats the point of TLS. Prefer the CA.
 
 ### 3. Create the schema and the first administrator
 
@@ -261,14 +286,21 @@ npm run db:init       # permissions, roles, both companies, chart of accounts, a
 Nothing else is inserted — no sample customers, no sample coffee, no invented
 transactions. Sign in and the dashboard's setup checklist takes it from there.
 
-### TLS
+### 4. Put the app near the database
 
-Keep `sslmode=require` on both strings; Supabase refuses unencrypted
-connections. The pooler hostnames present certificates that Node's built-in
-roots already verify. If you use the direct hostname and hit a certificate
-error, download Supabase's root certificate and point `DATABASE_SSL_CA` at it,
-or fall back to `sslmode=no-verify` — encrypted, but the certificate is not
-checked, so prefer the CA file.
+This matters more than anything above. Every query costs a network round-trip,
+and a page that runs a dozen of them pays that latency a dozen times:
+
+| Server ↔ database | Round-trip | Typical page |
+|---|---|---|
+| Same region | 1–5 ms | under 100 ms |
+| Different continent | 150–250 ms | 1.5–3 s |
+
+If the application feels slow, it is almost always geography, not the code.
+Deploy to the region your Supabase project lives in — or create the project in
+the region you deploy to. `DATABASE_TRANSACTION_TIMEOUT_MS` raises the ceiling
+on posting transactions if you are stuck with a distant database, but it treats
+the symptom.
 
 ### What not to point at Supabase
 
@@ -280,8 +312,9 @@ Keep it on a local database.
 Leave RLS off, or leave it on and connect as the `postgres` owner. This
 application is the only client of its database and does its own authorisation:
 every query is scoped by company on the server, and permissions are checked
-before a service is ever reached. Supabase's client libraries and anon key are
-not used at all — the browser never talks to the database.
+before a service is ever reached. Supabase's client libraries, anon key and
+publishable key are not used at all — the browser never talks to the database,
+only to your Next.js server.
 
 ---
 

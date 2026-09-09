@@ -76,11 +76,22 @@ if (process.env.NODE_ENV !== 'production') {
 export type Tx = Parameters<Parameters<PrismaClient['$transaction']>[0]>[0];
 
 /**
+ * A hosted database adds a network round-trip to every statement inside a
+ * transaction, so the ceiling that is generous on localhost can be tight from
+ * another continent. Raise DATABASE_TRANSACTION_TIMEOUT_MS if posting starts
+ * timing out; the right answer is usually a database closer to the server.
+ */
+const DEFAULT_TRANSACTION_TIMEOUT_MS = Number(process.env.DATABASE_TRANSACTION_TIMEOUT_MS ?? 20_000);
+
+/**
  * Runs `fn` inside a database transaction. Serializable-adjacent defaults are
  * intentional: financial posting must not observe torn reads of stock or
  * balances. We use the ORM default (read committed) plus explicit row locks in
  * the services, which is the standard approach for high-write ERP posting.
  */
-export function transaction<T>(fn: (tx: Tx) => Promise<T>, timeoutMs = 20_000): Promise<T> {
+export function transaction<T>(
+  fn: (tx: Tx) => Promise<T>,
+  timeoutMs = DEFAULT_TRANSACTION_TIMEOUT_MS,
+): Promise<T> {
   return prisma.$transaction(fn, { timeout: timeoutMs, maxWait: 10_000 });
 }

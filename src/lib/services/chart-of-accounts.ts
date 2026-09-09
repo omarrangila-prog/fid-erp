@@ -138,22 +138,28 @@ const STANDARD_ACCOUNTS: AccountSeed[] = [
 ];
 
 export async function ensureChartOfAccounts(tx: Tx, companyId: string): Promise<void> {
-  for (const seed of STANDARD_ACCOUNTS) {
-    const existing = await tx.account.findFirst({ where: { companyId, code: seed.code } });
-    if (existing) continue;
-    await tx.account.create({
-      data: {
-        companyId,
-        code: seed.code,
-        name: seed.name,
-        type: seed.type,
-        reportGroup: seed.reportGroup,
-        systemKey: seed.systemKey ?? null,
-        subledgerType: seed.subledgerType ?? 'NONE',
-        isSystem: true,
-      },
-    });
-  }
+  // One read and one write. The obvious version — look up each account, then
+  // create it — costs a network round-trip per row, which is imperceptible
+  // against a local database and takes tens of seconds against a hosted one.
+  const existing = await tx.account.findMany({ where: { companyId }, select: { code: true } });
+  const present = new Set(existing.map((account) => account.code));
+
+  const missing = STANDARD_ACCOUNTS.filter((seed) => !present.has(seed.code));
+  if (missing.length === 0) return;
+
+  await tx.account.createMany({
+    data: missing.map((seed) => ({
+      companyId,
+      code: seed.code,
+      name: seed.name,
+      type: seed.type,
+      reportGroup: seed.reportGroup,
+      systemKey: seed.systemKey ?? null,
+      subledgerType: seed.subledgerType ?? 'NONE',
+      isSystem: true,
+    })),
+    skipDuplicates: true,
+  });
 }
 
 /**
@@ -162,42 +168,68 @@ export async function ensureChartOfAccounts(tx: Tx, companyId: string): Promise<
  * flagged to capitalise into landed cost; period costs are not.
  */
 export async function ensureExpenseCategories(tx: Tx, companyId: string): Promise<void> {
+  // The GL code comes from the seed's position in the catalogue, not from its
+  // position among the ones still missing, so re-running against a partly
+  // provisioned company reuses the same codes instead of colliding.
   let capitalisedSeq = 1;
   let operatingSeq = 1;
-
-  for (const seed of EXPENSE_CATEGORY_SEEDS) {
-    const existingCategory = await tx.expenseCategory.findFirst({ where: { companyId, code: seed.code } });
-    if (existingCategory) continue;
-
+  const planned = EXPENSE_CATEGORY_SEEDS.map((seed) => ({
+    ...seed,
     // Capitalised costs sit in the 52xx cost-of-sales range; period costs in 61xx.
-    const code = seed.capitalise
+    glCode: seed.capitalise
       ? `52${String(capitalisedSeq++).padStart(2, '0')}`
-      : `61${String(operatingSeq++).padStart(2, '0')}`;
+      : `61${String(operatingSeq++).padStart(2, '0')}`,
+  }));
 
-    let account = await tx.account.findFirst({ where: { companyId, code } });
-    if (!account) {
-      account = await tx.account.create({
-        data: {
-          companyId,
-          code,
-          name: seed.name,
-          type: 'EXPENSE',
-          reportGroup: seed.capitalise ? REPORT_GROUPS.COGS : REPORT_GROUPS.OPERATING,
-          isSystem: true,
-        },
-      });
-    }
+  const [existingCategories, existingAccounts] = await Promise.all([
+    tx.expenseCategory.findMany({ where: { companyId }, select: { code: true } }),
+    tx.account.findMany({ where: { companyId }, select: { id: true, code: true } }),
+  ]);
 
-    await tx.expenseCategory.create({
-      data: {
+  const presentCategories = new Set(existingCategories.map((category) => category.code));
+  const accountIdByCode = new Map(existingAccounts.map((account) => [account.code, account.id]));
+
+  const missing = planned.filter((seed) => !presentCategories.has(seed.code));
+  if (missing.length === 0) return;
+
+  const missingAccounts = missing.filter((seed) => !accountIdByCode.has(seed.glCode));
+  if (missingAccounts.length > 0) {
+    await tx.account.createMany({
+      data: missingAccounts.map((seed) => ({
+        companyId,
+        code: seed.glCode,
+        name: seed.name,
+        type: 'EXPENSE' as const,
+        reportGroup: seed.capitalise ? REPORT_GROUPS.COGS : REPORT_GROUPS.OPERATING,
+        isSystem: true,
+      })),
+      skipDuplicates: true,
+    });
+
+    // createMany does not return rows, and the categories need the ids.
+    const created = await tx.account.findMany({
+      where: { companyId, code: { in: missingAccounts.map((seed) => seed.glCode) } },
+      select: { id: true, code: true },
+    });
+    for (const account of created) accountIdByCode.set(account.code, account.id);
+  }
+
+  await tx.expenseCategory.createMany({
+    data: missing.map((seed) => {
+      const glAccountId = accountIdByCode.get(seed.glCode);
+      if (!glAccountId) {
+        throw new BusinessRuleError(`No GL account ${seed.glCode} for expense category ${seed.code}.`);
+      }
+      return {
         companyId,
         code: seed.code,
         name: seed.name,
-        glAccountId: account.id,
+        glAccountId,
         capitaliseByDefault: seed.capitalise,
-      },
-    });
-  }
+      };
+    }),
+    skipDuplicates: true,
+  });
 }
 
 /**
