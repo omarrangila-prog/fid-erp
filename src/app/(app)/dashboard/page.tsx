@@ -6,11 +6,12 @@ import {
 } from 'lucide-react';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, SHIPMENT_STATUS_META, TRANSACTION_STATUS_META } from '@/lib/constants';
-import { getDashboard, getRecentActivity, getLowStock } from '@/lib/services/dashboard';
+import { WorkQueue } from '@/app/(app)/dashboard/work-queue';
+import { getMyRecentEntries, getDashboard, getRecentActivity, getLowStock } from '@/lib/services/dashboard';
 import { getSetupStatus, toChecklistStep } from '@/lib/services/setup';
 import { getMonthlyPurchases } from '@/lib/services/profitability';
 import { dec } from '@/lib/money';
-import { formatMoney, formatMoneyCompact, formatQuantityKg, formatDate, daysUntil } from '@/lib/format';
+import { formatMoney, formatMoneyCompact, formatQuantityKg, formatDate, daysUntil, formatDateTime } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { StatCard } from '@/components/shared/stat-card';
 import { KpiCard } from '@/components/dashboard/kpi-card';
@@ -71,6 +72,39 @@ export default async function DashboardPage() {
   const user = await requirePageAccess(PERMISSIONS.DASHBOARD_VIEW);
   const companyId = user.activeCompany.id;
   const local = user.activeCompany.localCurrency;
+
+  const hourNow = new Date().getHours();
+  const timeOfDay = hourNow < 12 ? 'Good morning' : hourNow < 18 ? 'Good afternoon' : 'Good evening';
+  const forename = user.name.split(/\s+/)[0];
+
+  /**
+   * Somebody who cannot see profit has no use for a management dashboard, and
+   * eleven figures they are not allowed to act on only bury the one thing they
+   * came here to do. They get a work queue instead.
+   *
+   * The test is what they may see, not what they are called: give a data-entry
+   * operator reporting rights tomorrow and they get the full dashboard without
+   * anyone editing this.
+   */
+  if (!can(user, PERMISSIONS.PROFITS_VIEW) && !can(user, PERMISSIONS.ACCOUNTING_VIEW)) {
+    const recent = await getMyRecentEntries(companyId, user.id);
+    return (
+      <WorkQueue
+        firstName={forename}
+        greeting={timeOfDay}
+        companyName={user.activeCompany.name}
+        permissions={new Set(user.permissions)}
+        recent={recent.map((entry) => ({
+          id: entry.id,
+          href: entry.href,
+          reference: entry.reference,
+          description: entry.description,
+          when: formatDateTime(entry.at),
+          status: entry.status,
+        }))}
+      />
+    );
+  }
 
   const [data, purchases, setup, activity, lowStock] = await Promise.all([
     getDashboard({ companyId }),

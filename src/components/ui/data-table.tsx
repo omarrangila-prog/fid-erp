@@ -2,7 +2,10 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { ArrowUpDown, ArrowUp, ArrowDown, Search, SlidersHorizontal, ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+  ArrowUpDown, ArrowUp, ArrowDown, Search, SlidersHorizontal,
+  ChevronLeft, ChevronRight, Download, Rows2, Rows3,
+} from 'lucide-react';
 import * as Popover from '@radix-ui/react-popover';
 import { cn } from '@/lib/utils';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
@@ -24,6 +27,11 @@ export type DataColumn<T> = {
   mobile?: 'title' | 'badge' | 'meta' | 'hidden';
   className?: string;
   footer?: React.ReactNode;
+  /**
+   * The cell as plain text, for CSV. Without it a column that renders markup
+   * exports as nothing useful, so a column that needs exporting must say how.
+   */
+  exportValue?: (row: T) => string | number | null | undefined;
 };
 
 type SortState = { columnId: string; direction: 'asc' | 'desc' } | null;
@@ -50,6 +58,7 @@ export function DataTable<T>({
   toolbar,
   showFooter = false,
   dense = false,
+  exportFileName,
 }: {
   data: T[];
   columns: DataColumn<T>[];
@@ -65,6 +74,11 @@ export function DataTable<T>({
   toolbar?: React.ReactNode;
   showFooter?: boolean;
   dense?: boolean;
+  /**
+   * Turns on CSV export, named after this. Omitted means no export button —
+   * a list nobody would ever take to a spreadsheet should not offer to.
+   */
+  exportFileName?: string;
 }) {
   const [query, setQuery] = React.useState('');
   const [sort, setSort] = React.useState<SortState>(null);
@@ -72,6 +86,9 @@ export function DataTable<T>({
   const [hidden, setHidden] = React.useState<Set<string>>(
     () => new Set(columns.filter((c) => c.defaultHidden).map((c) => c.id)),
   );
+  // Compact fits about a third more rows on a screen, which matters on a
+  // follow-up sheet somebody scans all day.
+  const [compact, setCompact] = React.useState(dense);
 
   const visibleColumns = columns.filter((c) => !hidden.has(c.id));
 
@@ -110,6 +127,39 @@ export function DataTable<T>({
 
   const hideableColumns = columns.filter((c) => c.hideable);
 
+  /**
+   * Exports what is on screen — the current search, sort and column choices —
+   * rather than the whole table. Someone who has filtered to one supplier and
+   * pressed Export means that supplier, not everything.
+   *
+   * Every field is quoted and internal quotes doubled, which is the whole of
+   * RFC 4180 that matters: a supplier called "Cooxupé, Cooperativa" must not
+   * become two columns.
+   */
+  function exportCsv() {
+    const exportable = visibleColumns.filter((column) => column.exportValue);
+    if (exportable.length === 0) return;
+
+    const escape = (value: string | number | null | undefined) =>
+      `"${String(value ?? '').replace(/"/g, '""')}"`;
+
+    const csv = [
+      exportable.map((column) => escape(column.header)).join(','),
+      ...sorted.map((row) => exportable.map((column) => escape(column.exportValue!(row))).join(',')),
+    ].join('\r\n');
+
+    // A BOM, so Excel opens UTF-8 correctly instead of mangling é and ç.
+    const blob = new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${exportFileName}-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const canExport = Boolean(exportFileName) && columns.some((column) => column.exportValue);
+
   return (
     <div className="space-y-3">
       {(searchValue || toolbar || hideableColumns.length > 0) && (
@@ -135,6 +185,26 @@ export function DataTable<T>({
 
           <div className="flex items-center gap-2">
             {toolbar}
+
+            {canExport ? (
+              <Button variant="outline" size="md" className="shrink-0" onClick={exportCsv}>
+                <Download />
+                <span className="hidden sm:inline">Export</span>
+              </Button>
+            ) : null}
+
+            <Button
+              variant="outline"
+              size="icon"
+              className="shrink-0"
+              aria-pressed={compact}
+              aria-label={compact ? 'Show comfortable rows' : 'Show compact rows'}
+              title={compact ? 'Comfortable rows' : 'Compact rows'}
+              onClick={() => setCompact((current) => !current)}
+            >
+              {compact ? <Rows3 /> : <Rows2 />}
+            </Button>
+
             {hideableColumns.length > 0 ? (
               <Popover.Root>
                 <Popover.Trigger asChild>
@@ -220,7 +290,7 @@ export function DataTable<T>({
                 {pageRows.map((row) => {
                   const href = rowHref?.(row);
                   return (
-                    <TR key={getRowId(row)} className={cn(href && 'cursor-pointer', dense && '[&>td]:py-1.5')}>
+                    <TR key={getRowId(row)} className={cn(href && 'cursor-pointer', compact && '[&>td]:py-1.5')}>
                       {visibleColumns.map((column, index) => (
                         <TD key={column.id} numeric={column.numeric} className={column.className}>
                           {href && index === 0 ? (

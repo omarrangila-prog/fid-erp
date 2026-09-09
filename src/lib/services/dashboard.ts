@@ -255,3 +255,76 @@ async function getTopItemStock(companyId: string) {
 }
 
 export { dec };
+
+/**
+ * The last documents a specific person entered.
+ *
+ * Scoped to the user, not the company: a data-entry operator wants to check
+ * their own work, and showing them everybody's is both noisier and, for two
+ * people sharing a screen, a small privacy problem.
+ */
+export async function getMyRecentEntries(companyId: string, userId: string, limit = 12) {
+  const [purchases, sales, receipts, expenses] = await Promise.all([
+    prisma.purchaseContract.findMany({
+      where: { companyId, createdById: userId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: { id: true, contractNumber: true, contractReference: true, status: true, createdAt: true, vendor: { select: { vendorName: true } } },
+    }),
+    prisma.salesInvoice.findMany({
+      where: { companyId, createdById: userId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: { id: true, invoiceNumber: true, status: true, createdAt: true, customer: { select: { customerName: true } } },
+    }),
+    prisma.receipt.findMany({
+      where: { companyId, createdById: userId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: { id: true, receiptNumber: true, status: true, createdAt: true, customer: { select: { customerName: true } } },
+    }),
+    prisma.expense.findMany({
+      where: { companyId, createdById: userId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: { id: true, expenseNumber: true, status: true, createdAt: true, description: true },
+    }),
+  ]);
+
+  const entries = [
+    ...purchases.map((row) => ({
+      id: `po-${row.id}`,
+      href: `/purchases/${row.id}`,
+      reference: row.contractNumber,
+      description: `${row.vendor.vendorName} · ${row.contractReference}`,
+      at: row.createdAt,
+      status: row.status as string,
+    })),
+    ...sales.map((row) => ({
+      id: `si-${row.id}`,
+      href: `/sales/${row.id}`,
+      reference: row.invoiceNumber,
+      description: row.customer.customerName,
+      at: row.createdAt,
+      status: row.status as string,
+    })),
+    ...receipts.map((row) => ({
+      id: `rv-${row.id}`,
+      href: `/finance/receipts/${row.id}`,
+      reference: row.receiptNumber,
+      description: `Received from ${row.customer.customerName}`,
+      at: row.createdAt,
+      status: row.status as string,
+    })),
+    ...expenses.map((row) => ({
+      id: `ev-${row.id}`,
+      href: `/finance/expenses/${row.id}`,
+      reference: row.expenseNumber,
+      description: row.description ?? 'Expense',
+      at: row.createdAt,
+      status: row.status as string,
+    })),
+  ];
+
+  return entries.sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, limit);
+}

@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
-import { prisma } from '@/lib/db';
-import { dec } from '@/lib/money';
-import { formatQuantityKg, formatDate } from '@/lib/format';
+import { getLoadingSheet } from '@/lib/services/loading-sheet';
+import { formatQuantityKg, formatDate, formatMoney } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
+import { PrintButton } from '@/components/shared/print-button';
+import { Callout } from '@/components/ui/feedback';
 import { LoadingSheet, type LoadingRow } from '@/app/(app)/loading/loading-sheet';
 
 export const metadata: Metadata = { title: 'Loading Follow-Up' };
@@ -12,91 +13,82 @@ export const dynamic = 'force-dynamic';
 
 export default async function LoadingPage() {
   const user = await requirePageAccess(PERMISSIONS.SHIPMENTS_VIEW);
-  const companyId = user.activeCompany.id;
+  const sheet = await getLoadingSheet(user.activeCompany.id);
 
-  // One row per batch: the logistics team works container by container.
-  const batches = await prisma.batch.findMany({
-    where: { companyId, purchaseContract: { status: 'POSTED' } },
-    orderBy: [{ createdAt: 'desc' }],
-    include: {
-      item: { select: { itemName: true, originCountry: true } },
-      lot: { select: { lotNumber: true } },
-      container: { select: { containerNumber: true } },
-      purchaseContract: {
-        select: { contractNumber: true, contractReference: true, contractDate: true, vendor: { select: { vendorName: true } } },
-      },
-      shipment: {
-        select: {
-          id: true,
-          status: true,
-          documentStatus: true,
-          bookingNumber: true,
-          billOfLading: true,
-          etaDate: true,
-          customer: { select: { customerName: true } },
-          shippingLine: { select: { name: true } },
-        },
-      },
-      invoiceLines: {
-        where: { salesInvoice: { status: 'POSTED' } },
-        select: { salesInvoice: { select: { customer: { select: { customerName: true } } } } },
-      },
-    },
-  });
+  // Dubai trades container to container; Morocco buys a container and sells it
+  // to many customers. The two paper sheets differ, so the two screens do too.
+  const isDubai = user.activeCompany.localCurrency === 'AED';
 
-  const rows: LoadingRow[] = batches.map((b) => {
-    const ordered = dec(b.orderedQuantityKg);
-    const sold = dec(b.soldQuantityKg);
-    const soldStatus: LoadingRow['soldStatus'] = sold.greaterThanOrEqualTo(ordered) && ordered.greaterThan(0)
-      ? 'Sold'
-      : sold.greaterThan(0)
-        ? 'Partly sold'
-        : 'Unsold';
-
-    const buyers = [
-      ...new Set(b.invoiceLines.map((l) => l.salesInvoice.customer.customerName)),
-    ];
-
-    return {
-      id: b.id,
-      shipmentId: b.shipmentId,
-      contractDate: formatDate(b.purchaseContract.contractDate),
-      contractDateSort: b.purchaseContract.contractDate.getTime(),
-      contractNumber: b.purchaseContract.contractNumber,
-      contractReference: b.purchaseContract.contractReference,
-      vendorName: b.purchaseContract.vendor.vendorName,
-      itemName: b.item.itemName,
-      origin: b.item.originCountry,
-      lotNumber: b.lot.lotNumber,
-      batchNumber: b.batchNumber,
-      containerNumber: b.container?.containerNumber ?? null,
-      quantityKg: formatQuantityKg(ordered),
-      quantitySort: Number(ordered),
-      bags: b.orderedBags,
-      buyer: buyers.length > 0 ? buyers.join(', ') : (b.shipment.customer?.customerName ?? null),
-      soldStatus,
-      shippingLine: b.shipment.shippingLine?.name ?? null,
-      bookingNumber: b.shipment.bookingNumber,
-      billOfLading: b.shipment.billOfLading,
-      etaDate: formatDate(b.shipment.etaDate),
-      etaSort: b.shipment.etaDate?.getTime() ?? Number.MAX_SAFE_INTEGER,
-      status: b.shipment.status,
-      documentStatus: b.shipment.documentStatus,
-    };
-  });
+  const rows: LoadingRow[] = sheet.map((row, index) => ({
+    id: row.batchId,
+    serial: index + 1,
+    shipmentId: row.shipmentId,
+    contractId: row.contractId,
+    contractDate: formatDate(row.contractDate),
+    contractDateSort: row.contractDate.getTime(),
+    contractNumber: row.contractNumber,
+    contractReference: row.contractReference,
+    exporter: row.exporter,
+    importer: row.importer,
+    consignee: row.consignee,
+    itemName: row.itemName,
+    origin: row.origin,
+    destination: row.destination,
+    lotNumber: row.lotNumber,
+    batchNumber: row.batchNumber,
+    containerNumber: row.containerNumber,
+    containers: row.containers,
+    quantity: formatQuantityKg(row.quantityKg),
+    quantitySort: Number(row.quantityKg),
+    sold: formatQuantityKg(row.soldKg),
+    available: formatQuantityKg(row.availableKg),
+    bags: row.bags,
+    status: row.status,
+    documentStatus: row.documentStatus,
+    shippingLine: row.shippingLine,
+    bookingNumber: row.bookingNumber,
+    billOfLading: row.billOfLading,
+    etaDate: row.etaDate ? formatDate(row.etaDate) : '—',
+    etaSort: row.etaDate?.getTime() ?? Number.MAX_SAFE_INTEGER,
+    remarks: row.remarks,
+    saleStatus: row.saleStatus,
+    paymentStatus: row.paymentStatus,
+    allocations: row.allocations.map((allocation) => ({
+      customerId: allocation.customerId,
+      customerName: allocation.customerName,
+      invoiceId: allocation.invoiceId,
+      invoiceNumber: allocation.invoiceNumber,
+      invoiceDate: formatDate(allocation.invoiceDate),
+      quantity: formatQuantityKg(allocation.quantityKg),
+      amount: formatMoney(allocation.amount, allocation.currency),
+      outstanding: formatMoney(allocation.outstanding, allocation.currency),
+      settlement: allocation.settlement,
+    })),
+  }));
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Loading Follow-Up"
-        description="One row per lot and batch, with booking, bill of lading, ETA and whether the coffee is sold."
+        description={
+          isDubai
+            ? 'Every container from contract to consignee, in one sheet.'
+            : 'Every contract from purchase to the customers it was sold to.'
+        }
         breadcrumbs={[{ label: 'Trading' }, { label: 'Loading Follow-Up' }]}
+        actions={<PrintButton />}
       />
-      <LoadingSheet
-        rows={rows}
-        companyCode={user.activeCompany.code}
-        canExport={can(user, PERMISSIONS.REPORTS_EXPORT)}
-      />
+
+      <Callout tone="info" title="Nothing on this sheet is typed twice">
+        Every column is read from the document that already holds it. Approving a purchase contract creates the row;
+        entering a bill of lading or an ETA on the shipment fills those columns; posting a sale fills in the consignee
+        and moves the sold figures; receiving a payment moves the payment status.{' '}
+        {isDubai
+          ? 'Sold or unsold is arithmetic on the container, not a label anyone maintains.'
+          : 'A contract sold to several customers stays one row, with every customer listed underneath it.'}
+      </Callout>
+
+      <LoadingSheet rows={rows} isDubai={isDubai} canExport={can(user, PERMISSIONS.REPORTS_EXPORT)} />
     </div>
   );
 }

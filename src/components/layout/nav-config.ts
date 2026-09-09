@@ -81,6 +81,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Supplier Debit Notes', href: '/purchases/debit-notes', icon: FilePlus, permissions: [PERMISSIONS.CREDIT_NOTES_VIEW] },
       { label: 'Shipments', href: '/shipments', icon: Ship, permissions: [PERMISSIONS.SHIPMENTS_VIEW] },
       { label: 'Loading Sheet', href: '/loading', icon: ClipboardList, permissions: [PERMISSIONS.SHIPMENTS_VIEW] },
+      { label: 'Stock Allocation', href: '/reports/allocations', icon: Layers, permissions: [PERMISSIONS.INVENTORY_VIEW] },
     ],
   },
   {
