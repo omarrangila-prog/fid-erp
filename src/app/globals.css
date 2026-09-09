@@ -1,26 +1,122 @@
 @import "tailwindcss";
 
+/*
+ * FID Trading — design tokens.
+ *
+ * A restrained palette: paper-white surfaces, a deep navy that carries the
+ * brand and the navigation, and a single teal accent reserved for the active
+ * state and primary actions. Status colours appear only on badges and figures,
+ * so a screen full of data still reads calmly.
+ */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", monospace;
+
+  --color-navy-50: #f2f5f9;
+  --color-navy-100: #e3e9f2;
+  --color-navy-200: #c7d3e5;
+  --color-navy-300: #9db1d0;
+  --color-navy-400: #6c88b6;
+  --color-navy-500: #4a679c;
+  --color-navy-600: #395182;
+  --color-navy-700: #2f4269;
+  --color-navy-800: #1f2d4a;
+  --color-navy-900: #14203a;
+  --color-navy-950: #0b1424;
+
+  --color-teal-50: #eefbf6;
+  --color-teal-100: #d4f5e8;
+  --color-teal-200: #ace9d5;
+  --color-teal-300: #75d7bb;
+  --color-teal-400: #3fbd9c;
+  --color-teal-500: #1ba184;
+  --color-teal-600: #10816b;
+  --color-teal-700: #0f6758;
+  --color-teal-800: #105246;
+  --color-teal-900: #0f443b;
+
+  --color-paper: #fbfcfd;
+  --color-surface: #ffffff;
+  --color-line: #e5e9f0;
+  --color-line-strong: #d3dae5;
+
+  --color-ink: #14203a;
+  --color-ink-muted: #5a6782;
+  --color-ink-subtle: #8b96ad;
+
+  --radius-card: 0.75rem;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: var(--color-paper);
+  --foreground: var(--color-ink);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@layer base {
+  * {
+    border-color: var(--color-line);
+  }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Figures line up column-to-column only when the digits are tabular. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-teal-500);
+    outline-offset: 2px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line-strong);
+    border-radius: 9999px;
+    border: 2px solid var(--color-paper);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-navy-300);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer utilities {
+  /* Sticky table headers need an opaque background or rows show through. */
+  .sticky-head th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--color-surface);
+  }
+}
+
+@keyframes fid-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-in-soft {
+  animation: fid-fade-in 160ms ease-out;
 }

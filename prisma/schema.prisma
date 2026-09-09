@@ -1,0 +1,1679 @@
+// FID Trading Integrated Business Management System
+// Prisma schema — PostgreSQL
+//
+// Numeric conventions (see docs/ARCHITECTURE.md):
+//   money     -> Decimal(18, 4)
+//   rate      -> Decimal(18, 8)   units of quoted currency per 1 USD
+//   quantity  -> Decimal(18, 3)   canonical unit is KG
+//   unit cost -> Decimal(18, 8)   per KG, kept wide to avoid rounding drift
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum TransactionStatus {
+  DRAFT
+  POSTED
+  REVERSED
+  CANCELLED
+}
+
+enum UnitOfMeasure {
+  KG
+  MT
+  BAG
+}
+
+enum CoffeeType {
+  ARABICA
+  ROBUSTA
+  BLEND
+}
+
+enum CoffeeProcess {
+  WASHED
+  NATURAL
+  HONEY
+  WET_HULLED
+  ANAEROBIC
+  OTHER
+}
+
+enum PackagingType {
+  JUTE_BAG
+  GRAINPRO
+  VACUUM_PACK
+  BULK
+  OTHER
+}
+
+enum ContainerType {
+  FT20
+  FT40
+  FT40HC
+  LCL
+  BULK
+}
+
+enum Incoterm {
+  EXW
+  FCA
+  FOB
+  CFR
+  CIF
+  DAP
+  DDP
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CHEQUE
+}
+
+enum ChequeDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum ChequeStatus {
+  RECEIVED
+  DEPOSITED
+  CLEARED
+  BOUNCED
+  CANCELLED
+}
+
+enum ShipmentStatus {
+  CONTRACT_CREATED
+  AWAITING_LOADING
+  LOADED
+  IN_TRANSIT
+  ARRIVED
+  CUSTOMS_CLEARING
+  CLEARED
+  DELIVERED
+  CLOSED
+}
+
+enum ShipmentDocumentStatus {
+  DRAFT_PENDING
+  DRAFT_RECEIVED
+  UNDER_APPROVAL
+  APPROVED
+  ORIGINALS_WITH_SUPPLIER
+  DISPATCHED
+  WITH_BANK
+  WITH_CUSTOMER
+  COMPLETED
+}
+
+enum SettlementStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+enum SubledgerType {
+  NONE
+  CUSTOMER
+  VENDOR
+  CASH_BANK
+}
+
+enum CashBankAccountType {
+  CASH
+  PETTY_CASH
+  BANK
+}
+
+enum InventoryTransactionType {
+  OPENING
+  RECEIPT
+  SALE
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+  RESERVATION
+  RESERVATION_RELEASE
+  TRANSFER_IN
+  TRANSFER_OUT
+  REVERSAL
+}
+
+enum NotificationSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum JournalSourceType {
+  PURCHASE_CONTRACT
+  SALES_INVOICE
+  RECEIPT
+  PAYMENT
+  EXPENSE
+  CHEQUE
+  LANDED_COST
+  OPENING_BALANCE
+  INVENTORY_ADJUSTMENT
+  MANUAL
+}
+
+// ---------------------------------------------------------------------------
+// Organisation, identity and access control
+// ---------------------------------------------------------------------------
+
+model Company {
+  id            String       @id @default(cuid())
+  code          String       @unique
+  name          String
+  legalName     String?
+  country       String
+  localCurrency String       @db.VarChar(3)
+  baseCurrency  String       @default("USD") @db.VarChar(3)
+  timezone      String       @default("UTC")
+  address       String?
+  /// Prefix used in every document number, e.g. "FID-DXB" -> FID-DXB-PO-000001.
+  docPrefix     String       @default("FID")
+  status        RecordStatus @default(ACTIVE)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  users               UserCompany[]
+  customers           Customer[]
+  vendors             Vendor[]
+  agents              Agent[]
+  warehouses          Warehouse[]
+  items               CoffeeItem[]
+  lots                Lot[]
+  containers          Container[]
+  inventoryBalances   InventoryBalance[]
+  goodsReceipts       GoodsReceipt[]
+  stockTransfers      StockTransfer[]
+  cheques             Cheque[]
+  attachments         Attachment[]
+  shippingLines       ShippingLine[]
+  expenseCategories   ExpenseCategory[]
+  accounts            Account[]
+  cashBankAccounts    CashBankAccount[]
+  purchaseContracts   PurchaseContract[]
+  shipments           Shipment[]
+  batches             Batch[]
+  inventoryTxns       InventoryTransaction[]
+  salesInvoices       SalesInvoice[]
+  receipts            Receipt[]
+  payments            Payment[]
+  expenses            Expense[]
+  journalEntries      JournalEntry[]
+  notifications       Notification[]
+  auditLogs           AuditLog[]
+  settings            ApplicationSetting[]
+  numberSequences     NumberSequence[]
+  exchangeRates       ExchangeRate[]
+  sessionsActiveHere  Session[]
+  defaultForUsers     User[]                 @relation("UserDefaultCompany")
+
+  @@index([status])
+  @@map("companies")
+}
+
+model User {
+  id               String       @id @default(cuid())
+  email            String       @unique
+  name             String
+  passwordHash     String
+  isActive         Boolean      @default(true)
+  isSuperAdmin     Boolean      @default(false)
+  defaultCompanyId String?
+  lastLoginAt      DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  defaultCompany Company?      @relation("UserDefaultCompany", fields: [defaultCompanyId], references: [id], onDelete: SetNull)
+  roles          UserRole[]
+  companies      UserCompany[]
+  sessions       Session[]
+  auditLogs      AuditLog[]
+
+  createdContracts     PurchaseContract[]     @relation("ContractCreatedBy")
+  postedContracts      PurchaseContract[]     @relation("ContractPostedBy")
+  createdShipments     Shipment[]             @relation("ShipmentCreatedBy")
+  updatedShipments     Shipment[]             @relation("ShipmentUpdatedBy")
+  shipmentStatusLogs   ShipmentStatusHistory[]
+  shipmentDocLogs      ShipmentDocumentStatusHistory[]
+  createdInvoices      SalesInvoice[]         @relation("InvoiceCreatedBy")
+  postedInvoices       SalesInvoice[]         @relation("InvoicePostedBy")
+  createdReceipts      Receipt[]              @relation("ReceiptCreatedBy")
+  createdPayments      Payment[]              @relation("PaymentCreatedBy")
+  createdExpenses      Expense[]              @relation("ExpenseCreatedBy")
+  createdCheques       Cheque[]               @relation("ChequeCreatedBy")
+  chequeStatusLogs     ChequeStatusHistory[]
+  receivedGrns         GoodsReceipt[]         @relation("GrnReceivedBy")
+  createdGrns          GoodsReceipt[]         @relation("GrnCreatedBy")
+  requestedTransfers   StockTransfer[]        @relation("TransferRequestedBy")
+  approvedTransfers    StockTransfer[]        @relation("TransferApprovedBy")
+  receivedTransfers    StockTransfer[]        @relation("TransferReceivedBy")
+  createdJournals      JournalEntry[]         @relation("JournalCreatedBy")
+  attachments          Attachment[]
+  inventoryTxns        InventoryTransaction[]
+
+  @@index([isActive])
+  @@map("users")
+}
+
+model Session {
+  id             String   @id @default(cuid())
+  token          String   @unique
+  userId         String
+  activeCompanyId String?
+  ipAddress      String?
+  userAgent      String?
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+  lastSeenAt     DateTime @default(now())
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeCompany Company? @relation(fields: [activeCompanyId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model Role {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  name        String
+  description String?
+  isSystem    Boolean @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  module      String
+  description String
+
+  roles RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId String
+  roleId String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model UserCompany {
+  userId    String
+  companyId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@id([userId, companyId])
+  @@index([companyId])
+  @@map("user_companies")
+}
+
+// ---------------------------------------------------------------------------
+// Master data
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id              String       @id @default(cuid())
+  companyId       String
+  customerCode    String
+  customerName    String
+  country         String?
+  contactPerson   String?
+  phone           String?
+  whatsapp        String?
+  email           String?
+  address         String?
+  primaryCurrency String       @db.VarChar(3)
+  creditLimit     Decimal      @default(0) @db.Decimal(18, 4)
+  paymentTermDays Int          @default(0)
+  openingBalance  Decimal      @default(0) @db.Decimal(18, 4)
+  notes           String?
+  status          RecordStatus @default(ACTIVE)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  salesInvoices SalesInvoice[]
+  receipts      Receipt[]
+  shipments     Shipment[]
+  cheques       Cheque[]
+  journalLines  JournalLine[]
+
+  @@unique([companyId, customerCode])
+  @@index([companyId, status])
+  @@index([companyId, customerName])
+  @@map("customers")
+}
+
+model Vendor {
+  id              String       @id @default(cuid())
+  companyId       String
+  vendorCode      String
+  vendorName      String
+  country         String?
+  contactPerson   String?
+  phone           String?
+  whatsapp        String?
+  email           String?
+  address         String?
+  primaryCurrency String       @db.VarChar(3)
+  paymentTermDays Int          @default(0)
+  openingBalance  Decimal      @default(0) @db.Decimal(18, 4)
+  bankDetails     String?
+  notes           String?
+  status          RecordStatus @default(ACTIVE)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  purchaseContracts PurchaseContract[]
+  payments          Payment[]
+  shipments         Shipment[]
+  expenses          Expense[]
+  cheques           Cheque[]
+  goodsReceipts     GoodsReceipt[]
+  journalLines      JournalLine[]
+
+  @@unique([companyId, vendorCode])
+  @@index([companyId, status])
+  @@index([companyId, vendorName])
+  @@map("vendors")
+}
+
+model CoffeeItem {
+  id            String         @id @default(cuid())
+  companyId     String
+  itemCode      String
+  itemName      String
+  coffeeType    CoffeeType     @default(ARABICA)
+  originCountry String
+  region        String?
+  farmEstate    String?
+  grade         String?
+  screenSize    String?
+  variety       String?
+  process       CoffeeProcess  @default(WASHED)
+  cropYear      String?
+  moisturePct   Decimal?       @db.Decimal(5, 2)
+  densityGPerL  Decimal?       @db.Decimal(8, 2)
+  packagingType PackagingType  @default(JUTE_BAG)
+  /// Nominal weight of one bag in KG. 60 for most Arabica origins, 30 for Ethiopia.
+  bagWeightKg   Decimal        @default(60) @db.Decimal(18, 3)
+  defaultUnit   UnitOfMeasure  @default(KG)
+  description   String?
+  notes         String?
+  status        RecordStatus   @default(ACTIVE)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  company       Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contractLines PurchaseContractLine[]
+  shipments     Shipment[]
+  lots          Lot[]
+  batches       Batch[]
+  invoiceLines  SalesInvoiceLine[]
+  inventoryTxns InventoryTransaction[]
+  journalLines  JournalLine[]
+  balances      InventoryBalance[]
+  receiptLines  GoodsReceiptLine[]
+  transferLines StockTransferLine[]
+
+  @@unique([companyId, itemCode])
+  @@index([companyId, status])
+  @@index([companyId, originCountry])
+  @@index([companyId, coffeeType])
+  @@map("coffee_items")
+}
+
+/// A physical storage location. Dubai runs port/free-zone warehouses; Morocco
+/// runs local warehouses. Stock is always held at a specific warehouse.
+model Warehouse {
+  id        String       @id @default(cuid())
+  companyId String
+  code      String
+  name      String
+  location  String?
+  country   String?
+  port      String?
+  isDefault Boolean      @default(false)
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  company        Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  batches        Batch[]
+  inventoryTxns  InventoryTransaction[]
+  invoiceLines   SalesInvoiceLine[]
+  balances       InventoryBalance[]
+  goodsReceipts  GoodsReceipt[]
+  transfersFrom  StockTransfer[]        @relation("TransferFrom")
+  transfersTo    StockTransfer[]        @relation("TransferTo")
+
+  @@unique([companyId, code])
+  @@index([companyId, status])
+  @@map("warehouses")
+}
+
+/// Clearing / forwarding / commission agents.
+model Agent {
+  id            String       @id @default(cuid())
+  companyId     String
+  agentCode     String
+  agentName     String
+  contactPerson String?
+  phone         String?
+  email         String?
+  commissionPct Decimal      @default(0) @db.Decimal(9, 4)
+  notes         String?
+  status        RecordStatus @default(ACTIVE)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  cheques  Cheque[]
+  expenses Expense[]
+
+  @@unique([companyId, agentCode])
+  @@index([companyId, status])
+  @@map("agents")
+}
+
+/// A lot is the supplier's traceability unit. One purchase contract can carry
+/// several lots, and each lot can be split across several batches/containers.
+model Lot {
+  id                 String       @id @default(cuid())
+  companyId          String
+  lotNumber          String
+  itemId             String
+  purchaseContractId String?
+  originCountry      String?
+  cropYear           String?
+  grade              String?
+  notes              String?
+  status             RecordStatus @default(ACTIVE)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  company          Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  item             CoffeeItem         @relation(fields: [itemId], references: [id])
+  purchaseContract PurchaseContract?  @relation(fields: [purchaseContractId], references: [id])
+  batches          Batch[]
+  invoiceLines     SalesInvoiceLine[]
+
+  @@unique([companyId, lotNumber])
+  @@index([companyId, itemId])
+  @@map("lots")
+}
+
+/// A shipping container. Dubai tracks containers closely; Morocco cares more
+/// about batch/KG, so a container is optional on a batch.
+model Container {
+  id                 String        @id @default(cuid())
+  companyId          String
+  containerNumber    String
+  containerType      ContainerType @default(FT20)
+  sealNumber         String?
+  purchaseContractId String?
+  shipmentId         String?
+  tareWeightKg       Decimal?      @db.Decimal(18, 3)
+  netWeightKg        Decimal       @default(0) @db.Decimal(18, 3)
+  bags               Int           @default(0)
+  notes              String?
+  status             RecordStatus  @default(ACTIVE)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  company          Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  purchaseContract PurchaseContract?      @relation(fields: [purchaseContractId], references: [id])
+  shipment         Shipment?              @relation(fields: [shipmentId], references: [id])
+  batches          Batch[]
+  invoiceLines     SalesInvoiceLine[]
+  inventoryTxns    InventoryTransaction[]
+  receiptLines     GoodsReceiptLine[]
+  transferLines    StockTransferLine[]
+
+  @@unique([companyId, containerNumber])
+  @@index([companyId, shipmentId])
+  @@map("containers")
+}
+
+model ShippingLine {
+  id                 String       @id @default(cuid())
+  companyId          String
+  code               String
+  name               String
+  contactInformation String?
+  notes              String?
+  status             RecordStatus @default(ACTIVE)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  shipments Shipment[]
+
+  @@unique([companyId, code])
+  @@index([companyId, status])
+  @@map("shipping_lines")
+}
+
+model ExpenseCategory {
+  id           String       @id @default(cuid())
+  companyId    String
+  code         String
+  name         String
+  description  String?
+  glAccountId  String?
+  /// Direct shipment costs (freight, customs, clearing…) are capitalised into
+  /// the landed cost of the goods. Period costs (bank charges, commission) are
+  /// expensed. This is the default; each expense can override it.
+  capitaliseByDefault Boolean @default(true)
+  status       RecordStatus @default(ACTIVE)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  company   Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  glAccount Account?  @relation(fields: [glAccountId], references: [id], onDelete: SetNull)
+  expenses  Expense[]
+
+  @@unique([companyId, code])
+  @@index([companyId, status])
+  @@map("expense_categories")
+}
+
+// ---------------------------------------------------------------------------
+// Chart of accounts / cash & bank
+// ---------------------------------------------------------------------------
+
+model Account {
+  id            String        @id @default(cuid())
+  companyId     String
+  code          String
+  name          String
+  type          AccountType
+  subledgerType SubledgerType @default(NONE)
+  currency      String?       @db.VarChar(3)
+  systemKey     String?
+  /// Drives where the account appears in the P&L / Balance Sheet:
+  /// COGS, OPERATING, OTHER_INCOME, OTHER_EXPENSE, CURRENT_ASSET,
+  /// NON_CURRENT_ASSET, CURRENT_LIABILITY, NON_CURRENT_LIABILITY, EQUITY.
+  reportGroup   String?
+  isSystem      Boolean       @default(false)
+  parentId      String?
+  status        RecordStatus  @default(ACTIVE)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  company           Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent            Account?          @relation("AccountParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children          Account[]         @relation("AccountParent")
+  journalLines      JournalLine[]
+  cashBankAccounts  CashBankAccount[]
+  expenseCategories ExpenseCategory[]
+
+  @@unique([companyId, code])
+  @@unique([companyId, systemKey])
+  @@index([companyId, type])
+  @@map("accounts")
+}
+
+model CashBankAccount {
+  id             String              @id @default(cuid())
+  companyId      String
+  code           String
+  name           String
+  accountType    CashBankAccountType
+  currency       String              @db.VarChar(3)
+  openingBalance Decimal             @default(0) @db.Decimal(18, 4)
+  bankName       String?
+  accountNumber  String?
+  glAccountId    String
+  status         RecordStatus        @default(ACTIVE)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  glAccount    Account       @relation(fields: [glAccountId], references: [id])
+  receipts     Receipt[]
+  payments     Payment[]
+  expenses     Expense[]
+  cheques      Cheque[]
+  journalLines JournalLine[]
+
+  @@unique([companyId, code])
+  @@index([companyId, status])
+  @@map("cash_bank_accounts")
+}
+
+// ---------------------------------------------------------------------------
+// Purchasing
+// ---------------------------------------------------------------------------
+
+model PurchaseContract {
+  id                String            @id @default(cuid())
+  companyId         String
+  contractNumber    String
+  contractReference String
+  contractDate      DateTime          @db.Date
+  vendorId          String
+  origin            String?
+  currency          String            @db.VarChar(3)
+  rateToUsd         Decimal           @default(1) @db.Decimal(18, 8)
+  rateLocalPerUsd   Decimal           @default(1) @db.Decimal(18, 8)
+  subtotal          Decimal           @default(0) @db.Decimal(18, 4)
+  freightAmount     Decimal           @default(0) @db.Decimal(18, 4)
+  totalValue        Decimal           @default(0) @db.Decimal(18, 4)
+  totalValueUsd     Decimal           @default(0) @db.Decimal(18, 4)
+  containers        Int               @default(0)
+  totalBags         Int               @default(0)
+  otherCharges      Decimal           @default(0) @db.Decimal(18, 4)
+  incoterm          Incoterm          @default(FOB)
+  portOfLoading     String?
+  destination       String?
+  supplierContractNo String?
+  expectedShipmentDate DateTime?      @db.Date
+  paymentTermDays   Int               @default(0)
+  dueDate           DateTime?         @db.Date
+  notes             String?
+  status            TransactionStatus @default(DRAFT)
+  postedAt          DateTime?
+  postedById        String?
+  reversedAt        DateTime?
+  reversalReason    String?
+  createdById       String
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  company       Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  vendor        Vendor                 @relation(fields: [vendorId], references: [id])
+  createdBy     User                   @relation("ContractCreatedBy", fields: [createdById], references: [id])
+  postedBy      User?                  @relation("ContractPostedBy", fields: [postedById], references: [id])
+  lines         PurchaseContractLine[]
+  shipments     Shipment[]
+  batches       Batch[]
+  lots          Lot[]
+  containerList Container[]
+  goodsReceipts GoodsReceipt[]
+  paymentAllocs PaymentAllocation[]
+  expenses      Expense[]
+  salesInvoices SalesInvoice[]
+  journalLines  JournalLine[]
+
+  @@unique([companyId, contractNumber])
+  @@unique([companyId, contractReference])
+  @@index([companyId, status])
+  @@index([companyId, vendorId])
+  @@index([companyId, contractDate])
+  @@map("purchase_contracts")
+}
+
+model PurchaseContractLine {
+  id               String        @id @default(cuid())
+  purchaseContractId String
+  lineNumber       Int
+  itemId           String
+  quantity         Decimal       @db.Decimal(18, 3)
+  unit             UnitOfMeasure
+  quantityKg       Decimal       @db.Decimal(18, 3)
+  unitPrice        Decimal       @db.Decimal(18, 8)
+  unitPriceKg      Decimal       @db.Decimal(18, 8)
+  lineSubtotal     Decimal       @db.Decimal(18, 4)
+  freightAllocated Decimal       @default(0) @db.Decimal(18, 4)
+  otherChargesAllocated Decimal  @default(0) @db.Decimal(18, 4)
+  lineTotal        Decimal       @db.Decimal(18, 4)
+  unitCostKg       Decimal       @db.Decimal(18, 8)
+  containers       Int           @default(0)
+  /// Traceability entered on the contract line and carried into the batch.
+  lotNumber        String
+  batchNumber      String
+  containerNumber  String?
+  containerType    ContainerType @default(FT20)
+  bags             Int           @default(0)
+  bagWeightKg      Decimal       @default(60) @db.Decimal(18, 3)
+  notes            String?
+
+  purchaseContract PurchaseContract @relation(fields: [purchaseContractId], references: [id], onDelete: Cascade)
+  item             CoffeeItem       @relation(fields: [itemId], references: [id])
+  shipments        Shipment[]
+  batches          Batch[]
+  receiptLines     GoodsReceiptLine[]
+
+  @@unique([purchaseContractId, lineNumber])
+  @@index([itemId])
+  @@map("purchase_contract_lines")
+}
+
+// ---------------------------------------------------------------------------
+// Shipments / logistics
+// ---------------------------------------------------------------------------
+
+model Shipment {
+  id                     String                 @id @default(cuid())
+  companyId              String
+  shipmentNumber         String
+  /// The job number is the profitability object every cost and sale rolls up to.
+  jobNumber              String
+  purchaseContractId     String
+  purchaseContractLineId String?
+  vendorId               String
+  customerId             String?
+  itemId                 String
+  quantityKg             Decimal                @db.Decimal(18, 3)
+  bags                   Int                    @default(0)
+  containers             Int                    @default(0)
+  origin                 String?
+  destination            String?
+  status                 ShipmentStatus         @default(CONTRACT_CREATED)
+  documentStatus         ShipmentDocumentStatus @default(DRAFT_PENDING)
+  bookingNumber          String?
+  billOfLading           String?
+  vesselName             String?
+  voyageNumber           String?
+  portOfLoading          String?
+  portOfDischarge        String?
+  incoterm               Incoterm               @default(FOB)
+  shippingLineId         String?
+  etdDate                DateTime?              @db.Date
+  etaDate                DateTime?              @db.Date
+  ataDate                DateTime?              @db.Date
+  loadingDate            DateTime?              @db.Date
+  clearanceDate          DateTime?              @db.Date
+  deliveryDate           DateTime?              @db.Date
+  paymentStatusOverride  SettlementStatus?
+  overrideReason         String?
+  notes                  String?
+  createdById            String
+  updatedById            String?
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+
+  company          Company                         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  purchaseContract PurchaseContract                @relation(fields: [purchaseContractId], references: [id])
+  contractLine     PurchaseContractLine?           @relation(fields: [purchaseContractLineId], references: [id])
+  vendor           Vendor                          @relation(fields: [vendorId], references: [id])
+  customer         Customer?                       @relation(fields: [customerId], references: [id])
+  item             CoffeeItem                      @relation(fields: [itemId], references: [id])
+  shippingLine     ShippingLine?                   @relation(fields: [shippingLineId], references: [id])
+  createdBy        User                            @relation("ShipmentCreatedBy", fields: [createdById], references: [id])
+  updatedBy        User?                           @relation("ShipmentUpdatedBy", fields: [updatedById], references: [id])
+  statusHistory    ShipmentStatusHistory[]
+  docStatusHistory ShipmentDocumentStatusHistory[]
+  batches          Batch[]
+  containerList    Container[]
+  goodsReceipts    GoodsReceipt[]
+  inventoryTxns    InventoryTransaction[]
+  invoiceLines     SalesInvoiceLine[]
+  salesInvoices    SalesInvoice[]
+  receipts         Receipt[]
+  payments         Payment[]
+  expenses         Expense[]
+  journalLines     JournalLine[]
+
+  @@unique([companyId, shipmentNumber])
+  @@unique([companyId, jobNumber])
+  @@index([companyId, status])
+  @@index([companyId, etaDate])
+  @@index([companyId, billOfLading])
+  @@index([companyId, documentStatus])
+  @@index([purchaseContractId])
+  @@index([bookingNumber])
+  @@map("shipments")
+}
+
+model ShipmentStatusHistory {
+  id          String         @id @default(cuid())
+  shipmentId  String
+  fromStatus  ShipmentStatus?
+  toStatus    ShipmentStatus
+  changedById String
+  notes       String?
+  changedAt   DateTime       @default(now())
+
+  shipment  Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  changedBy User     @relation(fields: [changedById], references: [id])
+
+  @@index([shipmentId, changedAt])
+  @@map("shipment_status_history")
+}
+
+model ShipmentDocumentStatusHistory {
+  id          String                  @id @default(cuid())
+  shipmentId  String
+  fromStatus  ShipmentDocumentStatus?
+  toStatus    ShipmentDocumentStatus
+  changedById String
+  notes       String?
+  changedAt   DateTime                @default(now())
+
+  shipment  Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  changedBy User     @relation(fields: [changedById], references: [id])
+
+  @@index([shipmentId, changedAt])
+  @@map("shipment_document_status_history")
+}
+
+// ---------------------------------------------------------------------------
+// Inventory
+// ---------------------------------------------------------------------------
+
+model Batch {
+  id                     String       @id @default(cuid())
+  companyId              String
+  batchNumber            String
+  itemId                 String
+  lotId                  String
+  containerId            String?
+  warehouseId            String?
+  shipmentId             String
+  purchaseContractId     String
+  purchaseContractLineId String?
+  /// Quantity contracted on the purchase order. Goods are "in transit" until a
+  /// goods receipt brings them into a warehouse.
+  orderedQuantityKg      Decimal      @default(0) @db.Decimal(18, 3)
+  receivedQuantityKg     Decimal      @default(0) @db.Decimal(18, 3)
+  allocatedQuantityKg    Decimal      @default(0) @db.Decimal(18, 3)
+  soldQuantityKg         Decimal      @default(0) @db.Decimal(18, 3)
+  availableQuantityKg    Decimal      @default(0) @db.Decimal(18, 3)
+  /// orderedQuantityKg - receivedQuantityKg. Owned, paid for, not yet landed.
+  inTransitQuantityKg    Decimal      @default(0) @db.Decimal(18, 3)
+  orderedBags            Int          @default(0)
+  receivedBags           Int          @default(0)
+  soldBags               Int          @default(0)
+  bagWeightKg            Decimal      @default(60) @db.Decimal(18, 3)
+  /// Contract price per KG in the contract currency, before landed costs.
+  unitCost               Decimal      @db.Decimal(18, 8)
+  currency               String       @db.VarChar(3)
+  /// Contract price per KG converted to USD at the contract's stored rate.
+  unitCostUsd            Decimal      @db.Decimal(18, 8)
+  /// Goods value of this batch in USD, excluding landed costs.
+  purchaseCostUsd        Decimal      @default(0) @db.Decimal(18, 4)
+  /// Direct shipment expenses capitalised into this batch so far, in USD.
+  capitalisedCostUsd     Decimal      @default(0) @db.Decimal(18, 4)
+  /// (purchaseCostUsd + capitalisedCostUsd) / receivedQuantityKg. Drives COGS.
+  landedUnitCostUsd      Decimal      @default(0) @db.Decimal(18, 8)
+  status                 RecordStatus @default(ACTIVE)
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+
+  company          Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  item             CoffeeItem             @relation(fields: [itemId], references: [id])
+  lot              Lot                    @relation(fields: [lotId], references: [id])
+  container        Container?             @relation(fields: [containerId], references: [id])
+  warehouse        Warehouse?             @relation(fields: [warehouseId], references: [id])
+  shipment         Shipment               @relation(fields: [shipmentId], references: [id])
+  purchaseContract PurchaseContract       @relation(fields: [purchaseContractId], references: [id])
+  contractLine     PurchaseContractLine?  @relation(fields: [purchaseContractLineId], references: [id])
+  inventoryTxns    InventoryTransaction[]
+  invoiceLines     SalesInvoiceLine[]
+  journalLines     JournalLine[]
+  balances         InventoryBalance[]
+  receiptLines     GoodsReceiptLine[]
+  transferLines    StockTransferLine[]
+
+  @@unique([companyId, batchNumber])
+  @@index([companyId, itemId])
+  @@index([shipmentId])
+  @@index([lotId])
+  @@index([containerId])
+  @@index([warehouseId])
+  @@map("batches")
+}
+
+model InventoryTransaction {
+  id            String                   @id @default(cuid())
+  companyId     String
+  itemId        String
+  shipmentId    String?
+  batchId       String
+  containerId   String?
+  warehouseId   String?
+  transactionType InventoryTransactionType
+  quantityKg    Decimal                  @db.Decimal(18, 3)
+  bags          Int                      @default(0)
+  unitCost      Decimal                  @default(0) @db.Decimal(18, 8)
+  valueUsd      Decimal                  @default(0) @db.Decimal(18, 4)
+  referenceType String
+  referenceId   String
+  transactionDate DateTime               @db.Date
+  notes         String?
+  createdById   String
+  createdAt     DateTime                 @default(now())
+
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  item      CoffeeItem @relation(fields: [itemId], references: [id])
+  shipment  Shipment?  @relation(fields: [shipmentId], references: [id])
+  batch     Batch      @relation(fields: [batchId], references: [id])
+  container Container? @relation(fields: [containerId], references: [id])
+  warehouse Warehouse? @relation(fields: [warehouseId], references: [id])
+  createdBy User       @relation(fields: [createdById], references: [id])
+
+  @@index([companyId, transactionDate])
+  @@index([batchId, createdAt])
+  @@index([companyId, itemId])
+  @@index([referenceType, referenceId])
+  @@map("inventory_transactions")
+}
+
+
+/// Stock on hand for one batch in one warehouse.
+///
+/// This is a cache: it is recomputed from `inventory_transactions` inside every
+/// posting transaction, so it can never drift from the movement ledger. It
+/// exists because "which warehouse holds this batch" is asked constantly and
+/// aggregating the whole movement history each time would not scale.
+model InventoryBalance {
+  id          String   @id @default(cuid())
+  companyId   String
+  batchId     String
+  warehouseId String
+  itemId      String
+  onHandKg    Decimal  @default(0) @db.Decimal(18, 3)
+  reservedKg  Decimal  @default(0) @db.Decimal(18, 3)
+  availableKg Decimal  @default(0) @db.Decimal(18, 3)
+  bags        Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  batch     Batch      @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  warehouse Warehouse  @relation(fields: [warehouseId], references: [id])
+  item      CoffeeItem @relation(fields: [itemId], references: [id])
+
+  @@unique([batchId, warehouseId])
+  @@index([companyId, warehouseId])
+  @@index([companyId, itemId])
+  @@map("inventory_balances")
+}
+
+/// Goods receipt note.
+///
+/// Approving a purchase order does not put coffee in a warehouse — it creates
+/// the supplier liability and puts the goods "in transit". Stock only becomes
+/// available when it is physically received here, against a named warehouse.
+/// A purchase order may be received in several partial receipts.
+model GoodsReceipt {
+  id                 String            @id @default(cuid())
+  companyId          String
+  grnNumber          String
+  receiptDate        DateTime          @db.Date
+  purchaseContractId String
+  shipmentId         String?
+  vendorId           String
+  warehouseId        String
+  reference          String?
+  notes              String?
+  status             TransactionStatus @default(DRAFT)
+  postedAt           DateTime?
+  reversedAt         DateTime?
+  reversalReason     String?
+  receivedById       String
+  createdById        String
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  company          Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  purchaseContract PurchaseContract   @relation(fields: [purchaseContractId], references: [id])
+  shipment         Shipment?          @relation(fields: [shipmentId], references: [id])
+  vendor           Vendor             @relation(fields: [vendorId], references: [id])
+  warehouse        Warehouse          @relation(fields: [warehouseId], references: [id])
+  receivedBy       User               @relation("GrnReceivedBy", fields: [receivedById], references: [id])
+  createdBy        User               @relation("GrnCreatedBy", fields: [createdById], references: [id])
+  lines            GoodsReceiptLine[]
+
+  @@unique([companyId, grnNumber])
+  @@index([companyId, status])
+  @@index([companyId, receiptDate])
+  @@index([purchaseContractId])
+  @@map("goods_receipts")
+}
+
+model GoodsReceiptLine {
+  id                     String  @id @default(cuid())
+  goodsReceiptId         String
+  lineNumber             Int
+  purchaseContractLineId String
+  batchId                String
+  itemId                 String
+  containerId            String?
+  quantityKg             Decimal @db.Decimal(18, 3)
+  bags                   Int     @default(0)
+  notes                  String?
+
+  goodsReceipt GoodsReceipt         @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+  contractLine PurchaseContractLine @relation(fields: [purchaseContractLineId], references: [id])
+  batch        Batch                @relation(fields: [batchId], references: [id])
+  item         CoffeeItem           @relation(fields: [itemId], references: [id])
+  container    Container?           @relation(fields: [containerId], references: [id])
+
+  @@unique([goodsReceiptId, lineNumber])
+  @@index([batchId])
+  @@map("goods_receipt_lines")
+}
+
+/// Warehouse-to-warehouse stock transfer.
+///
+/// Approving reserves the stock at the source; receiving posts a matched
+/// TRANSFER_OUT / TRANSFER_IN pair inside one transaction. Company-level stock
+/// is therefore never duplicated and never dips while goods are in transfer.
+model StockTransfer {
+  id              String            @id @default(cuid())
+  companyId       String
+  transferNumber  String
+  transferDate    DateTime          @db.Date
+  fromWarehouseId String
+  toWarehouseId   String
+  status          TransactionStatus @default(DRAFT)
+  /// DRAFT -> APPROVED -> IN_TRANSIT -> RECEIVED, or CANCELLED.
+  workflowState   String            @default("DRAFT")
+  notes           String?
+  requestedById   String
+  approvedById    String?
+  receivedById    String?
+  approvedAt      DateTime?
+  receivedAt      DateTime?
+  cancelledAt     DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  company       Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fromWarehouse Warehouse           @relation("TransferFrom", fields: [fromWarehouseId], references: [id])
+  toWarehouse   Warehouse           @relation("TransferTo", fields: [toWarehouseId], references: [id])
+  requestedBy   User                @relation("TransferRequestedBy", fields: [requestedById], references: [id])
+  approvedBy    User?               @relation("TransferApprovedBy", fields: [approvedById], references: [id])
+  receivedBy    User?               @relation("TransferReceivedBy", fields: [receivedById], references: [id])
+  lines         StockTransferLine[]
+
+  @@unique([companyId, transferNumber])
+  @@index([companyId, workflowState])
+  @@index([companyId, transferDate])
+  @@map("stock_transfers")
+}
+
+model StockTransferLine {
+  id              String  @id @default(cuid())
+  stockTransferId String
+  lineNumber      Int
+  batchId         String
+  itemId          String
+  containerId     String?
+  quantityKg      Decimal @db.Decimal(18, 3)
+  bags            Int     @default(0)
+  notes           String?
+
+  stockTransfer StockTransfer @relation(fields: [stockTransferId], references: [id], onDelete: Cascade)
+  batch         Batch         @relation(fields: [batchId], references: [id])
+  item          CoffeeItem    @relation(fields: [itemId], references: [id])
+  container     Container?    @relation(fields: [containerId], references: [id])
+
+  @@unique([stockTransferId, lineNumber])
+  @@index([batchId])
+  @@map("stock_transfer_lines")
+}
+
+// ---------------------------------------------------------------------------
+// Sales
+// ---------------------------------------------------------------------------
+
+model SalesInvoice {
+  id                 String            @id @default(cuid())
+  companyId          String
+  invoiceNumber      String
+  invoiceDate        DateTime          @db.Date
+  customerId         String
+  shipmentId         String?
+  purchaseContractId String?
+  currency           String            @db.VarChar(3)
+  rateToUsd          Decimal           @default(1) @db.Decimal(18, 8)
+  rateLocalPerUsd    Decimal           @default(1) @db.Decimal(18, 8)
+  subtotal           Decimal           @default(0) @db.Decimal(18, 4)
+  totalAmount        Decimal           @default(0) @db.Decimal(18, 4)
+  totalAmountUsd     Decimal           @default(0) @db.Decimal(18, 4)
+  costOfGoodsUsd     Decimal           @default(0) @db.Decimal(18, 4)
+  paymentTermDays    Int               @default(0)
+  dueDate            DateTime?         @db.Date
+  reference          String?
+  notes              String?
+  status             TransactionStatus @default(DRAFT)
+  postedAt           DateTime?
+  postedById         String?
+  reversedAt         DateTime?
+  reversalReason     String?
+  createdById        String
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  company          Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer         Customer            @relation(fields: [customerId], references: [id])
+  shipment         Shipment?           @relation(fields: [shipmentId], references: [id])
+  purchaseContract PurchaseContract?   @relation(fields: [purchaseContractId], references: [id])
+  createdBy        User                @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  postedBy         User?               @relation("InvoicePostedBy", fields: [postedById], references: [id])
+  lines            SalesInvoiceLine[]
+  allocations      ReceiptAllocation[]
+  journalLines     JournalLine[]
+
+  @@unique([companyId, invoiceNumber])
+  @@index([companyId, status])
+  @@index([companyId, customerId])
+  @@index([companyId, invoiceDate])
+  @@index([companyId, dueDate])
+  @@index([shipmentId])
+  @@map("sales_invoices")
+}
+
+model SalesInvoiceLine {
+  id             String        @id @default(cuid())
+  salesInvoiceId String
+  lineNumber     Int
+  itemId         String
+  batchId        String
+  lotId          String?
+  containerId    String?
+  warehouseId    String?
+  shipmentId     String?
+  quantity       Decimal       @db.Decimal(18, 3)
+  unit           UnitOfMeasure
+  quantityKg     Decimal       @db.Decimal(18, 3)
+  bags           Int           @default(0)
+  unitPrice      Decimal       @db.Decimal(18, 8)
+  unitPriceKg    Decimal       @db.Decimal(18, 8)
+  lineTotal      Decimal       @db.Decimal(18, 4)
+  lineTotalUsd   Decimal       @db.Decimal(18, 4)
+  unitCostUsd    Decimal       @default(0) @db.Decimal(18, 8)
+  costTotalUsd   Decimal       @default(0) @db.Decimal(18, 4)
+  notes          String?
+
+  salesInvoice SalesInvoice @relation(fields: [salesInvoiceId], references: [id], onDelete: Cascade)
+  item         CoffeeItem   @relation(fields: [itemId], references: [id])
+  batch        Batch        @relation(fields: [batchId], references: [id])
+  lot          Lot?         @relation(fields: [lotId], references: [id])
+  container    Container?   @relation(fields: [containerId], references: [id])
+  warehouse    Warehouse?   @relation(fields: [warehouseId], references: [id])
+  shipment     Shipment?    @relation(fields: [shipmentId], references: [id])
+
+  @@unique([salesInvoiceId, lineNumber])
+  @@index([batchId])
+  @@index([lotId])
+  @@index([containerId])
+  @@map("sales_invoice_lines")
+}
+
+// ---------------------------------------------------------------------------
+// Cash cycle: receipts, payments, expenses
+// ---------------------------------------------------------------------------
+
+model Receipt {
+  id                String            @id @default(cuid())
+  companyId         String
+  receiptNumber     String
+  receiptDate       DateTime          @db.Date
+  customerId        String
+  currency          String            @db.VarChar(3)
+  amount            Decimal           @db.Decimal(18, 4)
+  rateToUsd         Decimal           @db.Decimal(18, 8)
+  amountUsd         Decimal           @db.Decimal(18, 4)
+  rateLocalPerUsd   Decimal           @db.Decimal(18, 8)
+  amountLocal       Decimal           @db.Decimal(18, 4)
+  cashBankAccountId String?
+  paymentMethod     PaymentMethod     @default(BANK_TRANSFER)
+  shipmentId        String?
+  reference         String?
+  description       String?
+  status            TransactionStatus @default(DRAFT)
+  postedAt          DateTime?
+  reversedAt        DateTime?
+  reversalReason    String?
+  createdById       String
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  company         Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer        Customer            @relation(fields: [customerId], references: [id])
+  cashBankAccount CashBankAccount?    @relation(fields: [cashBankAccountId], references: [id])
+  cheque          Cheque?
+  shipment        Shipment?           @relation(fields: [shipmentId], references: [id])
+  createdBy       User                @relation("ReceiptCreatedBy", fields: [createdById], references: [id])
+  allocations     ReceiptAllocation[]
+
+  @@unique([companyId, receiptNumber])
+  @@index([companyId, status])
+  @@index([companyId, customerId])
+  @@index([companyId, receiptDate])
+  @@map("receipts")
+}
+
+model ReceiptAllocation {
+  id             String  @id @default(cuid())
+  receiptId      String
+  salesInvoiceId String
+  amount         Decimal @db.Decimal(18, 4)
+  amountUsd      Decimal @db.Decimal(18, 4)
+
+  receipt      Receipt      @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  salesInvoice SalesInvoice @relation(fields: [salesInvoiceId], references: [id])
+
+  @@unique([receiptId, salesInvoiceId])
+  @@index([salesInvoiceId])
+  @@map("receipt_allocations")
+}
+
+model Payment {
+  id                String            @id @default(cuid())
+  companyId         String
+  paymentNumber     String
+  paymentDate       DateTime          @db.Date
+  vendorId          String
+  currency          String            @db.VarChar(3)
+  amount            Decimal           @db.Decimal(18, 4)
+  rateToUsd         Decimal           @db.Decimal(18, 8)
+  amountUsd         Decimal           @db.Decimal(18, 4)
+  rateLocalPerUsd   Decimal           @db.Decimal(18, 8)
+  amountLocal       Decimal           @db.Decimal(18, 4)
+  cashBankAccountId String?
+  paymentMethod     PaymentMethod     @default(BANK_TRANSFER)
+  shipmentId        String?
+  reference         String?
+  description       String?
+  status            TransactionStatus @default(DRAFT)
+  postedAt          DateTime?
+  reversedAt        DateTime?
+  reversalReason    String?
+  createdById       String
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  company         Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  vendor          Vendor              @relation(fields: [vendorId], references: [id])
+  cashBankAccount CashBankAccount?    @relation(fields: [cashBankAccountId], references: [id])
+  cheque          Cheque?
+  shipment        Shipment?           @relation(fields: [shipmentId], references: [id])
+  createdBy       User                @relation("PaymentCreatedBy", fields: [createdById], references: [id])
+  allocations     PaymentAllocation[]
+
+  @@unique([companyId, paymentNumber])
+  @@index([companyId, status])
+  @@index([companyId, vendorId])
+  @@index([companyId, paymentDate])
+  @@map("payments")
+}
+
+model PaymentAllocation {
+  id                 String  @id @default(cuid())
+  paymentId          String
+  purchaseContractId String
+  amount             Decimal @db.Decimal(18, 4)
+  amountUsd          Decimal @db.Decimal(18, 4)
+
+  payment          Payment          @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  purchaseContract PurchaseContract @relation(fields: [purchaseContractId], references: [id])
+
+  @@unique([paymentId, purchaseContractId])
+  @@index([purchaseContractId])
+  @@map("payment_allocations")
+}
+
+model Expense {
+  id                 String            @id @default(cuid())
+  companyId          String
+  expenseNumber      String
+  expenseDate        DateTime          @db.Date
+  expenseCategoryId  String
+  shipmentId         String?
+  purchaseContractId String?
+  vendorId           String?
+  agentId            String?
+  currency           String            @db.VarChar(3)
+  amount             Decimal           @db.Decimal(18, 4)
+  rateToUsd          Decimal           @db.Decimal(18, 8)
+  amountUsd          Decimal           @db.Decimal(18, 4)
+  rateLocalPerUsd    Decimal           @db.Decimal(18, 8)
+  amountLocal        Decimal           @db.Decimal(18, 4)
+  cashBankAccountId  String?
+  paymentMethod      PaymentMethod     @default(BANK_TRANSFER)
+  /// When true the amount is added to the shipment's landed cost instead of
+  /// being written straight to the profit and loss account.
+  capitaliseToLandedCost Boolean       @default(false)
+  reference          String?
+  description        String?
+  status             TransactionStatus @default(DRAFT)
+  postedAt           DateTime?
+  reversedAt         DateTime?
+  reversalReason     String?
+  createdById        String
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  expenseCategory  ExpenseCategory   @relation(fields: [expenseCategoryId], references: [id])
+  shipment         Shipment?         @relation(fields: [shipmentId], references: [id])
+  purchaseContract PurchaseContract? @relation(fields: [purchaseContractId], references: [id])
+  vendor           Vendor?           @relation(fields: [vendorId], references: [id])
+  agent            Agent?            @relation(fields: [agentId], references: [id])
+  cashBankAccount  CashBankAccount?  @relation(fields: [cashBankAccountId], references: [id])
+  createdBy        User              @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([companyId, expenseNumber])
+  @@index([companyId, status])
+  @@index([companyId, expenseDate])
+  @@index([shipmentId])
+  @@index([companyId, expenseCategoryId])
+  @@map("expenses")
+}
+
+
+/// Cheque register.
+///
+/// A cheque is an instrument with its own life cycle, not just a payment note.
+/// Receiving one moves the balance from the customer to "cheques on hand"; only
+/// clearing moves it into the bank. A bounced cheque puts the receivable back,
+/// so a bounced cheque is never mistaken for cleared cash.
+model Cheque {
+  id                String          @id @default(cuid())
+  companyId         String
+  chequeNumber      String
+  direction         ChequeDirection
+  chequeDate        DateTime        @db.Date
+  bankName          String
+  amount            Decimal         @db.Decimal(18, 4)
+  currency          String          @db.VarChar(3)
+  rateToUsd         Decimal         @default(1) @db.Decimal(18, 8)
+  amountUsd         Decimal         @default(0) @db.Decimal(18, 4)
+  rateLocalPerUsd   Decimal         @default(1) @db.Decimal(18, 8)
+  amountLocal       Decimal         @default(0) @db.Decimal(18, 4)
+  beneficiary       String?
+  customerId        String?
+  vendorId          String?
+  agentId           String?
+  receiptId         String?         @unique
+  paymentId         String?         @unique
+  /// Bank account the cheque is deposited into or drawn on.
+  cashBankAccountId String?
+  receivedDate      DateTime?       @db.Date
+  depositDate       DateTime?       @db.Date
+  clearingDate      DateTime?       @db.Date
+  bounceDate        DateTime?       @db.Date
+  bounceReason      String?
+  status            ChequeStatus    @default(RECEIVED)
+  notes             String?
+  createdById       String
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  company         Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer        Customer?             @relation(fields: [customerId], references: [id])
+  vendor          Vendor?               @relation(fields: [vendorId], references: [id])
+  agent           Agent?                @relation(fields: [agentId], references: [id])
+  receipt         Receipt?              @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  payment         Payment?              @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  cashBankAccount CashBankAccount?      @relation(fields: [cashBankAccountId], references: [id])
+  createdBy       User                  @relation("ChequeCreatedBy", fields: [createdById], references: [id])
+  statusHistory   ChequeStatusHistory[]
+
+  @@unique([companyId, chequeNumber, direction])
+  @@index([companyId, status])
+  @@index([companyId, chequeDate])
+  @@index([customerId])
+  @@index([vendorId])
+  @@map("cheques")
+}
+
+model ChequeStatusHistory {
+  id          String        @id @default(cuid())
+  chequeId    String
+  fromStatus  ChequeStatus?
+  toStatus    ChequeStatus
+  changedById String
+  notes       String?
+  changedAt   DateTime      @default(now())
+
+  cheque    Cheque @relation(fields: [chequeId], references: [id], onDelete: Cascade)
+  changedBy User   @relation(fields: [changedById], references: [id])
+
+  @@index([chequeId, changedAt])
+  @@map("cheque_status_history")
+}
+
+/// Document attachments. Files are stored outside the database; the row keeps
+/// the pointer, the checksum and who uploaded it.
+model Attachment {
+  id           String   @id @default(cuid())
+  companyId    String
+  entityType   String
+  entityId     String
+  category     String?
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  storageKey   String   @unique
+  checksum     String?
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  company    Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  uploadedBy User    @relation(fields: [uploadedById], references: [id])
+
+  @@index([companyId, entityType, entityId])
+  @@map("attachments")
+}
+
+// ---------------------------------------------------------------------------
+// Accounting
+// ---------------------------------------------------------------------------
+
+model JournalEntry {
+  id            String            @id @default(cuid())
+  companyId     String
+  entryNumber   String
+  entryDate     DateTime          @db.Date
+  description   String
+  sourceType    JournalSourceType
+  sourceId      String
+  sourceSeq     Int               @default(1)
+  isReversal    Boolean           @default(false)
+  status        TransactionStatus @default(POSTED)
+  reversalOfId  String?           @unique
+  createdById   String
+  createdAt     DateTime          @default(now())
+  postedAt      DateTime          @default(now())
+
+  company    Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy  User          @relation("JournalCreatedBy", fields: [createdById], references: [id])
+  reversalOf JournalEntry? @relation("JournalReversal", fields: [reversalOfId], references: [id])
+  reversedBy JournalEntry? @relation("JournalReversal")
+  lines      JournalLine[]
+
+  @@unique([companyId, entryNumber])
+  @@unique([companyId, sourceType, sourceId, sourceSeq])
+  @@index([companyId, entryDate])
+  @@index([sourceType, sourceId])
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id              String  @id @default(cuid())
+  journalEntryId  String
+  lineNumber      Int
+  accountId       String
+  description     String?
+  currency        String  @db.VarChar(3)
+  debit           Decimal @default(0) @db.Decimal(18, 4)
+  credit          Decimal @default(0) @db.Decimal(18, 4)
+  rateToUsd       Decimal @default(1) @db.Decimal(18, 8)
+  debitUsd        Decimal @default(0) @db.Decimal(18, 4)
+  creditUsd       Decimal @default(0) @db.Decimal(18, 4)
+  rateLocalPerUsd Decimal @default(1) @db.Decimal(18, 8)
+  debitLocal      Decimal @default(0) @db.Decimal(18, 4)
+  creditLocal     Decimal @default(0) @db.Decimal(18, 4)
+
+  customerId         String?
+  vendorId           String?
+  cashBankAccountId  String?
+  shipmentId         String?
+  purchaseContractId String?
+  salesInvoiceId     String?
+  itemId             String?
+  batchId            String?
+
+  journalEntry     JournalEntry      @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account          Account           @relation(fields: [accountId], references: [id])
+  customer         Customer?         @relation(fields: [customerId], references: [id])
+  vendor           Vendor?           @relation(fields: [vendorId], references: [id])
+  cashBankAccount  CashBankAccount?  @relation(fields: [cashBankAccountId], references: [id])
+  shipment         Shipment?         @relation(fields: [shipmentId], references: [id])
+  purchaseContract PurchaseContract? @relation(fields: [purchaseContractId], references: [id])
+  salesInvoice     SalesInvoice?     @relation(fields: [salesInvoiceId], references: [id])
+  item             CoffeeItem?       @relation(fields: [itemId], references: [id])
+  batch            Batch?            @relation(fields: [batchId], references: [id])
+
+  @@index([journalEntryId])
+  @@index([accountId])
+  @@index([customerId])
+  @@index([vendorId])
+  @@index([cashBankAccountId])
+  @@index([shipmentId])
+  @@map("journal_lines")
+}
+
+// ---------------------------------------------------------------------------
+// Platform services
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id                String               @id @default(cuid())
+  companyId         String
+  type              String
+  severity          NotificationSeverity @default(INFO)
+  relatedEntityType String?
+  relatedEntityId   String?
+  title             String
+  message           String
+  dedupeKey         String               @unique
+  dueAt             DateTime?
+  readAt            DateTime?
+  createdAt         DateTime             @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, readAt])
+  @@index([companyId, createdAt])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  companyId  String?
+  userId     String?
+  action     String
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([entityType, entityId])
+  @@index([userId, createdAt])
+  @@map("audit_logs")
+}
+
+model ApplicationSetting {
+  id        String   @id @default(cuid())
+  companyId String?
+  key       String
+  value     String
+  updatedAt DateTime @updatedAt
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, key])
+  @@map("application_settings")
+}
+
+model NumberSequence {
+  id         String   @id @default(cuid())
+  companyId  String
+  docType    String
+  year       Int
+  prefix     String
+  lastNumber Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, docType, year])
+  @@map("number_sequences")
+}
+
+model ExchangeRate {
+  id            String   @id @default(cuid())
+  companyId     String?
+  quoteCurrency String   @db.VarChar(3)
+  rate          Decimal  @db.Decimal(18, 8)
+  effectiveDate DateTime @db.Date
+  createdAt     DateTime @default(now())
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, quoteCurrency, effectiveDate])
+  @@index([quoteCurrency, effectiveDate])
+  @@map("exchange_rates")
+}
