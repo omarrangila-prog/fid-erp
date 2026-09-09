@@ -138,7 +138,7 @@ export function AgeingClient({
       emptyDescription="Everything has been settled."
       toolbar={
         <div className="flex flex-wrap items-center gap-2">
-          <Select value={bucket} onChange={(e) => setBucket(e.target.value)} className="h-10 w-auto min-w-36">
+          <Select aria-label="Filter by ageing bucket" value={bucket} onChange={(e) => setBucket(e.target.value)} className="h-10 w-auto min-w-36">
             <option value="ALL">All ages</option>
             {Object.entries(AGEING_LABELS_CLIENT).map(([value, label]) => (
               <option key={value} value={value}>
@@ -146,7 +146,7 @@ export function AgeingClient({
               </option>
             ))}
           </Select>
-          <Select value={party} onChange={(e) => setParty(e.target.value)} className="h-10 w-auto min-w-44">
+          <Select aria-label="Filter by customer" value={party} onChange={(e) => setParty(e.target.value)} className="h-10 w-auto min-w-44">
             <option value="ALL">All {partyLabel.toLowerCase()}s</option>
             {parties.map((p) => (
               <option key={p} value={p}>

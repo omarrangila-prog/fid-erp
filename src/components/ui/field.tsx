@@ -22,20 +22,51 @@ export function Field({
   className?: string;
   children: React.ReactNode;
 }) {
+  const labelText = label ? (
+    <>
+      {label}
+      {required ? (
+        <>
+          <span aria-hidden className="ml-0.5 text-red-500">
+            *
+          </span>
+          <span className="sr-only"> (required)</span>
+        </>
+      ) : null}
+    </>
+  ) : null;
+
+  const detail = error ? (
+    <p className="text-xs font-medium text-red-600">{error}</p>
+  ) : hint ? (
+    <p className="text-xs text-ink-subtle">{hint}</p>
+  ) : null;
+
+  // With an explicit id we associate by `for`. Without one — which is most
+  // controls, since ids are tedious and get forgotten — the label wraps the
+  // control instead. An implicit association needs no id and cannot drift out
+  // of sync, so no field can end up nameless to a screen reader.
+  if (!htmlFor && labelText) {
+    return (
+      <div className={cn('flex flex-col gap-1.5', className)}>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-ink-muted">{labelText}</span>
+          {children}
+        </label>
+        {detail}
+      </div>
+    );
+  }
+
   return (
     <div className={cn('flex flex-col gap-1.5', className)}>
-      {label ? (
+      {labelText ? (
         <label htmlFor={htmlFor} className="text-xs font-medium text-ink-muted">
-          {label}
-          {required ? <span className="ml-0.5 text-red-500">*</span> : null}
+          {labelText}
         </label>
       ) : null}
       {children}
-      {error ? (
-        <p className="text-xs font-medium text-red-600">{error}</p>
-      ) : hint ? (
-        <p className="text-xs text-ink-subtle">{hint}</p>
-      ) : null}
+      {detail}
     </div>
   );
 }

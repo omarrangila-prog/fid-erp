@@ -104,7 +104,7 @@ export function SetupChecklist({
       <CardContent className="grid gap-6 lg:grid-cols-2">
         {setup.length > 0 ? (
           <section>
-            <h3 className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
+            <h3 className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">
               First, set up your records
             </h3>
             <ul className="divide-y divide-line/70">
@@ -117,7 +117,7 @@ export function SetupChecklist({
 
         {trading.length > 0 ? (
           <section>
-            <h3 className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
+            <h3 className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">
               Then, run a trade end to end
             </h3>
             <ul className="divide-y divide-line/70">

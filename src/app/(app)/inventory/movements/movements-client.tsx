@@ -146,7 +146,7 @@ export function MovementsClient({
       emptyDescription="Movements are written whenever coffee is received, sold, transferred or adjusted."
       toolbar={
         <div className="flex flex-wrap items-center gap-2">
-          <Select value={type} onChange={(e) => setType(e.target.value)} className="h-10 w-auto min-w-40">
+          <Select aria-label="Filter by movement type" value={type} onChange={(e) => setType(e.target.value)} className="h-10 w-auto min-w-40">
             <option value="ALL">All movements</option>
             {Object.keys(TYPE_TONES).map((t) => (
               <option key={t} value={t}>
@@ -154,7 +154,7 @@ export function MovementsClient({
               </option>
             ))}
           </Select>
-          <Select value={warehouse} onChange={(e) => setWarehouse(e.target.value)} className="h-10 w-auto min-w-40">
+          <Select aria-label="Filter by warehouse" value={warehouse} onChange={(e) => setWarehouse(e.target.value)} className="h-10 w-auto min-w-40">
             <option value="ALL">All warehouses</option>
             {warehouses.map((w) => (
               <option key={w} value={w}>

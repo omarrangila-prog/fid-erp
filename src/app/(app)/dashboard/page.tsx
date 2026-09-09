@@ -414,7 +414,7 @@ export default async function DashboardPage() {
               <p className="py-6 text-center text-xs text-ink-subtle">No warehouse stock yet.</p>
             ) : (
               data.warehouseStock.map((w) => (
-                <div key={w.warehouseId} className="flex items-center justify-between gap-3 border-b border-line pb-3 last:border-0 last:pb-0">
+                <div key={w.warehouseId} className="-mx-2 flex items-center justify-between gap-3 rounded-lg border-b border-line px-2 py-2.5 transition-colors last:border-0 hover:bg-forest-50/60">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-ink">{w.name}</p>
                     <p className="text-xs text-ink-subtle">
@@ -477,7 +477,7 @@ export default async function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>Receivable ageing</CardTitle>
-            <CardDescription>Outstanding customer balances, in USD.</CardDescription>
+            <CardDescription>Outstanding customer balances by age in days, in USD.</CardDescription>
           </CardHeader>
           <CardContent>
             <AgeingChart data={receivableAgeing} tone="receivable" />
@@ -487,7 +487,7 @@ export default async function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>Payable ageing</CardTitle>
-            <CardDescription>What we owe suppliers, in USD.</CardDescription>
+            <CardDescription>What we owe suppliers by age in days, in USD.</CardDescription>
           </CardHeader>
           <CardContent>
             <AgeingChart data={payableAgeing} tone="payable" />
@@ -526,7 +526,7 @@ export default async function DashboardPage() {
                   <Link
                     key={s.id}
                     href={`/shipments/${s.id}`}
-                    className="flex items-center justify-between gap-3 border-b border-line pb-3 last:border-0 last:pb-0"
+                    className="-mx-2 flex items-center justify-between gap-3 rounded-lg border-b border-line px-2 py-2.5 transition-colors last:border-0 hover:bg-forest-50/60"
                   >
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-forest-800">{s.shipmentNumber}</p>
@@ -565,7 +565,7 @@ export default async function DashboardPage() {
                 <Link
                   key={c.customerId}
                   href={`/ledgers/customers/${c.customerId}`}
-                  className="flex items-center justify-between gap-3 border-b border-line pb-3 last:border-0 last:pb-0"
+                  className="-mx-2 flex items-center justify-between gap-3 rounded-lg border-b border-line px-2 py-2.5 transition-colors last:border-0 hover:bg-forest-50/60"
                 >
                   <p className="min-w-0 truncate text-sm font-medium text-forest-800">{c.customerName}</p>
                   <p className="tnum shrink-0 text-sm font-semibold text-red-600">

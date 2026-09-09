@@ -52,7 +52,7 @@ export default async function SelectCompanyPage() {
           ))}
         </div>
 
-        <p className="flex items-center justify-center gap-1.5 text-center text-xs text-forest-400">
+        <p className="flex items-center justify-center gap-1.5 text-center text-xs text-forest-300">
           <Building2 className="size-3.5" />
           You can switch companies at any time from the top bar.
           <ArrowRight className="size-3.5" />

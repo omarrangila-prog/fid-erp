@@ -44,14 +44,14 @@ export function CompanyChoice({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-white">{company.name}</p>
-          <p className="mt-0.5 text-xs text-forest-400">
+          <p className="mt-0.5 text-xs text-forest-300">
             {company.code} · Local currency {company.localCurrency}
           </p>
         </div>
         {pending ? (
           <Loader2 className="size-4 shrink-0 animate-spin text-gold-300" />
         ) : (
-          <ArrowRight className="size-4 shrink-0 text-forest-500 transition-colors group-hover:text-gold-300" />
+          <ArrowRight className="size-4 shrink-0 text-forest-200 transition-colors group-hover:text-gold-300" />
         )}
       </div>
 
@@ -62,7 +62,7 @@ export function CompanyChoice({
           ['Invoices', company.openInvoices],
         ].map(([label, value]) => (
           <div key={label as string}>
-            <dt className="text-[10px] uppercase tracking-wide text-forest-500">{label}</dt>
+            <dt className="text-[11px] uppercase tracking-wide text-forest-200">{label}</dt>
             <dd className="tnum text-sm font-semibold text-white">{value as number}</dd>
           </div>
         ))}

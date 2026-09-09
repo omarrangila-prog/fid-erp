@@ -118,7 +118,7 @@ function CommandPalette({
               placeholder="Go to a screen, or search a contract, invoice, customer…"
               className="h-12 w-full bg-transparent text-sm outline-none placeholder:text-ink-subtle"
             />
-            <kbd className="hidden shrink-0 rounded border border-line-strong px-1.5 py-0.5 text-[10px] font-medium text-ink-subtle sm:block">
+            <kbd className="hidden shrink-0 rounded border border-line-strong px-1.5 py-0.5 text-[11px] font-medium text-ink-subtle sm:block">
               esc
             </kbd>
           </div>
@@ -126,7 +126,7 @@ function CommandPalette({
           <div className="max-h-[26rem] overflow-y-auto p-1">
             {pageMatches.length > 0 ? (
               <div className="pb-1">
-                <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
+                <p className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">
                   {trimmed.length === 0 ? 'Jump to' : 'Screens'}
                 </p>
                 {pageMatches.map((item) => {
@@ -150,7 +150,7 @@ function CommandPalette({
             {trimmed.length >= 2 &&
               groupedRecords.map(([type, items]) => (
                 <div key={type} className="pb-1">
-                  <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
+                  <p className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">
                     {type}
                   </p>
                   {items.map((result) => (
@@ -205,7 +205,7 @@ function QuickCreate({ permissions, isSuperAdmin }: { permissions: string[]; isS
 
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-gold-600 px-2.5 text-sm font-medium text-white transition-colors hover:bg-gold-700 sm:px-3">
+      <DropdownMenu.Trigger className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-gold-700 px-2.5 text-sm font-medium text-white transition-colors hover:bg-gold-800 sm:px-3">
         <Plus className="size-4" />
         <span className="hidden sm:inline">New</span>
         <ChevronDown className="hidden size-3.5 opacity-80 sm:block" />
@@ -222,7 +222,7 @@ function QuickCreate({ permissions, isSuperAdmin }: { permissions: string[]; isS
             if (groupItems.length === 0) return null;
             return (
               <div key={group} className="pb-1 last:pb-0">
-                <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
+                <p className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">
                   {group}
                 </p>
                 {groupItems.map((item) => {
@@ -273,7 +273,7 @@ function CompanySwitcher({ companies, active }: { companies: TopbarCompany[]; ac
       <div className="flex min-w-0 items-center gap-2 rounded-lg border border-line bg-forest-50 px-2.5 py-1.5">
         <Building2 className="size-4 shrink-0 text-forest-500" />
         <span className="truncate text-xs font-semibold text-forest-800">{active.name}</span>
-        <span className="hidden rounded bg-forest-200 px-1.5 py-0.5 text-[10px] font-medium text-forest-700 sm:inline">
+        <span className="hidden rounded bg-forest-200 px-1.5 py-0.5 text-[11px] font-medium text-forest-700 sm:inline">
           {active.localCurrency}
         </span>
       </div>
@@ -292,7 +292,7 @@ function CompanySwitcher({ companies, active }: { companies: TopbarCompany[]; ac
           <Building2 className="size-4 shrink-0 text-forest-500" />
         )}
         <span className="max-w-28 truncate text-xs font-semibold text-forest-800 sm:max-w-none">{active.name}</span>
-        <span className="hidden rounded bg-forest-100 px-1.5 py-0.5 text-[10px] font-medium text-forest-700 sm:inline">
+        <span className="hidden rounded bg-forest-100 px-1.5 py-0.5 text-[11px] font-medium text-forest-700 sm:inline">
           {active.localCurrency}
         </span>
         <ChevronDown className="size-3.5 shrink-0 text-ink-subtle" />
@@ -304,7 +304,7 @@ function CompanySwitcher({ companies, active }: { companies: TopbarCompany[]; ac
           sideOffset={4}
           className="animate-in-soft z-50 w-64 rounded-lg border border-line bg-surface p-1 shadow-lg"
         >
-          <p className="px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
+          <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">
             Switch company
           </p>
           {companies.map((company) => (
@@ -423,7 +423,7 @@ export function Topbar({
   return (
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface/95 px-3 backdrop-blur sm:gap-3 sm:px-5">
       <div className="flex items-center gap-2 lg:hidden">
-        <div className="grid size-7 shrink-0 place-items-center rounded-md bg-forest-900 text-[10px] font-bold text-gold-300">
+        <div className="grid size-7 shrink-0 place-items-center rounded-md bg-forest-900 text-[11px] font-bold text-gold-300">
           FID
         </div>
       </div>
@@ -438,7 +438,7 @@ export function Topbar({
       >
         <Search className="size-4 shrink-0" />
         <span className="truncate">Search or jump to…</span>
-        <kbd className="ml-auto hidden shrink-0 rounded border border-line-strong px-1.5 py-0.5 text-[10px] font-medium text-ink-subtle sm:block">
+        <kbd className="ml-auto hidden shrink-0 rounded border border-line-strong px-1.5 py-0.5 text-[11px] font-medium text-ink-subtle sm:block">
           ⌘K
         </kbd>
       </button>
@@ -471,7 +471,7 @@ export function Topbar({
       >
         <Bell className="size-5" />
         {unreadCount > 0 ? (
-          <span className="tnum absolute -right-0.5 -top-0.5 grid min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+          <span className="tnum absolute -right-0.5 -top-0.5 grid min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[11px] font-semibold text-white">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         ) : null}

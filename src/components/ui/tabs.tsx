@@ -47,7 +47,7 @@ export function TabsContent({ className, ...props }: React.ComponentProps<typeof
 export function TabCount({ value }: { value: number }) {
   if (value === 0) return null;
   return (
-    <span className="tnum ml-1.5 rounded bg-forest-100 px-1.5 py-0.5 text-[10px] font-semibold text-forest-700">
+    <span className="tnum ml-1.5 rounded bg-forest-100 px-1.5 py-0.5 text-[11px] font-semibold text-forest-700">
       {value}
     </span>
   );

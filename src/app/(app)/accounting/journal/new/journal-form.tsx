@@ -212,6 +212,8 @@ export function JournalForm({
               <div className="sm:col-span-5">
                 <Field label={index === 0 ? 'Account' : ''} htmlFor={`acct-${line.key}`} required={index === 0}>
                   <Combobox
+                    id={`acct-${line.key}`}
+                    aria-label={`Line ${index + 1} account`}
                     options={accounts}
                     value={line.accountId}
                     onChange={(value) => updateLine(line.key, { accountId: value ?? "" })}
@@ -224,6 +226,7 @@ export function JournalForm({
                 <Field label={index === 0 ? 'Side' : ''} htmlFor={`dir-${line.key}`}>
                   <Select
                     id={`dir-${line.key}`}
+                    aria-label={`Line ${index + 1} debit or credit`}
                     value={line.direction}
                     onChange={(e) => updateLine(line.key, { direction: e.target.value as Line['direction'] })}
                   >
@@ -237,6 +240,7 @@ export function JournalForm({
                 <Field label={index === 0 ? 'Amount' : ''} htmlFor={`amt-${line.key}`}>
                   <MoneyInput
                     id={`amt-${line.key}`}
+                    aria-label={`Line ${index + 1} amount`}
                     currency={currency}
                     value={line.amount}
                     onChange={(e) => updateLine(line.key, { amount: e.target.value })}

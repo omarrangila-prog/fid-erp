@@ -128,7 +128,12 @@ export function StockClient({
       emptyDescription="Receive an approved purchase contract into a warehouse to bring coffee into stock."
       toolbar={
         <div className="flex items-center gap-2">
-          <Select value={warehouse} onChange={(e) => setWarehouse(e.target.value)} className="h-10 w-auto min-w-44">
+          <Select
+            aria-label="Filter by warehouse"
+            value={warehouse}
+            onChange={(e) => setWarehouse(e.target.value)}
+            className="h-10 w-auto min-w-44"
+          >
             <option value="ALL">All warehouses</option>
             {warehouses.map((w) => (
               <option key={w.id} value={w.id}>

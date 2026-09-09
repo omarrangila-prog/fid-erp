@@ -51,7 +51,9 @@
   /* --- Text: charcoal ----------------------------------------------------- */
   --color-ink: #22201c;
   --color-ink-muted: #5c574e;
-  --color-ink-subtle: #8a8478;
+  /* 5.14:1 on white and 4.84:1 on paper — AA for normal text. The lighter
+     value this replaced measured 3.71 and failed. */
+  --color-ink-subtle: #736d61;
   --color-ink-inverse: #f7f5f0;
 
   /* --- Radii -------------------------------------------------------------- */

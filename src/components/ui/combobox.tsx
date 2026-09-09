@@ -29,6 +29,7 @@ export function Combobox({
   id,
   className,
   invalid,
+  'aria-label': ariaLabel,
 }: {
   options: ComboOption[];
   value: string | null;
@@ -40,6 +41,8 @@ export function Combobox({
   className?: string;
   /** Marks the control as failing validation. */
   invalid?: boolean;
+  /** Needed where the visible label appears only on the first row of a list. */
+  'aria-label'?: string;
 }) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState('');
@@ -66,6 +69,10 @@ export function Combobox({
       <Popover.Trigger asChild>
         <button
           id={id}
+          aria-label={ariaLabel}
+          role="combobox"
+          aria-expanded={open}
+          aria-haspopup="listbox"
           type="button"
           disabled={disabled}
           data-invalid={invalid ? 'true' : undefined}
@@ -98,7 +105,7 @@ export function Combobox({
             />
           </div>
 
-          <div className="max-h-64 overflow-y-auto p-1">
+          <div className="max-h-64 overflow-y-auto p-1" role="listbox" aria-label={ariaLabel ?? 'Options'}>
             {filtered.length === 0 ? (
               <p className="px-3 py-6 text-center text-xs text-ink-subtle">{emptyText}</p>
             ) : (
@@ -106,6 +113,8 @@ export function Combobox({
                 <button
                   key={option.value}
                   type="button"
+                  role="option"
+                  aria-selected={option.value === value}
                   disabled={option.disabled}
                   onClick={() => {
                     onChange(option.value === value ? null : option.value);

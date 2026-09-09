@@ -118,7 +118,7 @@ export default async function GettingStartedPage() {
                       <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-forest-800 text-white">
                         <Icon className="size-4" />
                       </span>
-                      <span className="tnum text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
+                      <span className="tnum text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">
                         Step {index + 1}
                       </span>
                     </div>

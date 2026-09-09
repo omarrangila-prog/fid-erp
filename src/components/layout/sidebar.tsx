@@ -79,7 +79,7 @@ export function SidebarNav({
                 onClick={() => toggleGroup(group.label)}
                 aria-expanded={!isClosed}
                 aria-controls={bodyId}
-                className="flex w-full items-center gap-1 rounded-md px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-forest-400 transition-colors hover:text-forest-200"
+                className="flex w-full items-center gap-1 rounded-md px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-forest-300 transition-colors hover:text-forest-100"
               >
                 <ChevronRight
                   className={cn('size-3 shrink-0 transition-transform', !isClosed && 'rotate-90')}
@@ -179,7 +179,7 @@ export function DesktopSidebar({
         {collapsed ? null : (
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-white">FID Trading</p>
-            <p className="truncate text-[10px] text-forest-400">Business Management</p>
+            <p className="truncate text-[11px] text-forest-300">Business Management</p>
           </div>
         )}
       </div>

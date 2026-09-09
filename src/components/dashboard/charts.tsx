@@ -123,11 +123,16 @@ export function AgeingChart({ data, tone = 'receivable' }: { data: AgeingPoint[]
       ? [EMERALD, SKY, AMBER, '#ea580c', RED]
       : [FOREST, FOREST_LIGHT, AMBER, '#ea580c', RED];
 
+  // Five buckets across a third of a row leaves no room for "31–60 Days", and
+  // the labels ran into each other. The unit is stated once in the card's own
+  // description, so the ticks only need the range.
+  const shaped = data.map((point) => ({ ...point, tick: point.label.replace(/\s*Days$/i, '') }));
+
   return (
     <ResponsiveContainer width="100%" height={200}>
-      <BarChart data={data} margin={{ top: 4, right: 8, left: -12, bottom: 0 }}>
+      <BarChart data={shaped} margin={{ top: 4, right: 8, left: -12, bottom: 0 }}>
         <CartesianGrid {...GRID} vertical={false} />
-        <XAxis dataKey="label" {...AXIS} tickLine={false} axisLine={false} interval={0} />
+        <XAxis dataKey="tick" {...AXIS} tickLine={false} axisLine={false} interval={0} minTickGap={0} />
         <YAxis {...AXIS} tickLine={false} axisLine={false} tickFormatter={money} width={52} />
         <Tooltip {...tooltipStyle} formatter={formatOutstanding} />
         <Bar dataKey="amount" radius={[4, 4, 0, 0]} maxBarSize={56}>

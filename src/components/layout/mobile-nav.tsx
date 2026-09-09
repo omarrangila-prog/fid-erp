@@ -34,7 +34,7 @@ export function MobileNav({ permissions, isSuperAdmin }: { permissions: string[]
                   href={item.href}
                   aria-current={active ? 'page' : undefined}
                   className={cn(
-                    'flex flex-col items-center gap-1 px-1 py-2.5 text-[10px] font-medium transition-colors',
+                    'flex flex-col items-center gap-1 px-1 py-2.5 text-[11px] font-medium transition-colors',
                     active ? 'text-gold-700' : 'text-ink-muted',
                   )}
                 >
@@ -48,7 +48,7 @@ export function MobileNav({ permissions, isSuperAdmin }: { permissions: string[]
             <button
               type="button"
               onClick={() => setOpen(true)}
-              className="flex w-full flex-col items-center gap-1 px-1 py-2.5 text-[10px] font-medium text-ink-muted"
+              className="flex w-full flex-col items-center gap-1 px-1 py-2.5 text-[11px] font-medium text-ink-muted"
             >
               <MoreHorizontal className="size-5" />
               <span>More</span>

@@ -19,7 +19,7 @@ export default async function LoginPage() {
           </div>
           <div>
             <p className="text-sm font-semibold">FID Trading</p>
-            <p className="text-xs text-forest-400">Coffee Trading Management</p>
+            <p className="text-xs text-forest-300">Coffee Trading Management</p>
           </div>
         </div>
 
@@ -40,13 +40,13 @@ export default async function LoginPage() {
             ].map(([term, detail]) => (
               <div key={term}>
                 <dt className="text-xs font-semibold text-gold-300">{term}</dt>
-                <dd className="mt-0.5 text-xs text-forest-400">{detail}</dd>
+                <dd className="mt-0.5 text-xs text-forest-300">{detail}</dd>
               </div>
             ))}
           </dl>
         </div>
 
-        <p className="text-[11px] text-forest-500">
+        <p className="text-[11px] text-forest-200">
           FID Trading L.L.C. · Dubai &nbsp;·&nbsp; FID Trading International SARL · Casablanca
         </p>
       </section>
