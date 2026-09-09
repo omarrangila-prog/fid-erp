@@ -74,7 +74,8 @@ test.describe('the loading sheet', () => {
 
   test('offers export and a compact density', async ({ page }) => {
     await page.goto('/loading');
-    await expect(page.getByRole('button', { name: 'Export', exact: true })).toBeVisible();
+    // A link, not a button: it downloads a workbook the server builds.
+    await expect(page.getByRole('link', { name: 'Excel', exact: true })).toBeVisible();
     await page.getByRole('button', { name: /compact rows|comfortable rows/i }).click();
     await expect(page.getByRole('table')).toBeVisible();
   });
