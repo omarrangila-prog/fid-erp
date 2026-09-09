@@ -123,6 +123,7 @@ export function StockClient({
       pageSize={50}
       searchValue={(r) => `${r.itemName} ${r.itemCode} ${r.origin} ${r.warehouse}`}
       searchPlaceholder="Search coffee or warehouse…"
+      exportHref={canExport ? '/api/export/stock-on-hand' : undefined}
       emptyAction={emptyAction}
       emptyTitle="No stock on hand"
       emptyDescription="Receive an approved purchase contract into a warehouse to bring coffee into stock."

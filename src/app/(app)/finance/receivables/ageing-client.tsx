@@ -40,6 +40,7 @@ export function AgeingClient({
   companyCode,
   reportName,
   canExport,
+  exportHref,
   showEta,
 }: {
   rows: AgeingRow[];
@@ -48,6 +49,8 @@ export function AgeingClient({
   companyCode: string;
   reportName: string;
   canExport: boolean;
+  /** The server route that builds the .xlsx for this list. */
+  exportHref?: string;
   showEta?: boolean;
 }) {
   const [bucket, setBucket] = React.useState('ALL');
@@ -134,6 +137,7 @@ export function AgeingClient({
       pageSize={50}
       searchValue={(r) => `${r.documentNumber} ${r.party} ${r.job ?? ''}`}
       searchPlaceholder={`Search ${documentLabel.toLowerCase()} or ${partyLabel.toLowerCase()}…`}
+      exportHref={canExport ? exportHref : undefined}
       emptyTitle="Nothing outstanding"
       emptyDescription="Everything has been settled."
       toolbar={

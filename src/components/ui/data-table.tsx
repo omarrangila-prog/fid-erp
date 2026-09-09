@@ -32,6 +32,8 @@ export type DataColumn<T> = {
    * exports as nothing useful, so a column that needs exporting must say how.
    */
   exportValue?: (row: T) => string | number | null | undefined;
+  /** Left off the printed sheet — an actions column, typically. */
+  printHidden?: boolean;
 };
 
 type SortState = { columnId: string; direction: 'asc' | 'desc' } | null;
@@ -59,6 +61,7 @@ export function DataTable<T>({
   showFooter = false,
   dense = false,
   exportFileName,
+  exportHref,
 }: {
   data: T[];
   columns: DataColumn<T>[];
@@ -79,6 +82,13 @@ export function DataTable<T>({
    * a list nobody would ever take to a spreadsheet should not offer to.
    */
   exportFileName?: string;
+  /**
+   * A server route that returns a real .xlsx. When present it replaces the
+   * CSV: a spreadsheet with column widths, number formats, a frozen header and
+   * working totals is worth far more to the client than comma-separated text,
+   * and only the server can assemble one.
+   */
+  exportHref?: string;
 }) {
   const [query, setQuery] = React.useState('');
   const [sort, setSort] = React.useState<SortState>(null);
@@ -158,12 +168,12 @@ export function DataTable<T>({
     URL.revokeObjectURL(url);
   }
 
-  const canExport = Boolean(exportFileName) && columns.some((column) => column.exportValue);
+  const canExport = Boolean(exportHref) || (Boolean(exportFileName) && columns.some((column) => column.exportValue));
 
   return (
     <div className="space-y-3">
       {(searchValue || toolbar || hideableColumns.length > 0) && (
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div data-table-toolbar className="flex flex-col gap-2 sm:flex-row sm:items-center">
           {searchValue ? (
             <div className="relative flex-1 sm:max-w-xs">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-subtle" />
@@ -187,10 +197,19 @@ export function DataTable<T>({
             {toolbar}
 
             {canExport ? (
-              <Button variant="outline" size="md" className="shrink-0" onClick={exportCsv}>
-                <Download />
-                <span className="hidden sm:inline">Export</span>
-              </Button>
+              exportHref ? (
+                <Button asChild variant="outline" size="md" className="shrink-0">
+                  <a href={exportHref} download>
+                    <Download />
+                    <span className="hidden sm:inline">Excel</span>
+                  </a>
+                </Button>
+              ) : (
+                <Button variant="outline" size="md" className="shrink-0" onClick={exportCsv}>
+                  <Download />
+                  <span className="hidden sm:inline">Export</span>
+                </Button>
+              )
             ) : null}
 
             <Button
@@ -253,12 +272,17 @@ export function DataTable<T>({
       ) : (
         <>
           {/* Desktop and tablet: a real table. */}
-          <TableWrap className="hidden md:block">
+          <TableWrap data-wide-sheet className="hidden md:block print:!block">
             <Table>
               <THead className="sticky-head">
                 <TR className="hover:bg-transparent">
                   {visibleColumns.map((column) => (
-                    <TH key={column.id} numeric={column.numeric} className={column.className}>
+                    <TH
+                      key={column.id}
+                      numeric={column.numeric}
+                      className={column.className}
+                      data-print={column.printHidden ? 'hide' : undefined}
+                    >
                       {column.sortValue ? (
                         <button
                           type="button"
@@ -292,7 +316,12 @@ export function DataTable<T>({
                   return (
                     <TR key={getRowId(row)} className={cn(href && 'cursor-pointer', compact && '[&>td]:py-1.5')}>
                       {visibleColumns.map((column, index) => (
-                        <TD key={column.id} numeric={column.numeric} className={column.className}>
+                        <TD
+                          key={column.id}
+                          numeric={column.numeric}
+                          className={column.className}
+                          data-print={column.printHidden ? 'hide' : undefined}
+                        >
                           {href && index === 0 ? (
                             <Link href={href} className="block font-medium text-forest-800 hover:text-gold-700">
                               {column.cell(row)}
@@ -314,7 +343,7 @@ export function DataTable<T>({
                 <TFoot>
                   <tr>
                     {visibleColumns.map((column) => (
-                      <TD key={column.id} numeric={column.numeric}>
+                      <TD key={column.id} numeric={column.numeric} data-print={column.printHidden ? 'hide' : undefined}>
                         {column.footer ?? null}
                       </TD>
                     ))}
@@ -325,7 +354,7 @@ export function DataTable<T>({
           </TableWrap>
 
           {/* Mobile: cards built from the tagged columns. */}
-          <div className="space-y-2 md:hidden">
+          <div data-print="hide" className="space-y-2 md:hidden">
             {pageRows.map((row) => {
               const href = rowHref?.(row);
               const title = columns.find((c) => c.mobile === 'title');
@@ -371,7 +400,7 @@ export function DataTable<T>({
           </div>
 
           {pageCount > 1 ? (
-            <div className="flex items-center justify-between gap-3 text-xs text-ink-muted">
+            <div data-table-pagination className="flex items-center justify-between gap-3 text-xs text-ink-muted">
               <p>
                 Showing <span className="tnum font-medium text-ink">{safePage * pageSize + 1}</span>–
                 <span className="tnum font-medium text-ink">

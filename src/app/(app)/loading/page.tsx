@@ -5,6 +5,7 @@ import { getLoadingSheet } from '@/lib/services/loading-sheet';
 import { formatQuantityKg, formatDate, formatMoney } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrintButton } from '@/components/shared/print-button';
+import { PrintHeader } from '@/components/shared/print-header';
 import { Callout } from '@/components/ui/feedback';
 import { LoadingSheet, type LoadingRow } from '@/app/(app)/loading/loading-sheet';
 
@@ -66,8 +67,19 @@ export default async function LoadingPage() {
     })),
   }));
 
+  const soldRows = sheet.filter((row) => row.saleStatus !== 'UNSOLD').length;
+
   return (
-    <div className="space-y-6">
+    // Landscape: fifteen columns do not fit portrait, and shrinking them until
+    // they do makes the sheet unreadable.
+    <div className="print-landscape space-y-6">
+      <PrintHeader
+        title="Loading / Contract Follow-Up"
+        companyName={user.activeCompany.name}
+        country={user.activeCompany.country}
+        period={`${rows.length} container${rows.length === 1 ? '' : 's'} · ${soldRows} sold or part sold`}
+      />
+
       <PageHeader
         title="Loading Follow-Up"
         description={

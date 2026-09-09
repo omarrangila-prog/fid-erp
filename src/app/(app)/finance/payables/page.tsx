@@ -61,6 +61,7 @@ export default async function PayablesPage() {
       </div>
 
       <AgeingClient
+        exportHref="/api/export/payables"
         rows={rows}
         partyLabel="Supplier"
         documentLabel="Contract"

@@ -245,6 +245,8 @@ export function LoadingSheet({
   const allocationsColumn: DataColumn<LoadingRow> = {
     id: 'allocations',
     header: '',
+    // A column of buttons has no meaning on a printed sheet.
+    printHidden: true,
     cell: (r) =>
       r.allocations.length > 0 ? (
         <Button size="sm" variant="outline" onClick={() => setViewing(r)}>
@@ -380,7 +382,7 @@ export function LoadingSheet({
         getRowId={(r) => r.id}
         dense
         pageSize={50}
-        exportFileName={canExport ? 'loading-sheet' : undefined}
+        exportHref={canExport ? '/api/export/loading-sheet' : undefined}
         searchValue={(r) =>
           [
             r.contractReference, r.contractNumber, r.exporter, r.consignee, r.itemName,

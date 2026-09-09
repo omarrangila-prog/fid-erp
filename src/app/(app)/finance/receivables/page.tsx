@@ -61,6 +61,7 @@ export default async function ReceivablesPage() {
       </div>
 
       <AgeingClient
+        exportHref="/api/export/receivables"
         rows={rows}
         partyLabel="Customer"
         documentLabel="Invoice"

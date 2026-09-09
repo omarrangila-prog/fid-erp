@@ -435,8 +435,18 @@
  */
 @media print {
   @page {
-    margin: 14mm 12mm;
+    margin: 12mm 10mm;
     size: A4;
+  }
+
+  /* A fifteen-column follow-up sheet does not fit portrait, and shrinking it
+     until it does makes it unreadable. */
+  @page landscape {
+    size: A4 landscape;
+  }
+
+  .print-landscape {
+    page: landscape;
   }
 
   html {
@@ -463,6 +473,85 @@
   .no-print {
     display: none !important;
   }
+
+  /*
+   * Anything a person clicks is dead on paper.
+   *
+   * A printed sheet carrying a search box, an Export button and a column
+   * picker looks like a screenshot of software rather than a document, and the
+   * client sends these to suppliers and to his bank. The sort arrows go for
+   * the same reason: there is nothing to sort.
+   */
+  [data-table-toolbar],
+  [data-table-pagination],
+  [data-print-drop] {
+    display: none !important;
+  }
+
+  table button svg,
+  th button svg {
+    display: none !important;
+  }
+
+  /* The header keeps its shape without the button wrapper's own styling. */
+  th button {
+    font: inherit !important;
+    text-transform: inherit !important;
+    letter-spacing: inherit !important;
+    color: inherit !important;
+    pointer-events: none;
+  }
+
+  /* An explanation is for somebody learning the screen, not for the record. */
+  [data-callout] {
+    display: none !important;
+  }
+
+  /*
+   * A follow-up sheet is fifteen columns wide and has to fit the paper.
+   * Landscape, edge to edge, with the scroll container released — a table
+   * inside `overflow-x: auto` prints clipped at the viewport edge, which is
+   * exactly what was happening: half the columns simply were not on the page.
+   */
+  [data-wide-sheet] {
+    overflow: visible !important;
+  }
+
+  [data-wide-sheet] table {
+    width: 100% !important;
+    table-layout: auto;
+    font-size: 7.5pt;
+  }
+
+  [data-wide-sheet] th,
+  [data-wide-sheet] td {
+    padding: 3pt 4pt !important;
+    white-space: normal !important;
+  }
+
+  /*
+   * Cells set their own minimum widths and stop their text wrapping so the
+   * screen reads well while scrolling sideways. On paper there is no sideways:
+   * whatever those add up to is simply wider than the sheet, and the columns
+   * past the edge are not printed at all. Released here, and only here.
+   */
+  [data-wide-sheet] th *,
+  [data-wide-sheet] td * {
+    min-width: 0 !important;
+    max-width: none !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+  }
+
+  /*
+   * Action columns are hidden by the column declaring `printHidden`, not by a
+   * rule that looks for a button. The first attempt matched any cell
+   * containing one, which included a consignee rendered as "2 customers" — so
+   * that row lost a cell and every value after it shifted a column left,
+   * silently, on the printed sheet. A heuristic that can misalign a row is not
+   * worth the convenience.
+   */
 
   main {
     padding: 0 !important;

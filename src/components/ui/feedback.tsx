@@ -93,7 +93,7 @@ export function Callout({
   } as const;
 
   return (
-    <div className={cn('rounded-lg border px-4 py-3 text-xs leading-relaxed', tones[tone])}>
+    <div data-callout className={cn('rounded-lg border px-4 py-3 text-xs leading-relaxed', tones[tone])}>
       {title ? <p className="mb-0.5 font-semibold">{title}</p> : null}
       {children}
     </div>

@@ -21,7 +21,7 @@ export function PageHeader({
   className?: string;
 }) {
   return (
-    <header className={cn('space-y-3', className)}>
+    <header data-print="hide" className={cn('space-y-3', className)}>
       {breadcrumbs && breadcrumbs.length > 0 ? (
         <nav aria-label="Breadcrumb">
           <ol className="flex flex-wrap items-center gap-1 text-xs text-ink-muted">
