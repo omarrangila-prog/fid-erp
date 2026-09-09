@@ -48,15 +48,15 @@ async function sha256(file: string): Promise<string> {
  * none at all.
  */
 async function prune(): Promise<number> {
-  const entries = await readdir(BACKUP_DIR).catch(() => [] as string[]);
+  const entries = await readdir(/* turbopackIgnore: true */ BACKUP_DIR).catch(() => [] as string[]);
   const dumps = entries.filter((name) => name.endsWith('.sql'));
   if (dumps.length <= 1) return 0;
 
   const cutoff = Date.now() - RETAIN_DAILY * 86_400_000;
   const withTimes = await Promise.all(
     dumps.map(async (name) => {
-      const full = path.join(BACKUP_DIR, name);
-      const info = await stat(full);
+      const full = path.join(/* turbopackIgnore: true */ BACKUP_DIR, name);
+      const info = await stat(/* turbopackIgnore: true */ full);
       return { full, time: info.mtimeMs };
     }),
   );

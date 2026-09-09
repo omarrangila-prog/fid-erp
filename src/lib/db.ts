@@ -81,11 +81,37 @@ function createPrismaClient(): PrismaClient {
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-export const prisma: PrismaClient = globalForPrisma.prisma ?? createPrismaClient();
-
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma;
+function client(): PrismaClient {
+  if (!globalForPrisma.prisma) {
+    globalForPrisma.prisma = createPrismaClient();
+  }
+  return globalForPrisma.prisma;
 }
+
+/**
+ * The client is built on first use, not on import.
+ *
+ * Next's build collects page data by importing every route in a process that
+ * has no environment variables, so constructing the client at module scope
+ * threw "DATABASE_URL is not set" and failed the build for routes that would
+ * never run at build time. Deferring it means importing this module is free,
+ * and the error still surfaces — loudly, and at the first query — if the
+ * variable really is missing when the application runs.
+ *
+ * The instance is cached on globalThis so a development hot reload reuses one
+ * pool instead of exhausting Postgres with a new one per module evaluation.
+ */
+export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
+  get(_target, property, receiver) {
+    return Reflect.get(client(), property, receiver);
+  },
+  set(_target, property, value, receiver) {
+    return Reflect.set(client(), property, value, receiver);
+  },
+  has(_target, property) {
+    return Reflect.has(client(), property);
+  },
+});
 
 /**
  * The transaction client type. Every domain service accepts this so that a
