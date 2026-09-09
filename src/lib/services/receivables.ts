@@ -139,7 +139,11 @@ export async function getReceivables(params: {
     };
   });
 
-  return params.onlyOutstanding ? shaped.filter((r) => r.outstandingAmount.greaterThan(0)) : shaped;
+  // Non-zero, not positive. A customer who has been credited more than they
+  // still owe carries a credit balance — money the business owes them — and
+  // dropping it here hid a real balance from the report while the control
+  // account kept it, which the reconciliation then reported as a break.
+  return params.onlyOutstanding ? shaped.filter((r) => !r.outstandingAmount.isZero()) : shaped;
 }
 
 export type PayableRow = {
@@ -243,7 +247,9 @@ export async function getPayables(params: {
     };
   });
 
-  return params.onlyOutstanding ? shaped.filter((r) => r.outstandingAmount.greaterThan(0)) : shaped;
+  // Non-zero, for the same reason as receivables: a supplier over-credited
+  // is a debit balance the business is owed, and it belongs on the report.
+  return params.onlyOutstanding ? shaped.filter((r) => !r.outstandingAmount.isZero()) : shaped;
 }
 
 /** Totals by ageing bucket, in USD — used by the dashboard charts. */

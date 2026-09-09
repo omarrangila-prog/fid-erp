@@ -401,7 +401,13 @@ export async function getFinancialPosition(params: { companyId: string; asOf?: D
                   GROUP BY pa."purchaseContractId"
                 ) settled ON settled."contractId" = pc."id"
                WHERE pc."companyId" = ${params.companyId} AND pc."status" = 'POSTED'), 0)::text AS "payableUsd",
-      COALESCE((SELECT SUM(b."availableQuantityKg" * b."landedUnitCostUsd") FROM batches b
+      -- On hand, not available. Reserving stock against a draft invoice does
+      -- not remove it from the balance sheet: the coffee is still owned, still
+      -- in the warehouse, and still an asset until it is actually sold. Valuing
+      -- availableQuantityKg understated inventory by the whole of whatever
+      -- was reserved, and the reconciliation report reported it, correctly, as
+      -- the asset account disagreeing with the valued stock.
+      COALESCE((SELECT SUM((b."availableQuantityKg" + b."allocatedQuantityKg") * b."landedUnitCostUsd") FROM batches b
                  WHERE b."companyId" = ${params.companyId} AND b."status" = 'ACTIVE'), 0)::text AS "inventoryUsd",
       COALESCE((SELECT SUM(b."inTransitQuantityKg" * b."landedUnitCostUsd") FROM batches b
                  WHERE b."companyId" = ${params.companyId} AND b."status" = 'ACTIVE'), 0)::text AS "inTransitUsd",

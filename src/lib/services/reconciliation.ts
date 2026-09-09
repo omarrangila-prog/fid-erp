@@ -198,10 +198,16 @@ export async function reconcile(companyId: string): Promise<ReconciliationResult
   );
 
   // --- Inventory ----------------------------------------------------------
+  // Reservations are excluded, exactly as computeWarehouseBalance excludes
+  // them. A reservation ring-fences stock for a draft invoice; it does not move
+  // a kilogram, and counting it here made the check fail the moment anyone left
+  // a sales invoice unposted — which is to say, constantly.
   const movementRows = await prisma.$queryRaw<Array<{ batchId: string; warehouseId: string; kg: string }>>`
     SELECT "batchId", "warehouseId", SUM("quantityKg")::text AS kg
     FROM inventory_transactions
-    WHERE "companyId" = ${companyId} AND "warehouseId" IS NOT NULL
+    WHERE "companyId" = ${companyId}
+      AND "warehouseId" IS NOT NULL
+      AND "transactionType" NOT IN ('RESERVATION', 'RESERVATION_RELEASE')
     GROUP BY "batchId", "warehouseId"`;
   const balances = await prisma.inventoryBalance.findMany({ where: { companyId } });
 
@@ -222,13 +228,20 @@ export async function reconcile(companyId: string): Promise<ReconciliationResult
     passed: ledgerDrift === 0,
   });
 
-  const batches = await prisma.batch.findMany({ where: { companyId }, select: { id: true, availableQuantityKg: true } });
+  const batches = await prisma.batch.findMany({
+    where: { companyId },
+    select: { id: true, availableQuantityKg: true, allocatedQuantityKg: true },
+  });
   let cacheDrift = 0;
   for (const batch of batches) {
     const total = balances
       .filter((b) => b.batchId === batch.id)
       .reduce((sum, b) => sum.plus(b.onHandKg), new Decimal(0));
-    if (total.minus(batch.availableQuantityKg).abs().greaterThan('0.001')) cacheDrift += 1;
+    // The warehouse rows hold what is physically on hand; the batch record
+    // holds what is *available*, which is on hand less what a draft invoice has
+    // reserved. Comparing the two directly reported every reservation as drift.
+    const batchOnHand = dec(batch.availableQuantityKg).plus(batch.allocatedQuantityKg);
+    if (total.minus(batchOnHand).abs().greaterThan('0.001')) cacheDrift += 1;
   }
   checks.push({
     id: 'batch-cache',

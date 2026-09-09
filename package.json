@@ -22,7 +22,8 @@
     "e2e": "playwright test",
     "e2e:shots": "playwright test tests/e2e/screenshots.spec.ts",
     "postinstall": "prisma generate",
-    "db:inspect": "tsx scripts/inspect-data.ts"
+    "db:inspect": "tsx scripts/inspect-data.ts",
+    "db:demo": "tsx scripts/demo-data.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
