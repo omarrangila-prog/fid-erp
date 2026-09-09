@@ -38,7 +38,10 @@ export function SidebarNav({
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
-  const [closedGroups, setClosedGroups] = React.useState<ReadonlySet<string>>(() => new Set<string>());
+  // Groups behave as dropdowns: shut until asked for. The section you are
+  // working in opens itself, so the rail shows where you are without
+  // presenting forty links at once.
+  const [openedGroups, setOpenedGroups] = React.useState<ReadonlySet<string>>(() => new Set<string>());
 
   const groups = React.useMemo(
     () => filterNav(NAV_GROUPS, permissions, isSuperAdmin),
@@ -54,7 +57,7 @@ export function SidebarNav({
   }, [groups, pathname]);
 
   function toggleGroup(label: string) {
-    setClosedGroups((current) => {
+    setOpenedGroups((current) => {
       const next = new Set(current);
       if (next.has(label)) next.delete(label);
       else next.add(label);
@@ -66,8 +69,11 @@ export function SidebarNav({
     <nav className={cn('flex flex-col gap-1 py-4', collapsed ? 'px-2' : 'px-3')} aria-label="Main">
       {groups.map((group) => {
         const holdsActive = group.items.some((item) => item.href === activeHref);
-        const isClosed = !collapsed && closedGroups.has(group.label) && !holdsActive;
+        // The group you are inside is always open; the rail is all icons when
+        // collapsed, so grouping does not apply there.
+        const isOpen = collapsed || holdsActive || openedGroups.has(group.label);
         const bodyId = `nav-group-${group.label.replace(/\s+/g, '-').toLowerCase()}`;
+        const count = group.items.length;
 
         return (
           <div key={group.label} className="pb-2">
@@ -77,19 +83,27 @@ export function SidebarNav({
               <button
                 type="button"
                 onClick={() => toggleGroup(group.label)}
-                aria-expanded={!isClosed}
+                aria-expanded={isOpen}
                 aria-controls={bodyId}
-                className="flex w-full items-center gap-1 rounded-md px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-subtle transition-colors hover:text-ink"
+                className={cn(
+                  'flex w-full items-center gap-1.5 rounded-md px-2.5 py-2 text-xs font-semibold transition-colors',
+                  holdsActive ? 'text-forest-800' : 'text-ink-muted hover:bg-forest-50/70 hover:text-ink',
+                )}
               >
                 <ChevronRight
-                  className={cn('size-3 shrink-0 transition-transform', !isClosed && 'rotate-90')}
+                  className={cn('size-3.5 shrink-0 transition-transform', isOpen && 'rotate-90')}
                   aria-hidden
                 />
-                <span className="truncate">{group.label}</span>
+                <span className="flex-1 truncate text-left">{group.label}</span>
+                {!isOpen ? (
+                  <span className="tnum rounded-full bg-surface-sunken px-1.5 text-[11px] font-medium text-ink-subtle">
+                    {count}
+                  </span>
+                ) : null}
               </button>
             )}
 
-            <ul id={bodyId} className={cn('space-y-0.5', isClosed && 'hidden')}>
+            <ul id={bodyId} className={cn('space-y-0.5', !isOpen && 'hidden')}>
               {group.items.map((item) => {
                 const active = item.href === activeHref;
                 const Icon = item.icon;
@@ -102,7 +116,7 @@ export function SidebarNav({
                       title={collapsed ? item.label : undefined}
                       className={cn(
                         'group/nav relative flex items-center rounded-lg py-2 text-sm transition-colors',
-                        collapsed ? 'justify-center px-2' : 'gap-2.5 pl-3 pr-3',
+                        collapsed ? 'justify-center px-2' : 'gap-2.5 pl-5 pr-3',
                         active
                           ? 'bg-forest-50 font-medium text-forest-800'
                           : 'text-ink-muted hover:bg-forest-50/70 hover:text-ink',

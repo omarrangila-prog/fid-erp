@@ -102,5 +102,6 @@ test('a stock figure on the dashboard matches the inventory report', async ({ pa
 test('a page the user may not open redirects rather than erroring', async ({ page }) => {
   await signInToDubai(page);
   await page.goto('/unauthorized?permission=test.permission');
-  await expect(page.getByText(/permission/i).first()).toBeVisible();
+  // Scoped to the page body: the navigation also contains the word.
+  await expect(page.locator('main').getByText(/permission/i).first()).toBeVisible();
 });
