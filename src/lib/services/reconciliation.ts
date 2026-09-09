@@ -2,7 +2,7 @@ import { prisma } from '@/lib/db';
 import { Decimal, dec, toMoney } from '@/lib/money';
 import { getTrialBalanceReport, getBalanceSheet, getFinancialPosition } from '@/lib/services/reports';
 import { getCompanyProfitSummary } from '@/lib/services/profitability';
-import { getReceivables, getPayables } from '@/lib/services/receivables';
+import { getReceivables, getPayables, getUnappliedCredits } from '@/lib/services/receivables';
 
 /**
  * Does the ledger agree with the operational records?
@@ -130,11 +130,13 @@ export async function reconcile(companyId: string): Promise<ReconciliationResult
   });
 
   // --- Sub-ledgers --------------------------------------------------------
+  // A credit raised without naming an invoice cannot be netted against one, so
+  // it is subtracted from the sub-ledger total instead.
+  const unapplied = await getUnappliedCredits(companyId);
   const arControl = await controlAccountBalance(companyId, 'ACCOUNTS_RECEIVABLE', 'debit');
-  const arSub = (await getReceivables({ companyId, onlyOutstanding: true })).reduce(
-    (total, row) => total.plus(row.outstandingAmountUsd),
-    new Decimal(0),
-  );
+  const arSub = (await getReceivables({ companyId, onlyOutstanding: true }))
+    .reduce((total, row) => total.plus(row.outstandingAmountUsd), new Decimal(0))
+    .minus(unapplied.customerUsd);
   checks.push(
     build(
       'receivables',
@@ -143,16 +145,15 @@ export async function reconcile(companyId: string): Promise<ReconciliationResult
       'The sum of what customers owe must equal the Accounts Receivable control account.',
       'AR control account',
       arControl,
-      'Customer outstanding',
+      'Customer outstanding, less unapplied credits',
       arSub,
     ),
   );
 
   const apControl = await controlAccountBalance(companyId, 'ACCOUNTS_PAYABLE', 'credit');
-  const apSub = (await getPayables({ companyId, onlyOutstanding: true })).reduce(
-    (total, row) => total.plus(row.outstandingAmountUsd),
-    new Decimal(0),
-  );
+  const apSub = (await getPayables({ companyId, onlyOutstanding: true }))
+    .reduce((total, row) => total.plus(row.outstandingAmountUsd), new Decimal(0))
+    .minus(unapplied.vendorUsd);
   checks.push(
     build(
       'payables',
@@ -161,7 +162,7 @@ export async function reconcile(companyId: string): Promise<ReconciliationResult
       'The sum of what we owe suppliers must equal the Accounts Payable control account.',
       'AP control account',
       apControl,
-      'Supplier outstanding',
+      'Supplier outstanding, less unapplied credits',
       apSub,
     ),
   );

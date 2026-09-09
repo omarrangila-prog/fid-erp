@@ -171,14 +171,22 @@ export async function getShipmentProfitabilityById(
 export async function getCompanyProfitSummary(params: { companyId: string; from?: Date; to?: Date }) {
   const rows = await prisma.$queryRaw<Array<{ revenue: string; cogs: string; expenses: string; soldKg: string }>>`
     SELECT
-      COALESCE((SELECT SUM(si."totalAmountUsd") FROM sales_invoices si
+      (COALESCE((SELECT SUM(si."totalAmountUsd") FROM sales_invoices si
                  WHERE si."companyId" = ${params.companyId} AND si."status" = 'POSTED'
                    AND (${params.from ?? null}::date IS NULL OR si."invoiceDate" >= ${params.from ?? null}::date)
-                   AND (${params.to ?? null}::date IS NULL OR si."invoiceDate" <= ${params.to ?? null}::date)), 0)::text AS revenue,
-      COALESCE((SELECT SUM(si."costOfGoodsUsd") FROM sales_invoices si
+                   AND (${params.to ?? null}::date IS NULL OR si."invoiceDate" <= ${params.to ?? null}::date)), 0)
+      - COALESCE((SELECT SUM(cn."totalAmountUsd") FROM credit_notes cn
+                 WHERE cn."companyId" = ${params.companyId} AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'
+                   AND (${params.from ?? null}::date IS NULL OR cn."creditDate" >= ${params.from ?? null}::date)
+                   AND (${params.to ?? null}::date IS NULL OR cn."creditDate" <= ${params.to ?? null}::date)), 0))::text AS revenue,
+      (COALESCE((SELECT SUM(si."costOfGoodsUsd") FROM sales_invoices si
                  WHERE si."companyId" = ${params.companyId} AND si."status" = 'POSTED'
                    AND (${params.from ?? null}::date IS NULL OR si."invoiceDate" >= ${params.from ?? null}::date)
-                   AND (${params.to ?? null}::date IS NULL OR si."invoiceDate" <= ${params.to ?? null}::date)), 0)::text AS cogs,
+                   AND (${params.to ?? null}::date IS NULL OR si."invoiceDate" <= ${params.to ?? null}::date)), 0)
+      - COALESCE((SELECT SUM(cn."costOfGoodsUsd") FROM credit_notes cn
+                 WHERE cn."companyId" = ${params.companyId} AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'
+                   AND (${params.from ?? null}::date IS NULL OR cn."creditDate" >= ${params.from ?? null}::date)
+                   AND (${params.to ?? null}::date IS NULL OR cn."creditDate" <= ${params.to ?? null}::date)), 0))::text AS cogs,
       COALESCE((SELECT SUM(e."amountUsd") FROM expenses e
                  WHERE e."companyId" = ${params.companyId} AND e."status" = 'POSTED'
                    AND e."capitaliseToLandedCost" = false

@@ -381,6 +381,61 @@ export async function postPayment(params: { id: string; companyId: string; userI
       partyLabel: payment.vendor.vendorName,
     });
 
+    const allocatedInLedger = payment.allocations.reduce(
+      (total, allocation) => total.plus(allocation.amountUsd),
+      new Decimal(0),
+    );
+    const paymentUsd = dec(payment.amountUsd);
+    const unallocatedUsd = toMoney(paymentUsd.minus(allocatedInLedger));
+    const hasAdvance = unallocatedUsd.greaterThan('0.005');
+
+    const settledPortion = paymentUsd.isZero()
+      ? new Decimal(0)
+      : dec(ap.amount).times(allocatedInLedger).dividedBy(paymentUsd);
+    const advancePortion = dec(ap.amount).minus(settledPortion);
+
+    const debitLines = hasAdvance
+      ? [
+          ...(settledPortion.greaterThan('0.005')
+            ? [
+                {
+                  accountKey: ACCOUNT_KEYS.ACCOUNTS_PAYABLE,
+                  direction: 'DEBIT' as const,
+                  currency: ap.currency,
+                  amount: toMoney(settledPortion),
+                  rateToUsd: ap.rateToUsd,
+                  description: `Settlement to ${payment.vendor.vendorName}`,
+                  vendorId: payment.vendorId,
+                  shipmentId: payment.shipmentId,
+                  purchaseContractId: payment.allocations[0]?.purchaseContractId ?? null,
+                },
+              ]
+            : []),
+          {
+            accountKey: ACCOUNT_KEYS.SUPPLIER_ADVANCES,
+            direction: 'DEBIT' as const,
+            currency: ap.currency,
+            amount: toMoney(advancePortion),
+            rateToUsd: ap.rateToUsd,
+            description: `Advance to ${payment.vendor.vendorName}, not yet applied to a contract`,
+            vendorId: payment.vendorId,
+            shipmentId: payment.shipmentId,
+          },
+        ]
+      : [
+          {
+            accountKey: ACCOUNT_KEYS.ACCOUNTS_PAYABLE,
+            direction: 'DEBIT' as const,
+            currency: ap.currency,
+            amount: ap.amount,
+            rateToUsd: ap.rateToUsd,
+            description: `Settlement to ${payment.vendor.vendorName}`,
+            vendorId: payment.vendorId,
+            shipmentId: payment.shipmentId,
+            purchaseContractId: payment.allocations[0]?.purchaseContractId ?? null,
+          },
+        ];
+
     await postJournalEntry(tx, {
       companyId: params.companyId,
       entryDate: payment.paymentDate,
@@ -391,17 +446,9 @@ export async function postPayment(params: { id: string; companyId: string; userI
       localCurrency: company.localCurrency,
       rateLocalPerUsd: payment.rateLocalPerUsd,
       lines: [
-        {
-          accountKey: ACCOUNT_KEYS.ACCOUNTS_PAYABLE,
-          direction: 'DEBIT',
-          currency: ap.currency,
-          amount: ap.amount,
-          rateToUsd: ap.rateToUsd,
-          description: `Settlement to ${payment.vendor.vendorName}`,
-          vendorId: payment.vendorId,
-          shipmentId: payment.shipmentId,
-          purchaseContractId: payment.allocations[0]?.purchaseContractId ?? null,
-        },
+        // Anything not put against a contract is an advance the supplier owes
+        // back in goods, so it is an asset rather than a reduction of payables.
+        ...debitLines,
         payment.paymentMethod === 'CHEQUE'
           ? {
               accountKey: ACCOUNT_KEYS.CHEQUES_ISSUED,

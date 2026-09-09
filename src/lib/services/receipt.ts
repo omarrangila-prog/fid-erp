@@ -438,6 +438,64 @@ export async function postReceipt(params: { id: string; companyId: string; userI
       partyLabel: receipt.customer.customerName,
     });
 
+    // Money that has not been put against an invoice is not a settlement — it
+    // is an advance the company owes the customer until it is allocated. Left
+    // on Accounts Receivable it would show as a negative debtor, which is both
+    // wrong on the balance sheet and invisible as a liability.
+    const allocatedInLedger = receipt.allocations.reduce(
+      (total, allocation) => total.plus(allocation.amountUsd),
+      new Decimal(0),
+    );
+    const receiptUsd = dec(receipt.amountUsd);
+    const unallocatedUsd = toMoney(receiptUsd.minus(allocatedInLedger));
+    const hasAdvance = unallocatedUsd.greaterThan('0.005');
+
+    // Split the credit in the customer's own currency, in the same proportion.
+    const settledPortion = receiptUsd.isZero()
+      ? new Decimal(0)
+      : dec(ar.amount).times(allocatedInLedger).dividedBy(receiptUsd);
+    const advancePortion = dec(ar.amount).minus(settledPortion);
+
+    const creditLines = hasAdvance
+      ? [
+          ...(settledPortion.greaterThan('0.005')
+            ? [
+                {
+                  accountKey: ACCOUNT_KEYS.ACCOUNTS_RECEIVABLE,
+                  direction: 'CREDIT' as const,
+                  currency: ar.currency,
+                  amount: toMoney(settledPortion),
+                  rateToUsd: ar.rateToUsd,
+                  description: `Settlement from ${receipt.customer.customerName}`,
+                  customerId: receipt.customerId,
+                  shipmentId: receipt.shipmentId,
+                },
+              ]
+            : []),
+          {
+            accountKey: ACCOUNT_KEYS.CUSTOMER_ADVANCES,
+            direction: 'CREDIT' as const,
+            currency: ar.currency,
+            amount: toMoney(advancePortion),
+            rateToUsd: ar.rateToUsd,
+            description: `Advance from ${receipt.customer.customerName}, not yet applied to an invoice`,
+            customerId: receipt.customerId,
+            shipmentId: receipt.shipmentId,
+          },
+        ]
+      : [
+          {
+            accountKey: ACCOUNT_KEYS.ACCOUNTS_RECEIVABLE,
+            direction: 'CREDIT' as const,
+            currency: ar.currency,
+            amount: ar.amount,
+            rateToUsd: ar.rateToUsd,
+            description: `Settlement from ${receipt.customer.customerName}`,
+            customerId: receipt.customerId,
+            shipmentId: receipt.shipmentId,
+          },
+        ];
+
     await postJournalEntry(tx, {
       companyId: params.companyId,
       entryDate: receipt.receiptDate,
@@ -469,16 +527,7 @@ export async function postReceipt(params: { id: string; companyId: string; userI
               customerId: receipt.customerId,
               shipmentId: receipt.shipmentId,
             },
-        {
-          accountKey: ACCOUNT_KEYS.ACCOUNTS_RECEIVABLE,
-          direction: 'CREDIT',
-          currency: ar.currency,
-          amount: ar.amount,
-          rateToUsd: ar.rateToUsd,
-          description: `Settlement from ${receipt.customer.customerName}`,
-          customerId: receipt.customerId,
-          shipmentId: receipt.shipmentId,
-        },
+        ...creditLines,
       ],
     });
 

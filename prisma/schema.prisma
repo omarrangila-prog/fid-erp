@@ -13,7 +13,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-
 }
 
 // ---------------------------------------------------------------------------
@@ -178,7 +177,42 @@ enum JournalSourceType {
   LANDED_COST
   OPENING_BALANCE
   INVENTORY_ADJUSTMENT
+  CREDIT_NOTE
+  STOCK_COUNT
   MANUAL
+}
+
+/// A credit note runs either way: to a customer, or from a supplier.
+enum CreditNoteType {
+  CUSTOMER
+  VENDOR
+}
+
+/// Why stock was written up or down, recorded on every adjustment.
+enum StockAdjustmentReason {
+  DAMAGE
+  LOSS
+  COUNT_ADJUSTMENT
+  CORRECTION
+  OTHER
+}
+
+enum StockCountStatus {
+  DRAFT
+  COUNTED
+  POSTED
+  CANCELLED
+}
+
+enum BackupStatus {
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+enum BackupTrigger {
+  MANUAL
+  SCHEDULED
 }
 
 // ---------------------------------------------------------------------------
@@ -233,6 +267,10 @@ model Company {
   numberSequences     NumberSequence[]
   exchangeRates       ExchangeRate[]
   sessionsActiveHere  Session[]
+  creditNotes         CreditNote[]
+  stockCounts         StockCount[]
+  bankReconciliations BankReconciliation[]
+  backupRuns          BackupRun[]
   defaultForUsers     User[]                 @relation("UserDefaultCompany")
 
   @@index([status])
@@ -240,16 +278,16 @@ model Company {
 }
 
 model User {
-  id               String       @id @default(cuid())
-  email            String       @unique
+  id               String    @id @default(cuid())
+  email            String    @unique
   name             String
   passwordHash     String
-  isActive         Boolean      @default(true)
-  isSuperAdmin     Boolean      @default(false)
+  isActive         Boolean   @default(true)
+  isSuperAdmin     Boolean   @default(false)
   defaultCompanyId String?
   lastLoginAt      DateTime?
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   defaultCompany Company?      @relation("UserDefaultCompany", fields: [defaultCompanyId], references: [id], onDelete: SetNull)
   roles          UserRole[]
@@ -257,42 +295,49 @@ model User {
   sessions       Session[]
   auditLogs      AuditLog[]
 
-  createdContracts     PurchaseContract[]     @relation("ContractCreatedBy")
-  postedContracts      PurchaseContract[]     @relation("ContractPostedBy")
-  createdShipments     Shipment[]             @relation("ShipmentCreatedBy")
-  updatedShipments     Shipment[]             @relation("ShipmentUpdatedBy")
-  shipmentStatusLogs   ShipmentStatusHistory[]
-  shipmentDocLogs      ShipmentDocumentStatusHistory[]
-  createdInvoices      SalesInvoice[]         @relation("InvoiceCreatedBy")
-  postedInvoices       SalesInvoice[]         @relation("InvoicePostedBy")
-  createdReceipts      Receipt[]              @relation("ReceiptCreatedBy")
-  createdPayments      Payment[]              @relation("PaymentCreatedBy")
-  createdExpenses      Expense[]              @relation("ExpenseCreatedBy")
-  createdCheques       Cheque[]               @relation("ChequeCreatedBy")
-  chequeStatusLogs     ChequeStatusHistory[]
-  receivedGrns         GoodsReceipt[]         @relation("GrnReceivedBy")
-  createdGrns          GoodsReceipt[]         @relation("GrnCreatedBy")
-  requestedTransfers   StockTransfer[]        @relation("TransferRequestedBy")
-  approvedTransfers    StockTransfer[]        @relation("TransferApprovedBy")
-  receivedTransfers    StockTransfer[]        @relation("TransferReceivedBy")
-  createdJournals      JournalEntry[]         @relation("JournalCreatedBy")
-  attachments          Attachment[]
-  inventoryTxns        InventoryTransaction[]
+  createdContracts    PurchaseContract[]              @relation("ContractCreatedBy")
+  postedContracts     PurchaseContract[]              @relation("ContractPostedBy")
+  createdShipments    Shipment[]                      @relation("ShipmentCreatedBy")
+  updatedShipments    Shipment[]                      @relation("ShipmentUpdatedBy")
+  shipmentStatusLogs  ShipmentStatusHistory[]
+  shipmentDocLogs     ShipmentDocumentStatusHistory[]
+  createdInvoices     SalesInvoice[]                  @relation("InvoiceCreatedBy")
+  postedInvoices      SalesInvoice[]                  @relation("InvoicePostedBy")
+  createdReceipts     Receipt[]                       @relation("ReceiptCreatedBy")
+  createdPayments     Payment[]                       @relation("PaymentCreatedBy")
+  createdExpenses     Expense[]                       @relation("ExpenseCreatedBy")
+  createdCheques      Cheque[]                        @relation("ChequeCreatedBy")
+  chequeStatusLogs    ChequeStatusHistory[]
+  receivedGrns        GoodsReceipt[]                  @relation("GrnReceivedBy")
+  createdGrns         GoodsReceipt[]                  @relation("GrnCreatedBy")
+  requestedTransfers  StockTransfer[]                 @relation("TransferRequestedBy")
+  approvedTransfers   StockTransfer[]                 @relation("TransferApprovedBy")
+  receivedTransfers   StockTransfer[]                 @relation("TransferReceivedBy")
+  createdJournals     JournalEntry[]                  @relation("JournalCreatedBy")
+  attachments         Attachment[]
+  inventoryTxns       InventoryTransaction[]
+  creditNotesCreated  CreditNote[]                    @relation("CreditNoteCreatedBy")
+  creditNotesPosted   CreditNote[]                    @relation("CreditNotePostedBy")
+  stockCountsCreated  StockCount[]                    @relation("StockCountCreatedBy")
+  stockCountsCounted  StockCount[]                    @relation("StockCountCountedBy")
+  stockCountsApproved StockCount[]                    @relation("StockCountApprovedBy")
+  reconciliations     BankReconciliation[]            @relation("ReconciliationCreatedBy")
+  backupRuns          BackupRun[]                     @relation("BackupCreatedBy")
 
   @@index([isActive])
   @@map("users")
 }
 
 model Session {
-  id             String   @id @default(cuid())
-  token          String   @unique
-  userId         String
+  id              String   @id @default(cuid())
+  token           String   @unique
+  userId          String
   activeCompanyId String?
-  ipAddress      String?
-  userAgent      String?
-  expiresAt      DateTime
-  createdAt      DateTime @default(now())
-  lastSeenAt     DateTime @default(now())
+  ipAddress       String?
+  userAgent       String?
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  lastSeenAt      DateTime @default(now())
 
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   activeCompany Company? @relation(fields: [activeCompanyId], references: [id], onDelete: SetNull)
@@ -303,11 +348,11 @@ model Session {
 }
 
 model Role {
-  id          String  @id @default(cuid())
-  code        String  @unique
+  id          String   @id @default(cuid())
+  code        String   @unique
   name        String
   description String?
-  isSystem    Boolean @default(false)
+  isSystem    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -318,8 +363,8 @@ model Role {
 }
 
 model Permission {
-  id          String  @id @default(cuid())
-  code        String  @unique
+  id          String @id @default(cuid())
+  code        String @unique
   module      String
   description String
 
@@ -394,6 +439,7 @@ model Customer {
   shipments     Shipment[]
   cheques       Cheque[]
   journalLines  JournalLine[]
+  creditNotes   CreditNote[]
 
   @@unique([companyId, customerCode])
   @@index([companyId, status])
@@ -429,6 +475,7 @@ model Vendor {
   cheques           Cheque[]
   goodsReceipts     GoodsReceipt[]
   journalLines      JournalLine[]
+  creditNotes       CreditNote[]
 
   @@unique([companyId, vendorCode])
   @@index([companyId, status])
@@ -437,42 +484,43 @@ model Vendor {
 }
 
 model CoffeeItem {
-  id            String         @id @default(cuid())
+  id            String        @id @default(cuid())
   companyId     String
   itemCode      String
   itemName      String
-  coffeeType    CoffeeType     @default(ARABICA)
+  coffeeType    CoffeeType    @default(ARABICA)
   originCountry String
   region        String?
   farmEstate    String?
   grade         String?
   screenSize    String?
   variety       String?
-  process       CoffeeProcess  @default(WASHED)
+  process       CoffeeProcess @default(WASHED)
   cropYear      String?
-  moisturePct   Decimal?       @db.Decimal(5, 2)
-  densityGPerL  Decimal?       @db.Decimal(8, 2)
-  packagingType PackagingType  @default(JUTE_BAG)
+  moisturePct   Decimal?      @db.Decimal(5, 2)
+  densityGPerL  Decimal?      @db.Decimal(8, 2)
+  packagingType PackagingType @default(JUTE_BAG)
   /// Nominal weight of one bag in KG. 60 for most Arabica origins, 30 for Ethiopia.
-  bagWeightKg   Decimal        @default(60) @db.Decimal(18, 3)
-  defaultUnit   UnitOfMeasure  @default(KG)
+  bagWeightKg   Decimal       @default(60) @db.Decimal(18, 3)
+  defaultUnit   UnitOfMeasure @default(KG)
   description   String?
   notes         String?
-  status        RecordStatus   @default(ACTIVE)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  status        RecordStatus  @default(ACTIVE)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
-  company       Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  contractLines PurchaseContractLine[]
-  shipments     Shipment[]
-  lots          Lot[]
-  batches       Batch[]
-  invoiceLines  SalesInvoiceLine[]
-  inventoryTxns InventoryTransaction[]
-  journalLines  JournalLine[]
-  balances      InventoryBalance[]
-  receiptLines  GoodsReceiptLine[]
-  transferLines StockTransferLine[]
+  company         Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contractLines   PurchaseContractLine[]
+  shipments       Shipment[]
+  lots            Lot[]
+  batches         Batch[]
+  invoiceLines    SalesInvoiceLine[]
+  inventoryTxns   InventoryTransaction[]
+  journalLines    JournalLine[]
+  balances        InventoryBalance[]
+  receiptLines    GoodsReceiptLine[]
+  transferLines   StockTransferLine[]
+  creditNoteLines CreditNoteLine[]
 
   @@unique([companyId, itemCode])
   @@index([companyId, status])
@@ -496,14 +544,16 @@ model Warehouse {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
-  company        Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  batches        Batch[]
-  inventoryTxns  InventoryTransaction[]
-  invoiceLines   SalesInvoiceLine[]
-  balances       InventoryBalance[]
-  goodsReceipts  GoodsReceipt[]
-  transfersFrom  StockTransfer[]        @relation("TransferFrom")
-  transfersTo    StockTransfer[]        @relation("TransferTo")
+  company         Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  batches         Batch[]
+  inventoryTxns   InventoryTransaction[]
+  invoiceLines    SalesInvoiceLine[]
+  balances        InventoryBalance[]
+  goodsReceipts   GoodsReceipt[]
+  transfersFrom   StockTransfer[]        @relation("TransferFrom")
+  transfersTo     StockTransfer[]        @relation("TransferTo")
+  creditNoteLines CreditNoteLine[]
+  stockCounts     StockCount[]
 
   @@unique([companyId, code])
   @@index([companyId, status])
@@ -613,19 +663,19 @@ model ShippingLine {
 }
 
 model ExpenseCategory {
-  id           String       @id @default(cuid())
-  companyId    String
-  code         String
-  name         String
-  description  String?
-  glAccountId  String?
+  id                  String       @id @default(cuid())
+  companyId           String
+  code                String
+  name                String
+  description         String?
+  glAccountId         String?
   /// Direct shipment costs (freight, customs, clearing…) are capitalised into
   /// the landed cost of the goods. Period costs (bank charges, commission) are
   /// expensed. This is the default; each expense can override it.
-  capitaliseByDefault Boolean @default(true)
-  status       RecordStatus @default(ACTIVE)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  capitaliseByDefault Boolean      @default(true)
+  status              RecordStatus @default(ACTIVE)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
 
   company   Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
   glAccount Account?  @relation(fields: [glAccountId], references: [id], onDelete: SetNull)
@@ -687,13 +737,14 @@ model CashBankAccount {
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
 
-  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  glAccount    Account       @relation(fields: [glAccountId], references: [id])
-  receipts     Receipt[]
-  payments     Payment[]
-  expenses     Expense[]
-  cheques      Cheque[]
-  journalLines JournalLine[]
+  company         Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  glAccount       Account              @relation(fields: [glAccountId], references: [id])
+  receipts        Receipt[]
+  payments        Payment[]
+  expenses        Expense[]
+  cheques         Cheque[]
+  journalLines    JournalLine[]
+  reconciliations BankReconciliation[]
 
   @@unique([companyId, code])
   @@index([companyId, status])
@@ -705,39 +756,39 @@ model CashBankAccount {
 // ---------------------------------------------------------------------------
 
 model PurchaseContract {
-  id                String            @id @default(cuid())
-  companyId         String
-  contractNumber    String
-  contractReference String
-  contractDate      DateTime          @db.Date
-  vendorId          String
-  origin            String?
-  currency          String            @db.VarChar(3)
-  rateToUsd         Decimal           @default(1) @db.Decimal(18, 8)
-  rateLocalPerUsd   Decimal           @default(1) @db.Decimal(18, 8)
-  subtotal          Decimal           @default(0) @db.Decimal(18, 4)
-  freightAmount     Decimal           @default(0) @db.Decimal(18, 4)
-  totalValue        Decimal           @default(0) @db.Decimal(18, 4)
-  totalValueUsd     Decimal           @default(0) @db.Decimal(18, 4)
-  containers        Int               @default(0)
-  totalBags         Int               @default(0)
-  otherCharges      Decimal           @default(0) @db.Decimal(18, 4)
-  incoterm          Incoterm          @default(FOB)
-  portOfLoading     String?
-  destination       String?
-  supplierContractNo String?
-  expectedShipmentDate DateTime?      @db.Date
-  paymentTermDays   Int               @default(0)
-  dueDate           DateTime?         @db.Date
-  notes             String?
-  status            TransactionStatus @default(DRAFT)
-  postedAt          DateTime?
-  postedById        String?
-  reversedAt        DateTime?
-  reversalReason    String?
-  createdById       String
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  id                   String            @id @default(cuid())
+  companyId            String
+  contractNumber       String
+  contractReference    String
+  contractDate         DateTime          @db.Date
+  vendorId             String
+  origin               String?
+  currency             String            @db.VarChar(3)
+  rateToUsd            Decimal           @default(1) @db.Decimal(18, 8)
+  rateLocalPerUsd      Decimal           @default(1) @db.Decimal(18, 8)
+  subtotal             Decimal           @default(0) @db.Decimal(18, 4)
+  freightAmount        Decimal           @default(0) @db.Decimal(18, 4)
+  totalValue           Decimal           @default(0) @db.Decimal(18, 4)
+  totalValueUsd        Decimal           @default(0) @db.Decimal(18, 4)
+  containers           Int               @default(0)
+  totalBags            Int               @default(0)
+  otherCharges         Decimal           @default(0) @db.Decimal(18, 4)
+  incoterm             Incoterm          @default(FOB)
+  portOfLoading        String?
+  destination          String?
+  supplierContractNo   String?
+  expectedShipmentDate DateTime?         @db.Date
+  paymentTermDays      Int               @default(0)
+  dueDate              DateTime?         @db.Date
+  notes                String?
+  status               TransactionStatus @default(DRAFT)
+  postedAt             DateTime?
+  postedById           String?
+  reversedAt           DateTime?
+  reversalReason       String?
+  createdById          String
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
 
   company       Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
   vendor        Vendor                 @relation(fields: [vendorId], references: [id])
@@ -753,6 +804,7 @@ model PurchaseContract {
   expenses      Expense[]
   salesInvoices SalesInvoice[]
   journalLines  JournalLine[]
+  creditNotes   CreditNote[]
 
   @@unique([companyId, contractNumber])
   @@unique([companyId, contractReference])
@@ -763,32 +815,32 @@ model PurchaseContract {
 }
 
 model PurchaseContractLine {
-  id               String        @id @default(cuid())
-  purchaseContractId String
-  lineNumber       Int
-  itemId           String
-  quantity         Decimal       @db.Decimal(18, 3)
-  unit             UnitOfMeasure
-  quantityKg       Decimal       @db.Decimal(18, 3)
-  unitPrice        Decimal       @db.Decimal(18, 8)
-  unitPriceKg      Decimal       @db.Decimal(18, 8)
-  lineSubtotal     Decimal       @db.Decimal(18, 4)
-  freightAllocated Decimal       @default(0) @db.Decimal(18, 4)
-  otherChargesAllocated Decimal  @default(0) @db.Decimal(18, 4)
-  lineTotal        Decimal       @db.Decimal(18, 4)
-  unitCostKg       Decimal       @db.Decimal(18, 8)
-  containers       Int           @default(0)
+  id                    String        @id @default(cuid())
+  purchaseContractId    String
+  lineNumber            Int
+  itemId                String
+  quantity              Decimal       @db.Decimal(18, 3)
+  unit                  UnitOfMeasure
+  quantityKg            Decimal       @db.Decimal(18, 3)
+  unitPrice             Decimal       @db.Decimal(18, 8)
+  unitPriceKg           Decimal       @db.Decimal(18, 8)
+  lineSubtotal          Decimal       @db.Decimal(18, 4)
+  freightAllocated      Decimal       @default(0) @db.Decimal(18, 4)
+  otherChargesAllocated Decimal       @default(0) @db.Decimal(18, 4)
+  lineTotal             Decimal       @db.Decimal(18, 4)
+  unitCostKg            Decimal       @db.Decimal(18, 8)
+  containers            Int           @default(0)
   /// Traceability entered on the contract line and carried into the batch.
-  lotNumber        String
-  batchNumber      String
-  containerNumber  String?
-  containerType    ContainerType @default(FT20)
-  bags             Int           @default(0)
-  bagWeightKg      Decimal       @default(60) @db.Decimal(18, 3)
-  notes            String?
+  lotNumber             String
+  batchNumber           String
+  containerNumber       String?
+  containerType         ContainerType @default(FT20)
+  bags                  Int           @default(0)
+  bagWeightKg           Decimal       @default(60) @db.Decimal(18, 3)
+  notes                 String?
 
-  purchaseContract PurchaseContract @relation(fields: [purchaseContractId], references: [id], onDelete: Cascade)
-  item             CoffeeItem       @relation(fields: [itemId], references: [id])
+  purchaseContract PurchaseContract   @relation(fields: [purchaseContractId], references: [id], onDelete: Cascade)
+  item             CoffeeItem         @relation(fields: [itemId], references: [id])
   shipments        Shipment[]
   batches          Batch[]
   receiptLines     GoodsReceiptLine[]
@@ -876,13 +928,13 @@ model Shipment {
 }
 
 model ShipmentStatusHistory {
-  id          String         @id @default(cuid())
+  id          String          @id @default(cuid())
   shipmentId  String
   fromStatus  ShipmentStatus?
   toStatus    ShipmentStatus
   changedById String
   notes       String?
-  changedAt   DateTime       @default(now())
+  changedAt   DateTime        @default(now())
 
   shipment  Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
   changedBy User     @relation(fields: [changedById], references: [id])
@@ -964,6 +1016,8 @@ model Batch {
   balances         InventoryBalance[]
   receiptLines     GoodsReceiptLine[]
   transferLines    StockTransferLine[]
+  creditNoteLines  CreditNoteLine[]
+  stockCountLines  StockCountLine[]
 
   @@unique([companyId, batchNumber])
   @@index([companyId, itemId])
@@ -975,24 +1029,24 @@ model Batch {
 }
 
 model InventoryTransaction {
-  id            String                   @id @default(cuid())
-  companyId     String
-  itemId        String
-  shipmentId    String?
-  batchId       String
-  containerId   String?
-  warehouseId   String?
+  id              String                   @id @default(cuid())
+  companyId       String
+  itemId          String
+  shipmentId      String?
+  batchId         String
+  containerId     String?
+  warehouseId     String?
   transactionType InventoryTransactionType
-  quantityKg    Decimal                  @db.Decimal(18, 3)
-  bags          Int                      @default(0)
-  unitCost      Decimal                  @default(0) @db.Decimal(18, 8)
-  valueUsd      Decimal                  @default(0) @db.Decimal(18, 4)
-  referenceType String
-  referenceId   String
-  transactionDate DateTime               @db.Date
-  notes         String?
-  createdById   String
-  createdAt     DateTime                 @default(now())
+  quantityKg      Decimal                  @db.Decimal(18, 3)
+  bags            Int                      @default(0)
+  unitCost        Decimal                  @default(0) @db.Decimal(18, 8)
+  valueUsd        Decimal                  @default(0) @db.Decimal(18, 4)
+  referenceType   String
+  referenceId     String
+  transactionDate DateTime                 @db.Date
+  notes           String?
+  createdById     String
+  createdAt       DateTime                 @default(now())
 
   company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   item      CoffeeItem @relation(fields: [itemId], references: [id])
@@ -1008,7 +1062,6 @@ model InventoryTransaction {
   @@index([referenceType, referenceId])
   @@map("inventory_transactions")
 }
-
 
 /// Stock on hand for one batch in one warehouse.
 ///
@@ -1205,6 +1258,7 @@ model SalesInvoice {
   lines            SalesInvoiceLine[]
   allocations      ReceiptAllocation[]
   journalLines     JournalLine[]
+  creditNotes      CreditNote[]
 
   @@unique([companyId, invoiceNumber])
   @@index([companyId, status])
@@ -1367,35 +1421,35 @@ model PaymentAllocation {
 }
 
 model Expense {
-  id                 String            @id @default(cuid())
-  companyId          String
-  expenseNumber      String
-  expenseDate        DateTime          @db.Date
-  expenseCategoryId  String
-  shipmentId         String?
-  purchaseContractId String?
-  vendorId           String?
-  agentId            String?
-  currency           String            @db.VarChar(3)
-  amount             Decimal           @db.Decimal(18, 4)
-  rateToUsd          Decimal           @db.Decimal(18, 8)
-  amountUsd          Decimal           @db.Decimal(18, 4)
-  rateLocalPerUsd    Decimal           @db.Decimal(18, 8)
-  amountLocal        Decimal           @db.Decimal(18, 4)
-  cashBankAccountId  String?
-  paymentMethod      PaymentMethod     @default(BANK_TRANSFER)
+  id                     String            @id @default(cuid())
+  companyId              String
+  expenseNumber          String
+  expenseDate            DateTime          @db.Date
+  expenseCategoryId      String
+  shipmentId             String?
+  purchaseContractId     String?
+  vendorId               String?
+  agentId                String?
+  currency               String            @db.VarChar(3)
+  amount                 Decimal           @db.Decimal(18, 4)
+  rateToUsd              Decimal           @db.Decimal(18, 8)
+  amountUsd              Decimal           @db.Decimal(18, 4)
+  rateLocalPerUsd        Decimal           @db.Decimal(18, 8)
+  amountLocal            Decimal           @db.Decimal(18, 4)
+  cashBankAccountId      String?
+  paymentMethod          PaymentMethod     @default(BANK_TRANSFER)
   /// When true the amount is added to the shipment's landed cost instead of
   /// being written straight to the profit and loss account.
-  capitaliseToLandedCost Boolean       @default(false)
-  reference          String?
-  description        String?
-  status             TransactionStatus @default(DRAFT)
-  postedAt           DateTime?
-  reversedAt         DateTime?
-  reversalReason     String?
-  createdById        String
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  capitaliseToLandedCost Boolean           @default(false)
+  reference              String?
+  description            String?
+  status                 TransactionStatus @default(DRAFT)
+  postedAt               DateTime?
+  reversedAt             DateTime?
+  reversalReason         String?
+  createdById            String
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
 
   company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   expenseCategory  ExpenseCategory   @relation(fields: [expenseCategoryId], references: [id])
@@ -1413,7 +1467,6 @@ model Expense {
   @@index([companyId, expenseCategoryId])
   @@map("expenses")
 }
-
 
 /// Cheque register.
 ///
@@ -1515,20 +1568,20 @@ model Attachment {
 // ---------------------------------------------------------------------------
 
 model JournalEntry {
-  id            String            @id @default(cuid())
-  companyId     String
-  entryNumber   String
-  entryDate     DateTime          @db.Date
-  description   String
-  sourceType    JournalSourceType
-  sourceId      String
-  sourceSeq     Int               @default(1)
-  isReversal    Boolean           @default(false)
-  status        TransactionStatus @default(POSTED)
-  reversalOfId  String?           @unique
-  createdById   String
-  createdAt     DateTime          @default(now())
-  postedAt      DateTime          @default(now())
+  id           String            @id @default(cuid())
+  companyId    String
+  entryNumber  String
+  entryDate    DateTime          @db.Date
+  description  String
+  sourceType   JournalSourceType
+  sourceId     String
+  sourceSeq    Int               @default(1)
+  isReversal   Boolean           @default(false)
+  status       TransactionStatus @default(POSTED)
+  reversalOfId String?           @unique
+  createdById  String
+  createdAt    DateTime          @default(now())
+  postedAt     DateTime          @default(now())
 
   company    Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
   createdBy  User          @relation("JournalCreatedBy", fields: [createdById], references: [id])
@@ -1544,20 +1597,22 @@ model JournalEntry {
 }
 
 model JournalLine {
-  id              String  @id @default(cuid())
-  journalEntryId  String
-  lineNumber      Int
-  accountId       String
-  description     String?
-  currency        String  @db.VarChar(3)
-  debit           Decimal @default(0) @db.Decimal(18, 4)
-  credit          Decimal @default(0) @db.Decimal(18, 4)
-  rateToUsd       Decimal @default(1) @db.Decimal(18, 8)
-  debitUsd        Decimal @default(0) @db.Decimal(18, 4)
-  creditUsd       Decimal @default(0) @db.Decimal(18, 4)
-  rateLocalPerUsd Decimal @default(1) @db.Decimal(18, 8)
-  debitLocal      Decimal @default(0) @db.Decimal(18, 4)
-  creditLocal     Decimal @default(0) @db.Decimal(18, 4)
+  id                   String  @id @default(cuid())
+  creditNoteId         String?
+  bankReconciliationId String?
+  journalEntryId       String
+  lineNumber           Int
+  accountId            String
+  description          String?
+  currency             String  @db.VarChar(3)
+  debit                Decimal @default(0) @db.Decimal(18, 4)
+  credit               Decimal @default(0) @db.Decimal(18, 4)
+  rateToUsd            Decimal @default(1) @db.Decimal(18, 8)
+  debitUsd             Decimal @default(0) @db.Decimal(18, 4)
+  creditUsd            Decimal @default(0) @db.Decimal(18, 4)
+  rateLocalPerUsd      Decimal @default(1) @db.Decimal(18, 8)
+  debitLocal           Decimal @default(0) @db.Decimal(18, 4)
+  creditLocal          Decimal @default(0) @db.Decimal(18, 4)
 
   customerId         String?
   vendorId           String?
@@ -1568,16 +1623,19 @@ model JournalLine {
   itemId             String?
   batchId            String?
 
-  journalEntry     JournalEntry      @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
-  account          Account           @relation(fields: [accountId], references: [id])
-  customer         Customer?         @relation(fields: [customerId], references: [id])
-  vendor           Vendor?           @relation(fields: [vendorId], references: [id])
-  cashBankAccount  CashBankAccount?  @relation(fields: [cashBankAccountId], references: [id])
-  shipment         Shipment?         @relation(fields: [shipmentId], references: [id])
-  purchaseContract PurchaseContract? @relation(fields: [purchaseContractId], references: [id])
-  salesInvoice     SalesInvoice?     @relation(fields: [salesInvoiceId], references: [id])
-  item             CoffeeItem?       @relation(fields: [itemId], references: [id])
-  batch            Batch?            @relation(fields: [batchId], references: [id])
+  journalEntry       JournalEntry        @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  creditNote         CreditNote?         @relation(fields: [creditNoteId], references: [id])
+  /// Set when the line has been ticked against a bank statement.
+  bankReconciliation BankReconciliation? @relation(fields: [bankReconciliationId], references: [id], onDelete: SetNull)
+  account            Account             @relation(fields: [accountId], references: [id])
+  customer           Customer?           @relation(fields: [customerId], references: [id])
+  vendor             Vendor?             @relation(fields: [vendorId], references: [id])
+  cashBankAccount    CashBankAccount?    @relation(fields: [cashBankAccountId], references: [id])
+  shipment           Shipment?           @relation(fields: [shipmentId], references: [id])
+  purchaseContract   PurchaseContract?   @relation(fields: [purchaseContractId], references: [id])
+  salesInvoice       SalesInvoice?       @relation(fields: [salesInvoiceId], references: [id])
+  item               CoffeeItem?         @relation(fields: [itemId], references: [id])
+  batch              Batch?              @relation(fields: [batchId], references: [id])
 
   @@index([journalEntryId])
   @@index([accountId])
@@ -1646,6 +1704,203 @@ model ApplicationSetting {
 
   @@unique([companyId, key])
   @@map("application_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Credit notes — customer credits and supplier credits
+// ---------------------------------------------------------------------------
+
+/// A credit against an invoice or a purchase that is being kept on file.
+///
+/// Distinct from a reversal: a reversal unwinds a document as though it never
+/// happened, while a credit note is its own document that reduces what is owed
+/// and leaves both papers in the history. A customer credit may also bring
+/// coffee back into stock, in which case the cost of sale is reversed with it.
+model CreditNote {
+  id                 String            @id @default(cuid())
+  companyId          String
+  creditNoteNumber   String
+  type               CreditNoteType
+  creditDate         DateTime          @db.Date
+  customerId         String?
+  vendorId           String?
+  /// The document being credited, when the credit relates to one.
+  salesInvoiceId     String?
+  purchaseContractId String?
+  currency           String            @db.VarChar(3)
+  rateToUsd          Decimal           @default(1) @db.Decimal(18, 8)
+  rateLocalPerUsd    Decimal           @default(1) @db.Decimal(18, 8)
+  totalAmount        Decimal           @default(0) @db.Decimal(18, 4)
+  totalAmountUsd     Decimal           @default(0) @db.Decimal(18, 4)
+  /// Cost of any stock returned to the warehouse, reversed out of COGS.
+  costOfGoodsUsd     Decimal           @default(0) @db.Decimal(18, 4)
+  reason             String
+  reference          String?
+  notes              String?
+  status             TransactionStatus @default(DRAFT)
+  postedAt           DateTime?
+  postedById         String?
+  reversedAt         DateTime?
+  reversalReason     String?
+  createdById        String
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer         Customer?         @relation(fields: [customerId], references: [id])
+  vendor           Vendor?           @relation(fields: [vendorId], references: [id])
+  salesInvoice     SalesInvoice?     @relation(fields: [salesInvoiceId], references: [id])
+  purchaseContract PurchaseContract? @relation(fields: [purchaseContractId], references: [id])
+  createdBy        User              @relation("CreditNoteCreatedBy", fields: [createdById], references: [id])
+  postedBy         User?             @relation("CreditNotePostedBy", fields: [postedById], references: [id])
+  lines            CreditNoteLine[]
+  journalLines     JournalLine[]
+
+  @@unique([companyId, creditNoteNumber])
+  @@index([companyId, status])
+  @@index([companyId, type])
+  @@index([companyId, customerId])
+  @@index([companyId, vendorId])
+  @@index([salesInvoiceId])
+  @@map("credit_notes")
+}
+
+model CreditNoteLine {
+  id           String  @id @default(cuid())
+  creditNoteId String
+  lineNumber   Int
+  description  String
+  /// Set when the credit brings coffee back into a warehouse.
+  batchId      String?
+  warehouseId  String?
+  itemId       String?
+  quantityKg   Decimal @default(0) @db.Decimal(18, 3)
+  bags         Int     @default(0)
+  unitPrice    Decimal @default(0) @db.Decimal(18, 8)
+  lineTotal    Decimal @default(0) @db.Decimal(18, 4)
+  lineTotalUsd Decimal @default(0) @db.Decimal(18, 4)
+  costTotalUsd Decimal @default(0) @db.Decimal(18, 4)
+
+  creditNote CreditNote  @relation(fields: [creditNoteId], references: [id], onDelete: Cascade)
+  batch      Batch?      @relation(fields: [batchId], references: [id])
+  warehouse  Warehouse?  @relation(fields: [warehouseId], references: [id])
+  item       CoffeeItem? @relation(fields: [itemId], references: [id])
+
+  @@index([creditNoteId])
+  @@index([batchId])
+  @@map("credit_note_lines")
+}
+
+// ---------------------------------------------------------------------------
+// Physical stock count
+// ---------------------------------------------------------------------------
+
+/// A count sheet for one warehouse: what the system thinks is there, what was
+/// actually found, and the adjustment that reconciles the two.
+model StockCount {
+  id           String           @id @default(cuid())
+  companyId    String
+  countNumber  String
+  countDate    DateTime         @db.Date
+  warehouseId  String
+  status       StockCountStatus @default(DRAFT)
+  notes        String?
+  countedById  String?
+  approvedById String?
+  postedAt     DateTime?
+  createdById  String
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  company    Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  warehouse  Warehouse        @relation(fields: [warehouseId], references: [id])
+  createdBy  User             @relation("StockCountCreatedBy", fields: [createdById], references: [id])
+  countedBy  User?            @relation("StockCountCountedBy", fields: [countedById], references: [id])
+  approvedBy User?            @relation("StockCountApprovedBy", fields: [approvedById], references: [id])
+  lines      StockCountLine[]
+
+  @@unique([companyId, countNumber])
+  @@index([companyId, status])
+  @@index([warehouseId])
+  @@map("stock_counts")
+}
+
+model StockCountLine {
+  id           String                 @id @default(cuid())
+  stockCountId String
+  batchId      String
+  /// Snapshot at the moment the sheet was produced, so a later movement does
+  /// not silently change what the counter was asked to verify.
+  systemKg     Decimal                @db.Decimal(18, 3)
+  countedKg    Decimal?               @db.Decimal(18, 3)
+  differenceKg Decimal                @default(0) @db.Decimal(18, 3)
+  reason       StockAdjustmentReason?
+  notes        String?
+
+  stockCount StockCount @relation(fields: [stockCountId], references: [id], onDelete: Cascade)
+  batch      Batch      @relation(fields: [batchId], references: [id])
+
+  @@unique([stockCountId, batchId])
+  @@index([stockCountId])
+  @@map("stock_count_lines")
+}
+
+// ---------------------------------------------------------------------------
+// Bank reconciliation
+// ---------------------------------------------------------------------------
+
+/// One statement period for one account: the closing balance the bank states,
+/// and which ledger lines have been ticked against it.
+model BankReconciliation {
+  id                String    @id @default(cuid())
+  companyId         String
+  cashBankAccountId String
+  statementDate     DateTime  @db.Date
+  statementBalance  Decimal   @db.Decimal(18, 4)
+  /// Ledger balance at the statement date, captured when the work was done.
+  bookBalance       Decimal   @default(0) @db.Decimal(18, 4)
+  difference        Decimal   @default(0) @db.Decimal(18, 4)
+  isComplete        Boolean   @default(false)
+  completedAt       DateTime?
+  notes             String?
+  createdById       String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  company         Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  cashBankAccount CashBankAccount @relation(fields: [cashBankAccountId], references: [id])
+  createdBy       User            @relation("ReconciliationCreatedBy", fields: [createdById], references: [id])
+  lines           JournalLine[]
+
+  @@unique([companyId, cashBankAccountId, statementDate])
+  @@index([companyId, isComplete])
+  @@map("bank_reconciliations")
+}
+
+// ---------------------------------------------------------------------------
+// Backup history
+// ---------------------------------------------------------------------------
+
+/// A record of every backup attempt. A backup nobody can point at is not a
+/// backup, so failures are kept as prominently as successes.
+model BackupRun {
+  id           String        @id @default(cuid())
+  companyId    String?
+  trigger      BackupTrigger
+  status       BackupStatus  @default(IN_PROGRESS)
+  startedAt    DateTime      @default(now())
+  finishedAt   DateTime?
+  sizeBytes    BigInt?
+  location     String?
+  checksum     String?
+  errorMessage String?
+  createdById  String?
+
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  createdBy User?    @relation("BackupCreatedBy", fields: [createdById], references: [id])
+
+  @@index([status, startedAt])
+  @@map("backup_runs")
 }
 
 model NumberSequence {

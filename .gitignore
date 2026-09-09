@@ -47,3 +47,7 @@ next-env.d.ts
 /playwright-report/
 /blob-report/
 /screenshots/
+
+# Local file storage
+/backups/
+/storage/

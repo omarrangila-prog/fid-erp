@@ -82,12 +82,20 @@ export async function getReceivables(params: {
            si."currency",
            si."totalAmount"::text AS "originalAmount",
            si."totalAmountUsd"::text AS "originalAmountUsd",
-           COALESCE((SELECT SUM(ra."amount") FROM receipt_allocations ra
-                       JOIN receipts r ON r."id" = ra."receiptId"
-                      WHERE ra."salesInvoiceId" = si."id" AND r."status" = 'POSTED'), 0)::text AS "paidAmount",
-           COALESCE((SELECT SUM(ra."amountUsd") FROM receipt_allocations ra
-                       JOIN receipts r ON r."id" = ra."receiptId"
-                      WHERE ra."salesInvoiceId" = si."id" AND r."status" = 'POSTED'), 0)::text AS "paidAmountUsd"
+           (
+             COALESCE((SELECT SUM(ra."amount") FROM receipt_allocations ra
+                         JOIN receipts r ON r."id" = ra."receiptId"
+                        WHERE ra."salesInvoiceId" = si."id" AND r."status" = 'POSTED'), 0)
+             + COALESCE((SELECT SUM(cn."totalAmount") FROM credit_notes cn
+                          WHERE cn."salesInvoiceId" = si."id" AND cn."status" = 'POSTED'), 0)
+           )::text AS "paidAmount",
+           (
+             COALESCE((SELECT SUM(ra."amountUsd") FROM receipt_allocations ra
+                         JOIN receipts r ON r."id" = ra."receiptId"
+                        WHERE ra."salesInvoiceId" = si."id" AND r."status" = 'POSTED'), 0)
+             + COALESCE((SELECT SUM(cn."totalAmountUsd") FROM credit_notes cn
+                          WHERE cn."salesInvoiceId" = si."id" AND cn."status" = 'POSTED'), 0)
+           )::text AS "paidAmountUsd"
     FROM sales_invoices si
     JOIN customers c ON c."id" = si."customerId"
     LEFT JOIN shipments s ON s."id" = si."shipmentId"
@@ -181,12 +189,20 @@ export async function getPayables(params: {
            pc."totalValueUsd"::text AS "purchaseValueUsd",
            (SELECT string_agg(s."shipmentNumber", ', ' ORDER BY s."shipmentNumber")
               FROM shipments s WHERE s."purchaseContractId" = pc."id") AS "shipmentNumbers",
-           COALESCE((SELECT SUM(pa."amount") FROM payment_allocations pa
-                       JOIN payments p ON p."id" = pa."paymentId"
-                      WHERE pa."purchaseContractId" = pc."id" AND p."status" = 'POSTED'), 0)::text AS "paidAmount",
-           COALESCE((SELECT SUM(pa."amountUsd") FROM payment_allocations pa
-                       JOIN payments p ON p."id" = pa."paymentId"
-                      WHERE pa."purchaseContractId" = pc."id" AND p."status" = 'POSTED'), 0)::text AS "paidAmountUsd"
+           (
+             COALESCE((SELECT SUM(pa."amount") FROM payment_allocations pa
+                         JOIN payments p ON p."id" = pa."paymentId"
+                        WHERE pa."purchaseContractId" = pc."id" AND p."status" = 'POSTED'), 0)
+             + COALESCE((SELECT SUM(cn."totalAmount") FROM credit_notes cn
+                          WHERE cn."purchaseContractId" = pc."id" AND cn."status" = 'POSTED'), 0)
+           )::text AS "paidAmount",
+           (
+             COALESCE((SELECT SUM(pa."amountUsd") FROM payment_allocations pa
+                         JOIN payments p ON p."id" = pa."paymentId"
+                        WHERE pa."purchaseContractId" = pc."id" AND p."status" = 'POSTED'), 0)
+             + COALESCE((SELECT SUM(cn."totalAmountUsd") FROM credit_notes cn
+                          WHERE cn."purchaseContractId" = pc."id" AND cn."status" = 'POSTED'), 0)
+           )::text AS "paidAmountUsd"
     FROM purchase_contracts pc
     JOIN vendors v ON v."id" = pc."vendorId"
     WHERE pc."companyId" = ${params.companyId}
@@ -239,4 +255,26 @@ export function summariseAgeing(
       rows.filter((r) => r.bucket === bucket).reduce((acc, r) => acc.plus(r.outstandingAmountUsd), new Decimal(0)),
     ),
   }));
+}
+
+/**
+ * Credit notes not tied to a specific document.
+ *
+ * A credit raised without naming an invoice or contract still reduces what the
+ * party owes, but it cannot be netted against any single document. It sits here
+ * until it is applied, and the reconciliation subtracts it from the sub-ledger
+ * total so the control account still agrees.
+ */
+export async function getUnappliedCredits(companyId: string) {
+  const rows = await prisma.$queryRaw<Array<{ type: string; total: string }>>`
+    SELECT cn."type"::text AS type, COALESCE(SUM(cn."totalAmountUsd"), 0)::text AS total
+    FROM credit_notes cn
+    WHERE cn."companyId" = ${companyId}
+      AND cn."status" = 'POSTED'
+      AND cn."salesInvoiceId" IS NULL
+      AND cn."purchaseContractId" IS NULL
+    GROUP BY cn."type"`;
+
+  const find = (type: string) => toMoney(rows.find((row) => row.type === type)?.total ?? 0);
+  return { customerUsd: find('CUSTOMER'), vendorUsd: find('VENDOR') };
 }

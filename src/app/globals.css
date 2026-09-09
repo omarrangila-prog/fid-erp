@@ -225,3 +225,93 @@
     animation: none;
   }
 }
+
+/*
+ * Print, which is also how a report becomes a PDF.
+ *
+ * Every browser can save a page as PDF, so a good print stylesheet gives real
+ * PDF export of every report without a rendering library, and without the
+ * layout drifting away from what is on screen. Navigation, toolbars and
+ * anything interactive are removed; the statement itself is what remains.
+ */
+@media print {
+  @page {
+    margin: 14mm 12mm;
+    size: A4;
+  }
+
+  html {
+    overflow-x: visible;
+  }
+
+  body {
+    background: #fff !important;
+    color: #000;
+    font-size: 10pt;
+  }
+
+  /* Chrome and Safari drop backgrounds by default, which loses table banding
+     and every status badge. */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  aside,
+  header,
+  nav,
+  [data-print="hide"],
+  .no-print {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  /* The report fills the sheet rather than sitting in the app's content column. */
+  main > div {
+    max-width: none !important;
+  }
+
+  /* Cards become plain sections: a printed statement does not need chrome. */
+  .shadow-card,
+  .shadow-raised,
+  .shadow-overlay {
+    box-shadow: none !important;
+  }
+
+  a {
+    color: inherit !important;
+    text-decoration: none !important;
+  }
+
+  /* Keep a row, and a heading with what follows it, on one page. */
+  tr,
+  img {
+    break-inside: avoid;
+  }
+  h1, h2, h3 {
+    break-after: avoid;
+  }
+  thead {
+    display: table-header-group;
+  }
+  tfoot {
+    display: table-footer-group;
+  }
+
+  /* A wide table must not be clipped at the paper edge. */
+  .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  [data-print="only"] {
+    display: block !important;
+  }
+}
+
+/* Shown only on paper: who printed it, and when. */
+[data-print="only"] {
+  display: none;
+}

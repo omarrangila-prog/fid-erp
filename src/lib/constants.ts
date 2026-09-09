@@ -109,6 +109,16 @@ export const PERMISSIONS = {
   ATTACHMENTS_VIEW: 'attachments.view',
   ATTACHMENTS_MANAGE: 'attachments.manage',
 
+  // --- Credits, counts and reconciliation ----------------------------------
+  CREDIT_NOTES_VIEW: 'creditnotes.view',
+  CREDIT_NOTES_CREATE: 'creditnotes.create',
+  CREDIT_NOTES_POST: 'creditnotes.post',
+  STOCK_COUNT_VIEW: 'stockcount.view',
+  STOCK_COUNT_MANAGE: 'stockcount.manage',
+  STOCK_COUNT_POST: 'stockcount.post',
+  BANK_RECONCILE: 'bank.reconcile',
+  BACKUP_MANAGE: 'backup.manage',
+
   // --- Administration ------------------------------------------------------
   USERS_MANAGE: 'users.manage',
   ROLES_MANAGE: 'roles.manage',
@@ -216,6 +226,15 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionCode, { module: string; d
   [PERMISSIONS.ATTACHMENTS_VIEW]: { module: 'Documents', description: 'View document attachments' },
   [PERMISSIONS.ATTACHMENTS_MANAGE]: { module: 'Documents', description: 'Upload and remove attachments' },
 
+  [PERMISSIONS.CREDIT_NOTES_VIEW]: { module: 'Credits', description: 'View credit notes' },
+  [PERMISSIONS.CREDIT_NOTES_CREATE]: { module: 'Credits', description: 'Raise credit notes' },
+  [PERMISSIONS.CREDIT_NOTES_POST]: { module: 'Credits', description: 'Post and reverse credit notes' },
+  [PERMISSIONS.STOCK_COUNT_VIEW]: { module: 'Inventory', description: 'View stock counts' },
+  [PERMISSIONS.STOCK_COUNT_MANAGE]: { module: 'Inventory', description: 'Start a count and record quantities' },
+  [PERMISSIONS.STOCK_COUNT_POST]: { module: 'Inventory', description: 'Post a stock count and its adjustments' },
+  [PERMISSIONS.BANK_RECONCILE]: { module: 'Finance', description: 'Reconcile a bank account to a statement' },
+  [PERMISSIONS.BACKUP_MANAGE]: { module: 'Administration', description: 'Take backups and view backup history' },
+
   [PERMISSIONS.USERS_MANAGE]: { module: 'Administration', description: 'Create users and assign roles/companies' },
   [PERMISSIONS.ROLES_MANAGE]: { module: 'Administration', description: 'Create roles and grant permissions' },
   [PERMISSIONS.COMPANIES_MANAGE]: { module: 'Administration', description: 'Create and edit companies' },
@@ -276,6 +295,9 @@ export const SYSTEM_ROLES: Array<{
     name: 'Manager',
     description: 'Approves trading documents and sees full profitability, but does not administer the system.',
     permissions: [
+      P.STOCK_COUNT_VIEW,
+      P.STOCK_COUNT_POST,
+      P.CREDIT_NOTES_VIEW,
       ...VIEW_ONLY,
       P.PURCHASE_COST_VIEW,
       P.PROFITS_VIEW,
@@ -296,6 +318,11 @@ export const SYSTEM_ROLES: Array<{
     permissions: [
       ...VIEW_ONLY,
       P.PERIODS_CLOSE,
+      P.CREDIT_NOTES_VIEW,
+      P.CREDIT_NOTES_CREATE,
+      P.CREDIT_NOTES_POST,
+      P.BANK_RECONCILE,
+      P.STOCK_COUNT_VIEW,
       P.PURCHASE_COST_VIEW,
       P.RECEIPTS_CREATE,
       P.RECEIPTS_POST,
@@ -375,6 +402,8 @@ export const SYSTEM_ROLES: Array<{
     name: 'Warehouse',
     description: 'Maintains stock accuracy, transfers and adjustments.',
     permissions: [
+      P.STOCK_COUNT_VIEW,
+      P.STOCK_COUNT_MANAGE,
       P.DASHBOARD_VIEW,
       P.ITEMS_VIEW,
       P.WAREHOUSES_VIEW,
@@ -627,6 +656,14 @@ export const ACCOUNT_KEYS = {
   FX_GAIN_LOSS: 'FX_GAIN_LOSS',
   EXPENSE_DEFAULT: 'EXPENSE_DEFAULT',
   INVENTORY_ADJUSTMENT: 'INVENTORY_ADJUSTMENT',
+  /// Money received before there is an invoice to put it against.
+  CUSTOMER_ADVANCES: 'CUSTOMER_ADVANCES',
+  /// Money paid to a supplier before their bill arrives.
+  SUPPLIER_ADVANCES: 'SUPPLIER_ADVANCES',
+  /// Contra-revenue, so credits are visible rather than netted into sales.
+  SALES_RETURNS: 'SALES_RETURNS',
+  /// Contra-cost for supplier credits that do not relate to stock.
+  PURCHASE_RETURNS: 'PURCHASE_RETURNS',
 } as const;
 
 export type AccountKey = (typeof ACCOUNT_KEYS)[keyof typeof ACCOUNT_KEYS];
@@ -671,6 +708,7 @@ export const DOC_TYPES = {
   LOT: 'LOT',
   CREDIT_NOTE: 'CN',
   DEBIT_NOTE: 'DN',
+  STOCK_COUNT: 'SC',
 } as const;
 
 export const DOC_TYPE_LABELS: Record<string, string> = {

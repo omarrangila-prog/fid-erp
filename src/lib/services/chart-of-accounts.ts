@@ -61,12 +61,28 @@ const STANDARD_ACCOUNTS: AccountSeed[] = [
   },
   // --- Liabilities ---------------------------------------------------------
   {
+    code: '1300',
+    name: 'Advances to Suppliers',
+    type: 'ASSET',
+    reportGroup: REPORT_GROUPS.CURRENT_ASSET,
+    systemKey: ACCOUNT_KEYS.SUPPLIER_ADVANCES,
+    subledgerType: 'VENDOR',
+  },
+  {
     code: '2000',
     name: 'Accounts Payable',
     type: 'LIABILITY',
     reportGroup: REPORT_GROUPS.CURRENT_LIABILITY,
     systemKey: ACCOUNT_KEYS.ACCOUNTS_PAYABLE,
     subledgerType: 'VENDOR',
+  },
+  {
+    code: '2050',
+    name: 'Customer Advances',
+    type: 'LIABILITY',
+    reportGroup: REPORT_GROUPS.CURRENT_LIABILITY,
+    systemKey: ACCOUNT_KEYS.CUSTOMER_ADVANCES,
+    subledgerType: 'CUSTOMER',
   },
   {
     code: '2100',
@@ -91,6 +107,20 @@ const STANDARD_ACCOUNTS: AccountSeed[] = [
     systemKey: ACCOUNT_KEYS.RETAINED_EARNINGS,
   },
   // --- Income --------------------------------------------------------------
+  {
+    code: '4090',
+    name: 'Sales Returns & Credits',
+    type: 'INCOME',
+    reportGroup: REPORT_GROUPS.REVENUE,
+    systemKey: ACCOUNT_KEYS.SALES_RETURNS,
+  },
+  {
+    code: '5090',
+    name: 'Purchase Returns & Credits',
+    type: 'EXPENSE',
+    reportGroup: REPORT_GROUPS.COGS,
+    systemKey: ACCOUNT_KEYS.PURCHASE_RETURNS,
+  },
   {
     code: '4000',
     name: 'Coffee Sales',
