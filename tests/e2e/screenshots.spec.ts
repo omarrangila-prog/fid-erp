@@ -23,7 +23,7 @@ const SIZES = [
 ];
 
 async function signIn(page: Page) {
-  await page.goto('/login');
+  await page.goto('/login/password');
   await page.getByLabel(/email/i).fill(process.env.E2E_EMAIL!);
   await page.getByLabel(/password/i).fill(process.env.E2E_PASSWORD!);
   await page.getByRole('button', { name: /sign in/i }).click();
@@ -51,7 +51,7 @@ for (const size of SIZES) {
 
 test('capture the sign-in screen', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/login');
+  await page.goto('/login/password');
   await page.screenshot({ path: 'screenshots/desktop/login.png' });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();

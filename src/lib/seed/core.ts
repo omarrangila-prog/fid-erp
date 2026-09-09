@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { prisma, transaction } from '@/lib/db';
 import { ALL_PERMISSIONS, PERMISSION_DESCRIPTIONS, SYSTEM_ROLES, SETTING_KEYS } from '@/lib/constants';
 import { hashPassword, validatePasswordStrength } from '@/lib/auth/password';
@@ -253,6 +254,90 @@ export async function seedAdminUser(companyIds: string[]): Promise<{ email: stri
   return { email: user.email, created: true };
 }
 
+/**
+ * Staff accounts with quick-entry PINs.
+ *
+ * Created only when the matching environment variables are set, and the PINs
+ * themselves never appear in source — they come from `.env`, which is not in
+ * the repository. Each PIN belongs to one person with one company and one role,
+ * so the audit trail still names an individual.
+ */
+export async function seedPinAccounts(): Promise<Array<{ name: string; company: string }>> {
+  const created: Array<{ name: string; company: string }> = [];
+
+  const specs = [
+    {
+      pin: process.env.ADMIN_PIN,
+      email: process.env.INITIAL_ADMIN_EMAIL,
+      isAdmin: true,
+      name: null,
+      roleCode: null,
+      companyCode: null,
+    },
+    {
+      pin: process.env.DUBAI_STAFF_PIN,
+      email: 'dubai.staff@fidtrading.local',
+      isAdmin: false,
+      name: 'Dubai Staff',
+      roleCode: 'ACCOUNTS',
+      companyCode: 'FID-DXB',
+    },
+    {
+      pin: process.env.MOROCCO_STAFF_PIN,
+      email: 'morocco.staff@fidtrading.local',
+      isAdmin: false,
+      name: 'Morocco Staff',
+      roleCode: 'ACCOUNTS',
+      companyCode: 'FID-MA',
+    },
+  ];
+
+  for (const spec of specs) {
+    if (!spec.pin || !spec.email) continue;
+
+    if (spec.isAdmin) {
+      const admin = await prisma.user.findUnique({ where: { email: spec.email } });
+      if (admin) {
+        await prisma.user.update({
+          where: { id: admin.id },
+          data: { pinHash: await hashPassword(spec.pin), pinSetAt: new Date(), pinFailedAttempts: 0, pinLockedUntil: null },
+        });
+        created.push({ name: admin.name, company: 'Both companies' });
+      }
+      continue;
+    }
+
+    const company = await prisma.company.findUnique({ where: { code: spec.companyCode! } });
+    const role = await prisma.role.findUnique({ where: { code: spec.roleCode! } });
+    if (!company || !role) continue;
+
+    // Staff accounts still get a password, generated and never printed: the PIN
+    // is the convenience, not the only credential the account possesses.
+    const existing = await prisma.user.findUnique({ where: { email: spec.email } });
+    const user =
+      existing ??
+      (await prisma.user.create({
+        data: {
+          email: spec.email,
+          name: spec.name!,
+          passwordHash: await hashPassword(randomBytes(24).toString('base64url')),
+          isSuperAdmin: false,
+          defaultCompanyId: company.id,
+          roles: { create: { roleId: role.id } },
+          companies: { create: { companyId: company.id } },
+        },
+      }));
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { pinHash: await hashPassword(spec.pin), pinSetAt: new Date(), pinFailedAttempts: 0, pinLockedUntil: null },
+    });
+    created.push({ name: user.name, company: company.name });
+  }
+
+  return created;
+}
+
 /** Everything a production install needs, and nothing it does not. */
 export async function initialiseProduction() {
   const permissions = await seedPermissions();
@@ -260,5 +345,6 @@ export async function initialiseProduction() {
   const companyIds = await seedCompanies();
   await seedExchangeRates();
   const admin = await seedAdminUser(companyIds);
-  return { permissions, roles, companies: companyIds.length, admin };
+  const pinAccounts = await seedPinAccounts();
+  return { permissions, roles, companies: companyIds.length, admin, pinAccounts };
 }

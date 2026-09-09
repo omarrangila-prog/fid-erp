@@ -278,16 +278,23 @@ model Company {
 }
 
 model User {
-  id               String    @id @default(cuid())
-  email            String    @unique
-  name             String
-  passwordHash     String
-  isActive         Boolean   @default(true)
-  isSuperAdmin     Boolean   @default(false)
-  defaultCompanyId String?
-  lastLoginAt      DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id                String    @id @default(cuid())
+  email             String    @unique
+  name              String
+  /// Argon2id hash of the 4-digit quick-entry PIN. Never the PIN itself.
+  pinHash           String?
+  pinSetAt          DateTime?
+  /// Consecutive wrong PINs; cleared on success.
+  pinFailedAttempts Int       @default(0)
+  /// Set after too many wrong PINs. Password sign-in still works.
+  pinLockedUntil    DateTime?
+  passwordHash      String
+  isActive          Boolean   @default(true)
+  isSuperAdmin      Boolean   @default(false)
+  defaultCompanyId  String?
+  lastLoginAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   defaultCompany Company?      @relation("UserDefaultCompany", fields: [defaultCompanyId], references: [id], onDelete: SetNull)
   roles          UserRole[]

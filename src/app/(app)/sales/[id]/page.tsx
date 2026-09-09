@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Printer } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requirePageAccess, can } from '@/lib/auth/guards';
@@ -8,6 +9,7 @@ import { dec, toMoney } from '@/lib/money';
 import { getInvoiceOutstanding } from '@/lib/services/receipt';
 import { formatMoney, formatQuantityKg, formatDate, formatDateTime, formatRate, formatPercent } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
+import { Button } from '@/components/ui/button';
 import { Metric, MetricGrid, DetailRow } from '@/components/shared/stat-card';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { StatusBadge, Badge } from '@/components/ui/badge';
@@ -103,7 +105,14 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
           </>
         }
         actions={
-          <SaleActions
+          <>
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/sales/${invoice.id}/print`}>
+                <Printer />
+                Print invoice
+              </Link>
+            </Button>
+            <SaleActions
             id={invoice.id}
             status={invoice.status}
             outstanding={Boolean(outstanding && outstanding.amount.greaterThan(0))}
@@ -111,8 +120,9 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
             canEdit={can(user, PERMISSIONS.SALES_EDIT)}
             canDelete={can(user, PERMISSIONS.SALES_DELETE)}
             canReverse={can(user, PERMISSIONS.SALES_REVERSE)}
-            canReceipt={can(user, PERMISSIONS.RECEIPTS_CREATE)}
-          />
+              canReceipt={can(user, PERMISSIONS.RECEIPTS_CREATE)}
+            />
+          </>
         }
       />
 

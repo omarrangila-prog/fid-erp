@@ -20,7 +20,7 @@ const PAGES = [
 ];
 
 async function signIn(page: Page) {
-  await page.goto('/login');
+  await page.goto('/login/password');
   await page.getByLabel(/email/i).fill(process.env.E2E_EMAIL!);
   await page.getByLabel(/password/i).fill(process.env.E2E_PASSWORD!);
   await page.getByRole('button', { name: /sign in/i }).click();
@@ -32,7 +32,7 @@ async function signIn(page: Page) {
 }
 
 test('the sign-in page has no accessibility violations', async ({ page }) => {
-  await page.goto('/login');
+  await page.goto('/login/password');
   const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
   expect(
     results.violations.map((v) => `${v.id} (${v.nodes.length}): ${v.help}`),

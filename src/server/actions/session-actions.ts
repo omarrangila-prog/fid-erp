@@ -5,6 +5,7 @@ import { headers } from 'next/headers';
 import { prisma } from '@/lib/db';
 import { hashPassword, verifyPassword, validatePasswordStrength } from '@/lib/auth/password';
 import { checkLoginAllowed, recordFailedLogin, clearLoginAttempts } from '@/lib/auth/rate-limit';
+import { verifyPin } from '@/lib/auth/pin';
 import {
   createSession,
   destroySession,
@@ -187,4 +188,80 @@ export async function changePasswordAction(
 
     return undefined;
   });
+}
+
+// ---------------------------------------------------------------------------
+// Quick PIN sign-in
+// ---------------------------------------------------------------------------
+
+/**
+ * Signs in with a four-digit PIN against one named account.
+ *
+ * The account is chosen on screen first, so a PIN can only ever open the person
+ * it belongs to — it cannot collide into somebody else's permissions. Failures
+ * are counted per user by `verifyPin` and per address here, and every outcome
+ * is written to the audit trail.
+ */
+export async function pinLoginAction(
+  userId: string,
+  pin: string,
+): Promise<ActionResult<{ redirectTo: string }>> {
+  const address = (await headers()).get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+
+  const verdict = checkLoginAllowed(`pin:${userId}`, address);
+  if (!verdict.allowed) {
+    const minutes = Math.ceil(verdict.retryAfterSeconds / 60);
+    return {
+      ok: false,
+      error: `Too many attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}, or sign in with a password.`,
+      code: 'RATE_LIMITED',
+    };
+  }
+
+  const result = await verifyPin(userId, pin);
+
+  if (!result.ok) {
+    recordFailedLogin(`pin:${userId}`, address);
+    if (result.reason === 'LOCKED') {
+      await recordAudit({ userId, action: 'PIN_LOCKED', entityType: 'User', entityId: userId });
+      return {
+        ok: false,
+        error: `Too many wrong PINs. This PIN is locked for ${result.retryAfterMinutes ?? 15} minutes — you can still sign in with a password.`,
+        code: 'PIN_LOCKED',
+      };
+    }
+    return { ok: false, error: 'That PIN is not correct.', code: 'UNAUTHENTICATED' };
+  }
+
+  clearLoginAttempts(`pin:${userId}`, address);
+
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: result.userId },
+    include: { companies: true },
+  });
+
+  const companyCount = user.isSuperAdmin
+    ? await prisma.company.count({ where: { status: 'ACTIVE' } })
+    : user.companies.length;
+  if (companyCount === 0) {
+    return {
+      ok: false,
+      error: 'Your account is not assigned to any company. Ask an administrator to grant you access.',
+      code: 'FORBIDDEN',
+    };
+  }
+
+  const activeCompanyId =
+    user.defaultCompanyId ??
+    (user.isSuperAdmin
+      ? (await prisma.company.findFirst({ where: { status: 'ACTIVE' }, orderBy: { name: 'asc' } }))?.id ?? null
+      : user.companies[0]?.companyId ?? null);
+
+  await createSession(user.id, activeCompanyId);
+  await recordAudit({ userId: user.id, action: 'PIN_LOGIN', entityType: 'User', entityId: user.id });
+
+  return {
+    ok: true,
+    data: { redirectTo: companyCount > 1 && !user.defaultCompanyId ? '/select-company' : '/dashboard' },
+  };
 }
