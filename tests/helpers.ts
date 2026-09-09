@@ -24,7 +24,14 @@ export async function getContext() {
   return { dubai, morocco, admin };
 }
 
-const unique = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.toUpperCase();
+// A monotonic counter, not a timestamp: two calls in the same millisecond used
+// to collide on the shipping-line code, which failed the suite for a reason
+// that had nothing to do with the code under test.
+let sequence = 0;
+const unique = () => {
+  sequence += 1;
+  return `${sequence.toString(36)}${Math.random().toString(36).slice(2, 6)}`.toUpperCase().slice(0, 6);
+};
 
 /** Creates the masters a coffee trading flow needs, in one call. */
 export async function createMasters(companyId: string, options?: { currency?: string }) {
@@ -71,7 +78,7 @@ export async function createMasters(companyId: string, options?: { currency?: st
   });
 
   const shippingLine = await prisma.shippingLine.create({
-    data: { companyId, code: `SL${suffix.slice(0, 5)}`, name: 'Test Shipping Line' },
+    data: { companyId, code: `SL-${suffix}`, name: 'Test Shipping Line' },
   });
 
   const warehouses = await prisma.warehouse.findMany({

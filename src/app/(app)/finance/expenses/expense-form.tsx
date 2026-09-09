@@ -269,8 +269,8 @@ export function ExpenseForm({
                   onClick={() => setCapitaliseOverride(option.value)}
                   className={`rounded-lg border p-3 text-left transition-colors ${
                     capitalise === option.value
-                      ? 'border-teal-500 bg-teal-50'
-                      : 'border-line hover:border-navy-300'
+                      ? 'border-gold-500 bg-gold-50'
+                      : 'border-line hover:border-forest-300'
                   }`}
                 >
                   <p className="text-sm font-semibold text-ink">{option.title}</p>

@@ -77,9 +77,9 @@ export function ShipmentsClient({
       sortValue: (r) => r.soldPct,
       cell: (r) => (
         <span className="flex items-center gap-2">
-          <span className="h-1.5 w-14 overflow-hidden rounded-full bg-navy-100">
+          <span className="h-1.5 w-14 overflow-hidden rounded-full bg-forest-100">
             <span
-              className={r.soldPct >= 100 ? 'block h-full bg-teal-500' : 'block h-full bg-sky-500'}
+              className={r.soldPct >= 100 ? 'block h-full bg-gold-500' : 'block h-full bg-sky-500'}
               style={{ width: `${Math.min(100, r.soldPct)}%` }}
             />
           </span>

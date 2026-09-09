@@ -52,7 +52,7 @@ export function LedgerView({
               title={option.hint}
               className={cn(
                 'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                ledger.view === option.mode ? 'bg-navy-800 text-white' : 'text-ink-muted hover:text-ink',
+                ledger.view === option.mode ? 'bg-forest-800 text-white' : 'text-ink-muted hover:text-ink',
               )}
             >
               {option.label}
@@ -82,7 +82,7 @@ export function LedgerView({
                 </TR>
               </THead>
               <TBody>
-                <TR className="bg-navy-50/40 hover:bg-navy-50/40">
+                <TR className="bg-forest-50/40 hover:bg-forest-50/40">
                   <TD colSpan={ledger.view !== 'TRANSACTION' ? 7 : 6} className="text-xs font-medium text-ink-muted">
                     Opening balance
                   </TD>

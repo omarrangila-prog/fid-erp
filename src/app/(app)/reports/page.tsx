@@ -204,10 +204,10 @@ export default async function ReportsPage() {
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {group.reports.map((report) => (
               <Link key={report.href} href={report.href}>
-                <Card className="h-full p-4 transition-colors hover:border-navy-300 hover:bg-navy-50/40">
+                <Card className="h-full p-4 transition-colors hover:border-forest-300 hover:bg-forest-50/40">
                   <div className="flex items-start gap-3">
-                    <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-navy-50">
-                      <report.icon className="size-4 text-navy-600" />
+                    <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-forest-50">
+                      <report.icon className="size-4 text-forest-600" />
                     </span>
                     <span className="min-w-0">
                       <span className="block text-sm font-semibold text-ink">{report.title}</span>

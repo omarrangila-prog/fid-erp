@@ -29,9 +29,9 @@ export function TabsTrigger({ className, ...props }: React.ComponentProps<typeof
       className={cn(
         'relative shrink-0 whitespace-nowrap px-3 py-2.5 text-sm font-medium text-ink-muted transition-colors',
         'hover:text-ink',
-        'data-[state=active]:text-navy-800',
+        'data-[state=active]:text-forest-800',
         'after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:bg-transparent',
-        'data-[state=active]:after:bg-teal-600',
+        'data-[state=active]:after:bg-gold-600',
         className,
       )}
       {...props}
@@ -47,7 +47,7 @@ export function TabsContent({ className, ...props }: React.ComponentProps<typeof
 export function TabCount({ value }: { value: number }) {
   if (value === 0) return null;
   return (
-    <span className="tnum ml-1.5 rounded bg-navy-100 px-1.5 py-0.5 text-[10px] font-semibold text-navy-700">
+    <span className="tnum ml-1.5 rounded bg-forest-100 px-1.5 py-0.5 text-[10px] font-semibold text-forest-700">
       {value}
     </span>
   );

@@ -35,7 +35,7 @@ export function MobileNav({ permissions, isSuperAdmin }: { permissions: string[]
                   aria-current={active ? 'page' : undefined}
                   className={cn(
                     'flex flex-col items-center gap-1 px-1 py-2.5 text-[10px] font-medium transition-colors',
-                    active ? 'text-teal-700' : 'text-ink-muted',
+                    active ? 'text-gold-700' : 'text-ink-muted',
                   )}
                 >
                   <Icon className="size-5" />
@@ -59,22 +59,22 @@ export function MobileNav({ permissions, isSuperAdmin }: { permissions: string[]
 
       <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
         <DialogPrimitive.Portal>
-          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-navy-950/40 lg:hidden" />
-          <DialogPrimitive.Content className="animate-in-soft fixed inset-y-0 left-0 z-50 flex w-[17rem] flex-col bg-navy-900 shadow-2xl lg:hidden">
+          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-forest-950/40 lg:hidden" />
+          <DialogPrimitive.Content className="animate-in-soft fixed inset-y-0 left-0 z-50 flex w-[17rem] flex-col bg-forest-900 shadow-2xl lg:hidden">
             <DialogPrimitive.Title className="sr-only">Navigation</DialogPrimitive.Title>
             <DialogPrimitive.Description className="sr-only">
               All application sections available to you
             </DialogPrimitive.Description>
-            <div className="flex h-14 shrink-0 items-center justify-between border-b border-navy-800 px-4">
+            <div className="flex h-14 shrink-0 items-center justify-between border-b border-forest-800 px-4">
               <div className="flex items-center gap-2.5">
-                <div className="grid size-7 place-items-center rounded-md bg-teal-500 text-xs font-bold text-navy-950">
+                <div className="grid size-7 place-items-center rounded-md bg-gold-500 text-xs font-bold text-forest-950">
                   FID
                 </div>
                 <p className="text-sm font-semibold text-white">FID Trading</p>
               </div>
               <DialogPrimitive.Close
                 aria-label="Close navigation"
-                className="rounded-md p-1 text-navy-300 hover:bg-navy-800 hover:text-white"
+                className="rounded-md p-1 text-forest-300 hover:bg-forest-800 hover:text-white"
               >
                 <X className="size-5" />
               </DialogPrimitive.Close>

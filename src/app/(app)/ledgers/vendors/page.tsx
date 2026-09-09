@@ -56,7 +56,7 @@ export default async function VendorLedgersPage() {
               {vendors.map((vendor) => (
                 <TR key={vendor.id}>
                   <TD>
-                    <Link href={`/ledgers/vendors/${vendor.id}`} className="font-medium text-navy-800 hover:text-teal-700">
+                    <Link href={`/ledgers/vendors/${vendor.id}`} className="font-medium text-forest-800 hover:text-gold-700">
                       <span className="block">{vendor.vendorName}</span>
                       <span className="block text-xs font-normal text-ink-subtle">{vendor.vendorCode}</span>
                     </Link>

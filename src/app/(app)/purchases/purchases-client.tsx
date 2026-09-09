@@ -114,7 +114,7 @@ export function PurchasesClient({
       hideable: true,
       sortValue: (r) => r.receivedPct,
       cell: (r) => (
-        <span className={r.receivedPct >= 100 ? 'text-teal-700' : r.receivedPct > 0 ? 'text-amber-700' : 'text-ink-subtle'}>
+        <span className={r.receivedPct >= 100 ? 'text-gold-700' : r.receivedPct > 0 ? 'text-amber-700' : 'text-ink-subtle'}>
           {r.receivedLabel}
         </span>
       ),

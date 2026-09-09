@@ -68,9 +68,9 @@ export default async function CashBankPage() {
                       <TD>
                         <Link
                           href={`/finance/cash-bank/${account.accountId}`}
-                          className="flex items-center gap-2 font-medium text-navy-800 hover:text-teal-700"
+                          className="flex items-center gap-2 font-medium text-forest-800 hover:text-gold-700"
                         >
-                          <Icon className="size-4 text-navy-400" />
+                          <Icon className="size-4 text-forest-400" />
                           <span>
                             <span className="block">{account.name}</span>
                             <span className="block text-xs font-normal text-ink-subtle">{account.code}</span>

@@ -7,6 +7,7 @@ import { formatQuantityKg, formatDate, titleCase } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Callout } from '@/components/ui/feedback';
 import { EmptyAction } from '@/components/shared/empty-action';
+import { ServerPagination } from '@/components/shared/server-pagination';
 import { MovementsClient, type MovementRow } from '@/app/(app)/inventory/movements/movements-client';
 
 export const metadata: Metadata = { title: 'Stock Movements' };
@@ -20,14 +21,27 @@ const REFERENCE_LINKS: Record<string, (id: string) => string> = {
   STOCK_TRANSFER: () => '/inventory/transfers',
 };
 
-export default async function MovementsPage() {
+const PAGE_SIZE = 100;
+
+export default async function MovementsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
   const user = await requirePageAccess(PERMISSIONS.INVENTORY_VIEW);
   const companyId = user.activeCompany.id;
+
+  // The movement ledger only ever grows, so it is paged in the database.
+  const requested = Number((await searchParams).page ?? '1');
+  const page = Number.isFinite(requested) && requested > 0 ? Math.floor(requested) - 1 : 0;
+
+  const total = await prisma.inventoryTransaction.count({ where: { companyId } });
 
   const movements = await prisma.inventoryTransaction.findMany({
     where: { companyId },
     orderBy: { createdAt: 'desc' },
-    take: 1000,
+    skip: page * PAGE_SIZE,
+    take: PAGE_SIZE,
     include: {
       batch: { select: { batchNumber: true } },
       item: { select: { itemName: true } },
@@ -82,6 +96,8 @@ export default async function MovementsPage() {
         companyCode={user.activeCompany.code}
         canExport={can(user, PERMISSIONS.REPORTS_EXPORT)}
       />
+
+      <ServerPagination page={page} pageSize={PAGE_SIZE} total={total} basePath="/inventory/movements" />
     </div>
   );
 }

@@ -143,7 +143,7 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
                   </DetailRow>
                 </dl>
                 {item.description || item.notes ? (
-                  <p className="mt-4 rounded-lg bg-navy-50 p-3 text-xs leading-relaxed text-ink-muted">
+                  <p className="mt-4 rounded-lg bg-forest-50 p-3 text-xs leading-relaxed text-ink-muted">
                     {[item.description, item.notes].filter(Boolean).join('\n\n')}
                   </p>
                 ) : null}
@@ -176,7 +176,7 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
                       <TD>
                         <Link
                           href={`/inventory/batches/${batch.batchId}`}
-                          className="font-medium text-navy-800 hover:text-teal-700"
+                          className="font-medium text-forest-800 hover:text-gold-700"
                         >
                           {batch.batchNumber}
                         </Link>
@@ -244,7 +244,7 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
                   {item.shipments.map((shipment) => (
                     <TR key={shipment.id}>
                       <TD>
-                        <Link href={`/shipments/${shipment.id}`} className="font-medium text-navy-800 hover:text-teal-700">
+                        <Link href={`/shipments/${shipment.id}`} className="font-medium text-forest-800 hover:text-gold-700">
                           {shipment.shipmentNumber}
                         </Link>
                       </TD>

@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getCurrentUser } from '@/lib/auth/session';
 import { countUnread } from '@/lib/services/notification';
@@ -18,6 +19,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const unreadCount = await countUnread(user.activeCompany.id);
 
+  // Read the rail's width server-side so the first paint is already correct.
+  const sidebarCollapsed = (await cookies()).get('fid_sidebar')?.value === 'collapsed';
+
   // Only serialisable data crosses into the client components.
   const permissions = [...user.permissions];
   const companies = user.companies.map((c) => ({
@@ -29,7 +33,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-dvh bg-paper">
-      <DesktopSidebar permissions={permissions} isSuperAdmin={user.isSuperAdmin} />
+      <DesktopSidebar
+        permissions={permissions}
+        isSuperAdmin={user.isSuperAdmin}
+        defaultCollapsed={sidebarCollapsed}
+      />
 
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar

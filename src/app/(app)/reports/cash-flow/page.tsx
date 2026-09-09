@@ -30,10 +30,10 @@ export default async function CashFlowPage({ searchParams }: { searchParams: Pro
 
       <DateRangePicker defaultFrom={fromDate.toISOString().slice(0, 10)} defaultTo={toDate.toISOString().slice(0, 10)} />
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Card className="p-4">
           <p className="text-xs font-medium text-ink-muted">Money in</p>
-          <p className="tnum mt-1 text-lg font-semibold text-teal-700">{formatMoney(flow.totalInUsd, 'USD')}</p>
+          <p className="tnum mt-1 text-lg font-semibold text-gold-700">{formatMoney(flow.totalInUsd, 'USD')}</p>
         </Card>
         <Card className="p-4">
           <p className="text-xs font-medium text-ink-muted">Money out</p>
@@ -42,7 +42,7 @@ export default async function CashFlowPage({ searchParams }: { searchParams: Pro
         <Card className="p-4">
           <p className="text-xs font-medium text-ink-muted">Net movement</p>
           <p
-            className={`tnum mt-1 text-lg font-semibold ${flow.netMovementUsd.greaterThanOrEqualTo(0) ? 'text-teal-700' : 'text-red-600'}`}
+            className={`tnum mt-1 text-lg font-semibold ${flow.netMovementUsd.greaterThanOrEqualTo(0) ? 'text-gold-700' : 'text-red-600'}`}
           >
             {formatMoney(flow.netMovementUsd, 'USD')}
           </p>
@@ -79,7 +79,7 @@ export default async function CashFlowPage({ searchParams }: { searchParams: Pro
                   flow.lines.map((line) => (
                     <TR key={line.sourceType}>
                       <TD className="font-medium">{line.label}</TD>
-                      <TD numeric className={line.inUsd.greaterThan(0) ? 'text-teal-700' : 'text-ink-subtle'}>
+                      <TD numeric className={line.inUsd.greaterThan(0) ? 'text-gold-700' : 'text-ink-subtle'}>
                         {line.inUsd.greaterThan(0) ? formatMoney(line.inUsd, 'USD') : '—'}
                       </TD>
                       <TD numeric className={line.outUsd.greaterThan(0) ? 'text-red-600' : 'text-ink-subtle'}>

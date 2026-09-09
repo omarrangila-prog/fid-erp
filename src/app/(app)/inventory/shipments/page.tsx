@@ -60,7 +60,7 @@ export default async function ShipmentStockPage() {
               {rows.map((r) => (
                 <TR key={r.shipmentId}>
                   <TD>
-                    <Link href={`/shipments/${r.shipmentId}`} className="font-medium text-navy-800 hover:text-teal-700">
+                    <Link href={`/shipments/${r.shipmentId}`} className="font-medium text-forest-800 hover:text-gold-700">
                       {r.shipmentNumber}
                     </Link>
                   </TD>

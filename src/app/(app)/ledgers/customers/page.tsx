@@ -58,7 +58,7 @@ export default async function CustomerLedgersPage() {
                   <TD>
                     <Link
                       href={`/ledgers/customers/${customer.id}`}
-                      className="font-medium text-navy-800 hover:text-teal-700"
+                      className="font-medium text-forest-800 hover:text-gold-700"
                     >
                       <span className="block">{customer.customerName}</span>
                       <span className="block text-xs font-normal text-ink-subtle">{customer.customerCode}</span>

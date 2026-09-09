@@ -58,7 +58,7 @@ export default async function ExpenseReportPage({
               href={`/reports/expenses?from=${fromDate.toISOString().slice(0, 10)}&to=${toDate.toISOString().slice(0, 10)}&groupBy=${group.key}`}
               className={cn(
                 'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                grouping === group.key ? 'bg-navy-800 text-white' : 'text-ink-muted hover:text-ink',
+                grouping === group.key ? 'bg-forest-800 text-white' : 'text-ink-muted hover:text-ink',
               )}
             >
               {group.label}
@@ -103,8 +103,8 @@ export default async function ExpenseReportPage({
                         <TD numeric className="font-semibold">{formatMoney(row.amountUsd, 'USD')}</TD>
                         <TD numeric>
                           <span className="flex items-center justify-end gap-2">
-                            <span className="h-1.5 w-16 overflow-hidden rounded-full bg-navy-100">
-                              <span className="block h-full bg-navy-500" style={{ width: `${Number(share)}%` }} />
+                            <span className="h-1.5 w-16 overflow-hidden rounded-full bg-forest-100">
+                              <span className="block h-full bg-forest-500" style={{ width: `${Number(share)}%` }} />
                             </span>
                             <span className="text-xs text-ink-muted">{share.toFixed(1)}%</span>
                           </span>

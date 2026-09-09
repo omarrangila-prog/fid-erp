@@ -336,7 +336,7 @@ export function SaleForm({
           {computed.map(({ line, option, math, over }, index) => (
             <div
               key={line.key}
-              className={`rounded-lg border p-4 ${over ? 'border-red-300 bg-red-50/40' : 'border-line bg-navy-50/30'}`}
+              className={`rounded-lg border p-4 ${over ? 'border-red-300 bg-red-50/40' : 'border-line bg-forest-50/30'}`}
             >
               <div className="mb-3 flex items-center justify-between">
                 <span className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">
@@ -437,7 +437,7 @@ export function SaleForm({
       </Card>
 
       {totals.quantityKg.greaterThan(0) ? (
-        <Card className="border-navy-200 bg-navy-50/50">
+        <Card className="border-forest-200 bg-forest-50/50">
           <CardContent className="pt-5">
             <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
               <div>
@@ -446,7 +446,7 @@ export function SaleForm({
               </div>
               <div>
                 <dt className="text-xs text-ink-muted">Invoice value</dt>
-                <dd className="tnum text-base font-semibold text-navy-800">
+                <dd className="tnum text-base font-semibold text-forest-800">
                   {formatMoney(totals.amount, header.currency)}
                 </dd>
               </div>

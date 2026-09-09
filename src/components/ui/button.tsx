@@ -7,23 +7,33 @@ import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0',
+  [
+    'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium',
+    'transition-[background-color,border-color,color,box-shadow,transform] duration-150',
+    'disabled:pointer-events-none disabled:opacity-50',
+    'active:translate-y-px',
+    '[&_svg]:size-4 [&_svg]:shrink-0',
+  ].join(' '),
   {
     variants: {
       variant: {
-        primary: 'bg-navy-800 text-white hover:bg-navy-700 active:bg-navy-900',
-        accent: 'bg-teal-600 text-white hover:bg-teal-700 active:bg-teal-800',
-        outline: 'border border-line-strong bg-surface text-ink hover:bg-navy-50',
-        ghost: 'text-ink-muted hover:bg-navy-50 hover:text-ink',
-        danger: 'bg-red-600 text-white hover:bg-red-700',
-        subtle: 'bg-navy-100 text-navy-800 hover:bg-navy-200',
-        link: 'text-teal-700 underline-offset-4 hover:underline',
+        // Forest is the workhorse; gold is saved for the one action on a screen
+        // that deserves the eye. gold-700 rather than gold-600 so white text
+        // clears the AA contrast threshold.
+        primary: 'bg-forest-800 text-white shadow-card hover:bg-forest-700 active:bg-forest-900',
+        accent: 'bg-gold-700 text-white shadow-card hover:bg-gold-800 active:bg-gold-900',
+        outline: 'border border-line-strong bg-surface text-ink hover:border-forest-300 hover:bg-forest-50',
+        ghost: 'text-ink-muted hover:bg-forest-50 hover:text-ink',
+        danger: 'bg-red-600 text-white shadow-card hover:bg-red-700 active:bg-red-800',
+        subtle: 'bg-forest-100 text-forest-800 hover:bg-forest-200',
+        link: 'text-forest-700 underline-offset-4 hover:underline hover:text-forest-800',
       },
       size: {
-        sm: 'h-8 px-3 text-xs',
-        md: 'h-10 px-4',
+        // Coarse pointers get a 44px target regardless of the visual height.
+        sm: 'h-8 px-3 text-xs [@media(pointer:coarse)]:min-h-11',
+        md: 'h-10 px-4 [@media(pointer:coarse)]:min-h-11',
         lg: 'h-11 px-6',
-        icon: 'h-9 w-9',
+        icon: 'h-9 w-9 [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:min-w-11',
       },
     },
     defaultVariants: { variant: 'primary', size: 'md' },

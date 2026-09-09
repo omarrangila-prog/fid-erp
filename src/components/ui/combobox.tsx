@@ -70,7 +70,7 @@ export function Combobox({
           disabled={disabled}
           data-invalid={invalid ? 'true' : undefined}
           className={cn(
-            'flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-line-strong bg-surface px-3 text-left text-sm transition-colors hover:border-navy-300 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 disabled:cursor-not-allowed disabled:bg-navy-50 data-[invalid=true]:border-red-400',
+            'flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-line-strong bg-surface px-3 text-left text-sm transition-colors hover:border-forest-300 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20 disabled:cursor-not-allowed disabled:bg-forest-50 data-[invalid=true]:border-red-400',
             className,
           )}
         >
@@ -112,8 +112,8 @@ export function Combobox({
                     setOpen(false);
                   }}
                   className={cn(
-                    'flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-navy-50 disabled:cursor-not-allowed disabled:opacity-50',
-                    option.value === value && 'bg-teal-50',
+                    'flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-forest-50 disabled:cursor-not-allowed disabled:opacity-50',
+                    option.value === value && 'bg-gold-50',
                   )}
                 >
                   <span className="min-w-0">
@@ -122,7 +122,7 @@ export function Combobox({
                       <span className="block truncate text-xs text-ink-subtle">{option.hint}</span>
                     ) : null}
                   </span>
-                  {option.value === value ? <Check className="size-4 shrink-0 text-teal-600" /> : null}
+                  {option.value === value ? <Check className="size-4 shrink-0 text-gold-600" /> : null}
                 </button>
               ))
             )}

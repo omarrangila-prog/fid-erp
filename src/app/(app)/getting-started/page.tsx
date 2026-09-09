@@ -112,10 +112,10 @@ export default async function GettingStartedPage() {
                 <li key={stage.title}>
                   <Link
                     href={stage.href}
-                    className="group flex h-full flex-col rounded-xl border border-line bg-paper p-4 transition-colors hover:border-teal-300 hover:bg-teal-50/40"
+                    className="group flex h-full flex-col rounded-xl border border-line bg-paper p-4 transition-colors hover:border-gold-300 hover:bg-gold-50/40"
                   >
                     <div className="flex items-center gap-2.5">
-                      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-navy-800 text-white">
+                      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-forest-800 text-white">
                         <Icon className="size-4" />
                       </span>
                       <span className="tnum text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
@@ -124,7 +124,7 @@ export default async function GettingStartedPage() {
                     </div>
                     <p className="mt-3 text-sm font-semibold text-ink">{stage.title}</p>
                     <p className="mt-1 flex-1 text-xs leading-relaxed text-ink-muted">{stage.body}</p>
-                    <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-teal-700 opacity-0 transition-opacity group-hover:opacity-100">
+                    <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-gold-700 opacity-0 transition-opacity group-hover:opacity-100">
                       Open <ArrowRight className="size-3.5" />
                     </span>
                   </Link>
@@ -146,7 +146,7 @@ export default async function GettingStartedPage() {
               const Icon = rule.icon;
               return (
                 <div key={rule.title} className="flex gap-3">
-                  <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-teal-50 text-teal-700">
+                  <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-gold-50 text-gold-700">
                     <Icon className="size-4" />
                   </span>
                   <div className="min-w-0">

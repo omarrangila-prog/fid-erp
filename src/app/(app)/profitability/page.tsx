@@ -84,7 +84,7 @@ export default async function ProfitabilityPage({ searchParams }: { searchParams
             href={`/profitability?view=${option.key}`}
             className={cn(
               'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-              active === option.key ? 'bg-navy-800 text-white' : 'text-ink-muted hover:text-ink',
+              active === option.key ? 'bg-forest-800 text-white' : 'text-ink-muted hover:text-ink',
             )}
           >
             {option.label}
@@ -138,7 +138,7 @@ async function ShipmentTable({ companyId }: { companyId: string }) {
                 rows.map((row) => (
                   <TR key={row.shipmentId}>
                     <TD>
-                      <Link href={`/shipments/${row.shipmentId}`} className="font-medium text-navy-800 hover:text-teal-700">
+                      <Link href={`/shipments/${row.shipmentId}`} className="font-medium text-forest-800 hover:text-gold-700">
                         <span className="block">{row.shipmentNumber}</span>
                         <span className="block text-xs font-normal text-ink-subtle">{row.jobNumber}</span>
                       </Link>
@@ -151,13 +151,13 @@ async function ShipmentTable({ companyId }: { companyId: string }) {
                     <TD numeric className="text-ink-muted">{formatQuantityKg(row.remainingQuantityKg)}</TD>
                     <TD numeric>{formatMoney(row.salesRevenueUsd, 'USD')}</TD>
                     <TD numeric className="text-ink-muted">{formatMoney(row.allocatedLandedCostUsd, 'USD')}</TD>
-                    <TD numeric className={row.grossProfitUsd.greaterThanOrEqualTo(0) ? 'text-teal-700' : 'text-red-600'}>
+                    <TD numeric className={row.grossProfitUsd.greaterThanOrEqualTo(0) ? 'text-gold-700' : 'text-red-600'}>
                       {formatMoney(row.grossProfitUsd, 'USD')}
                     </TD>
                     <TD numeric className="text-ink-muted">{formatMoney(row.otherCostsUsd, 'USD')}</TD>
                     <TD
                       numeric
-                      className={cn('font-semibold', row.netProfitUsd.greaterThanOrEqualTo(0) ? 'text-teal-700' : 'text-red-600')}
+                      className={cn('font-semibold', row.netProfitUsd.greaterThanOrEqualTo(0) ? 'text-gold-700' : 'text-red-600')}
                     >
                       {formatMoney(row.netProfitUsd, 'USD')}
                     </TD>
@@ -242,7 +242,7 @@ async function BreakdownTable({
                     <TD numeric className="text-ink-muted">{formatMoney(row.cogsUsd, 'USD')}</TD>
                     <TD
                       numeric
-                      className={cn('font-semibold', row.grossProfitUsd.greaterThanOrEqualTo(0) ? 'text-teal-700' : 'text-red-600')}
+                      className={cn('font-semibold', row.grossProfitUsd.greaterThanOrEqualTo(0) ? 'text-gold-700' : 'text-red-600')}
                     >
                       {formatMoney(row.grossProfitUsd, 'USD')}
                     </TD>
@@ -287,13 +287,13 @@ async function MonthlyTable({ companyId }: { companyId: string }) {
                   <TD className="font-medium">{row.month}</TD>
                   <TD numeric>{formatMoney(row.revenueUsd, 'USD')}</TD>
                   <TD numeric className="text-ink-muted">{formatMoney(row.cogsUsd, 'USD')}</TD>
-                  <TD numeric className={row.grossProfitUsd.greaterThanOrEqualTo(0) ? 'text-teal-700' : 'text-red-600'}>
+                  <TD numeric className={row.grossProfitUsd.greaterThanOrEqualTo(0) ? 'text-gold-700' : 'text-red-600'}>
                     {formatMoney(row.grossProfitUsd, 'USD')}
                   </TD>
                   <TD numeric className="text-ink-muted">{formatMoney(row.expensesUsd, 'USD')}</TD>
                   <TD
                     numeric
-                    className={cn('font-semibold', row.netProfitUsd.greaterThanOrEqualTo(0) ? 'text-teal-700' : 'text-red-600')}
+                    className={cn('font-semibold', row.netProfitUsd.greaterThanOrEqualTo(0) ? 'text-gold-700' : 'text-red-600')}
                   >
                     {formatMoney(row.netProfitUsd, 'USD')}
                   </TD>

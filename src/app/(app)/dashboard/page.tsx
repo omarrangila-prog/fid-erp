@@ -1,9 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import {
-  Wallet, Landmark, Boxes, Ship, CircleDollarSign, HandCoins,
-  TrendingUp, AlertTriangle, Package, Container as ContainerIcon, Coins, Truck,
-  Plus, ArrowRight,
+  Boxes, CircleDollarSign, HandCoins, TrendingUp,
+  Package, Container as ContainerIcon, Coins, Truck, Plus, ArrowRight,
 } from 'lucide-react';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, SHIPMENT_STATUS_META } from '@/lib/constants';
@@ -134,7 +133,7 @@ export default async function DashboardPage() {
             </dl>
             <Link
               href="/getting-started"
-              className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-teal-700 hover:underline"
+              className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-gold-700 hover:underline"
             >
               Read how the pieces fit together
               <ArrowRight className="size-4" />
@@ -145,9 +144,6 @@ export default async function DashboardPage() {
     );
   }
 
-  // Cash and bank, split by currency — never merged into one figure.
-  const localTotals = data.position.currencyTotals.find((c) => c.currency === local);
-  const usdTotals = data.position.currencyTotals.find((c) => c.currency === 'USD');
 
   const monthly = data.monthly.map((m) => ({
     month: m.month.slice(2),
@@ -199,42 +195,21 @@ export default async function DashboardPage() {
         />
       ) : null}
 
-      {/* --- What do I have? ------------------------------------------------ */}
-      <section className="space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">Money</h2>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <StatCard
-            label={`Cash ${local}`}
-            value={formatMoney(localTotals?.cash ?? 0, local)}
-            icon={Wallet}
-            href="/finance/cash-bank"
-          />
-          <StatCard
-            label={`Bank ${local}`}
-            value={formatMoney(localTotals?.bank ?? 0, local)}
-            icon={Landmark}
-            href="/finance/cash-bank"
-          />
-          <StatCard
-            label="Cash USD"
-            value={formatMoney(usdTotals?.cash ?? 0, 'USD')}
-            icon={Coins}
-            href="/finance/cash-bank"
-          />
-          <StatCard
-            label="Bank USD"
-            value={formatMoney(usdTotals?.bank ?? 0, 'USD')}
-            icon={Landmark}
-            href="/finance/cash-bank"
-          />
-        </div>
-      </section>
-
+      {/* --- The six figures people actually open this screen for ---------- */}
       <section className="space-y-3">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">Position</h2>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+          {showProfit ? (
+            <StatCard
+              label="Sales Revenue"
+              value={formatMoney(data.profit.revenueUsd, 'USD')}
+              sublabel="Posted invoices"
+              icon={TrendingUp}
+              href="/sales"
+            />
+          ) : null}
           <StatCard
-            label="Customer Receivables"
+            label="Receivables"
             value={formatMoney(data.position.receivableUsd, 'USD')}
             sublabel={
               data.receivables.overdueCount > 0
@@ -246,23 +221,29 @@ export default async function DashboardPage() {
             href="/finance/receivables"
           />
           <StatCard
-            label="Supplier Payables"
+            label="Payables"
             value={formatMoney(data.position.payableUsd, 'USD')}
             sublabel={`${data.payables.count} open contract${data.payables.count === 1 ? '' : 's'}`}
             icon={HandCoins}
             href="/finance/payables"
           />
-          <StatCard
-            label="Stock on Hand"
-            value={formatQuantityKg(data.position.availableKg)}
-            sublabel={
-              showCost
-                ? `${formatMoneyCompact(data.position.inventoryValueUsd, 'USD')} · ${data.position.bags.toLocaleString()} bags`
-                : `${data.position.bags.toLocaleString()} bags`
-            }
-            icon={Boxes}
-            href="/inventory"
-          />
+          {showCost ? (
+            <StatCard
+              label="Inventory Value"
+              value={formatMoneyCompact(data.position.inventoryValueUsd, 'USD')}
+              sublabel={`${formatQuantityKg(data.position.availableKg)} on hand`}
+              icon={Boxes}
+              href="/inventory"
+            />
+          ) : (
+            <StatCard
+              label="Stock on Hand"
+              value={formatQuantityKg(data.position.availableKg)}
+              sublabel={`${data.position.bags.toLocaleString()} bags`}
+              icon={Boxes}
+              href="/inventory"
+            />
+          )}
           <StatCard
             label="Coffee in Transit"
             value={formatQuantityKg(data.position.inTransitKg)}
@@ -270,14 +251,128 @@ export default async function DashboardPage() {
             icon={Truck}
             href="/shipments"
           />
+          {showProfit ? (
+            <StatCard
+              label="Net Profit"
+              value={formatMoney(data.profit.netProfitUsd, 'USD')}
+              sublabel={`${data.profit.netMarginPct.toString()}% margin`}
+              tone={data.profit.netProfitUsd.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
+              icon={TrendingUp}
+              href="/profitability"
+            />
+          ) : null}
         </div>
       </section>
 
+      {/* --- Cash, by currency. Never one merged number. -------------------- */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Cash and bank</CardTitle>
+            <CardDescription>
+              Each currency stands on its own — adding {local} to USD would produce a number that means nothing.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {data.position.currencyTotals.length === 0 ? (
+                <p className="py-4 text-xs text-ink-subtle">No cash or bank movement yet.</p>
+              ) : (
+                data.position.currencyTotals.map((totals) => (
+                  <Link
+                    key={totals.currency}
+                    href="/finance/cash-bank"
+                    className="rounded-lg border border-line bg-paper p-4 transition-colors hover:border-forest-300"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-ink-subtle">
+                        {totals.currency}
+                      </span>
+                      <Coins className="size-4 text-forest-300" />
+                    </div>
+                    <dl className="mt-3 grid grid-cols-2 gap-3">
+                      <div>
+                        <dt className="text-[11px] text-ink-muted">Cash</dt>
+                        <dd className="tnum text-sm font-semibold text-ink">
+                          {formatMoney(totals.cash, totals.currency)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-[11px] text-ink-muted">Bank</dt>
+                        <dd className="tnum text-sm font-semibold text-ink">
+                          {formatMoney(totals.bank, totals.currency)}
+                        </dd>
+                      </div>
+                    </dl>
+                  </Link>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Needs attention</CardTitle>
+            <CardDescription>What would go wrong if nobody looked today.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Link
+              href="/finance/receivables"
+              className="flex items-center justify-between gap-3 rounded-lg border border-line p-3 transition-colors hover:border-forest-300"
+            >
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-ink">Overdue customers</span>
+                <span className="block text-xs text-ink-subtle">
+                  {formatMoney(data.receivables.overdueUsd, 'USD')} outstanding
+                </span>
+              </span>
+              <span
+                className={`tnum shrink-0 text-lg font-semibold ${
+                  data.receivables.topOverdue.length > 0 ? 'text-red-600' : 'text-ink-subtle'
+                }`}
+              >
+                {data.receivables.topOverdue.length}
+              </span>
+            </Link>
+
+            <Link
+              href="/shipments"
+              className="flex items-center justify-between gap-3 rounded-lg border border-line p-3 transition-colors hover:border-forest-300"
+            >
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-ink">Active shipments</span>
+                <span className="block text-xs text-ink-subtle">
+                  {data.shipments.totalContainers} container{data.shipments.totalContainers === 1 ? '' : 's'}
+                </span>
+              </span>
+              <span className="tnum shrink-0 text-lg font-semibold text-ink">{data.shipments.activeCount}</span>
+            </Link>
+
+            <Link
+              href="/notifications"
+              className="flex items-center justify-between gap-3 rounded-lg border border-line p-3 transition-colors hover:border-forest-300"
+            >
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-ink">Unread alerts</span>
+                <span className="block text-xs text-ink-subtle">ETA and overdue warnings</span>
+              </span>
+              <span
+                className={`tnum shrink-0 text-lg font-semibold ${
+                  data.unreadAlerts > 0 ? 'text-amber-700' : 'text-ink-subtle'
+                }`}
+              >
+                {data.unreadAlerts}
+              </span>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+
       {showProfit ? (
         <section className="space-y-3">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">Performance</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">Margin</h2>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <StatCard label="Sales Revenue" value={formatMoney(data.profit.revenueUsd, 'USD')} icon={TrendingUp} />
             <StatCard
               label="Gross Profit"
               value={formatMoney(data.profit.grossProfitUsd, 'USD')}
@@ -285,49 +380,27 @@ export default async function DashboardPage() {
               tone={data.profit.grossProfitUsd.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
             />
             <StatCard
-              label="Net Profit"
-              value={formatMoney(data.profit.netProfitUsd, 'USD')}
-              sublabel={`${data.profit.netMarginPct.toString()}% margin`}
-              tone={data.profit.netProfitUsd.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
-              href="/profitability"
-            />
-            <StatCard
               label="Profit per KG"
               value={formatMoney(data.profit.profitPerKgUsd, 'USD')}
               sublabel={`on ${formatQuantityKg(data.profit.soldKg)} sold`}
               tone={data.profit.profitPerKgUsd.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
             />
+            <StatCard
+              label="Warehouses"
+              value={String(data.warehouseStock.length)}
+              sublabel={data.warehouseStock.map((w) => w.code).join(' · ') || 'None set up'}
+              icon={Package}
+              href="/inventory"
+            />
+            <StatCard
+              label="Containers"
+              value={String(data.shipments.totalContainers)}
+              icon={ContainerIcon}
+              href="/shipments"
+            />
           </div>
         </section>
       ) : null}
-
-      <section className="space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">Logistics</h2>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <StatCard label="Active Shipments" value={String(data.shipments.activeCount)} icon={Ship} href="/shipments" />
-          <StatCard
-            label="Containers"
-            value={String(data.shipments.totalContainers)}
-            icon={ContainerIcon}
-            href="/shipments"
-          />
-          <StatCard
-            label="Warehouses"
-            value={String(data.warehouseStock.length)}
-            sublabel={data.warehouseStock.map((w) => w.code).join(' · ') || 'None set up'}
-            icon={Package}
-            href="/inventory"
-          />
-          <StatCard
-            label="Overdue Customers"
-            value={String(data.receivables.topOverdue.length)}
-            sublabel={formatMoney(data.receivables.overdueUsd, 'USD')}
-            tone={data.receivables.topOverdue.length > 0 ? 'negative' : 'default'}
-            icon={AlertTriangle}
-            href="/finance/receivables"
-          />
-        </div>
-      </section>
 
       {/* --- Where is my stock? --------------------------------------------- */}
       <div className="grid gap-4 lg:grid-cols-3">
@@ -456,7 +529,7 @@ export default async function DashboardPage() {
                     className="flex items-center justify-between gap-3 border-b border-line pb-3 last:border-0 last:pb-0"
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-navy-800">{s.shipmentNumber}</p>
+                      <p className="truncate text-sm font-medium text-forest-800">{s.shipmentNumber}</p>
                       <p className="truncate text-xs text-ink-subtle">
                         {s.itemName} · {s.vendorName}
                       </p>
@@ -494,7 +567,7 @@ export default async function DashboardPage() {
                   href={`/ledgers/customers/${c.customerId}`}
                   className="flex items-center justify-between gap-3 border-b border-line pb-3 last:border-0 last:pb-0"
                 >
-                  <p className="min-w-0 truncate text-sm font-medium text-navy-800">{c.customerName}</p>
+                  <p className="min-w-0 truncate text-sm font-medium text-forest-800">{c.customerName}</p>
                   <p className="tnum shrink-0 text-sm font-semibold text-red-600">
                     {formatMoney(c.amountUsd, 'USD')}
                   </p>

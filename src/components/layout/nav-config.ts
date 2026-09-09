@@ -31,6 +31,9 @@ import {
   ClipboardList,
   TrendingUp,
   Compass,
+  BookPlus,
+  LineChart,
+  RefreshCcw,
   type LucideIcon,
 } from 'lucide-react';
 import { PERMISSIONS, type PermissionCode } from '@/lib/constants';
@@ -103,6 +106,14 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: 'Accounting',
+    items: [
+      { label: 'Journal Voucher', href: '/accounting/journal/new', icon: BookPlus, permissions: [PERMISSIONS.ACCOUNTING_POST] },
+      { label: 'Journal', href: '/reports/journal', icon: LineChart, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
+      { label: 'Currency Revaluation', href: '/accounting/revaluation', icon: RefreshCcw, permissions: [PERMISSIONS.ACCOUNTING_POST] },
+    ],
+  },
+  {
     label: 'Insight',
     items: [
       { label: 'Profitability', href: '/profitability', icon: TrendingUp, permissions: [PERMISSIONS.PROFITS_VIEW] },
@@ -150,6 +161,7 @@ export const QUICK_CREATE: QuickCreateItem[] = [
   { label: 'Customer', href: '/customers?new=1', icon: Users, group: 'Records', hint: 'Someone you sell to', permission: PERMISSIONS.CUSTOMERS_CREATE },
   { label: 'Supplier', href: '/vendors?new=1', icon: Truck, group: 'Records', hint: 'Someone you buy from', permission: PERMISSIONS.VENDORS_CREATE },
   { label: 'Coffee item', href: '/items?new=1', icon: Coffee, group: 'Records', hint: 'Origin, grade, screen, process', permission: PERMISSIONS.ITEMS_CREATE },
+  { label: 'Journal voucher', href: '/accounting/journal/new', icon: BookPlus, group: 'Money', hint: 'A direct double-entry posting', permission: PERMISSIONS.ACCOUNTING_POST },
 ];
 
 export function filterQuickCreate(permissions: string[], isSuperAdmin: boolean): QuickCreateItem[] {

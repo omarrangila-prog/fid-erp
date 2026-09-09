@@ -39,7 +39,7 @@ export default async function UnauthorizedPage({
               <p className="mt-1 text-sm font-medium text-ink">{detail.description}</p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <Badge tone="neutral">{detail.module}</Badge>
-                <code className="rounded bg-navy-50 px-1.5 py-0.5 text-[11px] text-ink-muted">{permission}</code>
+                <code className="rounded bg-forest-50 px-1.5 py-0.5 text-[11px] text-ink-muted">{permission}</code>
               </div>
             </div>
 

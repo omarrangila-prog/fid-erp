@@ -14,7 +14,7 @@ import { postJournalEntry, reverseJournalEntry } from '@/lib/services/accounting
 import { getCompanyContext } from '@/lib/services/company';
 import { writeAudit } from '@/lib/services/audit';
 import { computePurchaseTotals } from '@/lib/calc/purchase';
-import type { PurchaseContractInput } from '@/lib/calc/purchase';
+import type { PurchaseContractInput, PurchaseLineInput } from '@/lib/calc/purchase';
 
 /**
  * PurchaseService — the start of the "enter once, update everywhere" chain.
@@ -80,13 +80,96 @@ function lineData(totals: ReturnType<typeof computePurchaseTotals>) {
   }));
 }
 
+/**
+ * Batch, lot and container numbers, checked when the contract is saved.
+ *
+ * Batches are only written when the contract is approved, so without this the
+ * clash surfaces as a raw unique-constraint failure at approval — after the
+ * user has typed the whole document. Checking here names the offending number
+ * while it is still on screen.
+ *
+ * Lots may legitimately span contracts (a supplier lot can be split across
+ * shipments) so they are allowed to repeat, but only for the same coffee.
+ *
+ * Containers are physically reused in the real world, months apart. We still
+ * refuse to attach an existing container number to a second contract, because
+ * the container row carries the shipment it belongs to: silently repointing it
+ * would strip the container off the earlier shipment and quietly falsify that
+ * shipment's records. Refusing is the safe reading.
+ */
+async function assertTraceabilityNumbersAreFree(
+  tx: Tx,
+  companyId: string,
+  lines: PurchaseLineInput[],
+  excludeContractId?: string,
+): Promise<void> {
+  const seenBatches = new Set<string>();
+  const seenContainers = new Set<string>();
+
+  for (const line of lines) {
+    const batchNumber = line.batchNumber.trim();
+    if (seenBatches.has(batchNumber)) {
+      throw new ConflictError(`Batch number "${batchNumber}" appears more than once on this contract.`);
+    }
+    seenBatches.add(batchNumber);
+
+    const clash = await tx.batch.findFirst({
+      where: {
+        companyId,
+        batchNumber,
+        ...(excludeContractId ? { NOT: { purchaseContractId: excludeContractId } } : {}),
+      },
+      select: { batchNumber: true, purchaseContract: { select: { contractNumber: true } } },
+    });
+    if (clash) {
+      throw new ConflictError(
+        `Batch number "${batchNumber}" is already used by ${clash.purchaseContract?.contractNumber ?? 'another contract'}.`,
+      );
+    }
+
+    const lot = await tx.lot.findFirst({
+      where: { companyId, lotNumber: line.lotNumber.trim() },
+      select: { itemId: true, lotNumber: true },
+    });
+    if (lot && lot.itemId !== line.itemId) {
+      throw new ConflictError(
+        `Lot "${lot.lotNumber}" already exists for a different coffee. Use a lot number of its own.`,
+      );
+    }
+
+    if (line.containerNumber) {
+      const containerNumber = line.containerNumber.trim();
+      if (seenContainers.has(containerNumber)) continue;
+      seenContainers.add(containerNumber);
+
+      const container = await tx.container.findFirst({
+        where: {
+          companyId,
+          containerNumber,
+          ...(excludeContractId ? { NOT: { purchaseContractId: excludeContractId } } : {}),
+        },
+        select: { containerNumber: true, purchaseContract: { select: { contractNumber: true } } },
+      });
+      if (container) {
+        throw new ConflictError(
+          `Container "${containerNumber}" is already recorded on ${container.purchaseContract?.contractNumber ?? 'another contract'}.`,
+        );
+      }
+    }
+  }
+}
+
 export async function createPurchaseContract(input: PurchaseContractInput, userId: string) {
   return transaction(async (tx) => {
     const vendor = await tx.vendor.findFirst({
       where: { id: input.vendorId, companyId: input.companyId },
-      select: { id: true, vendorName: true },
+      select: { id: true, vendorName: true, paymentTermDays: true },
     });
     if (!vendor) throw new NotFoundError('Supplier');
+
+    // Zero-day terms are real and must still produce a due date, or the
+    // contract can never appear as overdue on the payables ageing.
+    const termDays = input.paymentTermDays ?? vendor.paymentTermDays ?? 0;
 
     for (const line of input.lines) {
       const item = await tx.coffeeItem.findFirst({
@@ -97,6 +180,7 @@ export async function createPurchaseContract(input: PurchaseContractInput, userI
     }
 
     await assertReferenceIsFree(tx, input.companyId, input.contractReference);
+    await assertTraceabilityNumbersAreFree(tx, input.companyId, input.lines);
 
     const totals = computePurchaseTotals(input);
     const contractNumber = await nextReference(tx, {
@@ -104,9 +188,7 @@ export async function createPurchaseContract(input: PurchaseContractInput, userI
       docType: DOC_TYPES.PURCHASE_CONTRACT,
     });
 
-    const dueDate = input.paymentTermDays
-      ? new Date(input.contractDate.getTime() + input.paymentTermDays * 86_400_000)
-      : null;
+    const dueDate = new Date(input.contractDate.getTime() + termDays * 86_400_000);
 
     const contract = await tx.purchaseContract.create({
       data: {
@@ -131,7 +213,7 @@ export async function createPurchaseContract(input: PurchaseContractInput, userI
         portOfLoading: input.portOfLoading ?? null,
         destination: input.destination ?? null,
         expectedShipmentDate: input.expectedShipmentDate ?? null,
-        paymentTermDays: input.paymentTermDays ?? 0,
+        paymentTermDays: termDays,
         dueDate,
         notes: input.notes ?? null,
         status: 'DRAFT',
@@ -166,11 +248,17 @@ export async function updatePurchaseContract(id: string, input: PurchaseContract
     }
 
     await assertReferenceIsFree(tx, input.companyId, input.contractReference, id);
+    await assertTraceabilityNumbersAreFree(tx, input.companyId, input.lines, id);
+
+    const vendor = await tx.vendor.findFirst({
+      where: { id: input.vendorId, companyId: input.companyId },
+      select: { paymentTermDays: true },
+    });
+    if (!vendor) throw new NotFoundError('Supplier');
 
     const totals = computePurchaseTotals(input);
-    const dueDate = input.paymentTermDays
-      ? new Date(input.contractDate.getTime() + input.paymentTermDays * 86_400_000)
-      : null;
+    const termDays = input.paymentTermDays ?? vendor.paymentTermDays ?? 0;
+    const dueDate = new Date(input.contractDate.getTime() + termDays * 86_400_000);
 
     await tx.purchaseContractLine.deleteMany({ where: { purchaseContractId: id } });
 
@@ -196,7 +284,7 @@ export async function updatePurchaseContract(id: string, input: PurchaseContract
         portOfLoading: input.portOfLoading ?? null,
         destination: input.destination ?? null,
         expectedShipmentDate: input.expectedShipmentDate ?? null,
-        paymentTermDays: input.paymentTermDays ?? 0,
+        paymentTermDays: termDays,
         dueDate,
         notes: input.notes ?? null,
         lines: { create: lineData(totals) },

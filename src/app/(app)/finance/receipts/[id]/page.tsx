@@ -127,7 +127,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                   className="flex items-center justify-between gap-3 border-b border-line pb-3 last:border-0 last:pb-0"
                 >
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium text-navy-800">
+                    <span className="block truncate text-sm font-medium text-forest-800">
                       {allocation.salesInvoice.invoiceNumber}
                     </span>
                     <span className="block text-xs text-ink-subtle">
@@ -156,7 +156,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
             <CardContent>
               <dl>
                 <DetailRow label="Customer">
-                  <Link href={`/ledgers/customers/${receipt.customerId}`} className="text-teal-700 hover:underline">
+                  <Link href={`/ledgers/customers/${receipt.customerId}`} className="text-gold-700 hover:underline">
                     {receipt.customer.customerName}
                   </Link>
                 </DetailRow>

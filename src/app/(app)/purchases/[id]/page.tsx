@@ -212,7 +212,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                             <span className="block text-xs text-ink-subtle">per {line.unit}</span>
                           </TD>
                           <TD numeric>{formatMoney(line.lineSubtotal, contract.currency)}</TD>
-                          <TD numeric className="font-medium text-teal-700">
+                          <TD numeric className="font-medium text-gold-700">
                             {formatMoney(line.unitCostKg, contract.currency)}
                           </TD>
                         </>
@@ -245,7 +245,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
             <CardContent>
               <dl>
                 <DetailRow label="Supplier">
-                  <Link href={`/vendors/${contract.vendorId}`} className="text-teal-700 hover:underline">
+                  <Link href={`/vendors/${contract.vendorId}`} className="text-gold-700 hover:underline">
                     {contract.vendor.vendorName}
                   </Link>
                 </DetailRow>
@@ -292,7 +292,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
               <CardContent>
                 <dl>
                   <DetailRow label="Job number">
-                    <Link href={`/shipments/${job.id}`} className="text-teal-700 hover:underline">
+                    <Link href={`/shipments/${job.id}`} className="text-gold-700 hover:underline">
                       {job.jobNumber}
                     </Link>
                   </DetailRow>
@@ -335,7 +335,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                       <TD>{r.lotNumber}</TD>
                       <TD numeric>{formatQuantityKg(r.orderedKg)}</TD>
                       <TD numeric>{formatQuantityKg(r.receivedKg)}</TD>
-                      <TD numeric className={r.outstandingKg.greaterThan(0) ? 'font-medium text-amber-700' : 'text-teal-700'}>
+                      <TD numeric className={r.outstandingKg.greaterThan(0) ? 'font-medium text-amber-700' : 'text-gold-700'}>
                         {r.outstandingKg.greaterThan(0) ? formatQuantityKg(r.outstandingKg) : 'Complete'}
                       </TD>
                     </TR>

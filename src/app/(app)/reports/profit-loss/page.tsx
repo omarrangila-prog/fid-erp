@@ -32,7 +32,7 @@ export default async function ProfitLossPage({
 
   const section = (title: string, lines: PnlLine[], totalUsd: string, totalLocal: string, emphasis?: boolean) => (
     <>
-      <TR className="bg-navy-50/40 hover:bg-navy-50/40">
+      <TR className="bg-forest-50/40 hover:bg-forest-50/40">
         <TD colSpan={3} className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
           {title}
         </TD>
@@ -78,8 +78,8 @@ export default async function ProfitLossPage({
         {[
           { label: 'Revenue', value: pnl.totals.revenueUsd, tone: 'text-ink' },
           { label: 'Cost of sales', value: pnl.totals.costOfSalesUsd, tone: 'text-ink' },
-          { label: 'Gross profit', value: pnl.totals.grossProfitUsd, tone: 'text-teal-700' },
-          { label: 'Net profit', value: pnl.totals.netProfitUsd, tone: pnl.totals.netProfitUsd.greaterThanOrEqualTo(0) ? 'text-teal-700' : 'text-red-600' },
+          { label: 'Gross profit', value: pnl.totals.grossProfitUsd, tone: 'text-gold-700' },
+          { label: 'Net profit', value: pnl.totals.netProfitUsd, tone: pnl.totals.netProfitUsd.greaterThanOrEqualTo(0) ? 'text-gold-700' : 'text-red-600' },
         ].map((card) => (
           <Card key={card.label} className="p-4">
             <p className="text-xs font-medium text-ink-muted">{card.label}</p>
@@ -110,7 +110,7 @@ export default async function ProfitLossPage({
                 {section('Revenue', pnl.revenue, formatMoney(pnl.totals.revenueUsd, 'USD'), formatMoney(pnl.totals.revenueLocal, local))}
                 {section('Cost of sales', pnl.costOfSales, formatMoney(pnl.totals.costOfSalesUsd, 'USD'), formatMoney(pnl.totals.costOfSalesLocal, local))}
 
-                <TR className="border-t-2 border-line-strong bg-teal-50/50 font-semibold hover:bg-teal-50/50">
+                <TR className="border-t-2 border-line-strong bg-gold-50/50 font-semibold hover:bg-gold-50/50">
                   <TD>
                     Gross profit
                     <span className="ml-2 text-xs font-normal text-ink-muted">{formatPercent(pnl.grossMarginPct)}</span>
@@ -124,7 +124,7 @@ export default async function ProfitLossPage({
                   ? section('Other income and costs', pnl.otherItems, formatMoney(pnl.totals.otherUsd, 'USD'), formatMoney(pnl.totals.otherLocal, local))
                   : null}
 
-                <TR className="border-t-2 border-line-strong bg-navy-50 font-semibold hover:bg-navy-50">
+                <TR className="border-t-2 border-line-strong bg-forest-50 font-semibold hover:bg-forest-50">
                   <TD>
                     Net profit
                     <span className="ml-2 text-xs font-normal text-ink-muted">{formatPercent(pnl.netMarginPct)}</span>

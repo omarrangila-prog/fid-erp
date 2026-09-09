@@ -74,7 +74,7 @@ export default async function GeneralLedgerPage({
                   </TR>
                 </THead>
                 <TBody>
-                  <TR className="bg-navy-50/40 hover:bg-navy-50/40">
+                  <TR className="bg-forest-50/40 hover:bg-forest-50/40">
                     <TD colSpan={6} className="text-xs font-medium text-ink-muted">
                       Opening balance
                     </TD>

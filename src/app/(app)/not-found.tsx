@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 export default function AppNotFound() {
   return (
     <div className="mx-auto flex max-w-xl flex-col items-center py-16 text-center">
-      <div className="grid size-12 place-items-center rounded-xl border border-line bg-navy-50 text-navy-500">
+      <div className="grid size-12 place-items-center rounded-xl border border-line bg-forest-50 text-forest-500">
         <FileQuestion className="size-6" />
       </div>
 

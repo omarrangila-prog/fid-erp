@@ -100,7 +100,7 @@ export function MovementsClient({
       mobile: 'meta',
       sortValue: (r) => r.quantitySort,
       cell: (r) => (
-        <span className={r.isInflow ? 'font-medium text-teal-700' : 'font-medium text-navy-700'}>
+        <span className={r.isInflow ? 'font-medium text-gold-700' : 'font-medium text-forest-700'}>
           {r.isInflow ? '+' : ''}
           {r.quantityLabel}
         </span>
@@ -112,7 +112,7 @@ export function MovementsClient({
       hideable: true,
       cell: (r) =>
         r.referenceHref ? (
-          <Link href={r.referenceHref} className="text-teal-700 hover:underline">
+          <Link href={r.referenceHref} className="text-gold-700 hover:underline">
             {r.reference}
           </Link>
         ) : (

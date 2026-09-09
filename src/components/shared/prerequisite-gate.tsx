@@ -46,7 +46,7 @@ export function PrerequisiteGate({
                 className={cn(
                   'mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border',
                   prerequisite.met
-                    ? 'border-teal-500 bg-teal-500 text-white'
+                    ? 'border-emerald-600 bg-emerald-600 text-white'
                     : 'border-amber-300 bg-amber-50 text-amber-600',
                 )}
                 aria-hidden
@@ -62,11 +62,11 @@ export function PrerequisiteGate({
               </div>
 
               {prerequisite.met ? (
-                <span className="shrink-0 self-center text-xs font-medium text-teal-700">Ready</span>
+                <span className="shrink-0 self-center text-xs font-medium text-emerald-700">Ready</span>
               ) : (
                 <Link
                   href={prerequisite.href}
-                  className="inline-flex shrink-0 items-center gap-1 self-center rounded-lg border border-line-strong bg-surface px-2.5 py-1.5 text-xs font-medium text-navy-800 transition-colors hover:border-teal-400 hover:text-teal-700"
+                  className="inline-flex shrink-0 items-center gap-1 self-center rounded-lg border border-line-strong bg-surface px-2.5 py-1.5 text-xs font-medium text-forest-800 transition-colors hover:border-gold-400 hover:text-gold-700"
                 >
                   {prerequisite.actionLabel}
                   <ArrowRight className="size-3.5" />

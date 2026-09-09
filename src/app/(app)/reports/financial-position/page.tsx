@@ -54,7 +54,7 @@ export default async function FinancialPositionPage() {
                       <TD>
                         <Link
                           href={`/finance/cash-bank/${account.accountId}`}
-                          className="font-medium text-navy-800 hover:text-teal-700"
+                          className="font-medium text-forest-800 hover:text-gold-700"
                         >
                           {account.name}
                         </Link>

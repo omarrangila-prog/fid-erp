@@ -168,18 +168,18 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           <CardContent>
             <dl>
               <DetailRow label="Contract">
-                <Link href={`/purchases/${batch.purchaseContract.id}`} className="text-teal-700 hover:underline">
+                <Link href={`/purchases/${batch.purchaseContract.id}`} className="text-gold-700 hover:underline">
                   {batch.purchaseContract.contractNumber}
                 </Link>
               </DetailRow>
               <DetailRow label="Supplier">
-                <Link href={`/vendors/${batch.purchaseContract.vendor.id}`} className="text-teal-700 hover:underline">
+                <Link href={`/vendors/${batch.purchaseContract.vendor.id}`} className="text-gold-700 hover:underline">
                   {batch.purchaseContract.vendor.vendorName}
                 </Link>
               </DetailRow>
               <DetailRow label="Contract date">{formatDate(batch.purchaseContract.contractDate)}</DetailRow>
               <DetailRow label="Shipment">
-                <Link href={`/shipments/${batch.shipment.id}`} className="text-teal-700 hover:underline">
+                <Link href={`/shipments/${batch.shipment.id}`} className="text-gold-700 hover:underline">
                   {batch.shipment.shipmentNumber}
                 </Link>
               </DetailRow>
@@ -222,7 +222,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
                   {batch.invoiceLines.map((line) => (
                     <TR key={line.id}>
                       <TD>
-                        <Link href={`/sales/${line.salesInvoice.id}`} className="font-medium text-navy-800 hover:text-teal-700">
+                        <Link href={`/sales/${line.salesInvoice.id}`} className="font-medium text-forest-800 hover:text-gold-700">
                           {line.salesInvoice.invoiceNumber}
                         </Link>
                       </TD>
@@ -264,7 +264,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
                     <TD>{formatDate(m.transactionDate)}</TD>
                     <TD>{titleCase(m.transactionType)}</TD>
                     <TD className="text-xs">{m.referenceLabel ?? titleCase(m.referenceType)}</TD>
-                    <TD numeric className={m.quantityKg.greaterThan(0) ? 'text-teal-700' : 'text-navy-700'}>
+                    <TD numeric className={m.quantityKg.greaterThan(0) ? 'text-gold-700' : 'text-forest-700'}>
                       {m.quantityKg.greaterThan(0) ? '+' : ''}
                       {formatQuantityKg(m.quantityKg)}
                     </TD>

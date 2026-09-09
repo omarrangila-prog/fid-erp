@@ -68,7 +68,7 @@ export default async function TrialBalancePage({ searchParams }: { searchParams:
                     <TD>
                       <Link
                         href={`/reports/general-ledger?account=${row.accountId}`}
-                        className="font-medium text-navy-800 hover:text-teal-700"
+                        className="font-medium text-forest-800 hover:text-gold-700"
                       >
                         <span className="text-ink-subtle">{row.code}</span> {row.name}
                       </Link>

@@ -109,7 +109,7 @@ export default async function ChequeDetailPage({ params }: { params: Promise<{ i
               <div>
                 <DetailRow label={isInbound ? 'Customer' : 'Supplier'}>
                   {partyHref && party ? (
-                    <Link href={partyHref} className="text-navy-800 hover:text-teal-700">
+                    <Link href={partyHref} className="text-forest-800 hover:text-gold-700">
                       {party}
                     </Link>
                   ) : (
@@ -119,11 +119,11 @@ export default async function ChequeDetailPage({ params }: { params: Promise<{ i
                 <DetailRow label="Agent">{cheque.agent?.agentName ?? '—'}</DetailRow>
                 <DetailRow label="Voucher">
                   {cheque.receipt ? (
-                    <Link href={`/finance/receipts/${cheque.receipt.id}`} className="text-navy-800 hover:text-teal-700">
+                    <Link href={`/finance/receipts/${cheque.receipt.id}`} className="text-forest-800 hover:text-gold-700">
                       {cheque.receipt.receiptNumber}
                     </Link>
                   ) : cheque.payment ? (
-                    <Link href={`/finance/payments/${cheque.payment.id}`} className="text-navy-800 hover:text-teal-700">
+                    <Link href={`/finance/payments/${cheque.payment.id}`} className="text-forest-800 hover:text-gold-700">
                       {cheque.payment.paymentNumber}
                     </Link>
                   ) : (
@@ -137,7 +137,7 @@ export default async function ChequeDetailPage({ params }: { params: Promise<{ i
             </dl>
 
             {cheque.notes ? (
-              <p className="mt-4 rounded-lg bg-navy-50 p-3 text-xs leading-relaxed text-ink-muted">{cheque.notes}</p>
+              <p className="mt-4 rounded-lg bg-forest-50 p-3 text-xs leading-relaxed text-ink-muted">{cheque.notes}</p>
             ) : null}
           </CardContent>
         </Card>

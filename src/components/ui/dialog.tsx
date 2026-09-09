@@ -12,7 +12,7 @@ export const DialogClose = DialogPrimitive.Close;
 function Overlay({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Overlay>) {
   return (
     <DialogPrimitive.Overlay
-      className={cn('fixed inset-0 z-50 bg-navy-950/40 backdrop-blur-[1px]', className)}
+      className={cn('fixed inset-0 z-50 bg-forest-950/40 backdrop-blur-[1px]', className)}
       {...props}
     />
   );
@@ -54,7 +54,7 @@ export function DialogContent({
           </div>
           <DialogPrimitive.Close
             aria-label="Close"
-            className="rounded-md p-1 text-ink-subtle transition-colors hover:bg-navy-50 hover:text-ink"
+            className="rounded-md p-1 text-ink-subtle transition-colors hover:bg-forest-50 hover:text-ink"
           >
             <X className="size-4" />
           </DialogPrimitive.Close>
@@ -119,7 +119,7 @@ export function Sheet({
             </div>
             <DialogPrimitive.Close
               aria-label="Close"
-              className="rounded-md p-1 text-ink-subtle transition-colors hover:bg-navy-50 hover:text-ink"
+              className="rounded-md p-1 text-ink-subtle transition-colors hover:bg-forest-50 hover:text-ink"
             >
               <X className="size-4" />
             </DialogPrimitive.Close>

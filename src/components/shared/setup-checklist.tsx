@@ -11,9 +11,9 @@ function Progress({ completed, total }: { completed: number; total: number }) {
   const pct = total === 0 ? 0 : Math.round((completed / total) * 100);
   return (
     <div className="flex items-center gap-3">
-      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-navy-100">
+      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-forest-100">
         <div
-          className="h-full rounded-full bg-teal-500 transition-[width] duration-500"
+          className="h-full rounded-full bg-emerald-600 transition-[width] duration-500"
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -30,11 +30,11 @@ function StepRow({ step }: { step: ChecklistStep }) {
       <span
         className={cn(
           'mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border',
-          step.done ? 'border-teal-500 bg-teal-500 text-white' : 'border-line-strong bg-surface text-transparent',
+          step.done ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-line-strong bg-surface text-transparent',
         )}
         aria-hidden
       >
-        {step.done ? <Check className="size-3" strokeWidth={3} /> : <Circle className="size-2 fill-navy-200 text-navy-200" />}
+        {step.done ? <Check className="size-3" strokeWidth={3} /> : <Circle className="size-2 fill-forest-200 text-forest-200" />}
       </span>
 
       <span className="min-w-0 flex-1">
@@ -45,11 +45,11 @@ function StepRow({ step }: { step: ChecklistStep }) {
       </span>
 
       {step.done ? (
-        <span className="tnum shrink-0 self-center rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-medium text-teal-700">
+        <span className="tnum shrink-0 self-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
           {step.count}
         </span>
       ) : (
-        <span className="inline-flex shrink-0 items-center gap-1 self-center rounded-lg border border-line-strong bg-surface px-2.5 py-1.5 text-xs font-medium text-navy-800 transition-colors group-hover:border-teal-400 group-hover:text-teal-700">
+        <span className="inline-flex shrink-0 items-center gap-1 self-center rounded-lg border border-line-strong bg-surface px-2.5 py-1.5 text-xs font-medium text-forest-800 transition-colors group-hover:border-gold-400 group-hover:text-gold-700">
           {step.actionLabel}
           <ArrowRight className="size-3.5" />
         </span>
@@ -61,7 +61,7 @@ function StepRow({ step }: { step: ChecklistStep }) {
     <li>
       <Link
         href={step.href}
-        className="group flex items-start gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-navy-50/70"
+        className="group flex items-start gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-forest-50/70"
       >
         {body}
       </Link>

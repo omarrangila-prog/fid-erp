@@ -26,7 +26,7 @@ export function StatCard({
 }) {
   const toneClass = {
     default: 'text-ink',
-    positive: 'text-teal-700',
+    positive: 'text-emerald-700',
     negative: 'text-red-600',
     warning: 'text-amber-700',
   }[tone];
@@ -35,13 +35,13 @@ export function StatCard({
     <Card
       className={cn(
         'h-full p-4 transition-colors',
-        href && 'hover:border-navy-300 hover:bg-navy-50/40',
+        href && 'hover:border-forest-300 hover:bg-forest-50/40',
         className,
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <p className="text-xs font-medium text-ink-muted">{label}</p>
-        {Icon ? <Icon className="size-4 shrink-0 text-navy-300" /> : null}
+        {Icon ? <Icon className="size-4 shrink-0 text-forest-300" /> : null}
       </div>
       <p className={cn('tnum mt-2 text-lg font-semibold tracking-tight sm:text-xl', toneClass)}>{value}</p>
       {sublabel ? <p className="mt-0.5 text-xs text-ink-subtle">{sublabel}</p> : null}
@@ -71,7 +71,7 @@ export function Metric({
 }) {
   const toneClass = {
     default: 'text-ink',
-    positive: 'text-teal-700',
+    positive: 'text-emerald-700',
     negative: 'text-red-600',
     muted: 'text-ink-muted',
   }[tone];

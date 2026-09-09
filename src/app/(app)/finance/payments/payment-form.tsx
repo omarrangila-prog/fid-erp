@@ -219,7 +219,7 @@ export function PaymentForm({
                 <Input value={form.rateToUsd} onChange={(e) => setForm({ ...form, rateToUsd: e.target.value })} className="tnum text-right" />
               </Field>
               <Field label="USD equivalent">
-                <div className="tnum flex h-10 items-center justify-end rounded-lg border border-line bg-navy-50 px-3 text-sm font-semibold">
+                <div className="tnum flex h-10 items-center justify-end rounded-lg border border-line bg-forest-50 px-3 text-sm font-semibold">
                   {formatMoney(amountUsd, 'USD')}
                 </div>
               </Field>

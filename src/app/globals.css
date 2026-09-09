@@ -1,64 +1,86 @@
 @import "tailwindcss";
 
 /*
- * FID Trading — design tokens.
+ * FID Trading — design system.
  *
- * A restrained palette: paper-white surfaces, a deep navy that carries the
- * brand and the navigation, and a single teal accent reserved for the active
- * state and primary actions. Status colours appear only on badges and figures,
- * so a screen full of data still reads calmly.
+ * The identity is a coffee trader's: deep forest green for structure, warm
+ * ivory for paper, a restrained gold reserved for what the eye should land on
+ * first, and charcoal for text. Gold is an accent, never a surface — a screen
+ * full of gold reads as a warning, not as quality.
+ *
+ * Status colour is kept separate from brand colour on purpose. The brand is
+ * green, so "success" cannot also be green without the two blurring; success
+ * is emerald, and it appears only on badges and figures.
  */
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", monospace;
 
-  --color-navy-50: #f2f5f9;
-  --color-navy-100: #e3e9f2;
-  --color-navy-200: #c7d3e5;
-  --color-navy-300: #9db1d0;
-  --color-navy-400: #6c88b6;
-  --color-navy-500: #4a679c;
-  --color-navy-600: #395182;
-  --color-navy-700: #2f4269;
-  --color-navy-800: #1f2d4a;
-  --color-navy-900: #14203a;
-  --color-navy-950: #0b1424;
+  /* --- Brand: deep forest green ------------------------------------------ */
+  --color-forest-50: #f2f7f4;
+  --color-forest-100: #e0ece5;
+  --color-forest-200: #c2d9cc;
+  --color-forest-300: #96bda9;
+  --color-forest-400: #649a81;
+  --color-forest-500: #427c62;
+  --color-forest-600: #30634d;
+  --color-forest-700: #274f3f;
+  --color-forest-800: #1f3f33;
+  --color-forest-900: #16302a;
+  --color-forest-950: #0d1f1a;
 
-  --color-teal-50: #eefbf6;
-  --color-teal-100: #d4f5e8;
-  --color-teal-200: #ace9d5;
-  --color-teal-300: #75d7bb;
-  --color-teal-400: #3fbd9c;
-  --color-teal-500: #1ba184;
-  --color-teal-600: #10816b;
-  --color-teal-700: #0f6758;
-  --color-teal-800: #105246;
-  --color-teal-900: #0f443b;
+  /* --- Accent: warm gold, used sparingly --------------------------------- */
+  --color-gold-50: #fdf9ed;
+  --color-gold-100: #faf0d2;
+  --color-gold-200: #f4dfa2;
+  --color-gold-300: #ecc86a;
+  --color-gold-400: #e3b243;
+  --color-gold-500: #d19a2b;
+  --color-gold-600: #b47d20;
+  --color-gold-700: #90601d;
+  --color-gold-800: #764d1e;
+  --color-gold-900: #64411d;
 
-  --color-paper: #fbfcfd;
+  /* --- Surfaces: warm ivory ---------------------------------------------- */
+  --color-paper: #faf8f4;
   --color-surface: #ffffff;
-  --color-line: #e5e9f0;
-  --color-line-strong: #d3dae5;
+  --color-surface-sunken: #f5f2ec;
+  --color-line: #e8e4dc;
+  --color-line-strong: #d8d2c7;
 
-  --color-ink: #14203a;
-  --color-ink-muted: #5a6782;
-  --color-ink-subtle: #8b96ad;
+  /* --- Text: charcoal ----------------------------------------------------- */
+  --color-ink: #22201c;
+  --color-ink-muted: #5c574e;
+  --color-ink-subtle: #8a8478;
+  --color-ink-inverse: #f7f5f0;
 
+  /* --- Radii -------------------------------------------------------------- */
   --radius-card: 0.75rem;
+  --radius-control: 0.5rem;
+
+  /* --- Elevation ---------------------------------------------------------- */
+  --shadow-card: 0 1px 2px rgba(34, 32, 28, 0.04), 0 1px 3px rgba(34, 32, 28, 0.03);
+  --shadow-raised: 0 2px 4px rgba(34, 32, 28, 0.05), 0 4px 12px rgba(34, 32, 28, 0.06);
+  --shadow-overlay: 0 8px 24px rgba(34, 32, 28, 0.10), 0 2px 8px rgba(34, 32, 28, 0.06);
 }
 
 :root {
   --background: var(--color-paper);
   --foreground: var(--color-ink);
+  /* Height of the mobile tab bar, so pages can clear it without magic numbers. */
+  --mobile-nav-height: 4rem;
 }
 
 @layer base {
   * {
     border-color: var(--color-line);
+    min-width: 0;
   }
 
   html {
     -webkit-text-size-adjust: 100%;
+    /* Never let a wide table drag the whole document sideways. */
+    overflow-x: hidden;
   }
 
   body {
@@ -67,16 +89,35 @@
     font-family: var(--font-sans);
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, h3, h4 {
+    letter-spacing: -0.011em;
   }
 
   /* Figures line up column-to-column only when the digits are tabular. */
   .tnum {
     font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-teal-500);
+    outline: 2px solid var(--color-gold-500);
     outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* Respect a reduced-motion preference rather than animating regardless. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 
   ::-webkit-scrollbar {
@@ -92,7 +133,13 @@
     border: 2px solid var(--color-paper);
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: var(--color-navy-300);
+    background: var(--color-forest-300);
+  }
+
+  /* Selection picks up the brand rather than the browser default blue. */
+  ::selection {
+    background: var(--color-gold-200);
+    color: var(--color-ink);
   }
 }
 
@@ -103,6 +150,36 @@
     top: 0;
     z-index: 10;
     background: var(--color-surface);
+    box-shadow: inset 0 -1px 0 var(--color-line);
+  }
+
+  /* A column pinned while the rest of a wide table scrolls under it. */
+  .pin-left {
+    position: sticky;
+    left: 0;
+    z-index: 5;
+    background: var(--color-surface);
+  }
+  .sticky-head th.pin-left {
+    z-index: 15;
+  }
+
+  /* Touch targets: 44px is the smallest a finger reliably hits. */
+  @media (pointer: coarse) {
+    .tap-target {
+      min-height: 44px;
+      min-width: 44px;
+    }
+  }
+
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+  .shadow-raised {
+    box-shadow: var(--shadow-raised);
+  }
+  .shadow-overlay {
+    box-shadow: var(--shadow-overlay);
   }
 }
 
@@ -119,4 +196,30 @@
 
 .animate-in-soft {
   animation: fid-fade-in 160ms ease-out;
+}
+
+@keyframes fid-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Skeletons sweep rather than pulse: less flicker on a dense table. */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-surface-sunken);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.65), transparent);
+  animation: fid-shimmer 1.6s infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after {
+    animation: none;
+  }
 }

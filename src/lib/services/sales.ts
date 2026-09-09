@@ -170,13 +170,28 @@ function invoiceTotals(lines: ResolvedLine[]) {
   return { totalAmount, totalAmountUsd };
 }
 
+/**
+ * The date the money is due.
+ *
+ * `input.paymentTermDays ? … : null` looks harmless and is not: zero-day terms
+ * — cash on delivery, routine in trading — are falsy, so the due date came out
+ * null and the invoice could never become overdue. Every invoice gets a due
+ * date; when the caller does not state a term we fall back to the customer's
+ * own, which is what the master record is for.
+ */
+function dueDateFor(invoiceDate: Date, termDays: number): Date {
+  return new Date(invoiceDate.getTime() + termDays * 86_400_000);
+}
+
 export async function createSalesInvoice(input: SalesInvoiceInput, userId: string) {
   return transaction(async (tx) => {
     const customer = await tx.customer.findFirst({
       where: { id: input.customerId, companyId: input.companyId },
-      select: { id: true, customerName: true },
+      select: { id: true, customerName: true, paymentTermDays: true },
     });
     if (!customer) throw new NotFoundError('Customer');
+
+    const termDays = input.paymentTermDays ?? customer.paymentTermDays ?? 0;
 
     const lines = await resolveLines(tx, input);
     const { totalAmount, totalAmountUsd } = invoiceTotals(lines);
@@ -186,9 +201,7 @@ export async function createSalesInvoice(input: SalesInvoiceInput, userId: strin
       docType: DOC_TYPES.SALES_INVOICE,
     });
 
-    const dueDate = input.paymentTermDays
-      ? new Date(input.invoiceDate.getTime() + input.paymentTermDays * 86_400_000)
-      : null;
+    const dueDate = dueDateFor(input.invoiceDate, termDays);
 
     // A single-shipment invoice gets linked automatically for profitability.
     const distinctShipments = [...new Set(lines.map((l) => l.shipmentId))];
@@ -207,7 +220,7 @@ export async function createSalesInvoice(input: SalesInvoiceInput, userId: strin
         subtotal: totalAmount,
         totalAmount,
         totalAmountUsd,
-        paymentTermDays: input.paymentTermDays ?? 0,
+        paymentTermDays: termDays,
         dueDate,
         reference: input.reference ?? null,
         notes: input.notes ?? null,
@@ -284,11 +297,16 @@ export async function updateSalesInvoice(id: string, input: SalesInvoiceInput, u
       transactionDate: input.invoiceDate,
     });
 
+    const customer = await tx.customer.findFirst({
+      where: { id: input.customerId, companyId: input.companyId },
+      select: { paymentTermDays: true },
+    });
+    if (!customer) throw new NotFoundError('Customer');
+
     const lines = await resolveLines(tx, input);
     const { totalAmount, totalAmountUsd } = invoiceTotals(lines);
-    const dueDate = input.paymentTermDays
-      ? new Date(input.invoiceDate.getTime() + input.paymentTermDays * 86_400_000)
-      : null;
+    const termDays = input.paymentTermDays ?? customer.paymentTermDays ?? 0;
+    const dueDate = dueDateFor(input.invoiceDate, termDays);
     const distinctShipments = [...new Set(lines.map((l) => l.shipmentId))];
     const shipmentId = input.shipmentId ?? (distinctShipments.length === 1 ? distinctShipments[0] : null);
 
@@ -306,7 +324,7 @@ export async function updateSalesInvoice(id: string, input: SalesInvoiceInput, u
         subtotal: totalAmount,
         totalAmount,
         totalAmountUsd,
-        paymentTermDays: input.paymentTermDays ?? 0,
+        paymentTermDays: termDays,
         dueDate,
         reference: input.reference ?? null,
         notes: input.notes ?? null,

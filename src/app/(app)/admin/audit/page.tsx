@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 import { formatDateTime, titleCase } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { AuditClient, type AuditRow } from '@/app/(app)/admin/audit/audit-client';
+import { ServerPagination } from '@/components/shared/server-pagination';
 
 export const metadata: Metadata = { title: 'Audit Log' };
 export const dynamic = 'force-dynamic';
@@ -18,13 +19,25 @@ function toneFor(action: string): BadgeTone {
   return 'warning';
 }
 
-export default async function AuditPage() {
+const PAGE_SIZE = 100;
+
+export default async function AuditPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
   const user = await requirePageAccess(PERMISSIONS.AUDIT_VIEW);
+
+  // The trail is append-only and never pruned, so it pages in the database.
+  const requested = Number((await searchParams).page ?? '1');
+  const page = Number.isFinite(requested) && requested > 0 ? Math.floor(requested) - 1 : 0;
+  const total = await prisma.auditLog.count({ where: { companyId: user.activeCompany.id } });
 
   const logs = await prisma.auditLog.findMany({
     where: { companyId: user.activeCompany.id },
     orderBy: { createdAt: 'desc' },
-    take: 500,
+    skip: page * PAGE_SIZE,
+    take: PAGE_SIZE,
     include: { user: { select: { name: true, email: true } } },
   });
 
@@ -49,9 +62,11 @@ export default async function AuditPage() {
         title="Audit Log"
         description="Who did what, and when. Postings, reversals, stock adjustments, status changes and access changes are all recorded."
         breadcrumbs={[{ label: 'Administration' }, { label: 'Audit Log' }]}
-        meta={<span className="text-xs text-ink-subtle">Showing the 500 most recent entries for {user.activeCompany.name}.</span>}
+        meta={<span className="text-xs text-ink-subtle">{total.toLocaleString()} entries recorded for {user.activeCompany.name}.</span>}
       />
       <AuditClient rows={rows} />
+
+      <ServerPagination page={page} pageSize={PAGE_SIZE} total={total} basePath="/admin/audit" />
     </div>
   );
 }

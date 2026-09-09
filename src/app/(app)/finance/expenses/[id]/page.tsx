@@ -111,7 +111,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
             <DetailRow label="Date">{formatDate(expense.expenseDate)}</DetailRow>
             <DetailRow label="Job">
               {expense.shipment ? (
-                <Link href={`/shipments/${expense.shipment.id}`} className="text-teal-700 hover:underline">
+                <Link href={`/shipments/${expense.shipment.id}`} className="text-gold-700 hover:underline">
                   {expense.shipment.jobNumber}
                 </Link>
               ) : (
@@ -122,7 +122,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
             <DetailRow label="Paid from">{expense.cashBankAccount?.name ?? 'On credit'}</DetailRow>
             <DetailRow label="Supplier">
               {expense.vendor ? (
-                <Link href={`/vendors/${expense.vendor.id}`} className="text-teal-700 hover:underline">
+                <Link href={`/vendors/${expense.vendor.id}`} className="text-gold-700 hover:underline">
                   {expense.vendor.vendorName}
                 </Link>
               ) : (

@@ -8,7 +8,10 @@ import { cn } from '@/lib/utils';
 export function TableWrap({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn('w-full overflow-x-auto rounded-xl border border-line bg-surface', className)}
+      className={cn(
+        'w-full overflow-x-auto overscroll-x-contain rounded-xl border border-line bg-surface shadow-card',
+        className,
+      )}
       {...props}
     />
   );
@@ -19,7 +22,7 @@ export function Table({ className, ...props }: React.TableHTMLAttributes<HTMLTab
 }
 
 export function THead({ className, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) {
-  return <thead className={cn('border-b border-line', className)} {...props} />;
+  return <thead className={cn('border-b border-line bg-surface', className)} {...props} />;
 }
 
 export function TBody({ className, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) {
@@ -27,7 +30,7 @@ export function TBody({ className, ...props }: React.HTMLAttributes<HTMLTableSec
 }
 
 export function TR({ className, ...props }: React.HTMLAttributes<HTMLTableRowElement>) {
-  return <tr className={cn('transition-colors hover:bg-navy-50/60', className)} {...props} />;
+  return <tr className={cn('transition-colors hover:bg-forest-50/70', className)} {...props} />;
 }
 
 export function TH({
@@ -39,7 +42,7 @@ export function TH({
     <th
       scope="col"
       className={cn(
-        'px-3 py-2.5 text-left text-xs font-semibold whitespace-nowrap text-ink-muted',
+        'px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wide whitespace-nowrap text-ink-subtle',
         numeric && 'text-right',
         className,
       )}
@@ -64,7 +67,7 @@ export function TD({
 export function TFoot({ className, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) {
   return (
     <tfoot
-      className={cn('border-t-2 border-line-strong bg-navy-50/60 font-semibold text-ink', className)}
+      className={cn('border-t-2 border-line-strong bg-surface-sunken font-semibold text-ink', className)}
       {...props}
     />
   );

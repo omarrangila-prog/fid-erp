@@ -164,7 +164,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
                 {vendor.bankDetails ? (
                   <div className="mt-4">
                     <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-ink-subtle">Bank details</p>
-                    <p className="whitespace-pre-line rounded-lg bg-navy-50 p-3 text-xs leading-relaxed text-ink-muted">
+                    <p className="whitespace-pre-line rounded-lg bg-forest-50 p-3 text-xs leading-relaxed text-ink-muted">
                       {vendor.bankDetails}
                     </p>
                   </div>
@@ -195,7 +195,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
                   {vendor.purchaseContracts.map((contract) => (
                     <TR key={contract.id}>
                       <TD>
-                        <Link href={`/purchases/${contract.id}`} className="font-medium text-navy-800 hover:text-teal-700">
+                        <Link href={`/purchases/${contract.id}`} className="font-medium text-forest-800 hover:text-gold-700">
                           {contract.contractNumber}
                         </Link>
                         <span className="block text-xs text-ink-subtle">{contract.contractReference}</span>
@@ -241,7 +241,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
                       <TD>
                         <Link
                           href={`/finance/payments/${payment.id}`}
-                          className="font-medium text-navy-800 hover:text-teal-700"
+                          className="font-medium text-forest-800 hover:text-gold-700"
                         >
                           {payment.paymentNumber}
                         </Link>
@@ -281,7 +281,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
                   {payables.map((row) => (
                     <TR key={row.contractId}>
                       <TD>
-                        <Link href={`/purchases/${row.contractId}`} className="font-medium text-navy-800 hover:text-teal-700">
+                        <Link href={`/purchases/${row.contractId}`} className="font-medium text-forest-800 hover:text-gold-700">
                           {row.contractNumber}
                         </Link>
                       </TD>
@@ -319,7 +319,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
                   {vendor.shipments.map((shipment) => (
                     <TR key={shipment.id}>
                       <TD>
-                        <Link href={`/shipments/${shipment.id}`} className="font-medium text-navy-800 hover:text-teal-700">
+                        <Link href={`/shipments/${shipment.id}`} className="font-medium text-forest-800 hover:text-gold-700">
                           {shipment.shipmentNumber}
                         </Link>
                       </TD>

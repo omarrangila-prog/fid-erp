@@ -82,7 +82,7 @@ export function NotificationsClient({ rows }: { rows: AlertRow[] }) {
               onClick={() => setFilter(value)}
               className={cn(
                 'rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-colors',
-                filter === value ? 'bg-navy-800 text-white' : 'text-ink-muted hover:text-ink',
+                filter === value ? 'bg-forest-800 text-white' : 'text-ink-muted hover:text-ink',
               )}
             >
               {value}
@@ -122,7 +122,7 @@ export function NotificationsClient({ rows }: { rows: AlertRow[] }) {
             const meta = SEVERITY[row.severity];
             const Icon = meta.icon;
             const body = (
-              <Card className={cn('p-4 transition-colors', !row.isRead && 'border-l-4 border-l-navy-700')}>
+              <Card className={cn('p-4 transition-colors', !row.isRead && 'border-l-4 border-l-forest-700')}>
                 <div className="flex items-start gap-3">
                   <span className={cn('grid size-8 shrink-0 place-items-center rounded-lg border', meta.className)}>
                     <Icon className="size-4" />

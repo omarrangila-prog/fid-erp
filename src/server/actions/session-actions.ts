@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { prisma } from '@/lib/db';
 import { hashPassword, verifyPassword, validatePasswordStrength } from '@/lib/auth/password';
+import { checkLoginAllowed, recordFailedLogin, clearLoginAttempts } from '@/lib/auth/rate-limit';
 import {
   createSession,
   destroySession,
@@ -38,6 +39,18 @@ export async function loginAction(
     return { ok: false, error: 'Enter your email address and password.', code: 'VALIDATION_ERROR' };
   }
 
+  // Throttle before touching the database, so a flood costs nothing to refuse.
+  const address = (await headers()).get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+  const verdict = checkLoginAllowed(email, address);
+  if (!verdict.allowed) {
+    const minutes = Math.ceil(verdict.retryAfterSeconds / 60);
+    return {
+      ok: false,
+      error: `Too many sign-in attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`,
+      code: 'RATE_LIMITED',
+    };
+  }
+
   const user = await prisma.user.findUnique({
     where: { email },
     include: { companies: true },
@@ -46,8 +59,11 @@ export async function loginAction(
   const passwordOk = await verifyPassword(user?.passwordHash ?? DUMMY_HASH, password);
 
   if (!user || !passwordOk || !user.isActive) {
+    recordFailedLogin(email, address);
     return { ok: false, error: GENERIC_LOGIN_FAILURE, code: 'UNAUTHENTICATED' };
   }
+
+  clearLoginAttempts(email, address);
 
   const companyCount = user.isSuperAdmin
     ? await prisma.company.count({ where: { status: 'ACTIVE' } })

@@ -23,7 +23,7 @@ export default async function BalanceSheetPage({ searchParams }: { searchParams:
 
   const renderSection = (section: BalanceSheetSection) => (
     <>
-      <TR className="bg-navy-50/40 hover:bg-navy-50/40">
+      <TR className="bg-forest-50/40 hover:bg-forest-50/40">
         <TD colSpan={3} className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
           {section.title}
         </TD>
@@ -106,7 +106,7 @@ export default async function BalanceSheetPage({ searchParams }: { searchParams:
                 {renderSection(sheet.assets)}
                 {renderSection(sheet.liabilities)}
                 {renderSection(sheet.equity)}
-                <TR className="border-t-2 border-line-strong bg-navy-50 font-semibold hover:bg-navy-50">
+                <TR className="border-t-2 border-line-strong bg-forest-50 font-semibold hover:bg-forest-50">
                   <TD>Liabilities and equity</TD>
                   <TD numeric>
                     {formatMoney(sheet.liabilities.totalUsd.plus(sheet.equity.totalUsd), 'USD')}

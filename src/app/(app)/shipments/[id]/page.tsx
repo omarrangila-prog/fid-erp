@@ -207,7 +207,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                   {batches.map((b) => (
                     <TR key={b.batchId}>
                       <TD className="font-medium">
-                        <Link href={`/inventory/batches/${b.batchId}`} className="text-navy-800 hover:text-teal-700">
+                        <Link href={`/inventory/batches/${b.batchId}`} className="text-forest-800 hover:text-gold-700">
                           {b.batchNumber}
                         </Link>
                       </TD>
@@ -232,13 +232,13 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
           <CardContent>
             <dl>
               <DetailRow label="Supplier">
-                <Link href={`/vendors/${shipment.vendor.id}`} className="text-teal-700 hover:underline">
+                <Link href={`/vendors/${shipment.vendor.id}`} className="text-gold-700 hover:underline">
                   {shipment.vendor.vendorName}
                 </Link>
               </DetailRow>
               <DetailRow label="Buyer">
                 {shipment.customer ? (
-                  <Link href={`/customers/${shipment.customer.id}`} className="text-teal-700 hover:underline">
+                  <Link href={`/customers/${shipment.customer.id}`} className="text-gold-700 hover:underline">
                     {shipment.customer.customerName}
                   </Link>
                 ) : (
@@ -299,7 +299,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                   className="flex items-center justify-between gap-3 border-b border-line pb-3 last:border-0 last:pb-0"
                 >
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium text-navy-800">{inv.invoiceNumber}</span>
+                    <span className="block truncate text-sm font-medium text-forest-800">{inv.invoiceNumber}</span>
                     <span className="block truncate text-xs text-ink-subtle">
                       {inv.customer.customerName} · {formatDate(inv.invoiceDate)}
                     </span>
@@ -329,7 +329,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                   className="flex items-center justify-between gap-3 border-b border-line pb-3 last:border-0 last:pb-0"
                 >
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium text-navy-800">
+                    <span className="block truncate text-sm font-medium text-forest-800">
                       {e.expenseCategory.name}
                     </span>
                     <span className="block truncate text-xs text-ink-subtle">

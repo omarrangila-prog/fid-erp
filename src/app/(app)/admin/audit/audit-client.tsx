@@ -74,7 +74,7 @@ export function AuditClient({ rows }: { rows: AuditRow[] }) {
             {open.before ? (
               <div>
                 <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-ink-subtle">Before</p>
-                <pre className="overflow-x-auto rounded-lg border border-line bg-navy-50/50 p-3 text-xs leading-relaxed text-ink">
+                <pre className="overflow-x-auto rounded-lg border border-line bg-forest-50/50 p-3 text-xs leading-relaxed text-ink">
                   {open.before}
                 </pre>
               </div>
@@ -82,7 +82,7 @@ export function AuditClient({ rows }: { rows: AuditRow[] }) {
             {open.after ? (
               <div>
                 <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-ink-subtle">After</p>
-                <pre className="overflow-x-auto rounded-lg border border-line bg-navy-50/50 p-3 text-xs leading-relaxed text-ink">
+                <pre className="overflow-x-auto rounded-lg border border-line bg-forest-50/50 p-3 text-xs leading-relaxed text-ink">
                   {open.after}
                 </pre>
               </div>

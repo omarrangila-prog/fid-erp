@@ -63,7 +63,7 @@ function SettingRow({ setting }: { setting: SettingSpec }) {
         <p className="text-sm font-medium text-ink">{setting.label}</p>
         <p className="mt-0.5 text-xs leading-relaxed text-ink-muted">{setting.description}</p>
         <p className="mt-1 text-[11px] text-ink-subtle">
-          <code className="rounded bg-navy-50 px-1 py-0.5">{setting.key}</code> · currently set at {setting.scope} level
+          <code className="rounded bg-forest-50 px-1 py-0.5">{setting.key}</code> · currently set at {setting.scope} level
         </p>
       </div>
 

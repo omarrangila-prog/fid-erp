@@ -379,7 +379,7 @@ export function PurchaseForm({
             {lines.map((line, index) => {
               const math = totals.lines[index];
               return (
-                <div key={line.key} className="rounded-xl border border-line bg-navy-50/30 p-4">
+                <div key={line.key} className="rounded-xl border border-line bg-forest-50/30 p-4">
                   <div className="mb-3 flex items-center justify-between gap-2">
                     <span className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">
                       Line {index + 1}
@@ -525,7 +525,7 @@ export function PurchaseForm({
                       </div>
                       <div>
                         <dt className="text-[11px] text-ink-subtle">Landed cost / KG</dt>
-                        <dd className="tnum text-sm font-semibold text-teal-700">
+                        <dd className="tnum text-sm font-semibold text-gold-700">
                           {header.currency} {math.unitCostKg}
                         </dd>
                       </div>
@@ -565,7 +565,7 @@ export function PurchaseForm({
             </div>
           </FormSection>
 
-          <div className="rounded-xl border border-line bg-navy-50/40 p-4">
+          <div className="rounded-xl border border-line bg-forest-50/40 p-4">
             <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
               {[
                 ['Total quantity', `${totals.totalQuantityKg.toLocaleString()} KG`],

@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NAV_GROUPS, filterNav } from '@/components/layout/nav-config';
 
@@ -14,19 +14,31 @@ import { NAV_GROUPS, filterNav } from '@/components/layout/nav-config';
  * checks the same permission server-side.
  *
  * Groups collapse, because thirty-odd screens in one unbroken list is a lot to
- * scan when you only ever use six of them.
+ * scan when you only ever use six of them. The whole rail collapses too, for
+ * people who work in wide tables all day and want the width back.
  */
+
+const SIDEBAR_COOKIE = 'fid_sidebar';
+
+function rememberWidth(collapsed: boolean) {
+  // A cookie rather than localStorage so the server renders the right width on
+  // the first paint — no flash of the wrong layout on every navigation.
+  document.cookie = `${SIDEBAR_COOKIE}=${collapsed ? 'collapsed' : 'expanded'};path=/;max-age=31536000;samesite=lax`;
+}
+
 export function SidebarNav({
   permissions,
   isSuperAdmin,
+  collapsed = false,
   onNavigate,
 }: {
   permissions: string[];
   isSuperAdmin: boolean;
+  collapsed?: boolean;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = React.useState<ReadonlySet<string>>(() => new Set<string>());
+  const [closedGroups, setClosedGroups] = React.useState<ReadonlySet<string>>(() => new Set<string>());
 
   const groups = React.useMemo(
     () => filterNav(NAV_GROUPS, permissions, isSuperAdmin),
@@ -42,7 +54,7 @@ export function SidebarNav({
   }, [groups, pathname]);
 
   function toggleGroup(label: string) {
-    setCollapsed((current) => {
+    setClosedGroups((current) => {
       const next = new Set(current);
       if (next.has(label)) next.delete(label);
       else next.add(label);
@@ -51,54 +63,73 @@ export function SidebarNav({
   }
 
   return (
-    <nav className="flex flex-col gap-1 px-3 py-4">
+    <nav className={cn('flex flex-col gap-1 py-4', collapsed ? 'px-2' : 'px-3')} aria-label="Main">
       {groups.map((group) => {
-        // A collapsed group still opens itself when you are inside it.
         const holdsActive = group.items.some((item) => item.href === activeHref);
-        const isCollapsed = collapsed.has(group.label) && !holdsActive;
+        const isClosed = !collapsed && closedGroups.has(group.label) && !holdsActive;
         const bodyId = `nav-group-${group.label.replace(/\s+/g, '-').toLowerCase()}`;
 
         return (
           <div key={group.label} className="pb-2">
-            <button
-              type="button"
-              onClick={() => toggleGroup(group.label)}
-              aria-expanded={!isCollapsed}
-              aria-controls={bodyId}
-              className="flex w-full items-center gap-1 rounded-md px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-navy-400 transition-colors hover:text-navy-200"
-            >
-              <ChevronRight
-                className={cn('size-3 shrink-0 transition-transform', !isCollapsed && 'rotate-90')}
-                aria-hidden
-              />
-              <span className="truncate">{group.label}</span>
-            </button>
+            {collapsed ? (
+              <div className="mx-auto mb-1 h-px w-6 bg-forest-800" aria-hidden />
+            ) : (
+              <button
+                type="button"
+                onClick={() => toggleGroup(group.label)}
+                aria-expanded={!isClosed}
+                aria-controls={bodyId}
+                className="flex w-full items-center gap-1 rounded-md px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-forest-400 transition-colors hover:text-forest-200"
+              >
+                <ChevronRight
+                  className={cn('size-3 shrink-0 transition-transform', !isClosed && 'rotate-90')}
+                  aria-hidden
+                />
+                <span className="truncate">{group.label}</span>
+              </button>
+            )}
 
-            <ul id={bodyId} className={cn('space-y-0.5', isCollapsed && 'hidden')}>
+            <ul id={bodyId} className={cn('space-y-0.5', isClosed && 'hidden')}>
               {group.items.map((item) => {
                 const active = item.href === activeHref;
                 const Icon = item.icon;
                 return (
-                  <li key={item.href}>
+                  <li key={item.href} className="relative">
                     <Link
                       href={item.href}
                       onClick={onNavigate}
                       aria-current={active ? 'page' : undefined}
+                      title={collapsed ? item.label : undefined}
                       className={cn(
-                        'relative flex items-center gap-2.5 rounded-lg py-2 pl-3 pr-3 text-sm transition-colors',
+                        'group/nav relative flex items-center rounded-lg py-2 text-sm transition-colors',
+                        collapsed ? 'justify-center px-2' : 'gap-2.5 pl-3 pr-3',
                         active
-                          ? 'bg-navy-800 font-medium text-white'
-                          : 'text-navy-200 hover:bg-navy-800/60 hover:text-white',
+                          ? 'bg-forest-800 font-medium text-white'
+                          : 'text-forest-200 hover:bg-forest-800/60 hover:text-white',
                       )}
                     >
                       {active ? (
                         <span
-                          className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-teal-400"
+                          className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-gold-400"
                           aria-hidden
                         />
                       ) : null}
-                      <Icon className={cn('size-4 shrink-0', active ? 'text-teal-300' : 'text-navy-400')} />
-                      <span className="truncate">{item.label}</span>
+                      <Icon className={cn('size-4 shrink-0', active ? 'text-gold-300' : 'text-forest-400')} />
+                      {collapsed ? (
+                        <span className="sr-only">{item.label}</span>
+                      ) : (
+                        <span className="truncate">{item.label}</span>
+                      )}
+
+                      {/* Collapsed rail: a real label on hover, not just a native tooltip delay. */}
+                      {collapsed ? (
+                        <span
+                          role="presentation"
+                          className="pointer-events-none absolute left-full z-50 ml-2 hidden whitespace-nowrap rounded-md bg-forest-950 px-2 py-1 text-xs font-medium text-white shadow-overlay group-hover/nav:block"
+                        >
+                          {item.label}
+                        </span>
+                      ) : null}
                     </Link>
                   </li>
                 );
@@ -111,20 +142,66 @@ export function SidebarNav({
   );
 }
 
-export function DesktopSidebar({ permissions, isSuperAdmin }: { permissions: string[]; isSuperAdmin: boolean }) {
+export function DesktopSidebar({
+  permissions,
+  isSuperAdmin,
+  defaultCollapsed = false,
+}: {
+  permissions: string[];
+  isSuperAdmin: boolean;
+  defaultCollapsed?: boolean;
+}) {
+  const [collapsed, setCollapsed] = React.useState(defaultCollapsed);
+
+  function toggle() {
+    setCollapsed((current) => {
+      rememberWidth(!current);
+      return !current;
+    });
+  }
+
   return (
-    <aside className="hidden w-64 shrink-0 flex-col overflow-y-auto border-r border-navy-800 bg-navy-900 lg:flex">
-      <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-navy-800 px-5">
-        <div className="grid size-7 place-items-center rounded-md bg-teal-500 text-xs font-bold text-navy-950">
+    <aside
+      className={cn(
+        'hidden shrink-0 flex-col border-r border-forest-800 bg-forest-900 transition-[width] duration-200 lg:flex',
+        collapsed ? 'w-[4.25rem]' : 'w-64',
+      )}
+    >
+      <div
+        className={cn(
+          'flex h-14 shrink-0 items-center border-b border-forest-800',
+          collapsed ? 'justify-center px-2' : 'gap-2.5 px-5',
+        )}
+      >
+        <div className="grid size-7 shrink-0 place-items-center rounded-md bg-gold-500 text-xs font-bold text-forest-950">
           FID
         </div>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-white">FID Trading</p>
-          <p className="truncate text-[10px] text-navy-400">Business Management</p>
-        </div>
+        {collapsed ? null : (
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-white">FID Trading</p>
+            <p className="truncate text-[10px] text-forest-400">Business Management</p>
+          </div>
+        )}
       </div>
+
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <SidebarNav permissions={permissions} isSuperAdmin={isSuperAdmin} />
+        <SidebarNav permissions={permissions} isSuperAdmin={isSuperAdmin} collapsed={collapsed} />
+      </div>
+
+      <div className="shrink-0 border-t border-forest-800 p-2">
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
+          title={collapsed ? 'Expand' : 'Collapse'}
+          className={cn(
+            'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-forest-300 transition-colors hover:bg-forest-800 hover:text-white',
+            collapsed && 'justify-center px-2',
+          )}
+        >
+          {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+          {collapsed ? null : <span>Collapse</span>}
+        </button>
       </div>
     </aside>
   );

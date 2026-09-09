@@ -98,7 +98,7 @@ function CommandPalette({
   return (
     <DialogPrimitive.Root open={open} onOpenChange={handleOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-navy-950/30 backdrop-blur-[2px]" />
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-forest-950/30 backdrop-blur-[2px]" />
         <DialogPrimitive.Content className="animate-in-soft fixed left-1/2 top-[12vh] z-50 w-[min(36rem,calc(100vw-1.5rem))] -translate-x-1/2 overflow-hidden rounded-xl border border-line bg-surface shadow-2xl">
           <DialogPrimitive.Title className="sr-only">Search and jump to</DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">
@@ -136,9 +136,9 @@ function CommandPalette({
                       key={item.href}
                       href={item.href}
                       onClick={() => handleOpenChange(false)}
-                      className="flex items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-navy-50"
+                      className="flex items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-forest-50"
                     >
-                      <Icon className="size-4 shrink-0 text-navy-400" />
+                      <Icon className="size-4 shrink-0 text-forest-400" />
                       <span className="min-w-0 flex-1 truncate text-sm text-ink">{item.label}</span>
                       <span className="shrink-0 text-[11px] text-ink-subtle">{item.group}</span>
                     </Link>
@@ -158,7 +158,7 @@ function CommandPalette({
                       key={`${result.type}-${result.id}`}
                       href={result.href}
                       onClick={() => handleOpenChange(false)}
-                      className="block rounded-md px-3 py-2 transition-colors hover:bg-navy-50"
+                      className="block rounded-md px-3 py-2 transition-colors hover:bg-forest-50"
                     >
                       <p className="truncate text-sm font-medium text-ink">{result.title}</p>
                       <p className="truncate text-xs text-ink-muted">{result.subtitle}</p>
@@ -205,7 +205,7 @@ function QuickCreate({ permissions, isSuperAdmin }: { permissions: string[]; isS
 
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-teal-600 px-2.5 text-sm font-medium text-white transition-colors hover:bg-teal-700 sm:px-3">
+      <DropdownMenu.Trigger className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-gold-600 px-2.5 text-sm font-medium text-white transition-colors hover:bg-gold-700 sm:px-3">
         <Plus className="size-4" />
         <span className="hidden sm:inline">New</span>
         <ChevronDown className="hidden size-3.5 opacity-80 sm:block" />
@@ -231,9 +231,9 @@ function QuickCreate({ permissions, isSuperAdmin }: { permissions: string[]; isS
                     <DropdownMenu.Item key={item.href} asChild>
                       <Link
                         href={item.href}
-                        className="flex cursor-pointer items-start gap-3 rounded-md px-3 py-2 outline-none transition-colors hover:bg-navy-50 data-[highlighted]:bg-navy-50"
+                        className="flex cursor-pointer items-start gap-3 rounded-md px-3 py-2 outline-none transition-colors hover:bg-forest-50 data-[highlighted]:bg-forest-50"
                       >
-                        <Icon className="mt-0.5 size-4 shrink-0 text-navy-400" />
+                        <Icon className="mt-0.5 size-4 shrink-0 text-forest-400" />
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-medium text-ink">{item.label}</span>
                           <span className="block truncate text-xs text-ink-subtle">{item.hint}</span>
@@ -270,10 +270,10 @@ function CompanySwitcher({ companies, active }: { companies: TopbarCompany[]; ac
 
   if (companies.length === 1) {
     return (
-      <div className="flex min-w-0 items-center gap-2 rounded-lg border border-line bg-navy-50 px-2.5 py-1.5">
-        <Building2 className="size-4 shrink-0 text-navy-500" />
-        <span className="truncate text-xs font-semibold text-navy-800">{active.name}</span>
-        <span className="hidden rounded bg-navy-200 px-1.5 py-0.5 text-[10px] font-medium text-navy-700 sm:inline">
+      <div className="flex min-w-0 items-center gap-2 rounded-lg border border-line bg-forest-50 px-2.5 py-1.5">
+        <Building2 className="size-4 shrink-0 text-forest-500" />
+        <span className="truncate text-xs font-semibold text-forest-800">{active.name}</span>
+        <span className="hidden rounded bg-forest-200 px-1.5 py-0.5 text-[10px] font-medium text-forest-700 sm:inline">
           {active.localCurrency}
         </span>
       </div>
@@ -284,15 +284,15 @@ function CompanySwitcher({ companies, active }: { companies: TopbarCompany[]; ac
     <DropdownMenu.Root>
       <DropdownMenu.Trigger
         disabled={pending}
-        className="flex min-w-0 items-center gap-2 rounded-lg border border-line-strong bg-surface px-2.5 py-1.5 transition-colors hover:border-navy-300 disabled:opacity-60"
+        className="flex min-w-0 items-center gap-2 rounded-lg border border-line-strong bg-surface px-2.5 py-1.5 transition-colors hover:border-forest-300 disabled:opacity-60"
       >
         {pending ? (
-          <Loader2 className="size-4 shrink-0 animate-spin text-navy-500" />
+          <Loader2 className="size-4 shrink-0 animate-spin text-forest-500" />
         ) : (
-          <Building2 className="size-4 shrink-0 text-navy-500" />
+          <Building2 className="size-4 shrink-0 text-forest-500" />
         )}
-        <span className="max-w-28 truncate text-xs font-semibold text-navy-800 sm:max-w-none">{active.name}</span>
-        <span className="hidden rounded bg-navy-100 px-1.5 py-0.5 text-[10px] font-medium text-navy-700 sm:inline">
+        <span className="max-w-28 truncate text-xs font-semibold text-forest-800 sm:max-w-none">{active.name}</span>
+        <span className="hidden rounded bg-forest-100 px-1.5 py-0.5 text-[10px] font-medium text-forest-700 sm:inline">
           {active.localCurrency}
         </span>
         <ChevronDown className="size-3.5 shrink-0 text-ink-subtle" />
@@ -312,8 +312,8 @@ function CompanySwitcher({ companies, active }: { companies: TopbarCompany[]; ac
               key={company.id}
               onSelect={() => switchTo(company.id)}
               className={cn(
-                'flex cursor-pointer items-center justify-between gap-2 rounded-md px-3 py-2 text-sm outline-none transition-colors hover:bg-navy-50 data-[highlighted]:bg-navy-50',
-                company.id === active.id && 'bg-teal-50',
+                'flex cursor-pointer items-center justify-between gap-2 rounded-md px-3 py-2 text-sm outline-none transition-colors hover:bg-forest-50 data-[highlighted]:bg-forest-50',
+                company.id === active.id && 'bg-gold-50',
               )}
             >
               <span className="min-w-0">
@@ -322,7 +322,7 @@ function CompanySwitcher({ companies, active }: { companies: TopbarCompany[]; ac
                   {company.code} · {company.localCurrency}
                 </span>
               </span>
-              {company.id === active.id ? <Check className="size-4 shrink-0 text-teal-600" /> : null}
+              {company.id === active.id ? <Check className="size-4 shrink-0 text-gold-600" /> : null}
             </DropdownMenu.Item>
           ))}
         </DropdownMenu.Content>
@@ -334,8 +334,8 @@ function CompanySwitcher({ companies, active }: { companies: TopbarCompany[]; ac
 function UserMenu({ user }: { user: TopbarUser }) {
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger className="flex shrink-0 items-center gap-2 rounded-lg p-1 transition-colors hover:bg-navy-50">
-        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-navy-800 text-xs font-semibold text-white">
+      <DropdownMenu.Trigger className="flex shrink-0 items-center gap-2 rounded-lg p-1 transition-colors hover:bg-forest-50">
+        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-forest-800 text-xs font-semibold text-white">
           {initials(user.name)}
         </span>
         <ChevronDown className="hidden size-3.5 text-ink-subtle sm:block" />
@@ -358,7 +358,7 @@ function UserMenu({ user }: { user: TopbarUser }) {
           <DropdownMenu.Item asChild>
             <Link
               href="/getting-started"
-              className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm outline-none transition-colors hover:bg-navy-50 data-[highlighted]:bg-navy-50"
+              className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm outline-none transition-colors hover:bg-forest-50 data-[highlighted]:bg-forest-50"
             >
               <Compass className="size-4 text-ink-muted" />
               Getting started
@@ -368,7 +368,7 @@ function UserMenu({ user }: { user: TopbarUser }) {
           <DropdownMenu.Item asChild>
             <Link
               href="/account"
-              className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm outline-none transition-colors hover:bg-navy-50 data-[highlighted]:bg-navy-50"
+              className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm outline-none transition-colors hover:bg-forest-50 data-[highlighted]:bg-forest-50"
             >
               <KeyRound className="size-4 text-ink-muted" />
               Change password
@@ -423,7 +423,7 @@ export function Topbar({
   return (
     <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface/95 px-3 backdrop-blur sm:gap-3 sm:px-5">
       <div className="flex items-center gap-2 lg:hidden">
-        <div className="grid size-7 shrink-0 place-items-center rounded-md bg-navy-900 text-[10px] font-bold text-teal-300">
+        <div className="grid size-7 shrink-0 place-items-center rounded-md bg-forest-900 text-[10px] font-bold text-gold-300">
           FID
         </div>
       </div>
@@ -434,7 +434,7 @@ export function Topbar({
       <button
         type="button"
         onClick={() => setPaletteOpen(true)}
-        className="hidden h-9 flex-1 items-center gap-2 rounded-lg border border-line-strong bg-surface px-3 text-sm text-ink-subtle transition-colors hover:border-navy-300 sm:flex sm:max-w-md"
+        className="hidden h-9 flex-1 items-center gap-2 rounded-lg border border-line-strong bg-surface px-3 text-sm text-ink-subtle transition-colors hover:border-forest-300 sm:flex sm:max-w-md"
       >
         <Search className="size-4 shrink-0" />
         <span className="truncate">Search or jump to…</span>
@@ -448,7 +448,7 @@ export function Topbar({
         type="button"
         onClick={() => setPaletteOpen(true)}
         aria-label="Search"
-        className="shrink-0 rounded-lg p-2 text-ink-muted transition-colors hover:bg-navy-50 hover:text-ink sm:hidden"
+        className="shrink-0 rounded-lg p-2 text-ink-muted transition-colors hover:bg-forest-50 hover:text-ink sm:hidden"
       >
         <Search className="size-5" />
       </button>
@@ -459,7 +459,7 @@ export function Topbar({
         href="/getting-started"
         aria-label="Getting started"
         title="Getting started"
-        className="hidden shrink-0 rounded-lg p-2 text-ink-muted transition-colors hover:bg-navy-50 hover:text-ink sm:block"
+        className="hidden shrink-0 rounded-lg p-2 text-ink-muted transition-colors hover:bg-forest-50 hover:text-ink sm:block"
       >
         <HelpCircle className="size-5" />
       </Link>
@@ -467,7 +467,7 @@ export function Topbar({
       <Link
         href="/notifications"
         aria-label={`Alerts${unreadCount > 0 ? `, ${unreadCount} unread` : ''}`}
-        className="relative shrink-0 rounded-lg p-2 text-ink-muted transition-colors hover:bg-navy-50 hover:text-ink"
+        className="relative shrink-0 rounded-lg p-2 text-ink-muted transition-colors hover:bg-forest-50 hover:text-ink"
       >
         <Bell className="size-5" />
         {unreadCount > 0 ? (

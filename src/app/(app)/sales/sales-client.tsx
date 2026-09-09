@@ -110,7 +110,7 @@ export function SalesClient({ rows, canCreate }: { rows: SaleRow[]; canCreate: b
       defaultHidden: true,
       cell: (r) =>
         r.shipmentId ? (
-          <Link href={`/shipments/${r.shipmentId}`} className="text-teal-700 hover:underline">
+          <Link href={`/shipments/${r.shipmentId}`} className="text-gold-700 hover:underline">
             {r.jobNumber}
           </Link>
         ) : (

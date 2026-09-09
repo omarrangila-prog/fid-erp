@@ -240,7 +240,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
             <CardContent>
               <dl>
                 <DetailRow label="Customer">
-                  <Link href={`/customers/${invoice.customerId}`} className="text-teal-700 hover:underline">
+                  <Link href={`/customers/${invoice.customerId}`} className="text-gold-700 hover:underline">
                     {invoice.customer.customerName}
                   </Link>
                 </DetailRow>
@@ -284,7 +284,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                     className="flex items-center justify-between gap-3 border-b border-line pb-3 last:border-0 last:pb-0"
                   >
                     <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium text-navy-800">
+                      <span className="block truncate text-sm font-medium text-forest-800">
                         {allocation.receipt.receiptNumber}
                       </span>
                       <span className="block text-xs text-ink-subtle">
@@ -292,7 +292,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                         {allocation.receipt.paymentMethod.replaceAll('_', ' ').toLowerCase()}
                       </span>
                     </span>
-                    <span className="tnum shrink-0 text-sm font-semibold text-teal-700">
+                    <span className="tnum shrink-0 text-sm font-semibold text-gold-700">
                       {formatMoney(allocation.amount, invoice.currency)}
                     </span>
                   </Link>

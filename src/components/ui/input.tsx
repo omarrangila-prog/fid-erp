@@ -4,18 +4,18 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 const FIELD_BASE =
-  'w-full rounded-lg border border-line-strong bg-surface px-3 text-sm text-ink transition-colors placeholder:text-ink-subtle hover:border-navy-300 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 disabled:cursor-not-allowed disabled:bg-navy-50 disabled:text-ink-subtle aria-[invalid=true]:border-red-400 aria-[invalid=true]:ring-red-500/20';
+  'w-full rounded-lg border border-line-strong bg-surface px-3 text-sm text-ink transition-colors placeholder:text-ink-subtle hover:border-forest-300 focus:border-forest-500 focus:outline-none focus:ring-2 focus:ring-forest-500/20 disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:text-ink-subtle aria-[invalid=true]:border-red-400 aria-[invalid=true]:ring-red-500/25';
 
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
   ({ className, ...props }, ref) => (
-    <input ref={ref} className={cn(FIELD_BASE, 'h-10', className)} {...props} />
+    <input ref={ref} className={cn(FIELD_BASE, 'h-11 text-base sm:h-10 sm:text-sm', className)} {...props} />
   ),
 );
 Input.displayName = 'Input';
 
 export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>(
   ({ className, ...props }, ref) => (
-    <textarea ref={ref} className={cn(FIELD_BASE, 'min-h-20 py-2 leading-relaxed', className)} {...props} />
+    <textarea ref={ref} className={cn(FIELD_BASE, 'min-h-20 py-2 text-base leading-relaxed sm:text-sm', className)} {...props} />
   ),
 );
 Textarea.displayName = 'Textarea';
@@ -30,7 +30,7 @@ export const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttrib
       ref={ref}
       className={cn(
         FIELD_BASE,
-        'h-10 appearance-none bg-[url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%235a6782\' stroke-linecap=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")] bg-[length:20px_20px] bg-[right_0.5rem_center] bg-no-repeat pr-9',
+        'h-11 text-base sm:h-10 sm:text-sm appearance-none bg-[url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\'%3E%3Cpath stroke=\'%235a6782\' stroke-linecap=\'round\' stroke-width=\'1.5\' d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")] bg-[length:20px_20px] bg-[right_0.5rem_center] bg-no-repeat pr-9',
         className,
       )}
       {...props}
@@ -56,7 +56,7 @@ export const MoneyInput = React.forwardRef<
     <input
       ref={ref}
       inputMode="decimal"
-      className={cn(FIELD_BASE, 'tnum h-10 text-right', currency ? 'pl-14' : '', className)}
+      className={cn(FIELD_BASE, 'tnum h-11 text-base sm:h-10 sm:text-sm text-right', currency ? 'pl-14' : '', className)}
       {...props}
     />
   </div>

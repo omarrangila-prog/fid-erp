@@ -81,7 +81,7 @@ export default async function CashBookPage({ params }: { params: Promise<{ id: s
                   </TR>
                 </THead>
                 <TBody>
-                  <TR className="bg-navy-50/40 hover:bg-navy-50/40">
+                  <TR className="bg-forest-50/40 hover:bg-forest-50/40">
                     <TD colSpan={6} className="text-xs font-medium text-ink-muted">
                       Opening balance
                     </TD>
@@ -98,7 +98,7 @@ export default async function CashBookPage({ params }: { params: Promise<{ id: s
                         <span className="block text-xs text-ink-subtle">{titleCase(row.sourceType)}</span>
                       </TD>
                       <TD>{row.counterparty ?? '—'}</TD>
-                      <TD numeric className={row.moneyIn.greaterThan(0) ? 'text-teal-700' : 'text-ink-subtle'}>
+                      <TD numeric className={row.moneyIn.greaterThan(0) ? 'text-gold-700' : 'text-ink-subtle'}>
                         {row.moneyIn.greaterThan(0) ? formatMoney(row.moneyIn, currency) : '—'}
                       </TD>
                       <TD numeric className={row.moneyOut.greaterThan(0) ? 'text-red-600' : 'text-ink-subtle'}>

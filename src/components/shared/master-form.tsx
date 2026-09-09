@@ -162,7 +162,7 @@ export function MasterFormSheet({
                   {field.hint ? <p className="text-xs text-ink-subtle">{field.hint}</p> : null}
                   {error ? <p className="text-xs font-medium text-red-600">{error}</p> : null}
 
-                  <div className="max-h-80 space-y-4 overflow-y-auto rounded-lg border border-line bg-navy-50/30 p-3">
+                  <div className="max-h-80 space-y-4 overflow-y-auto rounded-lg border border-line bg-forest-50/30 p-3">
                     {[...groups.entries()].map(([groupName, options]) => (
                       <div key={groupName || 'ungrouped'} className="space-y-1.5">
                         {groupName ? (
@@ -190,7 +190,7 @@ export function MasterFormSheet({
                                 name={`${field.name}[]`}
                                 value={option.value}
                                 defaultChecked={selected.has(option.value)}
-                                className="mt-0.5 size-4 shrink-0 accent-teal-600"
+                                className="mt-0.5 size-4 shrink-0 accent-gold-600"
                               />
                               <span className="min-w-0">
                                 <span className="block truncate text-ink">{option.label}</span>
@@ -217,7 +217,7 @@ export function MasterFormSheet({
                     type="checkbox"
                     value="true"
                     defaultChecked={Boolean(defaultValue)}
-                    className="mt-0.5 size-4 shrink-0 accent-teal-600"
+                    className="mt-0.5 size-4 shrink-0 accent-gold-600"
                   />
                   <label htmlFor={field.name} className="text-sm text-ink">
                     {field.label}

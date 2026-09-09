@@ -305,7 +305,7 @@ export function ReceiptForm({
                   type="button"
                   onClick={() => setEntryMode(mode)}
                   className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                    entryMode === mode ? 'bg-navy-800 text-white' : 'text-ink-muted hover:text-ink'
+                    entryMode === mode ? 'bg-forest-800 text-white' : 'text-ink-muted hover:text-ink'
                   }`}
                 >
                   {mode === 'rate' ? 'I agreed a rate' : 'I agreed a USD amount'}
@@ -346,7 +346,7 @@ export function ReceiptForm({
               </Field>
 
               <Field label={entryMode === 'rate' ? 'USD equivalent' : 'Implied rate'}>
-                <div className="tnum flex h-10 items-center justify-end rounded-lg border border-line bg-navy-50 px-3 text-sm font-semibold">
+                <div className="tnum flex h-10 items-center justify-end rounded-lg border border-line bg-forest-50 px-3 text-sm font-semibold">
                   {entryMode === 'rate'
                     ? formatMoney(amountUsd, 'USD')
                     : derivedRate

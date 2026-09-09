@@ -3,10 +3,10 @@ import { cn } from '@/lib/utils';
 import type { BadgeTone } from '@/lib/constants';
 
 const TONE_CLASSES: Record<BadgeTone, string> = {
-  neutral: 'bg-navy-100 text-navy-700 ring-navy-200',
+  neutral: 'bg-forest-100 text-forest-700 ring-forest-200',
   info: 'bg-sky-50 text-sky-700 ring-sky-200',
   progress: 'bg-amber-50 text-amber-700 ring-amber-200',
-  success: 'bg-teal-50 text-teal-700 ring-teal-200',
+  success: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
   warning: 'bg-orange-50 text-orange-700 ring-orange-200',
   danger: 'bg-red-50 text-red-700 ring-red-200',
 };

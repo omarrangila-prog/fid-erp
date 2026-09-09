@@ -249,12 +249,12 @@ export function TransferForm({
       </Card>
 
       {totalKg.greaterThan(0) ? (
-        <Card className="border-navy-200 bg-navy-50/50">
+        <Card className="border-forest-200 bg-forest-50/50">
           <CardContent className="flex flex-wrap items-center gap-3 pt-5 text-sm">
             <span className="font-medium">{warehouses.find((w) => w.id === fromWarehouseId)?.name}</span>
             <ArrowRight className="size-4 text-ink-subtle" />
             <span className="font-medium">{warehouses.find((w) => w.id === toWarehouseId)?.name}</span>
-            <span className="tnum ml-auto text-base font-semibold text-navy-800">{formatQuantityKg(totalKg)}</span>
+            <span className="tnum ml-auto text-base font-semibold text-forest-800">{formatQuantityKg(totalKg)}</span>
           </CardContent>
         </Card>
       ) : null}

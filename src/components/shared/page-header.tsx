@@ -29,7 +29,7 @@ export function PageHeader({
               <li key={`${crumb.label}-${index}`} className="flex items-center gap-1">
                 {index > 0 ? <ChevronRight className="size-3 text-ink-subtle" /> : null}
                 {crumb.href ? (
-                  <Link href={crumb.href} className="transition-colors hover:text-teal-700">
+                  <Link href={crumb.href} className="transition-colors hover:text-gold-700">
                     {crumb.label}
                   </Link>
                 ) : (

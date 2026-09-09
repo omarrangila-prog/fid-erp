@@ -3,7 +3,7 @@ import { FileQuestion, AlertTriangle, Inbox } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('animate-pulse rounded-md bg-navy-100', className)} {...props} />;
+  return <div className={cn('animate-pulse rounded-md bg-forest-100', className)} {...props} />;
 }
 
 export function TableSkeleton({ rows = 6, cols = 5 }: { rows?: number; cols?: number }) {
@@ -13,7 +13,7 @@ export function TableSkeleton({ rows = 6, cols = 5 }: { rows?: number; cols?: nu
         {Array.from({ length: rows }).map((_, r) => (
           <div key={r} className="grid gap-3" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
             {Array.from({ length: cols }).map((__, c) => (
-              <Skeleton key={c} className={cn('h-4', r === 0 && 'bg-navy-200')} />
+              <Skeleton key={c} className={cn('h-4', r === 0 && 'bg-forest-200')} />
             ))}
           </div>
         ))}
@@ -42,8 +42,8 @@ export function EmptyState({
         className,
       )}
     >
-      <div className="rounded-full bg-navy-50 p-3">
-        <Icon className="size-5 text-navy-400" />
+      <div className="rounded-full bg-forest-50 p-3">
+        <Icon className="size-5 text-forest-400" />
       </div>
       <div className="space-y-1">
         <p className="text-sm font-semibold text-ink">{title}</p>

@@ -179,7 +179,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                   <DetailRow label="Customer since">{formatDate(customer.createdAt)}</DetailRow>
                 </dl>
                 {customer.notes ? (
-                  <p className="mt-4 rounded-lg bg-navy-50 p-3 text-xs leading-relaxed text-ink-muted">
+                  <p className="mt-4 rounded-lg bg-forest-50 p-3 text-xs leading-relaxed text-ink-muted">
                     {customer.notes}
                   </p>
                 ) : null}
@@ -209,7 +209,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                   {customer.salesInvoices.map((invoice) => (
                     <TR key={invoice.id}>
                       <TD>
-                        <Link href={`/sales/${invoice.id}`} className="font-medium text-navy-800 hover:text-teal-700">
+                        <Link href={`/sales/${invoice.id}`} className="font-medium text-forest-800 hover:text-gold-700">
                           {invoice.invoiceNumber}
                         </Link>
                       </TD>
@@ -217,7 +217,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                       <TD>{formatDate(invoice.dueDate)}</TD>
                       <TD>
                         {invoice.shipment ? (
-                          <Link href={`/shipments/${invoice.shipment.id}`} className="text-navy-800 hover:text-teal-700">
+                          <Link href={`/shipments/${invoice.shipment.id}`} className="text-forest-800 hover:text-gold-700">
                             {invoice.shipment.shipmentNumber}
                           </Link>
                         ) : (
@@ -263,7 +263,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                       <TD>
                         <Link
                           href={`/finance/receipts/${receipt.id}`}
-                          className="font-medium text-navy-800 hover:text-teal-700"
+                          className="font-medium text-forest-800 hover:text-gold-700"
                         >
                           {receipt.receiptNumber}
                         </Link>
@@ -305,7 +305,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                   {receivables.map((row) => (
                     <TR key={row.invoiceId}>
                       <TD>
-                        <Link href={`/sales/${row.invoiceId}`} className="font-medium text-navy-800 hover:text-teal-700">
+                        <Link href={`/sales/${row.invoiceId}`} className="font-medium text-forest-800 hover:text-gold-700">
                           {row.invoiceNumber}
                         </Link>
                       </TD>
@@ -348,7 +348,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                   {customer.shipments.map((shipment) => (
                     <TR key={shipment.id}>
                       <TD>
-                        <Link href={`/shipments/${shipment.id}`} className="font-medium text-navy-800 hover:text-teal-700">
+                        <Link href={`/shipments/${shipment.id}`} className="font-medium text-forest-800 hover:text-gold-700">
                           {shipment.shipmentNumber}
                         </Link>
                       </TD>

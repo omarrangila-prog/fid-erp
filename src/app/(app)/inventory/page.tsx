@@ -151,7 +151,7 @@ export default async function InventoryPage() {
             {warehouseStock.map((w) => (
               <div key={w.warehouseId} className="rounded-lg border border-line p-3">
                 <p className="truncate text-sm font-medium text-ink">{w.name}</p>
-                <p className="tnum mt-1 text-lg font-semibold text-navy-800">{formatQuantityKg(w.onHandKg)}</p>
+                <p className="tnum mt-1 text-lg font-semibold text-forest-800">{formatQuantityKg(w.onHandKg)}</p>
                 <p className="text-xs text-ink-subtle">
                   {w.bags.toLocaleString()} bags
                   {showValue ? ` · ${formatMoney(w.valueUsd, 'USD')}` : ''}

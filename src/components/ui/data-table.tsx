@@ -152,11 +152,11 @@ export function DataTable<T>({
                     {hideableColumns.map((column) => (
                       <label
                         key={column.id}
-                        className="flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-sm hover:bg-navy-50"
+                        className="flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-sm hover:bg-forest-50"
                       >
                         <input
                           type="checkbox"
-                          className="size-4 accent-teal-600"
+                          className="size-4 accent-gold-600"
                           checked={!hidden.has(column.id)}
                           onChange={() =>
                             setHidden((prev) => {
@@ -224,7 +224,7 @@ export function DataTable<T>({
                       {visibleColumns.map((column, index) => (
                         <TD key={column.id} numeric={column.numeric} className={column.className}>
                           {href && index === 0 ? (
-                            <Link href={href} className="block font-medium text-navy-800 hover:text-teal-700">
+                            <Link href={href} className="block font-medium text-forest-800 hover:text-gold-700">
                               {column.cell(row)}
                             </Link>
                           ) : href ? (
@@ -264,7 +264,7 @@ export function DataTable<T>({
               const body = (
                 <>
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 font-medium text-navy-800">
+                    <div className="min-w-0 font-medium text-forest-800">
                       {title ? title.cell(row) : columns[0].cell(row)}
                     </div>
                     {badge ? <div className="shrink-0">{badge.cell(row)}</div> : null}
@@ -288,7 +288,7 @@ export function DataTable<T>({
                 <Link
                   key={getRowId(row)}
                   href={href}
-                  className="block rounded-xl border border-line bg-surface p-4 transition-colors active:bg-navy-50"
+                  className="block rounded-xl border border-line bg-surface p-4 transition-colors active:bg-forest-50"
                 >
                   {body}
                 </Link>
