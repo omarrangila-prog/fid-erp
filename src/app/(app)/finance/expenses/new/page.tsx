@@ -17,8 +17,8 @@ export default async function NewExpensePage({ searchParams }: { searchParams: P
   const [categories, shipments, vendors, agents, accounts] = await Promise.all([
     prisma.expenseCategory.findMany({
       where: { companyId, status: 'ACTIVE' },
-      orderBy: [{ capitaliseByDefault: 'desc' }, { name: 'asc' }],
-      select: { id: true, name: true, code: true, capitaliseByDefault: true },
+      orderBy: [{ kind: 'asc' }, { name: 'asc' }],
+      select: { id: true, name: true, code: true, capitaliseByDefault: true, kind: true },
     }),
     prisma.shipment.findMany({
       where: { companyId, purchaseContract: { status: 'POSTED' }, status: { not: 'CLOSED' } },
@@ -81,6 +81,7 @@ export default async function NewExpensePage({ searchParams }: { searchParams: P
     hint: c.capitaliseByDefault ? 'Landed cost' : 'Period cost',
     keywords: c.code,
     capitaliseByDefault: c.capitaliseByDefault,
+    kind: c.kind,
   }));
 
   return (

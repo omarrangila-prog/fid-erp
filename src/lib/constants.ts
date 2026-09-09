@@ -694,22 +694,64 @@ export const SHIPMENT_STATUSES_IN_TRANSIT = ['CONTRACT_CREATED', 'AWAITING_LOADI
  * the coffee rather than in period expenses. Getting this wrong distorts both
  * inventory valuation and gross margin, so the defaults are deliberate.
  */
-export const EXPENSE_CATEGORY_SEEDS: Array<{ code: string; name: string; capitalise: boolean }> = [
-  { code: 'FREIGHT', name: 'Ocean Freight', capitalise: true },
-  { code: 'INSURANCE', name: 'Marine Insurance', capitalise: true },
-  { code: 'CUSTOMS', name: 'Customs Duty', capitalise: true },
-  { code: 'CLEARING', name: 'Clearing Charges', capitalise: true },
-  { code: 'PORT', name: 'Port Charges', capitalise: true },
-  { code: 'TRANSPORT', name: 'Inland Transport', capitalise: true },
-  { code: 'DOCUMENTATION', name: 'Documentation', capitalise: true },
-  { code: 'LABOUR', name: 'Labour', capitalise: true },
-  { code: 'LOADING', name: 'Loading / Stuffing', capitalise: true },
-  { code: 'INSPECTION', name: 'Quality Inspection', capitalise: true },
-  { code: 'FUEL', name: 'Fuel', capitalise: true },
-  { code: 'WAREHOUSE', name: 'Warehouse Storage', capitalise: false },
-  { code: 'COMMISSION', name: 'Agent Commission', capitalise: false },
-  { code: 'BANK', name: 'Bank Charges', capitalise: false },
-  { code: 'MISC', name: 'Miscellaneous', capitalise: false },
+/**
+ * The expense catalogue.
+ *
+ * `kind` says which job the money was spent on; `capitalise` says how the
+ * ledger treats it. They are not the same question, and conflating them is
+ * how a broker's commission ends up either invisible on the shipment or
+ * wrongly inside the cost of the coffee.
+ *
+ * Seeds only. An administrator can add, rename and deactivate categories, so
+ * nothing here is permanent.
+ */
+export const EXPENSE_CATEGORY_SEEDS: Array<{
+  code: string;
+  name: string;
+  kind: 'SHIPMENT' | 'GENERAL';
+  capitalise: boolean;
+}> = [
+  // --- Direct shipment costs: these become the landed cost of the coffee ---
+  { code: 'FREIGHT', name: 'Ocean Freight', kind: 'SHIPMENT', capitalise: true },
+  { code: 'INSURANCE', name: 'Marine Insurance', kind: 'SHIPMENT', capitalise: true },
+  { code: 'CUSTOMS', name: 'Customs Duty', kind: 'SHIPMENT', capitalise: true },
+  { code: 'CLEARING', name: 'Clearing Charges', kind: 'SHIPMENT', capitalise: true },
+  { code: 'PORT', name: 'Port Charges', kind: 'SHIPMENT', capitalise: true },
+  { code: 'TRANSPORT', name: 'Inland Transport', kind: 'SHIPMENT', capitalise: true },
+  { code: 'DOCUMENTATION', name: 'Documentation', kind: 'SHIPMENT', capitalise: true },
+  { code: 'HANDLING', name: 'Handling', kind: 'SHIPMENT', capitalise: true },
+  { code: 'LABOUR', name: 'Labour', kind: 'SHIPMENT', capitalise: true },
+  { code: 'LOADING', name: 'Loading / Stuffing', kind: 'SHIPMENT', capitalise: true },
+  { code: 'INSPECTION', name: 'Quality Inspection', kind: 'SHIPMENT', capitalise: true },
+  { code: 'SHPSTORAGE', name: 'Shipment Storage', kind: 'SHIPMENT', capitalise: true },
+  { code: 'FUEL', name: 'Fuel', kind: 'SHIPMENT', capitalise: true },
+  // A broker who is paid to place one consignment is a cost of landing it.
+  { code: 'BROKER', name: 'Broker Commission', kind: 'SHIPMENT', capitalise: true },
+  { code: 'COMMISSION', name: 'Agent Commission', kind: 'SHIPMENT', capitalise: true },
+  /// Recoverable tax is not a cost, so this covers the irrecoverable duty and
+  /// levies a shipment genuinely bears. Reclaimable VAT goes to the tax
+  /// account through the expense's own tax code, never through here.
+  { code: 'SHPTAX', name: 'Shipment Tax / Levies', kind: 'SHIPMENT', capitalise: true },
+  // Shipment-linked for reporting, but not a cost of getting the coffee in:
+  // it belongs to the profit and loss the period it was incurred.
+  { code: 'SHPBANK', name: 'Shipment Bank Charges', kind: 'SHIPMENT', capitalise: false },
+  { code: 'OTHERSHP', name: 'Other Direct Shipment Cost', kind: 'SHIPMENT', capitalise: true },
+
+  // --- Running the company: never touches a shipment's cost ---------------
+  { code: 'MEALS', name: 'Food / Meals', kind: 'GENERAL', capitalise: false },
+  { code: 'ENTERTAIN', name: 'Entertainment', kind: 'GENERAL', capitalise: false },
+  { code: 'RENT', name: 'Office Rent', kind: 'GENERAL', capitalise: false },
+  { code: 'UTILITIES', name: 'Utilities', kind: 'GENERAL', capitalise: false },
+  { code: 'SALARY', name: 'Salary / Wages', kind: 'GENERAL', capitalise: false },
+  { code: 'SUPPLIES', name: 'Office Supplies', kind: 'GENERAL', capitalise: false },
+  { code: 'TRAVEL', name: 'Travel', kind: 'GENERAL', capitalise: false },
+  { code: 'TELECOM', name: 'Telephone / Internet', kind: 'GENERAL', capitalise: false },
+  { code: 'PROFFEE', name: 'Professional Fees', kind: 'GENERAL', capitalise: false },
+  { code: 'BANK', name: 'General Bank Charges', kind: 'GENERAL', capitalise: false },
+  { code: 'REPAIRS', name: 'Repairs & Maintenance', kind: 'GENERAL', capitalise: false },
+  { code: 'GENTRANS', name: 'General Transport', kind: 'GENERAL', capitalise: false },
+  { code: 'WAREHOUSE', name: 'Warehouse Rent', kind: 'GENERAL', capitalise: false },
+  { code: 'MISC', name: 'Other Administrative Expense', kind: 'GENERAL', capitalise: false },
 ];
 
 /** System account keys referenced by the posting engine. */

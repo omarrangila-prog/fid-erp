@@ -88,6 +88,7 @@ export const expenseSchema = z.object({
   paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'CHEQUE']),
   cashBankAccountId: optionalCuid,
   capitaliseToLandedCost: z.coerce.boolean().optional(),
+  kind: z.enum(['SHIPMENT', 'GENERAL']),
   taxCodeId: optionalCuid,
   reference: optionalText(60),
   description: optionalText(600),

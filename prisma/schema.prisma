@@ -690,6 +690,17 @@ model ExpenseCategory {
   name                String
   description         String?
   glAccountId         String?
+  /// Whether this cost belongs to a shipment or to the company as a whole.
+  ///
+  /// Separate from `capitaliseByDefault`, and deliberately so: the two answer
+  /// different questions. `kind` says which job the money was spent on, and so
+  /// which shipment's cost report it lands in. `capitaliseByDefault` says how
+  /// the ledger treats it — into the landed cost of the coffee, or straight to
+  /// the profit and loss. A broker's commission on a shipment is SHIPMENT and
+  /// capitalised; a bank charge on that shipment's remittance is SHIPMENT for
+  /// reporting but expensed, because it is not a cost of getting the coffee
+  /// to the warehouse.
+  kind                ExpenseKind  @default(SHIPMENT)
   /// Direct shipment costs (freight, customs, clearing…) are capitalised into
   /// the landed cost of the goods. Period costs (bank charges, commission) are
   /// expensed. This is the default; each expense can override it.
@@ -1483,6 +1494,10 @@ model Expense {
   /// When true the amount is added to the shipment's landed cost instead of
   /// being written straight to the profit and loss account.
   capitaliseToLandedCost Boolean           @default(false)
+  /// Recorded on the voucher, not inferred from the category later: a category
+  /// reclassified next year must not silently rewrite what last year's
+  /// expenses were.
+  kind                   ExpenseKind       @default(SHIPMENT)
   /// Recoverable input tax on top of `amount`. `amount` stays the net cost, so
   /// a capitalised expense never pushes reclaimable tax into landed cost.
   taxCodeId              String?
@@ -2085,4 +2100,15 @@ model TaxReturn {
   @@unique([companyId, periodStart, periodEnd])
   @@index([companyId, status])
   @@map("tax_returns")
+}
+
+/// What an expense is for.
+///
+/// The client's own division: money spent on getting one consignment to the
+/// warehouse and sold, against money spent running the business. A staff
+/// dinner and a clearing agent's invoice are both cash out of the same petty
+/// cash box, and they must not land in the same place.
+enum ExpenseKind {
+  SHIPMENT
+  GENERAL
 }

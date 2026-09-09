@@ -23,6 +23,9 @@ export default async function ExpensesPage() {
       expenseCategory: { select: { name: true } },
       shipment: { select: { id: true, jobNumber: true } },
       cashBankAccount: { select: { name: true } },
+      vendor: { select: { vendorName: true } },
+      agent: { select: { agentName: true } },
+      createdBy: { select: { name: true } },
     },
   });
 
@@ -40,6 +43,9 @@ export default async function ExpensesPage() {
     amountUsd: formatMoney(e.amountUsd, 'USD'),
     account: e.cashBankAccount?.name ?? 'On credit',
     capitalise: e.capitaliseToLandedCost,
+    kind: e.kind,
+    payee: e.vendor?.vendorName ?? e.agent?.agentName ?? null,
+    enteredBy: e.createdBy.name,
     reference: e.reference,
     status: e.status,
   }));

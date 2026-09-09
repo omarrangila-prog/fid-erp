@@ -41,6 +41,8 @@ export type ExpenseInput = {
   /** Overrides the category default. Direct shipment costs are capitalised
    *  into landed cost; period costs go straight to the profit and loss. */
   capitaliseToLandedCost?: boolean;
+  /** Shipment cost or company overhead. Defaults to the category's own kind. */
+  kind?: 'SHIPMENT' | 'GENERAL';
   /** `amount` stays net of this. Omitted means the company default. */
   taxCodeId?: string | null;
   reference?: string | null;
@@ -83,7 +85,7 @@ async function validateReferences(tx: Tx, input: ExpenseInput) {
 
   const category = await tx.expenseCategory.findFirst({
     where: { id: input.expenseCategoryId, companyId: input.companyId },
-    select: { id: true, name: true, glAccountId: true, status: true, capitaliseByDefault: true },
+    select: { id: true, name: true, glAccountId: true, status: true, capitaliseByDefault: true, kind: true },
   });
   if (!category) throw new NotFoundError('Expense category');
   if (category.status !== 'ACTIVE') throw new BusinessRuleError(`${category.name} is an inactive expense category.`);
@@ -118,14 +120,39 @@ async function validateReferences(tx: Tx, input: ExpenseInput) {
     if (!agent) throw new NotFoundError('Agent');
   }
 
-  const capitalise = input.capitaliseToLandedCost ?? category.capitaliseByDefault;
+  /**
+   * Naming a shipment is itself the statement that this belongs to a job —
+   * a bank charge on one consignment's remittance is a shipment expense even
+   * though bank charges are usually overheads. So the shipment wins over the
+   * category's own default, and only an explicit `kind` overrides both.
+   */
+  const kind = input.kind ?? (input.shipmentId ? 'SHIPMENT' : category.kind);
+
+  // A shipment cost has to say which shipment. Without that it cannot reach a
+  // job cost report, a landed cost or a profitability figure — it would be an
+  // overhead wearing a shipment category's name.
+  if (kind === 'SHIPMENT' && !input.shipmentId) {
+    throw new BusinessRuleError(
+      `${category.name} is a shipment cost, so it has to name the shipment it belongs to. If this is a running cost of the business rather than one consignment, record it as a general company expense instead.`,
+    );
+  }
+
+  // And the reverse: a general expense that names a shipment would quietly
+  // appear on that shipment's cost report while being treated as an overhead.
+  if (kind === 'GENERAL' && input.shipmentId) {
+    throw new BusinessRuleError(
+      'A general company expense does not belong to a shipment. Either clear the shipment, or record it as a shipment expense.',
+    );
+  }
+
+  const capitalise = kind === 'SHIPMENT' && (input.capitaliseToLandedCost ?? category.capitaliseByDefault);
   if (capitalise && !input.shipmentId) {
     throw new BusinessRuleError(
       `${category.name} is a direct shipment cost, so it must be linked to a job/shipment for its landed cost to be allocated. Either choose a shipment or record it as a period expense.`,
     );
   }
 
-  return { category, capitalise };
+  return { category, capitalise, kind };
 }
 
 /**
@@ -169,7 +196,7 @@ async function resolveExpenseTax(
 export async function createExpense(input: ExpenseInput, userId: string) {
   return transaction(async (tx) => {
     const company = await getCompanyContext(tx, input.companyId);
-    const { category, capitalise } = await validateReferences(tx, input);
+    const { category, capitalise, kind } = await validateReferences(tx, input);
     const amounts = computeExpenseAmounts({ ...input, localCurrency: company.localCurrency });
     const tax = await resolveExpenseTax(tx, input, amounts);
 
@@ -197,6 +224,7 @@ export async function createExpense(input: ExpenseInput, userId: string) {
         cashBankAccountId: input.cashBankAccountId ?? null,
         paymentMethod: input.paymentMethod ?? 'BANK_TRANSFER',
         capitaliseToLandedCost: capitalise,
+        kind,
         taxCodeId: tax.taxCodeId,
         taxRatePct: tax.taxRatePct,
         taxAmount: tax.taxAmount,
@@ -236,7 +264,7 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
     }
 
     const company = await getCompanyContext(tx, input.companyId);
-    const { capitalise } = await validateReferences(tx, input);
+    const { capitalise, kind } = await validateReferences(tx, input);
     const amounts = computeExpenseAmounts({ ...input, localCurrency: company.localCurrency });
     const tax = await resolveExpenseTax(tx, input, amounts);
 
@@ -258,6 +286,7 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
         cashBankAccountId: input.cashBankAccountId ?? null,
         paymentMethod: input.paymentMethod ?? 'BANK_TRANSFER',
         capitaliseToLandedCost: capitalise,
+        kind,
         taxCodeId: tax.taxCodeId,
         taxRatePct: tax.taxRatePct,
         taxAmount: tax.taxAmount,

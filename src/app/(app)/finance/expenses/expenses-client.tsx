@@ -22,6 +22,9 @@ export type ExpenseRow = {
   amountUsd: string;
   account: string;
   capitalise: boolean;
+  kind: 'SHIPMENT' | 'GENERAL';
+  payee: string | null;
+  enteredBy: string;
   reference: string | null;
   status: string;
 };
@@ -42,7 +45,20 @@ export function ExpensesClient({
     { id: 'number', header: 'Voucher', mobile: 'title', sortValue: (r) => r.number, cell: (r) => <span className="font-medium">{r.number}</span> },
     { id: 'date', header: 'Date', mobile: 'meta', sortValue: (r) => r.dateSort, cell: (r) => r.date },
     { id: 'category', header: 'Category', mobile: 'meta', sortValue: (r) => r.category, cell: (r) => r.category },
+    {
+      id: 'type',
+      header: 'Type',
+      mobile: 'badge',
+      sortValue: (r) => r.kind,
+      cell: (r) => (
+        <Badge tone={r.kind === 'SHIPMENT' ? 'info' : 'neutral'}>
+          {r.kind === 'SHIPMENT' ? 'Shipment' : 'Company'}
+        </Badge>
+      ),
+    },
     { id: 'job', header: 'Job', mobile: 'meta', cell: (r) => r.job ?? '—' },
+    { id: 'payee', header: 'Payee', hideable: true, cell: (r) => r.payee ?? '—' },
+    { id: 'enteredBy', header: 'Entered by', hideable: true, defaultHidden: true, cell: (r) => r.enteredBy },
     {
       id: 'amount',
       header: 'Amount',

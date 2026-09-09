@@ -673,22 +673,30 @@ export async function getCashFlow(params: { companyId: string; from: Date; to: D
 }
 
 /** Expenses grouped by category, shipment or month. */
+export type ExpenseGrouping = 'category' | 'shipment' | 'month' | 'payee' | 'type';
+
 export async function getExpenseReport(params: {
   companyId: string;
   from?: Date;
   to?: Date;
-  groupBy: 'category' | 'shipment' | 'month';
+  groupBy: ExpenseGrouping;
+  /** Narrow to one side of the business, or leave off for everything. */
+  kind?: 'SHIPMENT' | 'GENERAL';
 }) {
   const rows = await prisma.$queryRaw<Array<{ key: string; label: string; amountUsd: string; count: bigint }>>`
     SELECT
       CASE ${params.groupBy}
         WHEN 'category' THEN ec."id"
         WHEN 'shipment' THEN COALESCE(s."id", 'unassigned')
+        WHEN 'payee' THEN COALESCE(v."id", a."id", 'none')
+        WHEN 'type' THEN e."kind"::text
         ELSE to_char(e."expenseDate", 'YYYY-MM')
       END AS key,
       CASE ${params.groupBy}
         WHEN 'category' THEN ec."name"
         WHEN 'shipment' THEN COALESCE(s."jobNumber", 'Not linked to a job')
+        WHEN 'payee' THEN COALESCE(v."vendorName", a."agentName", 'No payee recorded')
+        WHEN 'type' THEN CASE WHEN e."kind" = 'SHIPMENT' THEN 'Shipment expenses' ELSE 'General company expenses' END
         ELSE to_char(e."expenseDate", 'YYYY-MM')
       END AS label,
       COALESCE(SUM(e."amountUsd"), 0)::text AS "amountUsd",
@@ -696,7 +704,10 @@ export async function getExpenseReport(params: {
     FROM expenses e
     JOIN expense_categories ec ON ec."id" = e."expenseCategoryId"
     LEFT JOIN shipments s ON s."id" = e."shipmentId"
+    LEFT JOIN vendors v ON v."id" = e."vendorId"
+    LEFT JOIN agents a ON a."id" = e."agentId"
     WHERE e."companyId" = ${params.companyId} AND e."status" = 'POSTED'
+      AND (${params.kind ?? null}::text IS NULL OR e."kind"::text = ${params.kind ?? null})
       AND (${params.from ?? null}::date IS NULL OR e."expenseDate" >= ${params.from ?? null}::date)
       AND (${params.to ?? null}::date IS NULL OR e."expenseDate" <= ${params.to ?? null}::date)
     GROUP BY 1, 2
@@ -709,4 +720,54 @@ export async function getExpenseReport(params: {
     amountUsd: toMoney(r.amountUsd),
     count: Number(r.count),
   }));
+}
+
+/**
+ * The two sides of the business, side by side.
+ *
+ * Shipment costs become the cost of the coffee and reach the profit and loss
+ * as cost of sales when it is sold; overheads hit the period directly. Both
+ * are money out of the same account, which is why the client wants them on one
+ * screen — and why they must never be added together into a single "expenses"
+ * figure that means nothing.
+ */
+export async function getExpenseSplit(params: { companyId: string; from?: Date; to?: Date }) {
+  const rows = await prisma.$queryRaw<
+    Array<{ kind: string; capitalised: boolean; amountUsd: string; count: bigint }>
+  >`
+    SELECT e."kind"::text AS kind,
+           e."capitaliseToLandedCost" AS capitalised,
+           COALESCE(SUM(e."amountUsd"), 0)::text AS "amountUsd",
+           COUNT(*) AS count
+    FROM expenses e
+    WHERE e."companyId" = ${params.companyId} AND e."status" = 'POSTED'
+      AND (${params.from ?? null}::date IS NULL OR e."expenseDate" >= ${params.from ?? null}::date)
+      AND (${params.to ?? null}::date IS NULL OR e."expenseDate" <= ${params.to ?? null}::date)
+    GROUP BY 1, 2`;
+
+  const pick = (kind: string, capitalised?: boolean) =>
+    rows
+      .filter((r) => r.kind === kind && (capitalised === undefined || r.capitalised === capitalised))
+      .reduce((sum, r) => sum.plus(r.amountUsd), new Decimal(0));
+
+  const capitalised = toMoney(pick('SHIPMENT', true));
+  const shipmentPeriod = toMoney(pick('SHIPMENT', false));
+  const general = toMoney(pick('GENERAL'));
+
+  return {
+    /** Into the landed cost of the coffee; reaches the P&L as cost of sales. */
+    capitalisedUsd: capitalised,
+    /** Booked to a job but charged to the period, not to the coffee. */
+    shipmentPeriodUsd: shipmentPeriod,
+    /** Overheads. Nothing to do with any consignment. */
+    generalUsd: general,
+    /** What actually left the bank, which is all three together. */
+    totalSpendUsd: toMoney(capitalised.plus(shipmentPeriod).plus(general)),
+    /** What the period's profit and loss is charged, which is not the same. */
+    periodChargeUsd: toMoney(shipmentPeriod.plus(general)),
+    counts: {
+      shipment: rows.filter((r) => r.kind === 'SHIPMENT').reduce((n, r) => n + Number(r.count), 0),
+      general: rows.filter((r) => r.kind === 'GENERAL').reduce((n, r) => n + Number(r.count), 0),
+    },
+  };
 }

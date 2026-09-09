@@ -262,7 +262,9 @@ describe('cash flow, journal and expenses', () => {
 
   it('groups expenses by category and by month', async () => {
     const byCategory = await getExpenseReport({ companyId: ctx.dubai.id, groupBy: 'category' });
-    expect(byCategory.find((r) => r.label === 'Bank Charges')?.amountUsd.toString()).toBe('1000');
+    // The brief splits bank charges in two: one attributable to a shipment,
+    // one an overhead. This seed uses the overhead.
+    expect(byCategory.find((r) => r.label === 'General Bank Charges')?.amountUsd.toString()).toBe('1000');
 
     const byMonth = await getExpenseReport({ companyId: ctx.dubai.id, groupBy: 'month' });
     expect(byMonth.find((r) => r.label === '2026-02')?.amountUsd.toString()).toBe('1000');

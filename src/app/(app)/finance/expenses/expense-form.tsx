@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Ship, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, MoneyInput, Select, Textarea } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
@@ -14,7 +14,7 @@ import { dec, convertToUsd } from '@/lib/money';
 import { formatMoney } from '@/lib/format';
 import { saveExpenseAction, postExpenseAction } from '@/server/actions/finance-actions';
 
-export type CategoryOption = ComboOption & { capitaliseByDefault: boolean };
+export type CategoryOption = ComboOption & { capitaliseByDefault: boolean; kind: 'SHIPMENT' | 'GENERAL' };
 
 /**
  * Expense entry.
@@ -48,6 +48,12 @@ export function ExpenseForm({
   const [error, setError] = React.useState<string | null>(null);
   const [fieldIssues, setFieldIssues] = React.useState<Record<string, string>>({});
 
+  // The first question, and the one that decides the rest of the form: is this
+  // money spent on one consignment, or on running the business?
+  const [kind, setKind] = React.useState<'SHIPMENT' | 'GENERAL'>(
+    defaultShipmentId ? 'SHIPMENT' : 'SHIPMENT',
+  );
+
   const [form, setForm] = React.useState({
     expenseDate: new Date().toISOString().slice(0, 10),
     expenseCategoryId: null as string | null,
@@ -64,9 +70,24 @@ export function ExpenseForm({
     description: '',
   });
 
-  const category = categories.find((c) => c.value === form.expenseCategoryId);
+  // Only the categories that belong to the chosen type, so a staff dinner is
+  // never one careless click away from a shipment's landed cost.
+  const availableCategories = categories.filter((option) => option.kind === kind);
+  const category = availableCategories.find((c) => c.value === form.expenseCategoryId);
   const [capitaliseOverride, setCapitaliseOverride] = React.useState<boolean | null>(null);
-  const capitalise = capitaliseOverride ?? category?.capitaliseByDefault ?? false;
+  const capitalise = kind === 'SHIPMENT' && (capitaliseOverride ?? category?.capitaliseByDefault ?? false);
+
+  /** Switching type invalidates the category and the shipment beneath it. */
+  function chooseKind(next: 'SHIPMENT' | 'GENERAL') {
+    setKind(next);
+    setCapitaliseOverride(null);
+    setForm((current) => ({
+      ...current,
+      expenseCategoryId: null,
+      shipmentId: next === 'GENERAL' ? null : (defaultShipmentId ?? null),
+      agentId: next === 'GENERAL' ? null : current.agentId,
+    }));
+  }
 
   const isForeign = form.currency !== 'USD';
 
@@ -83,7 +104,7 @@ export function ExpenseForm({
     setError(null);
     setFieldIssues({});
 
-    if (capitalise && !form.shipmentId) {
+    if (kind === 'SHIPMENT' && !form.shipmentId) {
       setError('A direct shipment cost must be linked to a job so its landed cost can be allocated.');
       return;
     }
@@ -91,10 +112,10 @@ export function ExpenseForm({
     const payload = {
       expenseDate: form.expenseDate,
       expenseCategoryId: form.expenseCategoryId,
-      shipmentId: form.shipmentId ?? '',
+      shipmentId: kind === 'SHIPMENT' ? (form.shipmentId ?? '') : '',
       purchaseContractId: '',
       vendorId: form.vendorId ?? '',
-      agentId: form.agentId ?? '',
+      agentId: kind === 'SHIPMENT' ? (form.agentId ?? '') : '',
       currency: form.currency,
       amount: form.amount,
       rateToUsd: isForeign ? form.rateToUsd : '1',
@@ -102,6 +123,7 @@ export function ExpenseForm({
       paymentMethod: form.paymentMethod,
       cashBankAccountId: form.cashBankAccountId ?? '',
       capitaliseToLandedCost: capitalise,
+      kind,
       reference: form.reference,
       description: form.description,
     };
@@ -142,6 +164,66 @@ export function ExpenseForm({
 
       <Card>
         <CardHeader>
+          <CardTitle>What is this expense for?</CardTitle>
+          <CardDescription>
+            This decides where the money lands. Everything below follows from it.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <fieldset>
+            <legend className="sr-only">Expense type</legend>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {(
+                [
+                  {
+                    value: 'SHIPMENT' as const,
+                    icon: Ship,
+                    title: 'Shipment expense',
+                    blurb:
+                      'Clearing, documentation, duty, transport, commission — a cost of getting one consignment landed and sold.',
+                  },
+                  {
+                    value: 'GENERAL' as const,
+                    icon: Building2,
+                    title: 'General company expense',
+                    blurb:
+                      'Meals, rent, utilities, travel, office costs — running the business, not one consignment.',
+                  },
+                ]
+              ).map((option) => {
+                const Icon = option.icon;
+                const active = kind === option.value;
+                return (
+                  <label
+                    key={option.value}
+                    className={
+                      active
+                        ? 'flex cursor-pointer gap-3 rounded-xl border-2 border-forest-500 bg-forest-50/60 p-4'
+                        : 'flex cursor-pointer gap-3 rounded-xl border-2 border-line bg-surface p-4 hover:border-forest-300'
+                    }
+                  >
+                    <input
+                      type="radio"
+                      name="expenseKind"
+                      className="sr-only"
+                      checked={active}
+                      onChange={() => chooseKind(option.value)}
+                    />
+                    <Icon className={active ? 'size-5 shrink-0 text-forest-700' : 'size-5 shrink-0 text-ink-subtle'} />
+                    <span>
+                      <span className="block text-sm font-semibold text-ink">{option.title}</span>
+                      <span className="mt-0.5 block text-xs text-ink-muted">{option.blurb}</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Expense</CardTitle>
           <CardDescription>What the cost was for, and how it was paid.</CardDescription>
         </CardHeader>
@@ -149,7 +231,7 @@ export function ExpenseForm({
           <Field label="Category" required error={fieldIssues.expenseCategoryId}>
             <Combobox
               autoFocus
-              options={categories}
+              options={availableCategories}
               value={form.expenseCategoryId}
               onChange={(value) => {
                 setForm({ ...form, expenseCategoryId: value });
@@ -163,18 +245,25 @@ export function ExpenseForm({
             <Input type="date" value={form.expenseDate} onChange={(e) => setForm({ ...form, expenseDate: e.target.value })} />
           </Field>
 
-          <Field
-            label="Job / shipment"
-            required={capitalise}
-            hint={capitalise ? 'Required: the cost is spread across this job’s batches.' : 'Optional.'}
-          >
-            <Combobox
-              options={shipments}
-              value={form.shipmentId}
-              onChange={(value) => setForm({ ...form, shipmentId: value })}
-              placeholder="Not linked to a job"
-            />
-          </Field>
+          {kind === 'SHIPMENT' ? (
+            <Field
+              label="Job / shipment"
+              required
+              error={fieldIssues.shipmentId}
+              hint={
+                capitalise
+                  ? 'The cost is spread across this job’s batches and becomes part of what the coffee cost.'
+                  : 'Shown on this job’s cost report, but charged straight to the period.'
+              }
+            >
+              <Combobox
+                options={shipments}
+                value={form.shipmentId}
+                onChange={(value) => setForm({ ...form, shipmentId: value })}
+                placeholder="Choose the shipment…"
+              />
+            </Field>
+          ) : null}
 
           <Field label="Currency" required>
             <Select

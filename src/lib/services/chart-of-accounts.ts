@@ -270,6 +270,7 @@ export async function ensureExpenseCategories(tx: Tx, companyId: string): Promis
         code: seed.code,
         name: seed.name,
         glAccountId,
+        kind: seed.kind,
         capitaliseByDefault: seed.capitalise,
       };
     }),
