@@ -99,6 +99,8 @@ export const PERMISSIONS = {
   // --- Accounting and insight ----------------------------------------------
   ACCOUNTING_VIEW: 'accounting.view',
   ACCOUNTING_POST: 'accounting.post',
+  /** Closing a period freezes it for everyone; reopening is equally serious. */
+  PERIODS_CLOSE: 'accounting.periods.close',
   /** Gates gross margin, net profit, landed cost and shipment profitability. */
   PROFITS_VIEW: 'profits.view',
   REPORTS_VIEW: 'reports.view',
@@ -205,6 +207,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionCode, { module: string; d
 
   [PERMISSIONS.ACCOUNTING_VIEW]: { module: 'Accounting', description: 'View journals, ledgers and statements' },
   [PERMISSIONS.ACCOUNTING_POST]: { module: 'Accounting', description: 'Post manual journal vouchers' },
+  [PERMISSIONS.PERIODS_CLOSE]: { module: 'Accounting', description: 'Close and reopen accounting periods' },
 
   [PERMISSIONS.PROFITS_VIEW]: { module: 'Management', description: 'View margin, net profit and profitability' },
   [PERMISSIONS.REPORTS_VIEW]: { module: 'Management', description: 'Run reports' },
@@ -292,6 +295,7 @@ export const SYSTEM_ROLES: Array<{
     description: 'Runs the finance function: receipts, payments, cheques, expenses, ledgers and accounting.',
     permissions: [
       ...VIEW_ONLY,
+      P.PERIODS_CLOSE,
       P.PURCHASE_COST_VIEW,
       P.RECEIPTS_CREATE,
       P.RECEIPTS_POST,
@@ -649,6 +653,8 @@ export const SETTING_KEYS = {
   ETA_ALERT_DAYS: 'alerts.etaDays',
   DEFAULT_PAYMENT_TERM_DAYS: 'sales.defaultPaymentTermDays',
   LANDED_COST_BASIS: 'costing.landedCostBasis',
+  /** ISO date. Nothing may post on or before this date. Empty means open. */
+  PERIOD_CLOSED_UNTIL: 'accounting.periodClosedUntil',
 } as const;
 
 export const DOC_TYPES = {

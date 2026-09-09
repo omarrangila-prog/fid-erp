@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { requirePageAccess } from '@/lib/auth/guards';
+import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, SETTING_KEYS } from '@/lib/constants';
 import { getAllSettings } from '@/lib/services/settings';
 import { PageHeader } from '@/components/shared/page-header';
@@ -7,6 +7,9 @@ import { Callout } from '@/components/ui/feedback';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { DetailRow } from '@/components/shared/stat-card';
 import { SettingsClient, type SettingSpec } from '@/app/(app)/settings/settings-client';
+import { PeriodClose } from '@/app/(app)/settings/period-close';
+import { getClosedUntil, summarisePeriod } from '@/lib/services/period';
+import { prisma } from '@/lib/db';
 
 export const metadata: Metadata = { title: 'Settings' };
 export const dynamic = 'force-dynamic';
@@ -33,6 +36,12 @@ const SPECS: Record<string, { label: string; description: string; kind: SettingS
 
 export default async function SettingsPage() {
   const user = await requirePageAccess(PERMISSIONS.SETTINGS_MANAGE);
+
+  const closedUntil = await prisma.$transaction((tx) => getClosedUntil(tx, user.activeCompany.id));
+  const period = closedUntil
+    ? await summarisePeriod(user.activeCompany.id, closedUntil)
+    : { entries: 0, earliest: null, latest: null };
+  const entriesInPeriod = period.entries;
   const all = await getAllSettings(user.activeCompany.id);
 
   const settings: SettingSpec[] = all
@@ -60,6 +69,12 @@ export default async function SettingsPage() {
         Turning on negative stock removes the block that stops staff selling coffee that is not there. Every change is
         recorded in the audit trail.
       </Callout>
+
+      <PeriodClose
+        closedUntil={closedUntil ? closedUntil.toISOString().slice(0, 10) : null}
+        entriesInPeriod={entriesInPeriod}
+        canManage={can(user, PERMISSIONS.PERIODS_CLOSE)}
+      />
 
       <SettingsClient
         groups={[

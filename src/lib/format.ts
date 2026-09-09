@@ -121,3 +121,15 @@ export function initials(name: string): string {
     .map((p) => p[0]?.toUpperCase() ?? '')
     .join('');
 }
+
+/**
+ * A country marker for the company badge. Small on purpose: it is there to stop
+ * somebody entering a Dubai transaction while looking at Morocco, not to
+ * decorate the page.
+ */
+export function companyFlag(country: string | null | undefined): string {
+  const name = (country ?? '').toLowerCase();
+  if (name.includes('emirat') || name.includes('uae') || name.includes('dubai')) return '\u{1F1E6}\u{1F1EA}';
+  if (name.includes('morocco') || name.includes('maroc')) return '\u{1F1F2}\u{1F1E6}';
+  return '';
+}

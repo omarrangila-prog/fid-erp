@@ -111,12 +111,14 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Journal Voucher', href: '/accounting/journal/new', icon: BookPlus, permissions: [PERMISSIONS.ACCOUNTING_POST] },
       { label: 'Journal', href: '/reports/journal', icon: LineChart, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
       { label: 'Currency Revaluation', href: '/accounting/revaluation', icon: RefreshCcw, permissions: [PERMISSIONS.ACCOUNTING_POST] },
+      { label: 'Reconciliation', href: '/reports/reconciliation', icon: ShieldCheck, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
     ],
   },
   {
     label: 'Insight',
     items: [
       { label: 'Profitability', href: '/profitability', icon: TrendingUp, permissions: [PERMISSIONS.PROFITS_VIEW] },
+      { label: 'Business Overview', href: '/reports/business-overview', icon: LayoutDashboard, permissions: [PERMISSIONS.REPORTS_VIEW] },
       { label: 'Reports', href: '/reports', icon: BarChart3, permissions: [PERMISSIONS.REPORTS_VIEW] },
     ],
   },

@@ -49,6 +49,8 @@ export function Combobox({
 }) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState('');
+  // The trigger has to name the list it controls for assistive technology.
+  const listboxId = `${React.useId()}-listbox`;
 
   const selected = options.find((o) => o.value === value) ?? null;
 
@@ -76,6 +78,7 @@ export function Combobox({
           autoFocus={autoFocus}
           role="combobox"
           aria-expanded={open}
+          aria-controls={listboxId}
           aria-haspopup="listbox"
           type="button"
           disabled={disabled}
@@ -109,7 +112,7 @@ export function Combobox({
             />
           </div>
 
-          <div className="max-h-64 overflow-y-auto p-1" role="listbox" aria-label={ariaLabel ?? 'Options'}>
+          <div id={listboxId} className="max-h-64 overflow-y-auto p-1" role="listbox" aria-label={ariaLabel ?? 'Options'}>
             {filtered.length === 0 ? (
               <p className="px-3 py-6 text-center text-xs text-ink-subtle">{emptyText}</p>
             ) : (

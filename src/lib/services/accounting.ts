@@ -4,6 +4,7 @@ import { ACCOUNT_KEYS, DOC_TYPES, type AccountKey } from '@/lib/constants';
 import { nextReference } from '@/lib/services/numbering';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
 import type { AccountType, JournalSourceType, SubledgerType } from '@prisma/client';
+import { assertPeriodOpen } from '@/lib/services/period';
 
 /**
  * The accounting posting engine.
@@ -119,6 +120,10 @@ export async function getSystemAccount(
  */
 export async function postJournalEntry(tx: Tx, params: PostJournalParams) {
   const { companyId, entryDate, description, sourceType, sourceId, createdById, localCurrency } = params;
+
+  // Every posting in the application arrives here, so a closed period is
+  // enforced once rather than in each document service.
+  await assertPeriodOpen(tx, companyId, entryDate);
 
   if (params.lines.length < 2) {
     throw new BusinessRuleError('A journal entry needs at least two lines.');

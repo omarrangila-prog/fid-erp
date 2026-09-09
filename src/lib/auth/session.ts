@@ -21,6 +21,7 @@ export type SessionCompany = {
   id: string;
   code: string;
   name: string;
+  country: string;
   localCurrency: string;
   baseCurrency: string;
   timezone: string;
@@ -124,6 +125,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
       id: c.id,
       code: c.code,
       name: c.name,
+      country: c.country,
       localCurrency: c.localCurrency,
       baseCurrency: c.baseCurrency,
       timezone: c.timezone,

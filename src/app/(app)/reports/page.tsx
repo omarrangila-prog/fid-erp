@@ -1,229 +1,136 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import {
-  Wallet, TrendingUp, Scale, ListChecks, ArrowLeftRight, BookOpen, Receipt,
-  Boxes, Layers, Truck, History, CircleDollarSign, HandCoins, Ship, LineChart,
-} from 'lucide-react';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, type PermissionCode } from '@/lib/constants';
 import { PageHeader } from '@/components/shared/page-header';
-import { Card, CardContent } from '@/components/ui/card';
+import { ReportsClient, type ReportEntry } from '@/app/(app)/reports/reports-client';
 
 export const metadata: Metadata = { title: 'Reports' };
 export const dynamic = 'force-dynamic';
 
-type ReportLink = {
-  href: string;
-  title: string;
-  description: string;
-  icon: typeof Wallet;
-  permission: PermissionCode;
-};
+type Catalogued = ReportEntry & { permission: PermissionCode };
 
-const GROUPS: Array<{ title: string; description: string; reports: ReportLink[] }> = [
-  {
-    title: 'Position',
-    description: 'What the company has, right now.',
-    reports: [
-      {
-        href: '/reports/financial-position',
-        title: 'Financial Position',
-        description: 'Cash and bank by currency, receivables, payables, stock value — the whole picture on one page.',
-        icon: Wallet,
-        permission: PERMISSIONS.CASHBANK_VIEW,
-      },
-      {
-        href: '/reports/balance-sheet',
-        title: 'Balance Sheet',
-        description: 'Assets, liabilities and equity as at a date, from the double-entry records.',
-        icon: Scale,
-        permission: PERMISSIONS.ACCOUNTING_VIEW,
-      },
-      {
-        href: '/reports/trial-balance',
-        title: 'Trial Balance',
-        description: 'Every account with a balance, in USD and local currency.',
-        icon: ListChecks,
-        permission: PERMISSIONS.ACCOUNTING_VIEW,
-      },
-    ],
-  },
-  {
-    title: 'Performance',
-    description: 'How the business is doing.',
-    reports: [
-      {
-        href: '/reports/profit-loss',
-        title: 'Profit & Loss',
-        description: 'Revenue less cost of goods sold and operating expenses, for any period.',
-        icon: TrendingUp,
-        permission: PERMISSIONS.ACCOUNTING_VIEW,
-      },
-      {
-        href: '/profitability',
-        title: 'Shipment Profitability',
-        description: 'Margin per job, per customer, per coffee, per batch and per container.',
-        icon: Ship,
-        permission: PERMISSIONS.PROFITS_VIEW,
-      },
-      {
-        href: '/reports/cash-flow',
-        title: 'Cash Flow',
-        description: 'Money in and out of every cash and bank account, grouped by what caused it.',
-        icon: ArrowLeftRight,
-        permission: PERMISSIONS.CASHBANK_VIEW,
-      },
-      {
-        href: '/reports/expenses',
-        title: 'Expense Report',
-        description: 'Costs by category, by job or by month.',
-        icon: Receipt,
-        permission: PERMISSIONS.EXPENSES_VIEW,
-      },
-    ],
-  },
-  {
-    title: 'Accounting',
-    description: 'The underlying records.',
-    reports: [
-      {
-        href: '/reports/general-ledger',
-        title: 'General Ledger',
-        description: 'Every movement through a chosen account, with a running balance.',
-        icon: BookOpen,
-        permission: PERMISSIONS.ACCOUNTING_VIEW,
-      },
-      {
-        href: '/reports/journal',
-        title: 'Journal',
-        description: 'Every posted entry with its lines, newest first.',
-        icon: LineChart,
-        permission: PERMISSIONS.ACCOUNTING_VIEW,
-      },
-      {
-        href: '/ledgers/customers',
-        title: 'Customer Ledgers',
-        description: 'Per-customer account in their currency, USD or local books.',
-        icon: CircleDollarSign,
-        permission: PERMISSIONS.LEDGERS_VIEW,
-      },
-      {
-        href: '/ledgers/vendors',
-        title: 'Supplier Ledgers',
-        description: 'Per-supplier account with the same three views.',
-        icon: HandCoins,
-        permission: PERMISSIONS.LEDGERS_VIEW,
-      },
-    ],
-  },
-  {
-    title: 'Inventory',
-    description: 'Where the coffee is and what it is worth.',
-    reports: [
-      {
-        href: '/inventory',
-        title: 'Current Stock',
-        description: 'Company totals with the warehouse split behind them.',
-        icon: Boxes,
-        permission: PERMISSIONS.INVENTORY_VIEW,
-      },
-      {
-        href: '/inventory/batches',
-        title: 'Batch & Lot Stock',
-        description: 'Full traceability: batch, lot, container, warehouse and what is left.',
-        icon: Layers,
-        permission: PERMISSIONS.INVENTORY_VIEW,
-      },
-      {
-        href: '/inventory/shipments',
-        title: 'Shipment Stock',
-        description: 'What each job brought in, sold and still holds.',
-        icon: Truck,
-        permission: PERMISSIONS.INVENTORY_VIEW,
-      },
-      {
-        href: '/inventory/movements',
-        title: 'Stock Movements',
-        description: 'The append-only ledger behind every stock figure.',
-        icon: History,
-        permission: PERMISSIONS.INVENTORY_VIEW,
-      },
-    ],
-  },
-  {
-    title: 'Receivables and payables',
-    description: 'Who owes what, and for how long.',
-    reports: [
-      {
-        href: '/finance/receivables',
-        title: 'Customer Outstanding',
-        description: 'Open invoices with ageing buckets.',
-        icon: CircleDollarSign,
-        permission: PERMISSIONS.RECEIVABLES_VIEW,
-      },
-      {
-        href: '/finance/payables',
-        title: 'Supplier Payables',
-        description: 'Open contracts with ageing buckets.',
-        icon: HandCoins,
-        permission: PERMISSIONS.PAYABLES_VIEW,
-      },
-      {
-        href: '/loading',
-        title: 'Loading Follow-Up',
-        description: 'Batch-level shipment sheet with booking, B/L, ETA and sold status.',
-        icon: Ship,
-        permission: PERMISSIONS.SHIPMENTS_VIEW,
-      },
-    ],
-  },
+/**
+ * The report catalogue.
+ *
+ * `pinned` marks the handful a trading business opens daily; everything else is
+ * grouped by category and reachable through search. Each entry names the
+ * permission that gates it, and the page it points at checks the same one — the
+ * list is a convenience, not the control.
+ */
+const CATALOGUE: Catalogued[] = [
+  // --- Everyday --------------------------------------------------------------
+  { href: '/reports/business-overview', title: 'Business Overview', category: 'Business Overview', pinned: true,
+    description: 'Cash, receivables, payables, stock, shipments and profit on one screen.',
+    keywords: 'summary position management dashboard', permission: PERMISSIONS.REPORTS_VIEW },
+  { href: '/reports/profit-loss', title: 'Profit & Loss', category: 'Financial Statements', pinned: true,
+    description: 'Revenue less cost of sales and operating expenses, for any period.',
+    keywords: 'income statement p&l pnl earnings', permission: PERMISSIONS.ACCOUNTING_VIEW },
+  { href: '/reports/balance-sheet', title: 'Balance Sheet', category: 'Financial Statements', pinned: true,
+    description: 'Assets, liabilities and equity as at a date, from the double-entry records.',
+    keywords: 'statement of financial position assets liabilities equity', permission: PERMISSIONS.ACCOUNTING_VIEW },
+  { href: '/reports/financial-position', title: 'Cash & Bank Position', category: 'Cash & Bank', pinned: true,
+    description: 'Every cash and bank account by currency, never merged into one total.',
+    keywords: 'cash bank currency position treasury', permission: PERMISSIONS.CASHBANK_VIEW },
+  { href: '/finance/receivables', title: 'Customer Receivables', category: 'Receivables', pinned: true,
+    description: 'What customers owe, with ageing and overdue balances.',
+    keywords: 'ar debtors ageing aging overdue outstanding', permission: PERMISSIONS.RECEIVABLES_VIEW },
+  { href: '/finance/payables', title: 'Vendor Payables', category: 'Payables', pinned: true,
+    description: 'What we owe suppliers, with ageing.',
+    keywords: 'ap creditors ageing aging supplier outstanding', permission: PERMISSIONS.PAYABLES_VIEW },
+  { href: '/inventory', title: 'Inventory Summary', category: 'Inventory', pinned: true,
+    description: 'Stock on hand by coffee and warehouse, with available and reserved quantities.',
+    keywords: 'stock summary on hand available kg bags', permission: PERMISSIONS.INVENTORY_VIEW },
+  { href: '/inventory/batches', title: 'Warehouse & Batch Stock', category: 'Inventory', pinned: true,
+    description: 'Every batch and lot, where it sits and what remains of it.',
+    keywords: 'batch lot container warehouse traceability', permission: PERMISSIONS.INVENTORY_VIEW },
+  { href: '/shipments', title: 'Shipment Position', category: 'Shipments', pinned: true,
+    description: 'Where every job stands, with ETA and document status.',
+    keywords: 'shipment job eta container bl booking status', permission: PERMISSIONS.SHIPMENTS_VIEW },
+  { href: '/profitability', title: 'Shipment Profitability', category: 'Profitability', pinned: true,
+    description: 'Margin per job, customer, coffee, batch and container.',
+    keywords: 'profit margin per kg landed cost job', permission: PERMISSIONS.PROFITS_VIEW },
+
+  // --- Accounting ------------------------------------------------------------
+  { href: '/reports/trial-balance', title: 'Trial Balance', category: 'Accounting', pinned: false,
+    description: 'Every account with a balance, in USD and local currency.',
+    keywords: 'tb debit credit accounts', permission: PERMISSIONS.ACCOUNTING_VIEW },
+  { href: '/reports/general-ledger', title: 'General Ledger', category: 'Accounting', pinned: false,
+    description: 'Every movement through a chosen account, with a running balance.',
+    keywords: 'gl account ledger running balance', permission: PERMISSIONS.ACCOUNTING_VIEW },
+  { href: '/reports/journal', title: 'Journal', category: 'Accounting', pinned: false,
+    description: 'Every posted entry with its lines, newest first.',
+    keywords: 'journal entries double entry postings', permission: PERMISSIONS.ACCOUNTING_VIEW },
+  { href: '/reports/reconciliation', title: 'Reconciliation', category: 'Accounting', pinned: false,
+    description: 'Checks that the control accounts agree with the sub-ledgers and the stock ledger.',
+    keywords: 'reconcile control account integrity check audit tie out', permission: PERMISSIONS.ACCOUNTING_VIEW },
+  { href: '/reports/cash-flow', title: 'Cash Flow', category: 'Cash & Bank', pinned: false,
+    description: 'Money in and out of every account, grouped by what caused it.',
+    keywords: 'cash flow movement receipts payments', permission: PERMISSIONS.CASHBANK_VIEW },
+  { href: '/finance/cash-bank', title: 'Cash & Bank Accounts', category: 'Cash & Bank', pinned: false,
+    description: 'Each account with its own book, in its own currency.',
+    keywords: 'cash book bank book petty cash', permission: PERMISSIONS.CASHBANK_VIEW },
+  { href: '/finance/cheques', title: 'Cheque Register', category: 'Cash & Bank', pinned: false,
+    description: 'Every cheque and where it stands in its life cycle.',
+    keywords: 'cheque check deposited cleared bounced', permission: PERMISSIONS.CHEQUES_VIEW },
+
+  // --- Ledgers ---------------------------------------------------------------
+  { href: '/ledgers/customers', title: 'Customer Ledgers', category: 'Receivables', pinned: false,
+    description: 'Per-customer account in their currency, USD or local books.',
+    keywords: 'customer statement ledger running balance', permission: PERMISSIONS.LEDGERS_VIEW },
+  { href: '/ledgers/vendors', title: 'Supplier Ledgers', category: 'Payables', pinned: false,
+    description: 'Per-supplier account with the same three views.',
+    keywords: 'vendor supplier statement ledger', permission: PERMISSIONS.LEDGERS_VIEW },
+
+  // --- Trading ---------------------------------------------------------------
+  { href: '/sales', title: 'Sales Register', category: 'Sales', pinned: false,
+    description: 'Every invoice with what has been paid and what is outstanding.',
+    keywords: 'sales invoices register revenue', permission: PERMISSIONS.SALES_VIEW },
+  { href: '/purchases', title: 'Purchase Register', category: 'Purchases', pinned: false,
+    description: 'Every contract with ordered, received and outstanding quantities.',
+    keywords: 'purchase orders po contracts received', permission: PERMISSIONS.PURCHASES_VIEW },
+  { href: '/goods-receipts', title: 'Goods Receipts', category: 'Purchases', pinned: false,
+    description: 'What arrived, when, into which warehouse.',
+    keywords: 'grn receipt inbound arrival', permission: PERMISSIONS.INVENTORY_VIEW },
+  { href: '/loading', title: 'Loading Sheet', category: 'Shipments', pinned: false,
+    description: 'The operational sheet: job, coffee, container, buyer and status.',
+    keywords: 'loading sheet operations container buyer', permission: PERMISSIONS.SHIPMENTS_VIEW },
+  { href: '/inventory/shipments', title: 'Shipment Stock', category: 'Inventory', pinned: false,
+    description: 'Coffee still on the water, by job.',
+    keywords: 'in transit shipment stock afloat', permission: PERMISSIONS.INVENTORY_VIEW },
+  { href: '/inventory/movements', title: 'Stock Movements', category: 'Inventory', pinned: false,
+    description: 'The movement ledger: every receipt, sale, transfer and adjustment.',
+    keywords: 'movement ledger in out transfer adjustment history', permission: PERMISSIONS.INVENTORY_VIEW },
+  { href: '/inventory/transfers', title: 'Warehouse Transfers', category: 'Inventory', pinned: false,
+    description: 'Stock moved between warehouses, and what is still in transit.',
+    keywords: 'transfer warehouse move relocation', permission: PERMISSIONS.INVENTORY_VIEW },
+  { href: '/reports/expenses', title: 'Expense Report', category: 'Purchases', pinned: false,
+    description: 'Costs by category, by job or by month.',
+    keywords: 'expenses category job cost overhead', permission: PERMISSIONS.EXPENSES_VIEW },
+  { href: '/admin/audit', title: 'Audit Trail', category: 'Audit & Activity', pinned: false,
+    description: 'Who did what and when, across every module.',
+    keywords: 'audit log activity user history changes', permission: PERMISSIONS.AUDIT_VIEW },
 ];
 
 export default async function ReportsPage() {
   const user = await requirePageAccess(PERMISSIONS.REPORTS_VIEW);
 
-  const groups = GROUPS.map((group) => ({
-    ...group,
-    reports: group.reports.filter((report) => can(user, report.permission)),
-  })).filter((group) => group.reports.length > 0);
+  const reports: ReportEntry[] = CATALOGUE.filter((entry) => can(user, entry.permission)).map((entry) => ({
+    href: entry.href,
+    title: entry.title,
+    description: entry.description,
+    category: entry.category,
+    pinned: entry.pinned,
+    keywords: entry.keywords,
+  }));
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <PageHeader
         title="Reports"
         description="Every figure is calculated from posted transactions. Nothing here is a stored summary."
         breadcrumbs={[{ label: 'Reports' }]}
       />
-
-      {groups.map((group) => (
-        <section key={group.title} className="space-y-3">
-          <div>
-            <h2 className="text-sm font-semibold text-ink">{group.title}</h2>
-            <p className="text-xs text-ink-muted">{group.description}</p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {group.reports.map((report) => (
-              <Link key={report.href} href={report.href}>
-                <Card className="h-full p-4 transition-colors hover:border-forest-300 hover:bg-forest-50/40">
-                  <div className="flex items-start gap-3">
-                    <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-forest-50">
-                      <report.icon className="size-4 text-forest-600" />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-sm font-semibold text-ink">{report.title}</span>
-                      <span className="mt-0.5 block text-xs leading-relaxed text-ink-muted">
-                        {report.description}
-                      </span>
-                    </span>
-                  </div>
-                </Card>
-              </Link>
-            ))}
-          </div>
-        </section>
-      ))}
+      <ReportsClient reports={reports} />
     </div>
   );
 }
-
-export { CardContent };

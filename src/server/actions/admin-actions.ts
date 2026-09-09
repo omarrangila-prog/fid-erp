@@ -11,6 +11,7 @@ import { destroyAllSessionsForUser } from '@/lib/auth/session';
 import { writeAudit } from '@/lib/services/audit';
 import { provisionCompany } from '@/lib/services/chart-of-accounts';
 import { setSetting } from '@/lib/services/settings';
+import { setClosedUntil } from '@/lib/services/period';
 import { formDataToObject, fieldErrors, requiredText, optionalText } from '@/lib/validation/common';
 import { fail, type ActionResult } from '@/server/actions/action-utils';
 import type { MasterFormState } from '@/server/actions/master-actions';
@@ -334,6 +335,53 @@ export async function saveSettingAction(key: string, value: string): Promise<Act
     );
 
     revalidatePath('/settings');
+    return { ok: true, data: undefined };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Accounting period control
+// ---------------------------------------------------------------------------
+
+/**
+ * Closes the books up to a date, or reopens them when given null.
+ *
+ * Closing is not a formality: after this, nothing — no invoice, receipt,
+ * expense, transfer or journal — can be posted on or before the date, for
+ * anybody. Reopening is equally serious and equally audited.
+ */
+export async function setPeriodCloseAction(closedUntil: string | null): Promise<ActionResult<undefined>> {
+  try {
+    const admin = await requirePermission(PERMISSIONS.PERIODS_CLOSE);
+
+    let date: Date | null = null;
+    if (closedUntil) {
+      date = new Date(`${closedUntil}T00:00:00.000Z`);
+      if (Number.isNaN(date.getTime())) {
+        throw new BusinessRuleError('That is not a valid date.');
+      }
+      if (date.getTime() > Date.now()) {
+        throw new BusinessRuleError('A period cannot be closed into the future.');
+      }
+    }
+
+    await setClosedUntil(admin.activeCompany.id, date);
+
+    await transaction((tx) =>
+      writeAudit(tx, {
+        companyId: admin.activeCompany.id,
+        userId: admin.id,
+        action: date ? 'PERIOD_CLOSED' : 'PERIOD_REOPENED',
+        entityType: 'AccountingPeriod',
+        entityId: admin.activeCompany.id,
+        after: { closedUntil: closedUntil ?? null },
+      }),
+    );
+
+    revalidatePath('/settings');
+    revalidatePath('/reports');
     return { ok: true, data: undefined };
   } catch (error) {
     return fail(error);
