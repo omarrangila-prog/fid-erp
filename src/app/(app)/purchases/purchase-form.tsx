@@ -226,7 +226,12 @@ export function PurchaseForm({
         <CardContent className="space-y-6 pt-5">
           <FormSection title="Contract" description="Who we are buying from, and on what terms.">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <Field label="Contract reference" htmlFor="contractReference" required error={errors.contractReference} hint="Your own reference. Must be unique.">
+              <Field
+                label="Contract reference"
+                htmlFor="contractReference"
+                error={errors.contractReference}
+                hint="The supplier's own reference, if you have it. Left blank, the FID number is used."
+              >
                 <Input
                   autoFocus
                   id="contractReference"

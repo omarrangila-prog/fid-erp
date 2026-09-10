@@ -212,7 +212,6 @@ export async function createPurchaseContract(input: PurchaseContractInput, userI
       if (!item) throw new NotFoundError('Coffee item');
     }
 
-    await assertReferenceIsFree(tx, input.companyId, input.contractReference);
     await assertTraceabilityNumbersAreFree(tx, input.companyId, input.lines);
 
     const totals = computePurchaseTotals(await applyServerTaxRates(tx, input));
@@ -221,13 +220,25 @@ export async function createPurchaseContract(input: PurchaseContractInput, userI
       docType: DOC_TYPES.PURCHASE_CONTRACT,
     });
 
+    /**
+     * The supplier's reference, or ours when they have not given one.
+     *
+     * Demanding a unique reference before the contract could be saved meant
+     * inventing one at the moment somebody was trying to record a deal — and
+     * an invented reference matches nothing on the supplier's paperwork, which
+     * is the only thing the field is for. The FID number is already unique, so
+     * it stands in until the real reference arrives.
+     */
+    const reference = input.contractReference?.trim() || contractNumber;
+    await assertReferenceIsFree(tx, input.companyId, reference);
+
     const dueDate = new Date(input.contractDate.getTime() + termDays * 86_400_000);
 
     const contract = await tx.purchaseContract.create({
       data: {
         companyId: input.companyId,
         contractNumber,
-        contractReference: input.contractReference,
+        contractReference: reference,
         supplierContractNo: input.supplierContractNo ?? null,
         contractDate: input.contractDate,
         vendorId: input.vendorId,
@@ -282,7 +293,8 @@ export async function updatePurchaseContract(id: string, input: PurchaseContract
       throw new BusinessRuleError('Only draft contracts can be edited. Reverse the contract to correct a posted one.');
     }
 
-    await assertReferenceIsFree(tx, input.companyId, input.contractReference, id);
+    const reference = input.contractReference?.trim() || existing.contractNumber;
+    await assertReferenceIsFree(tx, input.companyId, reference, id);
     await assertTraceabilityNumbersAreFree(tx, input.companyId, input.lines, id);
 
     const vendor = await tx.vendor.findFirst({
@@ -300,7 +312,7 @@ export async function updatePurchaseContract(id: string, input: PurchaseContract
     const contract = await tx.purchaseContract.update({
       where: { id },
       data: {
-        contractReference: input.contractReference,
+        contractReference: reference,
         supplierContractNo: input.supplierContractNo ?? null,
         contractDate: input.contractDate,
         vendorId: input.vendorId,

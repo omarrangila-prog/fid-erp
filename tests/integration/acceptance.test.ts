@@ -402,3 +402,101 @@ describe('Morocco: one container split across four customers', () => {
     expect(crossCompany).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// A contract raised with the minimum a person actually has to hand
+// ---------------------------------------------------------------------------
+
+describe('the least a purchase contract needs', () => {
+  it('saves without a supplier reference, and uses the FID number instead', async () => {
+    const masters = await createMasters(ctx.dubai.id);
+
+    const contract = await createPurchaseContract(
+      {
+        companyId: ctx.dubai.id,
+        // No contractReference at all: the deal is agreed, the paperwork has
+        // not arrived, and there is nothing to type here yet.
+        contractDate: utcDate('2026-04-01'),
+        vendorId: masters.vendor.id,
+        currency: 'USD',
+        rateToUsd: '1',
+        rateLocalPerUsd: '3.6725',
+        freightAmount: '0',
+        lines: [
+          {
+            itemId: masters.item.id,
+            // A lot only. The supplier gave no batch mark.
+            lotNumber: 'MIN/LOT/1',
+            quantity: '5000',
+            unit: 'KG',
+            unitPrice: '4.25',
+            bagWeightKg: '60',
+          },
+        ],
+      },
+      ctx.admin.id,
+    );
+
+    expect(contract.contractNumber).toMatch(/^FID-DXB-PO-/);
+    // The reference falls back to the number the system issued, so it is still
+    // unique and still searchable — it just was not typed.
+    expect(contract.contractReference).toBe(contract.contractNumber);
+
+    // And the missing batch was filled from the lot, so stock can still move.
+    expect(contract.lines[0].lotNumber).toBe('MIN/LOT/1');
+    expect(contract.lines[0].batchNumber).toBe('MIN/LOT/1');
+  });
+
+  it('saves with a batch and no lot, the other way round', async () => {
+    const masters = await createMasters(ctx.dubai.id);
+
+    const contract = await createPurchaseContract(
+      {
+        companyId: ctx.dubai.id,
+        contractReference: 'MIN-REF-2',
+        contractDate: utcDate('2026-04-02'),
+        vendorId: masters.vendor.id,
+        currency: 'USD',
+        rateToUsd: '1',
+        rateLocalPerUsd: '3.6725',
+        freightAmount: '0',
+        lines: [
+          {
+            itemId: masters.item.id,
+            batchNumber: 'MIN-BATCH-2',
+            quantity: '3000',
+            unit: 'KG',
+            unitPrice: '4.25',
+            bagWeightKg: '60',
+          },
+        ],
+      },
+      ctx.admin.id,
+    );
+
+    expect(contract.lines[0].batchNumber).toBe('MIN-BATCH-2');
+    expect(contract.lines[0].lotNumber).toBe('MIN-BATCH-2');
+  });
+
+  it('still refuses a line with neither', async () => {
+    const masters = await createMasters(ctx.dubai.id);
+
+    await expect(
+      createPurchaseContract(
+        {
+          companyId: ctx.dubai.id,
+          contractDate: utcDate('2026-04-03'),
+          vendorId: masters.vendor.id,
+          currency: 'USD',
+          rateToUsd: '1',
+          rateLocalPerUsd: '3.6725',
+          freightAmount: '0',
+          lines: [
+            { itemId: masters.item.id, quantity: '1000', unit: 'KG', unitPrice: '4.00', bagWeightKg: '60' },
+          ],
+        },
+        ctx.admin.id,
+      ),
+    ).rejects.toThrow(/lot number or a batch number/i);
+  });
+});

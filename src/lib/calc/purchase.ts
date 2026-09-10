@@ -42,7 +42,8 @@ export type PurchaseLineInput = {
 
 export type PurchaseContractInput = {
   companyId: string;
-  contractReference: string;
+  /** The supplier's own reference. Blank means the FID number stands in. */
+  contractReference?: string | null;
   supplierContractNo?: string | null;
   contractDate: Date;
   vendorId: string;

@@ -37,7 +37,10 @@ export const purchaseLineSchema = z
   });
 
 export const purchaseContractSchema = z.object({
-  contractReference: requiredText('Contract reference', 60),
+  // Optional. The system already issues a unique FID number; making the
+  // user invent a second unique code before they can save is friction for
+  // nothing. Left blank it becomes the FID number.
+  contractReference: optionalText(60),
   supplierContractNo: optionalText(60),
   contractDate: dateString('Contract date'),
   vendorId: cuid,

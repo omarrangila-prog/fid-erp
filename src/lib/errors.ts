@@ -141,9 +141,54 @@ type PrismaLikeError = {
  * Maps a Prisma error to an `AppError`. Returns null when the error is not a
  * recognised database fault, so the caller falls back to the generic message.
  */
+/**
+ * The database refusing a connection, said in words.
+ *
+ * A hosted Postgres pooler allows a fixed number of clients — Supabase's
+ * session pooler allows fifteen — and once they are taken the next query fails
+ * outright. Untranslated that surfaced as a 500 and an error boundary: the
+ * page simply broke, with nothing to tell the user it was momentary rather
+ * than fatal.
+ *
+ * It is momentary. Saying so, and saying to try again, is the difference
+ * between a user waiting five seconds and a user telephoning to say the system
+ * is down. The technical detail still goes to the log, because a pool
+ * exhausted often means something is wrong that hiding will not fix.
+ */
+function translateConnectionError(candidate: PrismaLikeError): AppError | null {
+  const message = typeof candidate.message === 'string' ? candidate.message : '';
+
+  const exhausted =
+    /EMAXCONNSESSION|max clients reached|too many connections|remaining connection slots/i.test(message);
+  if (exhausted) {
+    return new AppError(
+      'The system is handling as much as it can at the moment. Please try that again in a few seconds — nothing has been saved or lost.',
+      'DATABASE_BUSY',
+      503,
+    );
+  }
+
+  const unreachable =
+    /ECONNREFUSED|ETIMEDOUT|ENOTFOUND|Connection terminated|server closed the connection/i.test(message);
+  if (unreachable) {
+    return new AppError(
+      'The system could not reach the database just now. Please try again in a moment; if it keeps happening, tell your administrator.',
+      'DATABASE_UNREACHABLE',
+      503,
+    );
+  }
+
+  return null;
+}
+
 export function translateDatabaseError(error: unknown): AppError | null {
   const candidate = error as PrismaLikeError;
-  if (!candidate || typeof candidate.code !== 'string') return null;
+  if (!candidate) return null;
+
+  // A connection failure may arrive from the driver with no Prisma code at
+  // all, so it is checked before the code-based cases rather than after them.
+  // Skipping it left the user with a 500 and no explanation.
+  if (typeof candidate.code !== 'string') return translateConnectionError(candidate);
 
   const target = candidate.meta?.target;
   const constraint =
@@ -171,7 +216,7 @@ export function translateDatabaseError(error: unknown): AppError | null {
         503,
       );
     default:
-      return null;
+      return translateConnectionError(candidate);
   }
 }
 

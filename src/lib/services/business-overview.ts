@@ -131,7 +131,10 @@ export async function getBusinessOverview(params: {
   ];
   if (params.showCost) {
     stockFigures.push(
-      { label: 'Inventory value', ...money(position.inventoryValueUsd, 'USD'), href: '/reports/inventory-valuation' },
+      // /inventory is the valuation view: valued stock on hand, per warehouse.
+      // It pointed at /reports/inventory-valuation, which does not exist — so
+      // the figure was a dead link, and Next prefetched the 404 on every visit.
+      { label: 'Inventory value', ...money(position.inventoryValueUsd, 'USD'), href: '/inventory' },
       { label: 'In-transit value', ...money(position.inTransitValueUsd, 'USD'), href: '/shipments' },
     );
   }
