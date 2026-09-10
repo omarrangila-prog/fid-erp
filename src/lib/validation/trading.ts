@@ -10,13 +10,14 @@ import {
   optionalText,
   positiveInt,
   requiredText,
+  requiredChoice,
 } from '@/lib/validation/common';
 
 /** Purchase, goods receipt, sales and transfer schemas. */
 
 export const purchaseLineSchema = z
   .object({
-    itemId: cuid,
+    itemId: requiredChoice('Coffee'),
     // One or the other. Suppliers label consignments differently, and demanding
     // both only made people invent the missing one.
     lotNumber: optionalText(60),
@@ -73,8 +74,8 @@ export const goodsReceiptSchema = z.object({
 });
 
 export const salesLineSchema = z.object({
-  batchId: cuid,
-  warehouseId: cuid,
+  batchId: requiredChoice('Batch'),
+  warehouseId: requiredChoice('Warehouse'),
   quantity: decimalString('Quantity'),
   unit: z.enum(['KG', 'MT', 'BAG']),
   unitPrice: decimalString('Price'),

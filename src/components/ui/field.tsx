@@ -48,7 +48,7 @@ export function Field({
   // of sync, so no field can end up nameless to a screen reader.
   if (!htmlFor && labelText) {
     return (
-      <div className={cn('flex flex-col gap-1.5', className)}>
+      <div data-field-error={error ? 'true' : undefined} className={cn('flex flex-col gap-1.5', className)}>
         <label className="flex flex-col gap-1.5">
           <span className="text-xs font-medium text-ink-muted">{labelText}</span>
           {children}
@@ -59,7 +59,7 @@ export function Field({
   }
 
   return (
-    <div className={cn('flex flex-col gap-1.5', className)}>
+    <div data-field-error={error ? 'true' : undefined} className={cn('flex flex-col gap-1.5', className)}>
       {labelText ? (
         <label htmlFor={htmlFor} className="text-xs font-medium text-ink-muted">
           {labelText}

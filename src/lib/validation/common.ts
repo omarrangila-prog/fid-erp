@@ -67,7 +67,18 @@ export const optionalText = (max = 500) =>
     .optional()
     .transform((v) => (!v ? null : v));
 
-export const cuid = z.string().trim().min(1);
+/**
+ * A reference to another record: a customer, a coffee, a batch.
+ *
+ * The message matters. Left off, Zod supplies its own — "Too small: expected
+ * string to have >=1 characters" — and that reached the user on a blank
+ * Coffee field, which is both meaningless and alarming.
+ */
+export const cuid = z.string().trim().min(1, 'Choose one from the list.');
+
+/** The same, when the field's own name makes a better message. */
+export const requiredChoice = (label: string) =>
+  z.string().trim().min(1, `${label} is required.`);
 
 export const optionalCuid = z
   .string()

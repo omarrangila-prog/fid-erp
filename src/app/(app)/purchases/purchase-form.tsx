@@ -4,6 +4,7 @@ import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Plus, Trash2, AlertCircle, Copy } from 'lucide-react';
+import { focusFirstError, describeErrorCount } from '@/lib/focus-first-error';
 import { Button } from '@/components/ui/button';
 import { Input, Textarea, Select, MoneyInput, QuantityInput } from '@/components/ui/input';
 import { Field, FormSection } from '@/components/ui/field';
@@ -173,8 +174,12 @@ export function PurchaseForm({
       const result = await savePurchaseContractAction(defaults?.id ?? null, buildPayload());
 
       if (!result?.ok) {
+        const fieldErrors = result && !result.ok ? (result.errors ?? {}) : {};
         setError(result?.error ?? 'The contract could not be saved.');
-        setErrors(result && !result.ok ? (result.errors ?? {}) : {});
+        setErrors(fieldErrors);
+        // Take them to the first problem rather than leaving them to scroll a
+        // five-section form looking for the red one.
+        focusFirstError();
         return;
       }
 
@@ -200,6 +205,7 @@ export function PurchaseForm({
   }
 
   const lineError = (index: number, field: string) => errors[`lines.${index}.${field}`];
+  const countMessage = describeErrorCount(errors);
 
   return (
     <div className="space-y-6">
@@ -209,7 +215,10 @@ export function PurchaseForm({
           className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800"
         >
           <AlertCircle className="mt-0.5 size-4 shrink-0" />
-          <span>{error}</span>
+          <span>
+            {error}
+            {countMessage ? <span className="mt-0.5 block font-medium">{countMessage}</span> : null}
+          </span>
         </div>
       ) : null}
 
