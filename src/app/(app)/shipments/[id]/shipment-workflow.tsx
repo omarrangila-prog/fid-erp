@@ -53,6 +53,7 @@ export function ShipmentWorkflow({
   documentStatus,
   values,
   shippingLines,
+  ports,
   customers,
   canUpdate,
 }: {
@@ -61,6 +62,8 @@ export function ShipmentWorkflow({
   documentStatus: string;
   values: ShipmentFormValues;
   shippingLines: Array<{ id: string; name: string }>;
+  /** The port master, offered as suggestions rather than enforced. */
+  ports: Array<{ id: string; code: string; name: string; country: string | null }>;
   customers: Array<{ id: string; name: string }>;
   canUpdate: boolean;
 }) {
@@ -350,12 +353,35 @@ export function ShipmentWorkflow({
             <Field label="Voyage number">
               <Input value={form.voyageNumber} onChange={(e) => set('voyageNumber', e.target.value)} />
             </Field>
-            <Field label="Port of loading">
-              <Input value={form.portOfLoading} onChange={(e) => set('portOfLoading', e.target.value)} />
+            {/*
+              A list-backed text box, not a dropdown. The port master keeps the
+              spelling consistent, but a bill of lading occasionally names a
+              berth or a terminal that is on nobody's list, and the document has
+              to be able to say so.
+            */}
+            <Field label="Port of loading" hint={ports.length > 0 ? 'Choose one, or type what the B/L says.' : undefined}>
+              <Input
+                list="fid-ports"
+                value={form.portOfLoading}
+                onChange={(e) => set('portOfLoading', e.target.value)}
+              />
             </Field>
-            <Field label="Port of discharge">
-              <Input value={form.portOfDischarge} onChange={(e) => set('portOfDischarge', e.target.value)} />
+            <Field label="Port of discharge" hint={ports.length > 0 ? 'Choose one, or type what the B/L says.' : undefined}>
+              <Input
+                list="fid-ports"
+                value={form.portOfDischarge}
+                onChange={(e) => set('portOfDischarge', e.target.value)}
+              />
             </Field>
+
+            <datalist id="fid-ports">
+              {ports.map((port) => (
+                <option key={port.id} value={port.name}>
+                  {port.code}
+                  {port.country ? ` · ${port.country}` : ''}
+                </option>
+              ))}
+            </datalist>
             <Field label="Destination">
               <Input value={form.destination} onChange={(e) => set('destination', e.target.value)} />
             </Field>

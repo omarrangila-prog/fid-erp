@@ -35,6 +35,9 @@ export const PERMISSIONS = {
   SHIPPING_LINES_VIEW: 'shippinglines.view',
   SHIPPING_LINES_MANAGE: 'shippinglines.manage',
 
+  PORTS_VIEW: 'ports.view',
+  PORTS_MANAGE: 'ports.manage',
+
   EXPENSE_CATEGORIES_VIEW: 'expensecategories.view',
   EXPENSE_CATEGORIES_MANAGE: 'expensecategories.manage',
 
@@ -155,6 +158,8 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionCode, { module: string; d
 
   [PERMISSIONS.SHIPPING_LINES_VIEW]: { module: 'Masters', description: 'View shipping lines' },
   [PERMISSIONS.SHIPPING_LINES_MANAGE]: { module: 'Masters', description: 'Create and edit shipping lines' },
+  [PERMISSIONS.PORTS_VIEW]: { module: 'Masters', description: 'View ports' },
+  [PERMISSIONS.PORTS_MANAGE]: { module: 'Masters', description: 'Create and edit ports' },
 
   [PERMISSIONS.EXPENSE_CATEGORIES_VIEW]: { module: 'Masters', description: 'View expense categories' },
   [PERMISSIONS.EXPENSE_CATEGORIES_MANAGE]: { module: 'Masters', description: 'Create and edit expense categories' },
@@ -255,6 +260,7 @@ const VIEW_ONLY: PermissionCode[] = [
   P.ITEMS_VIEW,
   P.WAREHOUSES_VIEW,
   P.SHIPPING_LINES_VIEW,
+  P.PORTS_VIEW,
   P.EXPENSE_CATEGORIES_VIEW,
   P.PURCHASES_VIEW,
   P.SALES_VIEW,
@@ -427,7 +433,9 @@ export const SYSTEM_ROLES: Array<{
       P.ITEMS_VIEW,
       P.WAREHOUSES_VIEW,
       P.SHIPPING_LINES_VIEW,
+  P.PORTS_VIEW,
       P.SHIPPING_LINES_MANAGE,
+      P.PORTS_MANAGE,
       P.PURCHASES_VIEW,
       P.SALES_VIEW,
       P.SHIPMENTS_VIEW,
@@ -462,6 +470,7 @@ export const SYSTEM_ROLES: Array<{
       P.ITEMS_EDIT,
       P.WAREHOUSES_VIEW,
       P.SHIPPING_LINES_VIEW,
+  P.PORTS_VIEW,
       P.EXPENSE_CATEGORIES_VIEW,
 
       // Every document can be *raised*. None can be approved or posted:
@@ -885,4 +894,38 @@ export const DOC_TYPE_LABELS: Record<string, string> = {
   LOT: 'Lot',
   CN: 'Credit Note',
   DN: 'Debit Note',
+};
+
+
+/**
+ * Ports a coffee trader routinely touches, seeded so the picker is useful on
+ * day one. Not exhaustive and not permanent — an administrator adds their own.
+ */
+export const PORT_SEEDS: Record<string, Array<{ code: string; name: string; country: string }>> = {
+  AE: [
+    { code: 'AEJEA', name: 'Jebel Ali', country: 'United Arab Emirates' },
+    { code: 'AEDXB', name: 'Port Rashid, Dubai', country: 'United Arab Emirates' },
+    { code: 'AEKLF', name: 'Khalifa Port, Abu Dhabi', country: 'United Arab Emirates' },
+    { code: 'AESHJ', name: 'Sharjah', country: 'United Arab Emirates' },
+  ],
+  MA: [
+    { code: 'MACAS', name: 'Casablanca', country: 'Morocco' },
+    { code: 'MAPTM', name: 'Tanger Med', country: 'Morocco' },
+    { code: 'MAAGA', name: 'Agadir', country: 'Morocco' },
+  ],
+  /** Loading ports, shared by both companies: this is where coffee comes from. */
+  ORIGIN: [
+    { code: 'BRSSZ', name: 'Santos', country: 'Brazil' },
+    { code: 'BRPNG', name: 'Paranaguá', country: 'Brazil' },
+    { code: 'COCTG', name: 'Cartagena', country: 'Colombia' },
+    { code: 'COBUN', name: 'Buenaventura', country: 'Colombia' },
+    { code: 'DJJIB', name: 'Djibouti', country: 'Djibouti' },
+    { code: 'ETADD', name: 'Addis Ababa (dry port)', country: 'Ethiopia' },
+    { code: 'KEMBA', name: 'Mombasa', country: 'Kenya' },
+    { code: 'TZDAR', name: 'Dar es Salaam', country: 'Tanzania' },
+    { code: 'VNSGN', name: 'Ho Chi Minh City', country: 'Vietnam' },
+    { code: 'IDPNK', name: 'Panjang', country: 'Indonesia' },
+    { code: 'HNPCR', name: 'Puerto Cortés', country: 'Honduras' },
+    { code: 'UGKLA', name: 'Kampala (inland)', country: 'Uganda' },
+  ],
 };

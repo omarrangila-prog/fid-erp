@@ -41,6 +41,7 @@ import {
   ClipboardCheck,
   DatabaseBackup,
   Percent,
+  Anchor,
   type LucideIcon,
 } from 'lucide-react';
 import { PERMISSIONS, type PermissionCode } from '@/lib/constants';
@@ -94,6 +95,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Warehouse Transfers', href: '/inventory/transfers', icon: ArrowLeftRight, permissions: [PERMISSIONS.INVENTORY_VIEW] },
       { label: 'Stock Movements', href: '/inventory/movements', icon: History, permissions: [PERMISSIONS.INVENTORY_VIEW] },
       { label: 'Stock Counts', href: '/inventory/stock-counts', icon: ClipboardCheck, permissions: [PERMISSIONS.STOCK_COUNT_VIEW] },
+      { label: 'Stock Ageing', href: '/reports/stock-ageing', icon: History, permissions: [PERMISSIONS.INVENTORY_VIEW] },
       { label: 'Coffee Items', href: '/items', icon: Coffee, permissions: [PERMISSIONS.ITEMS_VIEW] },
       { label: 'Warehouses', href: '/warehouses', icon: Warehouse, permissions: [PERMISSIONS.WAREHOUSES_VIEW] },
     ],
@@ -148,6 +150,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Suppliers', href: '/vendors', icon: Truck, permissions: [PERMISSIONS.VENDORS_VIEW] },
       { label: 'Agents', href: '/agents', icon: Handshake, permissions: [PERMISSIONS.AGENTS_VIEW] },
       { label: 'Shipping Lines', href: '/shipping-lines', icon: Ship, permissions: [PERMISSIONS.SHIPPING_LINES_VIEW] },
+      { label: 'Ports', href: '/ports', icon: Anchor, permissions: [PERMISSIONS.PORTS_VIEW] },
     ],
   },
   {

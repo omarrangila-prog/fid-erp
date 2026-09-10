@@ -1,6 +1,6 @@
 import type { Tx } from '@/lib/db';
 import { transaction } from '@/lib/db';
-import { ACCOUNT_KEYS, EXPENSE_CATEGORY_SEEDS, REPORT_GROUPS } from '@/lib/constants';
+import { ACCOUNT_KEYS, EXPENSE_CATEGORY_SEEDS, PORT_SEEDS, REPORT_GROUPS } from '@/lib/constants';
 import { toMoney } from '@/lib/money';
 import { BusinessRuleError, ConflictError, NotFoundError } from '@/lib/errors';
 import { postJournalEntry } from '@/lib/services/accounting';
@@ -407,4 +407,31 @@ export async function provisionCompany(tx: Tx, companyId: string): Promise<void>
   // number: a company below the threshold must not be nudged into collecting
   // tax it has no authority to collect.
   await ensureTaxCodes(tx, companyId, company.country);
+  await ensurePorts(tx, companyId, company.country);
+}
+
+/**
+ * The ports this company plausibly ships through: its own, plus the origins
+ * coffee comes from. Idempotent, and an administrator can add or retire any of
+ * them — this only makes the picker useful before anyone has typed anything.
+ */
+export async function ensurePorts(tx: Tx, companyId: string, country: string): Promise<void> {
+  const name = (country ?? '').toLowerCase();
+  const home = name.includes('emirat') || name.includes('uae') || name.includes('dubai')
+    ? PORT_SEEDS.AE
+    : name.includes('morocco') || name.includes('maroc')
+      ? PORT_SEEDS.MA
+      : [];
+
+  const wanted = [...home, ...PORT_SEEDS.ORIGIN];
+  const existing = await tx.port.findMany({ where: { companyId }, select: { code: true } });
+  const present = new Set(existing.map((port) => port.code));
+
+  const missing = wanted.filter((port) => !present.has(port.code));
+  if (missing.length === 0) return;
+
+  await tx.port.createMany({
+    data: missing.map((port) => ({ companyId, ...port })),
+    skipDuplicates: true,
+  });
 }

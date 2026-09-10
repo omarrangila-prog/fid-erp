@@ -283,6 +283,7 @@ model Company {
   backupRuns          BackupRun[]
   taxCodes            TaxCode[]
   taxReturns          TaxReturn[]
+  ports               Port[]
   defaultForUsers     User[]                 @relation("UserDefaultCompany")
 
   @@index([status])
@@ -2111,4 +2112,30 @@ model TaxReturn {
 enum ExpenseKind {
   SHIPMENT
   GENERAL
+}
+
+/// A port the business actually ships through.
+///
+/// The shipment keeps its own free-text port fields rather than pointing here:
+/// a bill of lading says what it says, and a document has to record that even
+/// when it disagrees with the master list. This exists so the entry forms can
+/// offer a list instead of a blank box — the same port typed four ways is how
+/// a shipment register stops being groupable.
+model Port {
+  id        String       @id @default(cuid())
+  companyId String
+  /// UN/LOCODE where there is one, e.g. AEJEA. Short and unique per company.
+  code      String       @db.VarChar(12)
+  name      String
+  country   String?
+  notes     String?
+  status    RecordStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, code])
+  @@index([companyId, status])
+  @@map("ports")
 }

@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db';
-import { Decimal, toMoney, toQuantity } from '@/lib/money';
+import { Decimal, dec, toMoney, toQuantity } from '@/lib/money';
 
 /**
  * Stock query service. All figures are read from the batch cache, which the
@@ -416,3 +416,122 @@ export async function getBatchLocations(companyId: string, batchId: string) {
     bags: row.bags,
   }));
 }
+
+export type StockAgeingRow = {
+  batchId: string;
+  batchNumber: string;
+  lotNumber: string;
+  containerNumber: string | null;
+  itemName: string;
+  originCountry: string;
+  warehouseName: string;
+  receivedAt: Date | null;
+  daysInStock: number | null;
+  onHandKg: Decimal;
+  reservedKg: Decimal;
+  availableKg: Decimal;
+  unitCostUsd: Decimal;
+  valueUsd: Decimal;
+  /** 0–30, 31–60, 61–90, 91–180, over 180. */
+  bucket: string;
+};
+
+const AGEING_BUCKETS = ['0–30 days', '31–60 days', '61–90 days', '91–180 days', 'Over 180 days'] as const;
+
+function bucketFor(days: number | null): string {
+  if (days === null) return 'Not yet received';
+  if (days <= 30) return AGEING_BUCKETS[0];
+  if (days <= 60) return AGEING_BUCKETS[1];
+  if (days <= 90) return AGEING_BUCKETS[2];
+  if (days <= 180) return AGEING_BUCKETS[3];
+  return AGEING_BUCKETS[4];
+}
+
+/**
+ * How long each parcel has been sitting.
+ *
+ * Green coffee is not inert. It loses cup quality over months in a warehouse,
+ * and a trader carrying eleven tonnes of last year's crop wants to know before
+ * a buyer tells them. Age is counted from the goods receipt — the day it
+ * physically landed — not from the contract date, because coffee bought in
+ * January and delivered in April has been in the warehouse since April.
+ *
+ * Reserved quantity is shown beside available, because a parcel that looks old
+ * and idle may already be promised to somebody.
+ */
+export async function getStockAgeing(companyId: string): Promise<StockAgeingRow[]> {
+  const rows = await prisma.$queryRaw<
+    Array<{
+      batchId: string;
+      batchNumber: string;
+      lotNumber: string | null;
+      containerNumber: string | null;
+      itemName: string;
+      originCountry: string;
+      warehouseName: string;
+      receivedAt: Date | null;
+      onHandKg: string;
+      reservedKg: string;
+      unitCostUsd: string;
+    }>
+  >`
+    SELECT b."id" AS "batchId",
+           b."batchNumber",
+           l."lotNumber",
+           c."containerNumber",
+           ci."itemName",
+           ci."originCountry",
+           w."name" AS "warehouseName",
+           first_receipt."at" AS "receivedAt",
+           ib."onHandKg"::text,
+           ib."reservedKg"::text,
+           b."landedUnitCostUsd"::text AS "unitCostUsd"
+    FROM inventory_balances ib
+    JOIN batches b ON b."id" = ib."batchId"
+    JOIN warehouses w ON w."id" = ib."warehouseId"
+    JOIN coffee_items ci ON ci."id" = b."itemId"
+    LEFT JOIN lots l ON l."id" = b."lotId"
+    LEFT JOIN containers c ON c."id" = b."containerId"
+    LEFT JOIN LATERAL (
+      SELECT MIN(t."transactionDate") AS "at"
+      FROM inventory_transactions t
+      WHERE t."batchId" = ib."batchId"
+        AND t."warehouseId" = ib."warehouseId"
+        AND t."transactionType" IN ('OPENING', 'RECEIPT')
+    ) first_receipt ON true
+    WHERE ib."companyId" = ${companyId}
+      AND ib."onHandKg" > 0
+    ORDER BY first_receipt."at" ASC NULLS LAST, b."batchNumber" ASC`;
+
+  const today = Date.now();
+
+  return rows.map((row) => {
+    const onHandKg = toQuantity(row.onHandKg);
+    const reservedKg = toQuantity(row.reservedKg);
+    const unitCostUsd = dec(row.unitCostUsd);
+    const daysInStock = row.receivedAt
+      ? Math.max(0, Math.floor((today - row.receivedAt.getTime()) / 86_400_000))
+      : null;
+
+    return {
+      batchId: row.batchId,
+      batchNumber: row.batchNumber,
+      lotNumber: row.lotNumber ?? '—',
+      containerNumber: row.containerNumber,
+      itemName: row.itemName,
+      originCountry: row.originCountry,
+      warehouseName: row.warehouseName,
+      receivedAt: row.receivedAt,
+      daysInStock,
+      onHandKg,
+      reservedKg,
+      availableKg: toQuantity(onHandKg.minus(reservedKg)),
+      unitCostUsd,
+      valueUsd: toMoney(onHandKg.times(unitCostUsd)),
+      bucket: bucketFor(daysInStock),
+    };
+  });
+}
+
+/** The ageing buckets in order, so a summary can show empty ones too. */
+export const STOCK_AGEING_BUCKETS = AGEING_BUCKETS;

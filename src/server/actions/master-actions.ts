@@ -16,6 +16,7 @@ import {
   warehouseSchema,
   agentSchema,
   shippingLineSchema,
+  portSchema,
   expenseCategorySchema,
   cashBankAccountSchema,
 } from '@/lib/validation/masters';
@@ -57,7 +58,7 @@ function invalid(error: unknown): MasterFormState {
 
 async function saveMaster<S extends z.ZodTypeAny>(
   config: MasterConfig<S>,
-  delegate: 'customer' | 'vendor' | 'coffeeItem' | 'warehouse' | 'agent' | 'shippingLine' | 'expenseCategory',
+  delegate: 'customer' | 'vendor' | 'coffeeItem' | 'warehouse' | 'agent' | 'shippingLine' | 'expenseCategory' | 'port',
   id: string | null,
   formData: FormData,
 ): Promise<MasterFormState> {
@@ -212,6 +213,20 @@ const SHIPPING_LINE: MasterConfig<typeof shippingLineSchema> = {
 
 export async function saveShippingLineAction(id: string | null, _prev: MasterFormState, formData: FormData) {
   return saveMaster(SHIPPING_LINE, 'shippingLine', id, formData);
+}
+
+const PORT: MasterConfig<typeof portSchema> = {
+  schema: portSchema,
+  viewPermission: PERMISSIONS.PORTS_VIEW,
+  createPermission: PERMISSIONS.PORTS_MANAGE,
+  editPermission: PERMISSIONS.PORTS_MANAGE,
+  label: 'Port',
+  uniqueField: 'code',
+  path: '/ports',
+};
+
+export async function savePortAction(id: string | null, _prev: MasterFormState, formData: FormData) {
+  return saveMaster(PORT, 'port', id, formData);
 }
 
 const EXPENSE_CATEGORY: MasterConfig<typeof expenseCategorySchema> = {

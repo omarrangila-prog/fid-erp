@@ -63,7 +63,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
 
   if (!shipment) notFound();
 
-  const [settlement, profit, jobCost, batches, shippingLines, customers] = await Promise.all([
+  const [settlement, profit, jobCost, batches, shippingLines, customers, ports] = await Promise.all([
     getShipmentSettlement(prisma as never, companyId, shipment.id),
     showProfit ? getShipmentProfitabilityById(companyId, shipment.id) : Promise.resolve(null),
     showCost ? transaction((tx) => getJobCostSummary(tx, companyId, shipment.id)) : Promise.resolve(null),
@@ -77,6 +77,11 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
       where: { companyId, status: 'ACTIVE' },
       orderBy: { customerName: 'asc' },
       select: { id: true, customerName: true },
+    }),
+    prisma.port.findMany({
+      where: { companyId, status: 'ACTIVE' },
+      orderBy: [{ country: 'asc' }, { name: 'asc' }],
+      select: { id: true, code: true, name: true, country: true },
     }),
   ]);
 
@@ -104,6 +109,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
             documentStatus={shipment.documentStatus}
             canUpdate={can(user, PERMISSIONS.SHIPMENTS_UPDATE)}
             shippingLines={shippingLines}
+              ports={ports}
             customers={customers.map((c) => ({ id: c.id, name: c.customerName }))}
             values={{
               bookingNumber: shipment.bookingNumber ?? '',

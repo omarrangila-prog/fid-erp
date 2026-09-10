@@ -86,6 +86,14 @@ export const shippingLineSchema = z.object({
   status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),
 });
 
+export const portSchema = z.object({
+  code: requiredText('Code', 12),
+  name: requiredText('Port name'),
+  country: optionalText(80),
+  notes: optionalText(500),
+  status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),
+});
+
 export const expenseCategorySchema = z.object({
   code: requiredText('Code', 30),
   name: requiredText('Category name'),

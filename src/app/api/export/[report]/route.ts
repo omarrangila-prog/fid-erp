@@ -5,7 +5,7 @@ import { toErrorResponse, NotFoundError } from '@/lib/errors';
 import { buildWorkbook, workbookFileName } from '@/lib/services/workbook';
 import { getLoadingSheet } from '@/lib/services/loading-sheet';
 import { getReceivables, getPayables } from '@/lib/services/receivables';
-import { getBatchStock } from '@/lib/services/stock';
+import { getBatchStock, getStockAgeing } from '@/lib/services/stock';
 import type { SessionUser } from '@/lib/auth/session';
 
 /**
@@ -223,6 +223,37 @@ const REPORTS: Record<string, Report> = {
           { header: 'In transit (KG)', value: (r) => Number(r.inTransitKg), type: 'quantity' },
           { header: 'Cost/KG (USD)', value: (r) => Number(r.unitCostUsd), type: 'number' },
           { header: 'Value (USD)', value: (r) => Number(r.stockValueUsd), type: 'money' },
+        ],
+      });
+    },
+  },
+
+  'stock-ageing': {
+    title: 'Stock Ageing',
+    permission: PERMISSIONS.INVENTORY_VIEW,
+    build: async (user) => {
+      const rows = await getStockAgeing(user.activeCompany.id);
+      return buildWorkbook({
+        companyName: user.activeCompany.name,
+        title: 'Stock Ageing',
+        subtitle: 'How long each parcel has been in the warehouse, oldest first',
+        rows,
+        totals: ['On hand (KG)', 'Reserved (KG)', 'Available (KG)', 'Value (USD)'],
+        columns: [
+          { header: 'Batch', value: (r) => r.batchNumber },
+          { header: 'Lot', value: (r) => r.lotNumber },
+          { header: 'Container', value: (r) => r.containerNumber ?? '' },
+          { header: 'Coffee', value: (r) => r.itemName, width: 34 },
+          { header: 'Origin', value: (r) => r.originCountry },
+          { header: 'Warehouse', value: (r) => r.warehouseName, width: 26 },
+          { header: 'Received', value: (r) => r.receivedAt, type: 'date' },
+          { header: 'Days in stock', value: (r) => r.daysInStock ?? 0, type: 'integer' },
+          { header: 'Age', value: (r) => r.bucket },
+          { header: 'On hand (KG)', value: (r) => Number(r.onHandKg), type: 'quantity' },
+          { header: 'Reserved (KG)', value: (r) => Number(r.reservedKg), type: 'quantity' },
+          { header: 'Available (KG)', value: (r) => Number(r.availableKg), type: 'quantity' },
+          { header: 'Cost/KG (USD)', value: (r) => Number(r.unitCostUsd), type: 'number' },
+          { header: 'Value (USD)', value: (r) => Number(r.valueUsd), type: 'money' },
         ],
       });
     },
