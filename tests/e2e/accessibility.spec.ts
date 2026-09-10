@@ -24,10 +24,10 @@ async function signIn(page: Page) {
   await page.getByLabel(/email/i).fill(process.env.E2E_EMAIL!);
   await page.getByLabel(/password/i).fill(process.env.E2E_PASSWORD!);
   await page.getByRole('button', { name: /sign in/i }).click();
-  await page.waitForURL(/dashboard|select-company/);
+  await page.waitForURL(/dashboard|select-company/, { waitUntil: 'domcontentloaded' });
   if (page.url().includes('select-company')) {
     await page.getByRole('link', { name: /FID Trading L\.L\.C\./ }).first().click();
-    await page.waitForURL(/dashboard/);
+    await page.waitForURL(/dashboard/, { waitUntil: 'domcontentloaded' });
   }
 }
 

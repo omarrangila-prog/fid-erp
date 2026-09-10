@@ -24,10 +24,10 @@ async function signIn(page: Page) {
   for (const digit of (ADMIN_PIN ?? '').split('')) {
     await page.getByRole('button', { name: digit, exact: true }).click();
   }
-  await page.waitForURL(/\/(dashboard|select-company)/);
+  await page.waitForURL(/\/(dashboard|select-company)/, { waitUntil: 'domcontentloaded' });
   if (page.url().includes('select-company')) {
     await page.getByRole('link', { name: /FID Trading L\.L\.C\./ }).first().click();
-    await page.waitForURL(/\/dashboard/);
+    await page.waitForURL(/\/dashboard/, { waitUntil: 'domcontentloaded' });
   }
 }
 
@@ -40,7 +40,12 @@ async function signIn(page: Page) {
  * to catch.
  */
 async function open(page: Page, path: string, expected: RegExp) {
-  await page.goto(path);
+  // domcontentloaded, not load. Measured against this app the load event fires
+  // three milliseconds after the document is ready, so waiting for it buys
+  // nothing — but it can hang on a stylesheet or a font and take the whole
+  // ninety-second budget with it, which is a failure that says nothing about
+  // the page.
+  await page.goto(path, { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /this page could|something went wrong/i })).toHaveCount(0);
   await expect(
     page.getByText(expected).locator('visible=true').first(),
@@ -157,6 +162,18 @@ test('a document opens and prints', async ({ page }) => {
   await expect(page.getByText(/Tax Invoice|Commercial Invoice/)).toBeVisible();
   // Named twice on a proper invoice: the masthead and the remittance footer.
   await expect(page.getByText(/FID TRADING L\.L\.C\./)).toHaveCount(2);
+});
+
+test('stock ageing and the port master open with real data', async ({ page }) => {
+  await open(page, '/reports/stock-ageing', /days|Days/);
+  // The buckets are the point of the screen.
+  await expect(page.getByText(/0–30 days/).locator('visible=true').first()).toBeVisible();
+  await expect(page.getByText(/Why this matters for coffee/)).toBeVisible();
+
+  await open(page, '/ports', /Jebel Ali/);
+  await expect(page.getByText(/Santos/).locator('visible=true').first()).toBeVisible();
+  // A Dubai company is not offered Casablanca as one of its own ports.
+  await expect(page.getByText(/Casablanca/)).toHaveCount(0);
 });
 
 test('the contacts and master screens are populated', async ({ page }) => {

@@ -21,7 +21,7 @@ async function pinIn(page: Page, name: string, pin: string) {
   for (const digit of pin.split('')) {
     await page.getByRole('button', { name: digit, exact: true }).click();
   }
-  await page.waitForURL(/\/(dashboard|select-company)/);
+  await page.waitForURL(/\/(dashboard|select-company)/, { waitUntil: 'domcontentloaded' });
 }
 
 test.describe('a Dubai data-entry operator', () => {

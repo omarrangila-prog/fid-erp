@@ -19,10 +19,10 @@ async function pinIn(page: Page, name: string, pin: string) {
   await page.goto('/login');
   await page.getByRole('button', { name: new RegExp(name, 'i') }).click();
   for (const digit of pin.split('')) await page.getByRole('button', { name: digit, exact: true }).click();
-  await page.waitForURL(/\/(dashboard|select-company)/);
+  await page.waitForURL(/\/(dashboard|select-company)/, { waitUntil: 'domcontentloaded' });
   if (page.url().includes('select-company')) {
     await page.getByRole('link', { name: /FID Trading L\.L\.C\./ }).first().click();
-    await page.waitForURL(/\/dashboard/);
+    await page.waitForURL(/\/dashboard/, { waitUntil: 'domcontentloaded' });
   }
 }
 

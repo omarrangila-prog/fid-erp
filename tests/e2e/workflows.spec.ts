@@ -17,14 +17,14 @@ async function signIn(page: Page) {
   await page.getByLabel(/email/i).fill(process.env.E2E_EMAIL!);
   await page.getByLabel(/password/i).fill(process.env.E2E_PASSWORD!);
   await page.getByRole('button', { name: /sign in/i }).click();
-  await page.waitForURL(/dashboard|select-company/);
+  await page.waitForURL(/dashboard|select-company/, { waitUntil: 'domcontentloaded' });
 }
 
 async function signInToDubai(page: Page) {
   await signIn(page);
   if (page.url().includes('select-company')) {
     await page.getByRole('link', { name: /FID Trading L\.L\.C\./ }).first().click();
-    await page.waitForURL(/dashboard/);
+    await page.waitForURL(/dashboard/, { waitUntil: 'domcontentloaded' });
   }
 }
 
@@ -36,7 +36,7 @@ test('an administrator can reach both companies', async ({ page }) => {
     await expect(page.getByText(/FID Trading L\.L\.C\./)).toBeVisible();
     await expect(page.getByText(/FID Trading International SARL/)).toBeVisible();
     await page.getByRole('link', { name: /FID Trading International SARL/ }).first().click();
-    await page.waitForURL(/dashboard/);
+    await page.waitForURL(/dashboard/, { waitUntil: 'domcontentloaded' });
   } else {
     await page.getByRole('button', { name: /FID Trading/ }).first().click();
     await expect(page.getByRole('menuitem', { name: /FID Trading L\.L\.C\./ })).toBeVisible();

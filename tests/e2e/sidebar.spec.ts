@@ -38,10 +38,10 @@ async function signIn(page: Page) {
   for (const digit of (ADMIN_PIN ?? '').split('')) {
     await page.getByRole('button', { name: digit, exact: true }).click();
   }
-  await page.waitForURL(/\/(dashboard|select-company)/);
+  await page.waitForURL(/\/(dashboard|select-company)/, { waitUntil: 'domcontentloaded' });
   if (page.url().includes('select-company')) {
     await page.getByRole('link', { name: /FID Trading L\.L\.C\./i }).first().click();
-    await page.waitForURL(/\/dashboard/);
+    await page.waitForURL(/\/dashboard/, { waitUntil: 'domcontentloaded' });
   }
 }
 

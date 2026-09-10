@@ -40,19 +40,19 @@ async function pinIn(page: import('@playwright/test').Page, name: string, pin: s
 
 test('the administrator signs in with a PIN', async ({ page }) => {
   await pinIn(page, ADMIN_NAME, ADMIN_PIN);
-  await page.waitForURL(/dashboard|select-company/, { timeout: 20_000 });
+  await page.waitForURL(/dashboard|select-company/, { timeout: 20_000, waitUntil: 'domcontentloaded' });
   expect(page.url()).toMatch(/dashboard|select-company/);
 });
 
 test('Dubai staff land in Dubai', async ({ page }) => {
   await pinIn(page, 'Dubai Staff', DUBAI_PIN);
-  await page.waitForURL(/dashboard/, { timeout: 20_000 });
+  await page.waitForURL(/dashboard/, { timeout: 20_000, waitUntil: 'domcontentloaded' });
   await expect(page.getByText(onCompany('FID Trading L\\.L\\.C\\.'))).toBeVisible();
 });
 
 test('Morocco staff land in Morocco', async ({ page }) => {
   await pinIn(page, 'Morocco Staff', MOROCCO_PIN);
-  await page.waitForURL(/dashboard/, { timeout: 20_000 });
+  await page.waitForURL(/dashboard/, { timeout: 20_000, waitUntil: 'domcontentloaded' });
   await expect(page.getByText(onCompany('FID Trading International SARL'))).toBeVisible();
 });
 
@@ -71,6 +71,6 @@ test("one person's PIN cannot open another person's account", async ({ page }) =
 test('a password route is still reachable', async ({ page }) => {
   await page.goto('/login');
   await page.getByRole('link', { name: /password/i }).first().click();
-  await page.waitForURL(/login\/password/);
+  await page.waitForURL(/login\/password/, { waitUntil: 'domcontentloaded' });
   await expect(page.getByLabel(/email/i)).toBeVisible();
 });
