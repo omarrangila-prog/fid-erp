@@ -77,18 +77,23 @@ describe('lot or batch', () => {
     expect(contract.lines[0].batchNumber).toBe('B-77');
   });
 
-  it('refuses a line with neither, in the words the client asked for', () => {
-    expect(() =>
-      computePurchaseTotals({
-        lines: [{ itemId: 'x', quantity: '1000', unit: 'KG', unitPrice: '5' }],
-        freightAmount: '0',
-        currency: 'USD',
-        rateToUsd: '1',
-      }),
-    ).toThrow(/either a lot number or a batch number/i);
+  it('accepts a line with neither, because a contract is not a warehouse', () => {
+    // The client was explicit: a contract for 42 MT of Screen 12 signed in
+    // March is filled from lots the supplier chooses in May. Demanding a lot
+    // number here made people invent one, and an invented lot follows the
+    // coffee into the warehouse and onto the customer's invoice.
+    const totals = computePurchaseTotals({
+      lines: [{ itemId: 'x', quantity: '1000', unit: 'KG', unitPrice: '5' }],
+      freightAmount: '0',
+      currency: 'USD',
+      rateToUsd: '1',
+    });
+
+    expect(totals.lines[0].lotNumber).toBeNull();
+    expect(totals.lines[0].batchNumber).toBeNull();
   });
 
-  it('refuses it at the form boundary too, not only in the engine', () => {
+  it('accepts it at the form boundary too, not only in the engine', () => {
     const parsed = purchaseContractSchema.safeParse({
       contractReference: 'TRACE-X',
       contractDate: '2026-01-10',
@@ -98,16 +103,10 @@ describe('lot or batch', () => {
       rateLocalPerUsd: '3.6725',
       freightAmount: '0',
       otherCharges: '0',
-      paymentTermDays: 30,
       lines: [{ itemId: 'c'.repeat(25), quantity: '1000', unit: 'KG', unitPrice: '5', lotNumber: '', batchNumber: '' }],
     });
 
-    expect(parsed.success).toBe(false);
-    if (!parsed.success) {
-      expect(parsed.error.issues.map((i) => i.message)).toContain(
-        'Please enter either a Lot Number or a Batch Number.',
-      );
-    }
+    expect(parsed.success).toBe(true);
   });
 
   it('still refuses the same reference twice on one contract', async () => {
@@ -132,7 +131,6 @@ describe('the purchase order no longer asks for what nobody knows yet', () => {
       rateLocalPerUsd: '3.6725',
       freightAmount: '0',
       otherCharges: '0',
-      paymentTermDays: 30,
       lines: [{ itemId: 'c'.repeat(25), quantity: '1000', unit: 'KG', unitPrice: '5', lotNumber: 'L-1' }],
     });
     expect(parsed.success).toBe(true);

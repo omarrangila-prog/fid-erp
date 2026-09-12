@@ -62,7 +62,8 @@ export type SalesInvoiceInput = {
   currency: string;
   rateToUsd: string | number;
   rateLocalPerUsd: string | number;
-  paymentTermDays?: number;
+  /** The date the money is due, chosen from a calendar on the invoice. */
+  dueDate?: Date | null;
   reference?: string | null;
   notes?: string | null;
   lines: SalesLineInput[];
@@ -219,14 +220,32 @@ function invoiceTotals(lines: ResolvedLine[]) {
 /**
  * The date the money is due.
  *
- * `input.paymentTermDays ? … : null` looks harmless and is not: zero-day terms
- * — cash on delivery, routine in trading — are falsy, so the due date came out
- * null and the invoice could never become overdue. Every invoice gets a due
- * date; when the caller does not state a term we fall back to the customer's
- * own, which is what the master record is for.
+ * The invoice asks for a date, not a term. An invoice dated the 10th may be
+ * due on the 15th and a cash sale is due the day it is raised; neither is
+ * Net 7, Net 30 or Net 60, and offering only those three made the user pick an
+ * answer that was not true.
+ *
+ * When no date is given it falls back to the customer's standing terms, which
+ * is what the master record is for. `paymentTermDays` is still derived and
+ * stored, because the receivables ageing is expressed in days — it follows
+ * from the dates rather than driving them.
+ *
+ * Note the deliberate `?? 0` and not `|| 0`: zero-day terms — cash on
+ * delivery, routine in trading — are falsy, and an earlier version let them
+ * fall through to a null due date, so those invoices could never age.
  */
-function dueDateFor(invoiceDate: Date, termDays: number): Date {
-  return new Date(invoiceDate.getTime() + termDays * 86_400_000);
+function resolveDueDate(
+  invoiceDate: Date,
+  chosen: Date | null | undefined,
+  standingTermDays: number | null | undefined,
+): { dueDate: Date; termDays: number } {
+  if (chosen) {
+    const days = Math.max(0, Math.round((chosen.getTime() - invoiceDate.getTime()) / 86_400_000));
+    return { dueDate: chosen, termDays: days };
+  }
+
+  const days = standingTermDays ?? 0;
+  return { dueDate: new Date(invoiceDate.getTime() + days * 86_400_000), termDays: days };
 }
 
 export async function createSalesInvoice(input: SalesInvoiceInput, userId: string) {
@@ -237,7 +256,7 @@ export async function createSalesInvoice(input: SalesInvoiceInput, userId: strin
     });
     if (!customer) throw new NotFoundError('Customer');
 
-    const termDays = input.paymentTermDays ?? customer.paymentTermDays ?? 0;
+    const { dueDate, termDays } = resolveDueDate(input.invoiceDate, input.dueDate, customer.paymentTermDays);
 
     const lines = await resolveLines(tx, input);
     const totals = invoiceTotals(lines);
@@ -246,8 +265,6 @@ export async function createSalesInvoice(input: SalesInvoiceInput, userId: strin
       companyId: input.companyId,
       docType: DOC_TYPES.SALES_INVOICE,
     });
-
-    const dueDate = dueDateFor(input.invoiceDate, termDays);
 
     // A single-shipment invoice gets linked automatically for profitability.
     const distinctShipments = [...new Set(lines.map((l) => l.shipmentId))];
@@ -358,8 +375,7 @@ export async function updateSalesInvoice(id: string, input: SalesInvoiceInput, u
 
     const lines = await resolveLines(tx, input);
     const totals = invoiceTotals(lines);
-    const termDays = input.paymentTermDays ?? customer.paymentTermDays ?? 0;
-    const dueDate = dueDateFor(input.invoiceDate, termDays);
+    const { dueDate, termDays } = resolveDueDate(input.invoiceDate, input.dueDate, customer.paymentTermDays);
     const distinctShipments = [...new Set(lines.map((l) => l.shipmentId))];
     const shipmentId = input.shipmentId ?? (distinctShipments.length === 1 ? distinctShipments[0] : null);
 

@@ -53,7 +53,6 @@ async function purchaseAndReceive(params: {
       rateToUsd: '1',
       rateLocalPerUsd: params.rateLocalPerUsd,
       freightAmount: '0',
-      paymentTermDays: 30,
       lines: [
         {
           itemId: params.m.item.id,
@@ -141,8 +140,7 @@ describe('Dubai — a USD receivable settled in AED', () => {
         currency: 'USD',
         rateToUsd: '1',
         rateLocalPerUsd: '3.6725',
-        paymentTermDays: 30,
-        lines: [{ batchId, warehouseId: warehouse.id, quantity: '5000', unit: 'KG', unitPrice: '6.00' }],
+          lines: [{ batchId, warehouseId: warehouse.id, quantity: '5000', unit: 'KG', unitPrice: '6.00' }],
       },
       ctx.admin.id,
     );
@@ -304,8 +302,7 @@ describe('cheque life cycle', () => {
         currency: 'USD',
         rateToUsd: '1',
         rateLocalPerUsd: '3.6725',
-        paymentTermDays: 30,
-        lines: [{ batchId, warehouseId: warehouse.id, quantity: '2000', unit: 'KG', unitPrice: '6.00' }],
+          lines: [{ batchId, warehouseId: warehouse.id, quantity: '2000', unit: 'KG', unitPrice: '6.00' }],
       },
       ctx.admin.id,
     );
@@ -489,8 +486,7 @@ describe('Morocco — MAD sales against a USD supplier', () => {
         currency: 'MAD',
         rateToUsd: '9.85',
         rateLocalPerUsd: '9.85',
-        paymentTermDays: 30,
-        lines: [
+          lines: [
           { batchId: moroccoBatchId, warehouseId: moroccoWarehouse.id, quantity: '20000', unit: 'KG', unitPrice: '5.91' },
         ],
       },

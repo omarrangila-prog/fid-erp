@@ -50,7 +50,6 @@ async function postedContract(
       rateToUsd: '1',
       rateLocalPerUsd: companyId === ctx.dubai.id ? '3.6725' : '9.85',
       freightAmount: '0',
-      paymentTermDays: 30,
       lines: [
         {
           itemId: m.item.id,
@@ -232,8 +231,7 @@ describe('Flow 10 — atomicity: a failed posting leaves nothing behind', () => 
         currency: 'USD',
         rateToUsd: '1',
         rateLocalPerUsd: '3.6725',
-        paymentTermDays: 30,
-        lines: [
+          lines: [
           { batchId: dubaiBatchId, warehouseId: dubaiWarehouseId, quantity: '15000', unit: 'KG', unitPrice: '1.20' },
           { batchId: dubaiBatchId, warehouseId: dubaiWarehouseId, quantity: '15000', unit: 'KG', unitPrice: '1.20' },
         ],
@@ -322,8 +320,7 @@ describe('concurrency and idempotency', () => {
         currency: 'USD',
         rateToUsd: '1',
         rateLocalPerUsd: '3.6725',
-        paymentTermDays: 30,
-        lines: [{ batchId: dubaiBatchId, warehouseId: dubaiWarehouseId, quantity: '10000', unit: 'KG', unitPrice: '1.20' }],
+          lines: [{ batchId: dubaiBatchId, warehouseId: dubaiWarehouseId, quantity: '10000', unit: 'KG', unitPrice: '1.20' }],
       },
       ctx.admin.id,
     );
@@ -407,8 +404,7 @@ describe('reversals', () => {
         currency: 'USD',
         rateToUsd: '1',
         rateLocalPerUsd: '3.6725',
-        paymentTermDays: 30,
-        lines: [{ batchId, warehouseId, quantity: '20000', unit: 'KG', unitPrice: '1.20' }],
+          lines: [{ batchId, warehouseId, quantity: '20000', unit: 'KG', unitPrice: '1.20' }],
       },
       ctx.admin.id,
     );
@@ -490,8 +486,7 @@ describe('reversals', () => {
         currency: 'USD',
         rateToUsd: '1',
         rateLocalPerUsd: '3.6725',
-        paymentTermDays: 30,
-        lines: [{ batchId, warehouseId, quantity: '10000', unit: 'KG', unitPrice: '1.00' }],
+          lines: [{ batchId, warehouseId, quantity: '10000', unit: 'KG', unitPrice: '1.00' }],
       },
       ctx.admin.id,
     );

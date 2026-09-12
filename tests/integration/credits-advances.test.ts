@@ -53,7 +53,7 @@ beforeAll(async () => {
   const invoice = await createSalesInvoice(
     {
       companyId: ctx.dubai.id, invoiceDate: utcDate('2026-02-01'), customerId: masters.customer.id,
-      currency: 'USD', rateToUsd: '1', rateLocalPerUsd: '3.6725', paymentTermDays: 30,
+      currency: 'USD', rateToUsd: '1', rateLocalPerUsd: '3.6725', dueDate: utcDate('2026-02-04'),
       lines: [{ batchId, warehouseId: masters.warehouse.id, quantity: '10000', unit: 'KG', unitPrice: '6.00' }],
     },
     ctx.admin.id,

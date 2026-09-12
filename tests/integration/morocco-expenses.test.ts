@@ -260,7 +260,6 @@ describe('selling half of it', () => {
         currency: 'MAD',
         rateToUsd: '10',
         rateLocalPerUsd: '10',
-        paymentTermDays: 30,
         lines: [
           {
             batchId,

@@ -53,7 +53,7 @@ export type SaleFormDefaults = {
   currency?: string;
   rateToUsd?: string;
   rateLocalPerUsd?: string;
-  paymentTermDays?: string;
+  dueDate?: string;
   reference?: string;
   notes?: string;
   lines?: Array<Omit<LineState, 'key'>>;
@@ -104,7 +104,7 @@ export function SaleForm({
     currency: defaults?.currency ?? defaultCurrency,
     rateToUsd: defaults?.rateToUsd ?? (defaultCurrency === 'USD' ? '1' : defaultLocalRate),
     rateLocalPerUsd: defaults?.rateLocalPerUsd ?? defaultLocalRate,
-    paymentTermDays: defaults?.paymentTermDays ?? '30',
+    dueDate: defaults?.dueDate ?? '',
     reference: defaults?.reference ?? '',
     notes: defaults?.notes ?? '',
   });
@@ -207,7 +207,7 @@ export function SaleForm({
 
     const payload = {
       ...header,
-      paymentTermDays: Number(header.paymentTermDays || 0),
+      dueDate: header.dueDate || undefined,
       shipmentId: '',
       lines: lines
         .filter((l) => l.stockKey)
@@ -275,7 +275,13 @@ export function SaleForm({
                   customerId: value,
                   currency: customer?.currency ?? header.currency,
                   rateToUsd: customer?.currency === 'USD' ? '1' : header.rateToUsd,
-                  paymentTermDays: customer ? String(customer.paymentTermDays) : header.paymentTermDays,
+                  // Their usual terms, offered as a date the user can change.
+                  // Nobody has to count thirty days forward in their head, and
+                  // nobody is stuck with thirty if the deal was different.
+                  dueDate:
+                    customer && header.invoiceDate
+                      ? addDays(header.invoiceDate, customer.paymentTermDays)
+                      : header.dueDate,
                 });
               }}
               placeholder="Choose a customer…"
@@ -291,12 +297,17 @@ export function SaleForm({
             />
           </Field>
 
-          <Field label="Payment terms (days)" htmlFor="paymentTermDays">
+          <Field
+            label="Due date"
+            htmlFor="dueDate"
+            hint="For a cash sale, the same day as the invoice."
+          >
             <Input
-              id="paymentTermDays"
-              value={header.paymentTermDays}
-              onChange={(e) => setHeader({ ...header, paymentTermDays: e.target.value })}
-              className="tnum text-right"
+              id="dueDate"
+              type="date"
+              value={header.dueDate}
+              min={header.invoiceDate || undefined}
+              onChange={(e) => setHeader({ ...header, dueDate: e.target.value })}
             />
           </Field>
 
@@ -560,4 +571,12 @@ export function SaleForm({
       </div>
     </div>
   );
+}
+
+
+/** `2026-09-10` plus n days, as `2026-10-10`. Date inputs speak this format. */
+function addDays(isoDate: string, days: number): string {
+  const parsed = new Date(`${isoDate}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return new Date(parsed.getTime() + days * 86_400_000).toISOString().slice(0, 10);
 }

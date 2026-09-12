@@ -192,6 +192,31 @@ async function assertTraceabilityNumbersAreFree(
   }
 }
 
+/**
+ * When the supplier expects to be paid.
+ *
+ * The form used to offer Net 7 / Net 30 / Net 60 and the client trades on
+ * none of them: a contract is due on a date agreed with the supplier, and
+ * sometimes on its own date. So a date is what the form asks for.
+ *
+ * `paymentTermDays` is still stored, because the payables ageing and the
+ * supplier's standing terms are both expressed in days — it is derived from
+ * the two dates rather than driving them.
+ */
+function resolveDueDate(
+  documentDate: Date,
+  chosen: Date | null | undefined,
+  standingTermDays: number | null | undefined,
+): { dueDate: Date; termDays: number } {
+  if (chosen) {
+    const days = Math.max(0, Math.round((chosen.getTime() - documentDate.getTime()) / 86_400_000));
+    return { dueDate: chosen, termDays: days };
+  }
+
+  const days = standingTermDays ?? 0;
+  return { dueDate: new Date(documentDate.getTime() + days * 86_400_000), termDays: days };
+}
+
 export async function createPurchaseContract(input: PurchaseContractInput, userId: string) {
   return transaction(async (tx) => {
     const vendor = await tx.vendor.findFirst({
@@ -200,9 +225,15 @@ export async function createPurchaseContract(input: PurchaseContractInput, userI
     });
     if (!vendor) throw new NotFoundError('Supplier');
 
-    // Zero-day terms are real and must still produce a due date, or the
-    // contract can never appear as overdue on the payables ageing.
-    const termDays = input.paymentTermDays ?? vendor.paymentTermDays ?? 0;
+    // A date the user picked, or the supplier's standing terms, or the
+    // contract's own date. Zero-day terms are real and must still produce a
+    // due date, or the contract can never appear as overdue on the payables
+    // ageing.
+    const { dueDate, termDays } = resolveDueDate(
+      input.contractDate,
+      input.dueDate,
+      vendor.paymentTermDays,
+    );
 
     for (const line of input.lines) {
       const item = await tx.coffeeItem.findFirst({
@@ -231,8 +262,6 @@ export async function createPurchaseContract(input: PurchaseContractInput, userI
      */
     const reference = input.contractReference?.trim() || contractNumber;
     await assertReferenceIsFree(tx, input.companyId, reference);
-
-    const dueDate = new Date(input.contractDate.getTime() + termDays * 86_400_000);
 
     const contract = await tx.purchaseContract.create({
       data: {
@@ -304,8 +333,11 @@ export async function updatePurchaseContract(id: string, input: PurchaseContract
     if (!vendor) throw new NotFoundError('Supplier');
 
     const totals = computePurchaseTotals(await applyServerTaxRates(tx, input));
-    const termDays = input.paymentTermDays ?? vendor.paymentTermDays ?? 0;
-    const dueDate = new Date(input.contractDate.getTime() + termDays * 86_400_000);
+    const { dueDate, termDays } = resolveDueDate(
+      input.contractDate,
+      input.dueDate,
+      vendor.paymentTermDays,
+    );
 
     await tx.purchaseContractLine.deleteMany({ where: { purchaseContractId: id } });
 
@@ -431,11 +463,29 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
     const containerCache = new Map<string, string>();
 
     for (const line of contract.lines) {
+      /**
+       * The contract may not name the coffee yet.
+       *
+       * A supplier sells 42 MT of Screen 12 in March and decides in May which
+       * lots fill it. The batch still has to exist from the moment the
+       * contract is approved — it carries the money, the in-transit quantity
+       * and the payable — so it is issued a placeholder identity derived from
+       * the contract number, and flagged. The goods receipt replaces it with
+       * the real lot, splitting it if the coffee arrived under several.
+       *
+       * A placeholder is never silent: it reads `MOR-PO-000042/1`, which
+       * nobody will mistake for a supplier's lot number, and the batch cannot
+       * be sold until the receipt has named it.
+       */
+      const traceabilityPending = !line.lotNumber && !line.batchNumber;
+      const lotNumber = line.lotNumber ?? `${contract.contractNumber}/${line.lineNumber}`;
+      const batchNumber = line.batchNumber ?? lotNumber;
+
       // Lot: shared across lines that quote the same supplier lot number.
-      let lotId = lotCache.get(line.lotNumber);
+      let lotId = lotCache.get(lotNumber);
       if (!lotId) {
         const existingLot = await tx.lot.findFirst({
-          where: { companyId: params.companyId, lotNumber: line.lotNumber },
+          where: { companyId: params.companyId, lotNumber },
           select: { id: true },
         });
         lotId =
@@ -444,7 +494,7 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
             await tx.lot.create({
               data: {
                 companyId: params.companyId,
-                lotNumber: line.lotNumber,
+                lotNumber,
                 itemId: line.itemId,
                 purchaseContractId: contract.id,
                 originCountry: contract.origin,
@@ -452,7 +502,7 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
               select: { id: true },
             })
           ).id;
-        lotCache.set(line.lotNumber, lotId);
+        lotCache.set(lotNumber, lotId);
       }
 
       // Container, when the contract states one.
@@ -498,7 +548,8 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
       await tx.batch.create({
         data: {
           companyId: params.companyId,
-          batchNumber: line.batchNumber,
+          batchNumber,
+          traceabilityPending,
           itemId: line.itemId,
           lotId,
           containerId,

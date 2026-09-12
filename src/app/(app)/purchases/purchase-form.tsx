@@ -47,7 +47,7 @@ export type PurchaseFormDefaults = {
   incoterm?: string;
   portOfLoading?: string;
   destination?: string;
-  paymentTermDays?: string;
+  dueDate?: string;
   notes?: string;
   lines?: LineDefaults[];
 };
@@ -102,7 +102,7 @@ export function PurchaseForm({
     incoterm: defaults?.incoterm ?? 'FOB',
     portOfLoading: defaults?.portOfLoading ?? '',
     destination: defaults?.destination ?? '',
-    paymentTermDays: defaults?.paymentTermDays ?? '60',
+    dueDate: defaults?.dueDate ?? '',
     notes: defaults?.notes ?? '',
   });
 
@@ -148,7 +148,7 @@ export function PurchaseForm({
   function buildPayload() {
     return JSON.stringify({
       ...header,
-      paymentTermDays: header.paymentTermDays || '0',
+      dueDate: header.dueDate || undefined,
       freightAmount: header.freightAmount || '0',
       otherCharges: header.otherCharges || '0',
       lines: lines.map((line) => ({
@@ -277,13 +277,16 @@ export function PurchaseForm({
                 />
               </Field>
 
-              <Field label="Payment terms (days)" htmlFor="paymentTermDays">
+              <Field
+                label="Payment due"
+                htmlFor="dueDate"
+                hint="Leave blank to use the supplier's usual terms."
+              >
                 <Input
-                  id="paymentTermDays"
-                  inputMode="numeric"
-                  className="tnum text-right"
-                  value={header.paymentTermDays}
-                  onChange={(e) => setField('paymentTermDays', e.target.value)}
+                  id="dueDate"
+                  type="date"
+                  value={header.dueDate}
+                  onChange={(e) => setField('dueDate', e.target.value)}
                 />
               </Field>
             </div>

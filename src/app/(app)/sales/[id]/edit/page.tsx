@@ -133,7 +133,7 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
           currency: invoice.currency,
           rateToUsd: invoice.rateToUsd.toString(),
           rateLocalPerUsd: invoice.rateLocalPerUsd.toString(),
-          paymentTermDays: String(invoice.paymentTermDays),
+          dueDate: invoice.dueDate ? invoice.dueDate.toISOString().slice(0, 10) : "",
           reference: invoice.reference ?? '',
           notes: invoice.notes ?? '',
           lines: invoice.lines.map((l) => ({

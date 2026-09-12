@@ -65,11 +65,11 @@ describe('a blank purchase contract', () => {
     }
   });
 
-  it('asks for a lot or a batch, not both', () => {
-    // Attached to the lot field so it renders inline where the user is
-    // looking, rather than as a detached line-level complaint.
-    expect(messages['lines.0.lotNumber']).toMatch(/lot number or a batch number/i);
-    // And nothing separately demands the batch, which is the whole point.
+  it('asks for neither a lot nor a batch on a contract', () => {
+    // They are not known when the contract is signed. The requirement moved to
+    // the goods receipt, where the coffee is physically in front of someone
+    // and stock traceability actually begins.
+    expect(messages['lines.0.lotNumber']).toBeUndefined();
     expect(messages['lines.0.batchNumber']).toBeUndefined();
   });
 

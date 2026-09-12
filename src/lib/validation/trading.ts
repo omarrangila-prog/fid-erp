@@ -15,26 +15,32 @@ import {
 
 /** Purchase, goods receipt, sales and transfer schemas. */
 
-export const purchaseLineSchema = z
-  .object({
-    itemId: requiredChoice('Coffee'),
-    // One or the other. Suppliers label consignments differently, and demanding
-    // both only made people invent the missing one.
-    lotNumber: optionalText(60),
-    batchNumber: optionalText(60),
-    containerNumber: optionalText(40),
-    quantity: decimalString('Quantity'),
-    unit: z.enum(['KG', 'MT', 'BAG']),
-    unitPrice: decimalString('Price', { allowZero: true }),
-    bags: positiveInt('Bags').optional(),
-    bagWeightKg: optionalDecimalString('Bag weight'),
-    taxCodeId: optionalCuid,
-    notes: optionalText(300),
-  })
-  .refine((line) => Boolean(line.lotNumber?.trim() || line.batchNumber?.trim()), {
-    message: 'Please enter either a Lot Number or a Batch Number.',
-    path: ['lotNumber'],
-  });
+/**
+ * A contract line.
+ *
+ * Lot and batch are optional here and that is deliberate. At contract stage
+ * the trade is a quantity of a grade at a price; which physical lot fills it
+ * is decided when the supplier loads, often weeks later. Demanding a lot
+ * number before the contract could be saved meant people invented one, and an
+ * invented lot number is worse than a blank — it follows the coffee into the
+ * warehouse and onto the customer's invoice.
+ *
+ * One of the two becomes mandatory on the goods receipt, where the coffee is
+ * physically in front of someone and stock traceability begins.
+ */
+export const purchaseLineSchema = z.object({
+  itemId: requiredChoice('Coffee'),
+  lotNumber: optionalText(60),
+  batchNumber: optionalText(60),
+  containerNumber: optionalText(40),
+  quantity: decimalString('Quantity'),
+  unit: z.enum(['KG', 'MT', 'BAG']),
+  unitPrice: decimalString('Price', { allowZero: true }),
+  bags: positiveInt('Bags').optional(),
+  bagWeightKg: optionalDecimalString('Bag weight'),
+  taxCodeId: optionalCuid,
+  notes: optionalText(300),
+});
 
 export const purchaseContractSchema = z.object({
   // Optional. The system already issues a unique FID number; making the
@@ -53,10 +59,45 @@ export const purchaseContractSchema = z.object({
   incoterm: z.enum(['EXW', 'FCA', 'FOB', 'CFR', 'CIF', 'DAP', 'DDP']).default('FOB'),
   portOfLoading: optionalText(120),
   destination: optionalText(120),
-  paymentTermDays: positiveInt('Payment terms'),
+  /**
+   * When the supplier expects to be paid, as a date.
+   *
+   * Not a Net 7 / Net 30 / Net 60 selector: the client does not trade on
+   * standard terms and was being made to pick one of three answers none of
+   * which was true. Left blank, the contract is simply due on its own date.
+   */
+  dueDate: optionalDateString,
   notes: optionalText(1000),
   lines: z.array(purchaseLineSchema).min(1, 'Add at least one coffee line.'),
 });
+
+/**
+ * A goods receipt line.
+ *
+ * `batchId` says which contract line this quantity belongs to. The lot and
+ * batch numbers say what it actually arrived as — and because a line may
+ * appear more than once with different numbers, one contract line of 42 MT can
+ * land as 21 MT under lot 120229 and 21 MT under lot 120230.
+ */
+export const goodsReceiptLineSchema = z.object({
+  batchId: cuid,
+  quantityKg: decimalString('Quantity received'),
+  lotNumber: optionalText(60),
+  batchNumber: optionalText(60),
+  containerNumber: optionalText(40),
+  bags: positiveInt('Bags').optional(),
+  notes: optionalText(300),
+});
+
+/*
+ * Note what is *not* here: a rule that one of lot or batch must be present.
+ *
+ * Whether it is required depends on the batch being received — if the contract
+ * already named the lot, asking again is asking the user to retype the
+ * purchase order — and this schema cannot see the batch. The rule lives in the
+ * goods receipt service, which can, and the form mirrors it so the user is
+ * told inline rather than on submit.
+ */
 
 export const goodsReceiptSchema = z.object({
   purchaseContractId: cuid,
@@ -64,16 +105,7 @@ export const goodsReceiptSchema = z.object({
   receiptDate: dateString('Receipt date'),
   reference: optionalText(60),
   notes: optionalText(600),
-  lines: z
-    .array(
-      z.object({
-        batchId: cuid,
-        quantityKg: decimalString('Quantity received'),
-        bags: positiveInt('Bags').optional(),
-        notes: optionalText(300),
-      }),
-    )
-    .min(1, 'Add at least one batch to receive.'),
+  lines: z.array(goodsReceiptLineSchema).min(1, 'Add at least one line to receive.'),
 });
 
 export const salesLineSchema = z.object({
@@ -94,7 +126,15 @@ export const salesInvoiceSchema = z.object({
   currency: currencyCode,
   rateToUsd: decimalString('Exchange rate'),
   rateLocalPerUsd: decimalString('Local exchange rate'),
-  paymentTermDays: positiveInt('Payment terms'),
+  /**
+   * The date the money is due, chosen from a calendar.
+   *
+   * The client asked for this directly: an invoice dated the 10th may be due
+   * on the 15th, and a cash sale is due the day it is raised. Neither is
+   * Net 7, Net 30 or Net 60. Left blank it falls to the invoice date, which is
+   * the honest reading of an invoice with no stated terms.
+   */
+  dueDate: optionalDateString,
   reference: optionalText(60),
   notes: optionalText(1000),
   lines: z.array(salesLineSchema).min(1, 'Add at least one coffee line.'),

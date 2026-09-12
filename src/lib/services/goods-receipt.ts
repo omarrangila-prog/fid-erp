@@ -27,8 +27,22 @@ import { writeAudit } from '@/lib/services/audit';
  */
 
 export type GoodsReceiptLineInput = {
+  /** The contract's batch this quantity belongs to. */
   batchId: string;
   quantityKg: string | number;
+  /**
+   * What the coffee actually arrived as.
+   *
+   * At contract stage the supplier had usually not identified it, so the batch
+   * carries a placeholder. These are the real numbers, and naming a second set
+   * against the same contract batch splits it: 42 MT ordered can land as
+   * 21 MT under lot 120229 and 21 MT under lot 120230.
+   *
+   * One of the two is required — enforced in validation, and again here.
+   */
+  lotNumber?: string | null;
+  batchNumber?: string | null;
+  containerNumber?: string | null;
   bags?: number;
   notes?: string | null;
 };
@@ -51,11 +65,288 @@ type ResolvedGrnLine = {
   containerId: string | null;
   contractLineId: string;
   batchNumber: string;
+  lotNumber: string | null;
+  containerNumber: string | null;
   quantityKg: Decimal;
   bags: number;
   landedUnitCostUsd: Decimal;
   notes: string | null;
 };
+
+/**
+ * Give the arriving coffee the identity it actually arrived under.
+ *
+ * The contract may have named a lot; usually it did not, and the batch carries
+ * a placeholder issued when the contract was approved. This runs before the
+ * receipt is resolved and does two things:
+ *
+ *   - names a placeholder batch with the supplier's real lot, and
+ *   - splits one contract batch into several when the coffee arrived under
+ *     more than one — 42 MT ordered landing as 21 MT under 120229 and 21 MT
+ *     under 120230, which is the case the client showed us.
+ *
+ * The split is a real division of the contract line: the original batch gives
+ * up quantity, bags and cost in proportion, and the new batch takes them. The
+ * two together still tie back to the contract, so the in-transit journal
+ * posted at approval needs no adjustment.
+ *
+ * Returns the input lines rewritten to point at whichever batch now holds
+ * their identity.
+ */
+async function applyReceiptTraceability(
+  tx: Tx,
+  input: GoodsReceiptInput,
+): Promise<GoodsReceiptLineInput[]> {
+  const rewritten: GoodsReceiptLineInput[] = [];
+  /** Identity already assigned to a batch during this receipt. */
+  const assigned = new Map<string, string>();
+
+  for (let i = 0; i < input.lines.length; i += 1) {
+    const line = input.lines[i];
+    const lotNumber = line.lotNumber?.trim() || null;
+    const batchNumber = line.batchNumber?.trim() || null;
+    const containerNumber = line.containerNumber?.trim() || null;
+
+    const batch = await tx.batch.findFirst({
+      where: { id: line.batchId, companyId: input.companyId, purchaseContractId: input.purchaseContractId },
+      include: { lot: { select: { lotNumber: true } } },
+    });
+    if (!batch) throw new NotFoundError(`Batch on line ${i + 1}`);
+
+    // Nothing to name: the contract already said what this coffee is, and
+    // asking again would be asking the user to retype the purchase order.
+    if (!lotNumber && !batchNumber) {
+      if (batch.traceabilityPending) {
+        throw new BusinessRuleError(
+          `Line ${i + 1}: enter a Lot Number or a Batch Number. This is the point the coffee becomes stock, and stock without an identity cannot be traced to a customer later.`,
+        );
+      }
+      rewritten.push({ ...line, batchId: batch.id });
+      continue;
+    }
+
+    // Whichever the supplier gave; the missing one mirrors the other rather
+    // than being invented.
+    const effectiveLot = lotNumber ?? batchNumber!;
+    const effectiveBatch = batchNumber ?? lotNumber!;
+    const identity = `${effectiveLot}\u0000${effectiveBatch}`;
+
+    // Already carries exactly this identity — the contract named the lot, or
+    // an earlier receipt did. Nothing to name and nothing to split.
+    const alreadyThisIdentity =
+      !batch.traceabilityPending &&
+      batch.batchNumber === effectiveBatch &&
+      batch.lot.lotNumber === effectiveLot;
+
+    if (alreadyThisIdentity) {
+      rewritten.push({ ...line, batchId: batch.id });
+      continue;
+    }
+
+    const claimed = assigned.get(`${batch.id}${identity}`);
+    if (claimed) {
+      rewritten.push({ ...line, batchId: claimed });
+      continue;
+    }
+
+    const firstUseOfThisBatch = ![...assigned.keys()].some((key) => key.startsWith(batch.id));
+
+    if (firstUseOfThisBatch && batch.traceabilityPending) {
+      // Name the placeholder in place. Nothing has been received against it
+      // yet, so there is no history to carry.
+      const lotId = await resolveLot(tx, input.companyId, effectiveLot, batch.itemId, batch.purchaseContractId);
+      const containerId = containerNumber
+        ? await resolveContainer(tx, input.companyId, containerNumber, batch)
+        : batch.containerId;
+
+      await assertBatchNumberIsFree(tx, input.companyId, effectiveBatch, batch.id);
+      await tx.batch.update({
+        where: { id: batch.id },
+        data: { batchNumber: effectiveBatch, lotId, containerId, traceabilityPending: false },
+      });
+
+      assigned.set(`${batch.id}${identity}`, batch.id);
+      rewritten.push({ ...line, batchId: batch.id });
+      continue;
+    }
+
+    // A second identity against the same contract batch: split it.
+    const split = await splitBatch(tx, {
+      companyId: input.companyId,
+      batch,
+      quantityKg: toQuantity(line.quantityKg),
+      lotNumber: effectiveLot,
+      batchNumber: effectiveBatch,
+      containerNumber,
+    });
+
+    assigned.set(`${batch.id}${identity}`, split.id);
+    rewritten.push({ ...line, batchId: split.id });
+  }
+
+  return rewritten;
+}
+
+/** The lot with this number, reused across batches that quote the same one. */
+async function resolveLot(
+  tx: Tx,
+  companyId: string,
+  lotNumber: string,
+  itemId: string,
+  purchaseContractId: string,
+): Promise<string> {
+  const existing = await tx.lot.findFirst({ where: { companyId, lotNumber }, select: { id: true, itemId: true } });
+  if (existing) {
+    if (existing.itemId !== itemId) {
+      throw new BusinessRuleError(
+        `Lot "${lotNumber}" already exists for a different coffee. Use a lot number of its own.`,
+      );
+    }
+    return existing.id;
+  }
+
+  const created = await tx.lot.create({
+    data: { companyId, lotNumber, itemId, purchaseContractId },
+    select: { id: true },
+  });
+  return created.id;
+}
+
+async function resolveContainer(
+  tx: Tx,
+  companyId: string,
+  containerNumber: string,
+  batch: { shipmentId: string; purchaseContractId: string },
+): Promise<string> {
+  const existing = await tx.container.findFirst({ where: { companyId, containerNumber }, select: { id: true } });
+  if (existing) return existing.id;
+
+  const created = await tx.container.create({
+    data: {
+      companyId,
+      containerNumber,
+      purchaseContractId: batch.purchaseContractId,
+      shipmentId: batch.shipmentId,
+    },
+    select: { id: true },
+  });
+  return created.id;
+}
+
+async function assertBatchNumberIsFree(
+  tx: Tx,
+  companyId: string,
+  batchNumber: string,
+  excludeId: string,
+): Promise<void> {
+  const clash = await tx.batch.findFirst({
+    where: { companyId, batchNumber, NOT: { id: excludeId } },
+    select: { batchNumber: true, purchaseContract: { select: { contractNumber: true } } },
+  });
+  if (clash) {
+    throw new BusinessRuleError(
+      `Batch number "${batchNumber}" is already used by ${clash.purchaseContract?.contractNumber ?? 'another contract'}.`,
+    );
+  }
+}
+
+/**
+ * Divide a contract batch in two.
+ *
+ * Quantity, bags and cost move across in proportion, so the sum of the parts
+ * is still what the contract said. Only coffee not yet received can be split:
+ * once some has landed, its history belongs to the batch it landed under.
+ */
+async function splitBatch(
+  tx: Tx,
+  params: {
+    companyId: string;
+    batch: {
+      id: string;
+      itemId: string;
+      shipmentId: string;
+      purchaseContractId: string;
+      purchaseContractLineId: string | null;
+      containerId: string | null;
+      batchNumber: string;
+      orderedQuantityKg: Decimal;
+      receivedQuantityKg: Decimal;
+      inTransitQuantityKg: Decimal;
+      orderedBags: number;
+      bagWeightKg: Decimal;
+      unitCost: Decimal;
+      currency: string;
+      unitCostUsd: Decimal;
+      purchaseCostUsd: Decimal;
+      landedUnitCostUsd: Decimal;
+    };
+    quantityKg: Decimal;
+    lotNumber: string;
+    batchNumber: string;
+    containerNumber: string | null;
+  },
+) {
+  const { batch } = params;
+  const remaining = toQuantity(dec(batch.orderedQuantityKg).minus(dec(batch.receivedQuantityKg)));
+
+  if (params.quantityKg.greaterThan(remaining)) {
+    throw new BusinessRuleError(
+      `Only ${remaining.toFixed(3)} KG of ${batch.batchNumber} is still to be received, but ${params.quantityKg.toFixed(3)} KG was entered against lot ${params.lotNumber}.`,
+    );
+  }
+
+  await assertBatchNumberIsFree(tx, params.companyId, params.batchNumber, batch.id);
+
+  const lotId = await resolveLot(
+    tx,
+    params.companyId,
+    params.lotNumber,
+    batch.itemId,
+    batch.purchaseContractId,
+  );
+  const containerId = params.containerNumber
+    ? await resolveContainer(tx, params.companyId, params.containerNumber, batch)
+    : batch.containerId;
+
+  const share = dec(batch.orderedQuantityKg).isZero()
+    ? dec(0)
+    : params.quantityKg.dividedBy(dec(batch.orderedQuantityKg));
+  const movedCostUsd = toMoney(dec(batch.purchaseCostUsd).times(share));
+  const movedBags = Math.round(batch.orderedBags * Number(share));
+
+  await tx.batch.update({
+    where: { id: batch.id },
+    data: {
+      orderedQuantityKg: toQuantity(dec(batch.orderedQuantityKg).minus(params.quantityKg)),
+      inTransitQuantityKg: toQuantity(dec(batch.inTransitQuantityKg).minus(params.quantityKg)),
+      orderedBags: Math.max(0, batch.orderedBags - movedBags),
+      purchaseCostUsd: toMoney(dec(batch.purchaseCostUsd).minus(movedCostUsd)),
+    },
+  });
+
+  return tx.batch.create({
+    data: {
+      companyId: params.companyId,
+      batchNumber: params.batchNumber,
+      traceabilityPending: false,
+      itemId: batch.itemId,
+      lotId,
+      containerId,
+      shipmentId: batch.shipmentId,
+      purchaseContractId: batch.purchaseContractId,
+      purchaseContractLineId: batch.purchaseContractLineId,
+      orderedQuantityKg: params.quantityKg,
+      inTransitQuantityKg: params.quantityKg,
+      orderedBags: movedBags,
+      bagWeightKg: batch.bagWeightKg,
+      unitCost: batch.unitCost,
+      currency: batch.currency,
+      unitCostUsd: batch.unitCostUsd,
+      purchaseCostUsd: movedCostUsd,
+      landedUnitCostUsd: batch.landedUnitCostUsd,
+    },
+  });
+}
 
 async function resolveLines(tx: Tx, input: GoodsReceiptInput): Promise<ResolvedGrnLine[]> {
   if (input.lines.length === 0) {
@@ -79,6 +370,8 @@ async function resolveLines(tx: Tx, input: GoodsReceiptInput): Promise<ResolvedG
         landedUnitCostUsd: true,
         unitCostUsd: true,
         status: true,
+        lot: { select: { lotNumber: true } },
+        container: { select: { containerNumber: true } },
       },
     });
     if (!batch) throw new NotFoundError(`Batch on line ${i + 1}`);
@@ -108,6 +401,10 @@ async function resolveLines(tx: Tx, input: GoodsReceiptInput): Promise<ResolvedG
       containerId: batch.containerId,
       contractLineId: batch.purchaseContractLineId,
       batchNumber: batch.batchNumber,
+      // Recorded on the receipt line as well as the batch, so the document
+      // still says what arrived even if the batch is later merged or renamed.
+      lotNumber: batch.lot?.lotNumber ?? null,
+      containerNumber: batch.container?.containerNumber ?? null,
       quantityKg,
       bags: line.bags ?? 0,
       landedUnitCostUsd: dec(batch.landedUnitCostUsd).greaterThan(0)
@@ -140,7 +437,11 @@ export async function createGoodsReceipt(input: GoodsReceiptInput, userId: strin
       throw new BusinessRuleError(`${warehouse.name} is inactive and cannot receive stock.`);
     }
 
-    const lines = await resolveLines(tx, input);
+    // Name the placeholder batches and split any that arrived under more than
+    // one lot, then resolve against the batches that result.
+    const withIdentity = await applyReceiptTraceability(tx, input);
+    const lines = await resolveLines(tx, { ...input, lines: withIdentity });
+
     const grnNumber = await nextReference(tx, { companyId: input.companyId, docType: 'GRN' });
 
     const receipt = await tx.goodsReceipt.create({
@@ -166,6 +467,9 @@ export async function createGoodsReceipt(input: GoodsReceiptInput, userId: strin
             containerId: l.containerId,
             quantityKg: l.quantityKg,
             bags: l.bags,
+            lotNumber: l.lotNumber,
+            batchNumber: l.batchNumber,
+            containerNumber: l.containerNumber,
             notes: l.notes,
           })),
         },

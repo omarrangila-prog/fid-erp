@@ -67,7 +67,6 @@ describe('Flow 1 — purchase order creates the job, lots, containers and batche
         incoterm: 'CFR',
         portOfLoading: 'Santos',
         destination: 'Jebel Ali',
-        paymentTermDays: 60,
         lines: [
           { itemId: masters.item.id, lotNumber: 'BR-001', batchNumber: 'B001', containerNumber: 'MSCU1000001', quantity: CONTAINER_KG, unit: 'KG', unitPrice: PRICE_PER_KG, bags: BAGS_PER_CONTAINER },
           { itemId: masters.item.id, lotNumber: 'BR-002', batchNumber: 'B002', containerNumber: 'MSCU1000002', quantity: CONTAINER_KG, unit: 'KG', unitPrice: PRICE_PER_KG, bags: BAGS_PER_CONTAINER },
@@ -355,7 +354,6 @@ describe('Flow 4 — partial sales from a specific batch and warehouse', () => {
         currency: 'USD',
         rateToUsd: '1',
         rateLocalPerUsd: '3.6725',
-        paymentTermDays: 30,
         lines: [
           { batchId: batches[0].id, warehouseId: warehouseA.id, quantity: '5000', unit: 'KG', unitPrice: '6.00' },
         ],
@@ -393,7 +391,6 @@ describe('Flow 4 — partial sales from a specific batch and warehouse', () => {
         customerCode: 'CUS-DXB-B',
         customerName: 'Second Roastery FZE',
         primaryCurrency: 'USD',
-        paymentTermDays: 30,
       },
     });
 
@@ -405,7 +402,6 @@ describe('Flow 4 — partial sales from a specific batch and warehouse', () => {
         currency: 'USD',
         rateToUsd: '1',
         rateLocalPerUsd: '3.6725',
-        paymentTermDays: 30,
         lines: [
           { batchId: batches[0].id, warehouseId: warehouseA.id, quantity: '4600', unit: 'KG', unitPrice: '5.90' },
         ],

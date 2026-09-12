@@ -143,7 +143,6 @@ describe('Dubai: one container, one buyer', () => {
         currency: 'USD',
         rateToUsd: '1',
         rateLocalPerUsd: '3.6725',
-        paymentTermDays: 30,
         lines: [
           { batchId, warehouseId: masters.warehouse.id, quantity: '19200', unit: 'KG', unitPrice: '6.20' },
         ],
@@ -253,8 +252,7 @@ describe('Morocco: one container split across four customers', () => {
             customerName: name,
             country: 'Morocco',
             primaryCurrency: 'MAD',
-            paymentTermDays: 30,
-          },
+              },
         }),
       );
     }
@@ -314,8 +312,7 @@ describe('Morocco: one container split across four customers', () => {
           currency: 'MAD',
           rateToUsd: '9.85',
           rateLocalPerUsd: '9.85',
-          paymentTermDays: 30,
-          lines: [
+            lines: [
             {
               batchId,
               warehouseId: masters.warehouses[0].id,
@@ -478,25 +475,41 @@ describe('the least a purchase contract needs', () => {
     expect(contract.lines[0].lotNumber).toBe('MIN-BATCH-2');
   });
 
-  it('still refuses a line with neither', async () => {
+  it('saves with neither, and issues a placeholder rather than demanding one', async () => {
     const masters = await createMasters(ctx.dubai.id);
 
-    await expect(
-      createPurchaseContract(
-        {
-          companyId: ctx.dubai.id,
-          contractDate: utcDate('2026-04-03'),
-          vendorId: masters.vendor.id,
-          currency: 'USD',
-          rateToUsd: '1',
-          rateLocalPerUsd: '3.6725',
-          freightAmount: '0',
-          lines: [
-            { itemId: masters.item.id, quantity: '1000', unit: 'KG', unitPrice: '4.00', bagWeightKg: '60' },
-          ],
-        },
-        ctx.admin.id,
-      ),
-    ).rejects.toThrow(/lot number or a batch number/i);
+    // The ordinary case. A contract for a quantity of a grade at a price; the
+    // supplier decides weeks later which physical lots fill it.
+    const contract = await createPurchaseContract(
+      {
+        companyId: ctx.dubai.id,
+        contractDate: utcDate('2026-04-03'),
+        vendorId: masters.vendor.id,
+        currency: 'USD',
+        rateToUsd: '1',
+        rateLocalPerUsd: '3.6725',
+        freightAmount: '0',
+        lines: [
+          { itemId: masters.item.id, quantity: '1000', unit: 'KG', unitPrice: '4.00', bagWeightKg: '60' },
+        ],
+      },
+      ctx.admin.id,
+    );
+
+    expect(contract.lines[0].lotNumber).toBeNull();
+    expect(contract.lines[0].batchNumber).toBeNull();
+
+    await postPurchaseContract({ id: contract.id, companyId: ctx.dubai.id, userId: ctx.admin.id });
+
+    // Approving still creates the batch — it carries the money, the payable
+    // and the in-transit quantity — under a name nobody will mistake for a
+    // supplier's lot, and flagged so the receipt knows to ask.
+    const batch = await prisma.batch.findFirstOrThrow({
+      where: { purchaseContractId: contract.id },
+      include: { lot: true },
+    });
+    expect(batch.traceabilityPending).toBe(true);
+    expect(batch.batchNumber).toBe(`${contract.contractNumber}/1`);
+    expect(batch.lot.lotNumber).toBe(`${contract.contractNumber}/1`);
   });
 });

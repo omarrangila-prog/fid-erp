@@ -273,12 +273,14 @@ describe('receivable ageing buckets', () => {
     const today = new Date();
     const daysAgo = (n: number) => new Date(today.getTime() - n * 86_400_000);
 
-    // Four invoices with zero payment terms, dated so each lands in its own bucket.
+    // Four invoices due on the day they were raised — a cash sale — dated so
+    // each lands in its own bucket.
     for (const [index, age] of [5, 20, 45, 200].entries()) {
       const invoice = await createSalesInvoice(
         {
-          companyId: ctx.dubai.id, invoiceDate: daysAgo(age), customerId: masters.customer.id,
-          currency: 'USD', rateToUsd: '1', rateLocalPerUsd: '3.6725', paymentTermDays: 0,
+          companyId: ctx.dubai.id, invoiceDate: daysAgo(age), dueDate: daysAgo(age),
+          customerId: masters.customer.id,
+          currency: 'USD', rateToUsd: '1', rateLocalPerUsd: '3.6725',
           lines: [{ batchId: batch.id, warehouseId: masters.warehouse.id, quantity: '1000', unit: 'KG', unitPrice: `${index + 1}0.00` }],
         },
         ctx.admin.id,

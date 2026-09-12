@@ -1,7 +1,12 @@
 import type { Tx } from '@/lib/db';
 import { transaction, prisma } from '@/lib/db';
 import { Decimal, dec, toMoney } from '@/lib/money';
-import { SHIPMENT_STATUS_TRANSITIONS, SHIPMENT_STATUS_REQUIREMENTS, SHIPMENT_STATUS_META } from '@/lib/constants';
+import {
+  SHIPMENT_STATUS_TRANSITIONS,
+  SHIPMENT_STATUS_REQUIREMENTS,
+  SHIPMENT_STATUS_META,
+  SHIPMENT_STATUSES_IN_TRANSIT,
+} from '@/lib/constants';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
 import { writeAudit } from '@/lib/services/audit';
 import type { ShipmentDocumentStatus, ShipmentStatus, SettlementStatus } from '@prisma/client';
@@ -366,6 +371,152 @@ export async function overrideShipmentPaymentStatus(input: {
       entityId: shipment.id,
       before: { override: shipment.paymentStatusOverride },
       after: { override: input.status, reason: input.reason },
+    });
+
+    return updated;
+  });
+}
+
+/**
+ * Mark a consignment loaded, and record what makes it loaded.
+ *
+ * The client's §7. Until this point the contract is a commitment: a quantity,
+ * a price and a supplier. None of the shipping information exists yet, which
+ * is why the purchase order no longer asks for it. When the supplier actually
+ * loads, all of it arrives at once — the date, the vessel's arrival, the line
+ * carrying it, the booking and the bill of lading — and this is the single
+ * action that takes it.
+ *
+ * It refuses to move the status without the arrival date and the shipping
+ * line, because a consignment marked loaded that cannot say when it arrives or
+ * who is carrying it tells the person reading the loading sheet nothing, and a
+ * status that means nothing is worse than no status: it stops them asking.
+ *
+ * Everything here also reaches the loading sheet, which reads it from the
+ * shipment rather than holding a copy.
+ */
+export async function markShipmentLoaded(
+  input: {
+    companyId: string;
+    shipmentId: string;
+    loadingDate: Date;
+    etaDate: Date | null;
+    shippingLineId?: string | null;
+    bookingNumber?: string | null;
+    billOfLading?: string | null;
+    containerNumber?: string | null;
+    vesselName?: string | null;
+    voyageNumber?: string | null;
+    portOfLoading?: string | null;
+    portOfDischarge?: string | null;
+    notes?: string | null;
+  },
+  userId: string,
+) {
+  return transaction(async (tx) => {
+    const shipment = await tx.shipment.findFirst({
+      where: { id: input.shipmentId, companyId: input.companyId },
+      include: { shippingLine: { select: { id: true } } },
+    });
+    if (!shipment) throw new NotFoundError('Shipment');
+
+    if (shipment.status === 'LOADED') {
+      throw new BusinessRuleError('This consignment is already marked loaded.');
+    }
+    if (!SHIPMENT_STATUSES_IN_TRANSIT.includes(shipment.status)) {
+      throw new BusinessRuleError(
+        `This consignment is already ${shipment.status.replaceAll('_', ' ').toLowerCase()} and cannot be marked loaded.`,
+      );
+    }
+
+    const shippingLineId = input.shippingLineId ?? shipment.shippingLineId;
+    const etaDate = input.etaDate ?? shipment.etaDate;
+
+    const missing: string[] = [];
+    if (!etaDate) missing.push('the estimated arrival date');
+    if (!shippingLineId) missing.push('the shipping line');
+    if (missing.length > 0) {
+      throw new BusinessRuleError(
+        `Before this can be marked loaded it needs ${missing.join(' and ')}. ` +
+          'Without it the loading sheet cannot tell anyone when the coffee lands or who is carrying it.',
+      );
+    }
+
+    if (input.shippingLineId) {
+      const line = await tx.shippingLine.findFirst({
+        where: { id: input.shippingLineId, companyId: input.companyId },
+        select: { id: true },
+      });
+      if (!line) throw new NotFoundError('Shipping line');
+    }
+
+    // A container number given here belongs to the consignment, so it reaches
+    // the batches that have none of their own rather than being typed again.
+    if (input.containerNumber?.trim()) {
+      const containerNumber = input.containerNumber.trim();
+      const existing = await tx.container.findFirst({
+        where: { companyId: input.companyId, containerNumber },
+        select: { id: true },
+      });
+
+      const containerId =
+        existing?.id ??
+        (
+          await tx.container.create({
+            data: {
+              companyId: input.companyId,
+              containerNumber,
+              shipmentId: shipment.id,
+              purchaseContractId: shipment.purchaseContractId,
+            },
+            select: { id: true },
+          })
+        ).id;
+
+      await tx.batch.updateMany({
+        where: { shipmentId: shipment.id, containerId: null },
+        data: { containerId },
+      });
+    }
+
+    const updated = await tx.shipment.update({
+      where: { id: shipment.id },
+      data: {
+        status: 'LOADED',
+        loadingDate: input.loadingDate,
+        etaDate,
+        shippingLineId,
+        bookingNumber: input.bookingNumber?.trim() || shipment.bookingNumber,
+        billOfLading: input.billOfLading?.trim() || shipment.billOfLading,
+        vesselName: input.vesselName?.trim() || shipment.vesselName,
+        voyageNumber: input.voyageNumber?.trim() || shipment.voyageNumber,
+        portOfLoading: input.portOfLoading?.trim() || shipment.portOfLoading,
+        portOfDischarge: input.portOfDischarge?.trim() || shipment.portOfDischarge,
+        notes: input.notes?.trim() || shipment.notes,
+        updatedById: userId,
+      },
+    });
+
+    await tx.shipmentStatusHistory.create({
+      data: {
+        shipmentId: shipment.id,
+        fromStatus: shipment.status,
+        toStatus: 'LOADED',
+        changedById: userId,
+        notes: `Loaded ${input.loadingDate.toISOString().slice(0, 10)}${
+          input.billOfLading ? ` under B/L ${input.billOfLading}` : ''
+        }.`,
+      },
+    });
+
+    await writeAudit(tx, {
+      companyId: input.companyId,
+      userId,
+      action: 'SHIPMENT_LOADED',
+      entityType: 'Shipment',
+      entityId: shipment.id,
+      before: { status: shipment.status, etaDate: shipment.etaDate, billOfLading: shipment.billOfLading },
+      after: { status: updated.status, etaDate: updated.etaDate, billOfLading: updated.billOfLading },
     });
 
     return updated;

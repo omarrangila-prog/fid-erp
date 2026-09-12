@@ -62,7 +62,6 @@ beforeAll(async () => {
       rateToUsd: '1',
       rateLocalPerUsd: '3.6725',
       freightAmount: '1000',
-      paymentTermDays: 30,
       lines: [
         {
           itemId: masters.item.id,
@@ -96,7 +95,6 @@ beforeAll(async () => {
       currency: 'USD',
       rateToUsd: '1',
       rateLocalPerUsd: '3.6725',
-      paymentTermDays: 30,
       lines: [{ batchId, warehouseId: warehouse.id, quantity: '10000', unit: 'KG', unitPrice: '6.00' }],
     },
     ctx.admin.id,

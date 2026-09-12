@@ -93,7 +93,6 @@ describe('stock ageing', () => {
         currency: 'USD',
         rateToUsd: '1',
         rateLocalPerUsd: '3.6725',
-        paymentTermDays: 30,
         lines: [{ batchId, warehouseId: masters.warehouse.id, quantity: '4000', unit: 'KG', unitPrice: '7.00' }],
       },
       ctx.admin.id,

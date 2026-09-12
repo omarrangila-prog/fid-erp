@@ -868,9 +868,15 @@ model PurchaseContractLine {
   lineTotal             Decimal       @db.Decimal(18, 4)
   unitCostKg            Decimal       @db.Decimal(18, 8)
   containers            Int           @default(0)
-  /// Traceability entered on the contract line and carried into the batch.
-  lotNumber             String
-  batchNumber           String
+  /// Traceability, when the supplier has already identified the coffee.
+  ///
+  /// Usually they have not. At contract stage the trade is a quantity of a
+  /// grade at a price; which physical lot fills it is decided when the
+  /// supplier loads. So these are optional here and become mandatory — one of
+  /// the two, not both — on the goods receipt, where stock traceability
+  /// actually begins.
+  lotNumber             String?
+  batchNumber           String?
   containerNumber       String?
   containerType         ContainerType @default(FT20)
   bags                  Int           @default(0)
@@ -1041,6 +1047,12 @@ model Batch {
   capitalisedCostUsd     Decimal      @default(0) @db.Decimal(18, 4)
   /// (purchaseCostUsd + capitalisedCostUsd) / receivedQuantityKg. Drives COGS.
   landedUnitCostUsd      Decimal      @default(0) @db.Decimal(18, 8)
+  /// True while the batch carries a placeholder identity issued by the system
+  /// because the contract did not name a lot. The goods receipt asks for the
+  /// real number and clears it. Such a batch holds no received stock — it is
+  /// all still in transit — so it cannot reach a customer's invoice while the
+  /// flag is set, and an invoice naming a placeholder lot cannot happen.
+  traceabilityPending    Boolean      @default(false)
   status                 RecordStatus @default(ACTIVE)
   createdAt              DateTime     @default(now())
   updatedAt              DateTime     @updatedAt
@@ -1187,6 +1199,12 @@ model GoodsReceiptLine {
   containerId            String?
   quantityKg             Decimal @db.Decimal(18, 3)
   bags                   Int     @default(0)
+  /// What the coffee actually arrived under, when the receipt named or split
+  /// it. One contract line of 42 MT can land as 21 MT under lot 120229 and
+  /// 21 MT under lot 120230; each becomes its own batch.
+  lotNumber              String?
+  batchNumber            String?
+  containerNumber        String?
   notes                  String?
 
   goodsReceipt GoodsReceipt         @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)

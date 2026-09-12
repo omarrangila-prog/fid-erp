@@ -168,7 +168,6 @@ describe('a sale charging output tax', () => {
         currency: 'USD',
         rateToUsd: '1',
         rateLocalPerUsd: '3.6725',
-        paymentTermDays: 30,
         lines: [
           {
             batchId,
@@ -217,7 +216,6 @@ describe('a sale charging output tax', () => {
         currency: 'USD',
         rateToUsd: '1',
         rateLocalPerUsd: '3.6725',
-        paymentTermDays: 30,
         lines: [
           {
             batchId,

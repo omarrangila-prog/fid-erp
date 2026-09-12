@@ -36,6 +36,11 @@ function daysAgo(days: number): Date {
   return new Date(Date.UTC(then.getUTCFullYear(), then.getUTCMonth(), then.getUTCDate()));
 }
 
+/** A date `days` after `from`, for a document with an agreed due date. */
+function addDays(from: Date, days: number): Date {
+  return new Date(from.getTime() + days * 86_400_000);
+}
+
 function log(message: string) {
   console.log(`  ${message}`);
 }
@@ -225,7 +230,6 @@ async function buyAndReceive(params: {
       portOfLoading: portFor(item.originCountry),
       destination: params.localCurrency === 'AED' ? 'Jebel Ali, Dubai' : 'Casablanca',
       expectedShipmentDate: daysAgo(params.contractDaysAgo - 14),
-      paymentTermDays: vendor.paymentTermDays,
       notes: 'Demonstration contract.',
       lines: params.containers.map((container) => ({
         itemId: item.id,
@@ -497,7 +501,6 @@ export async function buildDemo() {
         currency: sale.currency,
         rateToUsd: sale.rateToUsd,
         rateLocalPerUsd: '3.6725',
-        paymentTermDays: customer.paymentTermDays,
         reference: `DEMO/SO/${1000 + invoiceCount}`,
         lines: [
           {
@@ -674,7 +677,7 @@ export async function buildDemo() {
       currency: 'USD',
       rateToUsd: '1',
       rateLocalPerUsd: '3.6725',
-      paymentTermDays: 45,
+      dueDate: addDays(daysAgo(1), 45),
       reference: 'DEMO/SO/1099',
       notes: 'Awaiting the customer’s confirmation of the shipping schedule.',
       lines: [
@@ -772,7 +775,6 @@ export async function buildDemo() {
         currency: sale.currency,
         rateToUsd: sale.rateToUsd,
         rateLocalPerUsd: '9.85',
-        paymentTermDays: customer.paymentTermDays,
         reference: `DEMO/SO/${3000 + maInvoices}`,
         lines: [
           {

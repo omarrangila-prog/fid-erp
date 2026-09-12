@@ -57,7 +57,8 @@ export type PurchaseContractInput = {
   portOfLoading?: string | null;
   destination?: string | null;
   expectedShipmentDate?: Date | null;
-  paymentTermDays?: number;
+  /** The date the supplier expects payment, when one was agreed. */
+  dueDate?: Date | null;
   notes?: string | null;
   lines: PurchaseLineInput[];
 };
@@ -65,8 +66,8 @@ export type PurchaseContractInput = {
 type ComputedLine = {
   lineNumber: number;
   itemId: string;
-  lotNumber: string;
-  batchNumber: string;
+  lotNumber: string | null;
+  batchNumber: string | null;
   containerNumber: string | null;
   containerType: ContainerType;
   quantity: Decimal;
@@ -121,31 +122,34 @@ export function computePurchaseTotals(input: {
       throw new BusinessRuleError(`Line ${index + 1}: price cannot be negative.`);
     }
     /**
-     * A lot or a batch, not necessarily both.
+     * A lot or a batch, or neither — this is a contract, not a warehouse.
      *
      * Suppliers label consignments differently: some quote a lot, some a batch
      * mark, some both. Demanding both meant inventing one of them, and an
      * invented reference is worse than none — it looks authoritative and
      * matches nothing on the supplier's paperwork.
      *
-     * One is enough to trace by. The server fills the other from it, so the
-     * inventory ledger still has the batch it needs to move stock against.
+     * More often the supplier has named nothing yet. A contract for 42 MT of
+     * Screen 12 in March is filled from lots chosen in May, and requiring a
+     * number here is requiring the buyer to guess one two months early. So
+     * both are optional, and the goods receipt — where the coffee is
+     * physically in front of someone — is where an identity becomes mandatory.
+     *
+     * Whichever is given still stands in for the other, so a contract that
+     * does name its lot behaves exactly as before.
      */
     const lot = line.lotNumber?.trim() ?? '';
     const batch = line.batchNumber?.trim() ?? '';
-    if (!lot && !batch) {
-      throw new BusinessRuleError(
-        `Line ${index + 1}: enter either a lot number or a batch number, whichever the supplier gave you.`,
-      );
-    }
 
-    const batchKey = (batch || lot).toUpperCase();
-    if (seenBatches.has(batchKey)) {
-      throw new BusinessRuleError(
-        `"${batch || lot}" is used on more than one line. Each line needs its own reference.`,
-      );
+    if (lot || batch) {
+      const batchKey = (batch || lot).toUpperCase();
+      if (seenBatches.has(batchKey)) {
+        throw new BusinessRuleError(
+          `"${batch || lot}" is used on more than one line. Each line needs its own reference.`,
+        );
+      }
+      seenBatches.add(batchKey);
     }
-    seenBatches.add(batchKey);
 
     const bagWeightKg = toQuantity(line.bagWeightKg ?? 60);
     const quantityKg = quantityToKg(quantity, line.unit, bagWeightKg);
@@ -164,8 +168,12 @@ export function computePurchaseTotals(input: {
       itemId: line.itemId,
       // Whichever was given stands in for the other, so both stay populated
       // and every downstream lookup keeps working unchanged.
-      lotNumber: lot || batch,
-      batchNumber: batch || lot,
+      // Null when the supplier has not identified the coffee yet. Approving
+      // the contract issues a placeholder so the batch can carry the money and
+      // the in-transit quantity; the goods receipt replaces it with the real
+      // number, splitting it when the coffee arrives under several.
+      lotNumber: lot || batch || null,
+      batchNumber: batch || lot || null,
       containerNumber: line.containerNumber?.trim() || null,
       containerType: line.containerType ?? ('FT20' as ContainerType),
       quantity,
