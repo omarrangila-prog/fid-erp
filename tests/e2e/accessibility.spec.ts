@@ -1,5 +1,9 @@
 import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { E2E_EMAIL, E2E_PASSWORD, PASSWORD_SIGN_IN_CONFIGURED, NO_PASSWORD_CREDENTIALS } from './credentials';
+import { settle } from './settle';
+
+test.skip(!PASSWORD_SIGN_IN_CONFIGURED, NO_PASSWORD_CREDENTIALS);
 
 /**
  * WCAG 2 A and AA, checked with axe on the screens people spend their day in.
@@ -21,8 +25,8 @@ const PAGES = [
 
 async function signIn(page: Page) {
   await page.goto('/login/password');
-  await page.getByLabel(/email/i).fill(process.env.E2E_EMAIL!);
-  await page.getByLabel(/password/i).fill(process.env.E2E_PASSWORD!);
+  await page.getByLabel(/email/i).fill(E2E_EMAIL!);
+  await page.getByLabel(/password/i).fill(E2E_PASSWORD!);
   await page.getByRole('button', { name: /sign in/i }).click();
   await page.waitForURL(/dashboard|select-company/, { waitUntil: 'domcontentloaded' });
   if (page.url().includes('select-company')) {
@@ -44,7 +48,7 @@ for (const path of PAGES) {
   test(`${path} has no accessibility violations`, async ({ page }) => {
     await signIn(page);
     await page.goto(path);
-    await page.waitForLoadState('networkidle');
+    await settle(page);
 
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

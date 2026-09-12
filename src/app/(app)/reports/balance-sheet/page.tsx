@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { Callout } from '@/components/ui/feedback';
 import { PrintButton } from '@/components/shared/print-button';
+import { ExcelLink, exportHref } from '@/components/shared/excel-link';
 import { PrintHeader } from '@/components/shared/print-header';
 import type { BalanceSheetSection } from '@/lib/services/reports';
 
@@ -61,7 +62,12 @@ export default async function BalanceSheetPage({ searchParams }: { searchParams:
         title="Balance Sheet"
         description={`${user.activeCompany.name} · as at ${formatDate(asOfDate)}`}
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Balance Sheet' }]}
-        actions={<PrintButton />}
+        actions={
+          <>
+            <ExcelLink href={exportHref('balance-sheet', { asOf })} />
+            <PrintButton />
+          </>
+        }
       />
       <PrintHeader
         title="Balance Sheet"

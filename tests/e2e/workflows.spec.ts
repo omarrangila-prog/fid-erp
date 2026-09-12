@@ -1,4 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
+import { E2E_EMAIL, E2E_PASSWORD, PASSWORD_SIGN_IN_CONFIGURED, NO_PASSWORD_CREDENTIALS } from './credentials';
+import { settle } from './settle';
+
+test.skip(!PASSWORD_SIGN_IN_CONFIGURED, NO_PASSWORD_CREDENTIALS);
 
 // The dashboard greets you differently depending on whether the business has
 // started trading: an empty company gets the setup checklist instead. Both
@@ -14,8 +18,8 @@ const onCompany = (name: string) => new RegExp(`(happening at|Welcome to) ${name
 
 async function signIn(page: Page) {
   await page.goto('/login/password');
-  await page.getByLabel(/email/i).fill(process.env.E2E_EMAIL!);
-  await page.getByLabel(/password/i).fill(process.env.E2E_PASSWORD!);
+  await page.getByLabel(/email/i).fill(E2E_EMAIL!);
+  await page.getByLabel(/password/i).fill(E2E_PASSWORD!);
   await page.getByRole('button', { name: /sign in/i }).click();
   await page.waitForURL(/dashboard|select-company/, { waitUntil: 'domcontentloaded' });
 }
@@ -97,7 +101,7 @@ test('the journal voucher refuses to post until debits equal credits', async ({ 
 test('a stock figure on the dashboard matches the inventory report', async ({ page }) => {
   await signInToDubai(page);
   await page.goto('/reports/trial-balance');
-  await page.waitForLoadState('networkidle');
+  await settle(page);
 
   // The trial balance states whether it balances; it must say that it does.
   const body = await page.locator('body').innerText();

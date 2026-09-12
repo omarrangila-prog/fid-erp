@@ -7,6 +7,7 @@ import { postJournalEntry } from '@/lib/services/accounting';
 import { getCompanyContext } from '@/lib/services/company';
 import { writeAudit } from '@/lib/services/audit';
 import { adjustStock } from '@/lib/services/inventory';
+import { getLocalRateForPosting } from '@/lib/services/exchange-rate';
 import type { StockAdjustmentReason } from '@prisma/client';
 
 /**
@@ -186,6 +187,18 @@ export async function postStockCount(params: { id: string; companyId: string; us
     // Only post when there is something to post: a clean count writes no entry.
     if (!netUsd.isZero()) {
       const gain = netUsd.greaterThan(0);
+
+      // The count is valued in USD, but the entry still has to reach the local
+      // ledger in local money. Posting it at 1 wrote the USD figure into the
+      // AED and MAD columns unchanged, so a Dubai stock loss of USD 114.82
+      // appeared on the AED profit and loss as AED 114.82 instead of AED
+      // 421.69 — the statutory presentation the client actually files.
+      const localRate = await getLocalRateForPosting({
+        companyId: params.companyId,
+        localCurrency: company.localCurrency,
+        asOf: count.countDate,
+      });
+
       await postJournalEntry(tx, {
         companyId: params.companyId,
         entryDate: count.countDate,
@@ -194,7 +207,7 @@ export async function postStockCount(params: { id: string; companyId: string; us
         sourceId: count.id,
         createdById: params.userId,
         localCurrency: company.localCurrency,
-        rateLocalPerUsd: 1,
+        rateLocalPerUsd: localRate,
         lines: [
           {
             accountKey: ACCOUNT_KEYS.INVENTORY,

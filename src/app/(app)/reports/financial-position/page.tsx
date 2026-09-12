@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { PrintButton } from '@/components/shared/print-button';
+import { ExcelLink } from '@/components/shared/excel-link';
 import { PrintHeader } from '@/components/shared/print-header';
 
 export const metadata: Metadata = { title: 'Financial Position' };
@@ -32,7 +33,12 @@ export default async function FinancialPositionPage() {
         description={`${position.companyName} — what the company holds, owes and is owed, right now.`}
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Financial Position' }]}
         meta={<span className="text-xs text-ink-subtle">As at {formatDateTime(new Date())}</span>}
-        actions={<PrintButton />}
+        actions={
+          <>
+            <ExcelLink href={'/api/export/financial-position'} />
+            <PrintButton />
+          </>
+        }
       />
       <PrintHeader
         title="Financial Position"

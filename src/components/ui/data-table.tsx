@@ -12,6 +12,8 @@ import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/
 import { EmptyState } from '@/components/ui/feedback';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { downloadExcel, type ExcelColumnType } from '@/lib/export-excel';
+import { toast } from 'sonner';
 
 export type DataColumn<T> = {
   id: string;
@@ -28,10 +30,17 @@ export type DataColumn<T> = {
   className?: string;
   footer?: React.ReactNode;
   /**
-   * The cell as plain text, for CSV. Without it a column that renders markup
-   * exports as nothing useful, so a column that needs exporting must say how.
+   * The cell as a plain value, for the Excel export. Without it a column that
+   * renders markup exports as nothing useful, so a column that needs exporting
+   * must say how.
    */
   exportValue?: (row: T) => string | number | null | undefined;
+  /**
+   * How Excel should treat the exported value: a quantity to three places, a
+   * date as a date, a share as a percentage. Left off, it is written as it
+   * arrives — which is right for a reference or a name and wrong for money.
+   */
+  exportType?: ExcelColumnType;
   /** Left off the printed sheet — an actions column, typically. */
   printHidden?: boolean;
 };
@@ -61,6 +70,7 @@ export function DataTable<T>({
   showFooter = false,
   dense = false,
   exportFileName,
+  exportTitle,
   exportHref,
 }: {
   data: T[];
@@ -78,15 +88,17 @@ export function DataTable<T>({
   showFooter?: boolean;
   dense?: boolean;
   /**
-   * Turns on CSV export, named after this. Omitted means no export button —
+   * Turns on Excel export, named after this. Omitted means no export button —
    * a list nobody would ever take to a spreadsheet should not offer to.
    */
   exportFileName?: string;
+  /** The heading written into the sheet. Defaults to a readable `exportFileName`. */
+  exportTitle?: string;
   /**
-   * A server route that returns a real .xlsx. When present it replaces the
-   * CSV: a spreadsheet with column widths, number formats, a frozen header and
-   * working totals is worth far more to the client than comma-separated text,
-   * and only the server can assemble one.
+   * A server route that builds the whole report from the services rather than
+   * from the rows on screen. When present it replaces the per-column export:
+   * a report means one thing, and the workbook should say that one thing even
+   * if the table in front of the user is showing a page of it.
    */
   exportHref?: string;
 }) {
@@ -142,30 +154,34 @@ export function DataTable<T>({
    * rather than the whole table. Someone who has filtered to one supplier and
    * pressed Export means that supplier, not everything.
    *
-   * Every field is quoted and internal quotes doubled, which is the whole of
-   * RFC 4180 that matters: a supplier called "Cooxupé, Cooperativa" must not
-   * become two columns.
+   * It writes a real .xlsx rather than a CSV. A CSV opens in Excel but is not
+   * a spreadsheet: no column widths, no number formats, and a quantity like
+   * 1,234.500 arrives as text or, worse, as a date. The workbook is assembled
+   * on the server, which is the only place a zip of XML can be built without
+   * putting a spreadsheet library into every page load.
    */
-  function exportCsv() {
+  const [exporting, setExporting] = React.useState(false);
+
+  async function exportExcel() {
     const exportable = visibleColumns.filter((column) => column.exportValue);
-    if (exportable.length === 0) return;
+    if (exportable.length === 0 || exporting) return;
 
-    const escape = (value: string | number | null | undefined) =>
-      `"${String(value ?? '').replace(/"/g, '""')}"`;
-
-    const csv = [
-      exportable.map((column) => escape(column.header)).join(','),
-      ...sorted.map((row) => exportable.map((column) => escape(column.exportValue!(row))).join(',')),
-    ].join('\r\n');
-
-    // A BOM, so Excel opens UTF-8 correctly instead of mangling é and ç.
-    const blob = new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${exportFileName}-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    setExporting(true);
+    try {
+      await downloadExcel({
+        title: exportTitle ?? titleFromFileName(exportFileName ?? 'Export'),
+        subtitle: describeSelection(sorted.length, data.length, query),
+        columns: exportable.map((column) => ({ header: column.header, type: column.exportType })),
+        rows: sorted.map((row) => exportable.map((column) => column.exportValue!(row) ?? null)),
+        totals: exportable
+          .filter((column) => column.exportType && NUMERIC_EXPORT_TYPES.has(column.exportType))
+          .map((column) => column.header),
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The export could not be prepared.');
+    } finally {
+      setExporting(false);
+    }
   }
 
   const canExport = Boolean(exportHref) || (Boolean(exportFileName) && columns.some((column) => column.exportValue));
@@ -205,9 +221,15 @@ export function DataTable<T>({
                   </a>
                 </Button>
               ) : (
-                <Button variant="outline" size="md" className="shrink-0" onClick={exportCsv}>
+                <Button
+                  variant="outline"
+                  size="md"
+                  className="shrink-0"
+                  onClick={exportExcel}
+                  disabled={exporting}
+                >
                   <Download />
-                  <span className="hidden sm:inline">Export</span>
+                  <span className="hidden sm:inline">{exporting ? 'Preparing…' : 'Excel'}</span>
                 </Button>
               )
             ) : null}
@@ -437,4 +459,27 @@ export function DataTable<T>({
       )}
     </div>
   );
+}
+
+const NUMERIC_EXPORT_TYPES = new Set<ExcelColumnType>(['number', 'money', 'quantity', 'integer']);
+
+/** `stock-movements` reads as a filename; `Stock Movements` reads as a report. */
+function titleFromFileName(name: string): string {
+  return name
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+/**
+ * The line under the title, so the sheet says what it is a sheet of. A
+ * spreadsheet gets emailed on, and "48 of 1,204 rows, matching 'Cooxupé'" is
+ * the difference between a useful attachment and a misleading one.
+ */
+function describeSelection(shown: number, total: number, query: string): string | undefined {
+  const rows = `${shown.toLocaleString()} row${shown === 1 ? '' : 's'}`;
+  if (query.trim()) return `${rows} of ${total.toLocaleString()}, matching “${query.trim()}”`;
+  if (shown < total) return `${rows} of ${total.toLocaleString()}`;
+  return rows;
 }

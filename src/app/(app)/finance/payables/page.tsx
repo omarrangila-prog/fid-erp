@@ -65,8 +65,6 @@ export default async function PayablesPage() {
         rows={rows}
         partyLabel="Supplier"
         documentLabel="Contract"
-        companyCode={user.activeCompany.code}
-        reportName="payables"
         canExport={can(user, PERMISSIONS.REPORTS_EXPORT)}
       />
     </div>

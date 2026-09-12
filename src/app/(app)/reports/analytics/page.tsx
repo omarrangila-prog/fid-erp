@@ -100,7 +100,6 @@ export default async function AnalyticsPage() {
       />
       <AnalyticsClient
         dimensions={dimensions}
-        companyCode={user.activeCompany.code}
         currencyNote="Amounts are in USD, converted at each voucher's own rate."
       />
     </div>

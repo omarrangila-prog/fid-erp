@@ -24,11 +24,31 @@ export function StockCountForm({
   const [notes, setNotes] = React.useState('');
 
   const chosen = warehouses.find((w) => w.id === warehouseId) ?? null;
+  const available = warehouses.filter((w) => !w.openCountNumber);
 
+  /**
+   * The button stays live and the refusal is written down.
+   *
+   * It used to be disabled whenever no warehouse was chosen — which is every
+   * warehouse already counting, or simply a fresh form. A dead button explains
+   * nothing: the user presses it, nothing happens, and there is nowhere to
+   * read why. The check below did exist, but sat behind a button that could
+   * never be pressed to reach it.
+   */
   function submit() {
     setError(null);
+
     if (!warehouseId) {
-      setError('Choose the warehouse being counted.');
+      setError(
+        available.length === 0
+          ? 'Every warehouse already has a count open. Finish or cancel the open sheet before starting another.'
+          : 'Choose the warehouse being counted.',
+      );
+      return;
+    }
+
+    if (chosen && chosen.batchCount === 0) {
+      setError(`${chosen.name} has no stock recorded against it, so there is nothing to count.`);
       return;
     }
 
@@ -49,6 +69,13 @@ export function StockCountForm({
       {error ? (
         <Callout tone="danger" title="This count could not be opened">
           {error}
+        </Callout>
+      ) : null}
+
+      {available.length === 0 && warehouses.length > 0 ? (
+        <Callout tone="warning" title="Every warehouse already has a count open">
+          A warehouse can only be counted once at a time, so the figures cannot move underneath the sheet. Finish
+          or cancel the open count before starting another.
         </Callout>
       ) : null}
 
@@ -90,7 +117,7 @@ export function StockCountForm({
           </Field>
 
           <div className="flex flex-wrap gap-2">
-            <Button onClick={submit} loading={pending} disabled={!chosen || chosen.batchCount === 0}>
+            <Button onClick={submit} loading={pending}>
               Open count sheet
             </Button>
             <Button variant="ghost" onClick={() => router.push('/inventory/stock-counts')}>

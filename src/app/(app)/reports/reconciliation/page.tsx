@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Callout } from '@/components/ui/feedback';
 import { PrintButton } from '@/components/shared/print-button';
+import { ExcelLink } from '@/components/shared/excel-link';
 import { PrintHeader } from '@/components/shared/print-header';
 import { cn } from '@/lib/utils';
 
@@ -37,7 +38,12 @@ export default async function ReconciliationPage() {
             </Badge>
           </>
         }
-        actions={<PrintButton />}
+        actions={
+          <>
+            <ExcelLink href={'/api/export/reconciliation'} />
+            <PrintButton />
+          </>
+        }
       />
       <PrintHeader
         title="Reconciliation"

@@ -10,7 +10,8 @@ import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/feedback';
-import { downloadCsv, exportFilename } from '@/lib/export-csv';
+import { downloadExcel } from '@/lib/export-excel';
+import { toast } from 'sonner';
 
 export type Slice = {
   key: string;
@@ -65,11 +66,9 @@ function format(value: number, measure: Measure): string {
  */
 export function AnalyticsClient({
   dimensions,
-  companyCode,
   currencyNote,
 }: {
   dimensions: Dimension[];
-  companyCode: string;
   currencyNote: string;
 }) {
   const [dimensionId, setDimensionId] = React.useState(dimensions[0]?.id ?? '');
@@ -102,21 +101,44 @@ export function AnalyticsClient({
   );
   const totalMargin = totals.revenueUsd > 0 ? (totals.grossProfitUsd / totals.revenueUsd) * 100 : 0;
 
-  function exportRows() {
-    downloadCsv(
-      exportFilename(companyCode, `analysis-by-${dimension.id}`),
-      [dimension.label, 'Detail', 'Quantity KG', 'Revenue USD', 'Cost USD', 'Gross profit USD', 'Margin %', 'Profit per KG USD'],
-      rows.map((row) => [
-        row.label,
-        row.sublabel ?? '',
-        row.quantityKg.toFixed(3),
-        row.revenueUsd.toFixed(2),
-        row.cogsUsd.toFixed(2),
-        row.grossProfitUsd.toFixed(2),
-        row.marginPct.toFixed(2),
-        row.profitPerKgUsd.toFixed(4),
-      ]),
-    );
+  const [exporting, setExporting] = React.useState(false);
+
+  async function exportRows() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      await downloadExcel({
+        title: `Analysis by ${dimension.label}`,
+        subtitle: `${dimension.description} ${currencyNote}`,
+        columns: [
+          { header: dimension.label },
+          { header: 'Detail' },
+          { header: 'Quantity KG', type: 'quantity' },
+          { header: 'Revenue USD', type: 'money' },
+          { header: 'Cost USD', type: 'money' },
+          { header: 'Gross profit USD', type: 'money' },
+          { header: 'Margin', type: 'percent' },
+          { header: 'Profit per KG USD', type: 'number' },
+        ],
+        // Margin travels as a fraction: Excel does the ×100 itself, and a
+        // percentage-formatted 0.24 is a percentage the client can chart.
+        rows: rows.map((row) => [
+          row.label,
+          row.sublabel ?? '',
+          row.quantityKg,
+          row.revenueUsd,
+          row.cogsUsd,
+          row.grossProfitUsd,
+          row.marginPct / 100,
+          row.profitPerKgUsd,
+        ]),
+        totals: ['Quantity KG', 'Revenue USD', 'Cost USD', 'Gross profit USD'],
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'The export could not be prepared.');
+    } finally {
+      setExporting(false);
+    }
   }
 
   return (
@@ -177,7 +199,7 @@ export function AnalyticsClient({
               <ArrowUpDown />
               {sortDesc ? 'Highest first' : 'Lowest first'}
             </Button>
-            <Button variant="outline" size="sm" onClick={exportRows} disabled={rows.length === 0}>
+            <Button variant="outline" size="sm" onClick={exportRows} disabled={rows.length === 0 || exporting}>
               <Download />
               CSV
             </Button>

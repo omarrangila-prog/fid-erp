@@ -1,4 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
+import { E2E_EMAIL, E2E_PASSWORD, PASSWORD_SIGN_IN_CONFIGURED, NO_PASSWORD_CREDENTIALS } from './credentials';
+import { settle } from './settle';
+
+test.skip(!PASSWORD_SIGN_IN_CONFIGURED, NO_PASSWORD_CREDENTIALS);
 
 /**
  * Layout audit in a real browser.
@@ -30,8 +34,8 @@ const PAGES = [
 
 async function signIn(page: Page) {
   await page.goto('/login/password');
-  await page.getByLabel(/email/i).fill(process.env.E2E_EMAIL!);
-  await page.getByLabel(/password/i).fill(process.env.E2E_PASSWORD!);
+  await page.getByLabel(/email/i).fill(E2E_EMAIL!);
+  await page.getByLabel(/password/i).fill(E2E_PASSWORD!);
   await page.getByRole('button', { name: /sign in/i }).click();
   await page.waitForURL(/dashboard|select-company/, { waitUntil: 'domcontentloaded' });
   if (page.url().includes('select-company')) {
@@ -74,7 +78,7 @@ test.describe('no horizontal overflow at any supported width', () => {
 
       for (const path of PAGES) {
         await page.goto(path);
-        await page.waitForLoadState('networkidle');
+        await settle(page);
 
         const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
         const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);
@@ -96,7 +100,7 @@ test.describe('mobile ergonomics', () => {
 
     for (const path of ['/dashboard', '/purchases', '/sales']) {
       await page.goto(path);
-      await page.waitForLoadState('networkidle');
+      await settle(page);
 
       const small = await page.evaluate(() => {
         const out: string[] = [];
@@ -125,7 +129,7 @@ test.describe('mobile ergonomics', () => {
     await page.setViewportSize({ width: 375, height: 812 });
     await signIn(page);
     await page.goto('/dashboard');
-    await page.waitForLoadState('networkidle');
+    await settle(page);
 
     const tiny = await page.evaluate(() => {
       const out: string[] = [];

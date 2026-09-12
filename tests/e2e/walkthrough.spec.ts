@@ -188,9 +188,32 @@ test('the contacts and master screens are populated', async ({ page }) => {
 test('administration is reachable and the audit trail is populated', async ({ page }) => {
   await open(page, '/admin/users', new RegExp(ADMIN_NAME));
   await open(page, '/admin/roles', /Data Entry|Super Admin/);
-  await open(page, '/admin/audit', /invoice created|count posted|created|posted/i);
+  // Not the unfiltered page: sign-ins outnumber everything else and fill the
+  // whole of page one, which is the reason the filter exists.
+  await open(page, '/admin/audit?view=documents', /created|posted|reversed|approved/i);
   await open(page, '/settings/tax', /registration|Registration/);
   await open(page, '/admin/backups', /Backup|backup/);
+});
+
+test('the audit log separates what people did from who signed in', async ({ page }) => {
+  // Every sign-in is recorded and none is hidden — an audit log that dropped
+  // records would be no use to a security review. But sign-ins outnumbered
+  // everything else so heavily that the first page held nothing else, and
+  // someone looking for who reversed an invoice was reading a list of logins.
+  await page.goto('/admin/audit', { waitUntil: 'domcontentloaded' });
+  const everything = page.getByText(/entries for FID Trading/);
+  await expect(everything).toBeVisible();
+
+  await page.getByRole('link', { name: 'Documents & changes' }).click();
+  await page.waitForURL(/view=documents/, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByText(/matching entries for FID Trading/)).toBeVisible();
+  await expect(page.getByText(/created|posted|reversed|approved/i).locator('visible=true').first()).toBeVisible();
+  // And no sign-in survived the filter.
+  await expect(page.getByText('User Login', { exact: true })).toHaveCount(0);
+
+  await page.getByRole('link', { name: 'Sign-ins & access' }).click();
+  await page.waitForURL(/view=access/, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByText(/User Login|Pin Login/i).locator('visible=true').first()).toBeVisible();
 });
 
 test('Morocco keeps its own separate books', async ({ page }) => {

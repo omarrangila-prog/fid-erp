@@ -1,12 +1,9 @@
 'use client';
 
 import * as React from 'react';
-import { Download } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
-import { Button } from '@/components/ui/button';
 import { StatusBadge, Badge } from '@/components/ui/badge';
 import { TRANSACTION_STATUS_META } from '@/lib/constants';
-import { downloadCsv, exportFilename } from '@/lib/export-csv';
 
 export type ExpenseRow = {
   id: string;
@@ -31,40 +28,43 @@ export type ExpenseRow = {
 
 export function ExpensesClient({
   rows,
-  companyCode,
   canExport,
   emptyAction,
 }: {
   rows: ExpenseRow[];
-  companyCode: string;
   canExport: boolean;
   /** Rendered inside the empty state; built on the server so permissions are checked there. */
   emptyAction?: React.ReactNode;
 }) {
   const columns: DataColumn<ExpenseRow>[] = [
-    { id: 'number', header: 'Voucher', mobile: 'title', sortValue: (r) => r.number, cell: (r) => <span className="font-medium">{r.number}</span> },
-    { id: 'date', header: 'Date', mobile: 'meta', sortValue: (r) => r.dateSort, cell: (r) => r.date },
-    { id: 'category', header: 'Category', mobile: 'meta', sortValue: (r) => r.category, cell: (r) => r.category },
+    { id: 'number', header: 'Voucher', mobile: 'title', sortValue: (r) => r.number, exportValue: (r) => r.number, cell: (r) => <span className="font-medium">{r.number}</span> },
+    { id: 'date', header: 'Date', mobile: 'meta', sortValue: (r) => r.dateSort, exportValue: (r) => r.date, cell: (r) => r.date },
+    { id: 'category', header: 'Category', mobile: 'meta', sortValue: (r) => r.category, exportValue: (r) => r.category, cell: (r) => r.category },
     {
       id: 'type',
       header: 'Type',
       mobile: 'badge',
       sortValue: (r) => r.kind,
+      exportValue: (r) => (r.kind === 'SHIPMENT' ? 'Shipment' : 'Company'),
       cell: (r) => (
         <Badge tone={r.kind === 'SHIPMENT' ? 'info' : 'neutral'}>
           {r.kind === 'SHIPMENT' ? 'Shipment' : 'Company'}
         </Badge>
       ),
     },
-    { id: 'job', header: 'Job', mobile: 'meta', cell: (r) => r.job ?? '—' },
-    { id: 'payee', header: 'Payee', hideable: true, cell: (r) => r.payee ?? '—' },
-    { id: 'enteredBy', header: 'Entered by', hideable: true, defaultHidden: true, cell: (r) => r.enteredBy },
+    { id: 'job', header: 'Job', mobile: 'meta', exportValue: (r) => r.job ?? '', cell: (r) => r.job ?? '—' },
+    { id: 'payee', header: 'Payee', hideable: true, exportValue: (r) => r.payee ?? '', cell: (r) => r.payee ?? '—' },
+    { id: 'enteredBy', header: 'Entered by', hideable: true, defaultHidden: true, exportValue: (r) => r.enteredBy, cell: (r) => r.enteredBy },
     {
       id: 'amount',
-      header: 'Amount',
+      header: 'Amount USD',
       numeric: true,
       mobile: 'meta',
       sortValue: (r) => r.amountSort,
+      // The voucher currency and its face value are their own column, so the
+      // sheet can be totalled without adding dirhams to dollars.
+      exportValue: (r) => r.amountSort,
+      exportType: 'money',
       cell: (r) => (
         <span>
           <span className="block font-medium">{r.amount}</span>
@@ -73,20 +73,30 @@ export function ExpensesClient({
       ),
     },
     {
+      id: 'faceValue',
+      header: 'Voucher amount',
+      hideable: true,
+      defaultHidden: true,
+      exportValue: (r) => `${r.currency} ${r.amount}`,
+      cell: (r) => `${r.currency} ${r.amount}`,
+    },
+    {
       id: 'treatment',
       header: 'Treatment',
       hideable: true,
+      exportValue: (r) => (r.capitalise ? 'Landed cost' : 'Period cost'),
       cell: (r) => (
         <Badge tone={r.capitalise ? 'info' : 'neutral'}>{r.capitalise ? 'Landed cost' : 'Period cost'}</Badge>
       ),
     },
-    { id: 'account', header: 'Paid from', hideable: true, cell: (r) => r.account },
-    { id: 'reference', header: 'Reference', hideable: true, defaultHidden: true, cell: (r) => r.reference ?? '—' },
+    { id: 'account', header: 'Paid from', hideable: true, exportValue: (r) => r.account, cell: (r) => r.account },
+    { id: 'reference', header: 'Reference', hideable: true, defaultHidden: true, exportValue: (r) => r.reference ?? '', cell: (r) => r.reference ?? '—' },
     {
       id: 'status',
       header: 'Status',
       mobile: 'badge',
       sortValue: (r) => r.status,
+      exportValue: (r) => r.status,
       cell: (r) => <StatusBadge status={r.status} meta={TRANSACTION_STATUS_META} />,
     },
   ];
@@ -102,26 +112,8 @@ export function ExpensesClient({
       emptyAction={emptyAction}
       emptyTitle="No expenses yet"
       emptyDescription="Record shipment and operating costs. Direct shipment costs raise the landed cost of the coffee."
-      toolbar={
-        canExport ? (
-          <Button
-            variant="outline"
-            onClick={() =>
-              downloadCsv(
-                exportFilename(companyCode, 'expenses'),
-                ['Voucher', 'Date', 'Category', 'Job', 'Currency', 'Amount', 'USD', 'Treatment', 'Paid from', 'Status'],
-                rows.map((r) => [
-                  r.number, r.date, r.category, r.job, r.currency, r.amountSort, r.amountUsd,
-                  r.capitalise ? 'Landed cost' : 'Period cost', r.account, r.status,
-                ]),
-              )
-            }
-          >
-            <Download />
-            <span className="hidden sm:inline">Export</span>
-          </Button>
-        ) : undefined
-      }
+      exportFileName={canExport ? 'expenses' : undefined}
+      exportTitle="Expense Vouchers"
     />
   );
 }

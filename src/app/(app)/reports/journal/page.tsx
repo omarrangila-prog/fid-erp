@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/feedback';
 import { PrintButton } from '@/components/shared/print-button';
+import { ExcelLink, exportHref } from '@/components/shared/excel-link';
 import { PrintHeader } from '@/components/shared/print-header';
 
 export const metadata: Metadata = { title: 'Journal' };
@@ -32,7 +33,12 @@ export default async function JournalPage({ searchParams }: { searchParams: Prom
         title="Journal"
         description={`Every posted entry with its lines · ${formatDate(fromDate)} to ${formatDate(toDate)}`}
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Journal' }]}
-        actions={<PrintButton />}
+        actions={
+          <>
+            <ExcelLink href={exportHref('journal', { from, to })} />
+            <PrintButton />
+          </>
+        }
       />
       <PrintHeader
         title="Journal"

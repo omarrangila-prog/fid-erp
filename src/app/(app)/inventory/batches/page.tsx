@@ -30,12 +30,16 @@ export default async function BatchesPage() {
     orderedLabel: formatQuantityKg(b.orderedKg),
     orderedSort: Number(b.orderedKg),
     receivedLabel: formatQuantityKg(b.receivedKg),
+    receivedSort: Number(b.receivedKg),
     inTransitLabel: b.inTransitKg.greaterThan(0) ? formatQuantityKg(b.inTransitKg) : '—',
+    inTransitSort: Number(b.inTransitKg),
     soldLabel: formatQuantityKg(b.soldKg),
+    soldSort: Number(b.soldKg),
     availableLabel: formatQuantityKg(b.availableKg),
     availableSort: Number(b.availableKg),
     bags: 0,
     landedCostLabel: formatMoney(b.unitCostUsd, 'USD'),
+    landedCostSort: Number(b.unitCostUsd),
     valueLabel: formatMoney(b.stockValueUsd, 'USD'),
     valueSort: Number(b.stockValueUsd),
     status: b.status,
@@ -55,7 +59,6 @@ export default async function BatchesPage() {
           ) : undefined
         }
         rows={rows}
-        companyCode={user.activeCompany.code}
         showValue={showValue}
         canExport={can(user, PERMISSIONS.REPORTS_EXPORT)}
       />

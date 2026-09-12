@@ -2,13 +2,10 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Download } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
-import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import type { BadgeTone } from '@/lib/constants';
-import { downloadCsv, exportFilename } from '@/lib/export-csv';
 
 export type MovementRow = {
   id: string;
@@ -48,12 +45,10 @@ const TYPE_TONES: Record<string, BadgeTone> = {
  */
 export function MovementsClient({
   rows,
-  companyCode,
   canExport,
   emptyAction,
 }: {
   rows: MovementRow[];
-  companyCode: string;
   canExport: boolean;
   /** Rendered inside the empty state; built on the server so permissions are checked there. */
   emptyAction?: React.ReactNode;
@@ -72,12 +67,13 @@ export function MovementsClient({
   );
 
   const columns: DataColumn<MovementRow>[] = [
-    { id: 'date', header: 'Date', mobile: 'meta', sortValue: (r) => r.dateSort, cell: (r) => r.date },
+    { id: 'date', header: 'Date', mobile: 'meta', sortValue: (r) => r.dateSort, exportValue: (r) => r.date, cell: (r) => r.date },
     {
       id: 'type',
       header: 'Movement',
       mobile: 'badge',
       sortValue: (r) => r.type,
+      exportValue: (r) => r.typeLabel,
       cell: (r) => <Badge tone={TYPE_TONES[r.type] ?? 'neutral'}>{r.typeLabel}</Badge>,
     },
     {
@@ -85,6 +81,7 @@ export function MovementsClient({
       header: 'Batch',
       mobile: 'title',
       sortValue: (r) => r.batchNumber,
+      exportValue: (r) => r.batchNumber,
       cell: (r) => (
         <span>
           <span className="block font-medium">{r.batchNumber}</span>
@@ -92,13 +89,18 @@ export function MovementsClient({
         </span>
       ),
     },
-    { id: 'warehouse', header: 'Warehouse', mobile: 'meta', sortValue: (r) => r.warehouse, cell: (r) => r.warehouse },
+    { id: 'coffee', header: 'Coffee', hideable: true, defaultHidden: true, exportValue: (r) => r.itemName, cell: (r) => r.itemName },
+    { id: 'warehouse', header: 'Warehouse', mobile: 'meta', sortValue: (r) => r.warehouse, exportValue: (r) => r.warehouse, cell: (r) => r.warehouse },
     {
       id: 'quantity',
-      header: 'Quantity',
+      header: 'Quantity KG',
       numeric: true,
       mobile: 'meta',
       sortValue: (r) => r.quantitySort,
+      // Signed, so the column sums to the net movement rather than to the
+      // total volume of activity, which is not a number anyone wants.
+      exportValue: (r) => r.quantitySort,
+      exportType: 'quantity',
       cell: (r) => (
         <span className={r.isInflow ? 'font-medium text-gold-700' : 'font-medium text-forest-700'}>
           {r.isInflow ? '+' : ''}
@@ -110,6 +112,7 @@ export function MovementsClient({
       id: 'reference',
       header: 'Reference',
       hideable: true,
+      exportValue: (r) => r.reference,
       cell: (r) =>
         r.referenceHref ? (
           <Link href={r.referenceHref} className="text-gold-700 hover:underline">
@@ -119,19 +122,9 @@ export function MovementsClient({
           r.reference
         ),
     },
-    { id: 'notes', header: 'Notes', hideable: true, defaultHidden: true, cell: (r) => r.notes ?? '—' },
-    { id: 'user', header: 'By', hideable: true, cell: (r) => r.createdBy },
+    { id: 'notes', header: 'Notes', hideable: true, defaultHidden: true, exportValue: (r) => r.notes ?? '', cell: (r) => r.notes ?? '—' },
+    { id: 'user', header: 'By', hideable: true, exportValue: (r) => r.createdBy, cell: (r) => r.createdBy },
   ];
-
-  function exportCsv() {
-    downloadCsv(
-      exportFilename(companyCode, 'stock-movements'),
-      ['Date', 'Movement', 'Batch', 'Coffee', 'Warehouse', 'Quantity KG', 'Reference', 'Notes', 'By'],
-      filtered.map((r) => [
-        r.date, r.typeLabel, r.batchNumber, r.itemName, r.warehouse, r.quantitySort, r.reference, r.notes, r.createdBy,
-      ]),
-    );
-  }
 
   return (
     <DataTable
@@ -162,14 +155,10 @@ export function MovementsClient({
               </option>
             ))}
           </Select>
-          {canExport ? (
-            <Button variant="outline" onClick={exportCsv}>
-              <Download />
-              <span className="hidden sm:inline">Export</span>
-            </Button>
-          ) : null}
         </div>
       }
+      exportFileName={canExport ? 'stock-movements' : undefined}
+      exportTitle="Stock Movements"
     />
   );
 }

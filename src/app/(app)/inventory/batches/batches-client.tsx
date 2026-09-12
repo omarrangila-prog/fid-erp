@@ -1,11 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { Download } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { downloadCsv, exportFilename } from '@/lib/export-csv';
 
 export type BatchRow = {
   id: string;
@@ -21,12 +18,16 @@ export type BatchRow = {
   orderedLabel: string;
   orderedSort: number;
   receivedLabel: string;
+  receivedSort: number;
   inTransitLabel: string;
+  inTransitSort: number;
   soldLabel: string;
+  soldSort: number;
   availableLabel: string;
   availableSort: number;
   bags: number;
   landedCostLabel: string;
+  landedCostSort: number;
   valueLabel: string;
   valueSort: number;
   status: string;
@@ -34,13 +35,11 @@ export type BatchRow = {
 
 export function BatchesClient({
   rows,
-  companyCode,
   showValue,
   canExport,
   emptyAction,
 }: {
   rows: BatchRow[];
-  companyCode: string;
   showValue: boolean;
   canExport: boolean;
   /** Rendered inside the empty state; built on the server so permissions are checked there. */
@@ -52,6 +51,7 @@ export function BatchesClient({
       header: 'Batch / Lot',
       mobile: 'title',
       sortValue: (r) => r.batchNumber,
+      exportValue: (r) => r.batchNumber,
       cell: (r) => (
         <span>
           <span className="block font-medium">{r.batchNumber}</span>
@@ -64,6 +64,7 @@ export function BatchesClient({
       header: 'Coffee',
       mobile: 'meta',
       sortValue: (r) => r.itemName,
+      exportValue: (r) => r.itemName,
       cell: (r) => (
         <span>
           <span className="block">{r.itemName}</span>
@@ -71,31 +72,46 @@ export function BatchesClient({
         </span>
       ),
     },
-    { id: 'container', header: 'Container', hideable: true, cell: (r) => r.containerNumber ?? '—' },
-    { id: 'shipment', header: 'Shipment', hideable: true, cell: (r) => r.shipmentNumber },
-    { id: 'warehouses', header: 'Warehouse', mobile: 'meta', cell: (r) => r.warehouses || '—' },
-    { id: 'ordered', header: 'Ordered', numeric: true, hideable: true, sortValue: (r) => r.orderedSort, cell: (r) => r.orderedLabel },
-    { id: 'received', header: 'Received', numeric: true, hideable: true, cell: (r) => r.receivedLabel },
-    { id: 'inTransit', header: 'In transit', numeric: true, hideable: true, cell: (r) => r.inTransitLabel },
-    { id: 'sold', header: 'Sold', numeric: true, mobile: 'meta', cell: (r) => r.soldLabel },
+    { id: 'lot', header: 'Lot', hideable: true, defaultHidden: true, exportValue: (r) => r.lotNumber, cell: (r) => r.lotNumber },
+    { id: 'origin', header: 'Origin', hideable: true, defaultHidden: true, exportValue: (r) => r.origin, cell: (r) => r.origin },
+    { id: 'container', header: 'Container', hideable: true, exportValue: (r) => r.containerNumber ?? '', cell: (r) => r.containerNumber ?? '—' },
+    { id: 'shipment', header: 'Shipment', hideable: true, exportValue: (r) => r.shipmentNumber, cell: (r) => r.shipmentNumber },
+    { id: 'contract', header: 'Contract', hideable: true, defaultHidden: true, exportValue: (r) => r.contractNumber, cell: (r) => r.contractNumber },
+    { id: 'warehouses', header: 'Warehouse', mobile: 'meta', exportValue: (r) => r.warehouses, cell: (r) => r.warehouses || '—' },
+    { id: 'ordered', header: 'Ordered KG', numeric: true, hideable: true, sortValue: (r) => r.orderedSort, exportValue: (r) => r.orderedSort, exportType: 'quantity', cell: (r) => r.orderedLabel },
+    { id: 'received', header: 'Received KG', numeric: true, hideable: true, exportValue: (r) => r.receivedSort, exportType: 'quantity', cell: (r) => r.receivedLabel },
+    { id: 'inTransit', header: 'In transit KG', numeric: true, hideable: true, exportValue: (r) => r.inTransitSort, exportType: 'quantity', cell: (r) => r.inTransitLabel },
+    { id: 'sold', header: 'Sold KG', numeric: true, mobile: 'meta', exportValue: (r) => r.soldSort, exportType: 'quantity', cell: (r) => r.soldLabel },
     {
       id: 'available',
-      header: 'Available',
+      header: 'Available KG',
       numeric: true,
       mobile: 'meta',
       sortValue: (r) => r.availableSort,
+      exportValue: (r) => r.availableSort,
+      exportType: 'quantity',
       cell: (r) => <span className="font-medium">{r.availableLabel}</span>,
     },
-    { id: 'bags', header: 'Bags', numeric: true, hideable: true, defaultHidden: true, cell: (r) => r.bags.toLocaleString() },
+    { id: 'bags', header: 'Bags', numeric: true, hideable: true, defaultHidden: true, exportValue: (r) => r.bags, exportType: 'integer', cell: (r) => r.bags.toLocaleString() },
     ...(showValue
       ? [
-          { id: 'landed', header: 'Landed / KG', numeric: true, hideable: true, cell: (r: BatchRow) => r.landedCostLabel } satisfies DataColumn<BatchRow>,
+          {
+            id: 'landed',
+            header: 'Landed / KG USD',
+            numeric: true,
+            hideable: true,
+            exportValue: (r: BatchRow) => r.landedCostSort,
+            exportType: 'number',
+            cell: (r: BatchRow) => r.landedCostLabel,
+          } satisfies DataColumn<BatchRow>,
           {
             id: 'value',
-            header: 'Value',
+            header: 'Value USD',
             numeric: true,
             hideable: true,
             sortValue: (r: BatchRow) => r.valueSort,
+            exportValue: (r: BatchRow) => r.valueSort,
+            exportType: 'money',
             cell: (r: BatchRow) => r.valueLabel,
           } satisfies DataColumn<BatchRow>,
         ]
@@ -104,6 +120,7 @@ export function BatchesClient({
       id: 'status',
       header: 'Status',
       mobile: 'badge',
+      exportValue: (r) => (r.status === 'ACTIVE' ? 'Active' : 'Closed'),
       cell: (r) => (
         <Badge tone={r.status === 'ACTIVE' ? 'success' : 'neutral'}>
           {r.status === 'ACTIVE' ? 'Active' : 'Closed'}
@@ -111,19 +128,6 @@ export function BatchesClient({
       ),
     },
   ];
-
-  function exportCsv() {
-    downloadCsv(
-      exportFilename(companyCode, 'batch-stock'),
-      ['Batch', 'Lot', 'Coffee', 'Origin', 'Container', 'Shipment', 'Contract', 'Warehouse',
-       'Ordered KG', 'Received KG', 'In transit KG', 'Sold KG', 'Available KG', 'Bags', 'Landed/KG USD', 'Value USD'],
-      rows.map((r) => [
-        r.batchNumber, r.lotNumber, r.itemName, r.origin, r.containerNumber, r.shipmentNumber, r.contractNumber,
-        r.warehouses, r.orderedSort, r.receivedLabel, r.inTransitLabel, r.soldLabel, r.availableSort, r.bags,
-        showValue ? r.landedCostLabel : '', showValue ? r.valueSort : '',
-      ]),
-    );
-  }
 
   return (
     <DataTable
@@ -139,14 +143,8 @@ export function BatchesClient({
       emptyAction={emptyAction}
       emptyTitle="No batches yet"
       emptyDescription="Batches are created when a purchase contract is approved."
-      toolbar={
-        canExport ? (
-          <Button variant="outline" onClick={exportCsv}>
-            <Download />
-            <span className="hidden sm:inline">Export</span>
-          </Button>
-        ) : undefined
-      }
+      exportFileName={canExport ? 'batch-stock' : undefined}
+      exportTitle="Batch Stock"
     />
   );
 }

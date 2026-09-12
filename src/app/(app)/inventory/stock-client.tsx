@@ -1,11 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { Download } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
-import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/input';
-import { downloadCsv, exportFilename } from '@/lib/export-csv';
 
 export type StockRow = {
   id: string;
@@ -36,14 +33,12 @@ export type StockRow = {
 export function StockClient({
   rows,
   warehouses,
-  companyCode,
   showValue,
   canExport,
   emptyAction,
 }: {
   rows: StockRow[];
   warehouses: Array<{ id: string; name: string }>;
-  companyCode: string;
   showValue: boolean;
   canExport: boolean;
   /** Rendered inside the empty state; built on the server so permissions are checked there. */
@@ -104,17 +99,6 @@ export function StockClient({
       : []),
   ];
 
-  function exportCsv() {
-    downloadCsv(
-      exportFilename(companyCode, 'stock'),
-      ['Coffee', 'Code', 'Origin', 'Warehouse', 'On hand KG', 'Reserved KG', 'Available KG', 'Bags', 'Value USD'],
-      filtered.map((r) => [
-        r.itemName, r.itemCode, r.origin, r.warehouse,
-        r.onHandSort, r.reservedLabel, r.availableSort, r.bags, showValue ? r.valueSort : '',
-      ]),
-    );
-  }
-
   return (
     <DataTable
       data={filtered}
@@ -142,12 +126,6 @@ export function StockClient({
               </option>
             ))}
           </Select>
-          {canExport ? (
-            <Button variant="outline" onClick={exportCsv}>
-              <Download />
-              <span className="hidden sm:inline">Export</span>
-            </Button>
-          ) : null}
         </div>
       }
     />

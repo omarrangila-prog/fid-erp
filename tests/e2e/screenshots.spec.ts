@@ -1,4 +1,8 @@
 import { test, type Page } from '@playwright/test';
+import { E2E_EMAIL, E2E_PASSWORD, PASSWORD_SIGN_IN_CONFIGURED, NO_PASSWORD_CREDENTIALS } from './credentials';
+import { settle } from './settle';
+
+test.skip(!PASSWORD_SIGN_IN_CONFIGURED, NO_PASSWORD_CREDENTIALS);
 
 /**
  * Not an assertion suite — it captures the product at the sizes people use it,
@@ -24,8 +28,8 @@ const SIZES = [
 
 async function signIn(page: Page) {
   await page.goto('/login/password');
-  await page.getByLabel(/email/i).fill(process.env.E2E_EMAIL!);
-  await page.getByLabel(/password/i).fill(process.env.E2E_PASSWORD!);
+  await page.getByLabel(/email/i).fill(E2E_EMAIL!);
+  await page.getByLabel(/password/i).fill(E2E_PASSWORD!);
   await page.getByRole('button', { name: /sign in/i }).click();
   await page.waitForURL(/dashboard|select-company/, { waitUntil: 'domcontentloaded' });
   if (page.url().includes('select-company')) {
@@ -40,7 +44,7 @@ for (const size of SIZES) {
     await signIn(page);
     for (const shot of SHOTS) {
       await page.goto(shot.path);
-      await page.waitForLoadState('networkidle');
+      await settle(page);
       await page.screenshot({
         path: `screenshots/${size.label}/${shot.name}.png`,
         fullPage: size.label !== 'mobile',

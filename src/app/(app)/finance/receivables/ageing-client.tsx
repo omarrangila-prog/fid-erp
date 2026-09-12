@@ -1,13 +1,10 @@
 'use client';
 
 import * as React from 'react';
-import { Download } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
-import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/input';
 import { StatusBadge, Badge } from '@/components/ui/badge';
 import { SETTLEMENT_STATUS_META, AGEING_LABELS_CLIENT } from '@/app/(app)/finance/receivables/labels';
-import { downloadCsv, exportFilename } from '@/lib/export-csv';
 
 export type AgeingRow = {
   id: string;
@@ -37,8 +34,6 @@ export function AgeingClient({
   rows,
   partyLabel,
   documentLabel,
-  companyCode,
-  reportName,
   canExport,
   exportHref,
   showEta,
@@ -46,8 +41,6 @@ export function AgeingClient({
   rows: AgeingRow[];
   partyLabel: string;
   documentLabel: string;
-  companyCode: string;
-  reportName: string;
   canExport: boolean;
   /** The server route that builds the .xlsx for this list. */
   exportHref?: string;
@@ -158,25 +151,6 @@ export function AgeingClient({
               </option>
             ))}
           </Select>
-          {canExport ? (
-            <Button
-              variant="outline"
-              onClick={() =>
-                downloadCsv(
-                  exportFilename(companyCode, reportName),
-                  [documentLabel, partyLabel, 'Date', 'Due', 'Job', 'Currency', 'Original', 'Settled', 'Outstanding', 'Outstanding USD', 'Age', 'Status'],
-                  filtered.map((r) => [
-                    r.documentNumber, r.party, r.date, r.dueDate, r.job, r.currency,
-                    r.original, r.paid, r.outstanding, r.outstandingSort,
-                    AGEING_LABELS_CLIENT[r.bucket] ?? r.bucket, r.status,
-                  ]),
-                )
-              }
-            >
-              <Download />
-              <span className="hidden sm:inline">Export</span>
-            </Button>
-          ) : null}
         </div>
       }
     />

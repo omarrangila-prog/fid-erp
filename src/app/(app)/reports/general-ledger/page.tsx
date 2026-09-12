@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/feedback';
 import { PrintButton } from '@/components/shared/print-button';
+import { ExcelLink, exportHref } from '@/components/shared/excel-link';
 import { PrintHeader } from '@/components/shared/print-header';
 import { AccountPicker } from '@/app/(app)/reports/general-ledger/account-picker';
 
@@ -47,7 +48,12 @@ export default async function GeneralLedgerPage({
         title="General Ledger"
         description="Every movement through a chosen account, with a running balance in USD."
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'General Ledger' }]}
-        actions={<PrintButton />}
+        actions={
+          <>
+            <ExcelLink href={exportHref('general-ledger', { account: selectedId, from, to })} />
+            <PrintButton />
+          </>
+        }
       />
       <PrintHeader
         title="General Ledger"

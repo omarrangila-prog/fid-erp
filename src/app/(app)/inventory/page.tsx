@@ -185,7 +185,6 @@ export default async function InventoryPage() {
         }
         rows={rows}
         warehouses={warehouses}
-        companyCode={user.activeCompany.code}
         showValue={showValue}
         canExport={can(user, PERMISSIONS.REPORTS_EXPORT)}
       />

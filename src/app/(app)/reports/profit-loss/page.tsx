@@ -8,6 +8,7 @@ import { DateRangePicker } from '@/components/shared/date-range';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { PrintButton } from '@/components/shared/print-button';
+import { ExcelLink, exportHref } from '@/components/shared/excel-link';
 import { PrintHeader } from '@/components/shared/print-header';
 import type { PnlLine } from '@/lib/services/reports';
 
@@ -72,7 +73,12 @@ export default async function ProfitLossPage({
         title="Profit & Loss"
         description={`${user.activeCompany.name} · ${formatDate(fromDate)} to ${formatDate(toDate)}`}
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Profit & Loss' }]}
-        actions={<PrintButton />}
+        actions={
+          <>
+            <ExcelLink href={exportHref('profit-loss', { from, to })} />
+            <PrintButton />
+          </>
+        }
       />
       <PrintHeader
         title="Profit & Loss"

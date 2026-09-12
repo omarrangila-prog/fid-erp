@@ -93,7 +93,6 @@ export default async function MovementsPage({
           ) : undefined
         }
         rows={rows}
-        companyCode={user.activeCompany.code}
         canExport={can(user, PERMISSIONS.REPORTS_EXPORT)}
       />
 

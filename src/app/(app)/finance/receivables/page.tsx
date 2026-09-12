@@ -65,8 +65,6 @@ export default async function ReceivablesPage() {
         rows={rows}
         partyLabel="Customer"
         documentLabel="Invoice"
-        companyCode={user.activeCompany.code}
-        reportName="receivables"
         canExport={can(user, PERMISSIONS.REPORTS_EXPORT)}
         showEta
       />

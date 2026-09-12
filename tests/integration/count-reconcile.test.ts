@@ -90,6 +90,27 @@ describe('physical stock count', () => {
     expect(Number(rows[0].bal)).toBeCloseTo(-200, 2);
   });
 
+  it('writes the loss into the AED column at the rate the business trades at', async () => {
+    // Posting a system-generated entry at rate 1 put the USD figure into the
+    // local column unchanged: a USD 200 write-down appeared on the AED profit
+    // and loss as AED 200 rather than AED 734.50. The AED presentation is the
+    // one the client files.
+    const rows = await prisma.$queryRaw<Array<{ usd: string; local: string }>>`
+      SELECT COALESCE(SUM(jl."debitUsd" - jl."creditUsd"), 0)::text AS usd,
+             COALESCE(SUM(jl."debitLocal" - jl."creditLocal"), 0)::text AS local
+      FROM journal_lines jl
+      JOIN journal_entries je ON je."id" = jl."journalEntryId"
+      JOIN accounts a ON a."id" = jl."accountId"
+      WHERE je."companyId" = ${ctx.dubai.id}
+        AND je."sourceType" = 'STOCK_COUNT'
+        AND a."systemKey" = 'INVENTORY_ADJUSTMENT'`;
+
+    expect(Number(rows[0].usd)).toBeCloseTo(200, 2);
+    // No rate is on file for this test company, so it takes the rate the
+    // purchase contract was posted at — 3.6725 — rather than inventing one.
+    expect(Number(rows[0].local)).toBeCloseTo(734.5, 2);
+  });
+
   it('leaves the books balanced and every reconciliation check passing', async () => {
     expect((await getTrialBalanceReport({ companyId: ctx.dubai.id })).isBalanced).toBe(true);
     const result = await reconcile(ctx.dubai.id);
