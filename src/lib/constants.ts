@@ -558,8 +558,12 @@ export const SYSTEM_ROLES: Array<{
 export type BadgeTone = 'neutral' | 'info' | 'progress' | 'success' | 'warning' | 'danger';
 
 export const SHIPMENT_STATUS_META: Record<string, { label: string; tone: BadgeTone }> = {
-  CONTRACT_CREATED: { label: 'Contract Created', tone: 'neutral' },
-  AWAITING_LOADING: { label: 'Awaiting Loading', tone: 'warning' },
+  // "Pending Loading", not "Contract Created". The loading sheet is read to
+  // find out what has shipped, and the honest answer for a new consignment is
+  // that it has not — which is what the reader needs to know, whereas the
+  // internal event that created the record is not.
+  CONTRACT_CREATED: { label: 'Pending Loading', tone: 'neutral' },
+  AWAITING_LOADING: { label: 'Booked, Awaiting Loading', tone: 'warning' },
   LOADED: { label: 'Loaded', tone: 'info' },
   IN_TRANSIT: { label: 'In Transit', tone: 'progress' },
   ARRIVED: { label: 'Arrived', tone: 'info' },

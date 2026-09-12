@@ -15,6 +15,7 @@ import { Callout } from '@/components/ui/feedback';
 import { dec, convertToUsd } from '@/lib/money';
 import { formatMoney } from '@/lib/format';
 import { saveExpenseAction, postExpenseAction } from '@/server/actions/finance-actions';
+import { useSaveAndOpen } from '@/lib/use-save-and-open';
 
 export type CategoryOption = ComboOption & { capitaliseByDefault: boolean; kind: 'SHIPMENT' | 'GENERAL' };
 
@@ -46,7 +47,7 @@ export function ExpenseForm({
   defaultShipmentId?: string;
 }) {
   const router = useRouter();
-  const [pending, startTransition] = React.useTransition();
+  const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
   const [fieldIssues, setFieldIssues] = React.useState<Record<string, string>>({});
 
@@ -130,7 +131,7 @@ export function ExpenseForm({
       description: form.description,
     };
 
-    startTransition(async () => {
+    start(async () => {
       const result = await saveExpenseAction(null, JSON.stringify(payload));
       if (!result?.ok) {
         setError(result?.error ?? 'The expense could not be saved.');
@@ -143,6 +144,7 @@ export function ExpenseForm({
         const posted = await postExpenseAction(result.id);
         if (!posted.ok) {
           setError(posted.error);
+          opening();
           router.push(`/finance/expenses/${result.id}`);
           return;
         }
@@ -151,8 +153,9 @@ export function ExpenseForm({
         toast.success('Expense saved as a draft.');
       }
 
+      opening();
+
       router.push(`/finance/expenses/${result.id}`);
-      router.refresh();
     });
   }
 
@@ -391,13 +394,13 @@ export function ExpenseForm({
       </Card>
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <Button variant="outline" onClick={() => router.back()} disabled={pending}>
+        <Button variant="outline" onClick={() => router.back()} disabled={busy}>
           Cancel
         </Button>
-        <Button variant="outline" onClick={() => submit(false)} loading={pending}>
+        <Button variant="outline" onClick={() => submit(false)} loading={busy}>
           Save draft
         </Button>
-        <Button variant="accent" onClick={() => submit(true)} loading={pending}>
+        <Button variant="accent" onClick={() => submit(true)} loading={busy}>
           Save and post
         </Button>
       </div>

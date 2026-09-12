@@ -54,6 +54,12 @@ export type LoadingSheetRow = {
   destination: string | null;
   lotNumber: string;
   batchNumber: string;
+  /**
+   * True while the supplier has not yet said which coffee fills the contract,
+   * so the lot and batch above are a placeholder the system issued. The sheet
+   * says so rather than showing a number that looks like the supplier's.
+   */
+  traceabilityPending: boolean;
   containerNumber: string | null;
   containers: number;
 
@@ -251,6 +257,7 @@ export async function getLoadingSheet(companyId: string): Promise<LoadingSheetRo
         batch.purchaseContract.destination,
       lotNumber: batch.lot.lotNumber,
       batchNumber: batch.batchNumber,
+      traceabilityPending: batch.traceabilityPending,
       containerNumber: batch.container?.containerNumber ?? null,
       containers: batch.container ? 1 : batch.shipment.containers,
 

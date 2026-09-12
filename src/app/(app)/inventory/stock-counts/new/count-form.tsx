@@ -9,6 +9,7 @@ import { Field, FieldGroup } from '@/components/ui/field';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Callout } from '@/components/ui/feedback';
 import { createStockCountAction } from '@/server/actions/compliance-actions';
+import { useSaveAndOpen } from '@/lib/use-save-and-open';
 
 export function StockCountForm({
   warehouses,
@@ -16,7 +17,7 @@ export function StockCountForm({
   warehouses: Array<{ id: string; name: string; batchCount: number; openCountNumber: string | null }>;
 }) {
   const router = useRouter();
-  const [pending, startTransition] = React.useTransition();
+  const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
 
   const [warehouseId, setWarehouseId] = React.useState(warehouses.find((w) => !w.openCountNumber)?.id ?? '');
@@ -52,12 +53,12 @@ export function StockCountForm({
       return;
     }
 
-    startTransition(async () => {
+    start(async () => {
       const result = await createStockCountAction(JSON.stringify({ warehouseId, countDate, notes }));
       if (result?.ok) {
         toast.success(result.message);
+        opening();
         router.push(`/inventory/stock-counts/${result.id}`);
-        router.refresh();
       } else {
         setError(result?.error ?? 'The count could not be opened.');
       }
@@ -117,7 +118,7 @@ export function StockCountForm({
           </Field>
 
           <div className="flex flex-wrap gap-2">
-            <Button onClick={submit} loading={pending}>
+            <Button onClick={submit} loading={busy}>
               Open count sheet
             </Button>
             <Button variant="ghost" onClick={() => router.push('/inventory/stock-counts')}>

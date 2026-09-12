@@ -16,6 +16,7 @@ import { computeSalesLine } from '@/lib/calc/sales';
 import { dec, toMoney, sum } from '@/lib/money';
 import { formatMoney, formatQuantityKg } from '@/lib/format';
 import { saveSalesInvoiceAction } from '@/server/actions/trading-actions';
+import { useSaveAndOpen } from '@/lib/use-save-and-open';
 
 /**
  * Sales invoice entry.
@@ -94,7 +95,7 @@ export function SaleForm({
 }) {
   const defaultTaxCodeId = taxCodes[0]?.id ?? '';
   const router = useRouter();
-  const [pending, startTransition] = React.useTransition();
+  const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
   const [fieldIssues, setFieldIssues] = React.useState<Record<string, string>>({});
 
@@ -225,13 +226,13 @@ export function SaleForm({
         }),
     };
 
-    startTransition(async () => {
+    start(async () => {
       const result = await saveSalesInvoiceAction(defaults?.id ?? null, JSON.stringify(payload));
       if (!result) return;
       if (result.ok) {
         toast.success(result.message);
+        opening();
         router.push(`/sales/${result.id}`);
-        router.refresh();
       } else {
         setError(result.error);
         setFieldIssues(result.errors ?? {});
@@ -562,10 +563,10 @@ export function SaleForm({
       </Callout>
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <Button variant="outline" onClick={() => router.back()} disabled={pending}>
+        <Button variant="outline" onClick={() => router.back()} disabled={busy}>
           Cancel
         </Button>
-        <Button onClick={submit} loading={pending} disabled={hasOverdraw}>
+        <Button onClick={submit} loading={busy} disabled={hasOverdraw}>
           {defaults?.id ? 'Save changes' : 'Save draft'}
         </Button>
       </div>

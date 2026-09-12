@@ -13,6 +13,7 @@ import { Callout } from '@/components/ui/feedback';
 import { dec, toMoney, sum, Decimal } from '@/lib/money';
 import { formatMoney, formatQuantityKg } from '@/lib/format';
 import { saveCreditNoteAction } from '@/server/actions/compliance-actions';
+import { useSaveAndOpen } from '@/lib/use-save-and-open';
 
 export type CreditParty = { id: string; name: string; currency: string };
 export type CreditDocument = {
@@ -98,7 +99,7 @@ export function CreditNoteForm({
   basePath: string;
 }) {
   const router = useRouter();
-  const [pending, startTransition] = React.useTransition();
+  const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
 
   const defaultTaxCode = taxCodes[0]?.id ?? '';
@@ -275,12 +276,12 @@ export function CreditNoteForm({
       return;
     }
 
-    startTransition(async () => {
+    start(async () => {
       const result = await saveCreditNoteAction(JSON.stringify(payload));
       if (result?.ok) {
         toast.success(result.message);
+        opening();
         router.push(`${basePath}/${result.id}`);
-        router.refresh();
       } else {
         setError(result?.error ?? 'The note could not be saved.');
       }
@@ -625,7 +626,7 @@ export function CreditNoteForm({
           ) : null}
 
           <div className="flex flex-wrap gap-2 pt-1">
-            <Button onClick={submit} loading={pending}>
+            <Button onClick={submit} loading={busy}>
               Save as draft
             </Button>
             <Button variant="ghost" onClick={() => router.push(basePath)}>

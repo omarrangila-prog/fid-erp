@@ -2,7 +2,6 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import {
@@ -272,14 +271,35 @@ function QuickCreate({ permissions, isSuperAdmin }: { permissions: string[]; isS
  * is never ambiguous.
  */
 function CompanySwitcher({ companies, active }: { companies: TopbarCompany[]; active: TopbarCompany }) {
-  const router = useRouter();
   const [pending, startTransition] = React.useTransition();
 
+  /**
+   * Switch which company's books are open.
+   *
+   * A full page load, not `router.refresh()`.
+   *
+   * The soft refresh only re-renders the route the user is standing on, and it
+   * does so asynchronously. Anything already prefetched, and anything the user
+   * navigates to in the meantime, still belongs to the company being left — so
+   * a form could list Dubai's suppliers while the session had already moved to
+   * Morocco. Choosing one and saving gave "Supplier was not found.", which is
+   * the server correctly refusing to write across companies and a baffling
+   * thing to read.
+   *
+   * Switching company means a different set of books. Reloading the document
+   * is both the simplest way to guarantee nothing from the previous one
+   * survives, and an honest signal to the user that everything has changed.
+   */
   function switchTo(companyId: string) {
     if (companyId === active.id) return;
     startTransition(async () => {
       const result = await switchCompanyAction(companyId);
-      if (result.ok) router.refresh();
+      if (result.ok) {
+        // Discarding every cached route is the point here, so this is a full
+        // document load rather than a client-side push.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+        window.location.assign('/dashboard');
+      }
     });
   }
 

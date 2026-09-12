@@ -9,6 +9,10 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table';
 import { SHIPMENT_STATUS_META, DOCUMENT_STATUS_META, type BadgeTone } from '@/lib/constants';
+import { MarkLoadedDialog } from '@/app/(app)/loading/mark-loaded-dialog';
+
+/** Statuses from which "loaded" is still ahead rather than behind. */
+const NOT_YET_LOADED = ['CONTRACT_CREATED', 'AWAITING_LOADING'];
 
 export type AllocationRow = {
   customerId: string;
@@ -53,6 +57,10 @@ export type LoadingRow = {
   billOfLading: string | null;
   etaDate: string;
   etaSort: number;
+  traceabilityPending: boolean;
+  /** The ETA as `2026-04-18`, or null. Separate from `etaSort`, which is a
+   *  sort key and carries a sentinel when there is no date. */
+  etaIso: string | null;
   remarks: string | null;
   saleStatus: 'UNSOLD' | 'PARTIALLY_SOLD' | 'FULLY_SOLD';
   paymentStatus: string;
@@ -89,12 +97,18 @@ export function LoadingSheet({
   rows,
   isDubai,
   canExport,
+  canUpdate,
+  shippingLines,
 }: {
   rows: LoadingRow[];
   isDubai: boolean;
   canExport: boolean;
+  /** Whether this user may move a consignment along. */
+  canUpdate: boolean;
+  shippingLines: Array<{ id: string; name: string }>;
 }) {
   const [viewing, setViewing] = React.useState<LoadingRow | null>(null);
+  const [loadingRow, setLoadingRow] = React.useState<LoadingRow | null>(null);
 
   /** Columns shared by both sheets, in the order the paper sheet uses. */
   const serial: DataColumn<LoadingRow> = {
@@ -133,10 +147,41 @@ export function LoadingSheet({
       <span className="block min-w-44">
         <span className="block">{r.itemName}</span>
         <span className="block text-xs text-ink-subtle">
-          Lot {r.lotNumber} · {r.batchNumber}
+          {r.traceabilityPending
+            ? 'Lot not yet advised'
+            : `Lot ${r.lotNumber}${r.batchNumber === r.lotNumber ? '' : ` · ${r.batchNumber}`}`}
         </span>
       </span>
     ),
+  };
+
+  /**
+   * Lot and batch get columns of their own.
+   *
+   * They also appear under the coffee name, which is where the eye lands, but
+   * the client tracks consignments by lot — "120229 and 120230, same Screen 12"
+   * — and something you track by needs to be sortable, searchable and in the
+   * spreadsheet. Hidden by default on a sheet that is already wide; one click
+   * from the Columns control.
+   */
+  const lot: DataColumn<LoadingRow> = {
+    id: 'lot',
+    header: 'Lot',
+    hideable: true,
+    defaultHidden: true,
+    sortValue: (r) => r.lotNumber,
+    exportValue: (r) => (r.traceabilityPending ? '' : r.lotNumber),
+    cell: (r) => (r.traceabilityPending ? <span className="text-ink-subtle">—</span> : r.lotNumber),
+  };
+
+  const batch: DataColumn<LoadingRow> = {
+    id: 'batch',
+    header: 'Batch',
+    hideable: true,
+    defaultHidden: true,
+    sortValue: (r) => r.batchNumber,
+    exportValue: (r) => (r.traceabilityPending ? '' : r.batchNumber),
+    cell: (r) => (r.traceabilityPending ? <span className="text-ink-subtle">—</span> : r.batchNumber),
   };
 
   const quantity: DataColumn<LoadingRow> = {
@@ -172,6 +217,27 @@ export function LoadingSheet({
         </Link>
       );
     },
+  };
+
+  /**
+   * The one action this screen needs.
+   *
+   * Everything else on the sheet is derived — it fills itself in as documents
+   * are raised elsewhere. Loading is the exception: it is a real event that
+   * somebody has to record, and until now that meant opening the consignment,
+   * changing a status and then editing four more fields. One button.
+   */
+  const actions: DataColumn<LoadingRow> = {
+    id: 'actions',
+    header: '',
+    printHidden: true,
+    cell: (r) =>
+      canUpdate && NOT_YET_LOADED.includes(r.status) ? (
+        <Button variant="outline" size="sm" onClick={() => setLoadingRow(r)}>
+          <Ship />
+          Mark loaded
+        </Button>
+      ) : null,
   };
 
   const documents: DataColumn<LoadingRow> = {
@@ -277,6 +343,8 @@ export function LoadingSheet({
     },
     consignee,
     itemColumn,
+    lot,
+    batch,
     quantity,
     {
       id: 'origin',
@@ -312,6 +380,7 @@ export function LoadingSheet({
     remarks,
     documents,
     allocationsColumn,
+    actions,
   ];
 
   // --- Morocco: the simpler follow-up sheet --------------------------------
@@ -327,6 +396,8 @@ export function LoadingSheet({
     },
     contract,
     itemColumn,
+    lot,
+    batch,
     quantity,
     {
       id: 'containerQty',
@@ -372,6 +443,7 @@ export function LoadingSheet({
     eta,
     remarks,
     allocationsColumn,
+    actions,
   ];
 
   return (
@@ -397,6 +469,28 @@ export function LoadingSheet({
         emptyTitle="Nothing loading yet"
         emptyDescription="Approve a purchase contract and its containers appear here automatically — there is no separate sheet to fill in."
       />
+
+      {loadingRow ? (
+        <MarkLoadedDialog
+          open
+          onOpenChange={(open) => !open && setLoadingRow(null)}
+          shipmentId={loadingRow.shipmentId}
+          contractNumber={loadingRow.contractNumber}
+          shippingLines={shippingLines}
+          defaults={{
+            // From `etaIso`, not `etaSort`. The sort key holds
+            // Number.MAX_SAFE_INTEGER when there is no ETA so the row sorts
+            // last, and `new Date(…).toISOString()` on that throws
+            // "RangeError: Invalid time value" — which is every consignment
+            // that has not shipped, meaning every consignment this button
+            // exists for. It crashed the dialog every time it was opened.
+            etaDate: loadingRow.etaIso,
+            bookingNumber: loadingRow.bookingNumber,
+            billOfLading: loadingRow.billOfLading,
+            containerNumber: loadingRow.containerNumber,
+          }}
+        />
+      ) : null}
 
       <Dialog open={Boolean(viewing)} onOpenChange={(open) => !open && setViewing(null)}>
         {viewing ? (

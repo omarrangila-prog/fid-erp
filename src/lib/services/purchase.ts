@@ -782,6 +782,7 @@ export async function getReceiptStatus(tx: Tx, purchaseContractId: string) {
       bagWeightKg: string;
       orderedBags: string;
       receivedBags: string;
+      traceabilityPending: boolean;
     }>
   >`
     SELECT pcl."id" AS "lineId", pcl."lineNumber", b."id" AS "batchId", b."batchNumber",
@@ -790,7 +791,8 @@ export async function getReceiptStatus(tx: Tx, purchaseContractId: string) {
            b."receivedQuantityKg"::text AS "receivedKg",
            b."bagWeightKg"::text       AS "bagWeightKg",
            b."orderedBags"::text       AS "orderedBags",
-           b."receivedBags"::text      AS "receivedBags"
+           b."receivedBags"::text      AS "receivedBags",
+           b."traceabilityPending"     AS "traceabilityPending"
     FROM purchase_contract_lines pcl
     JOIN batches b ON b."purchaseContractLineId" = pcl."id"
     JOIN coffee_items ci ON ci."id" = b."itemId"
@@ -814,5 +816,7 @@ export async function getReceiptStatus(tx: Tx, purchaseContractId: string) {
     bagWeightKg: toQuantity(row.bagWeightKg),
     orderedBags: Number(row.orderedBags),
     receivedBags: Number(row.receivedBags),
+    /** True when the contract named no lot, so the receipt must. */
+    traceabilityPending: row.traceabilityPending,
   }));
 }

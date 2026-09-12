@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
+import { prisma } from '@/lib/db';
 import { getLoadingSheet } from '@/lib/services/loading-sheet';
 import { formatQuantityKg, formatDate, formatMoney } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
@@ -14,7 +15,15 @@ export const dynamic = 'force-dynamic';
 
 export default async function LoadingPage() {
   const user = await requirePageAccess(PERMISSIONS.SHIPMENTS_VIEW);
-  const sheet = await getLoadingSheet(user.activeCompany.id);
+
+  const [sheet, shippingLines] = await Promise.all([
+    getLoadingSheet(user.activeCompany.id),
+    prisma.shippingLine.findMany({
+      where: { companyId: user.activeCompany.id, status: 'ACTIVE' },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true },
+    }),
+  ]);
 
   // Dubai trades container to container; Morocco buys a container and sells it
   // to many customers. The two paper sheets differ, so the two screens do too.
@@ -37,6 +46,7 @@ export default async function LoadingPage() {
     destination: row.destination,
     lotNumber: row.lotNumber,
     batchNumber: row.batchNumber,
+    traceabilityPending: row.traceabilityPending,
     containerNumber: row.containerNumber,
     containers: row.containers,
     quantity: formatQuantityKg(row.quantityKg),
@@ -51,6 +61,7 @@ export default async function LoadingPage() {
     billOfLading: row.billOfLading,
     etaDate: row.etaDate ? formatDate(row.etaDate) : '—',
     etaSort: row.etaDate?.getTime() ?? Number.MAX_SAFE_INTEGER,
+    etaIso: row.etaDate ? row.etaDate.toISOString().slice(0, 10) : null,
     remarks: row.remarks,
     saleStatus: row.saleStatus,
     paymentStatus: row.paymentStatus,
@@ -100,7 +111,13 @@ export default async function LoadingPage() {
           : 'A contract sold to several customers stays one row, with every customer listed underneath it.'}
       </Callout>
 
-      <LoadingSheet rows={rows} isDubai={isDubai} canExport={can(user, PERMISSIONS.REPORTS_EXPORT)} />
+      <LoadingSheet
+        rows={rows}
+        isDubai={isDubai}
+        canExport={can(user, PERMISSIONS.REPORTS_EXPORT)}
+        canUpdate={can(user, PERMISSIONS.SHIPMENTS_UPDATE)}
+        shippingLines={shippingLines}
+      />
     </div>
   );
 }

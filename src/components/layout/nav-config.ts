@@ -77,7 +77,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: 'Purchases', href: '/purchases', icon: FileText, permissions: [PERMISSIONS.PURCHASES_VIEW] },
       { label: 'Goods Receipts', href: '/goods-receipts', icon: PackageCheck, permissions: [PERMISSIONS.INVENTORY_VIEW] },
-      { label: 'Sales', href: '/sales', icon: ShoppingCart, permissions: [PERMISSIONS.SALES_VIEW] },
+      { label: 'Sales Invoices', href: '/sales', icon: ShoppingCart, permissions: [PERMISSIONS.SALES_VIEW] },
       { label: 'Credit Notes', href: '/sales/credit-notes', icon: FileMinus, permissions: [PERMISSIONS.CREDIT_NOTES_VIEW] },
       { label: 'Supplier Debit Notes', href: '/purchases/debit-notes', icon: FilePlus, permissions: [PERMISSIONS.CREDIT_NOTES_VIEW] },
       { label: 'Shipments', href: '/shipments', icon: Ship, permissions: [PERMISSIONS.SHIPMENTS_VIEW] },

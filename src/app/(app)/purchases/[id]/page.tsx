@@ -118,6 +118,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
               receivedKg: r.receivedKg.toString(),
               outstandingKg: r.outstandingKg.toString(),
               bagWeightKg: r.bagWeightKg.toString(),
+              traceabilityPending: r.traceabilityPending,
             }))}
             warehouses={warehouses.map((w) => ({ id: w.id, name: w.name, code: w.code }))}
             defaultWarehouseId={warehouses.find((w) => w.isDefault)?.id ?? warehouses[0]?.id ?? null}

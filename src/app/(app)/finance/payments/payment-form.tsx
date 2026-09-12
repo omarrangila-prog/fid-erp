@@ -15,6 +15,7 @@ import { Callout, EmptyState } from '@/components/ui/feedback';
 import { dec, sum, convertToUsd } from '@/lib/money';
 import { formatMoney, formatDate } from '@/lib/format';
 import { savePaymentAction, postPaymentAction } from '@/server/actions/finance-actions';
+import { useSaveAndOpen } from '@/lib/use-save-and-open';
 
 export type OpenContract = {
   id: string;
@@ -43,7 +44,7 @@ export function PaymentForm({
   defaultLocalRate: string;
 }) {
   const router = useRouter();
-  const [pending, startTransition] = React.useTransition();
+  const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
   const [fieldIssues, setFieldIssues] = React.useState<Record<string, string>>({});
 
@@ -115,7 +116,7 @@ export function PaymentForm({
         .map(([purchaseContractId, amount]) => ({ purchaseContractId, amount })),
     };
 
-    startTransition(async () => {
+    start(async () => {
       const result = await savePaymentAction(null, JSON.stringify(payload));
       if (!result?.ok) {
         setError(result?.error ?? 'The payment could not be saved.');
@@ -128,6 +129,7 @@ export function PaymentForm({
         const posted = await postPaymentAction(result.id);
         if (!posted.ok) {
           setError(posted.error);
+          opening();
           router.push(`/finance/payments/${result.id}`);
           return;
         }
@@ -136,8 +138,9 @@ export function PaymentForm({
         toast.success('Payment saved as a draft.');
       }
 
+      opening();
+
       router.push(`/finance/payments/${result.id}`);
-      router.refresh();
     });
   }
 
@@ -313,13 +316,13 @@ export function PaymentForm({
       </Callout>
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <Button variant="outline" onClick={() => router.back()} disabled={pending}>
+        <Button variant="outline" onClick={() => router.back()} disabled={busy}>
           Cancel
         </Button>
-        <Button variant="outline" onClick={() => submit(false)} loading={pending}>
+        <Button variant="outline" onClick={() => submit(false)} loading={busy}>
           Save draft
         </Button>
-        <Button variant="accent" onClick={() => submit(true)} loading={pending}>
+        <Button variant="accent" onClick={() => submit(true)} loading={busy}>
           Save and post
         </Button>
       </div>

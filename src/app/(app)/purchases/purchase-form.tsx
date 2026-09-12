@@ -15,6 +15,7 @@ import { ConfirmDialog } from '@/components/ui/confirm';
 import { INCOTERM_LABELS } from '@/lib/constants';
 import { savePurchaseContractAction, postPurchaseContractAction } from '@/server/actions/trading-actions';
 import { computePurchaseTotalsClient, type LineDraft } from '@/app/(app)/purchases/purchase-math';
+import { useSaveAndOpen } from '@/lib/use-save-and-open';
 
 /**
  * Purchase contract entry.
@@ -83,7 +84,7 @@ export function PurchaseForm({
   canApprove?: boolean;
 }) {
   const router = useRouter();
-  const [pending, startTransition] = React.useTransition();
+  const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
   const [errors, setErrors] = React.useState<Record<string, string>>({});
   const [confirmApprove, setConfirmApprove] = React.useState(false);
@@ -170,7 +171,7 @@ export function PurchaseForm({
     setError(null);
     setErrors({});
 
-    startTransition(async () => {
+    start(async () => {
       const result = await savePurchaseContractAction(defaults?.id ?? null, buildPayload());
 
       if (!result?.ok) {
@@ -183,24 +184,33 @@ export function PurchaseForm({
         return;
       }
 
+      // No `router.refresh()` after the push.
+      //
+      // The refresh re-fetches the route the user is leaving, and that request
+      // cancels the navigation already in flight — the RSC fetch for the
+      // destination comes back ERR_ABORTED and the browser simply stays on the
+      // form. The contract had saved; the screen just never moved, which to
+      // the person pressing the button is indistinguishable from it not
+      // saving at all. It is what the client reported as "the PO was not
+      // saving". A push to a different route already fetches that route fresh.
       if (!thenApprove) {
         toast.success(result.message);
+        opening();
         router.push(`/purchases/${result.id}`);
-        router.refresh();
         return;
       }
 
       const posted = await postPurchaseContractAction(result.id);
       if (!posted.ok) {
         toast.error(posted.error);
+        opening();
         router.push(`/purchases/${result.id}`);
-        router.refresh();
         return;
       }
 
       toast.success('Contract approved. The job, lots and batches have been created.');
+      opening();
       router.push(`/purchases/${result.id}`);
-      router.refresh();
     });
   }
 
@@ -440,12 +450,12 @@ export function PurchaseForm({
                     <Field
                       label="Lot number"
                       error={lineError(index, 'lotNumber')}
-                      hint={!line.lotNumber && !line.batchNumber ? 'Lot or batch — either will do' : undefined}
+                      hint="Only if the supplier has already named it. You are asked again when the coffee arrives."
                     >
                       <Input
                         value={line.lotNumber}
                         onChange={(e) => updateLine(line.key, { lotNumber: e.target.value })}
-                        placeholder="BR-001"
+                        placeholder="Usually blank"
                         aria-invalid={Boolean(lineError(index, 'lotNumber'))}
                       />
                     </Field>
@@ -454,7 +464,7 @@ export function PurchaseForm({
                       <Input
                         value={line.batchNumber}
                         onChange={(e) => updateLine(line.key, { batchNumber: e.target.value })}
-                        placeholder="B001"
+                        placeholder="Usually blank"
                       />
                     </Field>
 
@@ -602,14 +612,14 @@ export function PurchaseForm({
       </Callout>
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <Button variant="outline" onClick={() => router.back()} disabled={pending}>
+        <Button variant="outline" onClick={() => router.back()} disabled={busy}>
           Cancel
         </Button>
-        <Button variant="subtle" onClick={() => save(false)} loading={pending}>
-          Save as draft
+        <Button variant="subtle" onClick={() => save(false)} loading={busy}>
+          {busy ? 'Saving…' : 'Save as draft'}
         </Button>
         {canApprove ? (
-          <Button variant="accent" onClick={() => setConfirmApprove(true)} disabled={pending}>
+          <Button variant="accent" onClick={() => setConfirmApprove(true)} disabled={busy}>
             Save and approve
           </Button>
         ) : null}

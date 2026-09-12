@@ -17,6 +17,7 @@ import {
 import { recordAudit } from '@/lib/services/audit';
 import { globalSearch, type SearchResult } from '@/lib/services/search';
 import { run, type ActionResult } from '@/server/actions/action-utils';
+import { revalidatePath } from 'next/cache';
 
 /**
  * Sign-in.
@@ -122,6 +123,22 @@ export async function logoutAction(): Promise<void> {
   redirect('/login');
 }
 
+/**
+ * Switch which company's books are open.
+ *
+ * The revalidation is `('/', 'layout')` and not `('/')`, which is the whole
+ * point of this function working. A path revalidation clears one page; a
+ * layout revalidation clears every route beneath it. With only the first, the
+ * session moved to Morocco while the client router cache went on serving the
+ * Dubai pages it had already prefetched — the new purchase form still listed
+ * Dubai's suppliers and still said "Local rate (AED per USD)". Choosing one of
+ * those suppliers and saving produced "Supplier was not found.", because by
+ * then the server was quite correctly looking in Morocco.
+ *
+ * Nothing leaked in the dangerous direction: the server refused the write. But
+ * a user was being shown one company's data while working in another, which is
+ * the thing this system is not allowed to do.
+ */
 export async function switchCompanyAction(companyId: string): Promise<ActionResult<undefined>> {
   return run(async () => {
     const before = await requireUser();
@@ -135,8 +152,11 @@ export async function switchCompanyAction(companyId: string): Promise<ActionResu
       before: { companyId: before.activeCompany.id },
       after: { companyId },
     });
+
+    // Every cached route below the root belongs to the company being left.
+    revalidatePath('/', 'layout');
     return undefined;
-  }, ['/']);
+  });
 }
 
 export async function searchAction(query: string): Promise<SearchResult[]> {

@@ -13,6 +13,7 @@ import { Callout, EmptyState } from '@/components/ui/feedback';
 import { dec, sum } from '@/lib/money';
 import { formatQuantityKg } from '@/lib/format';
 import { saveStockTransferAction } from '@/server/actions/trading-actions';
+import { useSaveAndOpen } from '@/lib/use-save-and-open';
 
 export type TransferStock = {
   batchId: string;
@@ -35,7 +36,7 @@ export function TransferForm({
   stock: TransferStock[];
 }) {
   const router = useRouter();
-  const [pending, startTransition] = React.useTransition();
+  const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
 
   const [fromWarehouseId, setFrom] = React.useState(warehouses[0]?.id ?? '');
@@ -108,12 +109,12 @@ export function TransferForm({
       return;
     }
 
-    startTransition(async () => {
+    start(async () => {
       const result = await saveStockTransferAction(JSON.stringify(payload));
       if (result?.ok) {
         toast.success('Transfer created. Approve it to reserve the stock.');
+        opening();
         router.push('/inventory/transfers');
-        router.refresh();
       } else {
         setError(result?.error ?? 'The transfer could not be created.');
       }
@@ -265,10 +266,10 @@ export function TransferForm({
       </Callout>
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <Button variant="outline" onClick={() => router.back()} disabled={pending}>
+        <Button variant="outline" onClick={() => router.back()} disabled={busy}>
           Cancel
         </Button>
-        <Button onClick={submit} loading={pending} disabled={hasOverdraw || sameWarehouse}>
+        <Button onClick={submit} loading={busy} disabled={hasOverdraw || sameWarehouse}>
           Create transfer
         </Button>
       </div>

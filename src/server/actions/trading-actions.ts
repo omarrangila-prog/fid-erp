@@ -12,6 +12,7 @@ import {
   stockTransferSchema,
   shipmentStatusSchema,
   shipmentDetailsSchema,
+  markLoadedSchema,
   documentStatusSchema,
 } from '@/lib/validation/trading';
 import {
@@ -42,7 +43,12 @@ import {
   cancelStockTransfer,
   deleteDraftStockTransfer,
 } from '@/lib/services/stock-transfer';
-import { changeShipmentStatus, changeDocumentStatus, updateShipmentDetails } from '@/lib/services/shipment';
+import {
+  changeShipmentStatus,
+  changeDocumentStatus,
+  updateShipmentDetails,
+  markShipmentLoaded,
+} from '@/lib/services/shipment';
 import { fail, type ActionResult } from '@/server/actions/action-utils';
 
 /**
@@ -288,6 +294,47 @@ export async function updateShipmentDetailsAction(shipmentId: string, payload: s
     revalidatePath(`/shipments/${shipmentId}`);
     revalidatePath('/loading');
     return { ok: true, id: shipmentId, message: 'Shipment updated.' };
+  } catch (error) {
+    return toState(error);
+  }
+}
+
+/**
+ * Mark a consignment loaded, with the shipping information that makes it so.
+ *
+ * One action rather than a status change followed by four separate edits: the
+ * information all arrives together when the supplier ships, and asking for it
+ * in one place is the difference between the loading sheet being current and
+ * being a week behind.
+ */
+export async function markShipmentLoadedAction(shipmentId: string, payload: string): Promise<DocFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.SHIPMENTS_UPDATE);
+    const input = markLoadedSchema.parse(parseJson(payload));
+
+    await markShipmentLoaded(
+      {
+        companyId: user.activeCompany.id,
+        shipmentId,
+        loadingDate: input.loadingDate,
+        etaDate: input.etaDate,
+        shippingLineId: input.shippingLineId,
+        bookingNumber: input.bookingNumber,
+        billOfLading: input.billOfLading,
+        containerNumber: input.containerNumber,
+        vesselName: input.vesselName,
+        voyageNumber: input.voyageNumber,
+        portOfLoading: input.portOfLoading,
+        portOfDischarge: input.portOfDischarge,
+        notes: input.notes,
+      },
+      user.id,
+    );
+
+    revalidatePath('/shipments');
+    revalidatePath(`/shipments/${shipmentId}`);
+    revalidatePath('/loading');
+    return { ok: true, id: shipmentId, message: 'Marked as loaded.' };
   } catch (error) {
     return toState(error);
   }

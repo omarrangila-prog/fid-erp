@@ -157,6 +157,28 @@ export const stockTransferSchema = z.object({
     .min(1, 'Add at least one batch to transfer.'),
 });
 
+/**
+ * Marking a consignment loaded.
+ *
+ * Everything the purchase order deliberately stopped asking for, asked at the
+ * moment it exists. The arrival date and the carrier are required because a
+ * consignment marked loaded that cannot say when it lands or who is carrying
+ * it tells the loading sheet's reader nothing.
+ */
+export const markLoadedSchema = z.object({
+  loadingDate: dateString('Loading date'),
+  etaDate: dateString('Estimated arrival'),
+  shippingLineId: requiredChoice('Shipping line'),
+  bookingNumber: optionalText(60),
+  billOfLading: optionalText(60),
+  containerNumber: optionalText(40),
+  vesselName: optionalText(120),
+  voyageNumber: optionalText(60),
+  portOfLoading: optionalText(120),
+  portOfDischarge: optionalText(120),
+  notes: optionalText(600),
+});
+
 export const shipmentStatusSchema = z.object({
   toStatus: z.enum([
     'CONTRACT_CREATED',
