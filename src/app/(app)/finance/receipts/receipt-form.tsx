@@ -16,6 +16,7 @@ import { dec, toMoney, sum, convertToUsd } from '@/lib/money';
 import { formatMoney, formatDate } from '@/lib/format';
 import { saveReceiptAction, postReceiptAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
+import { accountsFor } from '@/lib/cash-account-choice';
 
 /**
  * Customer receipt.
@@ -35,7 +36,7 @@ export type OpenInvoice = {
   customerId: string;
 };
 
-export type BankOption = ComboOption & { currency: string };
+export type BankOption = ComboOption & { currency: string; accountType: 'CASH' | 'PETTY_CASH' | 'BANK' };
 
 export function ReceiptForm({
   customers,
@@ -93,6 +94,14 @@ export function ReceiptForm({
 
   const isForeign = form.currency !== 'USD';
   const isCheque = form.paymentMethod === 'CHEQUE';
+
+  // Cash goes into the drawer without asking; a bank transfer still needs to
+  // say which bank.
+  const accountChoice = React.useMemo(
+    () => accountsFor(accounts, form.paymentMethod, form.currency),
+    [accounts, form.paymentMethod, form.currency],
+  );
+  const cashBankAccountId = accountChoice.automatic ?? form.cashBankAccountId;
   /*
    * The customer has paid; the company has not. The money is with the agent
    * until he hands it over, so there is no account to choose here — asking for
@@ -137,7 +146,7 @@ export function ReceiptForm({
       usdEquivalent: isForeign && entryMode === 'usd' ? form.usdEquivalent : '',
       rateLocalPerUsd: form.currency === localCurrency ? form.rateToUsd || '1' : form.rateLocalPerUsd,
       paymentMethod: form.paymentMethod,
-      cashBankAccountId: form.cashBankAccountId ?? '',
+      cashBankAccountId: cashBankAccountId ?? '',
       agentId: isAgentCollection ? form.agentId : '',
       cheque: isCheque
         ? {
@@ -258,12 +267,16 @@ export function ReceiptForm({
             <Field
               label="Received into"
               required
-              hint={`Only ${form.currency} accounts are shown.`}
+              hint={
+                accountChoice.automatic
+                  ? 'Cash goes straight into Cash in Hand.'
+                  : `Only ${form.currency} accounts are shown.`
+              }
               error={fieldIssues.cashBankAccountId}
             >
               <Combobox
-                options={accounts.filter((a) => a.currency === form.currency)}
-                value={form.cashBankAccountId}
+                options={accountChoice.options}
+                value={cashBankAccountId}
                 onChange={(value) => setForm({ ...form, cashBankAccountId: value })}
                 placeholder="Choose an account…"
                 emptyText={`No ${form.currency} account exists`}

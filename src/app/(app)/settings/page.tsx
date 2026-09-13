@@ -27,11 +27,6 @@ const SPECS: Record<string, { label: string; description: string; kind: SettingS
       'Days before arrival at which an alert is raised for a shipment whose customer still owes money. Comma-separated; 0 means on the day of arrival.',
     kind: 'csv',
   },
-  [SETTING_KEYS.DEFAULT_PAYMENT_TERM_DAYS]: {
-    label: 'Default payment terms',
-    description: 'Pre-filled on new sales invoices, in days.',
-    kind: 'number',
-  },
 };
 
 export default async function SettingsPage() {

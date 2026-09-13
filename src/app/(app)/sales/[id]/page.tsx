@@ -261,7 +261,6 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                 </DetailRow>
                 <DetailRow label="Invoice date">{formatDate(invoice.invoiceDate)}</DetailRow>
                 <DetailRow label="Due date">{formatDate(invoice.dueDate)}</DetailRow>
-                <DetailRow label="Payment terms">{invoice.paymentTermDays} days</DetailRow>
                 <DetailRow label="Reference">{invoice.reference ?? '—'}</DetailRow>
                 <DetailRow label="Rate to USD">{formatRate(invoice.rateToUsd)}</DetailRow>
                 <DetailRow label={`Rate to ${user.activeCompany.localCurrency}`}>

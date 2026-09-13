@@ -119,7 +119,7 @@ export async function getSetupStatus(companyId: string): Promise<SetupStatus> {
       id: 'customers',
       phase: 'setup',
       title: 'Add your customers',
-      description: 'Credit limit and payment terms drive the ageing and overdue alerts.',
+      description: 'The credit limit drives the overdue alerts, and each invoice carries its own due date.',
       href: '/customers',
       actionLabel: 'Add customer',
       permission: PERMISSIONS.CUSTOMERS_CREATE,

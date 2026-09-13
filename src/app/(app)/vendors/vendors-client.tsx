@@ -21,7 +21,6 @@ export type VendorRow = {
   bankDetails: string | null;
   notes: string | null;
   primaryCurrency: string;
-  paymentTermDays: number;
   outstandingUsd: number;
   outstandingLabel: string;
   contractCount: number;
@@ -49,7 +48,6 @@ const FIELDS: FieldSpec[] = [
   { kind: 'textarea', name: 'address', label: 'Address', full: true },
 
   { kind: 'section', title: 'Settlement' },
-  { kind: 'number', name: 'paymentTermDays', label: 'Payment terms (days)', placeholder: '60' },
   { kind: 'select', name: 'status', label: 'Status', options: STATUS_OPTIONS },
   {
     kind: 'textarea',
@@ -107,14 +105,6 @@ export function VendorsClient({
       mobile: 'meta',
       sortValue: (r) => r.primaryCurrency,
       cell: (r) => <Badge tone="neutral">{r.primaryCurrency}</Badge>,
-    },
-    {
-      id: 'terms',
-      header: 'Terms',
-      numeric: true,
-      hideable: true,
-      sortValue: (r) => r.paymentTermDays,
-      cell: (r) => `${r.paymentTermDays}d`,
     },
     {
       id: 'contracts',
@@ -199,7 +189,7 @@ export function VendorsClient({
           title="New supplier"
           description="Suppliers are referenced by every purchase contract and payment."
           fields={FIELDS}
-          defaults={{ primaryCurrency: 'USD', paymentTermDays: 60, status: 'ACTIVE' }}
+          defaults={{ primaryCurrency: 'USD', status: 'ACTIVE' }}
           action={saveVendorAction.bind(null, null) as (p: MasterFormState, f: FormData) => Promise<MasterFormState>}
           submitLabel="Create supplier"
         />

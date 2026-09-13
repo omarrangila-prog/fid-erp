@@ -89,6 +89,7 @@ export default async function NewReceiptPage({
     hint: `${a.code} · ${a.currency} · ${a.accountType.replaceAll('_', ' ').toLowerCase()}`,
     keywords: `${a.code} ${a.currency}`,
     currency: a.currency,
+    accountType: a.accountType,
   }));
 
   const rates = await getRateDefaults(user.activeCompany.id);

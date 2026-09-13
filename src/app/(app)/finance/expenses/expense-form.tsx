@@ -16,6 +16,7 @@ import { dec, convertToUsd } from '@/lib/money';
 import { formatMoney } from '@/lib/format';
 import { saveExpenseAction, postExpenseAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
+import { accountsFor } from '@/lib/cash-account-choice';
 
 export type CategoryOption = ComboOption & { capitaliseByDefault: boolean; kind: 'SHIPMENT' | 'GENERAL' };
 
@@ -41,7 +42,7 @@ export function ExpenseForm({
   shipments: ComboOption[];
   vendors: ComboOption[];
   agents: ComboOption[];
-  accounts: Array<ComboOption & { currency: string }>;
+  accounts: Array<ComboOption & { currency: string; accountType: 'CASH' | 'PETTY_CASH' | 'BANK' }>;
   localCurrency: string;
   defaultLocalRate: string;
   defaultShipmentId?: string;
@@ -72,6 +73,14 @@ export function ExpenseForm({
     reference: '',
     description: '',
   });
+
+  // Cash goes into the drawer without asking; a bank transfer still needs to
+  // say which bank.
+  const accountChoice = React.useMemo(
+    () => accountsFor(accounts, form.paymentMethod, form.currency),
+    [accounts, form.paymentMethod, form.currency],
+  );
+  const cashBankAccountId = accountChoice.automatic ?? form.cashBankAccountId;
 
   // Only the categories that belong to the chosen type, so a staff dinner is
   // never one careless click away from a shipment's landed cost.
@@ -127,7 +136,7 @@ export function ExpenseForm({
       // was never shown.
       rateLocalPerUsd: form.currency === localCurrency ? form.rateToUsd || '1' : form.rateLocalPerUsd,
       paymentMethod: form.paymentMethod,
-      cashBankAccountId: form.cashBankAccountId ?? '',
+      cashBankAccountId: cashBankAccountId ?? '',
       capitaliseToLandedCost: capitalise,
       kind,
       reference: form.reference,
@@ -292,10 +301,18 @@ export function ExpenseForm({
             </Field>
           ) : null}
 
-          <Field label="Paid from" required hint={`Only ${form.currency} accounts are shown.`} error={fieldIssues.cashBankAccountId}>
+          <Field
+            label="Paid from"
+            hint={
+              accountChoice.automatic
+                ? 'Cash comes out of Cash in Hand. Leave blank if it is owed to a supplier or agent instead.'
+                : `Only ${form.currency} accounts are shown. Leave blank if it is owed to a supplier or agent instead.`
+            }
+            error={fieldIssues.cashBankAccountId}
+          >
             <Combobox
-              options={accounts.filter((a) => a.currency === form.currency)}
-              value={form.cashBankAccountId}
+              options={accountChoice.options}
+              value={cashBankAccountId}
               onChange={(value) => setForm({ ...form, cashBankAccountId: value })}
               placeholder="Choose an account…"
               emptyText={`No ${form.currency} account exists`}
@@ -305,7 +322,7 @@ export function ExpenseForm({
           <Field label="Payment method">
             <Select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}>
               <option value="BANK_TRANSFER">Bank transfer</option>
-              <option value="CASH">Cash / petty cash</option>
+              <option value="CASH">Cash</option>
               <option value="CHEQUE">Cheque</option>
             </Select>
           </Field>

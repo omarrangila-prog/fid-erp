@@ -52,7 +52,6 @@ export default async function VendorsPage({
       bankDetails: v.bankDetails,
       notes: v.notes,
       primaryCurrency: v.primaryCurrency,
-      paymentTermDays: v.paymentTermDays,
       outstandingUsd,
       outstandingLabel: outstandingUsd > 0 ? formatMoney(outstandingUsd, 'USD') : '—',
       contractCount: v._count.purchaseContracts,

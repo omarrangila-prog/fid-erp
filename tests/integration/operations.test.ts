@@ -208,9 +208,9 @@ describe('petty cash and job costing', () => {
     shipmentId = (await prisma.shipment.findFirstOrThrow({ where: { purchaseContractId: contract.id } })).id;
   });
 
-  it('pays a transport expense out of AED petty cash and reduces that balance', async () => {
+  it('pays a transport expense out of AED cash in hand and reduces that balance', async () => {
     const petty = await prisma.cashBankAccount.findFirstOrThrow({
-      where: { companyId: ctx.dubai.id, accountType: 'PETTY_CASH', currency: 'AED' },
+      where: { companyId: ctx.dubai.id, accountType: 'CASH', currency: 'AED' },
     });
     const category = await prisma.expenseCategory.findFirstOrThrow({
       where: { companyId: ctx.dubai.id, code: 'TRANSPORT' },
@@ -231,7 +231,7 @@ describe('petty cash and job costing', () => {
       where: { cashBankAccountId: petty.id },
     });
     const movementAed = lines.reduce((sum, l) => sum + Number(l.debitLocal) - Number(l.creditLocal), 0);
-    // Cash went out: AED 10,000 credited to petty cash.
+    // Cash went out: AED 10,000 credited to cash in hand.
     expect(movementAed).toBeCloseTo(-10000, 2);
   });
 

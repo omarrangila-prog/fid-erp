@@ -131,11 +131,6 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
               {invoice.dueDate ? formatDate(invoice.dueDate) : '—'}
             </dd>
 
-            <dt className="text-ink-subtle">Payment terms</dt>
-            <dd className="font-medium text-ink">
-              {invoice.paymentTermDays === 0 ? 'On delivery' : `${invoice.paymentTermDays} days`}
-            </dd>
-
             <dt className="text-ink-subtle">Currency</dt>
             <dd className="font-medium text-ink">{invoice.currency}</dd>
 

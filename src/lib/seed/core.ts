@@ -58,7 +58,7 @@ export type CompanySeed = {
   cashAccounts: Array<{
     code: string;
     name: string;
-    accountType: 'CASH' | 'PETTY_CASH' | 'BANK';
+    accountType: 'CASH' | 'BANK';
     currency: string;
     openingBalance?: string;
     bankName?: string;
@@ -79,10 +79,12 @@ export const COMPANY_SEEDS: CompanySeed[] = [
       { code: 'DXB-JAFZA', name: 'Jebel Ali Free Zone Warehouse', location: 'Jebel Ali, Dubai', port: 'Jebel Ali', isDefault: true },
       { code: 'DXB-BOND', name: 'Port Rashid Bonded Store', location: 'Port Rashid, Dubai', port: 'Port Rashid' },
     ],
+    // One cash account per currency. "Cash in Hand" is the drawer; a second
+    // petty-cash box for the same currency only gave people two places to
+    // put the same note.
     cashAccounts: [
-      { code: 'DXB-CASH-AED', name: 'AED Cash', accountType: 'CASH', currency: 'AED' },
-      { code: 'DXB-PETTY-AED', name: 'AED Petty Cash', accountType: 'PETTY_CASH', currency: 'AED' },
-      { code: 'DXB-CASH-USD', name: 'USD Cash', accountType: 'CASH', currency: 'USD' },
+      { code: 'DXB-CASH-AED', name: 'Cash in Hand', accountType: 'CASH', currency: 'AED' },
+      { code: 'DXB-CASH-USD', name: 'Cash in Hand (USD)', accountType: 'CASH', currency: 'USD' },
       { code: 'DXB-BANK-AED', name: 'AED Bank Account', accountType: 'BANK', currency: 'AED', bankName: 'Emirates NBD' },
       { code: 'DXB-BANK-USD', name: 'USD Bank Account', accountType: 'BANK', currency: 'USD', bankName: 'Emirates NBD' },
     ],
@@ -102,9 +104,8 @@ export const COMPANY_SEEDS: CompanySeed[] = [
       { code: 'MA-CASA-B', name: 'Casablanca Warehouse B', location: 'Casablanca' },
     ],
     cashAccounts: [
-      { code: 'MA-CASH-MAD', name: 'MAD Cash', accountType: 'CASH', currency: 'MAD' },
-      { code: 'MA-PETTY-MAD', name: 'MAD Petty Cash', accountType: 'PETTY_CASH', currency: 'MAD' },
-      { code: 'MA-CASH-USD', name: 'USD Cash', accountType: 'CASH', currency: 'USD' },
+      { code: 'MA-CASH-MAD', name: 'Cash in Hand', accountType: 'CASH', currency: 'MAD' },
+      { code: 'MA-CASH-USD', name: 'Cash in Hand (USD)', accountType: 'CASH', currency: 'USD' },
       { code: 'MA-BANK-MAD', name: 'MAD Bank Account', accountType: 'BANK', currency: 'MAD', bankName: 'Attijariwafa Bank' },
       { code: 'MA-BANK-USD', name: 'USD Bank Account', accountType: 'BANK', currency: 'USD', bankName: 'Attijariwafa Bank' },
     ],

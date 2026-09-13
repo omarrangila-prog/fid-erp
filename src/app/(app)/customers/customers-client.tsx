@@ -19,7 +19,6 @@ export type CustomerRow = {
   primaryCurrency: string;
   creditLimit: string;
   creditLimitLabel: string;
-  paymentTermDays: number;
   outstandingLabel: string;
   outstandingUsd: number;
   invoiceCount: number;
@@ -51,7 +50,6 @@ const FIELDS = (defaultCurrency: string): FieldSpec[] => [
 
   { kind: 'section', title: 'Trading terms' },
   { kind: 'money', name: 'creditLimit', label: 'Credit limit' },
-  { kind: 'number', name: 'paymentTermDays', label: 'Payment terms (days)', placeholder: '30' },
   { kind: 'select', name: 'status', label: 'Status', options: STATUS_OPTIONS },
   { kind: 'textarea', name: 'notes', label: 'Notes', full: true },
 ];
@@ -104,14 +102,6 @@ export function CustomersClient({
       mobile: 'meta',
       sortValue: (r) => r.primaryCurrency,
       cell: (r) => <Badge tone="neutral">{r.primaryCurrency}</Badge>,
-    },
-    {
-      id: 'terms',
-      header: 'Terms',
-      numeric: true,
-      hideable: true,
-      sortValue: (r) => r.paymentTermDays,
-      cell: (r) => `${r.paymentTermDays}d`,
     },
     {
       id: 'creditLimit',
@@ -199,7 +189,7 @@ export function CustomersClient({
           title="New customer"
           description="Customers are created once and referenced by every sale and receipt."
           fields={FIELDS(defaultCurrency)}
-          defaults={{ primaryCurrency: defaultCurrency, paymentTermDays: 30, status: 'ACTIVE', creditLimit: '0' }}
+          defaults={{ primaryCurrency: defaultCurrency, status: 'ACTIVE', creditLimit: '0' }}
           action={saveCustomerAction.bind(null, null) as (p: MasterFormState, f: FormData) => Promise<MasterFormState>}
           submitLabel="Create customer"
         />
@@ -222,7 +212,6 @@ export function CustomersClient({
             address: editing.address,
             primaryCurrency: editing.primaryCurrency,
             creditLimit: editing.creditLimit,
-            paymentTermDays: editing.paymentTermDays,
             notes: editing.notes,
             status: editing.status,
           }}

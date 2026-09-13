@@ -54,7 +54,6 @@ export default async function CustomersPage({
       primaryCurrency: c.primaryCurrency,
       creditLimit: c.creditLimit.toString(),
       creditLimitLabel: formatMoney(c.creditLimit, c.primaryCurrency),
-      paymentTermDays: c.paymentTermDays,
       outstandingUsd,
       outstandingLabel: outstandingUsd > 0 ? formatMoney(outstandingUsd, 'USD') : '—',
       invoiceCount: c._count.salesInvoices,

@@ -263,7 +263,6 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                 <DetailRow label="Port of loading">{contract.portOfLoading ?? '—'}</DetailRow>
                 <DetailRow label="Destination">{contract.destination ?? '—'}</DetailRow>
                 <DetailRow label="Incoterm">{INCOTERM_LABELS[contract.incoterm] ?? contract.incoterm}</DetailRow>
-                <DetailRow label="Payment terms">{contract.paymentTermDays} days</DetailRow>
                 <DetailRow label="Due date">{formatDate(contract.dueDate)}</DetailRow>
                 {showCost ? (
                   <>

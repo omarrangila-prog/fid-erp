@@ -110,6 +110,7 @@ export default async function NewExpensePage({ searchParams }: { searchParams: P
           hint: `${a.code} · ${a.currency} · ${a.accountType.replaceAll('_', ' ').toLowerCase()}`,
           keywords: `${a.code} ${a.currency}`,
           currency: a.currency,
+          accountType: a.accountType,
         }))}
         localCurrency={user.activeCompany.localCurrency}
         defaultLocalRate={rates.local}

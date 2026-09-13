@@ -120,7 +120,6 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
         <StatCard
           label="Credit limit"
           value={formatMoney(customer.creditLimit, customer.primaryCurrency)}
-          sublabel={`${customer.paymentTermDays} day terms`}
         />
       </div>
 
@@ -169,7 +168,6 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
               <CardContent>
                 <dl>
                   <DetailRow label="Ledger currency">{customer.primaryCurrency}</DetailRow>
-                  <DetailRow label="Payment terms">{customer.paymentTermDays} days</DetailRow>
                   <DetailRow label="Credit limit">
                     {formatMoney(customer.creditLimit, customer.primaryCurrency)}
                   </DetailRow>

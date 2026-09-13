@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { currencyCode, optionalDecimalString, optionalText, positiveInt, requiredText } from '@/lib/validation/common';
+import { currencyCode, optionalDecimalString, optionalText, requiredText } from '@/lib/validation/common';
 
 /** Master data schemas. These are shared by the forms and the server actions. */
 
@@ -21,7 +21,6 @@ export const customerSchema = z.object({
   address: optionalText(400),
   primaryCurrency: currencyCode,
   creditLimit: optionalDecimalString('Credit limit'),
-  paymentTermDays: positiveInt('Payment terms'),
   notes: optionalText(1000),
   status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),
 });
@@ -37,7 +36,6 @@ export const vendorSchema = z.object({
   email: z.union([z.literal(''), z.email('Enter a valid email address.')]).transform((v) => v || null),
   address: optionalText(400),
   primaryCurrency: currencyCode,
-  paymentTermDays: positiveInt('Payment terms'),
   bankDetails: optionalText(600),
   notes: optionalText(1000),
   status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),

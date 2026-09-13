@@ -26,7 +26,7 @@ export function AddCustomer({
 }: {
   defaultCurrency: string;
   /** Called with the new customer so the invoice can select it immediately. */
-  onCreated: (customer: { id: string; name: string; currency: string; paymentTermDays: number }) => void;
+  onCreated: (customer: { id: string; name: string; currency: string }) => void;
 }) {
   const [open, setOpen] = React.useState(false);
 
@@ -58,7 +58,7 @@ function AddCustomerSheet({
 }: {
   defaultCurrency: string;
   onClose: () => void;
-  onCreated: (customer: { id: string; name: string; currency: string; paymentTermDays: number }) => void;
+  onCreated: (customer: { id: string; name: string; currency: string }) => void;
 }) {
   const [pending, startTransition] = React.useTransition();
   const [error, setError] = React.useState<string | null>(null);
@@ -67,7 +67,6 @@ function AddCustomerSheet({
     primaryCurrency: defaultCurrency,
     country: '',
     phone: '',
-    paymentTermDays: '0',
   });
 
   const set = (patch: Partial<typeof form>) => setForm((prev) => ({ ...prev, ...patch }));
@@ -150,19 +149,6 @@ function AddCustomerSheet({
           </Field>
         </div>
 
-        <Field
-          label="Usual payment terms (days)"
-          htmlFor="newCustomerTerms"
-          hint="Only a starting point — every invoice takes its own due date."
-        >
-          <Input
-            id="newCustomerTerms"
-            inputMode="numeric"
-            className="tnum"
-            value={form.paymentTermDays}
-            onChange={(e) => set({ paymentTermDays: e.target.value })}
-          />
-        </Field>
       </div>
     </Sheet>
   );

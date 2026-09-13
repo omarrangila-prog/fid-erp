@@ -17,7 +17,6 @@ const FIELDS: FieldSpec[] = [
     options: [
       { value: 'BANK', label: 'Bank' },
       { value: 'CASH', label: 'Cash' },
-      { value: 'PETTY_CASH', label: 'Petty cash' },
     ],
   },
   {

@@ -213,7 +213,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionCode, { module: string; d
     description: 'Deposit, clear, bounce or cancel a cheque',
   },
 
-  [PERMISSIONS.CASHBANK_VIEW]: { module: 'Finance', description: 'View cash, petty cash and bank positions' },
+  [PERMISSIONS.CASHBANK_VIEW]: { module: 'Finance', description: 'View cash and bank positions' },
   [PERMISSIONS.CASHBANK_MANAGE]: { module: 'Finance', description: 'Create and edit cash/bank accounts' },
 
   [PERMISSIONS.LEDGERS_VIEW]: { module: 'Finance', description: 'View customer and supplier ledgers' },

@@ -21,7 +21,7 @@ export default async function NewSalePage() {
     prisma.customer.findMany({
       where: { companyId, status: 'ACTIVE' },
       orderBy: { customerName: 'asc' },
-      select: { id: true, customerName: true, customerCode: true, primaryCurrency: true, paymentTermDays: true },
+      select: { id: true, customerName: true, customerCode: true, primaryCurrency: true },
     }),
     getSellableStock(companyId),
     prisma.cashBankAccount.findMany({
@@ -35,7 +35,7 @@ export default async function NewSalePage() {
     {
       met: customers.length > 0,
       label: 'At least one customer',
-      description: 'An invoice has to be addressed to somebody, and their currency and payment terms come from their record.',
+      description: 'An invoice has to be addressed to somebody, and their currency comes from their record.',
       href: '/customers?new=1',
       actionLabel: 'Add customer',
     },
@@ -105,10 +105,9 @@ export default async function NewSalePage() {
         customers={customers.map((c) => ({
           value: c.id,
           label: c.customerName,
-          hint: `${c.customerCode} · ${c.primaryCurrency} · ${c.paymentTermDays}d`,
+          hint: `${c.customerCode} · ${c.primaryCurrency}`,
           keywords: c.customerCode,
           currency: c.primaryCurrency,
-          paymentTermDays: c.paymentTermDays,
         }))}
         stock={stockOptions}
         localCurrency={user.activeCompany.localCurrency}
