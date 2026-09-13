@@ -1,45 +1,41 @@
 import {
-  LayoutDashboard,
+  Anchor,
+  ArrowDownToLine,
+  ArrowLeftRight,
+  ArrowUpFromLine,
+  BarChart3,
+  BookOpen,
+  BookPlus,
+  Boxes,
+  Building2,
+  CircleDollarSign,
+  ClipboardCheck,
+  ClipboardList,
+  Coffee,
+  Compass,
+  DatabaseBackup,
+  Factory,
+  FileCheck,
+  FileMinus,
   FileText,
+  HandCoins,
+  History,
+  Layers,
+  LayoutDashboard,
+  LineChart,
+  PackageCheck,
+  Percent,
+  Receipt,
+  Settings,
+  ShieldCheck,
   Ship,
   ShoppingCart,
-  Boxes,
-  Layers,
-  History,
-  ArrowDownToLine,
-  ArrowUpFromLine,
-  Receipt,
-  Landmark,
-  BookOpen,
-  BookText,
-  CircleDollarSign,
-  HandCoins,
-  Users,
+  Tags,
   Truck,
-  Coffee,
-  Warehouse,
-  Handshake,
-  PackageCheck,
-  ArrowLeftRight,
-  Building2,
   UserCog,
-  ShieldCheck,
-  ScrollText,
-  Settings,
-  BarChart3,
-  ClipboardList,
-  TrendingUp,
-  Compass,
-  BookPlus,
-  LineChart,
-  RefreshCcw,
-  Scale,
-  ListChecks,
-  FileMinus,
-  ClipboardCheck,
-  DatabaseBackup,
-  Percent,
-  Anchor,
+  Users,
+  Wallet,
+  Warehouse,
   type LucideIcon,
 } from 'lucide-react';
 import { PERMISSIONS, type PermissionCode } from '@/lib/constants';
@@ -59,6 +55,19 @@ export type NavGroup = {
   items: NavItem[];
 };
 
+/**
+ * The sidebar.
+ *
+ * Eight sections and fifty-two entries was a list of everything the
+ * application can do, which is not the same as a list of what anyone does.
+ * What is here now is the work: buy, ship, receive, sell, get paid. Master
+ * records sit together in one section because they are set up once and edited
+ * rarely, and every report lives behind All Reports, which is a real index with
+ * descriptions rather than thirty more lines in the rail.
+ *
+ * Nothing was deleted — everything remains at its own address and reachable
+ * from the index or the screen it belongs to. Only the rail got shorter.
+ */
 export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Overview',
@@ -69,15 +78,16 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    // The order of the job: buy it, watch it ship, receive it, sell it.
     label: 'Trading',
     icon: Ship,
     items: [
       { label: 'Purchase Orders', href: '/purchases', icon: FileText, permissions: [PERMISSIONS.PURCHASES_VIEW] },
+      { label: 'Loading Sheet', href: '/loading', icon: ClipboardList, permissions: [PERMISSIONS.SHIPMENTS_VIEW] },
       { label: 'Purchase Receipts', href: '/goods-receipts', icon: PackageCheck, permissions: [PERMISSIONS.INVENTORY_VIEW] },
       { label: 'Sales Invoices', href: '/sales', icon: ShoppingCart, permissions: [PERMISSIONS.SALES_VIEW] },
-      { label: 'Credit Notes', href: '/sales/credit-notes', icon: FileMinus, permissions: [PERMISSIONS.CREDIT_NOTES_VIEW] },
       { label: 'Shipments', href: '/shipments', icon: Ship, permissions: [PERMISSIONS.SHIPMENTS_VIEW] },
-      { label: 'Loading Sheet', href: '/loading', icon: ClipboardList, permissions: [PERMISSIONS.SHIPMENTS_VIEW] },
+      { label: 'Credit Notes', href: '/sales/credit-notes', icon: FileMinus, permissions: [PERMISSIONS.CREDIT_NOTES_VIEW] },
     ],
   },
   {
@@ -89,22 +99,17 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Warehouse Transfers', href: '/inventory/transfers', icon: ArrowLeftRight, permissions: [PERMISSIONS.INVENTORY_VIEW] },
       { label: 'Stock Movements', href: '/inventory/movements', icon: History, permissions: [PERMISSIONS.INVENTORY_VIEW] },
       { label: 'Stock Counts', href: '/inventory/stock-counts', icon: ClipboardCheck, permissions: [PERMISSIONS.STOCK_COUNT_VIEW] },
-      { label: 'Stock Ageing', href: '/reports/stock-ageing', icon: History, permissions: [PERMISSIONS.INVENTORY_VIEW] },
-      { label: 'Items', href: '/items', icon: Coffee, permissions: [PERMISSIONS.ITEMS_VIEW] },
-      { label: 'Warehouses', href: '/warehouses', icon: Warehouse, permissions: [PERMISSIONS.WAREHOUSES_VIEW] },
     ],
   },
   {
-    label: 'Finance',
-    icon: Landmark,
+    label: 'Money',
+    icon: Wallet,
     items: [
       { label: 'Payments Received', href: '/finance/receipts', icon: ArrowDownToLine, permissions: [PERMISSIONS.RECEIPTS_VIEW] },
       { label: 'Payments Made', href: '/finance/payments', icon: ArrowUpFromLine, permissions: [PERMISSIONS.PAYMENTS_VIEW] },
       { label: 'Expenses', href: '/finance/expenses', icon: Receipt, permissions: [PERMISSIONS.EXPENSES_VIEW] },
-      { label: 'Expense Categories', href: '/expense-categories', icon: ListChecks, permissions: [PERMISSIONS.EXPENSE_CATEGORIES_VIEW] },
-      { label: 'Cheques', href: '/finance/cheques', icon: ScrollText, permissions: [PERMISSIONS.CHEQUES_VIEW] },
-      { label: 'Cash & Bank Accounts', href: '/finance/cash-bank', icon: Landmark, permissions: [PERMISSIONS.CASHBANK_VIEW] },
-      { label: 'Bank Reconciliation', href: '/finance/reconciliation', icon: ListChecks, permissions: [PERMISSIONS.BANK_RECONCILE] },
+      { label: 'Cheques', href: '/finance/cheques', icon: FileCheck, permissions: [PERMISSIONS.CHEQUES_VIEW] },
+      { label: 'Cash & Bank Accounts', href: '/finance/cash-bank', icon: Wallet, permissions: [PERMISSIONS.CASHBANK_VIEW] },
       { label: 'Receivables', href: '/finance/receivables', icon: CircleDollarSign, permissions: [PERMISSIONS.RECEIVABLES_VIEW] },
       { label: 'Payables', href: '/finance/payables', icon: HandCoins, permissions: [PERMISSIONS.PAYABLES_VIEW] },
     ],
@@ -115,34 +120,31 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: 'Journal Entries', href: '/reports/journal', icon: LineChart, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
       { label: 'General Ledger', href: '/reports/general-ledger', icon: BookOpen, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
-      { label: 'Customer Ledgers', href: '/ledgers/customers', icon: BookOpen, permissions: [PERMISSIONS.LEDGERS_VIEW] },
-      { label: 'Supplier Ledgers', href: '/ledgers/vendors', icon: BookText, permissions: [PERMISSIONS.LEDGERS_VIEW] },
+      { label: 'Customer Ledgers', href: '/ledgers/customers', icon: Users, permissions: [PERMISSIONS.LEDGERS_VIEW] },
+      { label: 'Supplier Ledgers', href: '/ledgers/vendors', icon: Factory, permissions: [PERMISSIONS.LEDGERS_VIEW] },
       { label: 'Agent Ledgers', href: '/ledgers/agents', icon: HandCoins, permissions: [PERMISSIONS.LEDGERS_VIEW] },
-      { label: 'Currency Revaluation', href: '/accounting/revaluation', icon: RefreshCcw, permissions: [PERMISSIONS.ACCOUNTING_POST] },
-      { label: 'Data Health Check', href: '/reports/reconciliation', icon: ShieldCheck, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
-      { label: 'Tax Return', href: '/reports/tax-return', icon: Percent, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
     ],
   },
   {
+    // One entry, because /reports is a real index with a description against
+    // every report — a better place to choose one than a list of bare names.
     label: 'Reports',
     icon: BarChart3,
     items: [
-      { label: 'Stock Allocation', href: '/reports/allocations', icon: Layers, permissions: [PERMISSIONS.INVENTORY_VIEW] },
       { label: 'All Reports', href: '/reports', icon: BarChart3, permissions: [PERMISSIONS.REPORTS_VIEW] },
-      { label: 'Profit & Loss', href: '/reports/profit-loss', icon: TrendingUp, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
-      { label: 'Balance Sheet', href: '/reports/balance-sheet', icon: Scale, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
-      { label: 'Trial Balance', href: '/reports/trial-balance', icon: ListChecks, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
-      { label: 'Cash Flow', href: '/reports/cash-flow', icon: ArrowLeftRight, permissions: [PERMISSIONS.CASHBANK_VIEW] },
-      { label: 'Profit Analysis', href: '/reports/analytics', icon: BarChart3, permissions: [PERMISSIONS.PROFITS_VIEW] },
     ],
   },
   {
-    label: 'Contacts',
+    // Set up once, edited rarely. Together, and out of the way.
+    label: 'Master Data',
     icon: Users,
     items: [
       { label: 'Customers', href: '/customers', icon: Users, permissions: [PERMISSIONS.CUSTOMERS_VIEW] },
-      { label: 'Suppliers', href: '/vendors', icon: Truck, permissions: [PERMISSIONS.VENDORS_VIEW] },
-      { label: 'Agents', href: '/agents', icon: Handshake, permissions: [PERMISSIONS.AGENTS_VIEW] },
+      { label: 'Suppliers', href: '/vendors', icon: Factory, permissions: [PERMISSIONS.VENDORS_VIEW] },
+      { label: 'Agents', href: '/agents', icon: UserCog, permissions: [PERMISSIONS.AGENTS_VIEW] },
+      { label: 'Items', href: '/items', icon: Coffee, permissions: [PERMISSIONS.ITEMS_VIEW] },
+      { label: 'Warehouses', href: '/warehouses', icon: Warehouse, permissions: [PERMISSIONS.WAREHOUSES_VIEW] },
+      { label: 'Expense Categories', href: '/expense-categories', icon: Tags, permissions: [PERMISSIONS.EXPENSE_CATEGORIES_VIEW] },
       { label: 'Shipping Lines', href: '/shipping-lines', icon: Ship, permissions: [PERMISSIONS.SHIPPING_LINES_VIEW] },
       { label: 'Ports', href: '/ports', icon: Anchor, permissions: [PERMISSIONS.PORTS_VIEW] },
     ],
@@ -154,7 +156,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Users', href: '/admin/users', icon: UserCog, permissions: [PERMISSIONS.USERS_MANAGE] },
       { label: 'Roles & Permissions', href: '/admin/roles', icon: ShieldCheck, permissions: [PERMISSIONS.ROLES_MANAGE] },
       { label: 'Companies', href: '/admin/companies', icon: Building2, permissions: [PERMISSIONS.COMPANIES_MANAGE] },
-      { label: 'Audit Log', href: '/admin/audit', icon: ScrollText, permissions: [PERMISSIONS.AUDIT_VIEW] },
+      { label: 'Audit Log', href: '/admin/audit', icon: History, permissions: [PERMISSIONS.AUDIT_VIEW] },
       { label: 'Backups', href: '/admin/backups', icon: DatabaseBackup, permissions: [PERMISSIONS.BACKUP_MANAGE] },
       { label: 'Tax Settings', href: '/settings/tax', icon: Percent, permissions: [PERMISSIONS.SETTINGS_MANAGE] },
       { label: 'Settings', href: '/settings', icon: Settings, permissions: [PERMISSIONS.SETTINGS_MANAGE] },

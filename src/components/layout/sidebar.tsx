@@ -144,10 +144,17 @@ function ExpandedNav({
 }) {
   const openGroups = React.useSyncExternalStore(subscribeOpenGroups, readOpenGroups, () => NO_GROUPS);
 
+  /**
+   * One section open at a time.
+   *
+   * Any number could be open before, and they stayed open, so a sidebar of
+   * eight sections became a scrolling list of everything the application does.
+   * Opening one now closes the rest, which keeps the rail the length of one
+   * section however long you have been using it — the way every accounting
+   * package the client compares this to behaves.
+   */
   function toggleGroup(label: string) {
-    writeOpenGroups(
-      openGroups.includes(label) ? openGroups.filter((entry) => entry !== label) : [...openGroups, label],
-    );
+    writeOpenGroups(openGroups.includes(label) ? [] : [label]);
   }
 
   return (

@@ -86,22 +86,48 @@ test.describe('sidebar', () => {
     expect(linkBox!.width).toBeGreaterThan(80);
   });
 
-  test('remembers which groups were left open', async ({ page }) => {
-    const finance = page.getByRole('button', { name: /^Finance\b/ });
-    await finance.click();
-    await expect(page.getByRole('link', { name: 'Receipts', exact: true })).toBeVisible();
+  test('remembers which section was left open', async ({ page }) => {
+    const money = page.getByRole('button', { name: /^Money\b/ });
+    await money.click();
+    await expect(page.getByRole('link', { name: 'Payments Received', exact: true })).toBeVisible();
 
     await page.reload();
-    await expect(page.getByRole('link', { name: 'Receipts', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Payments Received', exact: true })).toBeVisible();
+  });
+
+  test('opening one section closes the last', async ({ page }) => {
+    // Any number could be open at once, and they stayed open, so eight
+    // sections became a scrolling list of everything the application does.
+    await page.getByRole('button', { name: /^Money\b/ }).click();
+    await expect(page.getByRole('link', { name: 'Payments Received', exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: /^Inventory\b/ }).click();
+    await expect(page.getByRole('link', { name: 'Stock on Hand', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Payments Received', exact: true })).toHaveCount(0);
   });
 
   test('every new screen is reachable from the navigation', async ({ page }) => {
+    /*
+     * The rail carries the work, not everything the application can do.
+     *
+     * It went from fifty-two entries to forty-one: reports live behind the
+     * All Reports index, which describes each one, and master records sit
+     * together because they are set up once. Bank Reconciliation, Stock
+     * Ageing, Tax Return and the rest are on that index — the unit test
+     * `nothing is stranded` proves every screen is reachable from somewhere,
+     * so this only needs to pin what belongs in the rail itself.
+     */
     for (const [group, label, href] of [
+      ['Trading', 'Purchase Orders', '/purchases'],
+      ['Trading', 'Loading Sheet', '/loading'],
+      ['Trading', 'Purchase Receipts', '/goods-receipts'],
       ['Trading', 'Credit Notes', '/sales/credit-notes'],
-      ['Trading', 'Supplier Debit Notes', '/purchases/debit-notes'],
       ['Inventory', 'Stock Counts', '/inventory/stock-counts'],
-      ['Finance', 'Bank Reconciliation', '/finance/reconciliation'],
-      ['Accounting', 'Tax Return', '/reports/tax-return'],
+      ['Money', 'Payments Received', '/finance/receipts'],
+      ['Money', 'Cheques', '/finance/cheques'],
+      ['Accounting', 'Agent Ledgers', '/ledgers/agents'],
+      ['Reports', 'All Reports', '/reports'],
+      ['Master Data', 'Agents', '/agents'],
       ['Administration', 'Backups', '/admin/backups'],
       ['Administration', 'Tax Settings', '/settings/tax'],
     ] as const) {

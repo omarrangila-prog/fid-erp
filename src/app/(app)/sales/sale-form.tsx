@@ -18,6 +18,7 @@ import { formatMoney, formatQuantityKg } from '@/lib/format';
 import { saveSalesInvoiceAction } from '@/server/actions/trading-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { AddCustomer } from '@/app/(app)/sales/add-customer';
+import { cn } from '@/lib/utils';
 
 /**
  * Sales invoice entry.
@@ -115,6 +116,20 @@ export function SaleForm({
   // Held locally so a customer added from this screen can be selected without
   // a round trip that would throw away the half-filled invoice.
   const [customers, setCustomers] = React.useState(initialCustomers);
+
+  /*
+   * Two ways to choose stock, because the two companies work differently.
+   *
+   * Morocco sells out of a named store, so §11 asks for the warehouse first
+   * and then only what is in it. Dubai sells whole containers, where the row
+   * is the container and three dropdowns is two more than the job needs — and
+   * anybody who already knows the batch number wants to type it, not walk a
+   * cascade.
+   *
+   * So both, chosen per invoice. It starts on the cascade, which is the safer
+   * default: it cannot offer stock from the wrong warehouse.
+   */
+  const [pickMode, setPickMode] = React.useState<'warehouse' | 'search'>('warehouse');
   const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
   const [fieldIssues, setFieldIssues] = React.useState<Record<string, string>>({});
@@ -454,9 +469,35 @@ export function SaleForm({
           <div>
             <CardTitle>Coffee sold</CardTitle>
             <CardDescription>
-              Each line draws from one batch in one warehouse. Availability is checked again when you post.
+              Each line draws from one batch in one warehouse. Choose the warehouse first, or search all stock if you
+              already know the batch. Availability is checked again when you post.
             </CardDescription>
           </div>
+          <div className="inline-flex rounded-lg border border-line-strong p-0.5" role="group" aria-label="How to choose stock">
+            <button
+              type="button"
+              onClick={() => setPickMode('warehouse')}
+              aria-pressed={pickMode === 'warehouse'}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                pickMode === 'warehouse' ? 'bg-forest-800 text-white' : 'text-ink-muted hover:text-ink',
+              )}
+            >
+              By warehouse
+            </button>
+            <button
+              type="button"
+              onClick={() => setPickMode('search')}
+              aria-pressed={pickMode === 'search'}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                pickMode === 'search' ? 'bg-forest-800 text-white' : 'text-ink-muted hover:text-ink',
+              )}
+            >
+              Search stock
+            </button>
+          </div>
+
           <Button variant="outline" size="sm" onClick={() => setLines((prev) => [...prev, newLine(defaultTaxCodeId)])}>
             <Plus />
             Add line
@@ -497,6 +538,27 @@ export function SaleForm({
                   actually in that warehouse, so a batch sitting in the other
                   store cannot be picked by mistake.
                 */}
+                {pickMode === 'search' ? (
+                  <Field label="Batch and warehouse" required className="lg:col-span-3">
+                    <Combobox
+                      options={stock}
+                      value={line.stockKey}
+                      onChange={(value) => {
+                        // Keep the cascade in step, so switching back shows
+                        // the warehouse and coffee this batch belongs to.
+                        const option = stock.find((o) => o.value === value);
+                        setLine(line.key, {
+                          stockKey: value,
+                          warehouseId: option?.warehouseId ?? '',
+                          itemId: option?.itemId ?? '',
+                        });
+                      }}
+                      placeholder="Search batch, lot, container or coffee…"
+                      emptyText="No stock matches"
+                    />
+                  </Field>
+                ) : (
+                <>
                 <Field label="Warehouse" required>
                   <Select
                     value={line.warehouseId}
@@ -545,6 +607,8 @@ export function SaleForm({
                     ))}
                   </Select>
                 </Field>
+                </>
+                )}
 
                 <Field label="Quantity" required>
                   <Input

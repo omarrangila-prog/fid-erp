@@ -308,6 +308,11 @@ test('§11 the sale asks for the warehouse before the stock', async ({ page }) =
   await page.goto('/sales/new', { waitUntil: 'domcontentloaded' });
   const form = page.getByRole('main');
 
+  // Two ways to pick stock, and it starts on the safer one: the cascade
+  // cannot offer a batch from the wrong warehouse.
+  await expect(form.getByRole('button', { name: 'By warehouse' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(form.getByRole('button', { name: 'Search stock' })).toHaveAttribute('aria-pressed', 'false');
+
   const warehouse = form.getByRole('combobox', { name: /^Warehouse/ }).first();
   const coffee = form.getByRole('combobox', { name: /^Coffee/ }).first();
   const batch = form.getByRole('combobox', { name: /^Batch/ }).first();
@@ -341,4 +346,20 @@ test('§35 rule 3 — saving a purchase order puts it on the loading sheet', asy
   // One button, and it is the obvious one.
   await expect(form.getByRole('button', { name: /^Save purchase order$/ })).toBeVisible();
   await expect(form.getByText(/appears on the Loading Sheet immediately/i)).toBeVisible();
+});
+
+test('§11 stock can also be searched directly, for whole-container selling', async ({ page }) => {
+  await page.goto('/sales/new', { waitUntil: 'domcontentloaded' });
+  const form = page.getByRole('main');
+
+  // Dubai sells a container at a time, where the row is the container and the
+  // cascade is two steps more than the job needs. Switching gives one box.
+  await form.getByRole('button', { name: 'Search stock' }).click();
+
+  await expect(form.getByRole('combobox', { name: /Batch and warehouse/ })).toBeVisible();
+  await expect(form.getByRole('combobox', { name: /^Warehouse/ })).toHaveCount(0);
+
+  // And back again, without losing the invoice.
+  await form.getByRole('button', { name: 'By warehouse' }).click();
+  await expect(form.getByRole('combobox', { name: /^Warehouse/ }).first()).toBeVisible();
 });

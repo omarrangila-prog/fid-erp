@@ -78,3 +78,56 @@ describe('internal links', () => {
     expect([...new Set(broken)], `dead links:\n${[...new Set(broken)].join('\n')}`).toEqual([]);
   });
 });
+
+/**
+ * Every page can be got to.
+ *
+ * The sidebar was trimmed from fifty-two entries to forty-one, and that is
+ * exactly the change that strands a screen: it stays built, keeps working, and
+ * has no route to it any more. Nobody notices, because nobody can get there to
+ * notice.
+ *
+ * So a page must be reachable from the sidebar, from the Reports index, or
+ * from a link on another page. Detail pages and the sub-pages of a screen —
+ * /purchases/[id], /sales/new — are reached from their own list and are not
+ * checked here; this is about top-level screens with nowhere to be found.
+ */
+describe('nothing is stranded', () => {
+  const sources = walk('src');
+  const allText = sources.map((file) => readFileSync(file, 'utf8')).join('\n');
+
+  /** Top-level screens: one segment, no parameters. */
+  const topLevel = servedRoutes().filter(
+    (route) =>
+      !route.startsWith('/api') &&
+      !route.includes('[') &&
+      route.split('/').filter(Boolean).length >= 1 &&
+      !['/login', '/select-company', '/unauthorized', '/dashboard'].includes(route),
+  );
+
+  const linked = (route: string) =>
+    new RegExp(`['\`"]${route.replace(/\//g, '\\/')}['\`"?]`).test(allText);
+
+  it.each(topLevel)('%s is linked from somewhere', (route) => {
+    if (linked(route)) return;
+
+    /*
+     * A sub-page is reached from its own list, and often by a href built at
+     * runtime — `${basePath}/new` — which no amount of searching for the
+     * literal string will find. /purchases/debit-notes/new is exactly that,
+     * and the first version of this test reported it as stranded when it is
+     * one click from the debit notes list.
+     *
+     * So for those, the parent has to be reachable instead. That still catches
+     * the thing worth catching: a whole screen with no way in.
+     */
+    const conventional = /\/(new|edit|print)$/;
+    if (conventional.test(route)) {
+      const parent = route.replace(conventional, '');
+      expect(linked(parent), `${route}: neither it nor ${parent} is linked from anywhere`).toBe(true);
+      return;
+    }
+
+    expect(false, `${route} has no link pointing at it`).toBe(true);
+  });
+});
