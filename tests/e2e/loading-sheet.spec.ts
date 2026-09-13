@@ -7,6 +7,9 @@ import { test, expect, type Page } from '@playwright/test';
  * checked as screens: the columns his paper sheet has, a table rather than a
  * grid of cards, the derived sold/unsold and payment positions, and the
  * drill-down from a shipment to the customers it was sold to.
+ *
+ * The rows come from scripts/e2e-fixture.ts, run against the test database
+ * before the suite. Nothing here assumes demo data.
  */
 
 const ADMIN_PIN = process.env.ADMIN_PIN;
@@ -55,14 +58,16 @@ test.describe('the loading sheet', () => {
 
   test('shows both the supplier reference and the FID number', async ({ page }) => {
     await page.goto('/loading');
-    await expect(page.getByText(/DEMO-PO-ETH-2601/).first()).toBeVisible();
+    // The trade scripts/e2e-fixture.ts puts in: the supplier's own reference
+    // and the FID number side by side.
+    await expect(page.getByText(/E2E-PO-DXB-1/).first()).toBeVisible();
     await expect(page.getByText(/FID-DXB-PO-/).first()).toBeVisible();
   });
 
   test('fills in the consignee from the sale, and shows a derived payment position', async ({ page }) => {
     await page.goto('/loading');
-    // The Ethiopian container was sold, so its consignee came from the invoice.
-    await expect(page.getByText(/Emirates Specialty|Gulf Coffee|Al Marsa/).locator('visible=true').first()).toBeVisible();
+    // The container was sold, so its consignee came from the invoice.
+    await expect(page.getByText(/E2E Roastery Dubai/).locator('visible=true').first()).toBeVisible();
     await expect(page.getByText(/Paid|Part paid|Overdue|Unpaid/).locator('visible=true').first()).toBeVisible();
   });
 

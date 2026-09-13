@@ -49,6 +49,7 @@ export type PurchaseFormDefaults = {
   portOfLoading?: string;
   destination?: string;
   containers?: string;
+  dueDate?: string;
   notes?: string;
   lines?: LineDefaults[];
 };
@@ -104,6 +105,7 @@ export function PurchaseForm({
     portOfLoading: defaults?.portOfLoading ?? '',
     destination: defaults?.destination ?? '',
     containers: defaults?.containers ?? '',
+    dueDate: defaults?.dueDate ?? '',
     notes: defaults?.notes ?? '',
   });
 
@@ -150,6 +152,7 @@ export function PurchaseForm({
     return JSON.stringify({
       ...header,
       containers: header.containers ? Number(header.containers) : undefined,
+      dueDate: header.dueDate || undefined,
       freightAmount: header.freightAmount || '0',
       otherCharges: header.otherCharges || '0',
       lines: lines.map((line) => ({
@@ -302,8 +305,8 @@ export function PurchaseForm({
           </FormSection>
 
           <FormSection
-            title="Supplier reference and origin"
-            description="Neither is needed to save the order. Fill in what you know."
+            title="Supplier reference, origin and payment due"
+            description="None of these is needed to save the order. Fill in what you know."
             collapsible
           >
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -320,6 +323,25 @@ export function PurchaseForm({
                   value={header.origin}
                   onChange={(e) => setField('origin', e.target.value)}
                   placeholder="Santos, Brazil"
+                />
+              </Field>
+              {/*
+                A date, not a term. Nobody keeps standing payment terms on a
+                supplier any more, so this is the only place the ageing can
+                learn when the money is actually expected. Left blank, the
+                contract is due on its own date.
+              */}
+              <Field
+                label="Payment due"
+                htmlFor="dueDate"
+                hint="When the supplier expects payment. Blank means on the contract date."
+                error={errors.dueDate}
+              >
+                <Input
+                  id="dueDate"
+                  type="date"
+                  value={header.dueDate}
+                  onChange={(e) => setField('dueDate', e.target.value)}
                 />
               </Field>
             </div>

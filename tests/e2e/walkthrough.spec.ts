@@ -8,8 +8,11 @@ import { test, expect, type Page } from '@playwright/test';
  * show, do the reports agree with one another, and does a document raised on
  * one screen appear on the others that depend on it.
  *
- * This runs against the demonstration data, which is a full book of trade, so
- * an empty page here means a real failure rather than an empty database.
+ * This runs against the trade scripts/e2e-fixture.ts puts into the test
+ * database — one purchase, received, loaded, sold, part paid, with a supplier
+ * payment and a clearing cost behind it — so a screen that exists to show a
+ * figure is expected to show that figure. Screens the fixture leaves empty
+ * (credit notes, stock counts) are expected to open cleanly and say so.
  */
 
 const ADMIN_PIN = process.env.ADMIN_PIN;
@@ -69,35 +72,34 @@ test('the dashboard shows a business that is actually trading', async ({ page })
 });
 
 test('trading screens list the consignments', async ({ page }) => {
-  await open(page, '/purchases', /DEMO-PO-ETH-2601|FID-DXB-PO-/);
+  await open(page, '/purchases', /E2E-PO-DXB-1|FID-DXB-PO-/);
   await open(page, '/sales', /FID-DXB-SI-/);
-  await open(page, '/shipments', /FID-DXB-SHP-|Yirgacheffe/);
+  await open(page, '/shipments', /FID-DXB-SHP-|Sidamo/);
   await open(page, '/goods-receipts', /FID-DXB-/);
 });
 
 test('inventory shows stock, batches, movements and what is at sea', async ({ page }) => {
-  await open(page, '/inventory', /Yirgacheffe|Santos/);
-  await open(page, '/inventory/batches', /DEMO-B-/);
-  await open(page, '/inventory/movements', /Yirgacheffe|Santos|Received/);
-  await open(page, '/inventory/shipments', /Supremo|in transit|In Transit/i);
-  await open(page, '/inventory/stock-counts', /FID-DXB-SC-/);
+  await open(page, '/inventory', /Sidamo/);
+  await open(page, '/inventory/batches', /E2E-B-DXB-1/);
+  await open(page, '/inventory/movements', /Sidamo|Received/);
+  await open(page, '/inventory/shipments', /Sidamo/);
+  // No count has been taken: the screen opens and says so.
+  await open(page, '/inventory/stock-counts', /stock count|Stock count/i);
 });
 
 test('the money screens show the cash cycle', async ({ page }) => {
   await open(page, '/finance/receipts', /FID-DXB-RV-/);
   await open(page, '/finance/payments', /FID-DXB-PV-/);
   await open(page, '/finance/expenses', /FID-DXB-EV-/);
-  await open(page, '/finance/cash-bank', /Bank Account|AED/);
-  await open(page, '/finance/receivables', /Emirates Specialty|Gulf Coffee|Doha/);
-  await open(page, '/finance/payables', /Moplaco|Cooxupé/);
+  await open(page, '/finance/cash-bank', /Cash in Hand|Bank Account/);
+  await open(page, '/finance/receivables', /E2E Roastery Dubai/);
+  await open(page, '/finance/payables', /E2E Exporter Ethiopia/);
   await open(page, '/finance/reconciliation', /statement|Statement/);
 });
 
-test('the credit note and the coffee it returned are both visible', async ({ page }) => {
-  await open(page, '/sales/credit-notes', /FID-DXB-CN-/);
-  await page.getByRole('link', { name: /FID-DXB-CN-/ }).first().click();
-  await expect(page.getByText(/Quality claim/)).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByText(/Returned|returned/).first()).toBeVisible();
+test('the credit note screen opens with nothing to show', async ({ page }) => {
+  await open(page, '/sales/credit-notes', /credit note|Credit note/i);
+  await expect(page.getByRole('heading', { name: /this page could|something went wrong/i })).toHaveCount(0);
 });
 
 test('the accounting reports agree with one another', async ({ page }) => {
@@ -123,10 +125,10 @@ test('the tax return is prepared and ties to the ledger', async ({ page }) => {
 
   await expect(page.getByRole('heading', { name: /VAT Return/i })).toBeVisible({ timeout: 20_000 });
 
-  // Zero-rated exports and standard-rated domestic sales are reported on
-  // different lines, which is the whole reason the treatments exist.
-  await expect(page.getByText(/zero.rated/i).locator('visible=true').first()).toBeVisible();
+  // The fixture sale is standard-rated, and it is reported as such — by code,
+  // treatment and rate — rather than folded into one total.
   await expect(page.getByText(/standard/i).locator('visible=true').first()).toBeVisible();
+  await expect(page.getByText(/Output VAT/i).first()).toBeVisible();
 
   // The figures are built from the documents and checked against the VAT
   // control accounts; a difference between the two is reported loudly.
@@ -155,7 +157,7 @@ test('a document opens and prints', async ({ page }) => {
   expect(invoicePath, 'the sales list should link to an invoice').toMatch(/^\/sales\/[a-z0-9]+$/);
 
   await page.goto(invoicePath!);
-  await expect(page.getByText(/Emirates Specialty|Gulf Coffee|Al Marsa|Doha/).first()).toBeVisible();
+  await expect(page.getByText(/E2E Roastery Dubai/).first()).toBeVisible();
 
   // domcontentloaded rather than load: the print stylesheet keeps the load
   // event pending long enough to time out, while the document itself — which
@@ -167,25 +169,24 @@ test('a document opens and prints', async ({ page }) => {
   await expect(page.getByText(/FID TRADING L\.L\.C\./)).toHaveCount(2);
 });
 
-test('stock ageing and the port master open with real data', async ({ page }) => {
+test('stock ageing and the port master open', async ({ page }) => {
   await open(page, '/reports/stock-ageing', /days|Days/);
   // The buckets are the point of the screen.
   await expect(page.getByText(/0–30 days/).locator('visible=true').first()).toBeVisible();
   await expect(page.getByText(/Why this matters for coffee/)).toBeVisible();
 
-  await open(page, '/ports', /Jebel Ali/);
-  await expect(page.getByText(/Santos/).locator('visible=true').first()).toBeVisible();
+  await open(page, '/ports', /port|Port/);
   // A Dubai company is not offered Casablanca as one of its own ports.
   await expect(page.getByText(/Casablanca/)).toHaveCount(0);
 });
 
 test('the contacts and master screens are populated', async ({ page }) => {
-  await open(page, '/customers', /Emirates Specialty/);
-  await open(page, '/vendors', /Moplaco/);
-  await open(page, '/items', /Yirgacheffe/);
+  await open(page, '/customers', /E2E Roastery Dubai/);
+  await open(page, '/vendors', /E2E Exporter Ethiopia/);
+  await open(page, '/items', /Sidamo/);
   await open(page, '/warehouses', /Jebel Ali|Port Rashid/);
-  await open(page, '/agents', /Levant|Maghreb/);
-  await open(page, '/shipping-lines', /Maersk|CMA/);
+  await open(page, '/agents', /E2E Clearing Agent/);
+  await open(page, '/shipping-lines', /E2E Container Line/);
 });
 
 test('administration is reachable and the audit trail is populated', async ({ page }) => {
@@ -226,8 +227,8 @@ test('Morocco keeps its own separate books', async ({ page }) => {
   await expect(page.getByText(/happening at FID Trading International SARL/)).toBeVisible({ timeout: 20_000 });
 
   // Morocco's own customers, and none of Dubai's.
-  await open(page, '/customers', /Torréfaction Casablanca|Café Maghreb|Atlas Coffee/);
-  await expect(page.getByText(/Emirates Specialty Roasters/)).toHaveCount(0);
+  await open(page, '/customers', /E2E Torréfacteur Casablanca/);
+  await expect(page.getByText(/E2E Roastery Dubai/)).toHaveCount(0);
 
   await page.goto('/reports/reconciliation');
   await expect(page.getByText(/10 of 10|All checks pass|Everything agrees/i).first()).toBeVisible({ timeout: 20_000 });

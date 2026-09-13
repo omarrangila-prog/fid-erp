@@ -23,7 +23,8 @@
     "e2e:shots": "playwright test tests/e2e/screenshots.spec.ts",
     "postinstall": "prisma generate",
     "db:inspect": "tsx scripts/inspect-data.ts",
-    "db:demo": "tsx scripts/demo-data.ts"
+    "db:demo": "tsx scripts/demo-data.ts",
+    "e2e:fixture": "tsx --tsconfig tsconfig.json scripts/e2e-fixture.ts --reset"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

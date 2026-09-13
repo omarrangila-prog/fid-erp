@@ -63,9 +63,9 @@ test('a customer can be created through the interface', async ({ page }) => {
   await signInToDubai(page);
   await page.goto('/customers?new=1');
 
+  // The name is all that is asked for; the code is issued by the system.
   const unique = `E2E Roasters ${Date.now().toString(36).toUpperCase()}`;
   await page.getByLabel(/customer name/i).fill(unique);
-  await page.getByLabel(/customer code/i).fill(`E2E${Date.now().toString(36).slice(-5).toUpperCase()}`);
   await page.getByRole('button', { name: /^save|create customer$/i }).first().click();
 
   await expect(page.getByText(unique).first()).toBeVisible({ timeout: 15_000 });
@@ -75,8 +75,9 @@ test('the journal voucher refuses to post until debits equal credits', async ({ 
   await signInToDubai(page);
   await page.goto('/accounting/journal/new');
 
+  // The button is never disabled — a dead button with no explanation was
+  // read as "saving does nothing". It is pressable, and pressing it says why.
   const post = page.getByRole('button', { name: /post voucher/i });
-  await expect(post).toBeDisabled();
   await expect(page.getByText(/not balanced/i)).toBeVisible();
 
   await page.getByLabel(/description/i).fill('E2E balance check');
@@ -87,15 +88,19 @@ test('the journal voucher refuses to post until debits equal credits', async ({ 
   await page.getByRole('listbox').getByRole('option').first().click();
   await page.getByLabel(/line 1 amount/i).fill('250');
 
-  // One side only: still refused.
-  await expect(post).toBeDisabled();
+  // One side only: refused, and it says what is missing.
+  await post.click();
+  await expect(page.getByText(/every line needs an account and an amount/i)).toBeVisible();
 
+  // Two sides that disagree: refused, and it says by how much.
   await page.getByRole('combobox', { name: /line 2 account/i }).click();
   await page.getByRole('listbox').getByRole('option').nth(1).click();
-  await page.getByLabel(/line 2 amount/i).fill('250');
+  await page.getByLabel(/line 2 amount/i).fill('100');
+  await post.click();
+  await expect(page.getByText(/differ by 150\.00/i)).toBeVisible();
 
+  await page.getByLabel(/line 2 amount/i).fill('250');
   await expect(page.getByText(/^balanced$/i)).toBeVisible();
-  await expect(post).toBeEnabled();
 });
 
 test('a stock figure on the dashboard matches the inventory report', async ({ page }) => {

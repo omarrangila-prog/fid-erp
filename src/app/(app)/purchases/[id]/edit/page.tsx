@@ -82,6 +82,8 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
           contractDate: toDateInputValue(contract.contractDate),
           vendorId: contract.vendorId,
           origin: contract.origin ?? '',
+          dueDate: contract.dueDate ? toDateInputValue(contract.dueDate) : '',
+          containers: contract.containers != null ? String(contract.containers) : '',
           currency: contract.currency,
           rateToUsd: contract.rateToUsd.toString(),
           rateLocalPerUsd: contract.rateLocalPerUsd.toString(),

@@ -555,13 +555,6 @@ export function LoadingSheet({
       ),
     },
     {
-      id: 'line',
-      header: 'Shipping line',
-      sortValue: (r) => r.shippingLine ?? '',
-      exportValue: (r) => r.shippingLine ?? '',
-      cell: (r) => r.shippingLine ?? '—',
-    },
-    {
       id: 'sold',
       header: 'Sold / left',
       numeric: true,

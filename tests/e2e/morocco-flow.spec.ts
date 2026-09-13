@@ -64,10 +64,14 @@ test('a purchase order saves with no lot number and no payment term', async ({ p
   await expect(page.getByLabel(/payment terms/i)).toHaveCount(0);
   await expect(page.getByLabel(/expected shipment date/i)).toHaveCount(0);
 
-  // And a due date is offered instead — a date, not a term.
+  // And a due date is offered instead — a date, not a term — behind the
+  // "fill in what you know" heading, so the plain order stays plain.
+  await page.getByText(/Supplier reference, origin and payment due/).click();
   await expect(page.getByLabel(/payment due/i)).toBeVisible();
 
-  // Lot and batch are on the line but neither is marked required.
+  // Lot and batch are on the line, behind their own disclosure, and neither
+  // is marked required — they are asked for at the goods receipt.
+  await page.getByText(/Lot, batch, container and packing/).first().click();
   const lot = page.getByLabel(/lot number/i).first();
   await expect(lot).toBeVisible();
   await expect(lot).not.toHaveAttribute('required', '');

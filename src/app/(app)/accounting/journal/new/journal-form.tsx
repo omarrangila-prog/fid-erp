@@ -90,14 +90,19 @@ export function JournalForm({
     setLines((current) => (current.length <= 2 ? current : current.filter((line) => line.key !== key)));
   }
 
-  /** Fills the shorter side so the entry balances, which is the usual last step. */
+  /**
+   * Fills a blank amount with whatever balances the entry, which is the usual
+   * last step. Only a blank one: a figure the user typed is the figure they
+   * meant. This used to rewrite any amount on blur, so a deliberate 100 on
+   * the second line of a three-line voucher became 250 the moment they tabbed
+   * away, and a split entry could not be typed in at all.
+   */
   function balanceRemainder(key: string) {
     const difference = totals.difference;
     if (difference.isZero()) return;
     const line = lines.find((l) => l.key === key);
-    if (!line) return;
-    const current = new Decimal(line.amount || 0);
-    const adjustment = line.direction === 'DEBIT' ? current.minus(difference) : current.plus(difference);
+    if (!line || line.amount.trim() !== '') return;
+    const adjustment = line.direction === 'DEBIT' ? difference.negated() : difference;
     if (adjustment.greaterThan(0)) updateLine(key, { amount: adjustment.toFixed(2) });
   }
 
