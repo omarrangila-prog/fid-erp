@@ -241,8 +241,19 @@ describe('an expense carrying input tax', () => {
     const purchaseStd = purchaseCodes.find((code) => code.treatment === 'STANDARD')!.id;
     const cash = await getCashAccount(ctx.dubai.id, 'AED');
 
+    /*
+     * A general category, chosen deterministically.
+     *
+     * This was `findFirst` on `capitaliseByDefault: false` with no ordering,
+     * so Postgres decided which category the test got. Most of the time that
+     * was a general one; sometimes it was "Shipment Bank Charges", which
+     * refuses to post without naming a shipment — and the test failed for a
+     * reason that had nothing to do with tax. An unordered findFirst in a test
+     * is a coin toss dressed as a fixture.
+     */
     const category = await prisma.expenseCategory.findFirstOrThrow({
-      where: { companyId: ctx.dubai.id, capitaliseByDefault: false },
+      where: { companyId: ctx.dubai.id, capitaliseByDefault: false, kind: 'GENERAL' },
+      orderBy: { code: 'asc' },
     });
 
     const before = await controlUsd(ctx.dubai.id, 'VAT_INPUT', 'debit');

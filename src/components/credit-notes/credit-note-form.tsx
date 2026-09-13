@@ -12,7 +12,7 @@ import { Combobox } from '@/components/ui/combobox';
 import { Callout } from '@/components/ui/feedback';
 import { dec, toMoney, sum, Decimal } from '@/lib/money';
 import { formatMoney, formatQuantityKg } from '@/lib/format';
-import { saveCreditNoteAction } from '@/server/actions/compliance-actions';
+import { saveCreditNoteAction, postCreditNoteAction } from '@/server/actions/compliance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 
 export type CreditParty = { id: string; name: string; currency: string };
@@ -278,13 +278,31 @@ export function CreditNoteForm({
 
     start(async () => {
       const result = await saveCreditNoteAction(JSON.stringify(payload));
-      if (result?.ok) {
-        toast.success(result.message);
+      if (!result?.ok) {
+        setError(result?.error ?? 'The note could not be saved.');
+        return;
+      }
+
+      /*
+       * Saving a credit note posts it.
+       *
+       * A draft credits nobody: the customer still owes the full amount, the
+       * returned coffee is not back on the shelf and nothing has reached the
+       * ledger. Leaving it there and saying "saved" is the same fault the
+       * purchase order and the invoice had — the document exists and none of
+       * its effects do, which reads as nothing having happened.
+       */
+      const posted = await postCreditNoteAction(result.id);
+      if (!posted.ok) {
+        setError(`${posted.error} The note is saved as a draft — open it to post once that is resolved.`);
         opening();
         router.push(`${basePath}/${result.id}`);
-      } else {
-        setError(result?.error ?? 'The note could not be saved.');
+        return;
       }
+
+      toast.success('Credit note posted.');
+      opening();
+      router.push(`${basePath}/${result.id}`);
     });
   }
 

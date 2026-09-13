@@ -123,10 +123,13 @@ export async function receiveEverything(params: {
       warehouseId: params.warehouseId,
       receiptDate: params.receiptDate,
       receivedById: params.userId,
+      // Stock takes an identity at receipt. A batch the contract already named
+      // keeps it — naming it again here would split it into a second lot.
       lines: batches.map((b) => ({
         batchId: b.id,
         quantityKg: b.orderedQuantityKg.toString(),
         bags: b.orderedBags,
+        ...(b.traceabilityPending ? { lotNumber: `LOT-${b.batchNumber}` } : {}),
       })),
     },
     params.userId,

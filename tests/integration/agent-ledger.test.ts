@@ -183,8 +183,14 @@ describe('a customer pays the agent, not the company', () => {
 
 describe('commission agreed but not yet paid', () => {
   it('is a cost of the shipment without any money moving', async () => {
+/*
+     * A shipment category, chosen deterministically. These expenses name a
+     * shipment, and a general category naming one is refused — so an unordered
+     * findFirst made this test a coin toss on Postgres row order.
+     */
     const category = await prisma.expenseCategory.findFirstOrThrow({
-      where: { companyId, status: 'ACTIVE' },
+      where: { companyId, status: 'ACTIVE', kind: 'SHIPMENT' },
+      orderBy: { code: 'asc' },
     });
     const cashBefore = await getCashBankBalance(
       prisma as never,
@@ -225,7 +231,10 @@ describe('commission agreed but not yet paid', () => {
   });
 
   it('refuses a cost settled two ways at once', async () => {
-    const category = await prisma.expenseCategory.findFirstOrThrow({ where: { companyId, status: 'ACTIVE' } });
+    const category = await prisma.expenseCategory.findFirstOrThrow({
+      where: { companyId, status: 'ACTIVE', kind: 'SHIPMENT' },
+      orderBy: { code: 'asc' },
+    });
     const cash = await getCashAccount(companyId, 'MAD');
 
     await expect(

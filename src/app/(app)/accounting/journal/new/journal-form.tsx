@@ -77,7 +77,6 @@ export function JournalForm({
 
   const balanced = totals.difference.isZero() && totals.debit.greaterThan(0);
   const complete = lines.every((line) => line.accountId && Number(line.amount) > 0);
-  const canPost = balanced && complete && description.trim().length > 0 && !busy;
 
   function updateLine(key: string, patch: Partial<Line>) {
     setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
@@ -104,6 +103,29 @@ export function JournalForm({
 
   function submit() {
     setError(null);
+
+    /*
+     * Say what is missing rather than going dead.
+     *
+     * The button was disabled until the voucher balanced, was complete and had
+     * a description — three conditions, none of them stated, and a button that
+     * does nothing when pressed is indistinguishable from a broken one.
+     */
+    if (!description.trim()) {
+      setError('Give the voucher a description, so the entry can be understood later.');
+      return;
+    }
+    if (!complete) {
+      setError('Every line needs an account and an amount greater than zero.');
+      return;
+    }
+    if (!balanced) {
+      setError(
+        `Debits and credits differ by ${totals.difference.abs().toFixed(2)}. A journal entry has to balance before it can be posted.`,
+      );
+      return;
+    }
+
     start(async () => {
       const result = await postJournalVoucherAction(
         JSON.stringify({
@@ -310,7 +332,7 @@ export function JournalForm({
               <Scale className="size-3.5" />
               {balanced ? 'Balanced' : 'Not balanced'}
             </span>
-            <Button onClick={submit} disabled={!canPost} loading={busy}>
+            <Button onClick={submit} loading={busy}>
               Post voucher
             </Button>
           </div>

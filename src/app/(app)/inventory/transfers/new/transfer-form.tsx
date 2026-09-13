@@ -269,7 +269,9 @@ export function TransferForm({
         <Button variant="outline" onClick={() => router.back()} disabled={busy}>
           Cancel
         </Button>
-        <Button onClick={submit} loading={busy} disabled={hasOverdraw || sameWarehouse}>
+        {/* submit() names the problem — the same destination, or a line over
+            what the batch holds. A button that cannot be pressed does not. */}
+        <Button onClick={submit} loading={busy}>
           Create transfer
         </Button>
       </div>

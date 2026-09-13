@@ -1,5 +1,5 @@
 import type { Tx } from '@/lib/db';
-import { Decimal, convertToUsd, convertFromUsd, dec, toMoney, sum } from '@/lib/money';
+import { BASE_CURRENCY, Decimal, convertToUsd, convertFromUsd, dec, toMoney, sum } from '@/lib/money';
 import { ACCOUNT_KEYS, DOC_TYPES, type AccountKey } from '@/lib/constants';
 import { nextReference } from '@/lib/services/numbering';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
@@ -77,6 +77,20 @@ export type PostJournalParams = {
  */
 const LOCAL_DRIFT_TOLERANCE = new Decimal('0.05');
 
+/**
+ * Largest USD difference we treat as translation noise.
+ *
+ * One foreign-currency amount split across several lines is converted a line at
+ * a time, and each conversion rounds on its own. A MAD 120,000 invoice at 9.85
+ * becomes USD 12,182.7411 as one receivable, but 10,152.2843 of revenue plus
+ * 2,030.4569 of tax — 12,182.7412. The books are not wrong by a hundredth of a
+ * cent; the arithmetic simply cannot land on the same figure both ways.
+ *
+ * Half a cent is the ceiling, and only ever absorbed on a translated line. Any
+ * difference a person could see is still a bug and is still refused.
+ */
+const USD_TRANSLATION_TOLERANCE = new Decimal('0.005');
+
 async function resolveAccountId(tx: Tx, companyId: string, line: JournalLineInput): Promise<string> {
   if (line.accountId) return line.accountId;
 
@@ -114,7 +128,8 @@ export async function getSystemAccount(
 /**
  * Posts a balanced journal entry.
  *
- * Balance is enforced in USD to the cent. The local-currency columns are
+ * Balance is enforced in USD, to within the sub-cent noise that converting one
+ * foreign amount line by line necessarily creates. The local-currency columns are
  * derived from the USD figures, which can leave a sub-cent rounding drift when
  * several currencies meet in one entry; that residue is absorbed by the largest
  * line rather than being written to a suspense account, and anything beyond
@@ -192,9 +207,30 @@ export async function postJournalEntry(tx: Tx, params: PostJournalParams) {
   const debitUsd = sum(prepared.filter((l) => l.input.direction === 'DEBIT').map((l) => l.amountUsd));
   const creditUsd = sum(prepared.filter((l) => l.input.direction === 'CREDIT').map((l) => l.amountUsd));
 
-  if (!debitUsd.equals(creditUsd)) {
-    throw new BusinessRuleError(
-      `Journal entry does not balance: debits USD ${debitUsd.toFixed(4)} vs credits USD ${creditUsd.toFixed(4)}.`,
+  const usdDrift = debitUsd.minus(creditUsd);
+
+  if (!usdDrift.isZero()) {
+    // Only lines stated in another currency may be nudged: a line already in
+    // USD is exact by definition, and moving it would misstate a real amount.
+    const translated = prepared.filter((l) => l.currency !== BASE_CURRENCY && !l.input.localOnly);
+
+    if (usdDrift.abs().greaterThan(USD_TRANSLATION_TOLERANCE) || translated.length === 0) {
+      throw new BusinessRuleError(
+        `Journal entry does not balance: debits USD ${debitUsd.toFixed(4)} vs credits USD ${creditUsd.toFixed(4)}.`,
+      );
+    }
+
+    // Put the residue on the largest translated line, where it is smallest
+    // relative to the amount it is folded into.
+    let target = translated[0];
+    for (const line of translated) {
+      if (line.amountUsd.greaterThan(target.amountUsd)) target = line;
+    }
+
+    const debitsHeavy = usdDrift.greaterThan(0);
+    const shrink = target.input.direction === (debitsHeavy ? 'DEBIT' : 'CREDIT');
+    target.amountUsd = toMoney(
+      shrink ? target.amountUsd.minus(usdDrift.abs()) : target.amountUsd.plus(usdDrift.abs()),
     );
   }
 

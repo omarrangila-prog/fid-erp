@@ -97,7 +97,7 @@ export function SaleForm({
   taxEnabled = false,
   defaults,
 }: {
-  customers: Array<ComboOption & { currency: string; paymentTermDays: number }>;
+  customers: Array<ComboOption & { currency: string }>;
   /** For a cash sale: where the money went. */
   cashAccounts: Array<{ id: string; name: string; code: string; currency: string }>;
   stock: StockOption[];
@@ -391,7 +391,6 @@ export function SaleForm({
                         label: customer.name,
                         hint: customer.currency,
                         currency: customer.currency,
-                        paymentTermDays: customer.paymentTermDays,
                       },
                     ].sort((a, b) => a.label.localeCompare(b.label)),
                   );
@@ -400,9 +399,6 @@ export function SaleForm({
                     customerId: customer.id,
                     currency: customer.currency,
                     rateToUsd: customer.currency === 'USD' ? '1' : header.rateToUsd,
-                    dueDate: header.invoiceDate
-                      ? addDays(header.invoiceDate, customer.paymentTermDays)
-                      : header.dueDate,
                   });
                 }}
               />
@@ -420,13 +416,6 @@ export function SaleForm({
                   customerId: value,
                   currency: customer?.currency ?? header.currency,
                   rateToUsd: customer?.currency === 'USD' ? '1' : header.rateToUsd,
-                  // Their usual terms, offered as a date the user can change.
-                  // Nobody has to count thirty days forward in their head, and
-                  // nobody is stuck with thirty if the deal was different.
-                  dueDate:
-                    customer && header.invoiceDate
-                      ? addDays(header.invoiceDate, customer.paymentTermDays)
-                      : header.dueDate,
                 });
               }}
               placeholder="Choose a customer…"
@@ -862,7 +851,9 @@ export function SaleForm({
         <Button variant="outline" onClick={() => router.back()} disabled={busy}>
           Cancel
         </Button>
-        <Button onClick={submit} loading={busy} disabled={hasOverdraw}>
+        {/* Not disabled on overdraw: submit() says which line is over, and a
+            dead button explains nothing. */}
+        <Button onClick={submit} loading={busy}>
           {busy ? 'Saving…' : defaults?.id ? 'Save changes' : 'Save invoice'}
         </Button>
       </div>
@@ -870,10 +861,3 @@ export function SaleForm({
   );
 }
 
-
-/** `2026-09-10` plus n days, as `2026-10-10`. Date inputs speak this format. */
-function addDays(isoDate: string, days: number): string {
-  const parsed = new Date(`${isoDate}T00:00:00.000Z`);
-  if (Number.isNaN(parsed.getTime())) return '';
-  return new Date(parsed.getTime() + days * 86_400_000).toISOString().slice(0, 10);
-}
