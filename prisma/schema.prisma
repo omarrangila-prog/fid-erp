@@ -298,7 +298,7 @@ model Company {
   taxReturns          TaxReturn[]
   ports               Port[]
   defaultForUsers     User[]                 @relation("UserDefaultCompany")
-  agentSettlements AgentSettlement[]
+  agentSettlements    AgentSettlement[]
 
   @@index([status])
   @@map("companies")
@@ -329,37 +329,37 @@ model User {
   sessions       Session[]
   auditLogs      AuditLog[]
 
-  createdContracts    PurchaseContract[]              @relation("ContractCreatedBy")
-  postedContracts     PurchaseContract[]              @relation("ContractPostedBy")
-  createdShipments    Shipment[]                      @relation("ShipmentCreatedBy")
-  updatedShipments    Shipment[]                      @relation("ShipmentUpdatedBy")
-  shipmentStatusLogs  ShipmentStatusHistory[]
-  shipmentDocLogs     ShipmentDocumentStatusHistory[]
-  createdInvoices     SalesInvoice[]                  @relation("InvoiceCreatedBy")
-  postedInvoices      SalesInvoice[]                  @relation("InvoicePostedBy")
-  createdReceipts     Receipt[]                       @relation("ReceiptCreatedBy")
-  createdPayments     Payment[]                       @relation("PaymentCreatedBy")
-  createdExpenses     Expense[]                       @relation("ExpenseCreatedBy")
-  createdCheques      Cheque[]                        @relation("ChequeCreatedBy")
-  chequeStatusLogs    ChequeStatusHistory[]
-  receivedGrns        GoodsReceipt[]                  @relation("GrnReceivedBy")
-  createdGrns         GoodsReceipt[]                  @relation("GrnCreatedBy")
-  requestedTransfers  StockTransfer[]                 @relation("TransferRequestedBy")
-  approvedTransfers   StockTransfer[]                 @relation("TransferApprovedBy")
-  receivedTransfers   StockTransfer[]                 @relation("TransferReceivedBy")
-  createdJournals     JournalEntry[]                  @relation("JournalCreatedBy")
-  attachments         Attachment[]
-  inventoryTxns       InventoryTransaction[]
-  creditNotesCreated  CreditNote[]                    @relation("CreditNoteCreatedBy")
-  creditNotesPosted   CreditNote[]                    @relation("CreditNotePostedBy")
-  stockCountsCreated  StockCount[]                    @relation("StockCountCreatedBy")
-  stockCountsCounted  StockCount[]                    @relation("StockCountCountedBy")
-  stockCountsApproved StockCount[]                    @relation("StockCountApprovedBy")
-  reconciliations     BankReconciliation[]            @relation("ReconciliationCreatedBy")
-  backupRuns          BackupRun[]                     @relation("BackupCreatedBy")
-  taxReturnsCreated   TaxReturn[]                     @relation("TaxReturnCreatedBy")
-  taxReturnsFiled     TaxReturn[]                     @relation("TaxReturnFiledBy")
-  agentSettlementsCreated AgentSettlement[] @relation("AgentSettlementCreatedBy")
+  createdContracts        PurchaseContract[]              @relation("ContractCreatedBy")
+  postedContracts         PurchaseContract[]              @relation("ContractPostedBy")
+  createdShipments        Shipment[]                      @relation("ShipmentCreatedBy")
+  updatedShipments        Shipment[]                      @relation("ShipmentUpdatedBy")
+  shipmentStatusLogs      ShipmentStatusHistory[]
+  shipmentDocLogs         ShipmentDocumentStatusHistory[]
+  createdInvoices         SalesInvoice[]                  @relation("InvoiceCreatedBy")
+  postedInvoices          SalesInvoice[]                  @relation("InvoicePostedBy")
+  createdReceipts         Receipt[]                       @relation("ReceiptCreatedBy")
+  createdPayments         Payment[]                       @relation("PaymentCreatedBy")
+  createdExpenses         Expense[]                       @relation("ExpenseCreatedBy")
+  createdCheques          Cheque[]                        @relation("ChequeCreatedBy")
+  chequeStatusLogs        ChequeStatusHistory[]
+  receivedGrns            GoodsReceipt[]                  @relation("GrnReceivedBy")
+  createdGrns             GoodsReceipt[]                  @relation("GrnCreatedBy")
+  requestedTransfers      StockTransfer[]                 @relation("TransferRequestedBy")
+  approvedTransfers       StockTransfer[]                 @relation("TransferApprovedBy")
+  receivedTransfers       StockTransfer[]                 @relation("TransferReceivedBy")
+  createdJournals         JournalEntry[]                  @relation("JournalCreatedBy")
+  attachments             Attachment[]
+  inventoryTxns           InventoryTransaction[]
+  creditNotesCreated      CreditNote[]                    @relation("CreditNoteCreatedBy")
+  creditNotesPosted       CreditNote[]                    @relation("CreditNotePostedBy")
+  stockCountsCreated      StockCount[]                    @relation("StockCountCreatedBy")
+  stockCountsCounted      StockCount[]                    @relation("StockCountCountedBy")
+  stockCountsApproved     StockCount[]                    @relation("StockCountApprovedBy")
+  reconciliations         BankReconciliation[]            @relation("ReconciliationCreatedBy")
+  backupRuns              BackupRun[]                     @relation("BackupCreatedBy")
+  taxReturnsCreated       TaxReturn[]                     @relation("TaxReturnCreatedBy")
+  taxReturnsFiled         TaxReturn[]                     @relation("TaxReturnFiledBy")
+  agentSettlementsCreated AgentSettlement[]               @relation("AgentSettlementCreatedBy")
 
   @@index([isActive])
   @@map("users")
@@ -634,26 +634,26 @@ model Agent {
 /// same document in opposite directions, and keeping them together is what
 /// makes one agent ledger possible.
 model AgentSettlement {
-  id                String            @id @default(cuid())
+  id                String                   @id @default(cuid())
   companyId         String
   settlementNumber  String
   agentId           String
-  settlementDate    DateTime          @db.Date
+  settlementDate    DateTime                 @db.Date
   direction         AgentSettlementDirection
   cashBankAccountId String
-  currency          String            @db.VarChar(3)
-  amount            Decimal           @db.Decimal(18, 4)
-  rateToUsd         Decimal           @default(1) @db.Decimal(18, 8)
-  amountUsd         Decimal           @db.Decimal(18, 4)
-  rateLocalPerUsd   Decimal           @default(1) @db.Decimal(18, 8)
-  amountLocal       Decimal           @db.Decimal(18, 4)
+  currency          String                   @db.VarChar(3)
+  amount            Decimal                  @db.Decimal(18, 4)
+  rateToUsd         Decimal                  @default(1) @db.Decimal(18, 8)
+  amountUsd         Decimal                  @db.Decimal(18, 4)
+  rateLocalPerUsd   Decimal                  @default(1) @db.Decimal(18, 8)
+  amountLocal       Decimal                  @db.Decimal(18, 4)
   reference         String?
   notes             String?
-  status            TransactionStatus @default(DRAFT)
+  status            TransactionStatus        @default(DRAFT)
   postedAt          DateTime?
   createdById       String
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
 
   company         Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   agent           Agent           @relation(fields: [agentId], references: [id])
@@ -837,14 +837,14 @@ model CashBankAccount {
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
 
-  company         Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  glAccount       Account              @relation(fields: [glAccountId], references: [id])
-  receipts        Receipt[]
-  payments        Payment[]
-  expenses        Expense[]
-  cheques         Cheque[]
-  journalLines    JournalLine[]
-  reconciliations BankReconciliation[]
+  company          Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  glAccount        Account              @relation(fields: [glAccountId], references: [id])
+  receipts         Receipt[]
+  payments         Payment[]
+  expenses         Expense[]
+  cheques          Cheque[]
+  journalLines     JournalLine[]
+  reconciliations  BankReconciliation[]
   agentSettlements AgentSettlement[]
 
   @@unique([companyId, code])
@@ -1557,15 +1557,21 @@ model Payment {
 model PaymentAllocation {
   id                 String  @id @default(cuid())
   paymentId          String
-  purchaseContractId String
+  /// Exactly one of these is set, enforced by a check constraint: a payment
+  /// settles either a purchase contract or a cost owed to the supplier.
+  purchaseContractId String?
+  expenseId          String?
   amount             Decimal @db.Decimal(18, 4)
   amountUsd          Decimal @db.Decimal(18, 4)
 
-  payment          Payment          @relation(fields: [paymentId], references: [id], onDelete: Cascade)
-  purchaseContract PurchaseContract @relation(fields: [purchaseContractId], references: [id])
+  payment          Payment           @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  purchaseContract PurchaseContract? @relation(fields: [purchaseContractId], references: [id])
+  expense          Expense?          @relation(fields: [expenseId], references: [id])
 
   @@unique([paymentId, purchaseContractId])
+  @@unique([paymentId, expenseId])
   @@index([purchaseContractId])
+  @@index([expenseId])
   @@map("payment_allocations")
 }
 
@@ -1614,16 +1620,17 @@ model Expense {
   createdAt              DateTime          @default(now())
   updatedAt              DateTime          @updatedAt
 
-  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  expenseCategory  ExpenseCategory   @relation(fields: [expenseCategoryId], references: [id])
-  shipment         Shipment?         @relation(fields: [shipmentId], references: [id])
-  purchaseContract PurchaseContract? @relation(fields: [purchaseContractId], references: [id])
-  vendor           Vendor?           @relation(fields: [vendorId], references: [id])
-  agent            Agent?            @relation(fields: [agentId], references: [id])
-  payableToAgent   Agent?            @relation("ExpensePayableToAgent", fields: [payableToAgentId], references: [id])
-  cashBankAccount  CashBankAccount?  @relation(fields: [cashBankAccountId], references: [id])
-  taxCode          TaxCode?          @relation(fields: [taxCodeId], references: [id])
-  createdBy        User              @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
+  company          Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  expenseCategory  ExpenseCategory     @relation(fields: [expenseCategoryId], references: [id])
+  shipment         Shipment?           @relation(fields: [shipmentId], references: [id])
+  purchaseContract PurchaseContract?   @relation(fields: [purchaseContractId], references: [id])
+  vendor           Vendor?             @relation(fields: [vendorId], references: [id])
+  agent            Agent?              @relation(fields: [agentId], references: [id])
+  payableToAgent   Agent?              @relation("ExpensePayableToAgent", fields: [payableToAgentId], references: [id])
+  cashBankAccount  CashBankAccount?    @relation(fields: [cashBankAccountId], references: [id])
+  taxCode          TaxCode?            @relation(fields: [taxCodeId], references: [id])
+  createdBy        User                @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
+  allocations      PaymentAllocation[]
 
   @@unique([companyId, expenseNumber])
   @@index([companyId, status])

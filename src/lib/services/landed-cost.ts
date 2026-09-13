@@ -21,8 +21,9 @@ import { BusinessRuleError } from '@/lib/errors';
  *
  *   2. For coffee already sold, the extra cost belongs in cost of goods sold,
  *      not in inventory. That portion is "trued up": moved straight from
- *      inventory to COGS so the general ledger keeps agreeing with the
- *      quantity-based profitability figures.
+ *      inventory to COGS, and written back onto the sales invoice lines that
+ *      sold the coffee, so the general ledger and every margin report keep
+ *      agreeing with each other.
  *
  * Without step 2 a late freight invoice would inflate the inventory asset for
  * coffee that had already left the warehouse.
@@ -34,8 +35,10 @@ export type LandedCostAllocation = {
   allocatedUsd: Decimal;
   /** Portion relating to already-sold coffee, moved to cost of goods sold. */
   trueUpUsd: Decimal;
-  /** Portion that stays capitalised in inventory. */
+  /** Portion capitalised into coffee sitting in a warehouse. */
   capitalisedUsd: Decimal;
+  /** Portion capitalised into coffee still on the water. */
+  inTransitUsd: Decimal;
   newLandedUnitCostUsd: Decimal;
 };
 
@@ -43,7 +46,10 @@ export type LandedCostResult = {
   allocations: LandedCostAllocation[];
   totalAllocatedUsd: Decimal;
   totalTrueUpUsd: Decimal;
+  /** Into the Inventory account: the share of coffee that has landed. */
   totalCapitalisedUsd: Decimal;
+  /** Into Inventory In Transit: the share of coffee not yet received. */
+  totalInTransitUsd: Decimal;
   /** True when none of the job's coffee has landed in a warehouse yet. */
   allInTransit: boolean;
 };
@@ -101,11 +107,18 @@ export async function applyLandedCost(
 
     const orderedKg = dec(batch.orderedQuantityKg);
     const soldKg = dec(batch.soldQuantityKg);
+    const receivedKg = dec(batch.receivedQuantityKg);
 
-    // The share of this allocation attributable to coffee already sold.
-    const soldRatio = orderedKg.greaterThan(0) ? soldKg.dividedBy(orderedKg) : new Decimal(0);
-    const trueUpUsd = toMoney(allocatedUsd.times(soldRatio));
-    const capitalisedUsd = toMoney(allocatedUsd.minus(trueUpUsd));
+    // Three destinations, in proportion to kilograms: what has been sold goes
+    // to cost of sales, what is still on the water stays in transit, and the
+    // rest is the coffee on the shelf. A cost booked while only some
+    // containers have landed must not value the shelf at what the whole
+    // shipment cost — the receipt of the remaining containers moves their
+    // share across when they arrive.
+    const trueUpUsd = toMoney(allocatedUsd.times(soldKg).dividedBy(orderedKg));
+    const inTransitKg = Decimal.max(orderedKg.minus(receivedKg), 0);
+    const inTransitUsd = toMoney(allocatedUsd.times(inTransitKg).dividedBy(orderedKg));
+    const capitalisedUsd = toMoney(allocatedUsd.minus(trueUpUsd).minus(inTransitUsd));
 
     const newCapitalisedTotal = toMoney(dec(batch.capitalisedCostUsd).plus(allocatedUsd));
     const newLandedUnitCostUsd = toUnitCost(
@@ -126,8 +139,17 @@ export async function applyLandedCost(
       allocatedUsd,
       trueUpUsd,
       capitalisedUsd,
+      inTransitUsd,
       newLandedUnitCostUsd,
     });
+
+    if (!trueUpUsd.isZero()) {
+      await restateSoldCost(tx, {
+        companyId: params.companyId,
+        batchId: batch.id,
+        trueUpUsd,
+      });
+    }
   }
 
   return {
@@ -135,8 +157,123 @@ export async function applyLandedCost(
     totalAllocatedUsd: toMoney(sum(allocations.map((a) => a.allocatedUsd))),
     totalTrueUpUsd: toMoney(sum(allocations.map((a) => a.trueUpUsd))),
     totalCapitalisedUsd: toMoney(sum(allocations.map((a) => a.capitalisedUsd))),
+    totalInTransitUsd: toMoney(sum(allocations.map((a) => a.inTransitUsd))),
     allInTransit: batches.every((b) => dec(b.receivedQuantityKg).lessThanOrEqualTo(0)),
   };
+}
+
+/**
+ * Pushes a batch's true-up into the documents that sold the coffee.
+ *
+ * The general ledger gets the true-up as one journal line, but every margin
+ * figure in the system is read from the cost stored on the sales invoice line
+ * — profit by customer, by item, by container, and the company summary that
+ * the P&L is cross-checked against. Leaving those at the cost frozen at
+ * posting time makes a late freight invoice raise cost of goods sold in the
+ * ledger while gross profit in the reports stays where it was.
+ *
+ * The share is spread over what actually stayed sold: invoice lines add to the
+ * basis, returns on a customer credit note take away from it, which is the
+ * same net quantity the true-up itself was calculated from. Restating the
+ * credit note too keeps a return valued at the same rate as the sale it
+ * reverses.
+ *
+ * Costs move, prices do not. Nothing the customer sees is touched.
+ */
+async function restateSoldCost(
+  tx: Tx,
+  params: { companyId: string; batchId: string; trueUpUsd: Decimal },
+): Promise<void> {
+  const [invoiceLines, creditLines] = await Promise.all([
+    tx.salesInvoiceLine.findMany({
+      where: { batchId: params.batchId, salesInvoice: { companyId: params.companyId, status: 'POSTED' } },
+      select: { id: true, salesInvoiceId: true, quantityKg: true, costTotalUsd: true },
+      orderBy: { id: 'asc' },
+    }),
+    tx.creditNoteLine.findMany({
+      where: {
+        batchId: params.batchId,
+        creditNote: { companyId: params.companyId, status: 'POSTED', type: 'CUSTOMER' },
+      },
+      select: { id: true, creditNoteId: true, quantityKg: true, costTotalUsd: true },
+      orderBy: { id: 'asc' },
+    }),
+  ]);
+
+  if (invoiceLines.length === 0) return;
+
+  const weights = [
+    ...invoiceLines.map((line) => dec(line.quantityKg)),
+    ...creditLines.map((line) => dec(line.quantityKg).negated()),
+  ];
+
+  // The net sold quantity is what the true-up was derived from. If it has gone
+  // to nothing there is no sale left to carry the cost, so leave the documents
+  // alone rather than inventing a rate.
+  if (sum(weights).lessThanOrEqualTo(0)) return;
+
+  const shares = allocateProportionally(params.trueUpUsd, weights);
+  const invoiceTotals = new Map<string, Decimal>();
+  const creditTotals = new Map<string, Decimal>();
+
+  for (let i = 0; i < invoiceLines.length; i += 1) {
+    const line = invoiceLines[i];
+    const share = shares[i];
+    if (share.isZero()) continue;
+
+    const quantityKg = dec(line.quantityKg);
+    const costTotalUsd = toMoney(dec(line.costTotalUsd).plus(share));
+
+    await tx.salesInvoiceLine.update({
+      where: { id: line.id },
+      data: {
+        costTotalUsd,
+        ...(quantityKg.greaterThan(0) ? { unitCostUsd: toUnitCost(costTotalUsd.dividedBy(quantityKg)) } : {}),
+      },
+    });
+
+    invoiceTotals.set(
+      line.salesInvoiceId,
+      (invoiceTotals.get(line.salesInvoiceId) ?? new Decimal(0)).plus(share),
+    );
+  }
+
+  for (let i = 0; i < creditLines.length; i += 1) {
+    const line = creditLines[i];
+    // The weight was negated so the basis nets out; the credit note's own cost
+    // still moves in the same direction as the sale it reverses.
+    const share = shares[invoiceLines.length + i].negated();
+    if (share.isZero()) continue;
+
+    await tx.creditNoteLine.update({
+      where: { id: line.id },
+      data: { costTotalUsd: toMoney(dec(line.costTotalUsd).plus(share)) },
+    });
+
+    creditTotals.set(line.creditNoteId, (creditTotals.get(line.creditNoteId) ?? new Decimal(0)).plus(share));
+  }
+
+  for (const [salesInvoiceId, delta] of invoiceTotals) {
+    const invoice = await tx.salesInvoice.findUniqueOrThrow({
+      where: { id: salesInvoiceId },
+      select: { costOfGoodsUsd: true },
+    });
+    await tx.salesInvoice.update({
+      where: { id: salesInvoiceId },
+      data: { costOfGoodsUsd: toMoney(dec(invoice.costOfGoodsUsd).plus(delta)) },
+    });
+  }
+
+  for (const [creditNoteId, delta] of creditTotals) {
+    const note = await tx.creditNote.findUniqueOrThrow({
+      where: { id: creditNoteId },
+      select: { costOfGoodsUsd: true },
+    });
+    await tx.creditNote.update({
+      where: { id: creditNoteId },
+      data: { costOfGoodsUsd: toMoney(dec(note.costOfGoodsUsd).plus(delta)) },
+    });
+  }
 }
 
 /** Landed cost summary for one job, used by the shipment costing screen. */

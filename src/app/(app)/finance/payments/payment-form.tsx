@@ -16,8 +16,11 @@ import { dec, sum, convertToUsd } from '@/lib/money';
 import { formatMoney, formatDate } from '@/lib/format';
 import { savePaymentAction, postPaymentAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
+import { accountsFor } from '@/lib/cash-account-choice';
 
 export type OpenContract = {
+  /** A contract is the coffee; an expense is a cost the supplier billed. */
+  kind: 'CONTRACT' | 'EXPENSE';
   id: string;
   contractNumber: string;
   contractDate: string;
@@ -38,7 +41,7 @@ export function PaymentForm({
   defaultLocalRate,
 }: {
   vendors: Array<ComboOption & { currency: string }>;
-  accounts: Array<ComboOption & { currency: string }>;
+  accounts: Array<ComboOption & { currency: string; accountType: 'CASH' | 'PETTY_CASH' | 'BANK' }>;
   contracts: OpenContract[];
   localCurrency: string;
   defaultLocalRate: string;
@@ -73,6 +76,13 @@ export function PaymentForm({
 
   const isForeign = form.currency !== 'USD';
   const isCheque = form.paymentMethod === 'CHEQUE';
+  // Cash goes into the drawer without asking; a bank transfer still needs to
+  // say which bank.
+  const accountChoice = React.useMemo(
+    () => accountsFor(accounts, form.paymentMethod, form.currency),
+    [accounts, form.paymentMethod, form.currency],
+  );
+  const cashBankAccountId = accountChoice.automatic ?? form.cashBankAccountId;
 
   const amountUsd = React.useMemo(() => {
     if (!form.amount) return dec(0);
@@ -97,7 +107,7 @@ export function PaymentForm({
       rateToUsd: isForeign ? form.rateToUsd : '1',
       rateLocalPerUsd: form.currency === localCurrency ? form.rateToUsd || '1' : form.rateLocalPerUsd,
       paymentMethod: form.paymentMethod,
-      cashBankAccountId: form.cashBankAccountId ?? '',
+      cashBankAccountId: cashBankAccountId ?? '',
       cheque: isCheque
         ? {
             chequeNumber: form.chequeNumber,
@@ -113,7 +123,12 @@ export function PaymentForm({
       description: form.description,
       allocations: Object.entries(allocations)
         .filter(([, amount]) => amount && Number(amount) > 0)
-        .map(([purchaseContractId, amount]) => ({ purchaseContractId, amount })),
+        .map(([id, amount]) => {
+          const row = contracts.find((c) => c.id === id);
+          return row?.kind === 'EXPENSE'
+            ? { expenseId: id, amount }
+            : { purchaseContractId: id, amount };
+        }),
     };
 
     start(async () => {
@@ -204,10 +219,15 @@ export function PaymentForm({
           </Field>
 
           {!isCheque ? (
-            <Field label="Paid from" required hint={`Only ${form.currency} accounts are shown.`} error={fieldIssues.cashBankAccountId}>
+            <Field
+              label="Paid from"
+              required
+              hint={accountChoice.automatic ? 'Cash comes out of Cash in Hand.' : `Only ${form.currency} accounts are shown.`}
+              error={fieldIssues.cashBankAccountId}
+            >
               <Combobox
-                options={accounts.filter((a) => a.currency === form.currency)}
-                value={form.cashBankAccountId}
+                options={accountChoice.options}
+                value={cashBankAccountId}
                 onChange={(value) => setForm({ ...form, cashBankAccountId: value })}
                 placeholder="Choose an account…"
                 emptyText={`No ${form.currency} account exists`}
@@ -273,18 +293,19 @@ export function PaymentForm({
       {form.vendorId ? (
         <Card>
           <CardHeader>
-            <CardTitle>Apply to contracts</CardTitle>
+            <CardTitle>Apply to what is owed</CardTitle>
             <CardDescription>Leave blank to hold the payment on account.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {vendorContracts.length === 0 ? (
-              <p className="py-4 text-center text-xs text-ink-subtle">This supplier has no outstanding contracts.</p>
+              <p className="py-4 text-center text-xs text-ink-subtle">Nothing is outstanding with this supplier.</p>
             ) : (
               vendorContracts.map((contract) => (
                 <div key={contract.id} className="flex items-center justify-between gap-3 rounded-lg border border-line p-3">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-ink">{contract.contractNumber}</p>
                     <p className="text-xs text-ink-subtle">
+                      {contract.kind === 'EXPENSE' ? 'Cost · ' : ''}
                       {formatDate(contract.contractDate)} · {formatMoney(contract.outstanding, contract.currency)} outstanding
                     </p>
                   </div>

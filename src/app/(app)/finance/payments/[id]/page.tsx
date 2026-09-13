@@ -33,7 +33,10 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
       createdBy: { select: { name: true } },
       cheque: true,
       allocations: {
-        include: { purchaseContract: { select: { id: true, contractNumber: true, contractDate: true, currency: true } } },
+        include: {
+          purchaseContract: { select: { id: true, contractNumber: true, contractDate: true, currency: true } },
+          expense: { select: { id: true, expenseNumber: true, expenseDate: true, currency: true } },
+        },
       },
     },
   });
@@ -98,34 +101,49 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Applied to</CardTitle>
-            <CardDescription>Which purchase contracts this payment settled.</CardDescription>
+            <CardDescription>Which contracts and costs this payment settled.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {payment.allocations.length === 0 ? (
               <p className="py-6 text-center text-xs text-ink-subtle">Held on account.</p>
             ) : (
-              payment.allocations.map((allocation) => (
-                <Link
-                  key={allocation.id}
-                  href={`/purchases/${allocation.purchaseContract.id}`}
-                  className="flex items-center justify-between gap-3 border-b border-line pb-3 last:border-0 last:pb-0"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium text-forest-800">
-                      {allocation.purchaseContract.contractNumber}
+              payment.allocations.map((allocation) => {
+                // A payment settles the coffee or a cost billed by the same
+                // supplier; both are listed here, each linking to its own page.
+                const target = allocation.purchaseContract
+                  ? {
+                      href: `/purchases/${allocation.purchaseContract.id}`,
+                      number: allocation.purchaseContract.contractNumber,
+                      date: allocation.purchaseContract.contractDate,
+                      currency: allocation.purchaseContract.currency,
+                    }
+                  : {
+                      href: `/finance/expenses/${allocation.expense!.id}`,
+                      number: allocation.expense!.expenseNumber,
+                      date: allocation.expense!.expenseDate,
+                      currency: allocation.expense!.currency,
+                    };
+                return (
+                  <Link
+                    key={allocation.id}
+                    href={target.href}
+                    className="flex items-center justify-between gap-3 border-b border-line pb-3 last:border-0 last:pb-0"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-forest-800">{target.number}</span>
+                      <span className="block text-xs text-ink-subtle">{formatDate(target.date)}</span>
                     </span>
-                    <span className="block text-xs text-ink-subtle">
-                      {formatDate(allocation.purchaseContract.contractDate)}
+                    <span className="shrink-0 text-right">
+                      <span className="tnum block text-sm font-semibold">
+                        {formatMoney(allocation.amount, target.currency)}
+                      </span>
+                      <span className="tnum block text-xs text-ink-subtle">
+                        {formatMoney(allocation.amountUsd, 'USD')}
+                      </span>
                     </span>
-                  </span>
-                  <span className="shrink-0 text-right">
-                    <span className="tnum block text-sm font-semibold">
-                      {formatMoney(allocation.amount, allocation.purchaseContract.currency)}
-                    </span>
-                    <span className="tnum block text-xs text-ink-subtle">{formatMoney(allocation.amountUsd, 'USD')}</span>
-                  </span>
-                </Link>
-              ))
+                  </Link>
+                );
+              })
             )}
           </CardContent>
         </Card>

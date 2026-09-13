@@ -68,8 +68,21 @@ export const paymentSchema = z
     shipmentId: optionalCuid,
     reference: optionalText(60),
     description: optionalText(600),
+    // A payment settles a purchase contract or a cost billed by the same
+    // supplier. One or the other, never both on a line.
     allocations: z
-      .array(z.object({ purchaseContractId: cuid, amount: decimalString('Allocation') }))
+      .array(
+        z
+          .object({
+            purchaseContractId: optionalCuid,
+            expenseId: optionalCuid,
+            amount: decimalString('Allocation'),
+          })
+          .refine((a) => Boolean(a.purchaseContractId) !== Boolean(a.expenseId), {
+            message: 'Each allocation settles one document.',
+            path: ['purchaseContractId'],
+          }),
+      )
       .default([]),
   })
   .refine((v) => v.paymentMethod === 'CHEQUE' || Boolean(v.cashBankAccountId), {

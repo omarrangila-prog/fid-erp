@@ -360,7 +360,10 @@ describe('rules 10 and 14 — vendor purchases and payments, in USD', () => {
 describe('rules 11 and 12 — paid expenses hit cash, unpaid ones hit payables', () => {
   it('a paid expense reduces the account it was paid from', async () => {
     const cash = await getCashAccount(companyId, 'MAD');
-    const category = await prisma.expenseCategory.findFirstOrThrow({ where: { companyId, status: 'ACTIVE' } });
+    const category = await prisma.expenseCategory.findFirstOrThrow({
+      where: { companyId, status: 'ACTIVE', kind: 'SHIPMENT' },
+      orderBy: { code: 'asc' },
+    });
     const before = await prisma.$transaction((tx) => getCashBankBalance(tx, companyId, cash.id));
 
     const expense = await createExpense(
@@ -386,7 +389,10 @@ describe('rules 11 and 12 — paid expenses hit cash, unpaid ones hit payables',
 
   it('an unpaid expense touches neither cash nor bank', async () => {
     const cash = await getCashAccount(companyId, 'MAD');
-    const category = await prisma.expenseCategory.findFirstOrThrow({ where: { companyId, status: 'ACTIVE' } });
+    const category = await prisma.expenseCategory.findFirstOrThrow({
+      where: { companyId, status: 'ACTIVE', kind: 'SHIPMENT' },
+      orderBy: { code: 'asc' },
+    });
     const agent = await prisma.agent.create({
       data: { companyId, agentCode: 'AG-R2', agentName: 'Ridwan', commissionPct: '1' },
     });

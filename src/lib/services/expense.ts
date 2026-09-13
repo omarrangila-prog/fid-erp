@@ -448,20 +448,34 @@ export async function postExpense(params: { id: string; companyId: string; userI
         reference: expense.expenseNumber,
       });
 
-      const inventoryKey = landed.allInTransit
-        ? ACCOUNT_KEYS.INVENTORY_IN_TRANSIT
-        : ACCOUNT_KEYS.INVENTORY;
+      // The engine has already split the cost three ways by kilograms. Any
+      // rounding residue between the three shares and the voucher stays with
+      // the coffee on the shelf, so the entry always sums to what was paid.
+      const shelfUsd = toMoney(
+        dec(expense.amountUsd).minus(landed.totalTrueUpUsd).minus(landed.totalInTransitUsd),
+      );
 
-      const capitalisedUsd = toMoney(dec(expense.amountUsd).minus(landed.totalTrueUpUsd));
-
-      if (capitalisedUsd.greaterThan(0)) {
+      if (shelfUsd.greaterThan(0)) {
         debitLines.push({
-          accountKey: inventoryKey,
+          accountKey: ACCOUNT_KEYS.INVENTORY,
           direction: 'DEBIT',
           currency: 'USD',
-          amount: capitalisedUsd,
+          amount: shelfUsd,
           rateToUsd: 1,
           description: `${expense.expenseCategory.name} capitalised into landed cost`,
+          shipmentId: expense.shipmentId,
+          purchaseContractId: expense.purchaseContractId,
+        });
+      }
+
+      if (landed.totalInTransitUsd.greaterThan(0)) {
+        debitLines.push({
+          accountKey: ACCOUNT_KEYS.INVENTORY_IN_TRANSIT,
+          direction: 'DEBIT',
+          currency: 'USD',
+          amount: landed.totalInTransitUsd,
+          rateToUsd: 1,
+          description: `${expense.expenseCategory.name} on coffee still in transit`,
           shipmentId: expense.shipmentId,
           purchaseContractId: expense.purchaseContractId,
         });

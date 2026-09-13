@@ -103,11 +103,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
         />
         <StatCard label="Contracts" value={String(vendor.purchaseContracts.length)} sublabel={`${posted.length} approved`} />
         <StatCard label="Coffee bought" value={formatQuantityKg(totalBoughtKg)} />
-        {showCost ? (
-          <StatCard label="Total purchased" value={formatMoney(totalValueUsd, 'USD')} sublabel={`${vendor.paymentTermDays} day terms`} />
-        ) : (
-          <StatCard label="Payment terms" value={`${vendor.paymentTermDays} days`} />
-        )}
+        {showCost ? <StatCard label="Total purchased" value={formatMoney(totalValueUsd, 'USD')} /> : null}
       </div>
 
       <Tabs defaultValue="overview">
@@ -155,7 +151,6 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
               <CardContent>
                 <dl>
                   <DetailRow label="Ledger currency">{vendor.primaryCurrency}</DetailRow>
-                  <DetailRow label="Payment terms">{vendor.paymentTermDays} days</DetailRow>
                   <DetailRow label="Opening balance">
                     {formatMoney(vendor.openingBalance, vendor.primaryCurrency)}
                   </DetailRow>
@@ -281,7 +276,10 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
                   {payables.map((row) => (
                     <TR key={row.contractId}>
                       <TD>
-                        <Link href={`/purchases/${row.contractId}`} className="font-medium text-forest-800 hover:text-gold-700">
+                        <Link
+                          href={row.kind === 'EXPENSE' ? `/finance/expenses/${row.contractId}` : `/purchases/${row.contractId}`}
+                          className="font-medium text-forest-800 hover:text-gold-700"
+                        >
                           {row.contractNumber}
                         </Link>
                       </TD>

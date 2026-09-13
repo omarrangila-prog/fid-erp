@@ -20,7 +20,7 @@ export default async function PayablesPage() {
     return {
       id: p.contractId,
       documentNumber: p.contractNumber,
-      documentHref: `/purchases/${p.contractId}`,
+      documentHref: p.kind === 'EXPENSE' ? `/finance/expenses/${p.contractId}` : `/purchases/${p.contractId}`,
       date: formatDate(p.contractDate),
       dateSort: p.contractDate.getTime(),
       dueDate: formatDate(p.dueDate),

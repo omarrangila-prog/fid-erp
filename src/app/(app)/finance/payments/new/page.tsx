@@ -64,6 +64,7 @@ export default async function NewPaymentPage() {
   }
 
   const contracts: OpenContract[] = payables.map((p) => ({
+    kind: p.kind,
     id: p.contractId,
     contractNumber: p.contractNumber,
     contractDate: toDateInputValue(p.contractDate),
@@ -78,7 +79,7 @@ export default async function NewPaymentPage() {
     <div className="space-y-6">
       <PageHeader
         title="New Payment"
-        description="Record money paid to a supplier and apply it to their contracts."
+        description="Record money paid to a supplier and apply it to their contracts and costs."
         breadcrumbs={[{ label: 'Finance' }, { label: 'Payments', href: '/finance/payments' }, { label: 'New' }]}
       />
       <PaymentForm
@@ -95,6 +96,7 @@ export default async function NewPaymentPage() {
           hint: `${a.code} · ${a.currency}`,
           keywords: `${a.code} ${a.currency}`,
           currency: a.currency,
+          accountType: a.accountType,
         }))}
         contracts={contracts}
         localCurrency={user.activeCompany.localCurrency}

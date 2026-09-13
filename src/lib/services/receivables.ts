@@ -147,6 +147,14 @@ export async function getReceivables(params: {
 }
 
 export type PayableRow = {
+  /**
+   * What the supplier is owed for. A purchase contract is the coffee itself; an
+   * expense is a cost booked against the supplier rather than paid on the spot
+   * — freight, clearing, inspection. Both credit Accounts Payable, so both have
+   * to appear here or the control account stops agreeing with the statement.
+   */
+  kind: 'CONTRACT' | 'EXPENSE';
+  /** The payable document: a contract id, or an expense id when kind is EXPENSE. */
   contractId: string;
   contractNumber: string;
   contractReference: string;
@@ -185,6 +193,7 @@ export async function getPayables(params: {
       purchaseValueUsd: string;
       paidAmount: string;
       paidAmountUsd: string;
+      kind: 'CONTRACT' | 'EXPENSE';
     }>
   >`
     SELECT pc."id" AS "contractId", pc."contractNumber", pc."contractReference", pc."contractDate", pc."dueDate",
@@ -209,13 +218,44 @@ export async function getPayables(params: {
                         WHERE pa."purchaseContractId" = pc."id" AND p."status" = 'POSTED'), 0)
              + COALESCE((SELECT SUM(cn."totalAmountUsd") FROM credit_notes cn
                           WHERE cn."purchaseContractId" = pc."id" AND cn."status" = 'POSTED'), 0)
-           )::text AS "paidAmountUsd"
+           )::text AS "paidAmountUsd",
+           'CONTRACT' AS kind
     FROM purchase_contracts pc
     JOIN vendors v ON v."id" = pc."vendorId"
     WHERE pc."companyId" = ${params.companyId}
       AND pc."status" = 'POSTED'
       AND (${params.vendorId ?? null}::text IS NULL OR pc."vendorId" = ${params.vendorId ?? null})
-    ORDER BY pc."dueDate" ASC NULLS LAST, pc."contractDate" ASC
+
+    UNION ALL
+
+    -- Costs owed to the supplier rather than paid from an account. The bill is
+    -- gross of tax for the same reason a contract is: the supplier is paid what
+    -- they invoiced, recoverable tax included.
+    SELECT e."id" AS "contractId", e."expenseNumber" AS "contractNumber",
+           COALESCE(e."reference", ec."name") AS "contractReference", e."expenseDate" AS "contractDate",
+           e."expenseDate" AS "dueDate",
+           e."vendorId", v."vendorName", e."currency",
+           (e."amount" + e."taxAmount")::text AS "purchaseValue",
+           (e."amountUsd" + e."taxAmountUsd")::text AS "purchaseValueUsd",
+           (SELECT s."shipmentNumber" FROM shipments s WHERE s."id" = e."shipmentId") AS "shipmentNumbers",
+           COALESCE((SELECT SUM(pa."amount") FROM payment_allocations pa
+                       JOIN payments p ON p."id" = pa."paymentId"
+                      WHERE pa."expenseId" = e."id" AND p."status" = 'POSTED'), 0)::text AS "paidAmount",
+           COALESCE((SELECT SUM(pa."amountUsd") FROM payment_allocations pa
+                       JOIN payments p ON p."id" = pa."paymentId"
+                      WHERE pa."expenseId" = e."id" AND p."status" = 'POSTED'), 0)::text AS "paidAmountUsd",
+           'EXPENSE' AS kind
+    FROM expenses e
+    JOIN vendors v ON v."id" = e."vendorId"
+    JOIN expense_categories ec ON ec."id" = e."expenseCategoryId"
+    WHERE e."companyId" = ${params.companyId}
+      AND e."status" = 'POSTED'
+      AND e."vendorId" IS NOT NULL
+      AND e."cashBankAccountId" IS NULL
+      AND e."payableToAgentId" IS NULL
+      AND (${params.vendorId ?? null}::text IS NULL OR e."vendorId" = ${params.vendorId ?? null})
+
+    ORDER BY "dueDate" ASC NULLS LAST, "contractDate" ASC
   `;
 
   const shaped = rows.map((row): PayableRow => {
@@ -228,6 +268,7 @@ export async function getPayables(params: {
     else if (paidAmount.greaterThan(0)) status = 'PARTIAL';
 
     return {
+      kind: row.kind,
       contractId: row.contractId,
       contractNumber: row.contractNumber,
       contractReference: row.contractReference,

@@ -17,8 +17,14 @@ import { writeAudit } from '@/lib/services/audit';
  */
 
 export type PaymentAllocationInput = {
-  purchaseContractId: string;
-  /** Amount in the contract's own currency. */
+  /**
+   * What is being settled. A payment pays down the coffee itself or a cost
+   * booked against the supplier — freight, clearing, inspection — and exactly
+   * one of these names the document.
+   */
+  purchaseContractId?: string | null;
+  expenseId?: string | null;
+  /** Amount in the document's own currency. */
   amount: string | number;
 };
 
@@ -73,41 +79,142 @@ export async function getContractOutstanding(
   };
 }
 
+/** Outstanding on one supplier-accrued cost, in its own currency and in USD. */
+export async function getExpenseOutstanding(
+  tx: Tx,
+  expenseId: string,
+): Promise<{ amount: Decimal; amountUsd: Decimal; currency: string }> {
+  const expense = await tx.expense.findUniqueOrThrow({
+    where: { id: expenseId },
+    select: {
+      amount: true,
+      amountUsd: true,
+      taxAmount: true,
+      taxAmountUsd: true,
+      currency: true,
+      status: true,
+      cashBankAccountId: true,
+      payableToAgentId: true,
+      vendorId: true,
+    },
+  });
+
+  const rows = await tx.$queryRaw<Array<{ amount: string | null; amountUsd: string | null }>>`
+    SELECT COALESCE(SUM(pa."amount"), 0)::text AS amount,
+           COALESCE(SUM(pa."amountUsd"), 0)::text AS "amountUsd"
+    FROM payment_allocations pa
+    JOIN payments p ON p."id" = pa."paymentId"
+    WHERE pa."expenseId" = ${expenseId} AND p."status" = 'POSTED'
+  `;
+
+  // Gross of tax: the supplier is paid what they billed.
+  const payable =
+    expense.status === 'POSTED' && expense.vendorId && !expense.cashBankAccountId && !expense.payableToAgentId;
+  const gross = payable ? dec(expense.amount).plus(expense.taxAmount) : new Decimal(0);
+  const grossUsd = payable ? dec(expense.amountUsd).plus(expense.taxAmountUsd) : new Decimal(0);
+
+  return {
+    amount: toMoney(gross.minus(dec(rows[0]?.amount ?? 0))),
+    amountUsd: toMoney(grossUsd.minus(dec(rows[0]?.amountUsd ?? 0))),
+    currency: expense.currency,
+  };
+}
+
 async function buildAllocations(
   tx: Tx,
   params: { companyId: string; vendorId: string; paymentAmountUsd: Decimal; allocations: PaymentAllocationInput[] },
 ) {
-  const rows: Array<{ purchaseContractId: string; amount: Decimal; amountUsd: Decimal }> = [];
+  const rows: Array<{
+    purchaseContractId: string | null;
+    expenseId: string | null;
+    amount: Decimal;
+    amountUsd: Decimal;
+  }> = [];
 
   for (const alloc of params.allocations) {
-    const contract = await tx.purchaseContract.findFirst({
-      where: { id: alloc.purchaseContractId, companyId: params.companyId },
-      select: { id: true, contractNumber: true, vendorId: true, status: true, currency: true, rateToUsd: true },
-    });
-    if (!contract) throw new NotFoundError('Purchase contract in allocation');
-    if (contract.vendorId !== params.vendorId) {
-      throw new BusinessRuleError(`Contract ${contract.contractNumber} belongs to a different vendor.`);
+    if (Boolean(alloc.purchaseContractId) === Boolean(alloc.expenseId)) {
+      throw new BusinessRuleError(
+        'Each allocation settles one document — either a purchase contract or a cost owed to the supplier.',
+      );
     }
-    if (contract.status !== 'POSTED') {
-      throw new BusinessRuleError(`Contract ${contract.contractNumber} is not posted and cannot be settled.`);
+
+    // Both kinds are read the same way: the document, who it belongs to, and
+    // what is still owed on it.
+    const document = alloc.purchaseContractId
+      ? await (async () => {
+          const contract = await tx.purchaseContract.findFirst({
+            where: { id: alloc.purchaseContractId!, companyId: params.companyId },
+            select: { id: true, contractNumber: true, vendorId: true, status: true, currency: true, rateToUsd: true },
+          });
+          if (!contract) throw new NotFoundError('Purchase contract in allocation');
+          return {
+            id: contract.id,
+            label: `Contract ${contract.contractNumber}`,
+            number: contract.contractNumber,
+            vendorId: contract.vendorId,
+            status: contract.status,
+            currency: contract.currency,
+            rateToUsd: contract.rateToUsd,
+            outstanding: await getContractOutstanding(tx, contract.id),
+            isContract: true,
+          };
+        })()
+      : await (async () => {
+          const expense = await tx.expense.findFirst({
+            where: { id: alloc.expenseId!, companyId: params.companyId },
+            select: {
+              id: true,
+              expenseNumber: true,
+              vendorId: true,
+              status: true,
+              currency: true,
+              rateToUsd: true,
+              cashBankAccountId: true,
+              payableToAgentId: true,
+            },
+          });
+          if (!expense) throw new NotFoundError('Cost in allocation');
+          if (!expense.vendorId || expense.cashBankAccountId || expense.payableToAgentId) {
+            throw new BusinessRuleError(
+              `Cost ${expense.expenseNumber} is not owed to a supplier, so a supplier payment cannot settle it.`,
+            );
+          }
+          return {
+            id: expense.id,
+            label: `Cost ${expense.expenseNumber}`,
+            number: expense.expenseNumber,
+            vendorId: expense.vendorId,
+            status: expense.status,
+            currency: expense.currency,
+            rateToUsd: expense.rateToUsd,
+            outstanding: await getExpenseOutstanding(tx, expense.id),
+            isContract: false,
+          };
+        })();
+
+    if (document.vendorId !== params.vendorId) {
+      throw new BusinessRuleError(`${document.label} belongs to a different vendor.`);
+    }
+    if (document.status !== 'POSTED') {
+      throw new BusinessRuleError(`${document.label} is not posted and cannot be settled.`);
     }
 
     const amount = toMoney(alloc.amount);
     if (amount.lessThanOrEqualTo(0)) {
-      throw new BusinessRuleError(`Allocation to ${contract.contractNumber} must be greater than zero.`);
+      throw new BusinessRuleError(`Allocation to ${document.number} must be greater than zero.`);
     }
 
-    const outstanding = await getContractOutstanding(tx, contract.id);
-    if (amount.greaterThan(outstanding.amount)) {
+    if (amount.greaterThan(document.outstanding.amount)) {
       throw new BusinessRuleError(
-        `Allocation of ${contract.currency} ${amount.toFixed(2)} exceeds the ${outstanding.amount.toFixed(2)} still outstanding on ${contract.contractNumber}.`,
+        `Allocation of ${document.currency} ${amount.toFixed(2)} exceeds the ${document.outstanding.amount.toFixed(2)} still outstanding on ${document.number}.`,
       );
     }
 
     rows.push({
-      purchaseContractId: contract.id,
+      purchaseContractId: document.isContract ? document.id : null,
+      expenseId: document.isContract ? null : document.id,
       amount,
-      amountUsd: convertToUsd(amount, contract.rateToUsd, contract.currency),
+      amountUsd: convertToUsd(amount, document.rateToUsd, document.currency),
     });
   }
 
@@ -353,7 +460,11 @@ export async function postPayment(params: { id: string; companyId: string; userI
 
     const payment = await tx.payment.findUniqueOrThrow({
       where: { id: params.id },
-      include: { vendor: true, cashBankAccount: true, allocations: { include: { purchaseContract: true } } },
+      include: {
+        vendor: true,
+        cashBankAccount: true,
+        allocations: { include: { purchaseContract: true, expense: true } },
+      },
     });
 
     if (payment.paymentMethod !== 'CHEQUE' && !payment.cashBankAccountId) {
@@ -362,10 +473,15 @@ export async function postPayment(params: { id: string; companyId: string; userI
     const company = await getCompanyContext(tx, params.companyId);
 
     for (const alloc of payment.allocations) {
-      const outstanding = await getContractOutstanding(tx, alloc.purchaseContractId);
+      const outstanding = alloc.purchaseContractId
+        ? await getContractOutstanding(tx, alloc.purchaseContractId)
+        : await getExpenseOutstanding(tx, alloc.expenseId!);
       if (dec(alloc.amount).greaterThan(outstanding.amount)) {
+        const label = alloc.purchaseContract
+          ? `Contract ${alloc.purchaseContract.contractNumber}`
+          : `Cost ${alloc.expense?.expenseNumber ?? ''}`.trim();
         throw new BusinessRuleError(
-          `Contract ${alloc.purchaseContract.contractNumber} now has only ${outstanding.currency} ${outstanding.amount.toFixed(2)} outstanding, which is less than the ${dec(alloc.amount).toFixed(2)} allocated here.`,
+          `${label} now has only ${outstanding.currency} ${outstanding.amount.toFixed(2)} outstanding, which is less than the ${dec(alloc.amount).toFixed(2)} allocated here.`,
         );
       }
     }
