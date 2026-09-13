@@ -606,31 +606,45 @@ export function PurchaseForm({
         </CardContent>
       </Card>
 
-      <Callout tone="info" title="What approving does">
-        Approving posts the supplier payable, opens a job, and creates the lots, containers and batches — but it does
-        not put coffee in a warehouse. Record a goods receipt when the containers actually arrive.
+      <Callout tone="info" title="What saving does">
+        The contract appears on the Loading Sheet immediately, the supplier payable is raised and the batches are
+        created — but no coffee is in a warehouse yet. Record a purchase receipt when the containers actually arrive.
       </Callout>
 
+      {/*
+        One button, as the specification asks: "click SAVE PO … should
+        automatically appear in the Loading Sheet."
+        
+        Saving and approving were two steps, and a contract left in draft never
+        reached the loading sheet — so the sheet the client lives in stayed
+        empty while the purchase order sat there looking saved. Saving now does
+        both. "Save as draft" remains for a contract that is genuinely not
+        agreed yet, but it is the quiet option rather than the obvious one.
+      */}
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button variant="outline" onClick={() => router.back()} disabled={busy}>
           Cancel
         </Button>
-        <Button variant="subtle" onClick={() => save(false)} loading={busy}>
-          {busy ? 'Saving…' : 'Save as draft'}
+        <Button variant="ghost" onClick={() => save(false)} disabled={busy}>
+          Save as draft
         </Button>
         {canApprove ? (
-          <Button variant="accent" onClick={() => setConfirmApprove(true)} disabled={busy}>
-            Save and approve
+          <Button variant="accent" onClick={() => setConfirmApprove(true)} loading={busy}>
+            {busy ? 'Saving…' : 'Save purchase order'}
           </Button>
-        ) : null}
+        ) : (
+          <Button variant="accent" onClick={() => save(false)} loading={busy}>
+            {busy ? 'Saving…' : 'Save purchase order'}
+          </Button>
+        )}
       </div>
 
       <ConfirmDialog
         open={confirmApprove}
         onOpenChange={setConfirmApprove}
-        title="Approve this contract?"
-        description="This posts the supplier payable, opens the job and creates the lots and batches. A posted contract can only be corrected by reversing it."
-        confirmLabel="Approve and post"
+        title="Save this purchase order?"
+        description="It appears on the Loading Sheet straight away, the supplier payable is raised and the batches are created. Correcting it afterwards means reversing it, so check the quantities and the price."
+        confirmLabel="Save purchase order"
         variant="accent"
         onConfirm={() => save(true)}
       />

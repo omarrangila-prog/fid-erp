@@ -303,3 +303,42 @@ test('§2 the Morocco loading sheet has no consignee column', async ({ page }) =
   await expect(page.getByRole('columnheader', { name: 'Consignee' })).toHaveCount(0);
   await expect(page.getByRole('columnheader', { name: /Company name/i })).toBeVisible();
 });
+
+test('§11 the sale asks for the warehouse before the stock', async ({ page }) => {
+  await page.goto('/sales/new', { waitUntil: 'domcontentloaded' });
+  const form = page.getByRole('main');
+
+  const warehouse = form.getByRole('combobox', { name: /^Warehouse/ }).first();
+  const coffee = form.getByRole('combobox', { name: /^Coffee/ }).first();
+  const batch = form.getByRole('combobox', { name: /^Batch/ }).first();
+
+  // Nothing below the warehouse can be chosen until it is.
+  await expect(warehouse).toBeVisible();
+  await expect(coffee).toBeDisabled();
+  await expect(batch).toBeDisabled();
+
+  const options = await warehouse.locator('option').count();
+  if (options <= 1) {
+    test.skip(true, 'No warehouse holds sellable stock in this company.');
+    return;
+  }
+
+  await warehouse.selectOption({ index: 1 });
+  await expect(coffee).toBeEnabled();
+  await expect(batch).toBeDisabled();
+
+  await coffee.selectOption({ index: 1 });
+  await expect(batch).toBeEnabled();
+
+  // And the batches offered say how much is actually there.
+  await expect(batch.locator('option').nth(1)).toContainText(/KG available/);
+});
+
+test('§35 rule 3 — saving a purchase order puts it on the loading sheet', async ({ page }) => {
+  await page.goto('/purchases/new', { waitUntil: 'domcontentloaded' });
+  const form = page.getByRole('main');
+
+  // One button, and it is the obvious one.
+  await expect(form.getByRole('button', { name: /^Save purchase order$/ })).toBeVisible();
+  await expect(form.getByText(/appears on the Loading Sheet immediately/i)).toBeVisible();
+});

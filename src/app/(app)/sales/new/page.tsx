@@ -84,6 +84,7 @@ export default async function NewSalePage() {
     availableKg: s.availableKg.toString(),
     bagWeightKg: s.bagWeightKg.toString(),
     itemName: s.itemName,
+    itemId: s.itemId,
     warehouseName: s.warehouseName,
     shipmentId: s.shipmentId,
   }));

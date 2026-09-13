@@ -35,12 +35,16 @@ export type StockOption = ComboOption & {
   availableKg: string;
   bagWeightKg: string;
   itemName: string;
+  itemId: string;
   warehouseName: string;
   shipmentId: string;
 };
 
 type LineState = {
   key: string;
+  /** Chosen first; narrows the coffee and the batch beneath it. */
+  warehouseId: string;
+  itemId: string;
   stockKey: string | null;
   quantity: string;
   unit: 'KG' | 'MT' | 'BAG';
@@ -60,11 +64,18 @@ export type SaleFormDefaults = {
   cashBankAccountId?: string;
   reference?: string;
   notes?: string;
-  lines?: Array<Omit<LineState, 'key'>>;
+  /**
+   * A saved line knows its batch. The warehouse and coffee above it in the
+   * cascade are read back from the stock list on mount, so a caller does not
+   * have to supply what it can already work out.
+   */
+  lines?: Array<Omit<LineState, 'key' | 'warehouseId' | 'itemId'>>;
 };
 
 const newLine = (taxCodeId = ''): LineState => ({
   key: Math.random().toString(36).slice(2),
+  warehouseId: '',
+  itemId: '',
   stockKey: null,
   quantity: '',
   unit: 'KG',
@@ -124,7 +135,56 @@ export function SaleForm({
   // Built in a lazy initialiser so the random keys are generated once, on mount,
   // rather than on every render.
   const [lines, setLines] = React.useState<LineState[]>(() =>
-    defaults?.lines?.length ? defaults.lines.map((l, i) => ({ ...l, key: `line-${i}` })) : [newLine(defaultTaxCodeId)],
+    defaults?.lines?.length
+      ? defaults.lines.map((l, i) => {
+          // A saved line knows its batch; the warehouse and coffee above it are
+          // read back from the stock list so the cascade shows what was chosen.
+          const option = stock.find((o) => o.value === l.stockKey);
+          return {
+            ...l,
+            key: `line-${i}`,
+            warehouseId: option?.warehouseId ?? '',
+            itemId: option?.itemId ?? '',
+          };
+        })
+      : [newLine(defaultTaxCodeId)],
+  );
+
+  /*
+   * The three lists, each narrowed by the one above it.
+   *
+   * Derived from the stock list rather than held separately: there is exactly
+   * one source of truth for what is where, and a warehouse with nothing in it
+   * should not be offered at all.
+   */
+  const warehousesWithStock = React.useMemo(() => {
+    const seen = new Map<string, { id: string; name: string }>();
+    for (const option of stock) {
+      if (!seen.has(option.warehouseId)) {
+        seen.set(option.warehouseId, { id: option.warehouseId, name: option.warehouseName });
+      }
+    }
+    return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [stock]);
+
+  const itemsIn = React.useCallback(
+    (warehouseId: string) => {
+      const seen = new Map<string, { id: string; name: string }>();
+      for (const option of stock) {
+        if (option.warehouseId !== warehouseId) continue;
+        if (!seen.has(option.itemId)) seen.set(option.itemId, { id: option.itemId, name: option.itemName });
+      }
+      return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
+    },
+    [stock],
+  );
+
+  const batchesIn = React.useCallback(
+    (warehouseId: string, itemId: string) =>
+      stock
+        .filter((option) => option.warehouseId === warehouseId && option.itemId === itemId)
+        .sort((a, b) => a.batchNumber.localeCompare(b.batchNumber)),
+    [stock],
   );
 
   function setLine(key: string, patch: Partial<LineState>) {
@@ -427,14 +487,63 @@ export function SaleForm({
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <Field label="Batch and warehouse" required className="lg:col-span-2">
-                  <Combobox
-                    options={stock}
-                    value={line.stockKey}
-                    onChange={(value) => setLine(line.key, { stockKey: value })}
-                    placeholder="Choose stock to sell…"
-                    emptyText="No stock matches"
-                  />
+                {/*
+                  Warehouse, then coffee, then batch — §11, in that order.
+                  
+                  A single "batch and warehouse" picker worked but asked the
+                  question backwards: the user knows which store they are
+                  selling out of before they know which parcel. Choosing the
+                  warehouse first also narrows what follows to stock that is
+                  actually in that warehouse, so a batch sitting in the other
+                  store cannot be picked by mistake.
+                */}
+                <Field label="Warehouse" required>
+                  <Select
+                    value={line.warehouseId}
+                    onChange={(e) =>
+                      // Changing the warehouse invalidates the coffee and the
+                      // batch beneath it, so both are cleared rather than left
+                      // pointing at stock that is somewhere else.
+                      setLine(line.key, { warehouseId: e.target.value, itemId: '', stockKey: null })
+                    }
+                  >
+                    <option value="">Choose…</option>
+                    {warehousesWithStock.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+
+                <Field label="Coffee" required>
+                  <Select
+                    value={line.itemId}
+                    disabled={!line.warehouseId}
+                    onChange={(e) => setLine(line.key, { itemId: e.target.value, stockKey: null })}
+                  >
+                    <option value="">{line.warehouseId ? 'Choose…' : 'Choose a warehouse first'}</option>
+                    {itemsIn(line.warehouseId).map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+
+                <Field label="Batch" required hint="Only batches with stock in that warehouse.">
+                  <Select
+                    value={line.stockKey ?? ''}
+                    disabled={!line.itemId}
+                    onChange={(e) => setLine(line.key, { stockKey: e.target.value || null })}
+                  >
+                    <option value="">{line.itemId ? 'Choose…' : 'Choose the coffee first'}</option>
+                    {batchesIn(line.warehouseId, line.itemId).map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.batchNumber} — {Number(option.availableKg).toLocaleString()} KG available
+                      </option>
+                    ))}
+                  </Select>
                 </Field>
 
                 <Field label="Quantity" required>

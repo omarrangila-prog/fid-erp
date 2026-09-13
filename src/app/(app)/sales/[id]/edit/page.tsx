@@ -61,6 +61,7 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
     availableKg: s.availableKg.toString(),
     bagWeightKg: s.bagWeightKg.toString(),
     itemName: s.itemName,
+    itemId: s.itemId,
     warehouseName: s.warehouseName,
     shipmentId: s.shipmentId,
   }));
@@ -86,6 +87,7 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
         availableKg: line.quantityKg.toString(),
         bagWeightKg: line.batch.bagWeightKg.toString(),
         itemName: line.item.itemName,
+        itemId: line.itemId,
         warehouseName: line.warehouse?.name ?? 'Warehouse',
         shipmentId: line.batch.shipmentId,
       });
