@@ -98,6 +98,18 @@ test.describe('the loading sheet', () => {
     }
     // Dubai's container-centric columns are absent here.
     await expect(page.getByRole('columnheader', { name: 'Exporter', exact: true })).toHaveCount(0);
+
+    /*
+     * And no consignee, which is the half of the split that matters.
+     *
+     * The 35-point specification is Morocco's alone. Morocco imports under its
+     * own name and sells a container on to several customers afterwards, so
+     * there is nobody to consign to. Dubai trades container to container and
+     * the consignee is a real party on the bill of lading — the test above
+     * requires that column, this one forbids it, and between them the two
+     * companies cannot quietly converge.
+     */
+    await expect(page.getByRole('columnheader', { name: 'Consignee', exact: true })).toHaveCount(0);
   });
 });
 

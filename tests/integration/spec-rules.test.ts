@@ -17,10 +17,20 @@ import { dec, toMoney } from '@/lib/money';
 /**
  * §35 — the sixteen rules the specification calls mandatory.
  *
- * Each one is written as the client stated it and checked against the running
- * system, in their order. Where a rule is a prohibition it is checked by
- * attempting the thing and requiring a refusal, because a rule nothing
- * enforces is a sentence in a document.
+ * Morocco only. The 35-point specification is written for FID Trading
+ * International SARL and nothing in it describes Dubai, which trades container
+ * to container, consigns to a named buyer and does not collect through agents.
+ * Every check below therefore runs against the Morocco company, and the first
+ * test asserts that rather than trusting it — a suite that quietly drifted onto
+ * the wrong set of books would still pass while proving nothing.
+ *
+ * Dubai's own acceptance test is tests/integration/acceptance.test.ts, and it
+ * is unchanged by any of this.
+ *
+ * Each rule is written as the client stated it and checked in their order.
+ * Where a rule is a prohibition it is checked by attempting the thing and
+ * requiring a refusal, because a rule nothing enforces is a sentence in a
+ * document.
  */
 
 let ctx: Awaited<ReturnType<typeof getContext>>;
@@ -30,7 +40,6 @@ let contractId: string;
 let shipmentId: string;
 let batchAId: string;
 let warehouseA: { id: string; name: string };
-let warehouseB: { id: string; name: string };
 
 async function control(systemKey: string) {
   const rows = await prisma.$queryRaw<Array<{ bal: string }>>`
@@ -48,7 +57,16 @@ beforeAll(async () => {
   companyId = ctx.morocco.id;
   masters = await createMasters(companyId, { currency: 'MAD' });
   warehouseA = masters.warehouses[0];
-  warehouseB = masters.warehouses[1] ?? masters.warehouses[0];
+
+});
+
+describe('these rules are Morocco\'s', () => {
+  it('runs against FID Trading International SARL, not Dubai', () => {
+    expect(ctx.morocco.code).toBe('FID-MA');
+    expect(ctx.morocco.localCurrency).toBe('MAD');
+    expect(companyId).toBe(ctx.morocco.id);
+    expect(companyId).not.toBe(ctx.dubai.id);
+  });
 });
 
 describe('rule 1 — a purchase order must have a contract reference', () => {
