@@ -301,6 +301,39 @@ export default async function DashboardPage() {
           href="/finance/payables"
         />
 
+        {/*
+          Only when there is something to say. A company that does not collect
+          through agents should not carry two permanently empty tiles, and a
+          company that does needs to see this every morning.
+        */}
+        {!data.agents.holdingUsd.isZero() ? (
+          <KpiCard
+            label="With Agents"
+            currency="USD"
+            value={formatMoneyCompact(data.agents.holdingUsd, 'USD').replace(/^USD\s*/, '')}
+            icon={HandCoins}
+            tone="receivable"
+            note={
+              data.agents.positions.length === 1
+                ? `Held by ${data.agents.positions[0].agentName}`
+                : `Held by ${data.agents.positions.length} agents`
+            }
+            href="/ledgers/agents"
+          />
+        ) : null}
+
+        {!data.agents.commissionPayableUsd.isZero() ? (
+          <KpiCard
+            label="Commission Owed"
+            currency="USD"
+            value={formatMoneyCompact(data.agents.commissionPayableUsd, 'USD').replace(/^USD\s*/, '')}
+            icon={HandCoins}
+            tone="payable"
+            note="Already charged to the shipments"
+            href="/ledgers/agents"
+          />
+        ) : null}
+
         <KpiCard
           label="Inventory Value"
           currency={showCost ? 'USD' : undefined}

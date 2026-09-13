@@ -404,7 +404,15 @@ export async function markShipmentLoaded(
     shippingLineId?: string | null;
     bookingNumber?: string | null;
     billOfLading?: string | null;
-    containerNumber?: string | null;
+    /**
+     * Every container on the consignment.
+     *
+     * One booking usually covers several, and the client asked to be able to
+     * say "three containers" and then enter three numbers. They are recorded
+     * against the shipment and attached to the batches that have none of their
+     * own, so the loading sheet shows what actually shipped.
+     */
+    containerNumbers?: string[];
     vesselName?: string | null;
     voyageNumber?: string | null;
     portOfLoading?: string | null;
@@ -450,32 +458,60 @@ export async function markShipmentLoaded(
       if (!line) throw new NotFoundError('Shipping line');
     }
 
-    // A container number given here belongs to the consignment, so it reaches
-    // the batches that have none of their own rather than being typed again.
-    if (input.containerNumber?.trim()) {
-      const containerNumber = input.containerNumber.trim();
-      const existing = await tx.container.findFirst({
-        where: { companyId: input.companyId, containerNumber },
-        select: { id: true },
-      });
+    /*
+     * The containers on the consignment.
+     *
+     * One booking covers several, so this takes a list. Each becomes a
+     * container record against the shipment, and the first is attached to any
+     * batch that still has none of its own — which is the common case, because
+     * the contract was signed before anybody knew the numbers.
+     *
+     * Duplicates within the list are ignored rather than refused: somebody
+     * asked for three fields and typed the same number twice is a slip, not a
+     * reason to lose the other two.
+     */
+    const containerNumbers = [
+      ...new Set((input.containerNumbers ?? []).map((n) => n.trim()).filter(Boolean)),
+    ];
 
-      const containerId =
-        existing?.id ??
-        (
-          await tx.container.create({
-            data: {
-              companyId: input.companyId,
-              containerNumber,
-              shipmentId: shipment.id,
-              purchaseContractId: shipment.purchaseContractId,
-            },
-            select: { id: true },
-          })
-        ).id;
+    if (containerNumbers.length > 0) {
+      const ids: string[] = [];
+
+      for (const containerNumber of containerNumbers) {
+        const existing = await tx.container.findFirst({
+          where: { companyId: input.companyId, containerNumber },
+          select: { id: true },
+        });
+
+        if (existing) {
+          await tx.container.update({
+            where: { id: existing.id },
+            data: { shipmentId: shipment.id, purchaseContractId: shipment.purchaseContractId },
+          });
+          ids.push(existing.id);
+          continue;
+        }
+
+        const created = await tx.container.create({
+          data: {
+            companyId: input.companyId,
+            containerNumber,
+            shipmentId: shipment.id,
+            purchaseContractId: shipment.purchaseContractId,
+          },
+          select: { id: true },
+        });
+        ids.push(created.id);
+      }
 
       await tx.batch.updateMany({
         where: { shipmentId: shipment.id, containerId: null },
-        data: { containerId },
+        data: { containerId: ids[0] },
+      });
+
+      await tx.shipment.update({
+        where: { id: shipment.id },
+        data: { containers: Math.max(shipment.containers, containerNumbers.length) },
       });
     }
 

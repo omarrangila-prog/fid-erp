@@ -387,7 +387,7 @@ export async function markShipmentLoadedAction(shipmentId: string, payload: stri
         shippingLineId: input.shippingLineId,
         bookingNumber: input.bookingNumber,
         billOfLading: input.billOfLading,
-        containerNumber: input.containerNumber,
+        containerNumbers: input.containerNumbers?.filter((n): n is string => Boolean(n)),
         vesselName: input.vesselName,
         voyageNumber: input.voyageNumber,
         portOfLoading: input.portOfLoading,

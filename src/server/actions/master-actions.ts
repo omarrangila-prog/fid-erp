@@ -8,7 +8,13 @@ import { PERMISSIONS, type PermissionCode } from '@/lib/constants';
 import { ConflictError, NotFoundError } from '@/lib/errors';
 import { writeAudit } from '@/lib/services/audit';
 import { createCashBankAccount } from '@/lib/services/chart-of-accounts';
-import { formDataToObject, fieldErrors } from '@/lib/validation/common';
+import {
+  formDataToObject,
+  fieldErrors,
+  requiredText,
+  currencyCode,
+  optionalText,
+} from '@/lib/validation/common';
 import {
   customerSchema,
   vendorSchema,
@@ -20,7 +26,7 @@ import {
   expenseCategorySchema,
   cashBankAccountSchema,
 } from '@/lib/validation/masters';
-import { fail, type ActionResult } from '@/server/actions/action-utils';
+import { fail, run, type ActionResult } from '@/server/actions/action-utils';
 
 /**
  * Master data actions.
@@ -128,6 +134,77 @@ const CUSTOMER: MasterConfig<typeof customerSchema> = {
   uniqueField: 'customerCode',
   path: '/customers',
 };
+
+/**
+ * Create a customer without leaving the invoice.
+ *
+ * A new customer walks in and buys something; making the user abandon a
+ * half-filled invoice, go to the customer master, come back and start again is
+ * the friction the client asked to be rid of. This takes only what an invoice
+ * actually needs — a name and a currency — and issues the code itself, because
+ * inventing a unique code is not a decision anybody wants to make mid-sale.
+ */
+export async function quickCreateCustomerAction(
+  payload: string,
+): Promise<ActionResult<{ id: string; name: string; currency: string; paymentTermDays: number }>> {
+  return run(async () => {
+    const user = await requirePermission(PERMISSIONS.CUSTOMERS_CREATE);
+    const companyId = user.activeCompany.id;
+
+    const input = z
+      .object({
+        customerName: requiredText('Customer name'),
+        primaryCurrency: currencyCode,
+        country: optionalText(100),
+        phone: optionalText(40),
+        paymentTermDays: z.coerce.number().int().min(0).max(365).default(0),
+      })
+      .parse(JSON.parse(payload) as unknown);
+
+    const existing = await prisma.customer.findFirst({
+      where: { companyId, customerName: { equals: input.customerName, mode: 'insensitive' } },
+      select: { id: true, customerName: true },
+    });
+    if (existing) {
+      throw new ConflictError(`${existing.customerName} is already on the customer list.`);
+    }
+
+    // A code of the system's own, in the same shape as the rest.
+    const count = await prisma.customer.count({ where: { companyId } });
+    let customerCode = `CUS-${String(count + 1).padStart(4, '0')}`;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const clash = await prisma.customer.findFirst({
+        where: { companyId, customerCode },
+        select: { id: true },
+      });
+      if (!clash) break;
+      customerCode = `CUS-${String(count + 2 + attempt).padStart(4, '0')}`;
+    }
+
+    const customer = await prisma.customer.create({
+      data: {
+        companyId,
+        customerCode,
+        customerName: input.customerName,
+        primaryCurrency: input.primaryCurrency.toUpperCase(),
+        country: input.country ?? null,
+        phone: input.phone ?? null,
+        paymentTermDays: input.paymentTermDays,
+      },
+      select: { id: true, customerName: true, primaryCurrency: true, paymentTermDays: true },
+    });
+
+    revalidatePath('/customers');
+    revalidatePath('/sales/new');
+
+    return {
+      id: customer.id,
+      name: customer.customerName,
+      currency: customer.primaryCurrency,
+      paymentTermDays: customer.paymentTermDays,
+    };
+  });
+}
 
 export async function saveCustomerAction(id: string | null, _prev: MasterFormState, formData: FormData) {
   return saveMaster(CUSTOMER, 'customer', id, formData);

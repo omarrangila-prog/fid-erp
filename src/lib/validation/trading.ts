@@ -179,7 +179,8 @@ export const markLoadedSchema = z.object({
   shippingLineId: requiredChoice('Shipping line'),
   bookingNumber: optionalText(60),
   billOfLading: optionalText(60),
-  containerNumber: optionalText(40),
+  /** Every container on the consignment; "3 containers" means three numbers. */
+  containerNumbers: z.array(optionalText(40)).max(40).optional(),
   vesselName: optionalText(120),
   voyageNumber: optionalText(60),
   portOfLoading: optionalText(120),

@@ -221,3 +221,85 @@ test('a purchase order can be raised from the screen, start to finish', async ({
   await expect(page.getByRole('main')).toContainText(/FID-MA-PO-|FID-DXB-PO-/);
   await expect(page.getByRole('main')).toContainText(/42,000/);
 });
+
+/**
+ * The eight corrections from the 35-point specification that needed new
+ * screens. The accounting behind them is covered by
+ * tests/integration/agent-ledger.test.ts; these check a person can reach it.
+ */
+test('§13–14 the invoice asks whether it is cash or credit', async ({ page }) => {
+  await page.goto('/sales/new', { waitUntil: 'domcontentloaded' });
+  const form = page.getByRole('main');
+
+  await expect(form.getByText('How is this being paid?')).toBeVisible();
+  const paymentType = form.getByLabel(/payment type/i);
+  await expect(paymentType).toBeVisible();
+
+  // Credit by default — an invoice is not settled unless somebody says so.
+  await expect(paymentType).toHaveValue('CREDIT');
+
+  // Choosing cash asks where the money went, and not before.
+  await expect(form.getByLabel(/paid into/i)).toHaveCount(0);
+  await paymentType.selectOption('CASH');
+  await expect(form.getByLabel(/paid into/i)).toBeVisible();
+});
+
+test('§9 a customer can be added without leaving the invoice', async ({ page }) => {
+  await page.goto('/sales/new', { waitUntil: 'domcontentloaded' });
+
+  await page.getByRole('button', { name: /New customer/i }).click();
+  await expect(page.getByRole('heading', { name: /New customer/i })).toBeVisible();
+  await expect(page.getByLabel(/customer name/i)).toBeVisible();
+
+  // It asks only what an invoice needs.
+  await expect(page.getByLabel(/credit limit/i)).toHaveCount(0);
+  await expect(page.getByLabel(/address/i)).toHaveCount(0);
+});
+
+test('§17 a receipt can be collected by an agent', async ({ page }) => {
+  await page.goto('/finance/receipts/new', { waitUntil: 'domcontentloaded' });
+  const form = page.getByRole('main');
+
+  await form.getByRole('combobox', { name: /^Payment method/ }).selectOption('AGENT_COLLECTION');
+
+  // By role and name. `getByLabel(/collected by/i)` also matches the payment
+  // method select, because the option now chosen inside it reads "Collected by
+  // an agent" — two matches, and the assertion fails on a form that is right.
+  await expect(form.getByRole('combobox', { name: /^Collected by/ })).toBeVisible();
+  await expect(form.getByLabel(/received into/i)).toHaveCount(0);
+  await expect(form.getByText(/does not put money in the bank/i)).toBeVisible();
+});
+
+test('§19 the agent ledger says how much is sitting with whom', async ({ page }) => {
+  await page.goto('/ledgers/agents', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByRole('heading', { name: /Agent Ledgers/i }).first()).toBeVisible();
+  await expect(page.getByRole('main')).toContainText(/Holding for us|No agents yet/i);
+});
+
+test('§4 three containers means three boxes', async ({ page }) => {
+  await page.goto('/loading', { waitUntil: 'domcontentloaded' });
+
+  const markLoaded = page.getByRole('button', { name: /Mark loaded/i }).first();
+  if ((await markLoaded.count()) === 0) {
+    test.skip(true, 'Everything in this company is already loaded.');
+    return;
+  }
+
+  await markLoaded.click();
+  await expect(page.getByLabel(/container number/i)).toBeVisible();
+
+  await page.getByLabel(/how many containers/i).fill('3');
+  await expect(page.getByLabel(/^Container 1$/)).toBeVisible();
+  await expect(page.getByLabel(/^Container 2$/)).toBeVisible();
+  await expect(page.getByLabel(/^Container 3$/)).toBeVisible();
+});
+
+test('§2 the Morocco loading sheet has no consignee column', async ({ page }) => {
+  await page.goto('/loading', { waitUntil: 'domcontentloaded' });
+
+  // Morocco imports under its own name and sells the container on afterwards,
+  // so there is no consignee to name. Dubai's sheet keeps the column.
+  await expect(page.getByRole('columnheader', { name: 'Consignee' })).toHaveCount(0);
+  await expect(page.getByRole('columnheader', { name: /Company name/i })).toBeVisible();
+});

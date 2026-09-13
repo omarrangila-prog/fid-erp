@@ -17,7 +17,8 @@ export function Field({
   label?: string;
   htmlFor?: string;
   required?: boolean;
-  hint?: string;
+  /** Usually a sentence; occasionally a small control, such as "New customer". */
+  hint?: React.ReactNode;
   error?: string;
   className?: string;
   children: React.ReactNode;

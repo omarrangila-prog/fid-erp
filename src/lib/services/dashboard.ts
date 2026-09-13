@@ -4,6 +4,7 @@ import { getFinancialPosition } from '@/lib/services/reports';
 import { getCompanyProfitSummary, getMonthlyProfitability } from '@/lib/services/profitability';
 import { getReceivables, getPayables, summariseAgeing } from '@/lib/services/receivables';
 import { SHIPMENT_STATUSES_IN_TRANSIT } from '@/lib/constants';
+import { getAgentPositions } from '@/lib/services/agent-ledger';
 
 /**
  * Dashboard aggregation.
@@ -78,7 +79,7 @@ export async function getLowStock(companyId: string, thresholdKg = 5000, limit =
 }
 
 export async function getDashboard(params: { companyId: string; from?: Date; to?: Date }) {
-  const [position, profit, receivables, payables, monthly, shipments, warehouseStock, itemStock, alerts] =
+  const [position, profit, receivables, payables, monthly, shipments, warehouseStock, itemStock, alerts, agents] =
     await Promise.all([
       getFinancialPosition({ companyId: params.companyId }),
       getCompanyProfitSummary({ companyId: params.companyId, from: params.from, to: params.to }),
@@ -89,6 +90,10 @@ export async function getDashboard(params: { companyId: string; from?: Date; to?
       getWarehouseStock(params.companyId),
       getTopItemStock(params.companyId),
       prisma.notification.count({ where: { companyId: params.companyId, readAt: null } }),
+      // What agents are holding and what they are owed. Before the agent
+      // clearing account existed there was nowhere to ask this, because an
+      // agent's cheque went straight into the bank.
+      getAgentPositions(params.companyId),
     ]);
 
   const today = new Date();
@@ -114,7 +119,17 @@ export async function getDashboard(params: { companyId: string; from?: Date; to?
     overdueByCustomer.set(row.customerId, entry);
   }
 
+  const agentHoldingUsd = agents.reduce((sum, a) => sum.plus(a.holdingUsd), new Decimal(0));
+  const agentCommissionUsd = agents.reduce((sum, a) => sum.plus(a.commissionPayableUsd), new Decimal(0));
+
   return {
+    agents: {
+      positions: agents.filter((a) => !a.holdingUsd.isZero() || !a.commissionPayableUsd.isZero()),
+      /** Money customers have paid that has not reached the company. */
+      holdingUsd: toMoney(agentHoldingUsd),
+      /** Commission already charged to shipments and not yet paid. */
+      commissionPayableUsd: toMoney(agentCommissionUsd),
+    },
     position,
     profit,
     monthly,

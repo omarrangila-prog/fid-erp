@@ -268,6 +268,15 @@ export function LoadingSheet({
     cell: (r) => <span className="block max-w-56 truncate text-xs text-ink-muted">{r.remarks ?? '—'}</span>,
   };
 
+  /**
+   * Consignee, on the Dubai sheet only.
+   *
+   * Dubai trades container to container and the consignee is a real party on
+   * the bill of lading. Morocco imports under its own name and sells the
+   * container on to several customers afterwards, so there is no consignee to
+   * name — the client asked for the column to go, and the customers who bought
+   * from the container are listed beneath the row anyway.
+   */
   const consignee: DataColumn<LoadingRow> = {
     id: 'consignee',
     header: 'Consignee',
@@ -425,7 +434,6 @@ export function LoadingSheet({
       exportValue: (r) => r.shippingLine ?? '',
       cell: (r) => r.shippingLine ?? '—',
     },
-    consignee,
     {
       id: 'sold',
       header: 'Sold / left',

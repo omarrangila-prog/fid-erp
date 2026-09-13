@@ -17,6 +17,7 @@ import { dec, toMoney, sum } from '@/lib/money';
 import { formatMoney, formatQuantityKg } from '@/lib/format';
 import { saveSalesInvoiceAction } from '@/server/actions/trading-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
+import { AddCustomer } from '@/app/(app)/sales/add-customer';
 
 /**
  * Sales invoice entry.
@@ -72,7 +73,7 @@ const newLine = (taxCodeId = ''): LineState => ({
 });
 
 export function SaleForm({
-  customers,
+  customers: initialCustomers,
   cashAccounts,
   stock,
   localCurrency,
@@ -100,6 +101,9 @@ export function SaleForm({
 }) {
   const defaultTaxCodeId = taxCodes[0]?.id ?? '';
   const router = useRouter();
+  // Held locally so a customer added from this screen can be selected without
+  // a round trip that would throw away the half-filled invoice.
+  const [customers, setCustomers] = React.useState(initialCustomers);
   const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
   const [fieldIssues, setFieldIssues] = React.useState<Record<string, string>>({});
@@ -272,7 +276,40 @@ export function SaleForm({
           <CardDescription>Who is buying, in which currency, and on what terms.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Field label="Customer" htmlFor="customerId" required error={fieldIssues.customerId}>
+          <Field
+            label="Customer"
+            htmlFor="customerId"
+            required
+            error={fieldIssues.customerId}
+            hint={
+              <AddCustomer
+                defaultCurrency={header.currency}
+                onCreated={(customer) => {
+                  setCustomers((prev) =>
+                    [
+                      ...prev,
+                      {
+                        value: customer.id,
+                        label: customer.name,
+                        hint: customer.currency,
+                        currency: customer.currency,
+                        paymentTermDays: customer.paymentTermDays,
+                      },
+                    ].sort((a, b) => a.label.localeCompare(b.label)),
+                  );
+                  setHeader({
+                    ...header,
+                    customerId: customer.id,
+                    currency: customer.currency,
+                    rateToUsd: customer.currency === 'USD' ? '1' : header.rateToUsd,
+                    dueDate: header.invoiceDate
+                      ? addDays(header.invoiceDate, customer.paymentTermDays)
+                      : header.dueDate,
+                  });
+                }}
+              />
+            }
+          >
             <Combobox
               autoFocus
               id="customerId"

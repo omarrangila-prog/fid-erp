@@ -135,7 +135,7 @@ describe('3 — mark as loaded, which is when shipping details exist', () => {
         shippingLineId: masters.shippingLine.id,
         bookingNumber: 'BK-556677',
         billOfLading: 'MSCUMA2026/0412',
-        containerNumber: 'MSCU1234567',
+        containerNumbers: ['MSCU1234567', 'MSCU7654321'],
       },
       ctx.admin.id,
     );

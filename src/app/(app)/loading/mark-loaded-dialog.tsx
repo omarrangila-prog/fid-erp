@@ -76,9 +76,30 @@ function MarkLoadedBody({
     shippingLineId: defaults?.shippingLineId ?? (shippingLines.length === 1 ? shippingLines[0].id : ''),
     bookingNumber: defaults?.bookingNumber ?? '',
     billOfLading: defaults?.billOfLading ?? '',
-    containerNumber: defaults?.containerNumber ?? '',
     notes: '',
   });
+
+  /*
+   * "Three containers" means three boxes.
+   *
+   * The client asked for exactly this: say how many are on the booking and get
+   * that many numbered fields, because one booking routinely covers several
+   * containers and typing them into a single box loses which is which.
+   */
+  const [containerCount, setContainerCount] = React.useState(defaults?.containerNumber ? 1 : 1);
+  const [containerNumbers, setContainerNumbers] = React.useState<string[]>([
+    defaults?.containerNumber ?? '',
+  ]);
+
+  function setCount(next: number) {
+    const count = Math.max(1, Math.min(40, Number.isFinite(next) ? next : 1));
+    setContainerCount(count);
+    setContainerNumbers((prev) => {
+      const grown = [...prev];
+      while (grown.length < count) grown.push('');
+      return grown.slice(0, count);
+    });
+  }
 
   const set = (patch: Partial<typeof form>) => setForm((prev) => ({ ...prev, ...patch }));
 
@@ -97,7 +118,10 @@ function MarkLoadedBody({
     }
 
     startTransition(async () => {
-      const result = await markShipmentLoadedAction(shipmentId, JSON.stringify(form));
+      const result = await markShipmentLoadedAction(
+        shipmentId,
+        JSON.stringify({ ...form, containerNumbers: containerNumbers.map((n) => n.trim()).filter(Boolean) }),
+      );
       if (!result?.ok) {
         setError(result?.error ?? 'This consignment could not be marked loaded.');
         return;
@@ -189,14 +213,40 @@ function MarkLoadedBody({
             />
           </Field>
 
-          <Field label="Container number" htmlFor="containerNumber">
+          <Field
+            label="How many containers?"
+            htmlFor="containerCount"
+            hint="One booking often covers several."
+          >
             <Input
-              id="containerNumber"
-              value={form.containerNumber}
-              onChange={(e) => set({ containerNumber: e.target.value })}
-              placeholder="MSCU1234567"
+              id="containerCount"
+              type="number"
+              min={1}
+              max={40}
+              value={String(containerCount)}
+              onChange={(e) => setCount(Number(e.target.value))}
+              className="tnum"
             />
           </Field>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          {containerNumbers.map((value, index) => (
+            <Field
+              key={index}
+              label={containerCount === 1 ? 'Container number' : `Container ${index + 1}`}
+              htmlFor={`container-${index}`}
+            >
+              <Input
+                id={`container-${index}`}
+                value={value}
+                onChange={(e) =>
+                  setContainerNumbers((prev) => prev.map((n, i) => (i === index ? e.target.value : n)))
+                }
+                placeholder="MSCU1234567"
+              />
+            </Field>
+          ))}
         </div>
 
         <Field label="Notes" htmlFor="loadedNotes">
@@ -205,7 +255,8 @@ function MarkLoadedBody({
 
         <Callout tone="info">
           Anything you leave blank can be added later from the consignment itself — a bill of lading that has not been
-          issued yet should not stop you recording that the coffee is on the water.
+          issued yet should not stop you recording that the coffee is on the water. The same is true of container
+          numbers: enter the ones you have.
         </Callout>
       </div>
     </Sheet>
