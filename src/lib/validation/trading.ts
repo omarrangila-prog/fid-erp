@@ -67,6 +67,8 @@ export const purchaseContractSchema = z.object({
    * which was true. Left blank, the contract is simply due on its own date.
    */
   dueDate: optionalDateString,
+  /** §1: "Number of Containers, if known" — and often it is not. */
+  containers: positiveInt('Number of containers').optional(),
   notes: optionalText(1000),
   lines: z.array(purchaseLineSchema).min(1, 'Add at least one coffee line.'),
 });

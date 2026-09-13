@@ -195,9 +195,12 @@ async function assertTraceabilityNumbersAreFree(
 /**
  * When the supplier expects to be paid.
  *
- * The form used to offer Net 7 / Net 30 / Net 60 and the client trades on
- * none of them: a contract is due on a date agreed with the supplier, and
- * sometimes on its own date. So a date is what the form asks for.
+ * The purchase order does not ask. It offered Net 7 / Net 30 / Net 60, which
+ * the client trades on none of; it then offered a date, and §1 does not list
+ * one either. So the contract takes the supplier's standing terms, and where
+ * there are none it is due on its own date — which is what an invoice with no
+ * stated terms means anyway. A caller may still supply a date, and the
+ * supplier's ledger is where a different arrangement is recorded.
  *
  * `paymentTermDays` is still stored, because the payables ageing and the
  * supplier's standing terms are both expressed in days — it is derived from
@@ -282,7 +285,7 @@ export async function createPurchaseContract(input: PurchaseContractInput, userI
         totalValueUsd: totals.totalValueUsd,
         taxAmount: totals.taxAmount,
         taxAmountUsd: totals.taxAmountUsd,
-        containers: totals.totalContainers,
+        containers: input.containers ?? totals.totalContainers,
         totalBags: totals.totalBags,
         incoterm: input.incoterm ?? 'FOB',
         portOfLoading: input.portOfLoading ?? null,
@@ -359,7 +362,7 @@ export async function updatePurchaseContract(id: string, input: PurchaseContract
         totalValueUsd: totals.totalValueUsd,
         taxAmount: totals.taxAmount,
         taxAmountUsd: totals.taxAmountUsd,
-        containers: totals.totalContainers,
+        containers: input.containers ?? totals.totalContainers,
         totalBags: totals.totalBags,
         incoterm: input.incoterm ?? 'FOB',
         portOfLoading: input.portOfLoading ?? null,

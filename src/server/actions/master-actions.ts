@@ -62,6 +62,38 @@ function invalid(error: unknown): MasterFormState {
   return { ok: false, error: response.ok ? 'The action could not be completed.' : response.error };
 }
 
+/** Prefixes that read like the record they belong to. */
+const CODE_PREFIX: Record<string, string> = {
+  customer: 'CUS',
+  vendor: 'SUP',
+  coffeeItem: 'ITM',
+  warehouse: 'WH',
+  agent: 'AGT',
+  shippingLine: 'SL',
+  expenseCategory: 'EXP',
+  port: 'PRT',
+};
+
+async function nextMasterCode<S extends z.ZodTypeAny>(
+  delegate: string,
+  config: MasterConfig<S>,
+  companyId: string,
+): Promise<string> {
+  const model = prisma[delegate as 'customer'] as unknown as {
+    count: (args: unknown) => Promise<number>;
+    findFirst: (args: unknown) => Promise<{ id: string } | null>;
+  };
+
+  const used = await model.count({ where: { companyId } });
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const code = `${CODE_PREFIX[delegate] ?? 'REC'}-${String(used + 1 + attempt).padStart(4, '0')}`;
+    const clash = await model.findFirst({ where: { companyId, [config.uniqueField]: code }, select: { id: true } });
+    if (!clash) return code;
+  }
+  // Two hundred consecutive collisions is not a naming problem any more.
+  return `${CODE_PREFIX[delegate] ?? 'REC'}-${Date.now().toString(36).toUpperCase()}`;
+}
+
 async function saveMaster<S extends z.ZodTypeAny>(
   config: MasterConfig<S>,
   delegate: 'customer' | 'vendor' | 'coffeeItem' | 'warehouse' | 'agent' | 'shippingLine' | 'expenseCategory' | 'port',
@@ -74,6 +106,19 @@ async function saveMaster<S extends z.ZodTypeAny>(
     const companyId = user.activeCompany.id;
 
     const data = config.schema.parse(formDataToObject(formData)) as Record<string, unknown>;
+
+    /*
+     * The code is issued here when the user has not given one.
+     *
+     * Inventing a unique code is not a decision anybody wants to make while
+     * adding a supplier, and a code invented under pressure is the one that
+     * collides next month. Left blank it becomes CUS-0001, SUP-0001 and so on,
+     * counting past anything already taken.
+     */
+    if (!String(data[config.uniqueField] ?? '').trim()) {
+      data[config.uniqueField] = await nextMasterCode(delegate, config, companyId);
+    }
+
     const uniqueValue = data[config.uniqueField] as string;
 
     // Prisma's delegates are structurally identical for these operations, but

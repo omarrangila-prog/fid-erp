@@ -122,7 +122,10 @@ export function ExpenseForm({
       currency: form.currency,
       amount: form.amount,
       rateToUsd: isForeign ? form.rateToUsd : '1',
-      rateLocalPerUsd: form.rateLocalPerUsd,
+      // A voucher in the company's own currency carries one rate, and it is
+      // the voucher's. Sending the other would be sending a number the user
+      // was never shown.
+      rateLocalPerUsd: form.currency === localCurrency ? form.rateToUsd || '1' : form.rateLocalPerUsd,
       paymentMethod: form.paymentMethod,
       cashBankAccountId: form.cashBankAccountId ?? '',
       capitaliseToLandedCost: capitalise,
@@ -266,7 +269,7 @@ export function ExpenseForm({
             </Field>
           ) : null}
 
-          <Field label="Currency" required>
+          <Field label="Currency">
             <Select
               value={form.currency}
               onChange={(e) =>
@@ -320,13 +323,29 @@ export function ExpenseForm({
             <Combobox options={agents} value={form.agentId} onChange={(value) => setForm({ ...form, agentId: value })} placeholder="—" />
           </Field>
 
-          <Field label={`Rate to ${localCurrency}`} required>
-            <Input
-              value={form.rateLocalPerUsd}
-              onChange={(e) => setForm({ ...form, rateLocalPerUsd: e.target.value })}
-              className="tnum text-right"
-            />
-          </Field>
+          {/*
+            One rate, not two.
+            
+            A MAD expense in a MAD company was asked for "Rate (MAD per 1 USD)"
+            and then "Rate to MAD" — the same number, twice, both mandatory,
+            and the second one ignored by the posting anyway because a voucher
+            in the company's own currency uses its own rate. It is asked for
+            only when the voucher is in neither USD nor the company's currency,
+            which is the one case where the two genuinely differ.
+          */}
+          {form.currency !== localCurrency ? (
+            <Field
+              label={`Rate (${localCurrency} per 1 USD)`}
+              required
+              hint="For this company's own reporting."
+            >
+              <Input
+                value={form.rateLocalPerUsd}
+                onChange={(e) => setForm({ ...form, rateLocalPerUsd: e.target.value })}
+                className="tnum text-right"
+              />
+            </Field>
+          ) : null}
 
           <Field label="Reference" hint="Invoice or receipt number.">
             <Input value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} />

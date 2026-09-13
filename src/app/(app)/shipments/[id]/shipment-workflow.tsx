@@ -151,7 +151,6 @@ export function ShipmentWorkflow({
       vesselName: 'Vessel name',
       portOfLoading: 'Port of loading',
       portOfDischarge: 'Port of discharge',
-      etdDate: 'ETD',
       etaDate: 'ETA',
       ataDate: 'Actual arrival date',
       billOfLading: 'Bill of lading',
@@ -347,12 +346,6 @@ export function ShipmentWorkflow({
             <Field label="Bill of lading">
               <Input value={form.billOfLading} onChange={(e) => set('billOfLading', e.target.value)} />
             </Field>
-            <Field label="Vessel name">
-              <Input value={form.vesselName} onChange={(e) => set('vesselName', e.target.value)} />
-            </Field>
-            <Field label="Voyage number">
-              <Input value={form.voyageNumber} onChange={(e) => set('voyageNumber', e.target.value)} />
-            </Field>
             {/*
               A list-backed text box, not a dropdown. The port master keeps the
               spelling consistent, but a bill of lading occasionally names a
@@ -395,9 +388,6 @@ export function ShipmentWorkflow({
             </Field>
             <Field label="Loading date">
               <Input type="date" value={form.loadingDate} onChange={(e) => set('loadingDate', e.target.value)} />
-            </Field>
-            <Field label="ETD">
-              <Input type="date" value={form.etdDate} onChange={(e) => set('etdDate', e.target.value)} />
             </Field>
             <Field label="ETA">
               <Input type="date" value={form.etaDate} onChange={(e) => set('etaDate', e.target.value)} />

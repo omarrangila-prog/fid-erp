@@ -95,7 +95,7 @@ export function PaymentForm({
       currency: form.currency,
       amount: form.amount,
       rateToUsd: isForeign ? form.rateToUsd : '1',
-      rateLocalPerUsd: form.rateLocalPerUsd,
+      rateLocalPerUsd: form.currency === localCurrency ? form.rateToUsd || '1' : form.rateLocalPerUsd,
       paymentMethod: form.paymentMethod,
       cashBankAccountId: form.cashBankAccountId ?? '',
       cheque: isCheque
@@ -171,7 +171,7 @@ export function PaymentForm({
             />
           </Field>
 
-          <Field label="Payment date" required error={fieldIssues.paymentDate}>
+          <Field label="Payment date" error={fieldIssues.paymentDate}>
             <Input type="date" value={form.paymentDate} onChange={(e) => setForm({ ...form, paymentDate: e.target.value })} />
           </Field>
 
@@ -186,7 +186,7 @@ export function PaymentForm({
             </Select>
           </Field>
 
-          <Field label="Currency paid" required>
+          <Field label="Currency paid">
             <Select
               value={form.currency}
               onChange={(e) =>
@@ -228,13 +228,21 @@ export function PaymentForm({
             </>
           ) : null}
 
-          <Field label={`Rate to ${localCurrency}`} required>
-            <Input
-              value={form.rateLocalPerUsd}
-              onChange={(e) => setForm({ ...form, rateLocalPerUsd: e.target.value })}
-              className="tnum text-right"
-            />
-          </Field>
+          {/*
+            Only when the voucher is in neither USD nor the company's own
+            currency. A MAD payment from a MAD company was asked for the MAD
+            rate twice — once as the voucher rate and again here — and the
+            second was ignored by the posting, which uses the voucher's own.
+          */}
+          {form.currency !== localCurrency ? (
+            <Field label={`Rate (${localCurrency} per 1 USD)`} required hint="For this company's own reporting.">
+              <Input
+                value={form.rateLocalPerUsd}
+                onChange={(e) => setForm({ ...form, rateLocalPerUsd: e.target.value })}
+                className="tnum text-right"
+              />
+            </Field>
+          ) : null}
 
           <Field label="Reference">
             <Input value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} />

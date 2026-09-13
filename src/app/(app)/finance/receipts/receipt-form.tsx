@@ -135,7 +135,7 @@ export function ReceiptForm({
       amount: form.amount,
       rateToUsd: !isForeign ? '1' : entryMode === 'rate' ? form.rateToUsd : '',
       usdEquivalent: isForeign && entryMode === 'usd' ? form.usdEquivalent : '',
-      rateLocalPerUsd: form.rateLocalPerUsd,
+      rateLocalPerUsd: form.currency === localCurrency ? form.rateToUsd || '1' : form.rateLocalPerUsd,
       paymentMethod: form.paymentMethod,
       cashBankAccountId: form.cashBankAccountId ?? '',
       agentId: isAgentCollection ? form.agentId : '',
@@ -213,7 +213,7 @@ export function ReceiptForm({
             />
           </Field>
 
-          <Field label="Receipt date" required error={fieldIssues.receiptDate}>
+          <Field label="Receipt date" error={fieldIssues.receiptDate}>
             <Input type="date" value={form.receiptDate} onChange={(e) => setForm({ ...form, receiptDate: e.target.value })} />
           </Field>
 
@@ -407,13 +407,19 @@ export function ReceiptForm({
                 </Field>
               )}
 
-              <Field label={`Rate to ${localCurrency}`} required hint={`${localCurrency} per 1 USD.`}>
-                <Input
-                  value={form.rateLocalPerUsd}
-                  onChange={(e) => setForm({ ...form, rateLocalPerUsd: e.target.value })}
-                  className="tnum text-right"
-                />
-              </Field>
+              {form.currency !== localCurrency ? (
+                <Field
+                  label={`Rate (${localCurrency} per 1 USD)`}
+                  required
+                  hint="For this company's own reporting."
+                >
+                  <Input
+                    value={form.rateLocalPerUsd}
+                    onChange={(e) => setForm({ ...form, rateLocalPerUsd: e.target.value })}
+                    className="tnum text-right"
+                  />
+                </Field>
+              ) : null}
 
               <Field label={entryMode === 'rate' ? 'USD equivalent' : 'Implied rate'}>
                 <div className="tnum flex h-10 items-center justify-end rounded-lg border border-line bg-forest-50 px-3 text-sm font-semibold">

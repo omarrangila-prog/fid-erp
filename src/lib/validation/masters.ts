@@ -4,7 +4,14 @@ import { currencyCode, optionalDecimalString, optionalText, positiveInt, require
 /** Master data schemas. These are shared by the forms and the server actions. */
 
 export const customerSchema = z.object({
-  customerCode: requiredText('Customer code', 40),
+  /**
+   * Optional, and issued by the system when left blank.
+   *
+   * Inventing a unique code is not a decision anybody wants to make while
+   * adding a customer, and a code somebody invented under pressure is the one
+   * that collides next month.
+   */
+  customerCode: optionalText(40),
   customerName: requiredText('Customer name'),
   country: optionalText(100),
   contactPerson: optionalText(120),
@@ -20,7 +27,8 @@ export const customerSchema = z.object({
 });
 
 export const vendorSchema = z.object({
-  vendorCode: requiredText('Supplier code', 40),
+  /** Optional, and issued by the system when left blank. See customerCode. */
+  vendorCode: optionalText(40),
   vendorName: requiredText('Supplier name'),
   country: optionalText(100),
   contactPerson: optionalText(120),

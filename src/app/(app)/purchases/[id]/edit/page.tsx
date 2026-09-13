@@ -90,7 +90,6 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
           incoterm: contract.incoterm,
           portOfLoading: contract.portOfLoading ?? '',
           destination: contract.destination ?? '',
-          dueDate: contract.dueDate ? contract.dueDate.toISOString().slice(0, 10) : '',
           notes: contract.notes ?? '',
           lines: contract.lines.map((l) => ({
             itemId: l.itemId,

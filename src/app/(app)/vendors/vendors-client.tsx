@@ -30,7 +30,6 @@ export type VendorRow = {
 
 const FIELDS: FieldSpec[] = [
   { kind: 'section', title: 'Identity' },
-  { kind: 'text', name: 'vendorCode', label: 'Supplier code', required: true, placeholder: 'SUP-DXB-001' },
   { kind: 'text', name: 'vendorName', label: 'Supplier name', required: true, placeholder: 'Fazenda Santa Clara Exportadora' },
   { kind: 'text', name: 'country', label: 'Origin country', placeholder: 'Brazil' },
   {

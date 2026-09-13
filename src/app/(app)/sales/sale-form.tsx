@@ -410,7 +410,7 @@ export function SaleForm({
             />
           </Field>
 
-          <Field label="Invoice date" htmlFor="invoiceDate" required error={fieldIssues.invoiceDate}>
+          <Field label="Invoice date" htmlFor="invoiceDate" error={fieldIssues.invoiceDate}>
             <Input
               id="invoiceDate"
               type="date"
@@ -433,7 +433,7 @@ export function SaleForm({
             />
           </Field>
 
-          <Field label="Currency" htmlFor="currency" required hint="Defaults to the customer's ledger currency.">
+          <Field label="Currency" htmlFor="currency" hint="Defaults to the customer's ledger currency.">
             <Select
               id="currency"
               value={header.currency}
@@ -790,7 +790,7 @@ export function SaleForm({
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
-          <Field label="Payment type" required>
+          <Field label="Payment type">
             <Select
               value={header.paymentType}
               onChange={(e) =>

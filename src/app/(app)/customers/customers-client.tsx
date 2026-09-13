@@ -31,7 +31,6 @@ export type CustomerRow = {
 
 const FIELDS = (defaultCurrency: string): FieldSpec[] => [
   { kind: 'section', title: 'Identity' },
-  { kind: 'text', name: 'customerCode', label: 'Customer code', required: true, placeholder: 'CUS-DXB-001' },
   { kind: 'text', name: 'customerName', label: 'Customer name', required: true },
   { kind: 'text', name: 'country', label: 'Country' },
   {

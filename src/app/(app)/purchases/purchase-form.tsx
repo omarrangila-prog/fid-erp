@@ -48,7 +48,7 @@ export type PurchaseFormDefaults = {
   incoterm?: string;
   portOfLoading?: string;
   destination?: string;
-  dueDate?: string;
+  containers?: string;
   notes?: string;
   lines?: LineDefaults[];
 };
@@ -103,7 +103,7 @@ export function PurchaseForm({
     incoterm: defaults?.incoterm ?? 'FOB',
     portOfLoading: defaults?.portOfLoading ?? '',
     destination: defaults?.destination ?? '',
-    dueDate: defaults?.dueDate ?? '',
+    containers: defaults?.containers ?? '',
     notes: defaults?.notes ?? '',
   });
 
@@ -149,7 +149,7 @@ export function PurchaseForm({
   function buildPayload() {
     return JSON.stringify({
       ...header,
-      dueDate: header.dueDate || undefined,
+      containers: header.containers ? Number(header.containers) : undefined,
       freightAmount: header.freightAmount || '0',
       otherCharges: header.otherCharges || '0',
       lines: lines.map((line) => ({
@@ -234,7 +234,15 @@ export function PurchaseForm({
 
       <Card>
         <CardContent className="space-y-6 pt-5">
-          <FormSection title="Contract" description="Who we are buying from, and on what terms.">
+          {/*
+            Only what §1 asks for: contract reference, date, supplier, and the
+            number of containers if it is known. Everything else — the
+            supplier's own reference, origin, when payment is due, the currency
+            and its rates, freight, incoterm and ports — is real and still here,
+            but it is behind a heading you open rather than four rows you have
+            to look past on every purchase.
+          */}
+          <FormSection title="Purchase order" description="Who we are buying from, and what was agreed.">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <Field
                 label="Contract reference"
@@ -251,15 +259,8 @@ export function PurchaseForm({
                 />
               </Field>
 
-              <Field label="Supplier contract no." htmlFor="supplierContractNo" hint="The seller's own contract number.">
-                <Input
-                  id="supplierContractNo"
-                  value={header.supplierContractNo}
-                  onChange={(e) => setField('supplierContractNo', e.target.value)}
-                />
-              </Field>
 
-              <Field label="Contract date" htmlFor="contractDate" required error={errors.contractDate}>
+              <Field label="Contract date" htmlFor="contractDate" error={errors.contractDate}>
                 <Input
                   id="contractDate"
                   type="date"
@@ -278,6 +279,41 @@ export function PurchaseForm({
                 />
               </Field>
 
+              {/*
+                §1: "Number of Containers, if known". Optional, because at
+                contract stage it often is not — and when it is given it stands
+                until the loading form records the actual container numbers.
+              */}
+              <Field
+                label="Number of containers"
+                htmlFor="containers"
+                hint="If you know it yet."
+              >
+                <Input
+                  id="containers"
+                  inputMode="numeric"
+                  className="tnum text-right"
+                  value={header.containers}
+                  onChange={(e) => setField('containers', e.target.value)}
+                  placeholder="0"
+                />
+              </Field>
+            </div>
+          </FormSection>
+
+          <FormSection
+            title="Supplier reference and origin"
+            description="Neither is needed to save the order. Fill in what you know."
+            collapsible
+          >
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label="Supplier contract no." htmlFor="supplierContractNo" hint="The seller's own contract number.">
+                <Input
+                  id="supplierContractNo"
+                  value={header.supplierContractNo}
+                  onChange={(e) => setField('supplierContractNo', e.target.value)}
+                />
+              </Field>
               <Field label="Origin" htmlFor="origin" hint="Where the coffee is shipped from.">
                 <Input
                   id="origin"
@@ -286,25 +322,16 @@ export function PurchaseForm({
                   placeholder="Santos, Brazil"
                 />
               </Field>
-
-              <Field
-                label="Payment due"
-                htmlFor="dueDate"
-                hint="Leave blank to use the supplier's usual terms."
-              >
-                <Input
-                  id="dueDate"
-                  type="date"
-                  value={header.dueDate}
-                  onChange={(e) => setField('dueDate', e.target.value)}
-                />
-              </Field>
             </div>
           </FormSection>
 
-          <FormSection title="Currency" description="The rate is stored on the contract and never restated later.">
+          <FormSection
+            title="Currency and rates"
+            description="Morocco buys in USD; these are already set. The rate is stored on the contract and never restated later."
+            collapsible
+          >
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <Field label="Contract currency" htmlFor="currency" required>
+              <Field label="Contract currency" htmlFor="currency">
                 <Select id="currency" value={header.currency} onChange={(e) => setField('currency', e.target.value)}>
                   <option value="USD">USD — US Dollar</option>
                   <option value="AED">AED — UAE Dirham</option>
@@ -447,6 +474,44 @@ export function PurchaseForm({
                       inventing one, and an invented reference looks
                       authoritative while matching nothing on their paperwork.
                     */}
+
+
+
+                    <Field label="Quantity" required error={lineError(index, 'quantity')}>
+                      <QuantityInput
+                        unit={line.unit}
+                        value={line.quantity}
+                        onChange={(e) => updateLine(line.key, { quantity: e.target.value })}
+                        placeholder="19200"
+                      />
+                    </Field>
+
+
+                    <Field label={`Price per ${line.unit === 'BAG' ? 'bag' : line.unit}`} required error={lineError(index, 'unitPrice')}>
+                      <MoneyInput
+                        currency={header.currency}
+                        value={line.unitPrice}
+                        onChange={(e) => updateLine(line.key, { unitPrice: e.target.value })}
+                        placeholder="4.50"
+                      />
+                    </Field>
+
+
+                  </div>
+
+                  {/*
+                    Lot, batch, container, unit, bags and bag weight are not
+                    §1 fields. Lot and batch in particular are asked for at the
+                    goods receipt, which is when the supplier has identified
+                    the coffee — putting them on the purchase order invited
+                    somebody to invent one. They stay available for a contract
+                    that genuinely names them.
+                  */}
+                  <details className="mt-3 rounded-lg border border-line bg-surface-sunken/40 px-3 py-2">
+                    <summary className="cursor-pointer text-xs font-medium text-ink-muted">
+                      Lot, batch, container and packing
+                    </summary>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     <Field
                       label="Lot number"
                       error={lineError(index, 'lotNumber')}
@@ -459,7 +524,6 @@ export function PurchaseForm({
                         aria-invalid={Boolean(lineError(index, 'lotNumber'))}
                       />
                     </Field>
-
                     <Field label="Batch number" error={lineError(index, 'batchNumber')}>
                       <Input
                         value={line.batchNumber}
@@ -467,7 +531,6 @@ export function PurchaseForm({
                         placeholder="Usually blank"
                       />
                     </Field>
-
                     <Field label="Container number">
                       <Input
                         value={line.containerNumber}
@@ -475,16 +538,6 @@ export function PurchaseForm({
                         placeholder="MSCU1000001"
                       />
                     </Field>
-
-                    <Field label="Quantity" required error={lineError(index, 'quantity')}>
-                      <QuantityInput
-                        unit={line.unit}
-                        value={line.quantity}
-                        onChange={(e) => updateLine(line.key, { quantity: e.target.value })}
-                        placeholder="19200"
-                      />
-                    </Field>
-
                     <Field label="Unit">
                       <Select
                         value={line.unit}
@@ -495,16 +548,6 @@ export function PurchaseForm({
                         <option value="BAG">Bags</option>
                       </Select>
                     </Field>
-
-                    <Field label={`Price per ${line.unit === 'BAG' ? 'bag' : line.unit}`} required error={lineError(index, 'unitPrice')}>
-                      <MoneyInput
-                        currency={header.currency}
-                        value={line.unitPrice}
-                        onChange={(e) => updateLine(line.key, { unitPrice: e.target.value })}
-                        placeholder="4.50"
-                      />
-                    </Field>
-
                     <Field label="Bags" hint="Left blank, derived from bag weight.">
                       <QuantityInput
                         value={line.bags}
@@ -512,7 +555,6 @@ export function PurchaseForm({
                         placeholder={math ? String(math.bags) : '320'}
                       />
                     </Field>
-
                     <Field label="Bag weight (KG)">
                       <QuantityInput
                         unit="KG"
@@ -520,7 +562,8 @@ export function PurchaseForm({
                         onChange={(e) => updateLine(line.key, { bagWeightKg: e.target.value })}
                       />
                     </Field>
-                  </div>
+                    </div>
+                  </details>
 
                   {math && math.quantityKg > 0 ? (
                     <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-line pt-3 sm:grid-cols-4">
@@ -561,6 +604,7 @@ export function PurchaseForm({
           <FormSection
             title="Freight and direct charges"
             description="Spread across the lines by value and folded into the cost per kilogram, so they reach profit through cost of goods sold exactly once."
+            collapsible
           >
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Field label="Freight" htmlFor="freightAmount" error={errors.freightAmount}>

@@ -59,6 +59,14 @@ export type PurchaseContractInput = {
   expectedShipmentDate?: Date | null;
   /** The date the supplier expects payment, when one was agreed. */
   dueDate?: Date | null;
+  /**
+   * Containers on the order, when that is known at contract stage.
+   *
+   * Counting the lines that happen to carry a container number is the fallback,
+   * not the answer: a contract for three containers usually names none of them
+   * yet, and would otherwise report zero.
+   */
+  containers?: number | null;
   notes?: string | null;
   lines: PurchaseLineInput[];
 };
