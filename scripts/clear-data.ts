@@ -26,6 +26,15 @@ const DELETIONS: Deleter[] = [
   { label: 'audit log', run: () => prisma.auditLog.deleteMany({}) },
   { label: 'notifications', run: () => prisma.notification.deleteMany({}) },
   { label: 'attachments', run: () => prisma.attachment.deleteMany({}) },
+  // Documents added since this script was first written. Each is a record in
+  // its own right rather than a cascading child row, so each has to be named:
+  // a filed tax return or a half-done stock count left behind after a clear
+  // would refer to trade that no longer exists.
+  { label: 'tax returns', run: () => prisma.taxReturn.deleteMany({}) },
+  { label: 'bank reconciliations', run: () => prisma.bankReconciliation.deleteMany({}) },
+  { label: 'stock counts', run: () => prisma.stockCount.deleteMany({}) },
+  { label: 'credit notes', run: () => prisma.creditNote.deleteMany({}) },
+  { label: 'agent settlements', run: () => prisma.agentSettlement.deleteMany({}) },
   { label: 'journal entries', run: () => prisma.journalEntry.deleteMany({}) },
   { label: 'cheques', run: () => prisma.cheque.deleteMany({}) },
   { label: 'receipts', run: () => prisma.receipt.deleteMany({}) },
@@ -46,6 +55,7 @@ const DELETIONS: Deleter[] = [
   { label: 'coffee items', run: () => prisma.coffeeItem.deleteMany({}) },
   { label: 'agents', run: () => prisma.agent.deleteMany({}) },
   { label: 'shipping lines', run: () => prisma.shippingLine.deleteMany({}) },
+  { label: 'ports', run: () => prisma.port.deleteMany({}) },
   { label: 'document numbering', run: () => prisma.numberSequence.deleteMany({}) },
 ];
 

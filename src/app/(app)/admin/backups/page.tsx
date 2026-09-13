@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { formatDateTime } from '@/lib/format';
-import { getBackupHistory, backupToolAvailable } from '@/lib/services/backup';
+import { getBackupHistory, backupReadiness } from '@/lib/services/backup';
 import { PageHeader } from '@/components/shared/page-header';
 import { Callout } from '@/components/ui/feedback';
 import { BackupsClient, type BackupRow } from '@/app/(app)/admin/backups/backups-client';
@@ -25,7 +25,8 @@ function duration(from: Date, to: Date | null): string {
 export default async function BackupsPage() {
   await requirePageAccess(PERMISSIONS.BACKUP_MANAGE);
 
-  const [history, available] = await Promise.all([getBackupHistory(), backupToolAvailable()]);
+  const [history, readiness] = await Promise.all([getBackupHistory(), backupReadiness()]);
+  const available = readiness.ready;
 
   const runs: BackupRow[] = history.runs.map((run) => ({
     id: run.id,
@@ -50,10 +51,19 @@ export default async function BackupsPage() {
 
       {!available ? (
         <Callout tone="warning" title="Backups cannot be taken from this server">
-          <p>
-            <code>pg_dump</code> is not available here. On a serverless host such as Vercel it never will be — the
-            filesystem is read-only and each request runs in a container that is thrown away, so there is nowhere for a
-            dump to live.
+          {/*
+            The specific reason, not a guess at it.
+            
+            This used to assume the only possible cause was pg_dump being
+            absent. It is present on this machine — at version 16, against a
+            database that is version 17, which PostgreSQL refuses outright. The
+            operator pressed the button, waited, and got "aborting because of
+            server version mismatch" with nothing telling them what to do.
+          */}
+          <p>{readiness.reason}</p>
+          <p className="mt-2">
+            On a serverless host such as Vercel a backup can never be taken here in any case — the filesystem is
+            read-only and each request runs in a container that is thrown away, so there is nowhere for a dump to live.
           </p>
           <p className="mt-2">
             Your database is on Supabase, which takes its own automatic backups and offers point-in-time recovery from
