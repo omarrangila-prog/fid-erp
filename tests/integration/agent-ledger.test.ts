@@ -436,6 +436,60 @@ describe('a cash sale', () => {
     expect(saved.dueDate).toBeTruthy();
   });
 
+  it('posts the invoice and its receipt together, from the service alone', async () => {
+    // The receipt used to be raised by the screen's action after the service
+    // returned, so a cash sale posted any other way — a script, an import, a
+    // future API — landed in receivables with no cash behind it, and a
+    // receipt that failed left the invoice posted anyway.
+    const batch = await prisma.batch.findFirstOrThrow({
+      where: { companyId, availableQuantityKg: { gt: 0 } },
+    });
+    const cash = await getCashAccount(companyId, 'MAD');
+    const cashBefore = await getCashBankBalance(prisma as never, companyId, cash.id);
+
+    const invoice = await createSalesInvoice(
+      {
+        companyId,
+        invoiceDate: utcDate('2026-05-05'),
+        customerId: masters.customer.id,
+        currency: 'MAD',
+        rateToUsd: '9.85',
+        rateLocalPerUsd: '9.85',
+        paymentType: 'CASH',
+        cashBankAccountId: cash.id,
+        lines: [
+          {
+            batchId: batch.id,
+            warehouseId: masters.warehouses[0].id,
+            quantity: '100',
+            unit: 'KG',
+            unitPrice: '60.00',
+          },
+        ],
+      },
+      ctx.admin.id,
+    );
+    await postSalesInvoice({ id: invoice.id, companyId, userId: ctx.admin.id });
+
+    const receipt = await prisma.receipt.findFirstOrThrow({
+      where: { companyId, allocations: { some: { salesInvoiceId: invoice.id } } },
+      include: { allocations: true },
+    });
+    expect(receipt.status).toBe('POSTED');
+    expect(receipt.cashBankAccountId).toBe(cash.id);
+    expect(dec(receipt.amount).toString()).toBe(dec(invoice.totalAmount).toString());
+
+    // The money is in the drawer, and the customer owes nothing for it.
+    const cashAfter = await getCashBankBalance(prisma as never, companyId, cash.id);
+    expect(dec(cashAfter).minus(dec(cashBefore)).toString()).toBe(dec(invoice.totalAmount).toString());
+    const owing = (await getReceivables({ companyId, onlyOutstanding: true })).filter(
+      (row) => row.invoiceId === invoice.id,
+    );
+    expect(owing).toHaveLength(0);
+
+    expect((await reconcile(companyId)).checks.filter((c) => !c.passed)).toEqual([]);
+  });
+
   it('does not record an account on a credit sale, even if one is passed', async () => {
     const batch = await prisma.batch.findFirstOrThrow({
       where: { companyId, availableQuantityKg: { gt: 0 } },

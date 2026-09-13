@@ -16,6 +16,7 @@ import { getCompanyContext } from '@/lib/services/company';
 import { computeSalesLine } from '@/lib/calc/sales';
 import { writeAudit } from '@/lib/services/audit';
 import { resolveTaxCode, computeLineTax } from '@/lib/services/tax';
+import { createReceiptIn, postReceiptIn } from '@/lib/services/receipt';
 
 /**
  * SalesService.
@@ -665,6 +666,38 @@ export async function postSalesInvoice(params: { id: string; companyId: string; 
         costOfGoodsUsd,
       },
     });
+
+    // 6. A cash sale is settled as it is raised. The receipt is part of the
+    //    same transaction: if it cannot be recorded the invoice does not post
+    //    either, so there is never a "cash" sale sitting in receivables with
+    //    no cash behind it. This used to live in the screen's action, which
+    //    meant any other route to posting left the money unrecorded.
+    if (invoice.paymentType === 'CASH') {
+      if (!invoice.cashBankAccountId) {
+        throw new BusinessRuleError(
+          'This is a cash sale but no cash account is named. Re-open the draft and choose where the money went.',
+        );
+      }
+      const receipt = await createReceiptIn(
+        tx,
+        {
+          companyId: params.companyId,
+          receiptDate: invoice.invoiceDate,
+          customerId: invoice.customerId,
+          currency: invoice.currency,
+          amount: invoice.totalAmount.toString(),
+          rateToUsd: invoice.rateToUsd.toString(),
+          rateLocalPerUsd: invoice.rateLocalPerUsd.toString(),
+          paymentMethod: 'CASH',
+          cashBankAccountId: invoice.cashBankAccountId,
+          reference: invoice.invoiceNumber,
+          description: `Cash sale ${invoice.invoiceNumber}`,
+          allocations: [{ salesInvoiceId: invoice.id, amount: invoice.totalAmount.toString() }],
+        },
+        params.userId,
+      );
+      await postReceiptIn(tx, { id: receipt.id, companyId: params.companyId, userId: params.userId });
+    }
 
     return posted;
   });

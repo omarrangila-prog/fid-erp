@@ -262,102 +262,109 @@ async function validateSettlement(tx: Tx, input: ReceiptInput) {
 }
 
 export async function createReceipt(input: ReceiptInput, userId: string) {
-  return transaction(async (tx) => {
-    const company = await getCompanyContext(tx, input.companyId);
-    const customer = await tx.customer.findFirst({
-      where: { id: input.customerId, companyId: input.companyId },
-      select: { id: true, customerName: true },
-    });
-    if (!customer) throw new NotFoundError('Customer');
+  return transaction((tx) => createReceiptIn(tx, input, userId));
+}
 
-    const method = await validateSettlement(tx, input);
+/**
+ * The body of createReceipt, for a caller that is already inside a
+ * transaction — a cash sale raises its receipt in the same transaction as
+ * the invoice, so the two post together or not at all.
+ */
+export async function createReceiptIn(tx: Tx, input: ReceiptInput, userId: string) {
+  const company = await getCompanyContext(tx, input.companyId);
+  const customer = await tx.customer.findFirst({
+    where: { id: input.customerId, companyId: input.companyId },
+    select: { id: true, customerName: true },
+  });
+  if (!customer) throw new NotFoundError('Customer');
 
-    const amounts = computeReceiptAmounts({ ...input, localCurrency: company.localCurrency });
-    const allocations = await buildAllocations(tx, {
+  const method = await validateSettlement(tx, input);
+
+  const amounts = computeReceiptAmounts({ ...input, localCurrency: company.localCurrency });
+  const allocations = await buildAllocations(tx, {
+    companyId: input.companyId,
+    customerId: input.customerId,
+    receiptAmountUsd: amounts.amountUsd,
+    allocations: input.allocations ?? [],
+  });
+
+  const receiptNumber = await nextReference(tx, {
+    companyId: input.companyId,
+    docType: DOC_TYPES.RECEIPT,
+  });
+
+  const receipt = await tx.receipt.create({
+    data: {
       companyId: input.companyId,
+      receiptNumber,
+      receiptDate: input.receiptDate,
       customerId: input.customerId,
-      receiptAmountUsd: amounts.amountUsd,
-      allocations: input.allocations ?? [],
-    });
+      currency: amounts.currency,
+      amount: amounts.amount,
+      rateToUsd: amounts.rateToUsd,
+      amountUsd: amounts.amountUsd,
+      rateLocalPerUsd: amounts.rateLocalPerUsd,
+      amountLocal: amounts.amountLocal,
+      cashBankAccountId: input.cashBankAccountId ?? null,
+      agentId: input.agentId ?? null,
+      paymentMethod: method,
+      shipmentId: input.shipmentId ?? null,
+      reference: input.reference ?? null,
+      description: input.description ?? null,
+      status: 'DRAFT',
+      createdById: userId,
+      allocations: { create: allocations },
+    },
+    include: { allocations: true },
+  });
 
-    const receiptNumber = await nextReference(tx, {
-      companyId: input.companyId,
-      docType: DOC_TYPES.RECEIPT,
-    });
-
-    const receipt = await tx.receipt.create({
+  if (method === 'CHEQUE' && input.cheque) {
+    await tx.cheque.create({
       data: {
         companyId: input.companyId,
-        receiptNumber,
-        receiptDate: input.receiptDate,
-        customerId: input.customerId,
-        currency: amounts.currency,
+        chequeNumber: input.cheque.chequeNumber.trim(),
+        direction: 'INBOUND',
+        chequeDate: input.cheque.chequeDate,
+        bankName: input.cheque.bankName.trim(),
         amount: amounts.amount,
+        currency: amounts.currency,
         rateToUsd: amounts.rateToUsd,
         amountUsd: amounts.amountUsd,
         rateLocalPerUsd: amounts.rateLocalPerUsd,
         amountLocal: amounts.amountLocal,
+        beneficiary: input.cheque.beneficiary ?? null,
+        customerId: input.customerId,
+        agentId: input.cheque.agentId ?? null,
+        receiptId: receipt.id,
         cashBankAccountId: input.cashBankAccountId ?? null,
-        agentId: input.agentId ?? null,
-        paymentMethod: method,
-        shipmentId: input.shipmentId ?? null,
-        reference: input.reference ?? null,
-        description: input.description ?? null,
-        status: 'DRAFT',
+        receivedDate: input.cheque.receivedDate ?? input.receiptDate,
+        status: 'RECEIVED',
+        notes: input.cheque.notes ?? null,
         createdById: userId,
-        allocations: { create: allocations },
-      },
-      include: { allocations: true },
-    });
-
-    if (method === 'CHEQUE' && input.cheque) {
-      await tx.cheque.create({
-        data: {
-          companyId: input.companyId,
-          chequeNumber: input.cheque.chequeNumber.trim(),
-          direction: 'INBOUND',
-          chequeDate: input.cheque.chequeDate,
-          bankName: input.cheque.bankName.trim(),
-          amount: amounts.amount,
-          currency: amounts.currency,
-          rateToUsd: amounts.rateToUsd,
-          amountUsd: amounts.amountUsd,
-          rateLocalPerUsd: amounts.rateLocalPerUsd,
-          amountLocal: amounts.amountLocal,
-          beneficiary: input.cheque.beneficiary ?? null,
-          customerId: input.customerId,
-          agentId: input.cheque.agentId ?? null,
-          receiptId: receipt.id,
-          cashBankAccountId: input.cashBankAccountId ?? null,
-          receivedDate: input.cheque.receivedDate ?? input.receiptDate,
-          status: 'RECEIVED',
-          notes: input.cheque.notes ?? null,
-          createdById: userId,
-          statusHistory: {
-            create: { fromStatus: null, toStatus: 'RECEIVED', changedById: userId, notes: 'Cheque received' },
-          },
+        statusHistory: {
+          create: { fromStatus: null, toStatus: 'RECEIVED', changedById: userId, notes: 'Cheque received' },
         },
-      });
-    }
-
-    await writeAudit(tx, {
-      companyId: input.companyId,
-      userId,
-      action: 'RECEIPT_CREATED',
-      entityType: 'Receipt',
-      entityId: receipt.id,
-      after: {
-        receiptNumber,
-        customer: customer.customerName,
-        amount: amounts.amount,
-        currency: amounts.currency,
-        rateToUsd: amounts.rateToUsd,
-        amountUsd: amounts.amountUsd,
       },
     });
+  }
 
-    return receipt;
+  await writeAudit(tx, {
+    companyId: input.companyId,
+    userId,
+    action: 'RECEIPT_CREATED',
+    entityType: 'Receipt',
+    entityId: receipt.id,
+    after: {
+      receiptNumber,
+      customer: customer.customerName,
+      amount: amounts.amount,
+      currency: amounts.currency,
+      rateToUsd: amounts.rateToUsd,
+      amountUsd: amounts.amountUsd,
+    },
   });
+
+  return receipt;
 }
 
 export async function updateReceipt(id: string, input: ReceiptInput, userId: string) {
@@ -418,194 +425,197 @@ export async function updateReceipt(id: string, input: ReceiptInput, userId: str
 }
 
 export async function postReceipt(params: { id: string; companyId: string; userId: string }) {
-  return transaction(async (tx) => {
-    const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>`
-      SELECT "id", "status"::text FROM receipts
-      WHERE "id" = ${params.id} AND "companyId" = ${params.companyId}
-      FOR UPDATE
-    `;
-    if (locked.length === 0) throw new NotFoundError('Receipt');
-    if (locked[0].status !== 'DRAFT') {
-      throw new BusinessRuleError(`This receipt is already ${locked[0].status.toLowerCase()} and cannot be posted again.`);
-    }
+  return transaction((tx) => postReceiptIn(tx, params));
+}
 
-    const receipt = await tx.receipt.findUniqueOrThrow({
-      where: { id: params.id },
-      include: {
-        customer: true,
-        cashBankAccount: true,
-        agent: { select: { agentName: true } },
-        allocations: { include: { salesInvoice: true } },
-      },
-    });
+/** The body of postReceipt, for a caller already inside a transaction. */
+export async function postReceiptIn(tx: Tx, params: { id: string; companyId: string; userId: string }) {
+  const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>`
+    SELECT "id", "status"::text FROM receipts
+    WHERE "id" = ${params.id} AND "companyId" = ${params.companyId}
+    FOR UPDATE
+  `;
+  if (locked.length === 0) throw new NotFoundError('Receipt');
+  if (locked[0].status !== 'DRAFT') {
+    throw new BusinessRuleError(`This receipt is already ${locked[0].status.toLowerCase()} and cannot be posted again.`);
+  }
 
-    // A cheque is held, not banked; an agent collection is held by the agent.
-    // Neither names an account, and neither should.
-    const needsAccount = receipt.paymentMethod !== 'CHEQUE' && receipt.paymentMethod !== 'AGENT_COLLECTION';
-    if (needsAccount && !receipt.cashBankAccountId) {
-      throw new BusinessRuleError('This receipt has no cash or bank account and cannot be posted.');
-    }
-    if (receipt.paymentMethod === 'AGENT_COLLECTION' && !receipt.agentId) {
-      throw new BusinessRuleError('This receipt was collected by an agent, but no agent is named on it.');
-    }
-    const company = await getCompanyContext(tx, params.companyId);
-
-    // Re-validate allocations under the lock: an invoice may have been settled
-    // by another receipt while this one sat in draft.
-    for (const alloc of receipt.allocations) {
-      const outstanding = await getInvoiceOutstanding(tx, alloc.salesInvoiceId);
-      if (dec(alloc.amount).greaterThan(outstanding.amount)) {
-        throw new BusinessRuleError(
-          `Invoice ${alloc.salesInvoice.invoiceNumber} now has only ${outstanding.currency} ${outstanding.amount.toFixed(2)} outstanding, which is less than the ${dec(alloc.amount).toFixed(2)} allocated here.`,
-        );
-      }
-    }
-
-    // The customer's receivable is relieved in the customer's own ledger
-    // currency, which is what makes the dual-view ledger work: the AED that
-    // arrived is recorded on the cash line, while the customer's USD exposure
-    // falls by the USD equivalent computed at the receipt's stored rate.
-    const ar = resolveSubledgerLeg({
-      partyCurrency: receipt.customer.primaryCurrency,
-      voucherCurrency: receipt.currency,
-      voucherAmount: receipt.amount,
-      voucherRateToUsd: receipt.rateToUsd,
-      voucherAmountUsd: receipt.amountUsd,
-      localCurrency: company.localCurrency,
-      rateLocalPerUsd: receipt.rateLocalPerUsd,
-      partyLabel: receipt.customer.customerName,
-    });
-
-    // Money that has not been put against an invoice is not a settlement — it
-    // is an advance the company owes the customer until it is allocated. Left
-    // on Accounts Receivable it would show as a negative debtor, which is both
-    // wrong on the balance sheet and invisible as a liability.
-    const allocatedInLedger = receipt.allocations.reduce(
-      (total, allocation) => total.plus(allocation.amountUsd),
-      new Decimal(0),
-    );
-    const receiptUsd = dec(receipt.amountUsd);
-    const unallocatedUsd = toMoney(receiptUsd.minus(allocatedInLedger));
-    const hasAdvance = unallocatedUsd.greaterThan('0.005');
-
-    // Split the credit in the customer's own currency, in the same proportion.
-    const settledPortion = receiptUsd.isZero()
-      ? new Decimal(0)
-      : dec(ar.amount).times(allocatedInLedger).dividedBy(receiptUsd);
-    const advancePortion = dec(ar.amount).minus(settledPortion);
-
-    const creditLines = hasAdvance
-      ? [
-          ...(settledPortion.greaterThan('0.005')
-            ? [
-                {
-                  accountKey: ACCOUNT_KEYS.ACCOUNTS_RECEIVABLE,
-                  direction: 'CREDIT' as const,
-                  currency: ar.currency,
-                  amount: toMoney(settledPortion),
-                  rateToUsd: ar.rateToUsd,
-                  description: `Settlement from ${receipt.customer.customerName}`,
-                  customerId: receipt.customerId,
-                  shipmentId: receipt.shipmentId,
-                },
-              ]
-            : []),
-          {
-            accountKey: ACCOUNT_KEYS.CUSTOMER_ADVANCES,
-            direction: 'CREDIT' as const,
-            currency: ar.currency,
-            amount: toMoney(advancePortion),
-            rateToUsd: ar.rateToUsd,
-            description: `Advance from ${receipt.customer.customerName}, not yet applied to an invoice`,
-            customerId: receipt.customerId,
-            shipmentId: receipt.shipmentId,
-          },
-        ]
-      : [
-          {
-            accountKey: ACCOUNT_KEYS.ACCOUNTS_RECEIVABLE,
-            direction: 'CREDIT' as const,
-            currency: ar.currency,
-            amount: ar.amount,
-            rateToUsd: ar.rateToUsd,
-            description: `Settlement from ${receipt.customer.customerName}`,
-            customerId: receipt.customerId,
-            shipmentId: receipt.shipmentId,
-          },
-        ];
-
-    await postJournalEntry(tx, {
-      companyId: params.companyId,
-      entryDate: receipt.receiptDate,
-      description: `Receipt ${receipt.receiptNumber} — ${receipt.customer.customerName}`,
-      sourceType: 'RECEIPT',
-      sourceId: receipt.id,
-      createdById: params.userId,
-      localCurrency: company.localCurrency,
-      rateLocalPerUsd: receipt.rateLocalPerUsd,
-      lines: [
-        receipt.paymentMethod === 'AGENT_COLLECTION'
-          ? {
-              // Not cash, not bank, and not a cheque the company is holding —
-              // the agent is holding it. An asset owed by him until he pays.
-              accountKey: ACCOUNT_KEYS.AGENT_CLEARING,
-              direction: 'DEBIT' as const,
-              currency: receipt.currency,
-              amount: receipt.amount,
-              rateToUsd: receipt.rateToUsd,
-              description: `Collected by ${receipt.agent?.agentName ?? 'agent'}, not yet handed over`,
-              customerId: receipt.customerId,
-              agentId: receipt.agentId,
-              shipmentId: receipt.shipmentId,
-            }
-          : receipt.paymentMethod === 'CHEQUE'
-          ? {
-              accountKey: ACCOUNT_KEYS.CHEQUES_ON_HAND,
-              direction: 'DEBIT' as const,
-              currency: receipt.currency,
-              amount: receipt.amount,
-              rateToUsd: receipt.rateToUsd,
-              description: 'Cheque received, not yet cleared',
-              customerId: receipt.customerId,
-              shipmentId: receipt.shipmentId,
-            }
-          : {
-              cashBankAccountId: receipt.cashBankAccountId!,
-              direction: 'DEBIT' as const,
-              currency: receipt.currency,
-              amount: receipt.amount,
-              rateToUsd: receipt.rateToUsd,
-              description: `Received into ${receipt.cashBankAccount?.name ?? 'cash/bank'}`,
-              customerId: receipt.customerId,
-              shipmentId: receipt.shipmentId,
-            },
-        ...creditLines,
-      ],
-    });
-
-    const posted = await tx.receipt.update({
-      where: { id: receipt.id },
-      data: { status: 'POSTED', postedAt: new Date() },
-    });
-
-    await writeAudit(tx, {
-      companyId: params.companyId,
-      userId: params.userId,
-      action: 'RECEIPT_POSTED',
-      entityType: 'Receipt',
-      entityId: receipt.id,
-      before: { status: 'DRAFT' },
-      after: {
-        status: 'POSTED',
-        amount: receipt.amount,
-        currency: receipt.currency,
-        rateToUsd: receipt.rateToUsd,
-        amountUsd: receipt.amountUsd,
-      },
-    });
-
-    return posted;
+  const receipt = await tx.receipt.findUniqueOrThrow({
+    where: { id: params.id },
+    include: {
+      customer: true,
+      cashBankAccount: true,
+      agent: { select: { agentName: true } },
+      allocations: { include: { salesInvoice: true } },
+    },
   });
+
+  // A cheque is held, not banked; an agent collection is held by the agent.
+  // Neither names an account, and neither should.
+  const needsAccount = receipt.paymentMethod !== 'CHEQUE' && receipt.paymentMethod !== 'AGENT_COLLECTION';
+  if (needsAccount && !receipt.cashBankAccountId) {
+    throw new BusinessRuleError('This receipt has no cash or bank account and cannot be posted.');
+  }
+  if (receipt.paymentMethod === 'AGENT_COLLECTION' && !receipt.agentId) {
+    throw new BusinessRuleError('This receipt was collected by an agent, but no agent is named on it.');
+  }
+  const company = await getCompanyContext(tx, params.companyId);
+
+  // Re-validate allocations under the lock: an invoice may have been settled
+  // by another receipt while this one sat in draft.
+  for (const alloc of receipt.allocations) {
+    const outstanding = await getInvoiceOutstanding(tx, alloc.salesInvoiceId);
+    if (dec(alloc.amount).greaterThan(outstanding.amount)) {
+      throw new BusinessRuleError(
+        `Invoice ${alloc.salesInvoice.invoiceNumber} now has only ${outstanding.currency} ${outstanding.amount.toFixed(2)} outstanding, which is less than the ${dec(alloc.amount).toFixed(2)} allocated here.`,
+      );
+    }
+  }
+
+  // The customer's receivable is relieved in the customer's own ledger
+  // currency, which is what makes the dual-view ledger work: the AED that
+  // arrived is recorded on the cash line, while the customer's USD exposure
+  // falls by the USD equivalent computed at the receipt's stored rate.
+  const ar = resolveSubledgerLeg({
+    partyCurrency: receipt.customer.primaryCurrency,
+    voucherCurrency: receipt.currency,
+    voucherAmount: receipt.amount,
+    voucherRateToUsd: receipt.rateToUsd,
+    voucherAmountUsd: receipt.amountUsd,
+    localCurrency: company.localCurrency,
+    rateLocalPerUsd: receipt.rateLocalPerUsd,
+    partyLabel: receipt.customer.customerName,
+  });
+
+  // Money that has not been put against an invoice is not a settlement — it
+  // is an advance the company owes the customer until it is allocated. Left
+  // on Accounts Receivable it would show as a negative debtor, which is both
+  // wrong on the balance sheet and invisible as a liability.
+  const allocatedInLedger = receipt.allocations.reduce(
+    (total, allocation) => total.plus(allocation.amountUsd),
+    new Decimal(0),
+  );
+  const receiptUsd = dec(receipt.amountUsd);
+  const unallocatedUsd = toMoney(receiptUsd.minus(allocatedInLedger));
+  const hasAdvance = unallocatedUsd.greaterThan('0.005');
+
+  // Split the credit in the customer's own currency, in the same proportion.
+  const settledPortion = receiptUsd.isZero()
+    ? new Decimal(0)
+    : dec(ar.amount).times(allocatedInLedger).dividedBy(receiptUsd);
+  const advancePortion = dec(ar.amount).minus(settledPortion);
+
+  const creditLines = hasAdvance
+    ? [
+        ...(settledPortion.greaterThan('0.005')
+          ? [
+              {
+                accountKey: ACCOUNT_KEYS.ACCOUNTS_RECEIVABLE,
+                direction: 'CREDIT' as const,
+                currency: ar.currency,
+                amount: toMoney(settledPortion),
+                rateToUsd: ar.rateToUsd,
+                description: `Settlement from ${receipt.customer.customerName}`,
+                customerId: receipt.customerId,
+                shipmentId: receipt.shipmentId,
+              },
+            ]
+          : []),
+        {
+          accountKey: ACCOUNT_KEYS.CUSTOMER_ADVANCES,
+          direction: 'CREDIT' as const,
+          currency: ar.currency,
+          amount: toMoney(advancePortion),
+          rateToUsd: ar.rateToUsd,
+          description: `Advance from ${receipt.customer.customerName}, not yet applied to an invoice`,
+          customerId: receipt.customerId,
+          shipmentId: receipt.shipmentId,
+        },
+      ]
+    : [
+        {
+          accountKey: ACCOUNT_KEYS.ACCOUNTS_RECEIVABLE,
+          direction: 'CREDIT' as const,
+          currency: ar.currency,
+          amount: ar.amount,
+          rateToUsd: ar.rateToUsd,
+          description: `Settlement from ${receipt.customer.customerName}`,
+          customerId: receipt.customerId,
+          shipmentId: receipt.shipmentId,
+        },
+      ];
+
+  await postJournalEntry(tx, {
+    companyId: params.companyId,
+    entryDate: receipt.receiptDate,
+    description: `Receipt ${receipt.receiptNumber} — ${receipt.customer.customerName}`,
+    sourceType: 'RECEIPT',
+    sourceId: receipt.id,
+    createdById: params.userId,
+    localCurrency: company.localCurrency,
+    rateLocalPerUsd: receipt.rateLocalPerUsd,
+    lines: [
+      receipt.paymentMethod === 'AGENT_COLLECTION'
+        ? {
+            // Not cash, not bank, and not a cheque the company is holding —
+            // the agent is holding it. An asset owed by him until he pays.
+            accountKey: ACCOUNT_KEYS.AGENT_CLEARING,
+            direction: 'DEBIT' as const,
+            currency: receipt.currency,
+            amount: receipt.amount,
+            rateToUsd: receipt.rateToUsd,
+            description: `Collected by ${receipt.agent?.agentName ?? 'agent'}, not yet handed over`,
+            customerId: receipt.customerId,
+            agentId: receipt.agentId,
+            shipmentId: receipt.shipmentId,
+          }
+        : receipt.paymentMethod === 'CHEQUE'
+        ? {
+            accountKey: ACCOUNT_KEYS.CHEQUES_ON_HAND,
+            direction: 'DEBIT' as const,
+            currency: receipt.currency,
+            amount: receipt.amount,
+            rateToUsd: receipt.rateToUsd,
+            description: 'Cheque received, not yet cleared',
+            customerId: receipt.customerId,
+            shipmentId: receipt.shipmentId,
+          }
+        : {
+            cashBankAccountId: receipt.cashBankAccountId!,
+            direction: 'DEBIT' as const,
+            currency: receipt.currency,
+            amount: receipt.amount,
+            rateToUsd: receipt.rateToUsd,
+            description: `Received into ${receipt.cashBankAccount?.name ?? 'cash/bank'}`,
+            customerId: receipt.customerId,
+            shipmentId: receipt.shipmentId,
+          },
+      ...creditLines,
+    ],
+  });
+
+  const posted = await tx.receipt.update({
+    where: { id: receipt.id },
+    data: { status: 'POSTED', postedAt: new Date() },
+  });
+
+  await writeAudit(tx, {
+    companyId: params.companyId,
+    userId: params.userId,
+    action: 'RECEIPT_POSTED',
+    entityType: 'Receipt',
+    entityId: receipt.id,
+    before: { status: 'DRAFT' },
+    after: {
+      status: 'POSTED',
+      amount: receipt.amount,
+      currency: receipt.currency,
+      rateToUsd: receipt.rateToUsd,
+      amountUsd: receipt.amountUsd,
+    },
+  });
+
+  return posted;
 }
 
 export async function reverseReceipt(params: { id: string; companyId: string; userId: string; reason: string }) {

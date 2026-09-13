@@ -51,8 +51,6 @@ import {
   updateShipmentEta,
 } from '@/lib/services/shipment';
 import { fail, type ActionResult } from '@/server/actions/action-utils';
-import { prisma } from '@/lib/db';
-import { createReceipt, postReceipt } from '@/lib/services/receipt';
 
 /**
  * Trading actions.
@@ -242,54 +240,9 @@ export async function postSalesInvoiceAction(id: string): Promise<ActionResult<u
     const user = await requirePermission(PERMISSIONS.SALES_APPROVE);
     const companyId = user.activeCompany.id;
 
+    // A cash sale's receipt is raised inside postSalesInvoice, in the same
+    // transaction, so there is nothing to do here beyond posting.
     await postSalesInvoice({ id, companyId, userId: user.id });
-
-    const invoice = await prisma.salesInvoice.findFirstOrThrow({
-      where: { id, companyId },
-      select: {
-        paymentType: true,
-        cashBankAccountId: true,
-        customerId: true,
-        invoiceDate: true,
-        currency: true,
-        totalAmount: true,
-        rateToUsd: true,
-        rateLocalPerUsd: true,
-        invoiceNumber: true,
-      },
-    });
-
-    if (invoice.paymentType === 'CASH' && invoice.cashBankAccountId) {
-      try {
-        const receipt = await createReceipt(
-          {
-            companyId,
-            receiptDate: invoice.invoiceDate,
-            customerId: invoice.customerId,
-            currency: invoice.currency,
-            amount: invoice.totalAmount.toString(),
-            rateToUsd: invoice.rateToUsd.toString(),
-            rateLocalPerUsd: invoice.rateLocalPerUsd.toString(),
-            paymentMethod: 'CASH',
-            cashBankAccountId: invoice.cashBankAccountId,
-            reference: invoice.invoiceNumber,
-            description: `Cash sale ${invoice.invoiceNumber}`,
-            allocations: [{ salesInvoiceId: id, amount: invoice.totalAmount.toString() }],
-          },
-          user.id,
-        );
-        await postReceipt({ id: receipt.id, companyId, userId: user.id });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'the cash receipt could not be recorded';
-        return {
-          ok: false,
-          code: 'CASH_RECEIPT_FAILED',
-          error:
-            `The invoice posted, but the cash receipt did not: ${message} ` +
-            'Record the payment from the invoice.',
-        };
-      }
-    }
 
     revalidatePath('/sales');
     revalidatePath(`/sales/${id}`);
