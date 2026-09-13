@@ -48,6 +48,7 @@ import {
   changeDocumentStatus,
   updateShipmentDetails,
   markShipmentLoaded,
+  updateShipmentEta,
 } from '@/lib/services/shipment';
 import { fail, type ActionResult } from '@/server/actions/action-utils';
 import { prisma } from '@/lib/db';
@@ -401,6 +402,61 @@ export async function markShipmentLoadedAction(shipmentId: string, payload: stri
     revalidatePath(`/shipments/${shipmentId}`);
     revalidatePath('/loading');
     return { ok: true, id: shipmentId, message: 'Marked as loaded.' };
+  } catch (error) {
+    return toState(error);
+  }
+}
+
+/**
+ * Change an ETA, from wherever the user happens to be looking.
+ *
+ * Chiefly the loading sheet: a shipping line moves dates every few days and
+ * staff update a dozen consignments at a time, which is not a thing to do one
+ * page load at a time.
+ */
+export async function updateShipmentEtaAction(shipmentId: string, etaDate: string): Promise<DocFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.SHIPMENTS_UPDATE);
+    const parsed = etaDate ? new Date(`${etaDate}T00:00:00.000Z`) : null;
+    if (etaDate && Number.isNaN(parsed?.getTime())) {
+      return { ok: false, error: 'That is not a date the system can read.' };
+    }
+
+    await updateShipmentEta(
+      { companyId: user.activeCompany.id, shipmentId, etaDate: parsed },
+      user.id,
+    );
+
+    revalidatePath('/loading');
+    revalidatePath('/shipments');
+    revalidatePath(`/shipments/${shipmentId}`);
+    return { ok: true, id: shipmentId, message: 'ETA updated.' };
+  } catch (error) {
+    return toState(error);
+  }
+}
+
+/** Mark a consignment arrived. One date, because that is the whole event. */
+export async function markShipmentArrivedAction(shipmentId: string, ataDate: string): Promise<DocFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.SHIPMENTS_UPDATE);
+    const parsed = new Date(`${ataDate}T00:00:00.000Z`);
+    if (Number.isNaN(parsed.getTime())) {
+      return { ok: false, error: 'That is not a date the system can read.' };
+    }
+
+    await changeShipmentStatus({
+      shipmentId,
+      companyId: user.activeCompany.id,
+      userId: user.id,
+      toStatus: 'ARRIVED',
+      ataDate: parsed,
+    });
+
+    revalidatePath('/loading');
+    revalidatePath('/shipments');
+    revalidatePath(`/shipments/${shipmentId}`);
+    return { ok: true, id: shipmentId, message: 'Marked arrived.' };
   } catch (error) {
     return toState(error);
   }

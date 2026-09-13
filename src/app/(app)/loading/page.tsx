@@ -47,6 +47,8 @@ export default async function LoadingPage() {
     lotNumber: row.lotNumber,
     batchNumber: row.batchNumber,
     traceabilityPending: row.traceabilityPending,
+    portOfLoading: row.portOfLoading,
+    portOfDischarge: row.portOfDischarge,
     containerNumber: row.containerNumber,
     containers: row.containers,
     quantity: formatQuantityKg(row.quantityKg),

@@ -667,20 +667,36 @@ export const INCOTERM_LABELS: Record<string, string> = {
 };
 
 /**
- * Allowed shipment status transitions. Anything not listed is rejected by
- * ShipmentService. One step backwards is permitted so a mis-click can be
- * corrected without opening the whole workflow.
+ * Allowed shipment status transitions.
+ *
+ * Three steps, because three is what the business actually tracks:
+ *
+ *   Pending Loading → Loaded → Arrived
+ *
+ * and then the goods receipt, which is a document rather than a status. The
+ * client was explicit that the rest — booked, in transit, customs clearing,
+ * cleared, delivered — were stages nobody updates and everybody has to scroll
+ * past. A status somebody has to maintain and nobody reads is worse than no
+ * status: it makes the ones that matter look unreliable too.
+ *
+ * The intermediate values remain in the database so shipments recorded under
+ * them still read correctly; they are simply no longer offered.
+ *
+ * One step backwards is permitted so a mis-click can be corrected.
  */
 export const SHIPMENT_STATUS_TRANSITIONS: Record<string, string[]> = {
-  CONTRACT_CREATED: ['AWAITING_LOADING'],
+  CONTRACT_CREATED: ['LOADED'],
+  LOADED: ['ARRIVED', 'CONTRACT_CREATED'],
+  ARRIVED: ['LOADED'],
+
+  // Kept for consignments recorded before the flow was shortened, so they can
+  // still be moved forward rather than being stuck in a state with no exit.
   AWAITING_LOADING: ['LOADED', 'CONTRACT_CREATED'],
-  LOADED: ['IN_TRANSIT', 'AWAITING_LOADING'],
   IN_TRANSIT: ['ARRIVED', 'LOADED'],
-  ARRIVED: ['CUSTOMS_CLEARING', 'IN_TRANSIT'],
-  CUSTOMS_CLEARING: ['CLEARED', 'ARRIVED'],
-  CLEARED: ['DELIVERED', 'CUSTOMS_CLEARING'],
-  DELIVERED: ['CLOSED', 'CLEARED'],
-  CLOSED: ['DELIVERED'],
+  CUSTOMS_CLEARING: ['ARRIVED'],
+  CLEARED: ['ARRIVED'],
+  DELIVERED: ['ARRIVED'],
+  CLOSED: ['ARRIVED'],
 };
 
 /**
@@ -688,23 +704,19 @@ export const SHIPMENT_STATUS_TRANSITIONS: Record<string, string[]> = {
  * booking, a vessel and an ETA is not a loaded shipment.
  */
 export const SHIPMENT_STATUS_REQUIREMENTS: Record<string, Array<{ field: string; label: string }>> = {
+  /*
+   * What "loaded" has to be able to tell the person reading the sheet: who is
+   * carrying it and when it lands. The vessel name, the voyage and the ETD
+   * were required too and are not asked for any more — a consignment nobody
+   * could mark loaded because the vessel was not named yet is a status that
+   * stays wrong.
+   */
   LOADED: [
     { field: 'loadingDate', label: 'Loading Date' },
-    { field: 'bookingNumber', label: 'Booking Number' },
     { field: 'shippingLineId', label: 'Shipping Line' },
-    { field: 'vesselName', label: 'Vessel Name' },
-    { field: 'portOfLoading', label: 'Port of Loading' },
-    { field: 'portOfDischarge', label: 'Port of Discharge' },
-    { field: 'etdDate', label: 'ETD' },
-    { field: 'etaDate', label: 'ETA' },
-  ],
-  IN_TRANSIT: [
-    { field: 'billOfLading', label: 'Bill of Lading' },
     { field: 'etaDate', label: 'ETA' },
   ],
   ARRIVED: [{ field: 'ataDate', label: 'Actual Arrival Date' }],
-  CLEARED: [{ field: 'clearanceDate', label: 'Clearance Date' }],
-  DELIVERED: [{ field: 'deliveryDate', label: 'Delivery Date' }],
 };
 
 /** Statuses at which the cargo is physically in the destination warehouse. */
@@ -712,6 +724,9 @@ export const SHIPMENT_STATUSES_LANDED = ['ARRIVED', 'CUSTOMS_CLEARING', 'CLEARED
 
 /** Statuses at which the cargo is still on the water or at origin. */
 export const SHIPMENT_STATUSES_IN_TRANSIT = ['CONTRACT_CREATED', 'AWAITING_LOADING', 'LOADED', 'IN_TRANSIT'];
+
+/** The three the business tracks, in order. Everything else is history. */
+export const SHIPMENT_STATUS_FLOW = ['CONTRACT_CREATED', 'LOADED', 'ARRIVED'] as const;
 
 /**
  * Standard expense categories.

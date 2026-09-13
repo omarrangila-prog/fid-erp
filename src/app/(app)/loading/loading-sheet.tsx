@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Ship, Users } from 'lucide-react';
+import { Ship, Users, Anchor, PackageCheck } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,9 +10,13 @@ import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table';
 import { SHIPMENT_STATUS_META, DOCUMENT_STATUS_META, type BadgeTone } from '@/lib/constants';
 import { MarkLoadedDialog } from '@/app/(app)/loading/mark-loaded-dialog';
+import { EtaDialog, ArrivedDialog } from '@/app/(app)/loading/eta-dialog';
 
 /** Statuses from which "loaded" is still ahead rather than behind. */
 const NOT_YET_LOADED = ['CONTRACT_CREATED', 'AWAITING_LOADING'];
+
+/** Landed, so the goods receipt is the next thing to do. */
+const LANDED = ['ARRIVED', 'CUSTOMS_CLEARING', 'CLEARED', 'DELIVERED'];
 
 export type AllocationRow = {
   customerId: string;
@@ -58,6 +62,8 @@ export type LoadingRow = {
   etaDate: string;
   etaSort: number;
   traceabilityPending: boolean;
+  portOfLoading: string | null;
+  portOfDischarge: string | null;
   /** The ETA as `2026-04-18`, or null. Separate from `etaSort`, which is a
    *  sort key and carries a sentinel when there is no date. */
   etaIso: string | null;
@@ -109,6 +115,8 @@ export function LoadingSheet({
 }) {
   const [viewing, setViewing] = React.useState<LoadingRow | null>(null);
   const [loadingRow, setLoadingRow] = React.useState<LoadingRow | null>(null);
+  const [editingEta, setEditingEta] = React.useState<LoadingRow | null>(null);
+  const [arrivingRow, setArrivingRow] = React.useState<LoadingRow | null>(null);
 
   /** Columns shared by both sheets, in the order the paper sheet uses. */
   const serial: DataColumn<LoadingRow> = {
@@ -231,13 +239,101 @@ export function LoadingSheet({
     id: 'actions',
     header: '',
     printHidden: true,
-    cell: (r) =>
-      canUpdate && NOT_YET_LOADED.includes(r.status) ? (
-        <Button variant="outline" size="sm" onClick={() => setLoadingRow(r)}>
-          <Ship />
-          Mark loaded
-        </Button>
-      ) : null,
+    cell: (r) => {
+      if (!canUpdate) return null;
+
+      if (NOT_YET_LOADED.includes(r.status)) {
+        return (
+          <Button variant="outline" size="sm" onClick={() => setLoadingRow(r)}>
+            <Ship />
+            Mark loaded
+          </Button>
+        );
+      }
+
+      // Loaded, and on the water. The next real event is that it lands.
+      if (r.status === 'LOADED' || r.status === 'IN_TRANSIT') {
+        return (
+          <Button variant="outline" size="sm" onClick={() => setArrivingRow(r)}>
+            <Anchor />
+            Mark arrived
+          </Button>
+        );
+      }
+
+      /*
+       * Arrived, so the next thing anybody wants is to receive it — and the
+       * receipt lives on the purchase order, because that is where the ordered
+       * quantities and the batches are. One click from here rather than a
+       * hunt through the purchase list.
+       */
+      if (LANDED.includes(r.status) && Number(r.available.replace(/[^\d.]/g, '')) >= 0) {
+        return (
+          <Button variant="accent" size="sm" asChild>
+            <Link href={`/purchases/${r.contractId}`}>
+              <PackageCheck />
+              Receive
+            </Link>
+          </Button>
+        );
+      }
+
+      return null;
+    },
+  };
+
+  /*
+   * The shipping details, on the sheet rather than inside each consignment.
+   *
+   * They were only visible by opening the container one at a time, which for
+   * eight or fifteen live shipments means eight or fifteen page loads to
+   * answer one question. They are entered once when the consignment is marked
+   * loaded and appear here immediately; scroll right and the whole book is on
+   * one page.
+   */
+  const origin: DataColumn<LoadingRow> = {
+    id: 'origin',
+    header: 'Origin',
+    hideable: true,
+    sortValue: (r) => r.origin,
+    exportValue: (r) => r.origin,
+    cell: (r) => r.origin,
+  };
+
+  const shippingLine: DataColumn<LoadingRow> = {
+    id: 'shippingLine',
+    header: 'Shipping line',
+    hideable: true,
+    sortValue: (r) => r.shippingLine ?? '',
+    exportValue: (r) => r.shippingLine ?? '',
+    cell: (r) => r.shippingLine ?? <span className="text-ink-subtle">—</span>,
+  };
+
+  const booking: DataColumn<LoadingRow> = {
+    id: 'booking',
+    header: 'Booking no.',
+    hideable: true,
+    sortValue: (r) => r.bookingNumber ?? '',
+    exportValue: (r) => r.bookingNumber ?? '',
+    cell: (r) => r.bookingNumber ?? <span className="text-ink-subtle">—</span>,
+  };
+
+  const loadPort: DataColumn<LoadingRow> = {
+    id: 'portOfLoading',
+    header: 'Port of loading',
+    hideable: true,
+    sortValue: (r) => r.portOfLoading ?? '',
+    exportValue: (r) => r.portOfLoading ?? '',
+    cell: (r) => r.portOfLoading ?? <span className="text-ink-subtle">—</span>,
+  };
+
+  const dischargePort: DataColumn<LoadingRow> = {
+    id: 'portOfDischarge',
+    header: 'Port of discharge',
+    hideable: true,
+    sortValue: (r) => r.portOfDischarge ?? '',
+    exportValue: (r) => r.portOfDischarge ?? '',
+    cell: (r) => r.portOfDischarge ?? <span className="text-ink-subtle">—</span>,
   };
 
   const documents: DataColumn<LoadingRow> = {
@@ -251,13 +347,34 @@ export function LoadingSheet({
     },
   };
 
+  /*
+   * The ETA is edited here, in the row.
+   *
+   * A shipping line moves a date every two or three days, and staff walk the
+   * live consignments updating fifteen or twenty at a sitting. Opening each
+   * shipment to change one date is fifteen page loads to do five minutes of
+   * work. There is no limit and no approval: it is a date somebody was told,
+   * and every change is written to the audit trail with the date it replaced.
+   */
   const eta: DataColumn<LoadingRow> = {
     id: 'eta',
     header: 'ETA',
     mobile: 'meta',
     sortValue: (r) => r.etaSort,
     exportValue: (r) => r.etaDate,
-    cell: (r) => <span className="whitespace-nowrap">{r.etaDate}</span>,
+    cell: (r) =>
+      canUpdate ? (
+        <button
+          type="button"
+          onClick={() => setEditingEta(r)}
+          className="whitespace-nowrap rounded px-1 py-0.5 text-left underline decoration-dotted underline-offset-2 hover:bg-forest-50"
+          title="Change the expected arrival"
+        >
+          {r.etaIso ? r.etaDate : <span className="text-ink-subtle">Set ETA</span>}
+        </button>
+      ) : (
+        <span className="whitespace-nowrap">{r.etaDate}</span>
+      ),
   };
 
   const remarks: DataColumn<LoadingRow> = {
@@ -371,6 +488,11 @@ export function LoadingSheet({
       cell: (r) => r.destination ?? '—',
     },
     status,
+    origin,
+    shippingLine,
+    booking,
+    loadPort,
+    dischargePort,
     {
       id: 'containers',
       header: 'Containers',
@@ -417,6 +539,11 @@ export function LoadingSheet({
       cell: (r) => <span className="tabular-nums">{r.containers}</span>,
     },
     status,
+    origin,
+    shippingLine,
+    booking,
+    loadPort,
+    dischargePort,
     {
       id: 'blOrContainer',
       header: 'B/L or container',
@@ -477,6 +604,23 @@ export function LoadingSheet({
         emptyTitle="Nothing loading yet"
         emptyDescription="Approve a purchase contract and its containers appear here automatically — there is no separate sheet to fill in."
       />
+
+      {editingEta ? (
+        <EtaDialog
+          shipmentId={editingEta.shipmentId}
+          contractNumber={editingEta.contractNumber}
+          currentEta={editingEta.etaIso}
+          onClose={() => setEditingEta(null)}
+        />
+      ) : null}
+
+      {arrivingRow ? (
+        <ArrivedDialog
+          shipmentId={arrivingRow.shipmentId}
+          contractNumber={arrivingRow.contractNumber}
+          onClose={() => setArrivingRow(null)}
+        />
+      ) : null}
 
       {loadingRow ? (
         <MarkLoadedDialog

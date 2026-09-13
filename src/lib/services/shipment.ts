@@ -558,3 +558,62 @@ export async function markShipmentLoaded(
     return updated;
   });
 }
+
+
+/**
+ * Change the expected arrival date, as often as the line changes it.
+ *
+ * A shipping line moves an ETA every few days, and staff walk the live
+ * consignments updating them — fifteen or twenty at a sitting. There is no
+ * limit, no approval and no status attached: it is a date somebody was told,
+ * and the only interesting thing about it is what it says now.
+ *
+ * Every change is written to the audit trail with the date it replaced, so the
+ * history is there for anyone who wants to see how a shipment slipped.
+ */
+export async function updateShipmentEta(
+  params: { companyId: string; shipmentId: string; etaDate: Date | null },
+  userId: string,
+) {
+  return transaction(async (tx) => {
+    const shipment = await tx.shipment.findFirst({
+      where: { id: params.shipmentId, companyId: params.companyId },
+      select: { id: true, shipmentNumber: true, etaDate: true },
+    });
+    if (!shipment) throw new NotFoundError('Shipment');
+
+    const updated = await tx.shipment.update({
+      where: { id: shipment.id },
+      data: { etaDate: params.etaDate, updatedById: userId },
+    });
+
+    await writeAudit(tx, {
+      companyId: params.companyId,
+      userId,
+      action: 'SHIPMENT_ETA_CHANGED',
+      entityType: 'Shipment',
+      entityId: shipment.id,
+      before: { etaDate: shipment.etaDate },
+      after: { etaDate: updated.etaDate, shipmentNumber: shipment.shipmentNumber },
+    });
+
+    return updated;
+  });
+}
+
+/** Every ETA this shipment has had, newest first, from the audit trail. */
+export async function getEtaHistory(companyId: string, shipmentId: string) {
+  const rows = await prisma.auditLog.findMany({
+    where: { companyId, entityType: 'Shipment', entityId: shipmentId, action: 'SHIPMENT_ETA_CHANGED' },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+    select: { createdAt: true, before: true, after: true, user: { select: { name: true } } },
+  });
+
+  return rows.map((row) => ({
+    changedAt: row.createdAt,
+    changedBy: row.user?.name ?? 'System',
+    from: (row.before as { etaDate?: string | null } | null)?.etaDate ?? null,
+    to: (row.after as { etaDate?: string | null } | null)?.etaDate ?? null,
+  }));
+}

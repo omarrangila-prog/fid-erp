@@ -73,6 +73,9 @@ export type LoadingSheetRow = {
   documentStatus: string;
   shippingLine: string | null;
   bookingNumber: string | null;
+  /** Shown on the sheet so a container can be tracked without opening it. */
+  portOfLoading: string | null;
+  portOfDischarge: string | null;
   billOfLading: string | null;
   etaDate: Date | null;
   remarks: string | null;
@@ -129,6 +132,7 @@ export async function getLoadingSheet(companyId: string): Promise<LoadingSheetRo
           contractReference: true,
           contractDate: true,
           destination: true,
+          portOfLoading: true,
           vendor: { select: { vendorName: true } },
         },
       },
@@ -141,6 +145,7 @@ export async function getLoadingSheet(companyId: string): Promise<LoadingSheetRo
           billOfLading: true,
           etaDate: true,
           destination: true,
+          portOfLoading: true,
           portOfDischarge: true,
           containers: true,
           notes: true,
@@ -258,6 +263,8 @@ export async function getLoadingSheet(companyId: string): Promise<LoadingSheetRo
       lotNumber: batch.lot.lotNumber,
       batchNumber: batch.batchNumber,
       traceabilityPending: batch.traceabilityPending,
+      portOfLoading: batch.shipment.portOfLoading ?? batch.purchaseContract.portOfLoading,
+      portOfDischarge: batch.shipment.portOfDischarge,
       containerNumber: batch.container?.containerNumber ?? null,
       containers: batch.container ? 1 : batch.shipment.containers,
 

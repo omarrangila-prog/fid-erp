@@ -97,46 +97,57 @@ describe('sales line calculation', () => {
 });
 
 describe('shipment status rules', () => {
-  it('permits the normal forward path', () => {
-    expect(() => assertTransitionAllowed('CONTRACT_CREATED', 'AWAITING_LOADING')).not.toThrow();
-    expect(() => assertTransitionAllowed('AWAITING_LOADING', 'LOADED')).not.toThrow();
-    expect(() => assertTransitionAllowed('LOADED', 'IN_TRANSIT')).not.toThrow();
-    expect(() => assertTransitionAllowed('IN_TRANSIT', 'ARRIVED')).not.toThrow();
-    expect(() => assertTransitionAllowed('ARRIVED', 'CUSTOMS_CLEARING')).not.toThrow();
-    expect(() => assertTransitionAllowed('CUSTOMS_CLEARING', 'CLEARED')).not.toThrow();
-    expect(() => assertTransitionAllowed('CLEARED', 'DELIVERED')).not.toThrow();
-    expect(() => assertTransitionAllowed('DELIVERED', 'CLOSED')).not.toThrow();
+  /*
+   * Three steps, because three is what the business tracks:
+   *
+   *   Pending Loading → Loaded → Arrived
+   *
+   * and then the goods receipt, which is a document rather than a status. The
+   * client was explicit that booked, in transit, customs clearing, cleared and
+   * delivered were stages nobody updated and everybody scrolled past — and a
+   * status somebody has to maintain and nobody reads makes the ones that
+   * matter look unreliable too.
+   */
+  it('permits the whole forward path, which is now three steps', () => {
+    expect(() => assertTransitionAllowed('CONTRACT_CREATED', 'LOADED')).not.toThrow();
+    expect(() => assertTransitionAllowed('LOADED', 'ARRIVED')).not.toThrow();
   });
 
-  it('refuses to skip the middle of the workflow', () => {
+  it('allows one step back, so a mis-click can be undone', () => {
+    expect(() => assertTransitionAllowed('LOADED', 'CONTRACT_CREATED')).not.toThrow();
+    expect(() => assertTransitionAllowed('ARRIVED', 'LOADED')).not.toThrow();
+  });
+
+  it('still refuses to skip loading', () => {
     expect(() => assertTransitionAllowed('CONTRACT_CREATED', 'ARRIVED')).toThrow(/cannot move directly/);
-    expect(() => assertTransitionAllowed('AWAITING_LOADING', 'IN_TRANSIT')).toThrow(/cannot move directly/);
+  });
+
+  it('leaves a consignment recorded under an old status a way forward', () => {
+    // The removed values stay in the database; anything sitting in one can
+    // still be moved on rather than being stuck with no exit.
+    expect(() => assertTransitionAllowed('IN_TRANSIT', 'ARRIVED')).not.toThrow();
+    expect(() => assertTransitionAllowed('AWAITING_LOADING', 'LOADED')).not.toThrow();
   });
 
   it('refuses a no-op transition', () => {
     expect(() => assertTransitionAllowed('LOADED', 'LOADED')).toThrow(/already in that status/);
   });
 
-  it('will not mark a shipment loaded without the full booking data', () => {
+  it('will not mark a shipment loaded without a carrier and an arrival date', () => {
+    // Who is carrying it and when it lands: the two things the loading sheet
+    // is read to find out. The vessel name, the voyage and the ETD used to be
+    // required as well, and a consignment nobody could mark loaded because the
+    // vessel was not named yet is a status that stays wrong.
     expect(() => assertStatusDataComplete('LOADED', { loadingDate: new Date() })).toThrow(
-      /Booking Number, Shipping Line, Vessel Name, Port of Loading, Port of Discharge, ETD, ETA/,
+      /Shipping Line, ETA/,
     );
     expect(() =>
       assertStatusDataComplete('LOADED', {
         loadingDate: new Date(),
-        bookingNumber: 'BK-1',
         shippingLineId: 'sl-1',
-        vesselName: 'MSC Aurora',
-        portOfLoading: 'Santos',
-        portOfDischarge: 'Jebel Ali',
-        etdDate: new Date(),
         etaDate: new Date(),
       }),
     ).not.toThrow();
-  });
-
-  it('requires a bill of lading before the cargo can sail', () => {
-    expect(() => assertStatusDataComplete('IN_TRANSIT', { etaDate: new Date() })).toThrow(/Bill of Lading/);
   });
 
   it('requires an actual arrival date on arrival', () => {

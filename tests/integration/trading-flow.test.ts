@@ -254,13 +254,6 @@ describe('Flow 3 — loading follow-up and shipment status', () => {
       shipmentId,
       companyId: ctx.dubai.id,
       userId: ctx.admin.id,
-      toStatus: 'AWAITING_LOADING',
-    });
-
-    await changeShipmentStatus({
-      shipmentId,
-      companyId: ctx.dubai.id,
-      userId: ctx.admin.id,
       toStatus: 'LOADED',
       loadingDate: utcDate('2026-01-20'),
       bookingNumber: 'MSCU-8842190',
@@ -281,10 +274,12 @@ describe('Flow 3 — loading follow-up and shipment status', () => {
       where: { shipmentId },
       orderBy: { changedAt: 'asc' },
     });
-    expect(history.map((h) => h.toStatus)).toEqual(['CONTRACT_CREATED', 'AWAITING_LOADING', 'LOADED']);
+    // Two steps, not three: "booked, awaiting loading" was a stage nobody
+    // updated, and the client asked for it to go.
+    expect(history.map((h) => h.toStatus)).toEqual(['CONTRACT_CREATED', 'LOADED']);
   });
 
-  it('will not mark a shipment loaded without the booking data', async () => {
+  it('will not mark a shipment loaded without a carrier and an arrival date', async () => {
     const other = await createPurchaseContract(
       {
         companyId: ctx.dubai.id,
@@ -304,13 +299,6 @@ describe('Flow 3 — loading follow-up and shipment status', () => {
     await postPurchaseContract({ id: other.id, companyId: ctx.dubai.id, userId: ctx.admin.id });
     const otherShipment = await prisma.shipment.findFirstOrThrow({ where: { purchaseContractId: other.id } });
 
-    await changeShipmentStatus({
-      shipmentId: otherShipment.id,
-      companyId: ctx.dubai.id,
-      userId: ctx.admin.id,
-      toStatus: 'AWAITING_LOADING',
-    });
-
     await expect(
       changeShipmentStatus({
         shipmentId: otherShipment.id,
@@ -319,7 +307,10 @@ describe('Flow 3 — loading follow-up and shipment status', () => {
         toStatus: 'LOADED',
         loadingDate: utcDate('2026-01-25'),
       }),
-    ).rejects.toThrow(/Booking Number, Shipping Line, Vessel Name/);
+    // Who is carrying it and when it lands. The vessel, the voyage and the
+    // ETD were required too, and a consignment nobody could mark loaded
+    // because the vessel was not named yet is a status that stays wrong.
+    ).rejects.toThrow(/Shipping Line, ETA/);
   });
 
   it('tracks document status separately from physical status', async () => {

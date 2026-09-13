@@ -116,7 +116,7 @@ describe('Dubai: one container, one buyer', () => {
     });
     // The workflow will not skip a step: a container is awaiting loading before
     // it is loaded, and refusing the jump is what keeps the sheet honest.
-    for (const toStatus of ['AWAITING_LOADING', 'LOADED'] as const) {
+    for (const toStatus of ['LOADED'] as const) {
       await changeShipmentStatus({ shipmentId, companyId: ctx.dubai.id, userId: ctx.admin.id, toStatus });
     }
 

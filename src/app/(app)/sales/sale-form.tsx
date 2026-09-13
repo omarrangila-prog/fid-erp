@@ -15,7 +15,7 @@ import { Callout, EmptyState } from '@/components/ui/feedback';
 import { computeSalesLine } from '@/lib/calc/sales';
 import { dec, toMoney, sum } from '@/lib/money';
 import { formatMoney, formatQuantityKg } from '@/lib/format';
-import { saveSalesInvoiceAction } from '@/server/actions/trading-actions';
+import { saveSalesInvoiceAction, postSalesInvoiceAction } from '@/server/actions/trading-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { AddCustomer } from '@/app/(app)/sales/add-customer';
 import { cn } from '@/lib/utils';
@@ -317,15 +317,38 @@ export function SaleForm({
     start(async () => {
       const result = await saveSalesInvoiceAction(defaults?.id ?? null, JSON.stringify(payload));
       if (!result) return;
-      if (result.ok) {
-        toast.success(result.message);
-        opening();
-        router.push(`/sales/${result.id}`);
-      } else {
+
+      if (!result.ok) {
         setError(result.error);
         setFieldIssues(result.errors ?? {});
         focusFirstError();
+        return;
       }
+
+      /*
+       * Saving an invoice posts it.
+       *
+       * It used to save a draft and stop there, so the stock stayed reserved,
+       * nothing reached the customer's ledger and the invoice was not an
+       * invoice — which read as "it did not save". Saving and posting are one
+       * action now, as they are on the purchase order.
+       *
+       * If posting fails the invoice still exists as a draft and the message
+       * says so, because the alternative is losing everything that was typed.
+       */
+      const posted = await postSalesInvoiceAction(result.id);
+      if (!posted.ok) {
+        setError(
+          `${posted.error} The invoice is saved as a draft — open it to post once that is resolved.`,
+        );
+        opening();
+        router.push(`/sales/${result.id}`);
+        return;
+      }
+
+      toast.success('Invoice posted.');
+      opening();
+      router.push(`/sales/${result.id}`);
     });
   }
 
@@ -827,10 +850,12 @@ export function SaleForm({
         </CardContent>
       </Card>
 
-      <Callout tone="info" title="This saves as a draft">
-        A draft reserves the stock so nobody else can sell it, but it does not touch the ledgers. Posting relieves the
-        stock, records cost of goods sold at the batch&rsquo;s landed cost and raises the receivable
-        {header.paymentType === 'CASH' ? ', then settles it with the cash receipt' : ''}.
+      <Callout tone="info" title="Saving posts this invoice">
+        The coffee comes out of the batch you chose, cost of goods sold is recorded at that batch&rsquo;s landed cost
+        and the customer is invoiced
+        {header.paymentType === 'CASH'
+          ? ', then the cash receipt settles it straight away — the money is in the account you named, dated today.'
+          : ', and it stays outstanding on their ledger until a payment is recorded against it.'}
       </Callout>
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -838,7 +863,7 @@ export function SaleForm({
           Cancel
         </Button>
         <Button onClick={submit} loading={busy} disabled={hasOverdraw}>
-          {defaults?.id ? 'Save changes' : 'Save draft'}
+          {busy ? 'Saving…' : defaults?.id ? 'Save changes' : 'Save invoice'}
         </Button>
       </div>
     </div>
