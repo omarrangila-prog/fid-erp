@@ -75,14 +75,13 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Trading',
     icon: Ship,
     items: [
-      { label: 'Purchases', href: '/purchases', icon: FileText, permissions: [PERMISSIONS.PURCHASES_VIEW] },
-      { label: 'Goods Receipts', href: '/goods-receipts', icon: PackageCheck, permissions: [PERMISSIONS.INVENTORY_VIEW] },
+      { label: 'Purchase Contracts', href: '/purchases', icon: FileText, permissions: [PERMISSIONS.PURCHASES_VIEW] },
+      { label: 'Purchase Receipts', href: '/goods-receipts', icon: PackageCheck, permissions: [PERMISSIONS.INVENTORY_VIEW] },
       { label: 'Sales Invoices', href: '/sales', icon: ShoppingCart, permissions: [PERMISSIONS.SALES_VIEW] },
       { label: 'Credit Notes', href: '/sales/credit-notes', icon: FileMinus, permissions: [PERMISSIONS.CREDIT_NOTES_VIEW] },
       { label: 'Supplier Debit Notes', href: '/purchases/debit-notes', icon: FilePlus, permissions: [PERMISSIONS.CREDIT_NOTES_VIEW] },
       { label: 'Shipments', href: '/shipments', icon: Ship, permissions: [PERMISSIONS.SHIPMENTS_VIEW] },
       { label: 'Loading Sheet', href: '/loading', icon: ClipboardList, permissions: [PERMISSIONS.SHIPMENTS_VIEW] },
-      { label: 'Stock Allocation', href: '/reports/allocations', icon: Layers, permissions: [PERMISSIONS.INVENTORY_VIEW] },
     ],
   },
   {
@@ -90,8 +89,8 @@ export const NAV_GROUPS: NavGroup[] = [
     icon: Boxes,
     items: [
       { label: 'Stock on Hand', href: '/inventory', icon: Boxes, permissions: [PERMISSIONS.INVENTORY_VIEW] },
-      { label: 'Batches & Lots', href: '/inventory/batches', icon: Layers, permissions: [PERMISSIONS.INVENTORY_VIEW] },
-      { label: 'Stock in Transit', href: '/inventory/shipments', icon: Package, permissions: [PERMISSIONS.INVENTORY_VIEW] },
+      { label: 'Lots & Batches', href: '/inventory/batches', icon: Layers, permissions: [PERMISSIONS.INVENTORY_VIEW] },
+      { label: 'Stock by Job', href: '/inventory/shipments', icon: Package, permissions: [PERMISSIONS.INVENTORY_VIEW] },
       { label: 'Warehouse Transfers', href: '/inventory/transfers', icon: ArrowLeftRight, permissions: [PERMISSIONS.INVENTORY_VIEW] },
       { label: 'Stock Movements', href: '/inventory/movements', icon: History, permissions: [PERMISSIONS.INVENTORY_VIEW] },
       { label: 'Stock Counts', href: '/inventory/stock-counts', icon: ClipboardCheck, permissions: [PERMISSIONS.STOCK_COUNT_VIEW] },
@@ -104,8 +103,8 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Finance',
     icon: Landmark,
     items: [
-      { label: 'Receipts', href: '/finance/receipts', icon: ArrowDownToLine, permissions: [PERMISSIONS.RECEIPTS_VIEW] },
-      { label: 'Payments', href: '/finance/payments', icon: ArrowUpFromLine, permissions: [PERMISSIONS.PAYMENTS_VIEW] },
+      { label: 'Customer Receipts', href: '/finance/receipts', icon: ArrowDownToLine, permissions: [PERMISSIONS.RECEIPTS_VIEW] },
+      { label: 'Supplier Payments', href: '/finance/payments', icon: ArrowUpFromLine, permissions: [PERMISSIONS.PAYMENTS_VIEW] },
       { label: 'Expenses', href: '/finance/expenses', icon: Receipt, permissions: [PERMISSIONS.EXPENSES_VIEW] },
       { label: 'Expense Categories', href: '/expense-categories', icon: ListChecks, permissions: [PERMISSIONS.EXPENSE_CATEGORIES_VIEW] },
       { label: 'Cheques', href: '/finance/cheques', icon: ScrollText, permissions: [PERMISSIONS.CHEQUES_VIEW] },
@@ -119,13 +118,12 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Accounting',
     icon: BookOpen,
     items: [
-      { label: 'Journal Voucher', href: '/accounting/journal/new', icon: BookPlus, permissions: [PERMISSIONS.ACCOUNTING_POST] },
-      { label: 'Journal', href: '/reports/journal', icon: LineChart, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
+      { label: 'Journal Entries', href: '/reports/journal', icon: LineChart, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
       { label: 'General Ledger', href: '/reports/general-ledger', icon: BookOpen, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
       { label: 'Customer Ledgers', href: '/ledgers/customers', icon: BookOpen, permissions: [PERMISSIONS.LEDGERS_VIEW] },
       { label: 'Supplier Ledgers', href: '/ledgers/vendors', icon: BookText, permissions: [PERMISSIONS.LEDGERS_VIEW] },
       { label: 'Currency Revaluation', href: '/accounting/revaluation', icon: RefreshCcw, permissions: [PERMISSIONS.ACCOUNTING_POST] },
-      { label: 'Reconciliation', href: '/reports/reconciliation', icon: ShieldCheck, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
+      { label: 'System Checks', href: '/reports/reconciliation', icon: ShieldCheck, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
       { label: 'Tax Return', href: '/reports/tax-return', icon: Percent, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
     ],
   },
@@ -133,13 +131,13 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Reports',
     icon: BarChart3,
     items: [
+      { label: 'Stock Allocation', href: '/reports/allocations', icon: Layers, permissions: [PERMISSIONS.INVENTORY_VIEW] },
       { label: 'All Reports', href: '/reports', icon: BarChart3, permissions: [PERMISSIONS.REPORTS_VIEW] },
       { label: 'Profit & Loss', href: '/reports/profit-loss', icon: TrendingUp, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
       { label: 'Balance Sheet', href: '/reports/balance-sheet', icon: Scale, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
       { label: 'Trial Balance', href: '/reports/trial-balance', icon: ListChecks, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
       { label: 'Cash Flow', href: '/reports/cash-flow', icon: ArrowLeftRight, permissions: [PERMISSIONS.CASHBANK_VIEW] },
-      { label: 'Analysis', href: '/reports/analytics', icon: BarChart3, permissions: [PERMISSIONS.PROFITS_VIEW] },
-      { label: 'Profitability', href: '/profitability', icon: TrendingUp, permissions: [PERMISSIONS.PROFITS_VIEW] },
+      { label: 'Profit Analysis', href: '/reports/analytics', icon: BarChart3, permissions: [PERMISSIONS.PROFITS_VIEW] },
     ],
   },
   {
@@ -218,7 +216,7 @@ export const MOBILE_PRIMARY: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, permissions: [PERMISSIONS.DASHBOARD_VIEW] },
   { label: 'Shipments', href: '/shipments', icon: Ship, permissions: [PERMISSIONS.SHIPMENTS_VIEW] },
   { label: 'Stock', href: '/inventory', icon: Boxes, permissions: [PERMISSIONS.INVENTORY_VIEW] },
-  { label: 'Receipts', href: '/finance/receipts', icon: ArrowDownToLine, permissions: [PERMISSIONS.RECEIPTS_VIEW] },
+  { label: 'Customer Receipts', href: '/finance/receipts', icon: ArrowDownToLine, permissions: [PERMISSIONS.RECEIPTS_VIEW] },
 ];
 
 export function filterNav(groups: NavGroup[], permissions: string[], isSuperAdmin: boolean): NavGroup[] {

@@ -21,7 +21,7 @@ export default async function NewReceiptPage({
   const user = await requirePageAccess(PERMISSIONS.RECEIPTS_CREATE);
   const companyId = user.activeCompany.id;
 
-  const [customers, accounts, receivables] = await Promise.all([
+  const [customers, accounts, receivables, agents] = await Promise.all([
     prisma.customer.findMany({
       where: { companyId, status: 'ACTIVE' },
       orderBy: { customerName: 'asc' },
@@ -33,6 +33,12 @@ export default async function NewReceiptPage({
       select: { id: true, name: true, code: true, currency: true, accountType: true },
     }),
     getReceivables({ companyId, onlyOutstanding: true }),
+    // For a cheque written in an agent's name rather than the company's.
+    prisma.agent.findMany({
+      where: { companyId, status: 'ACTIVE' },
+      orderBy: { agentName: 'asc' },
+      select: { id: true, agentName: true },
+    }),
   ]);
 
   const prerequisites: Prerequisite[] = [
@@ -106,6 +112,7 @@ export default async function NewReceiptPage({
         invoices={invoices}
         localCurrency={user.activeCompany.localCurrency}
         defaultLocalRate={rates.local}
+        agents={agents.map((a) => ({ id: a.id, name: a.agentName }))}
         preselectedInvoiceId={invoice}
       />
     </div>

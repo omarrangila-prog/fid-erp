@@ -44,6 +44,7 @@ export function ReceiptForm({
   localCurrency,
   defaultLocalRate,
   preselectedInvoiceId,
+  agents,
 }: {
   customers: Array<ComboOption & { currency: string }>;
   accounts: BankOption[];
@@ -51,6 +52,8 @@ export function ReceiptForm({
   localCurrency: string;
   defaultLocalRate: string;
   preselectedInvoiceId?: string;
+  /** For a cheque written in someone else's name. Master data, never a literal. */
+  agents: Array<{ id: string; name: string }>;
 }) {
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
@@ -74,6 +77,8 @@ export function ReceiptForm({
     chequeNumber: '',
     chequeDate: '',
     bankName: '',
+    beneficiary: '',
+    agentId: '',
   });
 
   const [allocations, setAllocations] = React.useState<Record<string, string>>(
@@ -132,8 +137,8 @@ export function ReceiptForm({
             chequeNumber: form.chequeNumber,
             chequeDate: form.chequeDate || form.receiptDate,
             bankName: form.bankName,
-            beneficiary: '',
-            agentId: '',
+            beneficiary: form.beneficiary,
+            agentId: form.agentId,
             notes: '',
           }
         : null,
@@ -285,6 +290,36 @@ export function ReceiptForm({
             </Field>
             <Field label="Drawee bank" required>
               <Input value={form.bankName} onChange={(e) => setForm({ ...form, bankName: e.target.value })} />
+            </Field>
+
+            {/*
+              A customer's cheque is not always written out to FID. It is often
+              made out to whoever introduced the trade, and the client named
+              one: the cheque says Rizwan, the debt is the customer's. Recording
+              the name the cheque actually carries is the only way the two can
+              be matched when it clears — and the agent comes from the agent
+              master, so nobody's name is written into the system itself.
+            */}
+            <Field
+              label="Made out to"
+              hint="Leave blank if the cheque is in this company's name."
+            >
+              <Input
+                value={form.beneficiary}
+                onChange={(e) => setForm({ ...form, beneficiary: e.target.value })}
+                placeholder="Name written on the cheque"
+              />
+            </Field>
+
+            <Field label="Agent" hint="If the cheque is in an agent's name.">
+              <Select value={form.agentId} onChange={(e) => setForm({ ...form, agentId: e.target.value })}>
+                <option value="">Not through an agent</option>
+                {agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </option>
+                ))}
+              </Select>
             </Field>
           </CardContent>
         </Card>

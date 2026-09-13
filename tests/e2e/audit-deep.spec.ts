@@ -19,7 +19,10 @@ test.skip(!ADMIN_PIN, 'Set ADMIN_PIN to run the deep audit.');
 test.describe.configure({ mode: 'serial' });
 
 async function pinIn(page: Page, name: string, pin: string) {
-  await page.goto('/login');
+  // `domcontentloaded`, not the default `load`: waiting for every subresource
+  // on a page that keeps polling aborts under load, and the whole spec fails
+  // on the sign-in rather than on anything it set out to check.
+  await page.goto('/login', { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: new RegExp(name, 'i') }).click();
   for (const digit of pin.split('')) await page.getByRole('button', { name: digit, exact: true }).click();
   await page.waitForURL(/\/(dashboard|select-company)/, { waitUntil: 'domcontentloaded' });

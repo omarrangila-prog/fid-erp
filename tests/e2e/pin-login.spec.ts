@@ -31,7 +31,10 @@ test.skip(
 );
 
 async function pinIn(page: import('@playwright/test').Page, name: string, pin: string) {
-  await page.goto('/login');
+  // `domcontentloaded`, not the default `load`: waiting for every subresource
+  // on a page that keeps polling aborts under load, and the whole spec fails
+  // on the sign-in rather than on anything it set out to check.
+  await page.goto('/login', { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: new RegExp(name, 'i') }).click();
   for (const digit of pin) {
     await page.getByRole('button', { name: digit, exact: true }).click();
@@ -69,7 +72,7 @@ test("one person's PIN cannot open another person's account", async ({ page }) =
 });
 
 test('a password route is still reachable', async ({ page }) => {
-  await page.goto('/login');
+  await page.goto('/login', { waitUntil: 'domcontentloaded' });
   await page.getByRole('link', { name: /password/i }).first().click();
   await page.waitForURL(/login\/password/, { waitUntil: 'domcontentloaded' });
   await expect(page.getByLabel(/email/i)).toBeVisible();

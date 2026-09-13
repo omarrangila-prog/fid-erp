@@ -573,16 +573,29 @@ export const SHIPMENT_STATUS_META: Record<string, { label: string; tone: BadgeTo
   CLOSED: { label: 'Closed', tone: 'neutral' },
 };
 
+/**
+ * Where the shipping documents are.
+ *
+ * The client named the states they actually use — draft, pending, approval,
+ * documents with the supplier — and the labels here say those words. The
+ * stored values are unchanged: "Draft Pending" and "Draft Received" read as
+ * two kinds of draft when they mean the draft has not arrived and the draft
+ * has, so they are now written as what the person is waiting for.
+ *
+ * The list is the life of a set of originals, in order: the supplier drafts
+ * them, FID checks them, they are approved, they travel, and they end up with
+ * whoever needs them to release the coffee.
+ */
 export const DOCUMENT_STATUS_META: Record<string, { label: string; tone: BadgeTone }> = {
-  DRAFT_PENDING: { label: 'Draft Pending', tone: 'neutral' },
+  DRAFT_PENDING: { label: 'Awaiting Draft', tone: 'neutral' },
   DRAFT_RECEIVED: { label: 'Draft Received', tone: 'info' },
   UNDER_APPROVAL: { label: 'Under Approval', tone: 'warning' },
   APPROVED: { label: 'Approved', tone: 'info' },
-  ORIGINALS_WITH_SUPPLIER: { label: 'Originals with Supplier', tone: 'progress' },
-  DISPATCHED: { label: 'Dispatched', tone: 'progress' },
+  ORIGINALS_WITH_SUPPLIER: { label: 'With Supplier', tone: 'progress' },
+  DISPATCHED: { label: 'Sent', tone: 'progress' },
   WITH_BANK: { label: 'With Bank', tone: 'progress' },
   WITH_CUSTOMER: { label: 'With Customer', tone: 'info' },
-  COMPLETED: { label: 'Completed', tone: 'success' },
+  COMPLETED: { label: 'Complete', tone: 'success' },
 };
 
 export const TRANSACTION_STATUS_META: Record<string, { label: string; tone: BadgeTone }> = {

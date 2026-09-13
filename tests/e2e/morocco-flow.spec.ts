@@ -17,7 +17,9 @@ const ADMIN_NAME = process.env.INITIAL_ADMIN_NAME ?? 'Ali Raza';
 test.skip(!ADMIN_PIN, 'Set ADMIN_PIN to run the Morocco flow test.');
 
 async function signInToMorocco(page: Page) {
-  await page.goto('/login');
+  // `domcontentloaded`, not the default `load`: waiting for every subresource
+  // on a page that keeps polling has hung this suite before.
+  await page.goto('/login', { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: new RegExp(ADMIN_NAME, 'i') }).click();
   for (const digit of (ADMIN_PIN ?? '').split('')) {
     await page.getByRole('button', { name: digit, exact: true }).click();

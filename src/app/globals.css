@@ -519,14 +519,59 @@
 
   [data-wide-sheet] table {
     width: 100% !important;
-    table-layout: auto;
-    font-size: 7.5pt;
+    /*
+     * `fixed`, not `auto`.
+     *
+     * Under `auto` a table sizes itself to its content and simply overflows a
+     * container it does not fit, so the Morocco sheet — seventeen columns —
+     * laid out 1698px wide inside a 1122px page and the last columns were
+     * sliced off at the edge. `width: 100%` does not prevent that, and neither
+     * does releasing every min-width: the table was not being squeezed, it was
+     * being allowed to take whatever it wanted.
+     *
+     * `fixed` divides the page between the columns and makes the content wrap
+     * inside them, which is what a printed register does.
+     */
+    table-layout: fixed !important;
+    /*
+     * The table itself carries `min-w-max` so it can scroll sideways on
+     * screen. Releasing every min-width on the cells left that one in place,
+     * and a table whose minimum is its own content cannot be made to fit
+     * anything.
+     */
+    min-width: 0 !important;
+    font-size: 6.5pt;
   }
 
   [data-wide-sheet] th,
   [data-wide-sheet] td {
-    padding: 3pt 4pt !important;
+    padding: 2pt 3pt !important;
     white-space: normal !important;
+    /*
+     * `width: 100%` does not make a table fit. A table is never narrower than
+     * its min-content, which for thirteen columns of unbreakable words is
+     * wider than a landscape A4 — so the Morocco sheet printed with its last
+     * columns sliced off at the page edge. Nothing warned anybody: the ETA and
+     * the payment status simply were not on the paper.
+     *
+     * Allowing a break anywhere drops min-content to roughly one character per
+     * column, so the table compresses to the page and every column survives.
+     */
+    /*
+     * `break-word`, not `anywhere`: a word breaks only when it would not fit
+     * its column at all. `anywhere` broke every header mid-word — "CONTRAC T
+     * DATE & REF", "Pendin g Loadin g" — which fits the page and cannot be
+     * read.
+     */
+    overflow-wrap: break-word !important;
+    word-break: normal !important;
+    hyphens: none !important;
+  }
+
+  /* A badge is a label, not prose. It wraps between words or not at all. */
+  [data-wide-sheet] td span[class*='rounded'] {
+    white-space: normal !important;
+    overflow-wrap: normal !important;
   }
 
   /*

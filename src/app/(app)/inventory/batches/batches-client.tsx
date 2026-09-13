@@ -76,7 +76,10 @@ export function BatchesClient({
     { id: 'origin', header: 'Origin', hideable: true, defaultHidden: true, exportValue: (r) => r.origin, cell: (r) => r.origin },
     { id: 'container', header: 'Container', hideable: true, exportValue: (r) => r.containerNumber ?? '', cell: (r) => r.containerNumber ?? '—' },
     { id: 'shipment', header: 'Shipment', hideable: true, exportValue: (r) => r.shipmentNumber, cell: (r) => r.shipmentNumber },
-    { id: 'contract', header: 'Contract', hideable: true, defaultHidden: true, exportValue: (r) => r.contractNumber, cell: (r) => r.contractNumber },
+    // Shown by default, not hidden behind the column picker: the client tracks
+    // stock back to the contract it came in on, and a reference you have to go
+    // looking for is one you stop using.
+    { id: 'contract', header: 'Contract', hideable: true, exportValue: (r) => r.contractNumber, cell: (r) => r.contractNumber },
     { id: 'warehouses', header: 'Warehouse', mobile: 'meta', exportValue: (r) => r.warehouses, cell: (r) => r.warehouses || '—' },
     { id: 'ordered', header: 'Ordered KG', numeric: true, hideable: true, sortValue: (r) => r.orderedSort, exportValue: (r) => r.orderedSort, exportType: 'quantity', cell: (r) => r.orderedLabel },
     { id: 'received', header: 'Received KG', numeric: true, hideable: true, exportValue: (r) => r.receivedSort, exportType: 'quantity', cell: (r) => r.receivedLabel },

@@ -138,7 +138,29 @@ export function PurchasesClient({
       header: 'Status',
       mobile: 'badge',
       sortValue: (r) => r.status,
+      exportValue: (r) => TRANSACTION_STATUS_META[r.status]?.label ?? r.status,
       cell: (r) => <StatusBadge status={r.status} meta={TRANSACTION_STATUS_META} />,
+    },
+    {
+      /*
+       * Whether the coffee has actually turned up.
+       *
+       * "Posted" only says the contract is approved and the supplier is owed.
+       * The question asked of this screen every day is a different one — has it
+       * arrived — and answering it meant opening the contract and comparing two
+       * quantities. The percentage is still in its own column for anyone who
+       * wants the detail; this is the answer in a word.
+       */
+      id: 'goods',
+      header: 'Goods',
+      mobile: 'badge',
+      sortValue: (r) => r.receivedPct,
+      exportValue: (r) => goodsState(r).label,
+      cell: (r) => {
+        if (r.status !== 'POSTED') return <span className="text-ink-subtle">—</span>;
+        const state = goodsState(r);
+        return <Badge tone={state.tone}>{state.label}</Badge>;
+      },
     },
   ];
 
@@ -177,4 +199,12 @@ export function PurchasesClient({
       }
     />
   );
+}
+
+
+/** Received, part received, or still to come. */
+function goodsState(row: PurchaseRow): { label: string; tone: 'success' | 'progress' | 'neutral' } {
+  if (row.receivedPct >= 100) return { label: 'Received', tone: 'success' };
+  if (row.receivedPct > 0) return { label: 'Part received', tone: 'progress' };
+  return { label: 'Awaiting goods', tone: 'neutral' };
 }

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { requirePageAccess } from '@/lib/auth/guards';
+import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getJournalReport } from '@/lib/services/reports';
 import { dec } from '@/lib/money';
@@ -10,6 +10,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/feedback';
+import Link from 'next/link';
+import { Plus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { PrintButton } from '@/components/shared/print-button';
 import { ExcelLink, exportHref } from '@/components/shared/excel-link';
 import { PrintHeader } from '@/components/shared/print-header';
@@ -35,6 +38,14 @@ export default async function JournalPage({ searchParams }: { searchParams: Prom
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Journal' }]}
         actions={
           <>
+            {can(user, PERMISSIONS.ACCOUNTING_POST) ? (
+              <Button asChild variant="accent" size="sm">
+                <Link href="/accounting/journal/new">
+                  <Plus />
+                  New entry
+                </Link>
+              </Button>
+            ) : null}
             <ExcelLink href={exportHref('journal', { from, to })} />
             <PrintButton />
           </>
