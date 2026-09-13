@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { fieldErrors } from '@/lib/validation/common';
 import {
+  agentSettlementSchema,
   receiptSchema,
   paymentSchema,
   expenseSchema,
@@ -17,6 +18,7 @@ import { createReceipt, updateReceipt, postReceipt, reverseReceipt, deleteDraftR
 import { createPayment, updatePayment, postPayment, reversePayment, deleteDraftPayment } from '@/lib/services/payment';
 import { createExpense, updateExpense, postExpense, reverseExpense, deleteDraftExpense } from '@/lib/services/expense';
 import { changeChequeStatus } from '@/lib/services/cheque';
+import { createAgentSettlement, postAgentSettlement } from '@/lib/services/agent-ledger';
 import { postRevaluation } from '@/lib/services/revaluation';
 import { postJournalEntry } from '@/lib/services/accounting';
 import { getCompanyContext } from '@/lib/services/company';
@@ -70,6 +72,45 @@ export async function saveReceiptAction(id: string | null, payload: string): Pro
 
     revalidateAll(paths.receipts);
     return { ok: true, id: result.id, message: id ? 'Receipt updated.' : 'Receipt created.' };
+  } catch (error) {
+    return toState(error);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Agent settlements
+// ---------------------------------------------------------------------------
+
+/**
+ * Money actually moving between the company and a collection agent.
+ *
+ * Creating and posting are one action. A settlement that is recorded but not
+ * posted has moved nothing — the agent still appears to be holding money he
+ * has already handed over — and there is no reason anybody would want to keep
+ * one as a draft.
+ */
+export async function recordAgentSettlementAction(payload: string): Promise<DocFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.RECEIPTS_POST);
+    const input = agentSettlementSchema.parse(parseJson(payload));
+
+    const created = await createAgentSettlement(
+      { companyId: user.activeCompany.id, ...input },
+      user.id,
+    );
+    await postAgentSettlement({ id: created.id, companyId: user.activeCompany.id, userId: user.id });
+
+    revalidateAll(paths.receipts);
+    revalidatePath('/agents');
+    revalidatePath(`/agents/${input.agentId}`);
+    return {
+      ok: true,
+      id: created.id,
+      message:
+        input.direction === 'COLLECTION'
+          ? 'Recorded. The money is now in the account you chose.'
+          : 'Commission paid.',
+    };
   } catch (error) {
     return toState(error);
   }

@@ -135,6 +135,14 @@ export const salesInvoiceSchema = z.object({
    * the honest reading of an invoice with no stated terms.
    */
   dueDate: optionalDateString,
+  /**
+   * Cash or credit, as the client asks for at the bottom of the invoice.
+   *
+   * A cash sale settles as it is raised — posting it raises the receipt too —
+   * so it also has to say which account the money went into.
+   */
+  paymentType: z.enum(['CASH', 'CREDIT']).default('CREDIT'),
+  cashBankAccountId: optionalCuid,
   reference: optionalText(60),
   notes: optionalText(1000),
   lines: z.array(salesLineSchema).min(1, 'Add at least one coffee line.'),

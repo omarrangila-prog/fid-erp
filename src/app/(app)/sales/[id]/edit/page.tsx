@@ -36,13 +36,18 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
   if (!invoice) notFound();
   if (invoice.status !== 'DRAFT') redirect(`/sales/${id}`);
 
-  const [customers, stock] = await Promise.all([
+  const [customers, stock, cashAccounts] = await Promise.all([
     prisma.customer.findMany({
       where: { companyId, status: 'ACTIVE' },
       orderBy: { customerName: 'asc' },
       select: { id: true, customerName: true, customerCode: true, primaryCurrency: true, paymentTermDays: true },
     }),
     getSellableStock(companyId),
+    prisma.cashBankAccount.findMany({
+      where: { companyId, status: 'ACTIVE' },
+      orderBy: [{ accountType: 'asc' }, { name: 'asc' }],
+      select: { id: true, name: true, code: true, currency: true },
+    }),
   ]);
 
   const stockOptions: StockOption[] = stock.map((s) => ({
@@ -111,6 +116,7 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
         ]}
       />
       <SaleForm
+        cashAccounts={cashAccounts}
         customers={customers.map((c) => ({
           value: c.id,
           label: c.customerName,
@@ -134,6 +140,8 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
           rateToUsd: invoice.rateToUsd.toString(),
           rateLocalPerUsd: invoice.rateLocalPerUsd.toString(),
           dueDate: invoice.dueDate ? invoice.dueDate.toISOString().slice(0, 10) : "",
+          paymentType: invoice.paymentType,
+          cashBankAccountId: invoice.cashBankAccountId ?? '',
           reference: invoice.reference ?? '',
           notes: invoice.notes ?? '',
           lines: invoice.lines.map((l) => ({

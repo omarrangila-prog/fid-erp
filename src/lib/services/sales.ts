@@ -64,6 +64,10 @@ export type SalesInvoiceInput = {
   rateLocalPerUsd: string | number;
   /** The date the money is due, chosen from a calendar on the invoice. */
   dueDate?: Date | null;
+  /** CASH settles as the invoice is raised; CREDIT leaves it outstanding. */
+  paymentType?: 'CASH' | 'CREDIT';
+  /** Where a cash sale's money went. Required when paymentType is CASH. */
+  cashBankAccountId?: string | null;
   reference?: string | null;
   notes?: string | null;
   lines: SalesLineInput[];
@@ -248,6 +252,34 @@ function resolveDueDate(
   return { dueDate: new Date(invoiceDate.getTime() + days * 86_400_000), termDays: days };
 }
 
+/**
+ * A cash sale must say where the cash went.
+ *
+ * Not a nicety: without an account the posting has nowhere to debit, and the
+ * sale would silently become a credit sale that nobody is chasing.
+ */
+async function assertCashSaleIsComplete(tx: Tx, input: SalesInvoiceInput): Promise<void> {
+  if (input.paymentType !== 'CASH') return;
+
+  if (!input.cashBankAccountId) {
+    throw new BusinessRuleError('A cash sale needs the cash or bank account the money went into.');
+  }
+
+  const account = await tx.cashBankAccount.findFirst({
+    where: { id: input.cashBankAccountId, companyId: input.companyId },
+    select: { id: true, name: true, currency: true, status: true },
+  });
+  if (!account) throw new NotFoundError('Cash or bank account');
+  if (account.status !== 'ACTIVE') {
+    throw new BusinessRuleError(`${account.name} is inactive and cannot take the money.`);
+  }
+  if (account.currency.toUpperCase() !== input.currency.toUpperCase()) {
+    throw new BusinessRuleError(
+      `${account.name} is held in ${account.currency}, so a ${input.currency.toUpperCase()} cash sale cannot be paid into it.`,
+    );
+  }
+}
+
 export async function createSalesInvoice(input: SalesInvoiceInput, userId: string) {
   return transaction(async (tx) => {
     const customer = await tx.customer.findFirst({
@@ -257,6 +289,7 @@ export async function createSalesInvoice(input: SalesInvoiceInput, userId: strin
     if (!customer) throw new NotFoundError('Customer');
 
     const { dueDate, termDays } = resolveDueDate(input.invoiceDate, input.dueDate, customer.paymentTermDays);
+    await assertCashSaleIsComplete(tx, input);
 
     const lines = await resolveLines(tx, input);
     const totals = invoiceTotals(lines);
@@ -288,6 +321,8 @@ export async function createSalesInvoice(input: SalesInvoiceInput, userId: strin
         totalAmountUsd: totals.totalAmountUsd,
         paymentTermDays: termDays,
         dueDate,
+        paymentType: input.paymentType ?? 'CREDIT',
+        cashBankAccountId: input.paymentType === 'CASH' ? (input.cashBankAccountId ?? null) : null,
         reference: input.reference ?? null,
         notes: input.notes ?? null,
         status: 'DRAFT',
@@ -376,6 +411,7 @@ export async function updateSalesInvoice(id: string, input: SalesInvoiceInput, u
     const lines = await resolveLines(tx, input);
     const totals = invoiceTotals(lines);
     const { dueDate, termDays } = resolveDueDate(input.invoiceDate, input.dueDate, customer.paymentTermDays);
+    await assertCashSaleIsComplete(tx, input);
     const distinctShipments = [...new Set(lines.map((l) => l.shipmentId))];
     const shipmentId = input.shipmentId ?? (distinctShipments.length === 1 ? distinctShipments[0] : null);
 
@@ -398,6 +434,8 @@ export async function updateSalesInvoice(id: string, input: SalesInvoiceInput, u
         totalAmountUsd: totals.totalAmountUsd,
         paymentTermDays: termDays,
         dueDate,
+        paymentType: input.paymentType ?? 'CREDIT',
+        cashBankAccountId: input.paymentType === 'CASH' ? (input.cashBankAccountId ?? null) : null,
         reference: input.reference ?? null,
         notes: input.notes ?? null,
         lines: {

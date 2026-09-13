@@ -315,3 +315,148 @@ describe('the agent hands the money over', () => {
     expect(result.checks.filter((c) => !c.passed).map((c) => c.label)).toEqual([]);
   });
 });
+
+
+/**
+ * §13–14 — a cash sale settles as it is raised.
+ *
+ * The service records the intent and the account; the posting action raises
+ * the receipt alongside the invoice. What is checked here is the half the
+ * service owns: a cash sale must know where the money went, and must refuse
+ * an account that cannot hold it.
+ */
+describe('a cash sale', () => {
+  it('will not be raised without saying where the money went', async () => {
+    const batch = await prisma.batch.findFirstOrThrow({
+      where: { companyId, availableQuantityKg: { gt: 0 } },
+    });
+
+    await expect(
+      createSalesInvoice(
+        {
+          companyId,
+          invoiceDate: utcDate('2026-05-02'),
+          customerId: masters.customer.id,
+          currency: 'MAD',
+          rateToUsd: '9.85',
+          rateLocalPerUsd: '9.85',
+          paymentType: 'CASH',
+          lines: [
+            {
+              batchId: batch.id,
+              warehouseId: masters.warehouses[0].id,
+              quantity: '100',
+              unit: 'KG',
+              unitPrice: '60.00',
+            },
+          ],
+        },
+        ctx.admin.id,
+      ),
+    ).rejects.toThrow(/cash or bank account the money went into/i);
+  });
+
+  it('refuses an account that cannot hold the currency', async () => {
+    const batch = await prisma.batch.findFirstOrThrow({
+      where: { companyId, availableQuantityKg: { gt: 0 } },
+    });
+    const usdAccount = await prisma.cashBankAccount.findFirst({
+      where: { companyId, currency: 'USD', status: 'ACTIVE' },
+    });
+    if (!usdAccount) return;
+
+    await expect(
+      createSalesInvoice(
+        {
+          companyId,
+          invoiceDate: utcDate('2026-05-03'),
+          customerId: masters.customer.id,
+          currency: 'MAD',
+          rateToUsd: '9.85',
+          rateLocalPerUsd: '9.85',
+          paymentType: 'CASH',
+          cashBankAccountId: usdAccount.id,
+          lines: [
+            {
+              batchId: batch.id,
+              warehouseId: masters.warehouses[0].id,
+              quantity: '100',
+              unit: 'KG',
+              unitPrice: '60.00',
+            },
+          ],
+        },
+        ctx.admin.id,
+      ),
+    ).rejects.toThrow(/held in USD|cannot be paid into/i);
+  });
+
+  it('records the account on the invoice when it is complete', async () => {
+    const batch = await prisma.batch.findFirstOrThrow({
+      where: { companyId, availableQuantityKg: { gt: 0 } },
+    });
+    const cash = await getCashAccount(companyId, 'MAD');
+
+    const invoice = await createSalesInvoice(
+      {
+        companyId,
+        invoiceDate: utcDate('2026-05-04'),
+        customerId: masters.customer.id,
+        currency: 'MAD',
+        rateToUsd: '9.85',
+        rateLocalPerUsd: '9.85',
+        paymentType: 'CASH',
+        cashBankAccountId: cash.id,
+        lines: [
+          {
+            batchId: batch.id,
+            warehouseId: masters.warehouses[0].id,
+            quantity: '100',
+            unit: 'KG',
+            unitPrice: '60.00',
+          },
+        ],
+      },
+      ctx.admin.id,
+    );
+
+    const saved = await prisma.salesInvoice.findUniqueOrThrow({ where: { id: invoice.id } });
+    expect(saved.paymentType).toBe('CASH');
+    expect(saved.cashBankAccountId).toBe(cash.id);
+    // Due the day it is raised: a cash sale is not owed for thirty days.
+    expect(saved.dueDate).toBeTruthy();
+  });
+
+  it('does not record an account on a credit sale, even if one is passed', async () => {
+    const batch = await prisma.batch.findFirstOrThrow({
+      where: { companyId, availableQuantityKg: { gt: 0 } },
+    });
+    const cash = await getCashAccount(companyId, 'MAD');
+
+    const invoice = await createSalesInvoice(
+      {
+        companyId,
+        invoiceDate: utcDate('2026-05-05'),
+        customerId: masters.customer.id,
+        currency: 'MAD',
+        rateToUsd: '9.85',
+        rateLocalPerUsd: '9.85',
+        paymentType: 'CREDIT',
+        cashBankAccountId: cash.id,
+        lines: [
+          {
+            batchId: batch.id,
+            warehouseId: masters.warehouses[0].id,
+            quantity: '100',
+            unit: 'KG',
+            unitPrice: '60.00',
+          },
+        ],
+      },
+      ctx.admin.id,
+    );
+
+    const saved = await prisma.salesInvoice.findUniqueOrThrow({ where: { id: invoice.id } });
+    expect(saved.cashBankAccountId).toBeNull();
+  });
+});

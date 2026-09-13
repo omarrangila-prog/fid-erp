@@ -55,6 +55,8 @@ export type SaleFormDefaults = {
   rateToUsd?: string;
   rateLocalPerUsd?: string;
   dueDate?: string;
+  paymentType?: 'CASH' | 'CREDIT';
+  cashBankAccountId?: string;
   reference?: string;
   notes?: string;
   lines?: Array<Omit<LineState, 'key'>>;
@@ -71,6 +73,7 @@ const newLine = (taxCodeId = ''): LineState => ({
 
 export function SaleForm({
   customers,
+  cashAccounts,
   stock,
   localCurrency,
   defaultCurrency,
@@ -82,6 +85,8 @@ export function SaleForm({
   defaults,
 }: {
   customers: Array<ComboOption & { currency: string; paymentTermDays: number }>;
+  /** For a cash sale: where the money went. */
+  cashAccounts: Array<{ id: string; name: string; code: string; currency: string }>;
   stock: StockOption[];
   localCurrency: string;
   defaultCurrency: string;
@@ -106,6 +111,8 @@ export function SaleForm({
     rateToUsd: defaults?.rateToUsd ?? (defaultCurrency === 'USD' ? '1' : defaultLocalRate),
     rateLocalPerUsd: defaults?.rateLocalPerUsd ?? defaultLocalRate,
     dueDate: defaults?.dueDate ?? '',
+    paymentType: defaults?.paymentType ?? 'CREDIT',
+    cashBankAccountId: defaults?.cashBankAccountId ?? '',
     reference: defaults?.reference ?? '',
     notes: defaults?.notes ?? '',
   });
@@ -209,6 +216,8 @@ export function SaleForm({
     const payload = {
       ...header,
       dueDate: header.dueDate || undefined,
+      paymentType: header.paymentType,
+      cashBankAccountId: header.paymentType === 'CASH' ? header.cashBankAccountId : '',
       shipmentId: '',
       lines: lines
         .filter((l) => l.stockKey)
@@ -557,9 +566,61 @@ export function SaleForm({
         </Card>
       ) : null}
 
+      {/*
+        Cash or credit, at the bottom of the invoice, where the client asked
+        for it. A cash sale settles as it is raised — posting it records the
+        receipt too — so it needs to know which account took the money.
+      */}
+      <Card>
+        <CardHeader>
+          <CardTitle>How is this being paid?</CardTitle>
+          <CardDescription>
+            A cash sale is settled the moment it is posted. A credit sale stays outstanding on the customer&rsquo;s
+            ledger until a payment is recorded against it.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2">
+          <Field label="Payment type" required>
+            <Select
+              value={header.paymentType}
+              onChange={(e) =>
+                setHeader({ ...header, paymentType: e.target.value as 'CASH' | 'CREDIT', cashBankAccountId: '' })
+              }
+            >
+              <option value="CREDIT">Credit — pay later</option>
+              <option value="CASH">Cash — paid now</option>
+            </Select>
+          </Field>
+
+          {header.paymentType === 'CASH' ? (
+            <Field
+              label="Paid into"
+              required
+              hint={`Only ${header.currency} accounts are shown.`}
+              error={fieldIssues.cashBankAccountId}
+            >
+              <Select
+                value={header.cashBankAccountId}
+                onChange={(e) => setHeader({ ...header, cashBankAccountId: e.target.value })}
+              >
+                <option value="">Choose an account…</option>
+                {cashAccounts
+                  .filter((account) => account.currency === header.currency)
+                  .map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name} ({account.code})
+                    </option>
+                  ))}
+              </Select>
+            </Field>
+          ) : null}
+        </CardContent>
+      </Card>
+
       <Callout tone="info" title="This saves as a draft">
         A draft reserves the stock so nobody else can sell it, but it does not touch the ledgers. Posting relieves the
-        stock, records cost of goods sold at the batch&rsquo;s landed cost and raises the receivable.
+        stock, records cost of goods sold at the batch&rsquo;s landed cost and raises the receivable
+        {header.paymentType === 'CASH' ? ', then settles it with the cash receipt' : ''}.
       </Callout>
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

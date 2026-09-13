@@ -17,13 +17,18 @@ export default async function NewSalePage() {
   const user = await requirePageAccess(PERMISSIONS.SALES_CREATE);
   const companyId = user.activeCompany.id;
 
-  const [customers, stock] = await Promise.all([
+  const [customers, stock, cashAccounts] = await Promise.all([
     prisma.customer.findMany({
       where: { companyId, status: 'ACTIVE' },
       orderBy: { customerName: 'asc' },
       select: { id: true, customerName: true, customerCode: true, primaryCurrency: true, paymentTermDays: true },
     }),
     getSellableStock(companyId),
+    prisma.cashBankAccount.findMany({
+      where: { companyId, status: 'ACTIVE' },
+      orderBy: [{ accountType: 'asc' }, { name: 'asc' }],
+      select: { id: true, name: true, code: true, currency: true },
+    }),
   ]);
 
   const prerequisites: Prerequisite[] = [
@@ -95,6 +100,7 @@ export default async function NewSalePage() {
         breadcrumbs={[{ label: 'Trading' }, { label: 'Sales', href: '/sales' }, { label: 'New' }]}
       />
       <SaleForm
+        cashAccounts={cashAccounts}
         customers={customers.map((c) => ({
           value: c.id,
           label: c.customerName,

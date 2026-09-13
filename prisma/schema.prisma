@@ -87,6 +87,12 @@ enum PaymentMethod {
   AGENT_COLLECTION
 }
 
+/// A cash sale is settled as it is raised; a credit sale is not.
+enum SalePaymentType {
+  CASH
+  CREDIT
+}
+
 enum ChequeDirection {
   INBOUND
   OUTBOUND
@@ -1352,6 +1358,11 @@ model SalesInvoice {
   customerId         String
   shipmentId         String?
   purchaseContractId String?
+  /// A cash sale is settled as it is raised: posting it raises the receipt too,
+  /// so nobody has to remember a second entry for one event.
+  paymentType        SalePaymentType   @default(CREDIT)
+  /// Where the cash went. Only meaningful on a cash sale.
+  cashBankAccountId  String?
   currency           String            @db.VarChar(3)
   rateToUsd          Decimal           @default(1) @db.Decimal(18, 8)
   rateLocalPerUsd    Decimal           @default(1) @db.Decimal(18, 8)

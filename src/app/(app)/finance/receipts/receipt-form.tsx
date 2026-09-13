@@ -93,6 +93,12 @@ export function ReceiptForm({
 
   const isForeign = form.currency !== 'USD';
   const isCheque = form.paymentMethod === 'CHEQUE';
+  /*
+   * The customer has paid; the company has not. The money is with the agent
+   * until he hands it over, so there is no account to choose here — asking for
+   * one would put money in the bank that is not there.
+   */
+  const isAgentCollection = form.paymentMethod === 'AGENT_COLLECTION';
 
   // The USD value of this receipt, however the user chose to express it.
   const amountUsd = React.useMemo(() => {
@@ -132,6 +138,7 @@ export function ReceiptForm({
       rateLocalPerUsd: form.rateLocalPerUsd,
       paymentMethod: form.paymentMethod,
       cashBankAccountId: form.cashBankAccountId ?? '',
+      agentId: isAgentCollection ? form.agentId : '',
       cheque: isCheque
         ? {
             chequeNumber: form.chequeNumber,
@@ -218,6 +225,7 @@ export function ReceiptForm({
               <option value="BANK_TRANSFER">Bank transfer</option>
               <option value="CASH">Cash</option>
               <option value="CHEQUE">Cheque</option>
+              <option value="AGENT_COLLECTION">Collected by an agent</option>
             </Select>
           </Field>
 
@@ -246,7 +254,7 @@ export function ReceiptForm({
             />
           </Field>
 
-          {!isCheque ? (
+          {!isCheque && !isAgentCollection ? (
             <Field
               label="Received into"
               required
@@ -263,6 +271,24 @@ export function ReceiptForm({
             </Field>
           ) : null}
 
+          {isAgentCollection ? (
+            <Field
+              label="Collected by"
+              required
+              hint="The money stays with the agent until he hands it over."
+              error={fieldIssues.agentId}
+            >
+              <Select value={form.agentId} onChange={(e) => setForm({ ...form, agentId: e.target.value })}>
+                <option value="">Choose an agent…</option>
+                {agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : null}
+
           <Field label="Reference">
             <Input
               value={form.reference}
@@ -272,6 +298,13 @@ export function ReceiptForm({
           </Field>
         </CardContent>
       </Card>
+
+      {isAgentCollection ? (
+        <Callout tone="info" title="This does not put money in the bank">
+          The customer&rsquo;s invoice is settled and the amount is recorded as held by the agent. It reaches cash or
+          bank when you record the agent handing it over, on the agent&rsquo;s own page.
+        </Callout>
+      ) : null}
 
       {isCheque ? (
         <Card>

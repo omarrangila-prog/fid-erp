@@ -9,6 +9,7 @@ import {
   optionalDecimalString,
   optionalText,
   requiredText,
+  requiredChoice,
 } from '@/lib/validation/common';
 
 /** Receipt, payment, expense and cheque schemas. */
@@ -32,8 +33,10 @@ export const receiptSchema = z
     rateToUsd: optionalDecimalString('Exchange rate'),
     usdEquivalent: optionalDecimalString('USD equivalent'),
     rateLocalPerUsd: decimalString('Local exchange rate'),
-    paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'CHEQUE']),
+    paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'CHEQUE', 'AGENT_COLLECTION']),
     cashBankAccountId: optionalCuid,
+    /** Who collected it, when the customer paid an agent rather than the company. */
+    agentId: optionalCuid,
     cheque: chequeDetails.nullish(),
     shipmentId: optionalCuid,
     reference: optionalText(60),
@@ -81,6 +84,8 @@ export const expenseSchema = z.object({
   purchaseContractId: optionalCuid,
   vendorId: optionalCuid,
   agentId: optionalCuid,
+  /** Owed to this agent rather than paid now — commission, typically. */
+  payableToAgentId: optionalCuid,
   currency: currencyCode,
   amount: decimalString('Amount'),
   rateToUsd: decimalString('Exchange rate'),
@@ -131,3 +136,23 @@ export const revaluationSchema = z.object({
 export type ReceiptFormInput = z.infer<typeof receiptSchema>;
 export type PaymentFormInput = z.infer<typeof paymentSchema>;
 export type ExpenseFormInput = z.infer<typeof expenseSchema>;
+
+/**
+ * Money handed over by a collection agent, or commission paid to one.
+ *
+ * The account is required in both directions and is the only place cash or
+ * bank moves in this whole arrangement: the collection itself never touched
+ * an account, which is the point of the agent clearing ledger.
+ */
+export const agentSettlementSchema = z.object({
+  agentId: requiredChoice('Agent'),
+  settlementDate: dateString('Date'),
+  direction: z.enum(['COLLECTION', 'COMMISSION']),
+  cashBankAccountId: requiredChoice('Cash or bank account'),
+  currency: currencyCode,
+  amount: decimalString('Amount'),
+  rateToUsd: decimalString('Exchange rate'),
+  rateLocalPerUsd: decimalString('Local exchange rate'),
+  reference: optionalText(60),
+  notes: optionalText(400),
+});

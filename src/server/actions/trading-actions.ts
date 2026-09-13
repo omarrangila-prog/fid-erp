@@ -50,6 +50,8 @@ import {
   markShipmentLoaded,
 } from '@/lib/services/shipment';
 import { fail, type ActionResult } from '@/server/actions/action-utils';
+import { prisma } from '@/lib/db';
+import { createReceipt, postReceipt } from '@/lib/services/receipt';
 
 /**
  * Trading actions.
@@ -221,14 +223,78 @@ export async function saveSalesInvoiceAction(id: string | null, payload: string)
   }
 }
 
+/**
+ * Post an invoice, and settle it if it was a cash sale.
+ *
+ * A cash sale is one event to the person doing it: the customer pays and
+ * leaves. Making them post the invoice and then key a separate receipt is two
+ * entries for one event, and the second is the one that gets forgotten.
+ *
+ * The two are separate documents — an invoice and a receipt, which is what
+ * they genuinely are — so they are two postings, not one. If the receipt fails
+ * the invoice still stands, and the message says exactly that rather than
+ * pretending nothing happened: the sale is real and only the settlement is
+ * missing, which is recoverable from the invoice in one click.
+ */
 export async function postSalesInvoiceAction(id: string): Promise<ActionResult<undefined>> {
   try {
     const user = await requirePermission(PERMISSIONS.SALES_APPROVE);
-    await postSalesInvoice({ id, companyId: user.activeCompany.id, userId: user.id });
+    const companyId = user.activeCompany.id;
+
+    await postSalesInvoice({ id, companyId, userId: user.id });
+
+    const invoice = await prisma.salesInvoice.findFirstOrThrow({
+      where: { id, companyId },
+      select: {
+        paymentType: true,
+        cashBankAccountId: true,
+        customerId: true,
+        invoiceDate: true,
+        currency: true,
+        totalAmount: true,
+        rateToUsd: true,
+        rateLocalPerUsd: true,
+        invoiceNumber: true,
+      },
+    });
+
+    if (invoice.paymentType === 'CASH' && invoice.cashBankAccountId) {
+      try {
+        const receipt = await createReceipt(
+          {
+            companyId,
+            receiptDate: invoice.invoiceDate,
+            customerId: invoice.customerId,
+            currency: invoice.currency,
+            amount: invoice.totalAmount.toString(),
+            rateToUsd: invoice.rateToUsd.toString(),
+            rateLocalPerUsd: invoice.rateLocalPerUsd.toString(),
+            paymentMethod: 'CASH',
+            cashBankAccountId: invoice.cashBankAccountId,
+            reference: invoice.invoiceNumber,
+            description: `Cash sale ${invoice.invoiceNumber}`,
+            allocations: [{ salesInvoiceId: id, amount: invoice.totalAmount.toString() }],
+          },
+          user.id,
+        );
+        await postReceipt({ id: receipt.id, companyId, userId: user.id });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'the cash receipt could not be recorded';
+        return {
+          ok: false,
+          code: 'CASH_RECEIPT_FAILED',
+          error:
+            `The invoice posted, but the cash receipt did not: ${message} ` +
+            'Record the payment from the invoice.',
+        };
+      }
+    }
+
     revalidatePath('/sales');
     revalidatePath(`/sales/${id}`);
     revalidatePath('/inventory');
     revalidatePath('/finance/receivables');
+    revalidatePath('/finance/cash-bank');
     revalidatePath('/dashboard');
     return { ok: true, data: undefined };
   } catch (error) {

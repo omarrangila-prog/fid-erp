@@ -122,6 +122,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'General Ledger', href: '/reports/general-ledger', icon: BookOpen, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
       { label: 'Customer Ledgers', href: '/ledgers/customers', icon: BookOpen, permissions: [PERMISSIONS.LEDGERS_VIEW] },
       { label: 'Supplier Ledgers', href: '/ledgers/vendors', icon: BookText, permissions: [PERMISSIONS.LEDGERS_VIEW] },
+      { label: 'Agent Ledgers', href: '/ledgers/agents', icon: HandCoins, permissions: [PERMISSIONS.LEDGERS_VIEW] },
       { label: 'Currency Revaluation', href: '/accounting/revaluation', icon: RefreshCcw, permissions: [PERMISSIONS.ACCOUNTING_POST] },
       { label: 'System Checks', href: '/reports/reconciliation', icon: ShieldCheck, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
       { label: 'Tax Return', href: '/reports/tax-return', icon: Percent, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
