@@ -265,7 +265,7 @@ describe('5 — the sale draws from a named lot at a named location', () => {
         dueDate: utcDate('2026-05-15'),
         customerId: masters.customer.id,
         currency: 'MAD',
-        rateToUsd: '0.101522',
+        rateToUsd: '9.85',
         rateLocalPerUsd: '9.85',
         lines: [
           {
@@ -305,7 +305,7 @@ describe('5 — the sale draws from a named lot at a named location', () => {
           invoiceDate: utcDate('2026-05-11'),
           customerId: masters.customer.id,
           currency: 'MAD',
-          rateToUsd: '0.101522',
+          rateToUsd: '9.85',
           rateLocalPerUsd: '9.85',
           lines: [
             { batchId: lot229BatchId, warehouseId: warehouseA.id, quantity: '17000', unit: 'KG', unitPrice: '62.00' },
@@ -335,7 +335,7 @@ describe('6 — two partial payments, both kept', () => {
         customerId: masters.customer.id,
         currency: 'MAD',
         amount: '120000',
-        rateToUsd: '0.101522',
+        rateToUsd: '9.85',
         rateLocalPerUsd: '9.85',
         paymentMethod: 'CASH',
         cashBankAccountId: cash.id,
@@ -364,7 +364,7 @@ describe('6 — two partial payments, both kept', () => {
         customerId: masters.customer.id,
         currency: 'MAD',
         amount: '90000',
-        rateToUsd: '0.101522',
+        rateToUsd: '9.85',
         rateLocalPerUsd: '9.85',
         paymentMethod: 'CASH',
         cashBankAccountId: cash.id,

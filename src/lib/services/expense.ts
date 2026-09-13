@@ -32,6 +32,8 @@ export type ExpenseInput = {
   purchaseContractId?: string | null;
   vendorId?: string | null;
   agentId?: string | null;
+  /** Owed to this agent rather than paid now — commission, typically. */
+  payableToAgentId?: string | null;
   currency: string;
   amount: string | number;
   rateToUsd: string | number;
@@ -74,13 +76,37 @@ function computeExpenseAmounts(input: ExpenseInput & { localCurrency: string }) 
 }
 
 async function validateReferences(tx: Tx, input: ExpenseInput) {
-  if (!input.cashBankAccountId && !input.vendorId) {
-    throw new BusinessRuleError('Choose the account the expense was paid from, or the vendor it is owed to.');
-  }
-  if (input.cashBankAccountId && input.vendorId) {
+  /*
+   * Three ways to settle a cost, and exactly one of them.
+   *
+   * Paid now from cash or bank; owed to a supplier; or owed to an agent —
+   * commission, typically, which the client agrees per shipment and the agent
+   * collects later. The third is what makes an unpaid commission a real cost
+   * of the shipment on the day it is agreed without pretending any money has
+   * moved.
+   */
+  const settlements = [input.cashBankAccountId, input.vendorId, input.payableToAgentId].filter(Boolean);
+
+  if (settlements.length === 0) {
     throw new BusinessRuleError(
-      'An expense is either paid from cash/bank or owed to a vendor, not both. Record the vendor payment separately.',
+      'Say how this cost is settled: paid from an account, owed to a supplier, or owed to an agent.',
     );
+  }
+  if (settlements.length > 1) {
+    throw new BusinessRuleError(
+      'A cost is settled one way only — paid from cash/bank, owed to a supplier, or owed to an agent. Record the payment separately.',
+    );
+  }
+
+  if (input.payableToAgentId) {
+    const agent = await tx.agent.findFirst({
+      where: { id: input.payableToAgentId, companyId: input.companyId },
+      select: { id: true, agentName: true, status: true },
+    });
+    if (!agent) throw new NotFoundError('Agent');
+    if (agent.status !== 'ACTIVE') {
+      throw new BusinessRuleError(`${agent.agentName} is inactive, so nothing can be booked as owed to them.`);
+    }
   }
 
   const category = await tx.expenseCategory.findFirst({
@@ -214,6 +240,7 @@ export async function createExpense(input: ExpenseInput, userId: string) {
         shipmentId: input.shipmentId ?? null,
         purchaseContractId: input.purchaseContractId ?? null,
         vendorId: input.vendorId ?? null,
+        payableToAgentId: input.payableToAgentId ?? null,
         agentId: input.agentId ?? null,
         currency: amounts.currency,
         amount: amounts.amount,
@@ -276,6 +303,7 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
         shipmentId: input.shipmentId ?? null,
         purchaseContractId: input.purchaseContractId ?? null,
         vendorId: input.vendorId ?? null,
+        payableToAgentId: input.payableToAgentId ?? null,
         agentId: input.agentId ?? null,
         currency: amounts.currency,
         amount: amounts.amount,
@@ -324,7 +352,12 @@ export async function postExpense(params: { id: string; companyId: string; userI
 
     const expense = await tx.expense.findUniqueOrThrow({
       where: { id: params.id },
-      include: { expenseCategory: true, cashBankAccount: true, vendor: true },
+      include: {
+        expenseCategory: true,
+        cashBankAccount: true,
+        vendor: true,
+        payableToAgent: { select: { agentName: true } },
+      },
     });
     const company = await getCompanyContext(tx, params.companyId);
 
@@ -346,9 +379,22 @@ export async function postExpense(params: { id: string; companyId: string; userI
           description: `Paid from ${expense.cashBankAccount?.name ?? 'cash/bank'}`,
           shipmentId: expense.shipmentId,
         }
+      : expense.payableToAgent
+      ? {
+          // A cost of the shipment now; money out of the bank later, when the
+          // agent is actually paid and the settlement clears this balance.
+          accountKey: ACCOUNT_KEYS.AGENT_COMMISSION_PAYABLE,
+          direction: 'CREDIT' as const,
+          currency: expense.currency,
+          amount: grossAmount,
+          rateToUsd: expense.rateToUsd,
+          description: `Owed to ${expense.payableToAgent.agentName}`,
+          agentId: expense.payableToAgentId,
+          shipmentId: expense.shipmentId,
+        }
       : (() => {
           if (!expense.vendor) {
-            throw new BusinessRuleError('This expense has neither a payment account nor a supplier.');
+            throw new BusinessRuleError('This expense has no payment account, supplier or agent.');
           }
           const ap = resolveSubledgerLeg({
             partyCurrency: expense.vendor.primaryCurrency,

@@ -58,6 +58,8 @@ export type ReceiptInput = {
   paymentMethod?: PaymentMethod;
   /** Required for cash and bank transfers; optional until a cheque is deposited. */
   cashBankAccountId?: string | null;
+  /** The collection agent, when the customer paid him rather than the company. */
+  agentId?: string | null;
   cheque?: ChequeDetailsInput | null;
   shipmentId?: string | null;
   reference?: string | null;
@@ -229,6 +231,29 @@ async function validateSettlement(tx: Tx, input: ReceiptInput) {
     return method;
   }
 
+  /*
+   * An agent collection names an agent, not an account.
+   *
+   * The customer has paid; the company has not been paid. The money is with
+   * the agent until he hands it over, so there is no cash or bank account to
+   * choose — asking for one, and crediting it, would state money the company
+   * does not have and would leave nothing anywhere saying who is holding it.
+   */
+  if (method === 'AGENT_COLLECTION') {
+    if (!input.agentId) {
+      throw new BusinessRuleError('Choose the agent who collected this money.');
+    }
+    const agent = await tx.agent.findFirst({
+      where: { id: input.agentId, companyId: input.companyId },
+      select: { id: true, status: true, agentName: true },
+    });
+    if (!agent) throw new NotFoundError('Agent');
+    if (agent.status !== 'ACTIVE') {
+      throw new BusinessRuleError(`${agent.agentName} is inactive and cannot collect on the company's behalf.`);
+    }
+    return method;
+  }
+
   if (!input.cashBankAccountId) {
     throw new BusinessRuleError('Choose the cash or bank account the money was received into.');
   }
@@ -273,6 +298,7 @@ export async function createReceipt(input: ReceiptInput, userId: string) {
         rateLocalPerUsd: amounts.rateLocalPerUsd,
         amountLocal: amounts.amountLocal,
         cashBankAccountId: input.cashBankAccountId ?? null,
+        agentId: input.agentId ?? null,
         paymentMethod: method,
         shipmentId: input.shipmentId ?? null,
         reference: input.reference ?? null,
@@ -367,6 +393,7 @@ export async function updateReceipt(id: string, input: ReceiptInput, userId: str
         rateLocalPerUsd: amounts.rateLocalPerUsd,
         amountLocal: amounts.amountLocal,
         cashBankAccountId: input.cashBankAccountId ?? null,
+        agentId: input.agentId ?? null,
         paymentMethod: method,
         shipmentId: input.shipmentId ?? null,
         reference: input.reference ?? null,
@@ -404,11 +431,22 @@ export async function postReceipt(params: { id: string; companyId: string; userI
 
     const receipt = await tx.receipt.findUniqueOrThrow({
       where: { id: params.id },
-      include: { customer: true, cashBankAccount: true, allocations: { include: { salesInvoice: true } } },
+      include: {
+        customer: true,
+        cashBankAccount: true,
+        agent: { select: { agentName: true } },
+        allocations: { include: { salesInvoice: true } },
+      },
     });
 
-    if (receipt.paymentMethod !== 'CHEQUE' && !receipt.cashBankAccountId) {
+    // A cheque is held, not banked; an agent collection is held by the agent.
+    // Neither names an account, and neither should.
+    const needsAccount = receipt.paymentMethod !== 'CHEQUE' && receipt.paymentMethod !== 'AGENT_COLLECTION';
+    if (needsAccount && !receipt.cashBankAccountId) {
       throw new BusinessRuleError('This receipt has no cash or bank account and cannot be posted.');
+    }
+    if (receipt.paymentMethod === 'AGENT_COLLECTION' && !receipt.agentId) {
+      throw new BusinessRuleError('This receipt was collected by an agent, but no agent is named on it.');
     }
     const company = await getCompanyContext(tx, params.companyId);
 
@@ -506,7 +544,21 @@ export async function postReceipt(params: { id: string; companyId: string; userI
       localCurrency: company.localCurrency,
       rateLocalPerUsd: receipt.rateLocalPerUsd,
       lines: [
-        receipt.paymentMethod === 'CHEQUE'
+        receipt.paymentMethod === 'AGENT_COLLECTION'
+          ? {
+              // Not cash, not bank, and not a cheque the company is holding —
+              // the agent is holding it. An asset owed by him until he pays.
+              accountKey: ACCOUNT_KEYS.AGENT_CLEARING,
+              direction: 'DEBIT' as const,
+              currency: receipt.currency,
+              amount: receipt.amount,
+              rateToUsd: receipt.rateToUsd,
+              description: `Collected by ${receipt.agent?.agentName ?? 'agent'}, not yet handed over`,
+              customerId: receipt.customerId,
+              agentId: receipt.agentId,
+              shipmentId: receipt.shipmentId,
+            }
+          : receipt.paymentMethod === 'CHEQUE'
           ? {
               accountKey: ACCOUNT_KEYS.CHEQUES_ON_HAND,
               direction: 'DEBIT' as const,

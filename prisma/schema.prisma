@@ -82,6 +82,9 @@ enum PaymentMethod {
   CASH
   BANK_TRANSFER
   CHEQUE
+  /// The customer paid the agent, not the company. Nothing reaches cash or
+  /// bank until the agent hands the money over.
+  AGENT_COLLECTION
 }
 
 enum ChequeDirection {
@@ -140,6 +143,8 @@ enum SubledgerType {
   CUSTOMER
   VENDOR
   CASH_BANK
+  /// Money sitting with a collection agent, and commission owed to one.
+  AGENT
 }
 
 enum CashBankAccountType {
@@ -179,6 +184,8 @@ enum JournalSourceType {
   INVENTORY_ADJUSTMENT
   CREDIT_NOTE
   STOCK_COUNT
+  /// Money handed over by a collection agent, or commission paid to one.
+  AGENT_SETTLEMENT
   MANUAL
 }
 
@@ -285,6 +292,7 @@ model Company {
   taxReturns          TaxReturn[]
   ports               Port[]
   defaultForUsers     User[]                 @relation("UserDefaultCompany")
+  agentSettlements AgentSettlement[]
 
   @@index([status])
   @@map("companies")
@@ -345,6 +353,7 @@ model User {
   backupRuns          BackupRun[]                     @relation("BackupCreatedBy")
   taxReturnsCreated   TaxReturn[]                     @relation("TaxReturnCreatedBy")
   taxReturnsFiled     TaxReturn[]                     @relation("TaxReturnFiledBy")
+  agentSettlementsCreated AgentSettlement[] @relation("AgentSettlementCreatedBy")
 
   @@index([isActive])
   @@map("users")
@@ -597,13 +606,65 @@ model Agent {
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
-  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  cheques  Cheque[]
-  expenses Expense[]
+  company         Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  cheques         Cheque[]
+  expenses        Expense[]
+  journalLines    JournalLine[]
+  receipts        Receipt[]
+  settlements     AgentSettlement[]
+  /// Commission and other costs owed to this agent but not yet paid.
+  payableExpenses Expense[]         @relation("ExpensePayableToAgent")
 
   @@unique([companyId, agentCode])
   @@index([companyId, status])
   @@map("agents")
+}
+
+/// Money actually moving between the company and a collection agent.
+///
+/// COLLECTION is the agent handing over what he collected from customers, which
+/// clears the agent clearing account. COMMISSION is the company paying the
+/// agent what it owed him, which clears agent commission payable. They are the
+/// same document in opposite directions, and keeping them together is what
+/// makes one agent ledger possible.
+model AgentSettlement {
+  id                String            @id @default(cuid())
+  companyId         String
+  settlementNumber  String
+  agentId           String
+  settlementDate    DateTime          @db.Date
+  direction         AgentSettlementDirection
+  cashBankAccountId String
+  currency          String            @db.VarChar(3)
+  amount            Decimal           @db.Decimal(18, 4)
+  rateToUsd         Decimal           @default(1) @db.Decimal(18, 8)
+  amountUsd         Decimal           @db.Decimal(18, 4)
+  rateLocalPerUsd   Decimal           @default(1) @db.Decimal(18, 8)
+  amountLocal       Decimal           @db.Decimal(18, 4)
+  reference         String?
+  notes             String?
+  status            TransactionStatus @default(DRAFT)
+  postedAt          DateTime?
+  createdById       String
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  company         Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agent           Agent           @relation(fields: [agentId], references: [id])
+  cashBankAccount CashBankAccount @relation(fields: [cashBankAccountId], references: [id])
+  createdBy       User            @relation("AgentSettlementCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([companyId, settlementNumber])
+  @@index([companyId, agentId])
+  @@index([companyId, status])
+  @@map("agent_settlements")
+}
+
+enum AgentSettlementDirection {
+  /// The agent hands over money he collected from customers.
+  COLLECTION
+  /// The company pays the agent commission it owed him.
+  COMMISSION
 }
 
 /// A lot is the supplier's traceability unit. One purchase contract can carry
@@ -778,6 +839,7 @@ model CashBankAccount {
   cheques         Cheque[]
   journalLines    JournalLine[]
   reconciliations BankReconciliation[]
+  agentSettlements AgentSettlement[]
 
   @@unique([companyId, code])
   @@index([companyId, status])
@@ -1396,6 +1458,9 @@ model Receipt {
   amountLocal       Decimal           @db.Decimal(18, 4)
   cashBankAccountId String?
   paymentMethod     PaymentMethod     @default(BANK_TRANSFER)
+  /// Set when the customer paid an agent instead of the company. The money is
+  /// the agent's to hand over, so no cash or bank account is named.
+  agentId           String?
   shipmentId        String?
   reference         String?
   description       String?
@@ -1409,6 +1474,7 @@ model Receipt {
 
   company         Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   customer        Customer            @relation(fields: [customerId], references: [id])
+  agent           Agent?              @relation(fields: [agentId], references: [id])
   cashBankAccount CashBankAccount?    @relation(fields: [cashBankAccountId], references: [id])
   cheque          Cheque?
   shipment        Shipment?           @relation(fields: [shipmentId], references: [id])
@@ -1502,6 +1568,10 @@ model Expense {
   purchaseContractId     String?
   vendorId               String?
   agentId                String?
+  /// Owed to this agent rather than paid now or owed to a supplier. Commission
+  /// is the usual case: it is a real cost of the shipment from the day it is
+  /// agreed, and the agent collects it later.
+  payableToAgentId       String?
   currency               String            @db.VarChar(3)
   amount                 Decimal           @db.Decimal(18, 4)
   rateToUsd              Decimal           @db.Decimal(18, 8)
@@ -1539,6 +1609,7 @@ model Expense {
   purchaseContract PurchaseContract? @relation(fields: [purchaseContractId], references: [id])
   vendor           Vendor?           @relation(fields: [vendorId], references: [id])
   agent            Agent?            @relation(fields: [agentId], references: [id])
+  payableToAgent   Agent?            @relation("ExpensePayableToAgent", fields: [payableToAgentId], references: [id])
   cashBankAccount  CashBankAccount?  @relation(fields: [cashBankAccountId], references: [id])
   taxCode          TaxCode?          @relation(fields: [taxCodeId], references: [id])
   createdBy        User              @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
@@ -1707,6 +1778,8 @@ model JournalLine {
 
   customerId         String?
   vendorId           String?
+  /// The agent this posting belongs to, for the agent ledger.
+  agentId            String?
   cashBankAccountId  String?
   shipmentId         String?
   purchaseContractId String?
@@ -1721,6 +1794,7 @@ model JournalLine {
   account            Account             @relation(fields: [accountId], references: [id])
   customer           Customer?           @relation(fields: [customerId], references: [id])
   vendor             Vendor?             @relation(fields: [vendorId], references: [id])
+  agent              Agent?              @relation(fields: [agentId], references: [id])
   cashBankAccount    CashBankAccount?    @relation(fields: [cashBankAccountId], references: [id])
   shipment           Shipment?           @relation(fields: [shipmentId], references: [id])
   purchaseContract   PurchaseContract?   @relation(fields: [purchaseContractId], references: [id])

@@ -78,6 +78,31 @@ const STANDARD_ACCOUNTS: AccountSeed[] = [
     subledgerType: 'VENDOR',
   },
   {
+    /*
+     * Money a collection agent is holding on the company's behalf.
+     *
+     * A customer settles by handing the agent a cheque in the agent's own
+     * name. The debt is discharged and the company has not been paid — so the
+     * balance moves out of receivables and sits here, per agent, until the
+     * agent hands the money over. Recording it as bank would state cash the
+     * company does not have.
+     */
+    code: '1160',
+    name: 'Agent Clearing — Collections Held',
+    type: 'ASSET',
+    reportGroup: REPORT_GROUPS.CURRENT_ASSET,
+    systemKey: ACCOUNT_KEYS.AGENT_CLEARING,
+    subledgerType: 'AGENT',
+  },
+  {
+    code: '2060',
+    name: 'Agent Commission Payable',
+    type: 'LIABILITY',
+    reportGroup: REPORT_GROUPS.CURRENT_LIABILITY,
+    systemKey: ACCOUNT_KEYS.AGENT_COMMISSION_PAYABLE,
+    subledgerType: 'AGENT',
+  },
+  {
     code: '2050',
     name: 'Customer Advances',
     type: 'LIABILITY',

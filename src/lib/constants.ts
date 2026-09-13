@@ -808,6 +808,13 @@ export const ACCOUNT_KEYS = {
   VAT_OUTPUT: 'VAT_OUTPUT',
   /// Tax paid to suppliers and reclaimable from the authority.
   VAT_INPUT: 'VAT_INPUT',
+  /// Money customers have paid to a collection agent and the agent still
+  /// holds. An asset of the company: the customer is settled, the cash is not
+  /// yet in the bank, and somebody has to be able to say how much is with whom.
+  AGENT_CLEARING: 'AGENT_CLEARING',
+  /// Commission agreed with an agent but not yet paid. A real cost of the
+  /// shipment from the day it is agreed.
+  AGENT_COMMISSION_PAYABLE: 'AGENT_COMMISSION_PAYABLE',
 } as const;
 
 export type AccountKey = (typeof ACCOUNT_KEYS)[keyof typeof ACCOUNT_KEYS];
@@ -895,6 +902,8 @@ export const DOC_TYPES = {
   CREDIT_NOTE: 'CN',
   DEBIT_NOTE: 'DN',
   STOCK_COUNT: 'SC',
+  /// Money handed over by a collection agent, or commission paid to one.
+  AGENT_SETTLEMENT: 'AGS',
 } as const;
 
 export const DOC_TYPE_LABELS: Record<string, string> = {

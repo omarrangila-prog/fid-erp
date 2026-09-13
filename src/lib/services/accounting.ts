@@ -48,6 +48,8 @@ export type JournalLineInput = {
 
   customerId?: string | null;
   vendorId?: string | null;
+  /** For the agent ledger: whose clearing or commission balance this moves. */
+  agentId?: string | null;
   shipmentId?: string | null;
   purchaseContractId?: string | null;
   salesInvoiceId?: string | null;
@@ -284,6 +286,7 @@ export async function postJournalEntry(tx: Tx, params: PostJournalParams) {
             creditLocal: l.input.direction === 'CREDIT' ? l.amountLocal : new Decimal(0),
             customerId: l.input.customerId ?? null,
             vendorId: l.input.vendorId ?? null,
+            agentId: l.input.agentId ?? null,
             cashBankAccountId: l.input.cashBankAccountId ?? null,
             shipmentId: l.input.shipmentId ?? null,
             purchaseContractId: l.input.purchaseContractId ?? null,
