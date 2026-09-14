@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { purchaseContractSchema, salesInvoiceSchema } from '@/lib/validation/trading';
+import { receiptSchema } from '@/lib/validation/finance';
 import { fieldErrors } from '@/lib/validation/common';
 
 /**
@@ -102,6 +103,43 @@ describe('a blank sales invoice', () => {
       for (const pattern of DEVELOPER_SPEAK) {
         expect(message, `${field}: "${message}"`).not.toMatch(pattern);
       }
+    }
+  });
+});
+
+describe('an agent-collection receipt', () => {
+  const id = 'clh3k2j1i0h9g8f7e6d5c4b3a';
+
+  it('does not require a cash or bank account', () => {
+    const result = receiptSchema.safeParse({
+      receiptDate: '2026-03-20',
+      customerId: id,
+      currency: 'USD',
+      amount: '1000',
+      rateToUsd: '1',
+      rateLocalPerUsd: '3.6725',
+      paymentMethod: 'AGENT_COLLECTION',
+      agentId: id,
+      allocations: [],
+    });
+    expect(result.success, result.success ? '' : JSON.stringify(result.error.flatten())).toBe(true);
+  });
+
+  it('does require the agent who collected it', () => {
+    const result = receiptSchema.safeParse({
+      receiptDate: '2026-03-20',
+      customerId: id,
+      currency: 'USD',
+      amount: '1000',
+      rateToUsd: '1',
+      rateLocalPerUsd: '3.6725',
+      paymentMethod: 'AGENT_COLLECTION',
+      allocations: [],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = fieldErrors(result.error);
+      expect(messages.agentId).toMatch(/agent who collected/i);
     }
   });
 });

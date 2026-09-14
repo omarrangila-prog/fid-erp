@@ -42,8 +42,9 @@ export const vendorSchema = z.object({
 });
 
 export const coffeeItemSchema = z.object({
-  itemCode: requiredText('Item code', 40),
-  itemName: requiredText('Coffee name'),
+  /** Optional SKU. Issued as ITM-0001 when left blank, same as customers. */
+  itemCode: optionalText(40),
+  itemName: requiredText('Item name'),
   coffeeType: z.enum(['ARABICA', 'ROBUSTA', 'BLEND']),
   originCountry: requiredText('Origin country', 100),
   region: optionalText(120),

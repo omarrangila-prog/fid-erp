@@ -7,26 +7,25 @@ import { Plus, Trash2, PackageX } from 'lucide-react';
 import { focusFirstError } from '@/lib/focus-first-error';
 import { FormError } from '@/components/shared/form-error';
 import { Button } from '@/components/ui/button';
-import { Input, MoneyInput, Select, Textarea } from '@/components/ui/input';
+import { Input, MoneyInput, Select } from '@/components/ui/input';
 import { Field, FormSection } from '@/components/ui/field';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Combobox, type ComboOption } from '@/components/ui/combobox';
 import { Callout, EmptyState } from '@/components/ui/feedback';
 import { computeSalesLine } from '@/lib/calc/sales';
 import { dec, toMoney, sum } from '@/lib/money';
-import { formatMoney, formatQuantityKg } from '@/lib/format';
+import { formatMoney, formatQuantityKg, todayInputValue } from '@/lib/format';
+import { preferZeroRateTax } from '@/lib/tax-default';
 import { saveSalesInvoiceAction, postSalesInvoiceAction } from '@/server/actions/trading-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { AddCustomer } from '@/app/(app)/sales/add-customer';
-import { cn } from '@/lib/utils';
 
 /**
  * Sales invoice entry.
  *
- * A line names a batch *and* the warehouse it leaves, because stock is held per
- * location. The picker therefore offers batch-in-warehouse combinations with
- * their free quantity, and refuses to let a line exceed it — the server checks
- * the same thing again under a row lock when the invoice is posted.
+ * Warehouse is chosen once at the top. Every line then picks coffee and batch
+ * from that warehouse. Two empty rows are shown so a second coffee does not
+ * require an extra click; a blank second row is simply ignored on save.
  */
 
 export type StockOption = ComboOption & {
@@ -43,8 +42,6 @@ export type StockOption = ComboOption & {
 
 type LineState = {
   key: string;
-  /** Chosen first; narrows the coffee and the batch beneath it. */
-  warehouseId: string;
   itemId: string;
   stockKey: string | null;
   quantity: string;
@@ -55,6 +52,8 @@ type LineState = {
 
 export type SaleFormDefaults = {
   id?: string;
+  status?: string;
+  invoiceNumber?: string;
   invoiceDate?: string;
   customerId?: string;
   currency?: string;
@@ -65,17 +64,12 @@ export type SaleFormDefaults = {
   cashBankAccountId?: string;
   reference?: string;
   notes?: string;
-  /**
-   * A saved line knows its batch. The warehouse and coffee above it in the
-   * cascade are read back from the stock list on mount, so a caller does not
-   * have to supply what it can already work out.
-   */
-  lines?: Array<Omit<LineState, 'key' | 'warehouseId' | 'itemId'>>;
+  warehouseId?: string;
+  lines?: Array<Omit<LineState, 'key' | 'itemId'> & { itemId?: string; warehouseId?: string }>;
 };
 
 const newLine = (taxCodeId = ''): LineState => ({
   key: Math.random().toString(36).slice(2),
-  warehouseId: '',
   itemId: '',
   stockKey: null,
   quantity: '',
@@ -83,6 +77,11 @@ const newLine = (taxCodeId = ''): LineState => ({
   unitPrice: '',
   taxCodeId,
 });
+
+function atLeastTwo(lines: LineState[], taxCodeId: string): LineState[] {
+  if (lines.length >= 2) return lines;
+  return [...lines, ...Array.from({ length: 2 - lines.length }, () => newLine(taxCodeId))];
+}
 
 export function SaleForm({
   customers: initialCustomers,
@@ -96,82 +95,34 @@ export function SaleForm({
   taxLabel = 'VAT',
   taxEnabled = false,
   defaults,
+  canApprove = true,
+  canCreateCustomer = true,
 }: {
   customers: Array<ComboOption & { currency: string }>;
-  /** For a cash sale: where the money went. */
   cashAccounts: Array<{ id: string; name: string; code: string; currency: string }>;
   stock: StockOption[];
   localCurrency: string;
   defaultCurrency: string;
   defaultLocalRate: string;
-  /** The rate on file for each currency, so choosing one proposes its rate. */
   ratesByCurrency?: Record<string, string>;
   taxCodes?: Array<{ id: string; code: string; name: string; ratePct: string }>;
   taxLabel?: string;
   taxEnabled?: boolean;
   defaults?: SaleFormDefaults;
+  canApprove?: boolean;
+  canCreateCustomer?: boolean;
 }) {
-  const defaultTaxCodeId = taxCodes[0]?.id ?? '';
+  const defaultTaxCodeId = preferZeroRateTax(taxCodes)?.id ?? '';
+  const taxOptions = React.useMemo(
+    () => [...taxCodes].sort((a, b) => Number(a.ratePct) - Number(b.ratePct) || a.code.localeCompare(b.code)),
+    [taxCodes],
+  );
   const router = useRouter();
-  // Held locally so a customer added from this screen can be selected without
-  // a round trip that would throw away the half-filled invoice.
   const [customers, setCustomers] = React.useState(initialCustomers);
-
-  /*
-   * Two ways to choose stock, because the two companies work differently.
-   *
-   * Morocco sells out of a named store, so §11 asks for the warehouse first
-   * and then only what is in it. Dubai sells whole containers, where the row
-   * is the container and three dropdowns is two more than the job needs — and
-   * anybody who already knows the batch number wants to type it, not walk a
-   * cascade.
-   *
-   * So both, chosen per invoice. It starts on the cascade, which is the safer
-   * default: it cannot offer stock from the wrong warehouse.
-   */
-  const [pickMode, setPickMode] = React.useState<'warehouse' | 'search'>('warehouse');
   const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
   const [fieldIssues, setFieldIssues] = React.useState<Record<string, string>>({});
 
-  const [header, setHeader] = React.useState({
-    invoiceDate: defaults?.invoiceDate ?? new Date().toISOString().slice(0, 10),
-    customerId: defaults?.customerId ?? null,
-    currency: defaults?.currency ?? defaultCurrency,
-    rateToUsd: defaults?.rateToUsd ?? (defaultCurrency === 'USD' ? '1' : defaultLocalRate),
-    rateLocalPerUsd: defaults?.rateLocalPerUsd ?? defaultLocalRate,
-    dueDate: defaults?.dueDate ?? '',
-    paymentType: defaults?.paymentType ?? 'CREDIT',
-    cashBankAccountId: defaults?.cashBankAccountId ?? '',
-    reference: defaults?.reference ?? '',
-    notes: defaults?.notes ?? '',
-  });
-
-  // Built in a lazy initialiser so the random keys are generated once, on mount,
-  // rather than on every render.
-  const [lines, setLines] = React.useState<LineState[]>(() =>
-    defaults?.lines?.length
-      ? defaults.lines.map((l, i) => {
-          // A saved line knows its batch; the warehouse and coffee above it are
-          // read back from the stock list so the cascade shows what was chosen.
-          const option = stock.find((o) => o.value === l.stockKey);
-          return {
-            ...l,
-            key: `line-${i}`,
-            warehouseId: option?.warehouseId ?? '',
-            itemId: option?.itemId ?? '',
-          };
-        })
-      : [newLine(defaultTaxCodeId)],
-  );
-
-  /*
-   * The three lists, each narrowed by the one above it.
-   *
-   * Derived from the stock list rather than held separately: there is exactly
-   * one source of truth for what is where, and a warehouse with nothing in it
-   * should not be offered at all.
-   */
   const warehousesWithStock = React.useMemo(() => {
     const seen = new Map<string, { id: string; name: string }>();
     for (const option of stock) {
@@ -181,6 +132,51 @@ export function SaleForm({
     }
     return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [stock]);
+
+  const initialWarehouseId = (() => {
+    if (defaults?.warehouseId) return defaults.warehouseId;
+    const firstKey = defaults?.lines?.[0]?.stockKey;
+    const fromLine = firstKey ? stock.find((option) => option.value === firstKey)?.warehouseId : '';
+    if (fromLine) return fromLine;
+    if (warehousesWithStock.length === 1) return warehousesWithStock[0].id;
+    return '';
+  })();
+
+  const [header, setHeader] = React.useState({
+    invoiceNumber: defaults?.invoiceNumber ?? '',
+    invoiceDate: defaults?.invoiceDate ?? todayInputValue(),
+    customerId: defaults?.customerId ?? null,
+    currency: defaults?.currency ?? defaultCurrency,
+    rateToUsd: defaults?.rateToUsd ?? (defaultCurrency === 'USD' ? '1' : defaultLocalRate),
+    rateLocalPerUsd: defaults?.rateLocalPerUsd ?? defaultLocalRate,
+    dueDate: defaults?.dueDate ?? '',
+    paymentType: defaults?.paymentType ?? 'CREDIT',
+    cashBankAccountId: defaults?.cashBankAccountId ?? '',
+    reference: defaults?.reference ?? '',
+    notes: defaults?.notes ?? '',
+    warehouseId: initialWarehouseId,
+  });
+  const isPosted = defaults?.status === 'POSTED';
+
+  const [lines, setLines] = React.useState<LineState[]>(() =>
+    atLeastTwo(
+      defaults?.lines?.length
+        ? defaults.lines.map((line, index) => {
+            const option = stock.find((o) => o.value === line.stockKey);
+            return {
+              key: `line-${index}`,
+              itemId: option?.itemId ?? line.itemId ?? '',
+              stockKey: line.stockKey ?? null,
+              quantity: line.quantity,
+              unit: line.unit,
+              unitPrice: line.unitPrice,
+              taxCodeId: line.taxCodeId || defaultTaxCodeId,
+            };
+          })
+        : [newLine(defaultTaxCodeId)],
+      defaultTaxCodeId,
+    ),
+  );
 
   const itemsIn = React.useCallback(
     (warehouseId: string) => {
@@ -203,22 +199,26 @@ export function SaleForm({
   );
 
   function setLine(key: string, patch: Partial<LineState>) {
-    setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+    setLines((prev) => prev.map((line) => (line.key === key ? { ...line, ...patch } : line)));
+  }
+
+  function changeWarehouse(warehouseId: string) {
+    setHeader((prev) => ({ ...prev, warehouseId }));
+    setLines((prev) => prev.map((line) => ({ ...line, itemId: '', stockKey: null })));
   }
 
   const stockByKey = React.useMemo(() => new Map(stock.map((s) => [s.value, s])), [stock]);
 
-  /** Quantity already claimed by other lines drawing on the same stock. */
   function claimedElsewhere(stockKey: string, exceptKey: string) {
     return sum(
       lines
-        .filter((l) => l.stockKey === stockKey && l.key !== exceptKey && l.quantity)
-        .map((l) => {
+        .filter((line) => line.stockKey === stockKey && line.key !== exceptKey && line.quantity)
+        .map((line) => {
           const option = stockByKey.get(stockKey);
           try {
             return computeSalesLine({
-              quantity: l.quantity,
-              unit: l.unit,
+              quantity: line.quantity,
+              unit: line.unit,
               unitPrice: '0',
               currency: 'USD',
               rateToUsd: '1',
@@ -251,9 +251,6 @@ export function SaleForm({
     }
   });
 
-  // Tax is previewed here from the chosen code's rate, and computed again on
-  // the server from the code itself. Only the server's figure is ever saved —
-  // this one exists so the person typing sees what the customer will owe.
   const rateFor = React.useCallback(
     (taxCodeId: string) => dec(taxCodes.find((code) => code.id === taxCodeId)?.ratePct ?? 0),
     [taxCodes],
@@ -282,6 +279,8 @@ export function SaleForm({
   }, [computed, rateFor, taxEnabled]);
 
   const hasOverdraw = computed.some((c) => c.over);
+  const warehouseId = header.warehouseId;
+  const itemOptions = itemsIn(warehouseId).map((item) => ({ value: item.id, label: item.name }));
 
   function submit() {
     setError(null);
@@ -292,23 +291,24 @@ export function SaleForm({
       return;
     }
 
+    const { warehouseId: _warehouseId, ...headerFields } = header;
     const payload = {
-      ...header,
+      ...headerFields,
       dueDate: header.dueDate || undefined,
       paymentType: header.paymentType,
       cashBankAccountId: header.paymentType === 'CASH' ? header.cashBankAccountId : '',
       shipmentId: '',
       lines: lines
-        .filter((l) => l.stockKey)
-        .map((l) => {
-          const option = stockByKey.get(l.stockKey!)!;
+        .filter((line) => line.stockKey)
+        .map((line) => {
+          const option = stockByKey.get(line.stockKey!)!;
           return {
             batchId: option.batchId,
             warehouseId: option.warehouseId,
-            quantity: l.quantity,
-            unit: l.unit,
-            unitPrice: l.unitPrice,
-            taxCodeId: taxEnabled ? l.taxCodeId : '',
+            quantity: line.quantity,
+            unit: line.unit,
+            unitPrice: line.unitPrice,
+            taxCodeId: taxEnabled ? line.taxCodeId : '',
             notes: '',
           };
         }),
@@ -325,28 +325,23 @@ export function SaleForm({
         return;
       }
 
-      /*
-       * Saving an invoice posts it.
-       *
-       * It used to save a draft and stop there, so the stock stayed reserved,
-       * nothing reached the customer's ledger and the invoice was not an
-       * invoice — which read as "it did not save". Saving and posting are one
-       * action now, as they are on the purchase order.
-       *
-       * If posting fails the invoice still exists as a draft and the message
-       * says so, because the alternative is losing everything that was typed.
-       */
-      const posted = await postSalesInvoiceAction(result.id);
-      if (!posted.ok) {
-        setError(
-          `${posted.error} The invoice is saved as a draft — open it to post once that is resolved.`,
-        );
-        opening();
-        router.push(`/sales/${result.id}`);
-        return;
-      }
+      if (isPosted) {
+        toast.success('Invoice updated.');
+      } else if (canApprove) {
+        const posted = await postSalesInvoiceAction(result.id);
+        if (!posted.ok) {
+          setError(
+            `${posted.error} The invoice is saved as a draft — open it to post once that is resolved.`,
+          );
+          opening();
+          router.push(`/sales/${result.id}`);
+          return;
+        }
 
-      toast.success('Invoice posted.');
+        toast.success(defaults?.id ? 'Invoice updated and posted.' : 'Invoice posted.');
+      } else {
+        toast.success(defaults?.id ? 'Draft updated.' : 'Invoice saved as a draft.');
+      }
       opening();
       router.push(`/sales/${result.id}`);
     });
@@ -371,37 +366,40 @@ export function SaleForm({
       <Card>
         <CardHeader>
           <CardTitle>Invoice</CardTitle>
-          <CardDescription>Who is buying, in which currency, and on what terms.</CardDescription>
+          <CardDescription>Customer, dates, and the warehouse this invoice is issued from.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Field
             label="Customer"
             htmlFor="customerId"
             required
             error={fieldIssues.customerId}
+            className="lg:col-span-2"
             hint={
-              <AddCustomer
-                defaultCurrency={header.currency}
-                onCreated={(customer) => {
-                  setCustomers((prev) =>
-                    [
-                      ...prev,
-                      {
-                        value: customer.id,
-                        label: customer.name,
-                        hint: customer.currency,
-                        currency: customer.currency,
-                      },
-                    ].sort((a, b) => a.label.localeCompare(b.label)),
-                  );
-                  setHeader({
-                    ...header,
-                    customerId: customer.id,
-                    currency: customer.currency,
-                    rateToUsd: customer.currency === 'USD' ? '1' : header.rateToUsd,
-                  });
-                }}
-              />
+              canCreateCustomer ? (
+                <AddCustomer
+                  defaultCurrency={header.currency}
+                  onCreated={(customer) => {
+                    setCustomers((prev) =>
+                      [
+                        ...prev,
+                        {
+                          value: customer.id,
+                          label: customer.name,
+                          hint: customer.currency,
+                          currency: customer.currency,
+                        },
+                      ].sort((a, b) => a.label.localeCompare(b.label)),
+                    );
+                    setHeader({
+                      ...header,
+                      customerId: customer.id,
+                      currency: customer.currency,
+                      rateToUsd: customer.currency === 'USD' ? '1' : header.rateToUsd,
+                    });
+                  }}
+                />
+              ) : undefined
             }
           >
             <Combobox
@@ -422,6 +420,21 @@ export function SaleForm({
             />
           </Field>
 
+          <Field
+            label="Invoice number"
+            htmlFor="invoiceNumber"
+            error={fieldIssues.invoiceNumber}
+            hint="The next free number. You can type a different one — 5 or 005 both become the same document number."
+          >
+            <Input
+              id="invoiceNumber"
+              value={header.invoiceNumber}
+              onChange={(e) => setHeader({ ...header, invoiceNumber: e.target.value })}
+              placeholder="Next free number"
+              autoComplete="off"
+            />
+          </Field>
+
           <Field label="Invoice date" htmlFor="invoiceDate" error={fieldIssues.invoiceDate}>
             <Input
               id="invoiceDate"
@@ -431,11 +444,7 @@ export function SaleForm({
             />
           </Field>
 
-          <Field
-            label="Due date"
-            htmlFor="dueDate"
-            hint="For a cash sale, the same day as the invoice."
-          >
+          <Field label="Due date" htmlFor="dueDate" hint="For a cash sale, the same day as the invoice.">
             <Input
               id="dueDate"
               type="date"
@@ -443,6 +452,27 @@ export function SaleForm({
               min={header.invoiceDate || undefined}
               onChange={(e) => setHeader({ ...header, dueDate: e.target.value })}
             />
+          </Field>
+
+          <Field
+            label="Warehouse"
+            htmlFor="warehouseId"
+            required
+            hint="Every item on this invoice leaves this warehouse."
+            className="lg:col-span-2"
+          >
+            <Select
+              id="warehouseId"
+              value={header.warehouseId}
+              onChange={(e) => changeWarehouse(e.target.value)}
+            >
+              <option value="">Choose…</option>
+              {warehousesWithStock.map((warehouse) => (
+                <option key={warehouse.id} value={warehouse.id}>
+                  {warehouse.name}
+                </option>
+              ))}
+            </Select>
           </Field>
 
           <Field label="Currency" htmlFor="currency" hint="Defaults to the customer's ledger currency.">
@@ -453,8 +483,6 @@ export function SaleForm({
                 setHeader({
                   ...header,
                   currency: e.target.value,
-                  // Propose the rate on file rather than blanking it and
-                  // making somebody look it up.
                   rateToUsd: ratesByCurrency?.[e.target.value] ?? (e.target.value === 'USD' ? '1' : ''),
                 })
               }
@@ -479,221 +507,151 @@ export function SaleForm({
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <div>
-            <CardTitle>Coffee sold</CardTitle>
+            <CardTitle>Items</CardTitle>
             <CardDescription>
-              Each line draws from one batch in one warehouse. Choose the warehouse first, or search all stock if you
-              already know the batch. Availability is checked again when you post.
+              Two rows are ready. Leave the second blank if you are selling one coffee. Availability is checked again
+              when you post.
             </CardDescription>
           </div>
-          <div className="inline-flex rounded-lg border border-line-strong p-0.5" role="group" aria-label="How to choose stock">
-            <button
-              type="button"
-              onClick={() => setPickMode('warehouse')}
-              aria-pressed={pickMode === 'warehouse'}
-              className={cn(
-                'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                pickMode === 'warehouse' ? 'bg-forest-800 text-white' : 'text-ink-muted hover:text-ink',
-              )}
-            >
-              By warehouse
-            </button>
-            <button
-              type="button"
-              onClick={() => setPickMode('search')}
-              aria-pressed={pickMode === 'search'}
-              className={cn(
-                'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                pickMode === 'search' ? 'bg-forest-800 text-white' : 'text-ink-muted hover:text-ink',
-              )}
-            >
-              Search stock
-            </button>
-          </div>
-
-          <Button variant="outline" size="sm" onClick={() => setLines((prev) => [...prev, newLine(defaultTaxCodeId)])}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setLines((prev) => [...prev, newLine(defaultTaxCodeId)])}
+          >
             <Plus />
-            Add line
+            Add item
           </Button>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-5">
           {fieldIssues.lines ? <p className="text-xs font-medium text-red-600">{fieldIssues.lines}</p> : null}
 
-          {computed.map(({ line, option, math, over }, index) => (
-            <div
-              key={line.key}
-              className={`rounded-lg border p-4 ${over ? 'border-red-300 bg-red-50/40' : 'border-line bg-forest-50/30'}`}
-            >
-              <div className="mb-3 flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">
-                  Line {index + 1}
-                </span>
-                {lines.length > 1 ? (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Remove line ${index + 1}`}
-                    onClick={() => setLines((prev) => prev.filter((l) => l.key !== line.key))}
-                  >
-                    <Trash2 className="text-red-500" />
-                  </Button>
-                ) : null}
-              </div>
+          {computed.map(({ line, option, math, over }, index) => {
+            const available = option
+              ? formatQuantityKg(option.availableKg)
+              : line.itemId
+                ? '—'
+                : warehouseId
+                  ? '—'
+                  : '—';
+            return (
+              <div key={line.key} className="space-y-3 border-b border-line pb-5 last:border-b-0 last:pb-0">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">
+                    Item {index + 1}
+                  </span>
+                  {lines.length > 2 || (lines.length > 1 && !line.stockKey && !line.itemId) ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Remove item ${index + 1}`}
+                      onClick={() => setLines((prev) => (prev.length > 1 ? prev.filter((l) => l.key !== line.key) : prev))}
+                    >
+                      <Trash2 className="text-red-500" />
+                    </Button>
+                  ) : null}
+                </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {/*
-                  Warehouse, then coffee, then batch — §11, in that order.
-                  
-                  A single "batch and warehouse" picker worked but asked the
-                  question backwards: the user knows which store they are
-                  selling out of before they know which parcel. Choosing the
-                  warehouse first also narrows what follows to stock that is
-                  actually in that warehouse, so a batch sitting in the other
-                  store cannot be picked by mistake.
-                */}
-                {pickMode === 'search' ? (
-                  <Field label="Batch and warehouse" required className="lg:col-span-3">
+                <div className="grid gap-3 lg:grid-cols-12">
+                  <Field label="Item" required className="lg:col-span-4">
                     <Combobox
-                      options={stock}
-                      value={line.stockKey}
-                      onChange={(value) => {
-                        // Keep the cascade in step, so switching back shows
-                        // the warehouse and coffee this batch belongs to.
-                        const option = stock.find((o) => o.value === value);
-                        setLine(line.key, {
-                          stockKey: value,
-                          warehouseId: option?.warehouseId ?? '',
-                          itemId: option?.itemId ?? '',
-                        });
-                      }}
-                      placeholder="Search batch, lot, container or coffee…"
-                      emptyText="No stock matches"
+                      wrap
+                      className="min-h-11 text-base"
+                      options={itemOptions}
+                      value={line.itemId || null}
+                      onChange={(value) => setLine(line.key, { itemId: value ?? '', stockKey: null })}
+                      placeholder={warehouseId ? 'Choose coffee…' : 'Choose a warehouse first'}
+                      emptyText="No coffee in this warehouse"
+                      disabled={!warehouseId}
+                      aria-label={`Coffee on item ${index + 1}`}
                     />
                   </Field>
-                ) : (
-                <>
-                <Field label="Warehouse" required>
-                  <Select
-                    value={line.warehouseId}
-                    onChange={(e) =>
-                      // Changing the warehouse invalidates the coffee and the
-                      // batch beneath it, so both are cleared rather than left
-                      // pointing at stock that is somewhere else.
-                      setLine(line.key, { warehouseId: e.target.value, itemId: '', stockKey: null })
-                    }
-                  >
-                    <option value="">Choose…</option>
-                    {warehousesWithStock.map((w) => (
-                      <option key={w.id} value={w.id}>
-                        {w.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
 
-                <Field label="Coffee" required>
-                  <Select
-                    value={line.itemId}
-                    disabled={!line.warehouseId}
-                    onChange={(e) => setLine(line.key, { itemId: e.target.value, stockKey: null })}
-                  >
-                    <option value="">{line.warehouseId ? 'Choose…' : 'Choose a warehouse first'}</option>
-                    {itemsIn(line.warehouseId).map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-
-                <Field label="Batch" required hint="Only batches with stock in that warehouse.">
-                  <Select
-                    value={line.stockKey ?? ''}
-                    disabled={!line.itemId}
-                    onChange={(e) => setLine(line.key, { stockKey: e.target.value || null })}
-                  >
-                    <option value="">{line.itemId ? 'Choose…' : 'Choose the coffee first'}</option>
-                    {batchesIn(line.warehouseId, line.itemId).map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.batchNumber} — {Number(option.availableKg).toLocaleString()} KG available
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                </>
-                )}
-
-                <Field label="Quantity" required>
-                  <Input
-                    value={line.quantity}
-                    onChange={(e) => setLine(line.key, { quantity: e.target.value })}
-                    inputMode="decimal"
-                    className="tnum text-right"
-                    aria-invalid={over}
-                  />
-                </Field>
-
-                <Field label="Unit">
-                  <Select
-                    value={line.unit}
-                    onChange={(e) => setLine(line.key, { unit: e.target.value as LineState['unit'] })}
-                  >
-                    <option value="KG">KG</option>
-                    <option value="MT">MT</option>
-                    <option value="BAG">Bags</option>
-                  </Select>
-                </Field>
-
-                <Field label={`Price per ${line.unit === 'BAG' ? 'bag' : line.unit}`} required>
-                  <MoneyInput
-                    currency={header.currency}
-                    value={line.unitPrice}
-                    onChange={(e) => setLine(line.key, { unitPrice: e.target.value })}
-                  />
-                </Field>
-
-                {taxEnabled ? (
-                  <Field label={taxLabel}>
+                  <Field label="Batch" required className="lg:col-span-3">
                     <Select
-                      value={line.taxCodeId}
-                      onChange={(e) => setLine(line.key, { taxCodeId: e.target.value })}
-                      aria-label={`${taxLabel} code on this line`}
+                      value={line.stockKey ?? ''}
+                      disabled={!line.itemId}
+                      onChange={(e) => setLine(line.key, { stockKey: e.target.value || null })}
+                      aria-label={`Batch on item ${index + 1}`}
                     >
-                      {taxCodes.map((code) => (
-                        <option key={code.id} value={code.id}>
-                          {code.code} — {Number(code.ratePct).toFixed(2)}%
+                      <option value="">{line.itemId ? 'Choose…' : 'Choose the coffee first'}</option>
+                      {batchesIn(warehouseId, line.itemId).map((batch) => (
+                        <option key={batch.value} value={batch.value}>
+                          {batch.batchNumber} — {Number(batch.availableKg).toLocaleString()} KG available
                         </option>
                       ))}
                     </Select>
                   </Field>
-                ) : null}
 
-                {math ? (
-                  <Field label="Line value">
-                    <div className="tnum flex h-10 items-center justify-end rounded-lg border border-line bg-surface px-3 text-sm font-semibold">
-                      {formatMoney(math.lineTotal, header.currency)}
+                  <Field label="Available KG" className="lg:col-span-2">
+                    <div className="tnum flex h-10 items-center rounded-lg border border-line bg-forest-50 px-3 text-sm">
+                      {option ? formatQuantityKg(option.availableKg) : available}
                     </div>
                   </Field>
+
+                  <Field label="Quantity" required className="lg:col-span-3">
+                    <div className="flex gap-2">
+                      <Input
+                        value={line.quantity}
+                        onChange={(e) => setLine(line.key, { quantity: e.target.value })}
+                        inputMode="decimal"
+                        className="tnum text-right"
+                        aria-invalid={over}
+                        aria-label={`Quantity on item ${index + 1}`}
+                      />
+                      <Select
+                        value={line.unit}
+                        onChange={(e) => setLine(line.key, { unit: e.target.value as LineState['unit'] })}
+                        aria-label={`Unit on item ${index + 1}`}
+                        className="w-24"
+                      >
+                        <option value="KG">KG</option>
+                        <option value="MT">MT</option>
+                        <option value="BAG">Bags</option>
+                      </Select>
+                    </div>
+                  </Field>
+
+                  <Field label={`Rate / ${line.unit === 'BAG' ? 'bag' : line.unit}`} required className="lg:col-span-3">
+                    <MoneyInput
+                      currency={header.currency}
+                      value={line.unitPrice}
+                      onChange={(e) => setLine(line.key, { unitPrice: e.target.value })}
+                    />
+                  </Field>
+
+                  <Field label="Amount" className="lg:col-span-3">
+                    <div className="tnum flex h-10 items-center justify-end rounded-lg border border-line bg-surface px-3 text-sm font-semibold">
+                      {math ? formatMoney(math.lineTotal, header.currency) : '—'}
+                    </div>
+                  </Field>
+
+                  {taxEnabled ? (
+                    <Field label={taxLabel} className="lg:col-span-3">
+                      <Select
+                        value={line.taxCodeId}
+                        onChange={(e) => setLine(line.key, { taxCodeId: e.target.value })}
+                        aria-label={`${taxLabel} on item ${index + 1}`}
+                      >
+                        {taxOptions.map((code) => (
+                          <option key={code.id} value={code.id}>
+                            {code.code} — {Number(code.ratePct).toFixed(2)}%
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                  ) : null}
+                </div>
+
+                {over && option ? (
+                  <p className="text-xs text-red-700">
+                    <strong>Not enough stock.</strong> {option.warehouseName} holds{' '}
+                    {formatQuantityKg(option.availableKg)} of batch {option.batchNumber}
+                    {math ? ` — this line needs ${formatQuantityKg(math.quantityKg)}.` : '.'}
+                  </p>
                 ) : null}
               </div>
-
-              {option ? (
-                <p className={`mt-3 border-t pt-3 text-xs ${over ? 'border-red-200 text-red-700' : 'border-line text-ink-muted'}`}>
-                  {over ? (
-                    <>
-                      <strong>Not enough stock.</strong> {option.warehouseName} holds{' '}
-                      {formatQuantityKg(option.availableKg)} of batch {option.batchNumber} —
-                      {math ? ` this line needs ${formatQuantityKg(math.quantityKg)}.` : ' reduce the quantity.'}
-                    </>
-                  ) : (
-                    <>
-                      {option.warehouseName} · {formatQuantityKg(option.availableKg)} available
-                      {math ? ` · selling ${formatQuantityKg(math.quantityKg)}` : ''}
-                    </>
-                  )}
-                </p>
-              ) : null}
-            </div>
-          ))}
+            );
+          })}
         </CardContent>
       </Card>
 
@@ -703,7 +661,7 @@ export function SaleForm({
             title="Exchange rates"
             description={
               isForeign
-                ? `${header.currency} ${header.rateToUsd || '—'} per USD · ${localCurrency} ${header.rateLocalPerUsd || '—'} per USD. Taken from the rates on file; change them if this invoice was agreed at a different one.`
+                ? `${header.currency} ${header.rateToUsd || '—'} per USD · ${localCurrency} ${header.rateLocalPerUsd || '—'} per USD.`
                 : `${localCurrency} ${header.rateLocalPerUsd || '—'} per USD, used for this company's own reporting.`
             }
             collapsible
@@ -715,7 +673,7 @@ export function SaleForm({
                   label={`${header.currency} per 1 USD`}
                   htmlFor="rateToUsd"
                   error={fieldIssues.rateToUsd}
-                  hint="What this invoice was agreed at. Stored on the voucher and never recalculated later."
+                  hint="What this invoice was agreed at."
                 >
                   <Input
                     id="rateToUsd"
@@ -726,11 +684,7 @@ export function SaleForm({
                 </Field>
               ) : null}
 
-              <Field
-                label={`${localCurrency} per 1 USD`}
-                htmlFor="rateLocalPerUsd"
-                hint="Used for this company's own reporting, whatever the invoice currency."
-              >
+              <Field label={`${localCurrency} per 1 USD`} htmlFor="rateLocalPerUsd">
                 <Input
                   id="rateLocalPerUsd"
                   value={header.rateLocalPerUsd}
@@ -740,14 +694,6 @@ export function SaleForm({
               </Field>
             </div>
           </FormSection>
-
-          <Field label="Notes" htmlFor="notes">
-            <Textarea
-              id="notes"
-              value={header.notes}
-              onChange={(e) => setHeader({ ...header, notes: e.target.value })}
-            />
-          </Field>
         </CardContent>
       </Card>
 
@@ -788,11 +734,6 @@ export function SaleForm({
         </Card>
       ) : null}
 
-      {/*
-        Cash or credit, at the bottom of the invoice, where the client asked
-        for it. A cash sale settles as it is raised — posting it records the
-        receipt too — so it needs to know which account took the money.
-      */}
       <Card>
         <CardHeader>
           <CardTitle>How is this being paid?</CardTitle>
@@ -802,9 +743,13 @@ export function SaleForm({
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
-          <Field label="Payment type">
+          <Field
+            label="Payment type"
+            hint={isPosted ? 'Cash or credit cannot be changed on a posted invoice.' : undefined}
+          >
             <Select
               value={header.paymentType}
+              disabled={isPosted}
               onChange={(e) =>
                 setHeader({ ...header, paymentType: e.target.value as 'CASH' | 'CREDIT', cashBankAccountId: '' })
               }
@@ -818,11 +763,16 @@ export function SaleForm({
             <Field
               label="Paid into"
               required
-              hint={`Only ${header.currency} accounts are shown.`}
+              hint={
+                isPosted
+                  ? 'The cash account on a posted invoice cannot be changed.'
+                  : `Only ${header.currency} accounts are shown.`
+              }
               error={fieldIssues.cashBankAccountId}
             >
               <Select
                 value={header.cashBankAccountId}
+                disabled={isPosted}
                 onChange={(e) => setHeader({ ...header, cashBankAccountId: e.target.value })}
               >
                 <option value="">Choose an account…</option>
@@ -839,25 +789,35 @@ export function SaleForm({
         </CardContent>
       </Card>
 
-      <Callout tone="info" title="Saving posts this invoice">
-        The coffee comes out of the batch you chose, cost of goods sold is recorded at that batch&rsquo;s landed cost
-        and the customer is invoiced
-        {header.paymentType === 'CASH'
-          ? ', then the cash receipt settles it straight away — the money is in the account you named, dated today.'
-          : ', and it stays outstanding on their ledger until a payment is recorded against it.'}
-      </Callout>
+      {isPosted ? (
+        <Callout tone="info" title="Saving restates this posted invoice">
+          Quantity, rate, batch and dates can be corrected — including when the weighed KG differs from what was first
+          entered. The invoice total, warehouse stock, customer balance and the related ledger entries are recalculated
+          together.
+        </Callout>
+      ) : canApprove ? (
+        <Callout tone="info" title="Saving posts this invoice">
+          The coffee comes out of the batch you chose, cost of goods sold is recorded at that batch&rsquo;s landed cost
+          and the customer is invoiced
+          {header.paymentType === 'CASH'
+            ? ', then the cash receipt settles it straight away — the money is in the account you named, dated today.'
+            : ', and it stays outstanding on their ledger until a payment is recorded against it.'}
+        </Callout>
+      ) : (
+        <Callout tone="info" title="Saving keeps this invoice as a draft">
+          Stock is reserved. Someone who can approve sales will post it, which is when the coffee leaves the warehouse
+          and the customer is billed.
+        </Callout>
+      )}
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button variant="outline" onClick={() => router.back()} disabled={busy}>
           Cancel
         </Button>
-        {/* Not disabled on overdraw: submit() says which line is over, and a
-            dead button explains nothing. */}
         <Button onClick={submit} loading={busy}>
-          {busy ? 'Saving…' : defaults?.id ? 'Save changes' : 'Save invoice'}
+          {busy ? 'Saving…' : defaults?.id ? 'Save changes' : canApprove ? 'Save invoice' : 'Save as draft'}
         </Button>
       </div>
     </div>
   );
 }
-

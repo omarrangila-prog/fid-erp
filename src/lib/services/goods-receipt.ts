@@ -1,6 +1,6 @@
 import { transaction } from '@/lib/db';
 import type { Tx } from '@/lib/db';
-import { Decimal, dec, toMoney, toQuantity, sum } from '@/lib/money';
+import { Decimal, dec, toMoney, toQuantity, toUnitCost, sum } from '@/lib/money';
 import { ACCOUNT_KEYS } from '@/lib/constants';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
 import { nextReference } from '@/lib/services/numbering';
@@ -278,6 +278,7 @@ async function splitBatch(
       currency: string;
       unitCostUsd: Decimal;
       purchaseCostUsd: Decimal;
+      capitalisedCostUsd: Decimal;
       landedUnitCostUsd: Decimal;
     };
     quantityKg: Decimal;
@@ -312,15 +313,28 @@ async function splitBatch(
     ? dec(0)
     : params.quantityKg.dividedBy(dec(batch.orderedQuantityKg));
   const movedCostUsd = toMoney(dec(batch.purchaseCostUsd).times(share));
+  const movedCapitalisedUsd = toMoney(dec(batch.capitalisedCostUsd).times(share));
   const movedBags = Math.round(batch.orderedBags * Number(share));
+
+  const remainingOrdered = toQuantity(dec(batch.orderedQuantityKg).minus(params.quantityKg));
+  const remainingPurchase = toMoney(dec(batch.purchaseCostUsd).minus(movedCostUsd));
+  const remainingCapitalised = toMoney(dec(batch.capitalisedCostUsd).minus(movedCapitalisedUsd));
+  const remainingLandedUnit = remainingOrdered.greaterThan(0)
+    ? toUnitCost(remainingPurchase.plus(remainingCapitalised).dividedBy(remainingOrdered))
+    : new Decimal(0);
+  const newLandedUnit = params.quantityKg.greaterThan(0)
+    ? toUnitCost(movedCostUsd.plus(movedCapitalisedUsd).dividedBy(params.quantityKg))
+    : new Decimal(0);
 
   await tx.batch.update({
     where: { id: batch.id },
     data: {
-      orderedQuantityKg: toQuantity(dec(batch.orderedQuantityKg).minus(params.quantityKg)),
+      orderedQuantityKg: remainingOrdered,
       inTransitQuantityKg: toQuantity(dec(batch.inTransitQuantityKg).minus(params.quantityKg)),
       orderedBags: Math.max(0, batch.orderedBags - movedBags),
-      purchaseCostUsd: toMoney(dec(batch.purchaseCostUsd).minus(movedCostUsd)),
+      purchaseCostUsd: remainingPurchase,
+      capitalisedCostUsd: remainingCapitalised,
+      landedUnitCostUsd: remainingLandedUnit,
     },
   });
 
@@ -343,7 +357,8 @@ async function splitBatch(
       currency: batch.currency,
       unitCostUsd: batch.unitCostUsd,
       purchaseCostUsd: movedCostUsd,
-      landedUnitCostUsd: batch.landedUnitCostUsd,
+      capitalisedCostUsd: movedCapitalisedUsd,
+      landedUnitCostUsd: newLandedUnit,
     },
   });
 }
@@ -354,6 +369,7 @@ async function resolveLines(tx: Tx, input: GoodsReceiptInput): Promise<ResolvedG
   }
 
   const resolved: ResolvedGrnLine[] = [];
+  const claimedKg = new Map<string, Decimal>();
 
   for (let i = 0; i < input.lines.length; i += 1) {
     const line = input.lines[i];
@@ -387,12 +403,15 @@ async function resolveLines(tx: Tx, input: GoodsReceiptInput): Promise<ResolvedG
       throw new BusinessRuleError(`Line ${i + 1}: received quantity must be greater than zero.`);
     }
 
-    const outstanding = toQuantity(dec(batch.orderedQuantityKg).minus(dec(batch.receivedQuantityKg)));
+    const outstanding = toQuantity(
+      dec(batch.orderedQuantityKg).minus(dec(batch.receivedQuantityKg)).minus(claimedKg.get(batch.id) ?? 0),
+    );
     if (quantityKg.greaterThan(outstanding)) {
       throw new BusinessRuleError(
         `Batch ${batch.batchNumber}: only ${outstanding.toFixed(3)} KG is still to be received, but ${quantityKg.toFixed(3)} KG was entered.`,
       );
     }
+    claimedKg.set(batch.id, (claimedKg.get(batch.id) ?? new Decimal(0)).plus(quantityKg));
 
     resolved.push({
       lineNumber: i + 1,
@@ -519,14 +538,37 @@ export async function postGoodsReceipt(params: { id: string; companyId: string; 
     const company = await getCompanyContext(tx, params.companyId);
     let receivedValueUsd = new Decimal(0);
 
+    const batchIds = [...new Set(receipt.lines.map((line) => line.batchId))].sort();
+    for (const batchId of batchIds) {
+      await lockBatch(tx, params.companyId, batchId);
+    }
+
+    const claimedKg = new Map<string, Decimal>();
+
     for (const line of receipt.lines) {
-      const batch = line.batch;
-      const outstanding = toQuantity(dec(batch.orderedQuantityKg).minus(dec(batch.receivedQuantityKg)));
+      const batch = await tx.batch.findUniqueOrThrow({
+        where: { id: line.batchId },
+        select: {
+          id: true,
+          batchNumber: true,
+          orderedQuantityKg: true,
+          receivedQuantityKg: true,
+          landedUnitCostUsd: true,
+          unitCostUsd: true,
+          warehouseId: true,
+        },
+      });
+      const outstanding = toQuantity(
+        dec(batch.orderedQuantityKg)
+          .minus(dec(batch.receivedQuantityKg))
+          .minus(claimedKg.get(line.batchId) ?? 0),
+      );
       if (dec(line.quantityKg).greaterThan(outstanding)) {
         throw new BusinessRuleError(
           `Batch ${batch.batchNumber} now has only ${outstanding.toFixed(3)} KG outstanding, which is less than the ${dec(line.quantityKg).toFixed(3)} KG on this receipt.`,
         );
       }
+      claimedKg.set(line.batchId, (claimedKg.get(line.batchId) ?? new Decimal(0)).plus(line.quantityKg));
 
       const unitCostUsd = dec(batch.landedUnitCostUsd).greaterThan(0)
         ? dec(batch.landedUnitCostUsd)

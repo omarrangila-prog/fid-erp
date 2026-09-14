@@ -145,6 +145,8 @@ export const salesInvoiceSchema = z.object({
    */
   paymentType: z.enum(['CASH', 'CREDIT']).default('CREDIT'),
   cashBankAccountId: optionalCuid,
+  /** Blank issues the next free number. Typed values stay as entered. */
+  invoiceNumber: optionalText(60),
   reference: optionalText(60),
   notes: optionalText(1000),
   lines: z.array(salesLineSchema).min(1, 'Add at least one coffee line.'),
@@ -249,6 +251,17 @@ export const documentStatusSchema = z.object({
     'COMPLETED',
   ]),
   notes: optionalText(600),
+});
+
+export const shipmentContainersSchema = z.object({
+  lines: z
+    .array(
+      z.object({
+        batchId: cuid,
+        containerNumber: optionalText(40),
+      }),
+    )
+    .min(1, 'Add at least one container line.'),
 });
 
 export const reversalSchema = z.object({

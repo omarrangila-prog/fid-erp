@@ -83,11 +83,25 @@ export async function getInvoiceOutstanding(
     FROM receipt_allocations ra
     JOIN receipts r ON r."id" = ra."receiptId"
     WHERE ra."salesInvoiceId" = ${invoiceId} AND r."status" = 'POSTED'
+      AND NOT EXISTS (
+        SELECT 1 FROM cheques ch
+        WHERE ch."receiptId" = r."id" AND ch.status IN ('BOUNCED', 'CANCELLED')
+      )
   `;
 
+  const credits = await tx.$queryRaw<Array<{ amount: string | null; amountUsd: string | null }>>`
+    SELECT COALESCE(SUM(cn."totalAmount"), 0)::text AS amount,
+           COALESCE(SUM(cn."totalAmountUsd"), 0)::text AS "amountUsd"
+    FROM credit_notes cn
+    WHERE cn."salesInvoiceId" = ${invoiceId} AND cn."status" = 'POSTED'
+  `;
+
+  const settled = dec(rows[0]?.amount ?? 0).plus(credits[0]?.amount ?? 0);
+  const settledUsd = dec(rows[0]?.amountUsd ?? 0).plus(credits[0]?.amountUsd ?? 0);
+
   return {
-    amount: toMoney(dec(invoice.totalAmount).minus(dec(rows[0]?.amount ?? 0))),
-    amountUsd: toMoney(dec(invoice.totalAmountUsd).minus(dec(rows[0]?.amountUsd ?? 0))),
+    amount: toMoney(dec(invoice.totalAmount).minus(settled)),
+    amountUsd: toMoney(dec(invoice.totalAmountUsd).minus(settledUsd)),
     currency: invoice.currency,
   };
 }
@@ -163,16 +177,18 @@ export function computeReceiptAmounts(input: {
   let rateToUsd: Decimal;
   let amountUsd: Decimal;
 
+  const statedUsd =
+    input.usdEquivalent === undefined || input.usdEquivalent === null || input.usdEquivalent === ''
+      ? null
+      : toMoney(input.usdEquivalent);
+
   if (currency === 'USD') {
     rateToUsd = new Decimal(1);
     amountUsd = amount;
-  } else if (input.usdEquivalent !== undefined && input.usdEquivalent !== null && input.usdEquivalent !== '') {
+  } else if (statedUsd && statedUsd.greaterThan(0)) {
     // The user stated the USD value for this payment; derive the rate from it
     // so the voucher records exactly what was agreed.
-    amountUsd = toMoney(input.usdEquivalent);
-    if (amountUsd.lessThanOrEqualTo(0)) {
-      throw new BusinessRuleError('The USD equivalent must be greater than zero.');
-    }
+    amountUsd = statedUsd;
     rateToUsd = dec(amount.dividedBy(amountUsd)).toDecimalPlaces(8, Decimal.ROUND_HALF_UP);
   } else {
     rateToUsd = dec(input.rateToUsd ?? 0);
@@ -261,6 +277,108 @@ async function validateSettlement(tx: Tx, input: ReceiptInput) {
   return method;
 }
 
+async function lockSalesInvoices(tx: Tx, invoiceIds: string[]) {
+  for (const id of [...new Set(invoiceIds)].sort()) {
+    await tx.$queryRaw`SELECT "id" FROM sales_invoices WHERE "id" = ${id} FOR UPDATE`;
+  }
+}
+
+async function cancelLinkedCheque(tx: Tx, params: { receiptId?: string; paymentId?: string; userId: string }) {
+  const existing = await tx.cheque.findFirst({
+    where: params.receiptId ? { receiptId: params.receiptId } : { paymentId: params.paymentId },
+  });
+  if (!existing) return;
+  if (existing.status === 'CLEARED' || existing.status === 'CANCELLED') return;
+  if (existing.status !== 'RECEIVED' && existing.status !== 'DEPOSITED' && existing.status !== 'BOUNCED') return;
+
+  await tx.cheque.update({
+    where: { id: existing.id },
+    data: { status: 'CANCELLED' },
+  });
+  await tx.chequeStatusHistory.create({
+    data: {
+      chequeId: existing.id,
+      fromStatus: existing.status,
+      toStatus: 'CANCELLED',
+      changedById: params.userId,
+      notes: 'Cancelled with the reversed voucher — the journal already unwound Cheques on Hand.',
+    },
+  });
+}
+
+async function syncDraftCheque(
+  tx: Tx,
+  params: {
+    companyId: string;
+    receiptId: string;
+    customerId: string;
+    userId: string;
+    method: PaymentMethod;
+    cheque: ChequeDetailsInput | null | undefined;
+    amounts: {
+      amount: Decimal;
+      currency: string;
+      rateToUsd: Decimal;
+      amountUsd: Decimal;
+      rateLocalPerUsd: Decimal;
+      amountLocal: Decimal;
+    };
+    cashBankAccountId: string | null;
+    receiptDate: Date;
+  },
+) {
+  const existing = await tx.cheque.findFirst({ where: { receiptId: params.receiptId } });
+
+  if (params.method !== 'CHEQUE') {
+    if (existing && existing.status === 'RECEIVED') {
+      await tx.cheque.delete({ where: { id: existing.id } });
+    }
+    return;
+  }
+
+  if (!params.cheque) return;
+
+  const data = {
+    chequeNumber: params.cheque.chequeNumber.trim(),
+    chequeDate: params.cheque.chequeDate,
+    bankName: params.cheque.bankName.trim(),
+    amount: params.amounts.amount,
+    currency: params.amounts.currency,
+    rateToUsd: params.amounts.rateToUsd,
+    amountUsd: params.amounts.amountUsd,
+    rateLocalPerUsd: params.amounts.rateLocalPerUsd,
+    amountLocal: params.amounts.amountLocal,
+    beneficiary: params.cheque.beneficiary ?? null,
+    customerId: params.customerId,
+    agentId: params.cheque.agentId ?? null,
+    cashBankAccountId: params.cashBankAccountId,
+    receivedDate: params.cheque.receivedDate ?? params.receiptDate,
+    notes: params.cheque.notes ?? null,
+  };
+
+  if (existing) {
+    if (existing.status !== 'RECEIVED') {
+      throw new BusinessRuleError('This receipt already has a cheque that has moved on from received, so the instrument cannot be rewritten.');
+    }
+    await tx.cheque.update({ where: { id: existing.id }, data });
+    return;
+  }
+
+  await tx.cheque.create({
+    data: {
+      companyId: params.companyId,
+      direction: 'INBOUND',
+      receiptId: params.receiptId,
+      status: 'RECEIVED',
+      createdById: params.userId,
+      statusHistory: {
+        create: { fromStatus: null, toStatus: 'RECEIVED', changedById: params.userId, notes: 'Cheque received' },
+      },
+      ...data,
+    },
+  });
+}
+
 export async function createReceipt(input: ReceiptInput, userId: string) {
   return transaction((tx) => createReceiptIn(tx, input, userId));
 }
@@ -318,35 +436,17 @@ export async function createReceiptIn(tx: Tx, input: ReceiptInput, userId: strin
     include: { allocations: true },
   });
 
-  if (method === 'CHEQUE' && input.cheque) {
-    await tx.cheque.create({
-      data: {
-        companyId: input.companyId,
-        chequeNumber: input.cheque.chequeNumber.trim(),
-        direction: 'INBOUND',
-        chequeDate: input.cheque.chequeDate,
-        bankName: input.cheque.bankName.trim(),
-        amount: amounts.amount,
-        currency: amounts.currency,
-        rateToUsd: amounts.rateToUsd,
-        amountUsd: amounts.amountUsd,
-        rateLocalPerUsd: amounts.rateLocalPerUsd,
-        amountLocal: amounts.amountLocal,
-        beneficiary: input.cheque.beneficiary ?? null,
-        customerId: input.customerId,
-        agentId: input.cheque.agentId ?? null,
-        receiptId: receipt.id,
-        cashBankAccountId: input.cashBankAccountId ?? null,
-        receivedDate: input.cheque.receivedDate ?? input.receiptDate,
-        status: 'RECEIVED',
-        notes: input.cheque.notes ?? null,
-        createdById: userId,
-        statusHistory: {
-          create: { fromStatus: null, toStatus: 'RECEIVED', changedById: userId, notes: 'Cheque received' },
-        },
-      },
-    });
-  }
+  await syncDraftCheque(tx, {
+    companyId: input.companyId,
+    receiptId: receipt.id,
+    customerId: input.customerId,
+    userId,
+    method,
+    cheque: input.cheque,
+    amounts,
+    cashBankAccountId: input.cashBankAccountId ?? null,
+    receiptDate: input.receiptDate,
+  });
 
   await writeAudit(tx, {
     companyId: input.companyId,
@@ -410,6 +510,18 @@ export async function updateReceipt(id: string, input: ReceiptInput, userId: str
       include: { allocations: true },
     });
 
+    await syncDraftCheque(tx, {
+      companyId: input.companyId,
+      receiptId: id,
+      customerId: input.customerId,
+      userId,
+      method,
+      cheque: input.cheque,
+      amounts,
+      cashBankAccountId: input.cashBankAccountId ?? null,
+      receiptDate: input.receiptDate,
+    });
+
     await writeAudit(tx, {
       companyId: input.companyId,
       userId,
@@ -460,6 +572,8 @@ export async function postReceiptIn(tx: Tx, params: { id: string; companyId: str
     throw new BusinessRuleError('This receipt was collected by an agent, but no agent is named on it.');
   }
   const company = await getCompanyContext(tx, params.companyId);
+
+  await lockSalesInvoices(tx, receipt.allocations.map((alloc) => alloc.salesInvoiceId));
 
   // Re-validate allocations under the lock: an invoice may have been settled
   // by another receipt while this one sat in draft.
@@ -619,45 +733,50 @@ export async function postReceiptIn(tx: Tx, params: { id: string; companyId: str
 }
 
 export async function reverseReceipt(params: { id: string; companyId: string; userId: string; reason: string }) {
-  return transaction(async (tx) => {
-    const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>`
-      SELECT "id", "status"::text FROM receipts
-      WHERE "id" = ${params.id} AND "companyId" = ${params.companyId}
-      FOR UPDATE
-    `;
-    if (locked.length === 0) throw new NotFoundError('Receipt');
-    if (locked[0].status !== 'POSTED') throw new BusinessRuleError('Only a posted receipt can be reversed.');
+  return transaction((tx) => reverseReceiptIn(tx, params));
+}
 
-    const reversalDate = new Date();
+export async function reverseReceiptIn(
+  tx: Tx,
+  params: { id: string; companyId: string; userId: string; reason: string },
+) {
+  const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>`
+    SELECT "id", "status"::text FROM receipts
+    WHERE "id" = ${params.id} AND "companyId" = ${params.companyId}
+    FOR UPDATE
+  `;
+  if (locked.length === 0) throw new NotFoundError('Receipt');
+  if (locked[0].status !== 'POSTED') throw new BusinessRuleError('Only a posted receipt can be reversed.');
 
-    await reverseJournalEntry(tx, {
-      companyId: params.companyId,
-      sourceType: 'RECEIPT',
-      sourceId: params.id,
-      createdById: params.userId,
-      entryDate: reversalDate,
-      reason: params.reason,
-    });
+  const reversalDate = new Date();
 
-    // Allocations follow the receipt's status, so the invoices they settled
-    // become outstanding again automatically.
-    const reversed = await tx.receipt.update({
-      where: { id: params.id },
-      data: { status: 'REVERSED', reversedAt: reversalDate, reversalReason: params.reason },
-    });
-
-    await writeAudit(tx, {
-      companyId: params.companyId,
-      userId: params.userId,
-      action: 'RECEIPT_REVERSED',
-      entityType: 'Receipt',
-      entityId: params.id,
-      before: { status: 'POSTED' },
-      after: { status: 'REVERSED', reason: params.reason },
-    });
-
-    return reversed;
+  await reverseJournalEntry(tx, {
+    companyId: params.companyId,
+    sourceType: 'RECEIPT',
+    sourceId: params.id,
+    createdById: params.userId,
+    entryDate: reversalDate,
+    reason: params.reason,
   });
+
+  await cancelLinkedCheque(tx, { receiptId: params.id, userId: params.userId });
+
+  const reversed = await tx.receipt.update({
+    where: { id: params.id },
+    data: { status: 'REVERSED', reversedAt: reversalDate, reversalReason: params.reason },
+  });
+
+  await writeAudit(tx, {
+    companyId: params.companyId,
+    userId: params.userId,
+    action: 'RECEIPT_REVERSED',
+    entityType: 'Receipt',
+    entityId: params.id,
+    before: { status: 'POSTED' },
+    after: { status: 'REVERSED', reason: params.reason },
+  });
+
+  return reversed;
 }
 
 export async function deleteDraftReceipt(params: { id: string; companyId: string; userId: string }) {

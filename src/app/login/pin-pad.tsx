@@ -78,13 +78,13 @@ export function PinPad({ accounts }: { accounts: PinAccount[] }) {
   // A physical keyboard should work as well as the on-screen pad.
   React.useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (!selected) return;
+      if (!selected || event.repeat) return;
       if (/^[0-9]$/.test(event.key)) press(event.key);
       else if (event.key === 'Backspace') backspace();
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  });
+  }, [selected, digits, pending]);
 
   if (!selected) {
     return (

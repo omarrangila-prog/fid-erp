@@ -12,7 +12,7 @@ import {
 import { prisma, transaction } from '@/lib/db';
 import { getShipmentSettlement } from '@/lib/services/shipment';
 import { getShipmentProfitabilityById } from '@/lib/services/profitability';
-import { getJobCostSummary } from '@/lib/services/landed-cost';
+import { getJobCostSummary, getShipmentCostSheet } from '@/lib/services/landed-cost';
 import { getBatchStock } from '@/lib/services/stock';
 import { formatMoney, formatQuantityKg, formatDate, formatDateTime, formatPercent, toDateInputValue } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
@@ -20,7 +20,9 @@ import { Metric, MetricGrid, DetailRow } from '@/components/shared/stat-card';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { StatusBadge, Badge } from '@/components/ui/badge';
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
 import { ShipmentWorkflow } from '@/app/(app)/shipments/[id]/shipment-workflow';
+import { Plus } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,10 +65,11 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
 
   if (!shipment) notFound();
 
-  const [settlement, profit, jobCost, batches, shippingLines, customers, ports] = await Promise.all([
+  const [settlement, profit, jobCost, costSheet, batches, shippingLines, customers, ports] = await Promise.all([
     getShipmentSettlement(prisma as never, companyId, shipment.id),
     showProfit ? getShipmentProfitabilityById(companyId, shipment.id) : Promise.resolve(null),
     showCost ? transaction((tx) => getJobCostSummary(tx, companyId, shipment.id)) : Promise.resolve(null),
+    showCost ? getShipmentCostSheet(companyId, shipment.id) : Promise.resolve(null),
     getBatchStock({ companyId, shipmentId: shipment.id, includeEmpty: true }),
     prisma.shippingLine.findMany({
       where: { companyId, status: 'ACTIVE' },
@@ -103,7 +106,16 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
           </>
         }
         actions={
-          <ShipmentWorkflow
+          <>
+            {can(user, PERMISSIONS.EXPENSES_CREATE) ? (
+              <Button asChild variant="outline">
+                <Link href={`/finance/expenses/new?job=${shipment.id}`}>
+                  <Plus />
+                  Add shipment expense
+                </Link>
+              </Button>
+            ) : null}
+            <ShipmentWorkflow
             shipmentId={shipment.id}
             status={shipment.status}
             documentStatus={shipment.documentStatus}
@@ -130,6 +142,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
               containers: String(shipment.containers),
             }}
           />
+          </>
         }
       />
 
@@ -149,6 +162,77 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
           tone={settlement.outstandingUsd.greaterThan(0) ? 'negative' : 'positive'}
         />
       </MetricGrid>
+
+      {showCost && costSheet ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Shipment costing</CardTitle>
+            <CardDescription>
+              Purchase plus every posted shipment expense on this consignment. General company expenses do not appear here.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <MetricGrid className="lg:grid-cols-5">
+              <Metric label="Purchase" value={formatMoney(costSheet.goodsUsd, 'USD')} hint="Goods and contract freight" />
+              <Metric label="Shipment expenses" value={formatMoney(costSheet.expenseUsd, 'USD')} />
+              <Metric label="Total shipment cost" value={formatMoney(costSheet.totalShipmentCostUsd, 'USD')} />
+              <Metric
+                label="Received"
+                value={formatQuantityKg(costSheet.receivedKg)}
+                hint={costSheet.receivedKg.greaterThan(0) ? undefined : `Ordered ${formatQuantityKg(costSheet.orderedKg)}`}
+              />
+              <Metric label="Cost / KG" value={formatMoney(costSheet.costPerKgUsd, 'USD')} />
+              <Metric label="Revenue" value={formatMoney(costSheet.revenueUsd, 'USD')} />
+              <Metric label="COGS" value={formatMoney(costSheet.cogsUsd, 'USD')} tone="muted" />
+              <Metric
+                label="Gross profit"
+                value={formatMoney(costSheet.grossProfitUsd, 'USD')}
+                tone={costSheet.grossProfitUsd.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
+                hint={formatPercent(costSheet.profitPct)}
+              />
+              <Metric label="Profit / KG" value={formatMoney(costSheet.profitPerKgUsd, 'USD')} />
+            </MetricGrid>
+
+            {costSheet.lines.length > 0 ? (
+              <TableWrap>
+                <Table>
+                  <THead>
+                    <TR className="hover:bg-transparent">
+                      <TH>Category</TH>
+                      <TH>Voucher</TH>
+                      <TH>Treatment</TH>
+                      <TH numeric>Amount</TH>
+                      <TH numeric>USD</TH>
+                    </TR>
+                  </THead>
+                  <TBody>
+                    {costSheet.lines.map((line) => (
+                      <TR key={line.expenseId}>
+                        <TD className="font-medium">{line.category}</TD>
+                        <TD>
+                          <Link href={`/finance/expenses/${line.expenseId}`} className="text-forest-800 hover:text-gold-700">
+                            {line.expenseNumber}
+                          </Link>
+                        </TD>
+                        <TD>
+                          <Badge tone={line.capitalised ? 'info' : 'neutral'}>
+                            {line.capitalised ? 'In stock cost' : 'P&L'}
+                          </Badge>
+                          <span className="ml-2 text-xs text-ink-subtle">{line.paid ? 'Paid' : 'Unpaid'}</span>
+                        </TD>
+                        <TD numeric>{formatMoney(line.amount, line.currency)}</TD>
+                        <TD numeric>{formatMoney(line.amountUsd, 'USD')}</TD>
+                      </TR>
+                    ))}
+                  </TBody>
+                </Table>
+              </TableWrap>
+            ) : (
+              <p className="text-xs text-ink-subtle">No shipment expenses posted yet. Use Add shipment expense for freight, duty, clearing, transport and commission.</p>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {showProfit && profit ? (
         <Card>

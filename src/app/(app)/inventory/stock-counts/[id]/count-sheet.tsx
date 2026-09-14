@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Callout } from '@/components/ui/feedback';
 import { ConfirmDialog } from '@/components/ui/confirm';
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table';
-import { dec, toMoney, sum, Decimal } from '@/lib/money';
+import { tryDec, toMoney, sum, Decimal } from '@/lib/money';
 import { formatQuantityKg, formatMoney } from '@/lib/format';
 import { recordStockCountAction, postStockCountAction } from '@/server/actions/compliance-actions';
 
@@ -70,7 +70,7 @@ export function CountSheet({
   }
 
   const rows = lines.map((line) => {
-    const counted = line.countedKg === null || line.countedKg === '' ? null : dec(line.countedKg);
+    const counted = line.countedKg === null || line.countedKg === '' ? null : tryDec(line.countedKg);
     const difference = counted ? counted.minus(line.systemKg) : null;
     const valueUsd = difference ? toMoney(difference.times(line.landedUnitCostUsd)) : null;
     return { line, counted, difference, valueUsd, needsReason: Boolean(difference && !difference.isZero() && !line.reason) };

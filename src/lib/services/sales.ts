@@ -9,14 +9,14 @@ import {
 } from '@/lib/money';
 import { ACCOUNT_KEYS, DOC_TYPES } from '@/lib/constants';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
-import { nextReference } from '@/lib/services/numbering';
+import { allocateSalesInvoiceNumber, retireSalesInvoiceNumber } from '@/lib/services/numbering';
 import { postJournalEntry, reverseJournalEntry, type JournalLineInput } from '@/lib/services/accounting';
 import { consumeStock, releaseReservations, reserveStock, returnStock } from '@/lib/services/inventory';
 import { getCompanyContext } from '@/lib/services/company';
 import { computeSalesLine } from '@/lib/calc/sales';
 import { writeAudit } from '@/lib/services/audit';
 import { resolveTaxCode, computeLineTax } from '@/lib/services/tax';
-import { createReceiptIn, postReceiptIn } from '@/lib/services/receipt';
+import { createReceiptIn, postReceiptIn, reverseReceiptIn, getInvoiceOutstanding } from '@/lib/services/receipt';
 
 /**
  * SalesService.
@@ -71,6 +71,8 @@ export type SalesInvoiceInput = {
   cashBankAccountId?: string | null;
   reference?: string | null;
   notes?: string | null;
+  /** Blank means issue the next free number. Typed values stay editable. */
+  invoiceNumber?: string | null;
   lines: SalesLineInput[];
 };
 
@@ -281,6 +283,31 @@ async function assertCashSaleIsComplete(tx: Tx, input: SalesInvoiceInput): Promi
   }
 }
 
+function lineCreates(lines: ResolvedLine[]) {
+  return lines.map((l) => ({
+    lineNumber: l.lineNumber,
+    itemId: l.itemId,
+    batchId: l.batchId,
+    lotId: l.lotId,
+    containerId: l.containerId,
+    warehouseId: l.warehouseId,
+    shipmentId: l.shipmentId,
+    quantity: l.quantity,
+    unit: l.unit,
+    quantityKg: l.quantityKg,
+    bags: l.bags,
+    unitPrice: l.unitPrice,
+    unitPriceKg: l.unitPriceKg,
+    lineTotal: l.lineTotal,
+    lineTotalUsd: l.lineTotalUsd,
+    taxCodeId: l.taxCodeId,
+    taxRatePct: l.taxRatePct,
+    taxAmount: l.taxAmount,
+    taxAmountUsd: l.taxAmountUsd,
+    notes: l.notes,
+  }));
+}
+
 export async function createSalesInvoice(input: SalesInvoiceInput, userId: string) {
   return transaction(async (tx) => {
     const customer = await tx.customer.findFirst({
@@ -295,9 +322,9 @@ export async function createSalesInvoice(input: SalesInvoiceInput, userId: strin
     const lines = await resolveLines(tx, input);
     const totals = invoiceTotals(lines);
 
-    const invoiceNumber = await nextReference(tx, {
+    const invoiceNumber = await allocateSalesInvoiceNumber(tx, {
       companyId: input.companyId,
-      docType: DOC_TYPES.SALES_INVOICE,
+      requested: input.invoiceNumber,
     });
 
     // A single-shipment invoice gets linked automatically for profitability.
@@ -329,28 +356,7 @@ export async function createSalesInvoice(input: SalesInvoiceInput, userId: strin
         status: 'DRAFT',
         createdById: userId,
         lines: {
-          create: lines.map((l) => ({
-            lineNumber: l.lineNumber,
-            itemId: l.itemId,
-            batchId: l.batchId,
-            lotId: l.lotId,
-            containerId: l.containerId,
-            warehouseId: l.warehouseId,
-            shipmentId: l.shipmentId,
-            quantity: l.quantity,
-            unit: l.unit,
-            quantityKg: l.quantityKg,
-            bags: l.bags,
-            unitPrice: l.unitPrice,
-            unitPriceKg: l.unitPriceKg,
-            lineTotal: l.lineTotal,
-            lineTotalUsd: l.lineTotalUsd,
-            taxCodeId: l.taxCodeId,
-            taxRatePct: l.taxRatePct,
-            taxAmount: l.taxAmount,
-            taxAmountUsd: l.taxAmountUsd,
-            notes: l.notes,
-          })),
+          create: lineCreates(lines),
         },
       },
       include: { lines: true },
@@ -385,48 +391,128 @@ export async function createSalesInvoice(input: SalesInvoiceInput, userId: strin
 
 export async function updateSalesInvoice(id: string, input: SalesInvoiceInput, userId: string) {
   return transaction(async (tx) => {
-    const existing = await tx.salesInvoice.findFirst({
-      where: { id, companyId: input.companyId },
-      include: { lines: true },
-    });
-    if (!existing) throw new NotFoundError('Sales invoice');
-    if (existing.status !== 'DRAFT') {
-      throw new BusinessRuleError('Only draft invoices can be edited. Reverse the invoice to correct a posted one.');
+    const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>`
+      SELECT "id", "status"::text FROM sales_invoices
+      WHERE "id" = ${id} AND "companyId" = ${input.companyId}
+      FOR UPDATE
+    `;
+    if (locked.length === 0) throw new NotFoundError('Sales invoice');
+    if (locked[0].status !== 'DRAFT' && locked[0].status !== 'POSTED') {
+      throw new BusinessRuleError('A reversed invoice cannot be edited.');
     }
 
-    // Drop the old reservations before re-reserving against the new lines.
-    await releaseReservations(tx, {
-      companyId: input.companyId,
-      referenceType: 'SALES_INVOICE',
-      referenceId: id,
-      createdById: userId,
-      transactionDate: input.invoiceDate,
+    const existing = await tx.salesInvoice.findFirst({
+      where: { id, companyId: input.companyId },
+      include: {
+        lines: true,
+        allocations: { include: { receipt: { select: { id: true, status: true } } } },
+      },
     });
+    if (!existing) throw new NotFoundError('Sales invoice');
+
+    const postedCredits = await tx.creditNote.count({
+      where: { salesInvoiceId: id, status: 'POSTED' },
+    });
+    if (postedCredits > 0) {
+      throw new BusinessRuleError(
+        'This invoice has a posted credit note. Reverse the credit note before changing the invoice.',
+      );
+    }
+
+    const wasPosted = existing.status === 'POSTED';
+    const workingInput: SalesInvoiceInput = wasPosted
+      ? {
+          ...input,
+          paymentType: existing.paymentType,
+          cashBankAccountId: existing.cashBankAccountId,
+        }
+      : input;
+
+    const liveReceipts = existing.allocations.some((allocation) => allocation.receipt.status === 'POSTED');
+    if (wasPosted && liveReceipts && existing.paymentType !== 'CASH') {
+      if (workingInput.customerId !== existing.customerId) {
+        throw new BusinessRuleError(
+          'Receipts are allocated to this invoice. Reverse those receipts before changing the customer.',
+        );
+      }
+      if (workingInput.currency.toUpperCase() !== existing.currency) {
+        throw new BusinessRuleError(
+          'Receipts are allocated to this invoice. Reverse those receipts before changing the currency.',
+        );
+      }
+    }
+
+    if (wasPosted) {
+      if (existing.paymentType === 'CASH') {
+        await reverseExclusiveReceipts(tx, {
+          companyId: input.companyId,
+          invoiceId: id,
+          userId,
+          reason: `Invoice ${existing.invoiceNumber} corrected`,
+        });
+      }
+      await unwindPostedSale(tx, {
+        companyId: input.companyId,
+        invoice: existing,
+        userId,
+        reason: `Correction of ${existing.invoiceNumber}`,
+      });
+    } else {
+      await releaseReservations(tx, {
+        companyId: input.companyId,
+        referenceType: 'SALES_INVOICE',
+        referenceId: id,
+        createdById: userId,
+        transactionDate: input.invoiceDate,
+      });
+    }
 
     const customer = await tx.customer.findFirst({
-      where: { id: input.customerId, companyId: input.companyId },
+      where: { id: workingInput.customerId, companyId: input.companyId },
       select: { paymentTermDays: true },
     });
     if (!customer) throw new NotFoundError('Customer');
 
-    const lines = await resolveLines(tx, input);
+    const lines = await resolveLines(tx, workingInput);
     const totals = invoiceTotals(lines);
-    const { dueDate, termDays } = resolveDueDate(input.invoiceDate, input.dueDate, customer.paymentTermDays);
-    await assertCashSaleIsComplete(tx, input);
+
+    if (wasPosted && existing.paymentType !== 'CASH') {
+      const outstanding = await getInvoiceOutstanding(tx, id);
+      const allocated = toMoney(dec(existing.totalAmount).minus(outstanding.amount));
+      if (allocated.greaterThan(totals.totalAmount)) {
+        throw new BusinessRuleError(
+          `Receipts of ${existing.currency} ${allocated.toFixed(2)} are already allocated. The corrected invoice cannot be less than that.`,
+        );
+      }
+    }
+
+    const { dueDate, termDays } = resolveDueDate(
+      workingInput.invoiceDate,
+      workingInput.dueDate,
+      customer.paymentTermDays,
+    );
+    await assertCashSaleIsComplete(tx, workingInput);
     const distinctShipments = [...new Set(lines.map((l) => l.shipmentId))];
-    const shipmentId = input.shipmentId ?? (distinctShipments.length === 1 ? distinctShipments[0] : null);
+    const shipmentId = workingInput.shipmentId ?? (distinctShipments.length === 1 ? distinctShipments[0] : null);
+
+    const invoiceNumber = await allocateSalesInvoiceNumber(tx, {
+      companyId: input.companyId,
+      requested: workingInput.invoiceNumber ?? existing.invoiceNumber,
+      excludeId: id,
+    });
 
     await tx.salesInvoiceLine.deleteMany({ where: { salesInvoiceId: id } });
 
     const invoice = await tx.salesInvoice.update({
       where: { id },
       data: {
-        invoiceDate: input.invoiceDate,
-        customerId: input.customerId,
+        invoiceNumber,
+        invoiceDate: workingInput.invoiceDate,
+        customerId: workingInput.customerId,
         shipmentId,
-        currency: input.currency.toUpperCase(),
-        rateToUsd: dec(input.rateToUsd),
-        rateLocalPerUsd: dec(input.rateLocalPerUsd),
+        currency: workingInput.currency.toUpperCase(),
+        rateToUsd: dec(workingInput.rateToUsd),
+        rateLocalPerUsd: dec(workingInput.rateLocalPerUsd),
         subtotal: totals.subtotal,
         subtotalUsd: totals.subtotalUsd,
         taxAmount: totals.taxAmount,
@@ -435,37 +521,36 @@ export async function updateSalesInvoice(id: string, input: SalesInvoiceInput, u
         totalAmountUsd: totals.totalAmountUsd,
         paymentTermDays: termDays,
         dueDate,
-        paymentType: input.paymentType ?? 'CREDIT',
-        cashBankAccountId: input.paymentType === 'CASH' ? (input.cashBankAccountId ?? null) : null,
-        reference: input.reference ?? null,
-        notes: input.notes ?? null,
-        lines: {
-          create: lines.map((l) => ({
-            lineNumber: l.lineNumber,
-            itemId: l.itemId,
-            batchId: l.batchId,
-            lotId: l.lotId,
-            containerId: l.containerId,
-            warehouseId: l.warehouseId,
-            shipmentId: l.shipmentId,
-            quantity: l.quantity,
-            unit: l.unit,
-            quantityKg: l.quantityKg,
-            bags: l.bags,
-            unitPrice: l.unitPrice,
-            unitPriceKg: l.unitPriceKg,
-            lineTotal: l.lineTotal,
-            lineTotalUsd: l.lineTotalUsd,
-            taxCodeId: l.taxCodeId,
-            taxRatePct: l.taxRatePct,
-            taxAmount: l.taxAmount,
-            taxAmountUsd: l.taxAmountUsd,
-            notes: l.notes,
-          })),
-        },
+        paymentType: workingInput.paymentType ?? 'CREDIT',
+        cashBankAccountId: workingInput.paymentType === 'CASH' ? (workingInput.cashBankAccountId ?? null) : null,
+        reference: workingInput.reference ?? null,
+        notes: workingInput.notes ?? null,
+        lines: { create: lineCreates(lines) },
       },
-      include: { lines: true },
+      include: { lines: { orderBy: { lineNumber: 'asc' } }, customer: true },
     });
+
+    if (wasPosted) {
+      const posted = await recordPostedSale(tx, {
+        companyId: input.companyId,
+        invoice,
+        userId,
+        settleCash: existing.paymentType === 'CASH',
+        keepPostedAt: existing.postedAt,
+      });
+
+      await writeAudit(tx, {
+        companyId: input.companyId,
+        userId,
+        action: 'SALES_INVOICE_UPDATED',
+        entityType: 'SalesInvoice',
+        entityId: id,
+        before: { totalAmount: existing.totalAmount, lines: existing.lines.length, status: existing.status },
+        after: { totalAmount: posted.totalAmount, lines: posted.lines.length, status: 'POSTED' },
+      });
+
+      return posted;
+    }
 
     for (const line of lines) {
       await reserveStock(tx, {
@@ -475,7 +560,7 @@ export async function updateSalesInvoice(id: string, input: SalesInvoiceInput, u
         quantityKg: line.quantityKg,
         referenceType: 'SALES_INVOICE',
         referenceId: id,
-        transactionDate: input.invoiceDate,
+        transactionDate: workingInput.invoiceDate,
         createdById: userId,
       });
     }
@@ -486,12 +571,272 @@ export async function updateSalesInvoice(id: string, input: SalesInvoiceInput, u
       action: 'SALES_INVOICE_UPDATED',
       entityType: 'SalesInvoice',
       entityId: id,
-      before: { totalAmount: existing.totalAmount, lines: existing.lines.length },
-      after: { totalAmount: invoice.totalAmount, lines: invoice.lines.length },
+      before: { totalAmount: existing.totalAmount, lines: existing.lines.length, status: existing.status },
+      after: { totalAmount: invoice.totalAmount, lines: invoice.lines.length, status: 'DRAFT' },
     });
 
     return invoice;
   });
+}
+
+async function reverseExclusiveReceipts(
+  tx: Tx,
+  params: { companyId: string; invoiceId: string; userId: string; reason: string },
+) {
+  const receipts = await tx.receipt.findMany({
+    where: {
+      companyId: params.companyId,
+      status: 'POSTED',
+      allocations: { some: { salesInvoiceId: params.invoiceId } },
+    },
+    include: { allocations: true },
+  });
+
+  for (const receipt of receipts) {
+    const onlyThis = receipt.allocations.every((allocation) => allocation.salesInvoiceId === params.invoiceId);
+    if (!onlyThis) {
+      throw new BusinessRuleError(
+        'A receipt on this invoice also settles another invoice, so the sale cannot be corrected in place. Reverse the receipt first.',
+      );
+    }
+    await reverseReceiptIn(tx, {
+      id: receipt.id,
+      companyId: params.companyId,
+      userId: params.userId,
+      reason: params.reason,
+    });
+  }
+}
+
+async function unwindPostedSale(
+  tx: Tx,
+  params: {
+    companyId: string;
+    invoice: { id: string; invoiceNumber: string; lines: Array<{
+      batchId: string;
+      warehouseId: string | null;
+      quantityKg: Decimal;
+      bags: number;
+      unitCostUsd: Decimal;
+    }> };
+    userId: string;
+    reason: string;
+  },
+) {
+  const reversalDate = new Date();
+  for (const line of params.invoice.lines) {
+    await returnStock(tx, {
+      companyId: params.companyId,
+      batchId: line.batchId,
+      warehouseId: line.warehouseId ?? '',
+      quantityKg: line.quantityKg,
+      bags: line.bags,
+      unitCostUsd: line.unitCostUsd,
+      referenceType: 'SALES_INVOICE_REVERSAL',
+      referenceId: params.invoice.id,
+      transactionDate: reversalDate,
+      createdById: params.userId,
+      notes: params.reason,
+    });
+  }
+
+  await reverseJournalEntry(tx, {
+    companyId: params.companyId,
+    sourceType: 'SALES_INVOICE',
+    sourceId: params.invoice.id,
+    createdById: params.userId,
+    entryDate: reversalDate,
+    reason: params.reason,
+  });
+}
+
+async function recordPostedSale(
+  tx: Tx,
+  params: {
+    companyId: string;
+    invoice: {
+      id: string;
+      invoiceNumber: string;
+      invoiceDate: Date;
+      customerId: string;
+      shipmentId: string | null;
+      currency: string;
+      rateToUsd: Decimal;
+      rateLocalPerUsd: Decimal;
+      subtotal: Decimal;
+      taxAmount: Decimal;
+      totalAmount: Decimal;
+      paymentType: string;
+      cashBankAccountId: string | null;
+      customer: { customerName: string };
+      lines: Array<{
+        id: string;
+        lineNumber: number;
+        batchId: string;
+        warehouseId: string | null;
+        quantityKg: Decimal;
+        bags: number;
+      }>;
+    };
+    userId: string;
+    settleCash: boolean;
+    /** Keep the original posting time when restating a posted invoice. */
+    keepPostedAt?: Date | null;
+  },
+) {
+  const { invoice } = params;
+  if (invoice.lines.length === 0) {
+    throw new BusinessRuleError('This invoice has no lines and cannot be posted.');
+  }
+
+  const company = await getCompanyContext(tx, params.companyId);
+  let costOfGoodsUsd = new Decimal(0);
+
+  for (const line of invoice.lines) {
+    if (!line.warehouseId) {
+      throw new BusinessRuleError(`Line ${line.lineNumber} has no warehouse. Re-open the draft and choose one.`);
+    }
+
+    const { unitCostUsd } = await consumeStock(tx, {
+      companyId: params.companyId,
+      batchId: line.batchId,
+      warehouseId: line.warehouseId,
+      quantityKg: line.quantityKg,
+      bags: line.bags,
+      referenceType: 'SALES_INVOICE',
+      referenceId: invoice.id,
+      transactionDate: invoice.invoiceDate,
+      createdById: params.userId,
+      notes: `Sold on ${invoice.invoiceNumber}`,
+    });
+
+    const costTotalUsd = toMoney(dec(line.quantityKg).times(unitCostUsd));
+    costOfGoodsUsd = costOfGoodsUsd.plus(costTotalUsd);
+
+    await tx.salesInvoiceLine.update({
+      where: { id: line.id },
+      data: { unitCostUsd, costTotalUsd },
+    });
+  }
+
+  costOfGoodsUsd = toMoney(costOfGoodsUsd);
+
+  const journalLines: JournalLineInput[] = [
+    {
+      accountKey: ACCOUNT_KEYS.ACCOUNTS_RECEIVABLE,
+      direction: 'DEBIT' as const,
+      currency: invoice.currency,
+      amount: invoice.totalAmount,
+      rateToUsd: invoice.rateToUsd,
+      description: `Receivable from ${invoice.customer.customerName}`,
+      customerId: invoice.customerId,
+      salesInvoiceId: invoice.id,
+      shipmentId: invoice.shipmentId,
+    },
+    {
+      accountKey: ACCOUNT_KEYS.SALES_REVENUE,
+      direction: 'CREDIT' as const,
+      currency: invoice.currency,
+      amount: invoice.subtotal,
+      rateToUsd: invoice.rateToUsd,
+      description: `Sales invoice ${invoice.invoiceNumber}`,
+      customerId: invoice.customerId,
+      salesInvoiceId: invoice.id,
+      shipmentId: invoice.shipmentId,
+    },
+  ];
+
+  if (dec(invoice.taxAmount).greaterThan(0)) {
+    journalLines.push({
+      accountKey: ACCOUNT_KEYS.VAT_OUTPUT,
+      direction: 'CREDIT' as const,
+      currency: invoice.currency,
+      amount: invoice.taxAmount,
+      rateToUsd: invoice.rateToUsd,
+      description: `Output tax on ${invoice.invoiceNumber}`,
+      customerId: invoice.customerId,
+      salesInvoiceId: invoice.id,
+    });
+  }
+
+  if (costOfGoodsUsd.greaterThan(0)) {
+    journalLines.push(
+      {
+        accountKey: ACCOUNT_KEYS.COST_OF_GOODS_SOLD,
+        direction: 'DEBIT' as const,
+        currency: 'USD',
+        amount: costOfGoodsUsd,
+        rateToUsd: new Decimal(1),
+        description: `Cost of goods sold on ${invoice.invoiceNumber}`,
+        customerId: invoice.customerId,
+        salesInvoiceId: invoice.id,
+        shipmentId: invoice.shipmentId,
+      },
+      {
+        accountKey: ACCOUNT_KEYS.INVENTORY,
+        direction: 'CREDIT' as const,
+        currency: 'USD',
+        amount: costOfGoodsUsd,
+        rateToUsd: new Decimal(1),
+        description: `Stock relieved by ${invoice.invoiceNumber}`,
+        customerId: invoice.customerId,
+        salesInvoiceId: invoice.id,
+        shipmentId: invoice.shipmentId,
+      },
+    );
+  }
+
+  await postJournalEntry(tx, {
+    companyId: params.companyId,
+    entryDate: invoice.invoiceDate,
+    description: `Sales invoice ${invoice.invoiceNumber} — ${invoice.customer.customerName}`,
+    sourceType: 'SALES_INVOICE',
+    sourceId: invoice.id,
+    createdById: params.userId,
+    localCurrency: company.localCurrency,
+    rateLocalPerUsd: invoice.rateLocalPerUsd,
+    lines: journalLines,
+  });
+
+  const posted = await tx.salesInvoice.update({
+    where: { id: invoice.id },
+    data: {
+      status: 'POSTED',
+      postedAt: params.keepPostedAt ?? new Date(),
+      postedById: params.userId,
+      costOfGoodsUsd,
+    },
+    include: { lines: true },
+  });
+
+  if (params.settleCash) {
+    if (!invoice.cashBankAccountId) {
+      throw new BusinessRuleError(
+        'This is a cash sale but no cash account is named. Re-open the draft and choose where the money went.',
+      );
+    }
+    const receipt = await createReceiptIn(
+      tx,
+      {
+        companyId: params.companyId,
+        receiptDate: invoice.invoiceDate,
+        customerId: invoice.customerId,
+        currency: invoice.currency,
+        amount: invoice.totalAmount.toString(),
+        rateToUsd: invoice.rateToUsd.toString(),
+        rateLocalPerUsd: invoice.rateLocalPerUsd.toString(),
+        paymentMethod: 'CASH',
+        cashBankAccountId: invoice.cashBankAccountId,
+        reference: invoice.invoiceNumber,
+        description: `Cash sale ${invoice.invoiceNumber}`,
+        allocations: [{ salesInvoiceId: invoice.id, amount: invoice.totalAmount.toString() }],
+      },
+      params.userId,
+    );
+    await postReceiptIn(tx, { id: receipt.id, companyId: params.companyId, userId: params.userId });
+  }
+
+  return posted;
 }
 
 export async function postSalesInvoice(params: { id: string; companyId: string; userId: string }) {
@@ -511,14 +856,6 @@ export async function postSalesInvoice(params: { id: string; companyId: string; 
       include: { lines: { orderBy: { lineNumber: 'asc' } }, customer: true },
     });
 
-    if (invoice.lines.length === 0) {
-      throw new BusinessRuleError('This invoice has no lines and cannot be posted.');
-    }
-
-    const company = await getCompanyContext(tx, params.companyId);
-
-    // 1. Give back our own reservation so the availability check below measures
-    //    real stock rather than counting this invoice against itself.
     await releaseReservations(tx, {
       companyId: params.companyId,
       referenceType: 'SALES_INVOICE',
@@ -527,129 +864,11 @@ export async function postSalesInvoice(params: { id: string; companyId: string; 
       transactionDate: invoice.invoiceDate,
     });
 
-    // 2 & 3. Consume stock and freeze the cost of goods on each line.
-    let costOfGoodsUsd = new Decimal(0);
-
-    for (const line of invoice.lines) {
-      if (!line.warehouseId) {
-        throw new BusinessRuleError(`Line ${line.lineNumber} has no warehouse. Re-open the draft and choose one.`);
-      }
-
-      const { unitCostUsd } = await consumeStock(tx, {
-        companyId: params.companyId,
-        batchId: line.batchId,
-        warehouseId: line.warehouseId,
-        quantityKg: line.quantityKg,
-        bags: line.bags,
-        referenceType: 'SALES_INVOICE',
-        referenceId: invoice.id,
-        transactionDate: invoice.invoiceDate,
-        createdById: params.userId,
-        notes: `Sold on ${invoice.invoiceNumber}`,
-      });
-
-      const costTotalUsd = toMoney(dec(line.quantityKg).times(unitCostUsd));
-      costOfGoodsUsd = costOfGoodsUsd.plus(costTotalUsd);
-
-      await tx.salesInvoiceLine.update({
-        where: { id: line.id },
-        data: { unitCostUsd, costTotalUsd },
-      });
-    }
-
-    costOfGoodsUsd = toMoney(costOfGoodsUsd);
-
-    // 4. Accounting. Revenue sits in the invoice currency; cost is USD, which is
-    //    the currency inventory is carried in.
-    const journalLines: JournalLineInput[] = [
-      {
-        accountKey: ACCOUNT_KEYS.ACCOUNTS_RECEIVABLE,
-        direction: 'DEBIT' as const,
-        currency: invoice.currency,
-        amount: invoice.totalAmount,
-        rateToUsd: invoice.rateToUsd,
-        description: `Receivable from ${invoice.customer.customerName}`,
-        customerId: invoice.customerId,
-        salesInvoiceId: invoice.id,
-        shipmentId: invoice.shipmentId,
-      },
-      {
-        accountKey: ACCOUNT_KEYS.SALES_REVENUE,
-        direction: 'CREDIT' as const,
-        currency: invoice.currency,
-        // Revenue is the goods value. Tax collected is the authority's money
-        // passing through, so it never touches the top line.
-        amount: invoice.subtotal,
-        rateToUsd: invoice.rateToUsd,
-        description: `Sales invoice ${invoice.invoiceNumber}`,
-        customerId: invoice.customerId,
-        salesInvoiceId: invoice.id,
-        shipmentId: invoice.shipmentId,
-      },
-    ];
-
-    if (dec(invoice.taxAmount).greaterThan(0)) {
-      journalLines.push({
-        accountKey: ACCOUNT_KEYS.VAT_OUTPUT,
-        direction: 'CREDIT' as const,
-        currency: invoice.currency,
-        amount: invoice.taxAmount,
-        rateToUsd: invoice.rateToUsd,
-        description: `Output tax on ${invoice.invoiceNumber}`,
-        customerId: invoice.customerId,
-        salesInvoiceId: invoice.id,
-      });
-    }
-
-    if (costOfGoodsUsd.greaterThan(0)) {
-      journalLines.push(
-        {
-          accountKey: ACCOUNT_KEYS.COST_OF_GOODS_SOLD,
-          direction: 'DEBIT' as const,
-          currency: 'USD',
-          amount: costOfGoodsUsd,
-          rateToUsd: new Decimal(1),
-          description: `Cost of goods sold on ${invoice.invoiceNumber}`,
-          customerId: invoice.customerId,
-          salesInvoiceId: invoice.id,
-          shipmentId: invoice.shipmentId,
-        },
-        {
-          accountKey: ACCOUNT_KEYS.INVENTORY,
-          direction: 'CREDIT' as const,
-          currency: 'USD',
-          amount: costOfGoodsUsd,
-          rateToUsd: new Decimal(1),
-          description: `Stock relieved by ${invoice.invoiceNumber}`,
-          customerId: invoice.customerId,
-          salesInvoiceId: invoice.id,
-          shipmentId: invoice.shipmentId,
-        },
-      );
-    }
-
-    await postJournalEntry(tx, {
+    const posted = await recordPostedSale(tx, {
       companyId: params.companyId,
-      entryDate: invoice.invoiceDate,
-      description: `Sales invoice ${invoice.invoiceNumber} — ${invoice.customer.customerName}`,
-      sourceType: 'SALES_INVOICE',
-      sourceId: invoice.id,
-      createdById: params.userId,
-      localCurrency: company.localCurrency,
-      rateLocalPerUsd: invoice.rateLocalPerUsd,
-      lines: journalLines,
-    });
-
-    // 5. Flip the status.
-    const posted = await tx.salesInvoice.update({
-      where: { id: invoice.id },
-      data: {
-        status: 'POSTED',
-        postedAt: new Date(),
-        postedById: params.userId,
-        costOfGoodsUsd,
-      },
-      include: { lines: true },
+      invoice,
+      userId: params.userId,
+      settleCash: invoice.paymentType === 'CASH',
     });
 
     await writeAudit(tx, {
@@ -663,41 +882,9 @@ export async function postSalesInvoice(params: { id: string; companyId: string; 
         status: 'POSTED',
         totalAmount: invoice.totalAmount,
         currency: invoice.currency,
-        costOfGoodsUsd,
+        costOfGoodsUsd: posted.costOfGoodsUsd,
       },
     });
-
-    // 6. A cash sale is settled as it is raised. The receipt is part of the
-    //    same transaction: if it cannot be recorded the invoice does not post
-    //    either, so there is never a "cash" sale sitting in receivables with
-    //    no cash behind it. This used to live in the screen's action, which
-    //    meant any other route to posting left the money unrecorded.
-    if (invoice.paymentType === 'CASH') {
-      if (!invoice.cashBankAccountId) {
-        throw new BusinessRuleError(
-          'This is a cash sale but no cash account is named. Re-open the draft and choose where the money went.',
-        );
-      }
-      const receipt = await createReceiptIn(
-        tx,
-        {
-          companyId: params.companyId,
-          receiptDate: invoice.invoiceDate,
-          customerId: invoice.customerId,
-          currency: invoice.currency,
-          amount: invoice.totalAmount.toString(),
-          rateToUsd: invoice.rateToUsd.toString(),
-          rateLocalPerUsd: invoice.rateLocalPerUsd.toString(),
-          paymentMethod: 'CASH',
-          cashBankAccountId: invoice.cashBankAccountId,
-          reference: invoice.invoiceNumber,
-          description: `Cash sale ${invoice.invoiceNumber}`,
-          allocations: [{ salesInvoiceId: invoice.id, amount: invoice.totalAmount.toString() }],
-        },
-        params.userId,
-      );
-      await postReceiptIn(tx, { id: receipt.id, companyId: params.companyId, userId: params.userId });
-    }
 
     return posted;
   });
@@ -765,17 +952,23 @@ export async function reverseSalesInvoice(params: {
       data: { status: 'REVERSED', reversedAt: reversalDate, reversalReason: params.reason },
     });
 
+    const retiredNumber = await retireSalesInvoiceNumber(tx, {
+      id: invoice.id,
+      companyId: params.companyId,
+      invoiceNumber: invoice.invoiceNumber,
+    });
+
     await writeAudit(tx, {
       companyId: params.companyId,
       userId: params.userId,
       action: 'SALES_INVOICE_REVERSED',
       entityType: 'SalesInvoice',
       entityId: invoice.id,
-      before: { status: 'POSTED' },
-      after: { status: 'REVERSED', reason: params.reason },
+      before: { status: 'POSTED', invoiceNumber: invoice.invoiceNumber },
+      after: { status: 'REVERSED', reason: params.reason, invoiceNumber: retiredNumber },
     });
 
-    return reversed;
+    return { ...reversed, invoiceNumber: retiredNumber };
   });
 }
 

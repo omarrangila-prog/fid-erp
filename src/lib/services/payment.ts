@@ -58,7 +58,14 @@ export async function getContractOutstanding(
 ): Promise<{ amount: Decimal; amountUsd: Decimal; currency: string }> {
   const contract = await tx.purchaseContract.findUniqueOrThrow({
     where: { id: contractId },
-    select: { totalValue: true, totalValueUsd: true, currency: true, status: true },
+    select: {
+      totalValue: true,
+      totalValueUsd: true,
+      taxAmount: true,
+      taxAmountUsd: true,
+      currency: true,
+      status: true,
+    },
   });
 
   const rows = await tx.$queryRaw<Array<{ amount: string | null; amountUsd: string | null }>>`
@@ -67,14 +74,28 @@ export async function getContractOutstanding(
     FROM payment_allocations pa
     JOIN payments p ON p."id" = pa."paymentId"
     WHERE pa."purchaseContractId" = ${contractId} AND p."status" = 'POSTED'
+      AND NOT EXISTS (
+        SELECT 1 FROM cheques ch
+        WHERE ch."paymentId" = p."id" AND ch.status IN ('BOUNCED', 'CANCELLED')
+      )
   `;
 
-  const gross = contract.status === 'POSTED' ? dec(contract.totalValue) : new Decimal(0);
-  const grossUsd = contract.status === 'POSTED' ? dec(contract.totalValueUsd) : new Decimal(0);
+  const credits = await tx.$queryRaw<Array<{ amount: string | null; amountUsd: string | null }>>`
+    SELECT COALESCE(SUM(cn."totalAmount"), 0)::text AS amount,
+           COALESCE(SUM(cn."totalAmountUsd"), 0)::text AS "amountUsd"
+    FROM credit_notes cn
+    WHERE cn."purchaseContractId" = ${contractId} AND cn."status" = 'POSTED'
+  `;
+
+  const gross = contract.status === 'POSTED' ? dec(contract.totalValue).plus(contract.taxAmount) : new Decimal(0);
+  const grossUsd =
+    contract.status === 'POSTED' ? dec(contract.totalValueUsd).plus(contract.taxAmountUsd) : new Decimal(0);
+  const settled = dec(rows[0]?.amount ?? 0).plus(credits[0]?.amount ?? 0);
+  const settledUsd = dec(rows[0]?.amountUsd ?? 0).plus(credits[0]?.amountUsd ?? 0);
 
   return {
-    amount: toMoney(gross.minus(dec(rows[0]?.amount ?? 0))),
-    amountUsd: toMoney(grossUsd.minus(dec(rows[0]?.amountUsd ?? 0))),
+    amount: toMoney(gross.minus(settled)),
+    amountUsd: toMoney(grossUsd.minus(settledUsd)),
     currency: contract.currency,
   };
 }
@@ -105,6 +126,10 @@ export async function getExpenseOutstanding(
     FROM payment_allocations pa
     JOIN payments p ON p."id" = pa."paymentId"
     WHERE pa."expenseId" = ${expenseId} AND p."status" = 'POSTED'
+      AND NOT EXISTS (
+        SELECT 1 FROM cheques ch
+        WHERE ch."paymentId" = p."id" AND ch.status IN ('BOUNCED', 'CANCELLED')
+      )
   `;
 
   // Gross of tax: the supplier is paid what they billed.
@@ -295,6 +320,109 @@ async function assertAccountUsable(tx: Tx, companyId: string, cashBankAccountId:
   return account;
 }
 
+async function lockPayableDocuments(
+  tx: Tx,
+  allocations: Array<{ purchaseContractId: string | null; expenseId: string | null }>,
+) {
+  const contractIds = [...new Set(allocations.map((a) => a.purchaseContractId).filter(Boolean))].sort() as string[];
+  const expenseIds = [...new Set(allocations.map((a) => a.expenseId).filter(Boolean))].sort() as string[];
+  for (const id of contractIds) {
+    await tx.$queryRaw`SELECT "id" FROM purchase_contracts WHERE "id" = ${id} FOR UPDATE`;
+  }
+  for (const id of expenseIds) {
+    await tx.$queryRaw`SELECT "id" FROM expenses WHERE "id" = ${id} FOR UPDATE`;
+  }
+}
+
+async function cancelPaymentCheque(tx: Tx, paymentId: string, userId: string) {
+  const existing = await tx.cheque.findFirst({ where: { paymentId } });
+  if (!existing) return;
+  if (existing.status === 'CLEARED' || existing.status === 'CANCELLED') return;
+  if (existing.status !== 'RECEIVED' && existing.status !== 'DEPOSITED' && existing.status !== 'BOUNCED') return;
+  await tx.cheque.update({ where: { id: existing.id }, data: { status: 'CANCELLED' } });
+  await tx.chequeStatusHistory.create({
+    data: {
+      chequeId: existing.id,
+      fromStatus: existing.status,
+      toStatus: 'CANCELLED',
+      changedById: userId,
+      notes: 'Cancelled with the reversed voucher — the journal already unwound Cheques Issued.',
+    },
+  });
+}
+
+async function syncDraftPaymentCheque(
+  tx: Tx,
+  params: {
+    companyId: string;
+    paymentId: string;
+    vendorId: string;
+    vendorName: string;
+    userId: string;
+    method: PaymentMethod;
+    cheque: PaymentInput['cheque'];
+    amounts: {
+      amount: Decimal;
+      currency: string;
+      rateToUsd: Decimal;
+      amountUsd: Decimal;
+      rateLocalPerUsd: Decimal;
+      amountLocal: Decimal;
+    };
+    cashBankAccountId: string | null;
+  },
+) {
+  const existing = await tx.cheque.findFirst({ where: { paymentId: params.paymentId } });
+
+  if (params.method !== 'CHEQUE') {
+    if (existing && existing.status === 'RECEIVED') {
+      await tx.cheque.delete({ where: { id: existing.id } });
+    }
+    return;
+  }
+  if (!params.cheque) return;
+
+  const data = {
+    chequeNumber: params.cheque.chequeNumber.trim(),
+    chequeDate: params.cheque.chequeDate,
+    bankName: params.cheque.bankName.trim(),
+    amount: params.amounts.amount,
+    currency: params.amounts.currency,
+    rateToUsd: params.amounts.rateToUsd,
+    amountUsd: params.amounts.amountUsd,
+    rateLocalPerUsd: params.amounts.rateLocalPerUsd,
+    amountLocal: params.amounts.amountLocal,
+    beneficiary: params.cheque.beneficiary ?? params.vendorName,
+    vendorId: params.vendorId,
+    cashBankAccountId: params.cashBankAccountId,
+    notes: params.cheque.notes ?? null,
+  };
+
+  if (existing) {
+    if (existing.status !== 'RECEIVED') {
+      throw new BusinessRuleError(
+        'This payment already has a cheque that has moved on from issued, so the instrument cannot be rewritten.',
+      );
+    }
+    await tx.cheque.update({ where: { id: existing.id }, data });
+    return;
+  }
+
+  await tx.cheque.create({
+    data: {
+      companyId: params.companyId,
+      direction: 'OUTBOUND',
+      paymentId: params.paymentId,
+      status: 'RECEIVED',
+      createdById: params.userId,
+      statusHistory: {
+        create: { fromStatus: null, toStatus: 'RECEIVED', changedById: params.userId, notes: 'Cheque issued' },
+      },
+      ...data,
+    },
+  });
+}
+
 export async function createPayment(input: PaymentInput, userId: string) {
   return transaction(async (tx) => {
     const company = await getCompanyContext(tx, input.companyId);
@@ -343,33 +471,17 @@ export async function createPayment(input: PaymentInput, userId: string) {
       include: { allocations: true },
     });
 
-    if (method === 'CHEQUE' && input.cheque) {
-      await tx.cheque.create({
-        data: {
-          companyId: input.companyId,
-          chequeNumber: input.cheque.chequeNumber.trim(),
-          direction: 'OUTBOUND',
-          chequeDate: input.cheque.chequeDate,
-          bankName: input.cheque.bankName.trim(),
-          amount: amounts.amount,
-          currency: amounts.currency,
-          rateToUsd: amounts.rateToUsd,
-          amountUsd: amounts.amountUsd,
-          rateLocalPerUsd: amounts.rateLocalPerUsd,
-          amountLocal: amounts.amountLocal,
-          beneficiary: input.cheque.beneficiary ?? vendor.vendorName,
-          vendorId: input.vendorId,
-          paymentId: payment.id,
-          cashBankAccountId: input.cashBankAccountId ?? null,
-          status: 'RECEIVED',
-          notes: input.cheque.notes ?? null,
-          createdById: userId,
-          statusHistory: {
-            create: { fromStatus: null, toStatus: 'RECEIVED', changedById: userId, notes: 'Cheque issued' },
-          },
-        },
-      });
-    }
+    await syncDraftPaymentCheque(tx, {
+      companyId: input.companyId,
+      paymentId: payment.id,
+      vendorId: input.vendorId,
+      vendorName: vendor.vendorName,
+      userId,
+      method,
+      cheque: input.cheque,
+      amounts,
+      cashBankAccountId: input.cashBankAccountId ?? null,
+    });
 
     await writeAudit(tx, {
       companyId: input.companyId,
@@ -397,6 +509,12 @@ export async function updatePayment(id: string, input: PaymentInput, userId: str
     if (existing.status !== 'DRAFT') {
       throw new BusinessRuleError('Only draft payments can be edited. Reverse the payment to correct a posted one.');
     }
+
+    const vendor = await tx.vendor.findFirst({
+      where: { id: input.vendorId, companyId: input.companyId },
+      select: { vendorName: true },
+    });
+    if (!vendor) throw new NotFoundError('Vendor');
 
     const company = await getCompanyContext(tx, input.companyId);
     const method = await validateSettlement(tx, input);
@@ -430,6 +548,18 @@ export async function updatePayment(id: string, input: PaymentInput, userId: str
         allocations: { create: allocations },
       },
       include: { allocations: true },
+    });
+
+    await syncDraftPaymentCheque(tx, {
+      companyId: input.companyId,
+      paymentId: id,
+      vendorId: input.vendorId,
+      vendorName: vendor.vendorName,
+      userId,
+      method,
+      cheque: input.cheque,
+      amounts,
+      cashBankAccountId: input.cashBankAccountId ?? null,
     });
 
     await writeAudit(tx, {
@@ -471,6 +601,8 @@ export async function postPayment(params: { id: string; companyId: string; userI
       throw new BusinessRuleError('This payment has no cash or bank account and cannot be posted.');
     }
     const company = await getCompanyContext(tx, params.companyId);
+
+    await lockPayableDocuments(tx, payment.allocations);
 
     for (const alloc of payment.allocations) {
       const outstanding = alloc.purchaseContractId
@@ -628,6 +760,8 @@ export async function reversePayment(params: { id: string; companyId: string; us
       entryDate: reversalDate,
       reason: params.reason,
     });
+
+    await cancelPaymentCheque(tx, params.id, params.userId);
 
     const reversed = await tx.payment.update({
       where: { id: params.id },

@@ -13,6 +13,7 @@ import { Metric, MetricGrid } from '@/components/shared/stat-card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { LedgerView } from '@/components/shared/ledger-view';
+import { Callout } from '@/components/ui/feedback';
 
 export const dynamic = 'force-dynamic';
 
@@ -94,6 +95,12 @@ export default async function VendorLedgerPage({
         <Metric label="Open contracts" value={String(payables.length)} />
         <Metric label="Outstanding" value={formatMoney(outstanding, vendor.primaryCurrency)} />
       </MetricGrid>
+
+      <Callout tone="info">
+        The supplier ledger is the posted payable — goods, freight and tax together, not the coffee rate alone.
+        If the purchase was in USD, switch to the USD view so the figure matches the contract. Each line shows
+        that voucher’s own currency.
+      </Callout>
 
       <LedgerView
         ledger={ledger}

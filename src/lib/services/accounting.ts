@@ -92,7 +92,14 @@ const LOCAL_DRIFT_TOLERANCE = new Decimal('0.05');
 const USD_TRANSLATION_TOLERANCE = new Decimal('0.005');
 
 async function resolveAccountId(tx: Tx, companyId: string, line: JournalLineInput): Promise<string> {
-  if (line.accountId) return line.accountId;
+  if (line.accountId) {
+    const account = await tx.account.findFirst({
+      where: { id: line.accountId, companyId },
+      select: { id: true },
+    });
+    if (!account) throw new NotFoundError('Account');
+    return account.id;
+  }
 
   if (line.cashBankAccountId) {
     const account = await tx.cashBankAccount.findUnique({
@@ -123,6 +130,25 @@ export async function getSystemAccount(
     throw new NotFoundError(`System account "${key}" for this company`);
   }
   return account;
+}
+
+async function assertJournalDimensions(tx: Tx, companyId: string, line: JournalLineInput) {
+  if (line.customerId) {
+    const row = await tx.customer.findFirst({ where: { id: line.customerId, companyId }, select: { id: true } });
+    if (!row) throw new NotFoundError('Customer');
+  }
+  if (line.vendorId) {
+    const row = await tx.vendor.findFirst({ where: { id: line.vendorId, companyId }, select: { id: true } });
+    if (!row) throw new NotFoundError('Vendor');
+  }
+  if (line.agentId) {
+    const row = await tx.agent.findFirst({ where: { id: line.agentId, companyId }, select: { id: true } });
+    if (!row) throw new NotFoundError('Agent');
+  }
+  if (line.shipmentId) {
+    const row = await tx.shipment.findFirst({ where: { id: line.shipmentId, companyId }, select: { id: true } });
+    if (!row) throw new NotFoundError('Shipment');
+  }
 }
 
 /**
@@ -190,6 +216,8 @@ export async function postJournalEntry(tx: Tx, params: PostJournalParams) {
       : currency === localCurrency.toUpperCase()
         ? amount
         : convertFromUsd(amountUsd, rateLocalPerUsd, localCurrency);
+
+    await assertJournalDimensions(tx, companyId, line);
 
     prepared.push({
       accountId: await resolveAccountId(tx, companyId, line),
@@ -432,6 +460,7 @@ export async function reverseJournalEntry(
           creditLocal: l.debitLocal,
           customerId: l.customerId,
           vendorId: l.vendorId,
+          agentId: l.agentId,
           cashBankAccountId: l.cashBankAccountId,
           shipmentId: l.shipmentId,
           purchaseContractId: l.purchaseContractId,

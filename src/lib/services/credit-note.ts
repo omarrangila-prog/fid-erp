@@ -7,7 +7,7 @@ import { nextReference } from '@/lib/services/numbering';
 import { postJournalEntry, reverseJournalEntry } from '@/lib/services/accounting';
 import { getCompanyContext } from '@/lib/services/company';
 import { writeAudit } from '@/lib/services/audit';
-import { consumeStock, returnStock } from '@/lib/services/inventory';
+import { consumeStock, returnStock, computeWarehouseBalance } from '@/lib/services/inventory';
 import { resolveTaxCode, computeLineTax } from '@/lib/services/tax';
 import { resolveSubledgerLeg } from '@/lib/services/subledger';
 
@@ -115,15 +115,29 @@ async function resolveLines(tx: Tx, input: CreditNoteInput): Promise<ResolvedLin
 
       const batch = await tx.batch.findFirst({
         where: { id: line.batchId, companyId: input.companyId },
-        select: { id: true, itemId: true, landedUnitCostUsd: true, soldQuantityKg: true, batchNumber: true },
+        select: {
+          id: true,
+          itemId: true,
+          landedUnitCostUsd: true,
+          soldQuantityKg: true,
+          batchNumber: true,
+        },
       });
       if (!batch) throw new NotFoundError('Batch');
 
-      // You cannot return more than was sold out of the batch.
-      if (quantityKg.greaterThan(batch.soldQuantityKg)) {
-        throw new BusinessRuleError(
-          `Batch ${batch.batchNumber} has only ${dec(batch.soldQuantityKg).toFixed(3)} KG recorded as sold, so ${quantityKg.toFixed(3)} KG cannot be returned.`,
-        );
+      if (input.type === 'CUSTOMER') {
+        if (quantityKg.greaterThan(batch.soldQuantityKg)) {
+          throw new BusinessRuleError(
+            `Batch ${batch.batchNumber} has only ${dec(batch.soldQuantityKg).toFixed(3)} KG recorded as sold, so ${quantityKg.toFixed(3)} KG cannot be returned.`,
+          );
+        }
+      } else {
+        const onHand = await computeWarehouseBalance(tx, batch.id, line.warehouseId);
+        if (quantityKg.greaterThan(onHand.onHandKg)) {
+          throw new BusinessRuleError(
+            `Batch ${batch.batchNumber} has only ${onHand.onHandKg.toFixed(3)} KG on hand, so ${quantityKg.toFixed(3)} KG cannot be returned to the supplier.`,
+          );
+        }
       }
 
       const warehouse = await tx.warehouse.findFirst({
@@ -201,9 +215,14 @@ export async function createCreditNote(input: CreditNoteInput, userId: string) {
     if (input.salesInvoiceId) {
       const invoice = await tx.salesInvoice.findFirst({
         where: { id: input.salesInvoiceId, companyId: input.companyId },
-        select: { id: true, invoiceNumber: true, totalAmountUsd: true },
+        select: { id: true, invoiceNumber: true, totalAmountUsd: true, customerId: true },
       });
       if (!invoice) throw new NotFoundError('Sales invoice');
+      if (input.customerId && invoice.customerId !== input.customerId) {
+        throw new BusinessRuleError(
+          `Invoice ${invoice.invoiceNumber} belongs to a different customer than this credit note.`,
+        );
+      }
 
       const alreadyCredited = await tx.creditNote.aggregate({
         where: { salesInvoiceId: invoice.id, status: 'POSTED' },
@@ -213,6 +232,19 @@ export async function createCreditNote(input: CreditNoteInput, userId: string) {
       if (toMoney(totalAmountUsd).greaterThan(headroom)) {
         throw new BusinessRuleError(
           `Invoice ${invoice.invoiceNumber} has only USD ${headroom.toFixed(2)} left to credit, which is less than the USD ${totalAmountUsd.toFixed(2)} on this note.`,
+        );
+      }
+    }
+
+    if (input.purchaseContractId) {
+      const contract = await tx.purchaseContract.findFirst({
+        where: { id: input.purchaseContractId, companyId: input.companyId },
+        select: { id: true, contractNumber: true, vendorId: true },
+      });
+      if (!contract) throw new NotFoundError('Purchase contract');
+      if (input.vendorId && contract.vendorId !== input.vendorId) {
+        throw new BusinessRuleError(
+          `Contract ${contract.contractNumber} belongs to a different supplier than this debit note.`,
         );
       }
     }
@@ -303,21 +335,37 @@ export async function postCreditNote(params: { id: string; companyId: string; us
     // Stock first: if a return cannot be made, nothing should post.
     for (const line of note.lines) {
       if (!line.batchId || !line.warehouseId || dec(line.quantityKg).lessThanOrEqualTo(0)) continue;
-      await returnStock(tx, {
-        companyId: params.companyId,
-        batchId: line.batchId,
-        warehouseId: line.warehouseId,
-        quantityKg: line.quantityKg,
-        bags: line.bags,
-        unitCostUsd: dec(line.quantityKg).isZero()
-          ? 0
-          : dec(line.costTotalUsd).dividedBy(line.quantityKg),
-        referenceType: 'CREDIT_NOTE',
-        referenceId: note.id,
-        transactionDate: note.creditDate,
-        createdById: params.userId,
-        notes: `Credit note ${note.creditNoteNumber}`,
-      });
+      const unitCostUsd = dec(line.quantityKg).isZero()
+        ? 0
+        : dec(line.costTotalUsd).dividedBy(line.quantityKg);
+      if (note.type === 'CUSTOMER') {
+        await returnStock(tx, {
+          companyId: params.companyId,
+          batchId: line.batchId,
+          warehouseId: line.warehouseId,
+          quantityKg: line.quantityKg,
+          bags: line.bags,
+          unitCostUsd,
+          referenceType: 'CREDIT_NOTE',
+          referenceId: note.id,
+          transactionDate: note.creditDate,
+          createdById: params.userId,
+          notes: `Credit note ${note.creditNoteNumber}`,
+        });
+      } else {
+        await consumeStock(tx, {
+          companyId: params.companyId,
+          batchId: line.batchId,
+          warehouseId: line.warehouseId,
+          quantityKg: line.quantityKg,
+          bags: line.bags,
+          referenceType: 'CREDIT_NOTE',
+          referenceId: note.id,
+          transactionDate: note.creditDate,
+          createdById: params.userId,
+          notes: `Supplier debit note ${note.creditNoteNumber}`,
+        });
+      }
     }
 
     const party =
@@ -433,6 +481,28 @@ export async function postCreditNote(params: { id: string; companyId: string; us
                     amount: note.taxAmount,
                     rateToUsd: note.rateToUsd,
                     description: `Input tax reversed on ${note.creditNoteNumber}`,
+                    vendorId: note.vendorId,
+                  },
+                ]
+              : []),
+            ...(hasReturn
+              ? [
+                  {
+                    accountKey: ACCOUNT_KEYS.PURCHASE_RETURNS,
+                    direction: 'DEBIT' as const,
+                    currency: 'USD',
+                    amount: costUsd,
+                    rateToUsd: 1,
+                    description: `Cost of coffee returned to supplier on ${note.creditNoteNumber}`,
+                    vendorId: note.vendorId,
+                  },
+                  {
+                    accountKey: ACCOUNT_KEYS.INVENTORY,
+                    direction: 'CREDIT' as const,
+                    currency: 'USD',
+                    amount: costUsd,
+                    rateToUsd: 1,
+                    description: `Coffee returned to supplier on ${note.creditNoteNumber}`,
                     vendorId: note.vendorId,
                   },
                 ]

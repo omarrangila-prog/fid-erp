@@ -10,6 +10,7 @@ import { Input, Select, Textarea } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { Callout } from '@/components/ui/feedback';
 import { markShipmentLoadedAction } from '@/server/actions/trading-actions';
+import { todayInputValue } from '@/lib/format';
 
 /**
  * Mark as loaded.
@@ -43,6 +44,10 @@ export function MarkLoadedDialog({
     bookingNumber?: string | null;
     billOfLading?: string | null;
     containerNumber?: string | null;
+    containerNumbers?: string[];
+    containers?: number;
+    portOfLoading?: string | null;
+    portOfDischarge?: string | null;
   };
 }) {
   return (
@@ -71,11 +76,13 @@ function MarkLoadedBody({
   const [error, setError] = React.useState<string | null>(null);
 
   const [form, setForm] = React.useState({
-    loadingDate: new Date().toISOString().slice(0, 10),
+    loadingDate: todayInputValue(),
     etaDate: defaults?.etaDate ?? '',
     shippingLineId: defaults?.shippingLineId ?? (shippingLines.length === 1 ? shippingLines[0].id : ''),
     bookingNumber: defaults?.bookingNumber ?? '',
     billOfLading: defaults?.billOfLading ?? '',
+    portOfLoading: defaults?.portOfLoading ?? '',
+    portOfDischarge: defaults?.portOfDischarge ?? '',
     notes: '',
   });
 
@@ -86,10 +93,22 @@ function MarkLoadedBody({
    * that many numbered fields, because one booking routinely covers several
    * containers and typing them into a single box loses which is which.
    */
-  const [containerCount, setContainerCount] = React.useState(defaults?.containerNumber ? 1 : 1);
-  const [containerNumbers, setContainerNumbers] = React.useState<string[]>([
-    defaults?.containerNumber ?? '',
-  ]);
+  const initialContainers = Math.max(
+    1,
+    defaults?.containerNumbers?.length || defaults?.containers || (defaults?.containerNumber ? 1 : 1),
+  );
+  const [containerCount, setContainerCount] = React.useState(initialContainers);
+  const [containerNumbers, setContainerNumbers] = React.useState<string[]>(() => {
+    const known = defaults?.containerNumbers?.filter(Boolean) ?? [];
+    if (known.length > 0) {
+      const grown = [...known];
+      while (grown.length < initialContainers) grown.push('');
+      return grown;
+    }
+    return Array.from({ length: initialContainers }, (_, i) =>
+      i === 0 ? (defaults?.containerNumber ?? '') : '',
+    );
+  });
 
   function setCount(next: number) {
     const count = Math.max(1, Math.min(40, Number.isFinite(next) ? next : 1));
@@ -202,6 +221,22 @@ function MarkLoadedBody({
               id="bookingNumber"
               value={form.bookingNumber}
               onChange={(e) => set({ bookingNumber: e.target.value })}
+            />
+          </Field>
+
+          <Field label="Port of loading" htmlFor="portOfLoading">
+            <Input
+              id="portOfLoading"
+              value={form.portOfLoading}
+              onChange={(e) => set({ portOfLoading: e.target.value })}
+            />
+          </Field>
+
+          <Field label="Port of discharge" htmlFor="portOfDischarge">
+            <Input
+              id="portOfDischarge"
+              value={form.portOfDischarge}
+              onChange={(e) => set({ portOfDischarge: e.target.value })}
             />
           </Field>
 

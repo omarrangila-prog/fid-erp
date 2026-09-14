@@ -11,6 +11,7 @@ import {
 import { cn } from '@/lib/utils';
 import { initials } from '@/lib/format';
 import { searchAction, switchCompanyAction, logoutAction } from '@/server/actions/session-actions';
+import { toast } from 'sonner';
 import { filterQuickCreate, navDestinations } from '@/components/layout/nav-config';
 import type { SearchResult } from '@/lib/services/search';
 
@@ -299,6 +300,8 @@ function CompanySwitcher({ companies, active }: { companies: TopbarCompany[]; ac
         // document load rather than a client-side push.
         // eslint-disable-next-line @next/next/no-location-assign-relative-destination
         window.location.assign('/dashboard');
+      } else {
+        toast.error(result.error ?? 'The company could not be switched.');
       }
     });
   }

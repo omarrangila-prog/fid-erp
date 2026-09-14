@@ -82,6 +82,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Trading',
     icon: Ship,
     items: [
+      { label: 'Items', href: '/items', icon: Coffee, permissions: [PERMISSIONS.ITEMS_VIEW] },
       { label: 'Purchase Orders', href: '/purchases', icon: FileText, permissions: [PERMISSIONS.PURCHASES_VIEW] },
       { label: 'Loading Sheet', href: '/loading', icon: ClipboardList, permissions: [PERMISSIONS.SHIPMENTS_VIEW] },
       { label: 'Purchase Receipts', href: '/goods-receipts', icon: PackageCheck, permissions: [PERMISSIONS.INVENTORY_VIEW] },
@@ -118,6 +119,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Accounting',
     icon: BookOpen,
     items: [
+      { label: 'Chart of Accounts', href: '/accounting/chart', icon: BookOpen, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
       { label: 'Journal Entries', href: '/reports/journal', icon: LineChart, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
       { label: 'General Ledger', href: '/reports/general-ledger', icon: BookOpen, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
       { label: 'Customer Ledgers', href: '/ledgers/customers', icon: Users, permissions: [PERMISSIONS.LEDGERS_VIEW] },
@@ -142,7 +144,6 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Customers', href: '/customers', icon: Users, permissions: [PERMISSIONS.CUSTOMERS_VIEW] },
       { label: 'Suppliers', href: '/vendors', icon: Factory, permissions: [PERMISSIONS.VENDORS_VIEW] },
       { label: 'Agents', href: '/agents', icon: UserCog, permissions: [PERMISSIONS.AGENTS_VIEW] },
-      { label: 'Items', href: '/items', icon: Coffee, permissions: [PERMISSIONS.ITEMS_VIEW] },
       { label: 'Warehouses', href: '/warehouses', icon: Warehouse, permissions: [PERMISSIONS.WAREHOUSES_VIEW] },
       { label: 'Expense Categories', href: '/expense-categories', icon: Tags, permissions: [PERMISSIONS.EXPENSE_CATEGORIES_VIEW] },
       { label: 'Shipping Lines', href: '/shipping-lines', icon: Ship, permissions: [PERMISSIONS.SHIPPING_LINES_VIEW] },
@@ -191,7 +192,7 @@ export const QUICK_CREATE: QuickCreateItem[] = [
 
   { label: 'Customer', href: '/customers?new=1', icon: Users, group: 'Records', hint: 'Someone you sell to', permission: PERMISSIONS.CUSTOMERS_CREATE },
   { label: 'Supplier', href: '/vendors?new=1', icon: Truck, group: 'Records', hint: 'Someone you buy from', permission: PERMISSIONS.VENDORS_CREATE },
-  { label: 'Coffee item', href: '/items?new=1', icon: Coffee, group: 'Records', hint: 'Origin, grade, screen, process', permission: PERMISSIONS.ITEMS_CREATE },
+  { label: 'Item', href: '/items?new=1', icon: Coffee, group: 'Records', hint: 'Coffee name, unit, origin, screen', permission: PERMISSIONS.ITEMS_CREATE },
   { label: 'Journal voucher', href: '/accounting/journal/new', icon: BookPlus, group: 'Money', hint: 'A direct double-entry posting', permission: PERMISSIONS.ACCOUNTING_POST },
   { label: 'Credit note', href: '/sales/credit-notes/new', icon: FileMinus, group: 'Money', hint: 'Reduce what a customer owes', permission: PERMISSIONS.CREDIT_NOTES_CREATE },
   { label: 'Stock count', href: '/inventory/stock-counts/new', icon: ClipboardCheck, group: 'Trade', hint: 'Verify a warehouse against the books', permission: PERMISSIONS.STOCK_COUNT_MANAGE },

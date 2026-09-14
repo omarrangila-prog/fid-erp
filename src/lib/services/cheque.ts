@@ -116,7 +116,75 @@ export async function changeChequeStatus(input: ChequeStatusChangeInput) {
     // --- Build the accounting entry for this transition --------------------
     let lines: JournalLineInput[] | null = null;
 
-    if (input.toStatus === 'CLEARED') {
+    if (fromStatus === 'BOUNCED' && input.toStatus === 'DEPOSITED') {
+      // Bounce already credited Cheques on Hand and reinstated the debt.
+      // Putting the paper back in play has to reopen that asset (or liability).
+      if (isInbound) {
+        if (!cheque.customer) throw new BusinessRuleError('This inbound cheque has no customer to re-credit.');
+        const ar = resolveSubledgerLeg({
+          partyCurrency: cheque.customer.primaryCurrency,
+          voucherCurrency: cheque.currency,
+          voucherAmount: cheque.amount,
+          voucherRateToUsd: cheque.rateToUsd,
+          voucherAmountUsd: cheque.amountUsd,
+          localCurrency: company.localCurrency,
+          rateLocalPerUsd: cheque.rateLocalPerUsd,
+          partyLabel: cheque.customer.customerName,
+        });
+        lines = [
+          {
+            accountKey: ACCOUNT_KEYS.CHEQUES_ON_HAND,
+            direction: 'DEBIT',
+            currency: cheque.currency,
+            amount: cheque.amount,
+            rateToUsd: cheque.rateToUsd,
+            description: `Cheque ${cheque.chequeNumber} redeposited`,
+            customerId: cheque.customerId,
+          },
+          {
+            accountKey: ACCOUNT_KEYS.ACCOUNTS_RECEIVABLE,
+            direction: 'CREDIT',
+            currency: ar.currency,
+            amount: ar.amount,
+            rateToUsd: ar.rateToUsd,
+            description: `Cheque ${cheque.chequeNumber} redeposited — debt settled again`,
+            customerId: cheque.customerId,
+          },
+        ];
+      } else {
+        if (!cheque.vendor) throw new BusinessRuleError('This outbound cheque has no supplier to re-debit.');
+        const ap = resolveSubledgerLeg({
+          partyCurrency: cheque.vendor.primaryCurrency,
+          voucherCurrency: cheque.currency,
+          voucherAmount: cheque.amount,
+          voucherRateToUsd: cheque.rateToUsd,
+          voucherAmountUsd: cheque.amountUsd,
+          localCurrency: company.localCurrency,
+          rateLocalPerUsd: cheque.rateLocalPerUsd,
+          partyLabel: cheque.vendor.vendorName,
+        });
+        lines = [
+          {
+            accountKey: ACCOUNT_KEYS.ACCOUNTS_PAYABLE,
+            direction: 'DEBIT',
+            currency: ap.currency,
+            amount: ap.amount,
+            rateToUsd: ap.rateToUsd,
+            description: `Cheque ${cheque.chequeNumber} reissued — liability settled again`,
+            vendorId: cheque.vendorId,
+          },
+          {
+            accountKey: ACCOUNT_KEYS.CHEQUES_ISSUED,
+            direction: 'CREDIT',
+            currency: cheque.currency,
+            amount: cheque.amount,
+            rateToUsd: cheque.rateToUsd,
+            description: `Cheque ${cheque.chequeNumber} reissued`,
+            vendorId: cheque.vendorId,
+          },
+        ];
+      }
+    } else if (input.toStatus === 'CLEARED') {
       lines = isInbound
         ? [
             {

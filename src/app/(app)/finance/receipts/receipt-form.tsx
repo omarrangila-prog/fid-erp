@@ -12,8 +12,8 @@ import { Field } from '@/components/ui/field';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Combobox, type ComboOption } from '@/components/ui/combobox';
 import { Callout, EmptyState } from '@/components/ui/feedback';
-import { dec, toMoney, sum, convertToUsd } from '@/lib/money';
-import { formatMoney, formatDate } from '@/lib/format';
+import { dec, tryDec, toMoney, sum, convertToUsd } from '@/lib/money';
+import { formatMoney, formatDate, todayInputValue } from '@/lib/format';
 import { saveReceiptAction, postReceiptAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { accountsFor } from '@/lib/cash-account-choice';
@@ -44,17 +44,21 @@ export function ReceiptForm({
   invoices,
   localCurrency,
   defaultLocalRate,
+  ratesByCurrency,
   preselectedInvoiceId,
   agents,
+  canPost = true,
 }: {
   customers: Array<ComboOption & { currency: string }>;
   accounts: BankOption[];
   invoices: OpenInvoice[];
   localCurrency: string;
   defaultLocalRate: string;
+  ratesByCurrency?: Record<string, string>;
   preselectedInvoiceId?: string;
   /** For a cheque written in someone else's name. Master data, never a literal. */
   agents: Array<{ id: string; name: string }>;
+  canPost?: boolean;
 }) {
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
@@ -62,13 +66,19 @@ export function ReceiptForm({
   const [fieldIssues, setFieldIssues] = React.useState<Record<string, string>>({});
 
   const preselected = invoices.find((i) => i.id === preselectedInvoiceId);
+  const initialCurrency = preselected?.currency ?? 'USD';
+  const rateFor = React.useCallback(
+    (currency: string) =>
+      currency === 'USD' ? '1' : (ratesByCurrency?.[currency] ?? defaultLocalRate),
+    [ratesByCurrency, defaultLocalRate],
+  );
 
   const [form, setForm] = React.useState({
-    receiptDate: new Date().toISOString().slice(0, 10),
+    receiptDate: todayInputValue(),
     customerId: preselected?.customerId ?? null,
-    currency: preselected?.currency ?? 'USD',
+    currency: initialCurrency,
     amount: preselected?.outstanding ?? '',
-    rateToUsd: '1',
+    rateToUsd: rateFor(initialCurrency),
     usdEquivalent: '',
     rateLocalPerUsd: defaultLocalRate,
     paymentMethod: 'BANK_TRANSFER',
@@ -131,7 +141,7 @@ export function ReceiptForm({
     }
   }, [form.amount, form.usdEquivalent, entryMode, isForeign]);
 
-  const allocatedTotal = sum(Object.values(allocations).filter(Boolean).map((v) => dec(v)));
+  const allocatedTotal = sum(Object.values(allocations).filter(Boolean).map((v) => tryDec(v)));
 
   function submit(andPost: boolean) {
     setError(null);
@@ -143,7 +153,7 @@ export function ReceiptForm({
       currency: form.currency,
       amount: form.amount,
       rateToUsd: !isForeign ? '1' : entryMode === 'rate' ? form.rateToUsd : '',
-      usdEquivalent: isForeign && entryMode === 'usd' ? form.usdEquivalent : '',
+      usdEquivalent: isForeign && entryMode === 'usd' && form.usdEquivalent ? form.usdEquivalent : undefined,
       rateLocalPerUsd: form.currency === localCurrency ? form.rateToUsd || '1' : form.rateLocalPerUsd,
       paymentMethod: form.paymentMethod,
       cashBankAccountId: cashBankAccountId ?? '',
@@ -215,7 +225,13 @@ export function ReceiptForm({
               value={form.customerId}
               onChange={(value) => {
                 const customer = customers.find((c) => c.value === value);
-                setForm({ ...form, customerId: value, currency: customer?.currency ?? form.currency });
+                const nextCurrency = customer?.currency ?? form.currency;
+                setForm({
+                  ...form,
+                  customerId: value,
+                  currency: nextCurrency,
+                  rateToUsd: rateFor(nextCurrency),
+                });
                 setAllocations({});
               }}
               placeholder="Choose a customer…"
@@ -246,7 +262,12 @@ export function ReceiptForm({
             <Select
               value={form.currency}
               onChange={(e) =>
-                setForm({ ...form, currency: e.target.value, rateToUsd: e.target.value === 'USD' ? '1' : '', cashBankAccountId: null })
+                setForm({
+                  ...form,
+                  currency: e.target.value,
+                  rateToUsd: rateFor(e.target.value),
+                  cashBankAccountId: null,
+                })
               }
             >
               <option value="USD">USD — US Dollar</option>
@@ -512,9 +533,11 @@ export function ReceiptForm({
         <Button variant="outline" onClick={() => submit(false)} loading={busy}>
           Save draft
         </Button>
-        <Button variant="accent" onClick={() => submit(true)} loading={busy}>
-          Save and post
-        </Button>
+        {canPost ? (
+          <Button variant="accent" onClick={() => submit(true)} loading={busy}>
+            Save and post
+          </Button>
+        ) : null}
       </div>
     </div>
   );

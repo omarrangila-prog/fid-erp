@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { Callout } from '@/components/ui/feedback';
 import { updateShipmentEtaAction, markShipmentArrivedAction } from '@/server/actions/trading-actions';
+import { todayInputValue } from '@/lib/format';
 
 /**
  * Change an expected arrival, from the row it is on.
@@ -113,7 +114,7 @@ export function ArrivedDialog({
   const router = useRouter();
   const [pending, startTransition] = React.useTransition();
   const [error, setError] = React.useState<string | null>(null);
-  const [ataDate, setAtaDate] = React.useState(new Date().toISOString().slice(0, 10));
+  const [ataDate, setAtaDate] = React.useState(todayInputValue());
 
   function submit() {
     setError(null);

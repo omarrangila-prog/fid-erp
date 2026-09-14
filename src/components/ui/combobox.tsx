@@ -30,6 +30,7 @@ export function Combobox({
   className,
   invalid,
   autoFocus,
+  wrap = false,
   'aria-label': ariaLabel,
 }: {
   options: ComboOption[];
@@ -46,6 +47,8 @@ export function Combobox({
   'aria-label'?: string;
   /** Entry forms focus their first field so typing can start immediately. */
   autoFocus?: boolean;
+  /** Let a long coffee name wrap instead of collapsing to an ellipsis. */
+  wrap?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState('');
@@ -84,11 +87,12 @@ export function Combobox({
           disabled={disabled}
           data-invalid={invalid ? 'true' : undefined}
           className={cn(
-            'flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-line-strong bg-surface px-3 text-left text-sm transition-colors hover:border-forest-300 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20 disabled:cursor-not-allowed disabled:bg-forest-50 data-[invalid=true]:border-red-400',
+            'flex w-full items-center justify-between gap-2 rounded-lg border border-line-strong bg-surface px-3 text-left text-sm transition-colors hover:border-forest-300 focus:border-gold-500 focus:outline-none focus:ring-2 focus:ring-gold-500/20 disabled:cursor-not-allowed disabled:bg-forest-50 data-[invalid=true]:border-red-400',
+            wrap ? 'h-auto min-h-11 items-start py-2' : 'h-10',
             className,
           )}
         >
-          <span className={cn('truncate', selected ? 'text-ink' : 'text-ink-subtle')}>
+          <span className={cn(wrap ? 'whitespace-normal break-words' : 'truncate', selected ? 'text-ink' : 'text-ink-subtle')}>
             {selected ? selected.label : placeholder}
           </span>
           <ChevronsUpDown className="size-4 shrink-0 text-ink-subtle" />
@@ -125,7 +129,7 @@ export function Combobox({
                   aria-selected={option.value === value}
                   disabled={option.disabled}
                   onClick={() => {
-                    onChange(option.value === value ? null : option.value);
+                    onChange(option.value);
                     setOpen(false);
                   }}
                   className={cn(

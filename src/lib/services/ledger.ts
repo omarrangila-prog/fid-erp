@@ -191,6 +191,10 @@ async function buildLedger(params: {
     };
   });
 
+  const txnCurrencies = new Set(shaped.map((row) => row.currency));
+  const viewCurrency =
+    view === 'TRANSACTION' && txnCurrencies.size === 1 ? [...txnCurrencies][0]! : params.viewCurrency;
+
   return {
     openingBalance,
     closingBalance: running,
@@ -198,8 +202,15 @@ async function buildLedger(params: {
     totalCredit: toMoney(totalCredit),
     rows: shaped,
     view,
-    viewCurrency: params.viewCurrency,
+    viewCurrency,
   };
+}
+
+/** Filter a party ledger to invoices, receipts, or everything. */
+export function ledgerKindToSourceType(kind?: string | null): string | undefined {
+  if (kind === 'INVOICES') return 'SALES_INVOICE';
+  if (kind === 'PAYMENTS') return 'RECEIPT';
+  return undefined;
 }
 
 export async function getCustomerLedger(params: {

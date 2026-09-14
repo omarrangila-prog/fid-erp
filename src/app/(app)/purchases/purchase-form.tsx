@@ -16,6 +16,7 @@ import { INCOTERM_LABELS } from '@/lib/constants';
 import { savePurchaseContractAction, postPurchaseContractAction } from '@/server/actions/trading-actions';
 import { computePurchaseTotalsClient, type LineDraft } from '@/app/(app)/purchases/purchase-math';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
+import { todayInputValue } from '@/lib/format';
 
 /**
  * Purchase contract entry.
@@ -93,7 +94,7 @@ export function PurchaseForm({
   const [header, setHeader] = React.useState({
     contractReference: defaults?.contractReference ?? '',
     supplierContractNo: defaults?.supplierContractNo ?? '',
-    contractDate: defaults?.contractDate ?? new Date().toISOString().slice(0, 10),
+    contractDate: defaults?.contractDate ?? todayInputValue(),
     vendorId: defaults?.vendorId ?? '',
     origin: defaults?.origin ?? '',
     currency: defaults?.currency ?? 'USD',

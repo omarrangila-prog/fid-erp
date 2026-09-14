@@ -53,16 +53,19 @@ export function SaleActions({
 
   return (
     <>
+      {status === 'DRAFT' || status === 'POSTED' ? (
+        canEdit ? (
+          <Button variant="outline" asChild>
+            <Link href={`/sales/${id}/edit`}>
+              <Pencil />
+              Edit Invoice
+            </Link>
+          </Button>
+        ) : null
+      ) : null}
+
       {status === 'DRAFT' ? (
         <>
-          {canEdit ? (
-            <Button variant="outline" asChild>
-              <Link href={`/sales/${id}/edit`}>
-                <Pencil />
-                Edit
-              </Link>
-            </Button>
-          ) : null}
           {canDelete ? (
             <Button variant="ghost" onClick={() => setConfirm('delete')} disabled={busy}>
               <Trash2 />

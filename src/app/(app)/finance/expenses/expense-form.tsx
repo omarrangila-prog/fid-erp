@@ -12,8 +12,8 @@ import { Field } from '@/components/ui/field';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Combobox, type ComboOption } from '@/components/ui/combobox';
 import { Callout } from '@/components/ui/feedback';
-import { dec, convertToUsd } from '@/lib/money';
-import { formatMoney } from '@/lib/format';
+import { dec, tryDec, convertToUsd } from '@/lib/money';
+import { formatMoney, todayInputValue } from '@/lib/format';
 import { saveExpenseAction, postExpenseAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { accountsFor } from '@/lib/cash-account-choice';
@@ -36,7 +36,9 @@ export function ExpenseForm({
   accounts,
   localCurrency,
   defaultLocalRate,
+  ratesByCurrency,
   defaultShipmentId,
+  canPost = true,
 }: {
   categories: CategoryOption[];
   shipments: ComboOption[];
@@ -45,7 +47,9 @@ export function ExpenseForm({
   accounts: Array<ComboOption & { currency: string; accountType: 'CASH' | 'PETTY_CASH' | 'BANK' }>;
   localCurrency: string;
   defaultLocalRate: string;
+  ratesByCurrency: Record<string, string>;
   defaultShipmentId?: string;
+  canPost?: boolean;
 }) {
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
@@ -54,12 +58,12 @@ export function ExpenseForm({
 
   // The first question, and the one that decides the rest of the form: is this
   // money spent on one consignment, or on running the business?
-  const [kind, setKind] = React.useState<'SHIPMENT' | 'GENERAL'>(
-    defaultShipmentId ? 'SHIPMENT' : 'SHIPMENT',
-  );
+  const [kind, setKind] = React.useState<'SHIPMENT' | 'GENERAL'>('SHIPMENT');
+  const [settlement, setSettlement] = React.useState<'PAID' | 'UNPAID'>('PAID');
+  const [unpaidTo, setUnpaidTo] = React.useState<'VENDOR' | 'AGENT'>('VENDOR');
 
   const [form, setForm] = React.useState({
-    expenseDate: new Date().toISOString().slice(0, 10),
+    expenseDate: todayInputValue(),
     expenseCategoryId: null as string | null,
     shipmentId: defaultShipmentId ?? (null as string | null),
     vendorId: null as string | null,
@@ -68,7 +72,7 @@ export function ExpenseForm({
     amount: '',
     rateToUsd: localCurrency === 'USD' ? '1' : defaultLocalRate,
     rateLocalPerUsd: defaultLocalRate,
-    paymentMethod: 'BANK_TRANSFER',
+    paymentMethod: 'CASH',
     cashBankAccountId: null as string | null,
     reference: '',
     description: '',
@@ -106,7 +110,7 @@ export function ExpenseForm({
   const amountUsd = React.useMemo(() => {
     if (!form.amount) return dec(0);
     try {
-      return isForeign ? convertToUsd(form.amount, form.rateToUsd || '1', form.currency) : dec(form.amount);
+      return isForeign ? convertToUsd(form.amount, form.rateToUsd || '1', form.currency) : tryDec(form.amount);
     } catch {
       return dec(0);
     }
@@ -117,17 +121,38 @@ export function ExpenseForm({
     setFieldIssues({});
 
     if (kind === 'SHIPMENT' && !form.shipmentId) {
-      setError('A direct shipment cost must be linked to a job so its landed cost can be allocated.');
+      setError('A shipment expense must name the contract / shipment it belongs to.');
       return;
     }
+
+    if (settlement === 'PAID' && !cashBankAccountId) {
+      setError('Choose the cash or bank this was paid from.');
+      return;
+    }
+
+    if (settlement === 'UNPAID' && unpaidTo === 'VENDOR' && !form.vendorId) {
+      setError('Choose the supplier this is owed to.');
+      return;
+    }
+
+    if (settlement === 'UNPAID' && unpaidTo === 'AGENT' && !form.agentId) {
+      setError('Choose the agent this is owed to.');
+      return;
+    }
+
+    const paidFrom = settlement === 'PAID' ? (cashBankAccountId ?? '') : '';
+    const vendorId = settlement === 'UNPAID' && unpaidTo === 'VENDOR' ? (form.vendorId ?? '') : '';
+    const agentId = kind === 'SHIPMENT' ? (form.agentId ?? '') : '';
+    const payableToAgentId = settlement === 'UNPAID' && unpaidTo === 'AGENT' ? (form.agentId ?? '') : '';
 
     const payload = {
       expenseDate: form.expenseDate,
       expenseCategoryId: form.expenseCategoryId,
       shipmentId: kind === 'SHIPMENT' ? (form.shipmentId ?? '') : '',
       purchaseContractId: '',
-      vendorId: form.vendorId ?? '',
-      agentId: kind === 'SHIPMENT' ? (form.agentId ?? '') : '',
+      vendorId,
+      agentId,
+      payableToAgentId,
       currency: form.currency,
       amount: form.amount,
       rateToUsd: isForeign ? form.rateToUsd : '1',
@@ -136,7 +161,7 @@ export function ExpenseForm({
       // was never shown.
       rateLocalPerUsd: form.currency === localCurrency ? form.rateToUsd || '1' : form.rateLocalPerUsd,
       paymentMethod: form.paymentMethod,
-      cashBankAccountId: cashBankAccountId ?? '',
+      cashBankAccountId: paidFrom,
       capitaliseToLandedCost: capitalise,
       kind,
       reference: form.reference,
@@ -237,8 +262,8 @@ export function ExpenseForm({
 
       <Card>
         <CardHeader>
-          <CardTitle>Expense</CardTitle>
-          <CardDescription>What the cost was for, and how it was paid.</CardDescription>
+        <CardTitle>Expense</CardTitle>
+        <CardDescription>What it cost, in which currency, and which shipment it belongs to.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Category" required error={fieldIssues.expenseCategoryId}>
@@ -260,14 +285,10 @@ export function ExpenseForm({
 
           {kind === 'SHIPMENT' ? (
             <Field
-              label="Job / shipment"
+              label="Contract / shipment"
               required
               error={fieldIssues.shipmentId}
-              hint={
-                capitalise
-                  ? 'The cost is spread across this job’s batches and becomes part of what the coffee cost.'
-                  : 'Shown on this job’s cost report, but charged straight to the period.'
-              }
+              hint="This amount is added to that shipment’s cost."
             >
               <Combobox
                 options={shipments}
@@ -281,9 +302,15 @@ export function ExpenseForm({
           <Field label="Currency">
             <Select
               value={form.currency}
-              onChange={(e) =>
-                setForm({ ...form, currency: e.target.value, rateToUsd: e.target.value === 'USD' ? '1' : '', cashBankAccountId: null })
-              }
+              onChange={(e) => {
+                const currency = e.target.value;
+                setForm({
+                  ...form,
+                  currency,
+                  rateToUsd: currency === 'USD' ? '1' : (ratesByCurrency[currency] ?? ''),
+                  cashBankAccountId: null,
+                });
+              }}
             >
               <option value="USD">USD — US Dollar</option>
               <option value="AED">AED — UAE Dirham</option>
@@ -300,45 +327,6 @@ export function ExpenseForm({
               <Input value={form.rateToUsd} onChange={(e) => setForm({ ...form, rateToUsd: e.target.value })} className="tnum text-right" />
             </Field>
           ) : null}
-
-          <Field
-            label="Paid from"
-            hint={
-              accountChoice.automatic
-                ? 'Cash comes out of Cash in Hand. Leave blank if it is owed to a supplier or agent instead.'
-                : `Only ${form.currency} accounts are shown. Leave blank if it is owed to a supplier or agent instead.`
-            }
-            error={fieldIssues.cashBankAccountId}
-          >
-            <Combobox
-              options={accountChoice.options}
-              value={cashBankAccountId}
-              onChange={(value) => setForm({ ...form, cashBankAccountId: value })}
-              placeholder="Choose an account…"
-              emptyText={`No ${form.currency} account exists`}
-            />
-          </Field>
-
-          <Field label="Payment method">
-            <Select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}>
-              <option value="BANK_TRANSFER">Bank transfer</option>
-              <option value="CASH">Cash</option>
-              <option value="CHEQUE">Cheque</option>
-            </Select>
-          </Field>
-
-          <Field label="Supplier / payee" hint="Optional.">
-            <Combobox
-              options={vendors}
-              value={form.vendorId}
-              onChange={(value) => setForm({ ...form, vendorId: value })}
-              placeholder="—"
-            />
-          </Field>
-
-          <Field label="Agent" hint="Optional.">
-            <Combobox options={agents} value={form.agentId} onChange={(value) => setForm({ ...form, agentId: value })} placeholder="—" />
-          </Field>
 
           {/*
             One rate, not two.
@@ -370,24 +358,163 @@ export function ExpenseForm({
         </CardContent>
       </Card>
 
-      {category ? (
+      <Card>
+        <CardHeader>
+          <CardTitle>How was this settled?</CardTitle>
+          <CardDescription>
+            Paid now takes the money out of cash or bank today. Unpaid sits as money owed to a supplier or agent.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <fieldset>
+            <legend className="sr-only">Paid or unpaid</legend>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {(
+                [
+                  {
+                    value: 'PAID' as const,
+                    title: 'Paid',
+                    blurb: 'Cash in hand or the bank goes down. The cost is on the books today.',
+                  },
+                  {
+                    value: 'UNPAID' as const,
+                    title: 'Unpaid',
+                    blurb: 'Owed to a supplier or an agent. Pay it later as a separate payment.',
+                  },
+                ]
+              ).map((option) => {
+                const active = settlement === option.value;
+                return (
+                  <label
+                    key={option.value}
+                    className={
+                      active
+                        ? 'flex cursor-pointer flex-col gap-1 rounded-xl border-2 border-forest-500 bg-forest-50/60 p-4'
+                        : 'flex cursor-pointer flex-col gap-1 rounded-xl border-2 border-line bg-surface p-4 hover:border-forest-300'
+                    }
+                  >
+                    <input
+                      type="radio"
+                      name="expenseSettlement"
+                      className="sr-only"
+                      checked={active}
+                      onChange={() => {
+                        setSettlement(option.value);
+                        if (option.value === 'PAID') setUnpaidTo('VENDOR');
+                      }}
+                    />
+                    <span className="text-sm font-semibold text-ink">{option.title}</span>
+                    <span className="text-xs text-ink-muted">{option.blurb}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+
+          {settlement === 'PAID' ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Paid from" required>
+                <Select
+                  value={form.paymentMethod === 'CASH' ? 'CASH' : 'BANK'}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      paymentMethod: e.target.value === 'CASH' ? 'CASH' : 'BANK_TRANSFER',
+                      cashBankAccountId: null,
+                    })
+                  }
+                >
+                  <option value="CASH">Cash in hand</option>
+                  <option value="BANK">Bank</option>
+                </Select>
+              </Field>
+              <Field
+                label={form.paymentMethod === 'CASH' ? 'Cash account' : 'Bank account'}
+                required
+                hint={
+                  accountChoice.automatic
+                    ? 'Cash in Hand is selected for this currency.'
+                    : `Only ${form.currency} accounts are shown.`
+                }
+                error={fieldIssues.cashBankAccountId}
+              >
+                <Combobox
+                  options={accountChoice.options}
+                  value={cashBankAccountId}
+                  onChange={(value) => setForm({ ...form, cashBankAccountId: value })}
+                  placeholder="Choose an account…"
+                  emptyText={`No ${form.currency} account exists`}
+                />
+              </Field>
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {kind === 'SHIPMENT' ? (
+                <Field label="Owed to" required>
+                  <Select
+                    value={unpaidTo}
+                    onChange={(e) => setUnpaidTo(e.target.value === 'AGENT' ? 'AGENT' : 'VENDOR')}
+                  >
+                    <option value="VENDOR">Supplier</option>
+                    <option value="AGENT">Agent</option>
+                  </Select>
+                </Field>
+              ) : null}
+              {unpaidTo === 'VENDOR' ? (
+                <Field label="Supplier" required error={fieldIssues.vendorId}>
+                  <Combobox
+                    options={vendors}
+                    value={form.vendorId}
+                    onChange={(value) => setForm({ ...form, vendorId: value })}
+                    placeholder="Choose the supplier…"
+                  />
+                </Field>
+              ) : (
+                <Field label="Agent" required error={fieldIssues.agentId}>
+                  <Combobox
+                    options={agents}
+                    value={form.agentId}
+                    onChange={(value) => setForm({ ...form, agentId: value })}
+                    placeholder="Choose the agent…"
+                  />
+                </Field>
+              )}
+            </div>
+          )}
+
+          {kind === 'SHIPMENT' && settlement === 'PAID' ? (
+            <Field label="Agent" hint="Optional — if this is their commission, already paid.">
+              <Combobox
+                options={agents}
+                value={form.agentId}
+                onChange={(value) => setForm({ ...form, agentId: value })}
+                placeholder="—"
+              />
+            </Field>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      {kind === 'SHIPMENT' && category ? (
         <Card>
           <CardHeader>
-            <CardTitle>How this cost is treated</CardTitle>
-            <CardDescription>This decides whether the cost lands in stock value or in the profit and loss.</CardDescription>
+            <CardTitle>Add to this shipment’s cost?</CardTitle>
+            <CardDescription>
+              Clearing, freight and duty usually raise the coffee’s cost. Office costs should not.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-2">
               {[
                 {
                   value: true,
-                  title: 'Landed cost',
-                  body: 'Spread across the job’s batches, raising the cost of coffee still in stock. The share already sold goes straight to cost of goods sold.',
+                  title: 'Yes — add to this shipment’s cost',
+                  body: 'The amount is included in this consignment’s costing and, where the category allows, in the coffee still in stock.',
                 },
                 {
                   value: false,
-                  title: 'Period cost',
-                  body: 'Charged to the profit and loss when incurred. Reduces net profit but not stock value or gross margin.',
+                  title: 'No — company P&L only',
+                  body: 'Shown on this shipment’s cost sheet if you named one, but it does not raise the stock value of the coffee.',
                 },
               ].map((option) => (
                 <button
@@ -408,8 +535,9 @@ export function ExpenseForm({
 
             {capitaliseOverride !== null && capitaliseOverride !== category.capitaliseByDefault ? (
               <Callout tone="warning">
-                You have overridden the default for <strong>{category.label}</strong>, which is normally treated as a{' '}
-                {category.capitaliseByDefault ? 'landed cost' : 'period cost'}. The override is recorded on the voucher.
+                You have overridden the default for <strong>{category.label}</strong>, which is normally{' '}
+                {category.capitaliseByDefault ? 'added to the shipment’s cost' : 'kept off the coffee’s stock value'}.
+                The override is recorded on the voucher.
               </Callout>
             ) : null}
           </CardContent>
@@ -436,9 +564,11 @@ export function ExpenseForm({
         <Button variant="outline" onClick={() => submit(false)} loading={busy}>
           Save draft
         </Button>
-        <Button variant="accent" onClick={() => submit(true)} loading={busy}>
-          Save and post
-        </Button>
+        {canPost ? (
+          <Button variant="accent" onClick={() => submit(true)} loading={busy}>
+            Save and post
+          </Button>
+        ) : null}
       </div>
     </div>
   );

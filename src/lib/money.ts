@@ -47,14 +47,30 @@ export const BASE_CURRENCY = 'USD';
 /** 1 metric ton expressed in the canonical inventory unit (kilograms). */
 export const KG_PER_MT = new Decimal(1000);
 
+function normalizeDecimalInput(value: DecimalInput): DecimalInput {
+  if (typeof value !== 'string') return value;
+  return value.replace(/,/g, '').trim();
+}
+
 export function dec(value: DecimalInput | null | undefined): Decimal {
   if (value === null || value === undefined || value === '') return new Decimal(0);
   if (value instanceof Decimal) return value;
-  const d = new Decimal(value);
+  const normalized = normalizeDecimalInput(value);
+  if (normalized === '' || normalized === '.' || normalized === '-' || normalized === '-.') return new Decimal(0);
+  const d = new Decimal(normalized);
   if (!d.isFinite()) {
     throw new Error(`Value "${String(value)}" is not a finite decimal.`);
   }
   return d;
+}
+
+/** Running totals in a form: never throw while the user is still typing. */
+export function tryDec(value: DecimalInput | null | undefined): Decimal {
+  try {
+    return dec(value);
+  } catch {
+    return new Decimal(0);
+  }
 }
 
 export function toMoney(value: DecimalInput): Decimal {

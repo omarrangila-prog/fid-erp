@@ -10,9 +10,9 @@ import { Field, FieldGroup } from '@/components/ui/field';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Combobox } from '@/components/ui/combobox';
 import { Callout } from '@/components/ui/feedback';
-import { dec, toMoney, sum, Decimal } from '@/lib/money';
-import { formatMoney, formatQuantityKg } from '@/lib/format';
-import { saveCreditNoteAction, postCreditNoteAction } from '@/server/actions/compliance-actions';
+import { dec, tryDec, toMoney, sum, Decimal } from '@/lib/money';
+import { formatMoney, formatQuantityKg, todayInputValue } from '@/lib/format';
+import { saveCreditNoteAction } from '@/server/actions/compliance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 
 export type CreditParty = { id: string; name: string; currency: string };
@@ -105,7 +105,7 @@ export function CreditNoteForm({
   const defaultTaxCode = taxCodes[0]?.id ?? '';
   const [partyId, setPartyId] = React.useState<string | null>(parties[0]?.id ?? null);
   const [documentId, setDocumentId] = React.useState<string | null>(null);
-  const [creditDate, setCreditDate] = React.useState(new Date().toISOString().slice(0, 10));
+  const [creditDate, setCreditDate] = React.useState(todayInputValue());
   const [currency, setCurrency] = React.useState(parties[0]?.currency ?? 'USD');
   const [rateToUsd, setRateToUsd] = React.useState('1');
   const [rateLocalPerUsd, setRateLocalPerUsd] = React.useState(defaultRateLocalPerUsd);
@@ -208,17 +208,17 @@ export function CreditNoteForm({
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   }
 
-  const rateFor = (id: string) => dec(taxCodes.find((c) => c.id === id)?.ratePct ?? 0);
+  const rateFor = (id: string) => tryDec(taxCodes.find((c) => c.id === id)?.ratePct ?? 0);
 
   const computed = lines.map((line) => {
     const net =
       line.mode === 'STOCK'
-        ? toMoney(dec(line.quantityKg || 0).times(dec(line.unitPrice || 0)))
-        : toMoney(dec(line.amount || 0));
+        ? toMoney(tryDec(line.quantityKg).times(tryDec(line.unitPrice)))
+        : toMoney(tryDec(line.amount));
     const rate = taxEnabled ? rateFor(line.taxCodeId) : new Decimal(0);
     const tax = rate.isZero() ? new Decimal(0) : toMoney(net.times(rate).dividedBy(100));
     const source = line.batchId ? stock.find((s) => s.batchId === line.batchId) : null;
-    const overReturn = Boolean(source && dec(line.quantityKg || 0).greaterThan(dec(source.soldKg)));
+    const overReturn = Boolean(source && tryDec(line.quantityKg).greaterThan(tryDec(source.soldKg)));
     return { line, net, tax, total: toMoney(net.plus(tax)), source, overReturn };
   });
 
@@ -284,23 +284,10 @@ export function CreditNoteForm({
       }
 
       /*
-       * Saving a credit note posts it.
-       *
-       * A draft credits nobody: the customer still owes the full amount, the
-       * returned coffee is not back on the shelf and nothing has reached the
-       * ledger. Leaving it there and saying "saved" is the same fault the
-       * purchase order and the invoice had — the document exists and none of
-       * its effects do, which reads as nothing having happened.
+       * Saving writes a draft. Posting is a separate action on the document
+       * itself, so a note can be reviewed before it moves the ledger or stock.
        */
-      const posted = await postCreditNoteAction(result.id);
-      if (!posted.ok) {
-        setError(`${posted.error} The note is saved as a draft — open it to post once that is resolved.`);
-        opening();
-        router.push(`${basePath}/${result.id}`);
-        return;
-      }
-
-      toast.success('Credit note posted.');
+      toast.success('Credit note saved as a draft.');
       opening();
       router.push(`${basePath}/${result.id}`);
     });
@@ -520,7 +507,13 @@ export function CreditNoteForm({
                           keywords: `${s.itemName} ${s.lotNumber ?? ''} ${s.containerNumber ?? ''}`,
                         }))}
                         value={line.batchId}
-                        onChange={(value) => setLine(line.key, { batchId: value })}
+                        onChange={(value) => {
+                          const source = stock.find((s) => s.batchId === value);
+                          setLine(line.key, {
+                            batchId: value,
+                            warehouseId: source?.lastWarehouseId ?? line.warehouseId,
+                          });
+                        }}
                         placeholder="Choose the batch being returned…"
                         aria-label={`Batch on line ${index + 1}`}
                       />

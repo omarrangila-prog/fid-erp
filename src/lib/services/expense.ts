@@ -133,9 +133,10 @@ async function validateReferences(tx: Tx, input: ExpenseInput) {
   if (input.shipmentId) {
     const shipment = await tx.shipment.findFirst({
       where: { id: input.shipmentId, companyId: input.companyId },
-      select: { id: true },
+      select: { id: true, purchaseContractId: true },
     });
     if (!shipment) throw new NotFoundError('Shipment');
+    input.purchaseContractId = input.purchaseContractId || shipment.purchaseContractId;
   }
 
   if (input.agentId) {

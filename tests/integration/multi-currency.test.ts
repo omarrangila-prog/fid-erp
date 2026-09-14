@@ -123,6 +123,21 @@ describe('exchange rate entry', () => {
     expect(amounts.amountUsd.toString()).toBe('27188.6895');
   });
 
+  it('treats a blank or zero USD equivalent as unset and uses the rate', () => {
+    // Forms coerce an empty usdEquivalent to '0'. That must not look like the
+    // user typed a USD amount — it would refuse a MAD/AED receipt that only
+    // has a rate.
+    const amounts = computeReceiptAmounts({
+      amount: '9850',
+      currency: 'MAD',
+      rateToUsd: '9.85',
+      usdEquivalent: '0',
+      localCurrency: 'MAD',
+      rateLocalPerUsd: '9.85',
+    });
+    expect(Number(amounts.amountUsd)).toBeCloseTo(1000, 4);
+  });
+
   it('refuses a foreign-currency receipt with neither a rate nor a USD value', () => {
     expect(() =>
       computeReceiptAmounts({ amount: '100', currency: 'AED', localCurrency: 'AED', rateLocalPerUsd: '3.6725' }),
@@ -434,6 +449,37 @@ describe('cheque life cycle', () => {
     const updated = await prisma.cheque.findUniqueOrThrow({ where: { id: cheque.id } });
     expect(updated.status).toBe('BOUNCED');
     expect(updated.bounceReason).toBe('Insufficient funds');
+
+    const outstanding = await transaction((tx) => getInvoiceOutstanding(tx, invoice.id));
+    expect(outstanding.amount.toString()).toBe('6000');
+  });
+
+  it('does not credit empty Cheques on Hand when a bounced cheque is redeposited and cleared', async () => {
+    const bounced = await prisma.cheque.findFirstOrThrow({ where: { chequeNumber: 'CHQ-889002' } });
+    const usdBank = await getCashAccount(ctx.dubai.id, 'USD');
+
+    await changeChequeStatus({
+      chequeId: bounced.id,
+      companyId: ctx.dubai.id,
+      userId: ctx.admin.id,
+      toStatus: 'DEPOSITED',
+      cashBankAccountId: usdBank.id,
+      effectiveDate: utcDate('2026-04-23'),
+    });
+    await changeChequeStatus({
+      chequeId: bounced.id,
+      companyId: ctx.dubai.id,
+      userId: ctx.admin.id,
+      toStatus: 'CLEARED',
+      cashBankAccountId: usdBank.id,
+      effectiveDate: utcDate('2026-04-24'),
+    });
+
+    const rows = await transaction((tx) => getTrialBalance(tx, ctx.dubai.id));
+    const chequesOnHand = rows.find((r) => r.code === '1150');
+    const coh = dec(chequesOnHand?.debitUsd ?? 0).minus(dec(chequesOnHand?.creditUsd ?? 0));
+    expect(coh.lessThan(0)).toBe(false);
+    expect(coh.toString()).toBe('0');
   });
 
   it('requires a reason before a cheque can be marked bounced', async () => {

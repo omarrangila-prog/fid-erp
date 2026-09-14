@@ -19,11 +19,15 @@ export function accountsFor<T extends AccountChoice>(
 ): { options: T[]; automatic: string | null } {
   const inCurrency = accounts.filter((a) => a.currency === currency);
   const wantCash = paymentMethod === 'CASH';
-  const matching = inCurrency.filter((a) => (a.accountType === 'BANK') === !wantCash);
+  const matching = wantCash
+    ? inCurrency.filter((a) => a.accountType === 'CASH' || a.accountType === 'PETTY_CASH')
+    : inCurrency.filter((a) => a.accountType === 'BANK');
 
-  // Fall back to every account in the currency rather than an empty list —
-  // an account typed the "wrong" way is still a real place the money went.
-  const options = matching.length > 0 ? matching : inCurrency;
+  // Prefer Cash in Hand over petty cash when both exist — they are not two
+  // places to put the same drawer, and offering both made people hesitate.
+  const drawers = matching.filter((a) => a.accountType === 'CASH');
+  const preferred = wantCash && drawers.length > 0 ? drawers : matching;
+  const options = preferred.length > 0 ? preferred : inCurrency;
   const automatic = wantCash && options.length === 1 ? options[0].value : null;
   return { options, automatic };
 }

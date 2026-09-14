@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogFooter } from '@/components/ui/dialog';
 import { Input, Select, Textarea } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { changeChequeStatusAction } from '@/server/actions/finance-actions';
+import { todayInputValue } from '@/lib/format';
 
 type Target = 'DEPOSITED' | 'CLEARED' | 'BOUNCED' | 'CANCELLED';
 
@@ -63,7 +64,7 @@ export function ChequeStatusActions({
   const [target, setTarget] = React.useState<Target | null>(null);
   const [pending, startTransition] = React.useTransition();
   const [accountId, setAccountId] = React.useState(bankAccounts[0]?.id ?? '');
-  const [effectiveDate, setEffectiveDate] = React.useState(new Date().toISOString().slice(0, 10));
+  const [effectiveDate, setEffectiveDate] = React.useState(todayInputValue());
   const [reason, setReason] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
 

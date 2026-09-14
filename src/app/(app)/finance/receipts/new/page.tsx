@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { requirePageAccess } from '@/lib/auth/guards';
+import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getRateDefaults } from '@/lib/services/exchange-rate';
 import { prisma } from '@/lib/db';
@@ -113,8 +113,10 @@ export default async function NewReceiptPage({
         invoices={invoices}
         localCurrency={user.activeCompany.localCurrency}
         defaultLocalRate={rates.local}
+        ratesByCurrency={rates.byCurrency}
         agents={agents.map((a) => ({ id: a.id, name: a.agentName }))}
         preselectedInvoiceId={invoice}
+        canPost={can(user, PERMISSIONS.RECEIPTS_POST)}
       />
     </div>
   );

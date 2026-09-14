@@ -49,9 +49,19 @@ export const receiptSchema = z
     (v) => v.currency === 'USD' || Number(v.rateToUsd) > 0 || Number(v.usdEquivalent) > 0,
     { message: 'Enter either an exchange rate or the USD equivalent.', path: ['rateToUsd'] },
   )
-  .refine((v) => v.paymentMethod === 'CHEQUE' || Boolean(v.cashBankAccountId), {
-    message: 'Choose the cash or bank account the money was received into.',
-    path: ['cashBankAccountId'],
+  .refine(
+    (v) =>
+      v.paymentMethod === 'CHEQUE' ||
+      v.paymentMethod === 'AGENT_COLLECTION' ||
+      Boolean(v.cashBankAccountId),
+    {
+      message: 'Choose the cash or bank account the money was received into.',
+      path: ['cashBankAccountId'],
+    },
+  )
+  .refine((v) => v.paymentMethod !== 'AGENT_COLLECTION' || Boolean(v.agentId), {
+    message: 'Choose the agent who collected this money.',
+    path: ['agentId'],
   });
 
 export const paymentSchema = z
@@ -168,4 +178,11 @@ export const agentSettlementSchema = z.object({
   rateLocalPerUsd: decimalString('Local exchange rate'),
   reference: optionalText(60),
   notes: optionalText(400),
+});
+
+export const ledgerAccountSchema = z.object({
+  code: requiredText('Account code', 20),
+  name: requiredText('Account name', 120),
+  type: z.enum(['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE']),
+  reportGroup: optionalText(40),
 });

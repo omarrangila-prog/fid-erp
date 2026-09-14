@@ -462,9 +462,11 @@ export async function markShipmentLoaded(
      * The containers on the consignment.
      *
      * One booking covers several, so this takes a list. Each becomes a
-     * container record against the shipment, and the first is attached to any
-     * batch that still has none of its own — which is the common case, because
-     * the contract was signed before anybody knew the numbers.
+     * container record against the shipment. Unassigned batches are then
+     * paired one-to-one with those records — container 1 to the first batch,
+     * container 2 to the second — rather than pinning every batch to the
+     * first number, which made two physical containers appear as the same
+     * box on the loading sheet.
      *
      * Duplicates within the list are ignored rather than refused: somebody
      * asked for three fields and typed the same number twice is a slip, not a
@@ -478,36 +480,27 @@ export async function markShipmentLoaded(
       const ids: string[] = [];
 
       for (const containerNumber of containerNumbers) {
-        const existing = await tx.container.findFirst({
-          where: { companyId: input.companyId, containerNumber },
-          select: { id: true },
-        });
-
-        if (existing) {
-          await tx.container.update({
-            where: { id: existing.id },
-            data: { shipmentId: shipment.id, purchaseContractId: shipment.purchaseContractId },
-          });
-          ids.push(existing.id);
-          continue;
-        }
-
-        const created = await tx.container.create({
-          data: {
+        ids.push(
+          await upsertContainerOnShipment(tx, {
             companyId: input.companyId,
-            containerNumber,
             shipmentId: shipment.id,
             purchaseContractId: shipment.purchaseContractId,
-          },
-          select: { id: true },
-        });
-        ids.push(created.id);
+            containerNumber,
+          }),
+        );
       }
 
-      await tx.batch.updateMany({
-        where: { shipmentId: shipment.id, containerId: null },
-        data: { containerId: ids[0] },
+      const unassigned = await tx.batch.findMany({
+        where: { shipmentId: shipment.id, containerId: null, status: 'ACTIVE' },
+        orderBy: [{ createdAt: 'asc' }, { batchNumber: 'asc' }],
+        select: { id: true },
       });
+
+      for (let i = 0; i < unassigned.length; i++) {
+        const containerId = ids[i];
+        if (!containerId) break;
+        await tx.batch.update({ where: { id: unassigned[i].id }, data: { containerId } });
+      }
 
       await tx.shipment.update({
         where: { id: shipment.id },
@@ -616,4 +609,145 @@ export async function getEtaHistory(companyId: string, shipmentId: string) {
     from: (row.before as { etaDate?: string | null } | null)?.etaDate ?? null,
     to: (row.after as { etaDate?: string | null } | null)?.etaDate ?? null,
   }));
+}
+
+/**
+ * Find or create a container number on this shipment.
+ *
+ * Container numbers are unique per company, so a number already on the books
+ * is reused and pointed at this consignment rather than refused.
+ */
+async function upsertContainerOnShipment(
+  tx: Tx,
+  params: {
+    companyId: string;
+    shipmentId: string;
+    purchaseContractId: string;
+    containerNumber: string;
+  },
+): Promise<string> {
+  const containerNumber = params.containerNumber.trim();
+  const existing = await tx.container.findFirst({
+    where: { companyId: params.companyId, containerNumber },
+    select: { id: true },
+  });
+
+  if (existing) {
+    await tx.container.update({
+      where: { id: existing.id },
+      data: { shipmentId: params.shipmentId, purchaseContractId: params.purchaseContractId },
+    });
+    return existing.id;
+  }
+
+  const created = await tx.container.create({
+    data: {
+      companyId: params.companyId,
+      containerNumber,
+      shipmentId: params.shipmentId,
+      purchaseContractId: params.purchaseContractId,
+    },
+    select: { id: true },
+  });
+  return created.id;
+}
+
+/**
+ * Corrects the earlier loading-sheet bug: every unassigned batch was pointed
+ * at the first container, so two real boxes showed the same number.
+ *
+ * Safe: it only rewrites `batch.containerId` when several container records
+ * exist on the shipment and every batch currently shares a single one. Nothing
+ * is deleted.
+ */
+export async function repairSharedContainerAssignments(
+  tx: Tx,
+  companyId: string,
+  shipmentId?: string,
+): Promise<void> {
+  const shipments = await tx.shipment.findMany({
+    where: { companyId, ...(shipmentId ? { id: shipmentId } : {}) },
+    select: {
+      id: true,
+      containerList: { orderBy: { createdAt: 'asc' }, select: { id: true } },
+      batches: {
+        where: { status: 'ACTIVE' },
+        orderBy: [{ createdAt: 'asc' }, { batchNumber: 'asc' }],
+        select: { id: true, containerId: true },
+      },
+    },
+  });
+
+  for (const shipment of shipments) {
+    if (shipment.containerList.length < 2 || shipment.batches.length < 2) continue;
+    const assigned = [
+      ...new Set(shipment.batches.map((batch) => batch.containerId).filter((id): id is string => Boolean(id))),
+    ];
+    if (assigned.length !== 1) continue;
+
+    for (let i = 0; i < shipment.batches.length; i++) {
+      const target = shipment.containerList[i] ?? shipment.containerList[shipment.containerList.length - 1];
+      if (shipment.batches[i].containerId === target.id) continue;
+      await tx.batch.update({ where: { id: shipment.batches[i].id }, data: { containerId: target.id } });
+    }
+  }
+}
+
+/**
+ * Edit each batch's container number independently, without recreating the PO.
+ */
+export async function saveShipmentContainers(
+  input: {
+    companyId: string;
+    shipmentId: string;
+    lines: Array<{ batchId: string; containerNumber?: string | null }>;
+  },
+  userId: string,
+) {
+  return transaction(async (tx) => {
+    const shipment = await tx.shipment.findFirst({
+      where: { id: input.shipmentId, companyId: input.companyId },
+      include: { batches: { where: { status: 'ACTIVE' }, select: { id: true } } },
+    });
+    if (!shipment) throw new NotFoundError('Shipment');
+
+    const allowed = new Set(shipment.batches.map((batch) => batch.id));
+
+    for (const line of input.lines) {
+      if (!allowed.has(line.batchId)) {
+        throw new BusinessRuleError('That coffee line does not belong to this shipment.');
+      }
+
+      const number = line.containerNumber?.trim() || '';
+      if (!number) {
+        await tx.batch.update({ where: { id: line.batchId }, data: { containerId: null } });
+        continue;
+      }
+
+      const containerId = await upsertContainerOnShipment(tx, {
+        companyId: input.companyId,
+        shipmentId: shipment.id,
+        purchaseContractId: shipment.purchaseContractId,
+        containerNumber: number,
+      });
+      await tx.batch.update({ where: { id: line.batchId }, data: { containerId } });
+    }
+
+    const count = await tx.container.count({ where: { shipmentId: shipment.id } });
+    await tx.shipment.update({
+      where: { id: shipment.id },
+      data: { containers: Math.max(shipment.containers, count, input.lines.filter((l) => l.containerNumber?.trim()).length), updatedById: userId },
+    });
+
+    await writeAudit(tx, {
+      companyId: input.companyId,
+      userId,
+      action: 'SHIPMENT_CONTAINERS_UPDATED',
+      entityType: 'Shipment',
+      entityId: shipment.id,
+      after: { lines: input.lines },
+    });
+
+    return shipment;
+  });
 }

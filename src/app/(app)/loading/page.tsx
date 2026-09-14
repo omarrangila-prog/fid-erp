@@ -8,7 +8,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { PrintButton } from '@/components/shared/print-button';
 import { PrintHeader } from '@/components/shared/print-header';
 import { Callout } from '@/components/ui/feedback';
-import { LoadingSheet, type LoadingRow } from '@/app/(app)/loading/loading-sheet';
+import { LoadingSheet, type LoadingLine, type LoadingRow } from '@/app/(app)/loading/loading-sheet';
 
 export const metadata: Metadata = { title: 'Loading Follow-Up' };
 export const dynamic = 'force-dynamic';
@@ -16,12 +16,17 @@ export const dynamic = 'force-dynamic';
 export default async function LoadingPage() {
   const user = await requirePageAccess(PERMISSIONS.SHIPMENTS_VIEW);
 
-  const [sheet, shippingLines] = await Promise.all([
+  const [sheet, shippingLines, warehouses] = await Promise.all([
     getLoadingSheet(user.activeCompany.id),
     prisma.shippingLine.findMany({
       where: { companyId: user.activeCompany.id, status: 'ACTIVE' },
       orderBy: { name: 'asc' },
       select: { id: true, name: true },
+    }),
+    prisma.warehouse.findMany({
+      where: { companyId: user.activeCompany.id, status: 'ACTIVE' },
+      orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
+      select: { id: true, name: true, code: true, isDefault: true },
     }),
   ]);
 
@@ -29,56 +34,79 @@ export default async function LoadingPage() {
   // to many customers. The two paper sheets differ, so the two screens do too.
   const isDubai = user.activeCompany.localCurrency === 'AED';
 
-  const rows: LoadingRow[] = sheet.map((row, index) => ({
-    id: row.batchId,
-    serial: index + 1,
-    shipmentId: row.shipmentId,
-    contractId: row.contractId,
-    contractDate: formatDate(row.contractDate),
-    contractDateSort: row.contractDate.getTime(),
-    contractNumber: row.contractNumber,
-    contractReference: row.contractReference,
-    exporter: row.exporter,
-    importer: row.importer,
-    consignee: row.consignee,
-    itemName: row.itemName,
-    origin: row.origin,
-    destination: row.destination,
-    lotNumber: row.lotNumber,
-    batchNumber: row.batchNumber,
-    traceabilityPending: row.traceabilityPending,
-    portOfLoading: row.portOfLoading,
-    portOfDischarge: row.portOfDischarge,
-    containerNumber: row.containerNumber,
-    containers: row.containers,
-    quantity: formatQuantityKg(row.quantityKg),
-    quantitySort: Number(row.quantityKg),
-    sold: formatQuantityKg(row.soldKg),
-    available: formatQuantityKg(row.availableKg),
-    bags: row.bags,
-    status: row.status,
-    documentStatus: row.documentStatus,
-    shippingLine: row.shippingLine,
-    bookingNumber: row.bookingNumber,
-    billOfLading: row.billOfLading,
-    etaDate: row.etaDate ? formatDate(row.etaDate) : '—',
-    etaSort: row.etaDate?.getTime() ?? Number.MAX_SAFE_INTEGER,
-    etaIso: row.etaDate ? row.etaDate.toISOString().slice(0, 10) : null,
-    remarks: row.remarks,
-    saleStatus: row.saleStatus,
-    paymentStatus: row.paymentStatus,
-    allocations: row.allocations.map((allocation) => ({
-      customerId: allocation.customerId,
-      customerName: allocation.customerName,
-      invoiceId: allocation.invoiceId,
-      invoiceNumber: allocation.invoiceNumber,
-      invoiceDate: formatDate(allocation.invoiceDate),
-      quantity: formatQuantityKg(allocation.quantityKg),
-      amount: formatMoney(allocation.amount, allocation.currency),
-      outstanding: formatMoney(allocation.outstanding, allocation.currency),
-      settlement: allocation.settlement,
-    })),
-  }));
+  const rows: LoadingRow[] = sheet.map((row) => {
+    const quantityKg = Number(row.quantityKg);
+    const receivedKg = Number(row.receivedKg);
+    const lines: LoadingLine[] = row.lines.map((line) => ({
+      batchId: line.batchId,
+      itemName: line.itemName,
+      origin: line.origin,
+      lotNumber: line.lotNumber,
+      batchNumber: line.batchNumber,
+      traceabilityPending: line.traceabilityPending,
+      containerNumber: line.containerNumber,
+      quantity: formatQuantityKg(line.quantityKg),
+      quantityKg: Number(line.quantityKg),
+      received: formatQuantityKg(line.receivedKg),
+      receivedKg: Number(line.receivedKg),
+      sold: formatQuantityKg(line.soldKg),
+      available: formatQuantityKg(line.availableKg),
+      bags: line.bags,
+      outstandingKg: Math.max(0, Number(line.quantityKg) - Number(line.receivedKg)).toFixed(3),
+      bagWeightKg: line.bagWeightKg.toString(),
+    }));
+
+    return {
+      id: row.shipmentId,
+      shipmentId: row.shipmentId,
+      contractId: row.contractId,
+      contractDate: formatDate(row.contractDate),
+      contractDateSort: row.contractDate.getTime(),
+      contractNumber: row.contractNumber,
+      contractReference: row.contractReference,
+      exporter: row.exporter,
+      importer: row.importer,
+      consignee: row.consignee,
+      lines,
+      origin: row.origin,
+      destination: row.destination,
+      containerNumbers: row.containerNumbers,
+      containers: row.containers,
+      quantity: formatQuantityKg(row.quantityKg),
+      quantitySort: quantityKg,
+      quantityKg,
+      receivedKg,
+      sold: formatQuantityKg(row.soldKg),
+      available: formatQuantityKg(row.availableKg),
+      bags: row.bags,
+      status: row.status,
+      documentStatus: row.documentStatus,
+      shippingLine: row.shippingLine,
+      shippingLineId: row.shippingLineId,
+      bookingNumber: row.bookingNumber,
+      billOfLading: row.billOfLading,
+      etaDate: row.etaDate ? formatDate(row.etaDate) : '—',
+      etaSort: row.etaDate?.getTime() ?? Number.MAX_SAFE_INTEGER,
+      etaIso: row.etaDate ? row.etaDate.toISOString().slice(0, 10) : null,
+      portOfLoading: row.portOfLoading,
+      portOfDischarge: row.portOfDischarge,
+      remarks: row.remarks,
+      saleStatus: row.saleStatus,
+      paymentStatus: row.paymentStatus,
+      fullyReceived: receivedKg > 0 && receivedKg >= quantityKg - 0.001,
+      allocations: row.allocations.map((allocation) => ({
+        customerId: allocation.customerId,
+        customerName: allocation.customerName,
+        invoiceId: allocation.invoiceId,
+        invoiceNumber: allocation.invoiceNumber,
+        invoiceDate: formatDate(allocation.invoiceDate),
+        quantity: formatQuantityKg(allocation.quantityKg),
+        amount: formatMoney(allocation.amount, allocation.currency),
+        outstanding: formatMoney(allocation.outstanding, allocation.currency),
+        settlement: allocation.settlement,
+      })),
+    };
+  });
 
   const soldRows = sheet.filter((row) => row.saleStatus !== 'UNSOLD').length;
 
@@ -90,27 +118,26 @@ export default async function LoadingPage() {
         title="Loading / Contract Follow-Up"
         companyName={user.activeCompany.name}
         country={user.activeCompany.country}
-        period={`${rows.length} container${rows.length === 1 ? '' : 's'} · ${soldRows} sold or part sold`}
+        period={`${rows.length} shipment${rows.length === 1 ? '' : 's'} · ${soldRows} sold or part sold`}
       />
 
       <PageHeader
         title="Loading Follow-Up"
         description={
           isDubai
-            ? 'Every container from contract to consignee, in one sheet.'
+            ? 'Every shipment from contract to consignee, in one sheet.'
             : 'Every contract from purchase to the customers it was sold to.'
         }
         breadcrumbs={[{ label: 'Trading' }, { label: 'Loading Follow-Up' }]}
         actions={<PrintButton />}
       />
 
-      <Callout tone="info" title="Nothing on this sheet is typed twice">
-        Every column is read from the document that already holds it. Approving a purchase contract creates the row;
-        entering a bill of lading or an ETA on the shipment fills those columns; posting a sale fills in the consignee
-        and moves the sold figures; receiving a payment moves the payment status.{' '}
-        {isDubai
-          ? 'Sold or unsold is arithmetic on the container, not a label anyone maintains.'
-          : 'A contract sold to several customers stays one row, with every customer listed underneath it.'}
+      <Callout tone="info" title="One page for every live shipment">
+        Approving a purchase order creates one follow-up row, even when that order has several coffees.
+        Container quantity belongs to the shipment, not to each item line. Mark it loaded, update the ETA,
+        Container quantity belongs to the shipment, not to each item line. After a consignment is marked loaded,
+        update the document status, then mark it arrived, then receive it container by container — without opening
+        the purchase order.
       </Callout>
 
       <LoadingSheet
@@ -118,7 +145,10 @@ export default async function LoadingPage() {
         isDubai={isDubai}
         canExport={can(user, PERMISSIONS.REPORTS_EXPORT)}
         canUpdate={can(user, PERMISSIONS.SHIPMENTS_UPDATE)}
+        canReceive={can(user, PERMISSIONS.PURCHASES_APPROVE)}
         shippingLines={shippingLines}
+        warehouses={warehouses.map((w) => ({ id: w.id, name: w.name, code: w.code }))}
+        defaultWarehouseId={warehouses.find((w) => w.isDefault)?.id ?? warehouses[0]?.id ?? null}
       />
     </div>
   );

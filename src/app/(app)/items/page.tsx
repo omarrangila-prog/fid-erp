@@ -7,7 +7,7 @@ import { formatQuantityKg } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { ItemsClient, type ItemRow } from '@/app/(app)/items/items-client';
 
-export const metadata: Metadata = { title: 'Coffee Items' };
+export const metadata: Metadata = { title: 'Items' };
 export const dynamic = 'force-dynamic';
 
 export default async function ItemsPage({
@@ -60,15 +60,16 @@ export default async function ItemsPage({
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Coffee Items"
-        description="The coffee master: type, origin, grade, process, crop year and packaging. Stock is always held in kilograms."
-        breadcrumbs={[{ label: 'Masters' }, { label: 'Coffee Items' }]}
+        title="Items"
+        description="Every coffee you trade, named once. Batch and lot are always tracked."
+        breadcrumbs={[{ label: 'Trading' }, { label: 'Items' }]}
       />
       <ItemsClient
         rows={rows}
         canCreate={can(user, PERMISSIONS.ITEMS_CREATE)}
         openCreate={openCreate}
         canEdit={can(user, PERMISSIONS.ITEMS_EDIT)}
+        canDelete={can(user, PERMISSIONS.ITEMS_DELETE)}
         showValue={can(user, PERMISSIONS.PURCHASE_COST_VIEW)}
       />
     </div>

@@ -10,8 +10,8 @@ import { Field } from '@/components/ui/field';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Combobox } from '@/components/ui/combobox';
 import { Callout, EmptyState } from '@/components/ui/feedback';
-import { dec, sum } from '@/lib/money';
-import { formatQuantityKg } from '@/lib/format';
+import { tryDec, sum } from '@/lib/money';
+import { formatQuantityKg, todayInputValue } from '@/lib/format';
 import { saveStockTransferAction } from '@/server/actions/trading-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 
@@ -41,7 +41,7 @@ export function TransferForm({
 
   const [fromWarehouseId, setFrom] = React.useState(warehouses[0]?.id ?? '');
   const [toWarehouseId, setTo] = React.useState(warehouses[1]?.id ?? '');
-  const [transferDate, setDate] = React.useState(new Date().toISOString().slice(0, 10));
+  const [transferDate, setDate] = React.useState(todayInputValue());
   const [notes, setNotes] = React.useState('');
   const [lines, setLines] = React.useState<LineState[]>([newLine()]);
 
@@ -74,8 +74,8 @@ export function TransferForm({
 
   const rows = lines.map((line) => {
     const option = line.batchId ? sourceStock.find((s) => s.batchId === line.batchId) : null;
-    const quantity = line.quantityKg ? dec(line.quantityKg) : dec(0);
-    const over = Boolean(option && quantity.greaterThan(dec(option.availableKg)));
+    const quantity = tryDec(line.quantityKg);
+    const over = Boolean(option && quantity.greaterThan(tryDec(option.availableKg)));
     return { line, option, quantity, over };
   });
 

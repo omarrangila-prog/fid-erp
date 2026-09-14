@@ -118,6 +118,7 @@ test.describe('sidebar', () => {
      * so this only needs to pin what belongs in the rail itself.
      */
     for (const [group, label, href] of [
+      ['Trading', 'Items', '/items'],
       ['Trading', 'Purchase Orders', '/purchases'],
       ['Trading', 'Loading Sheet', '/loading'],
       ['Trading', 'Purchase Receipts', '/goods-receipts'],

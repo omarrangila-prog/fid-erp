@@ -10,6 +10,7 @@ import { Input, Select, Textarea, MoneyInput } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { Callout } from '@/components/ui/feedback';
 import { recordAgentSettlementAction } from '@/server/actions/finance-actions';
+import { todayInputValue } from '@/lib/format';
 
 type Account = { id: string; name: string; code: string; currency: string };
 
@@ -98,7 +99,7 @@ function SettlementSheet({
 
   const collecting = direction === 'COLLECTION';
   const [form, setForm] = React.useState({
-    settlementDate: new Date().toISOString().slice(0, 10),
+    settlementDate: todayInputValue(),
     cashBankAccountId: '',
     currency: localCurrency,
     amount: '',

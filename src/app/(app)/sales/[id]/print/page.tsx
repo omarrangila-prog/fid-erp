@@ -201,7 +201,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
                   <td className="tnum px-3 py-3 text-right text-ink">{formatQuantityKg(line.quantityKg)}</td>
                   <td className="tnum px-3 py-3 text-right text-ink">
                     {formatMoney(line.unitPrice, invoice.currency)}
-                    <span className="block text-[11px] text-ink-subtle">per KG</span>
+                    <span className="block text-[11px] text-ink-subtle">per {line.unit}</span>
                   </td>
                   <td className="tnum py-3 pl-3 text-right font-medium text-ink">
                     {formatMoney(line.lineTotal, invoice.currency)}

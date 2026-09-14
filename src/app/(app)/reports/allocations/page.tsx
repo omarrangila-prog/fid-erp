@@ -89,7 +89,10 @@ export default async function AllocationsPage() {
         const reserved = group.rows.reduce((sum, row) => sum.plus(row.reservedKg), new Decimal(0));
         const available = group.rows.reduce((sum, row) => sum.plus(row.availableKg), new Decimal(0));
         const allocations = group.rows.flatMap((row) =>
-          row.allocations.map((allocation) => ({ ...allocation, batchNumber: row.batchNumber })),
+          row.allocations.map((allocation) => ({
+            ...allocation,
+            batchNumber: row.lines.map((line) => line.batchNumber).filter(Boolean).join(', '),
+          })),
         );
 
         const state = sold.lessThanOrEqualTo('0.001')

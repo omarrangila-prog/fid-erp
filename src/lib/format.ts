@@ -93,6 +93,15 @@ export function toDateInputValue(value: Date | string | null | undefined): strin
   return d.toISOString().slice(0, 10);
 }
 
+/** Today's calendar date in the browser's timezone, for date inputs. */
+export function todayInputValue(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 /** Whole days from today until `value`. Negative when the date has passed. */
 export function daysUntil(value: Date | string | null | undefined): number | null {
   if (!value) return null;

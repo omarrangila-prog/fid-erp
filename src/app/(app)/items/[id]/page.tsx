@@ -61,7 +61,7 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
       <PageHeader
         title={item.itemName}
         description={[item.itemCode, item.originCountry, item.region].filter(Boolean).join(' · ')}
-        breadcrumbs={[{ label: 'Masters' }, { label: 'Coffee Items', href: '/items' }, { label: item.itemName }]}
+        breadcrumbs={[{ label: 'Trading' }, { label: 'Items', href: '/items' }, { label: item.itemName }]}
         meta={
           <>
             <Badge tone={item.coffeeType === 'ARABICA' ? 'success' : item.coffeeType === 'ROBUSTA' ? 'info' : 'neutral'}>

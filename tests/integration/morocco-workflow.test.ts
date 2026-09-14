@@ -110,7 +110,7 @@ describe('2 — approving it opens the job and the loading sheet row', () => {
     expect(row.contractNumber).toBe(contractNumber);
     expect(row.exporter).toBe(masters.vendor.vendorName);
     expect(row.importer).toBe(ctx.morocco.name);
-    expect(row.itemName).toBe(masters.item.itemName);
+    expect(row.lines[0].itemName).toBe(masters.item.itemName);
     expect(dec(row.quantityKg).toString()).toBe('42000');
 
     // Blank until somebody buys it — not a guess, and not the supplier.
@@ -317,7 +317,9 @@ describe('5 — the sale draws from a named lot at a named location', () => {
   });
 
   it('shows the customer as the consignee on the loading sheet', async () => {
-    const row = (await getLoadingSheet(companyId)).find((r) => r.batchId === lot229BatchId)!;
+    const row = (await getLoadingSheet(companyId)).find((r) =>
+      r.lines.some((line) => line.batchId === lot229BatchId),
+    )!;
     expect(row.consignee).toBe(masters.customer.customerName);
     expect(row.saleStatus).toBe('PARTIALLY_SOLD');
     expect(dec(row.soldKg).toString()).toBe('5000');

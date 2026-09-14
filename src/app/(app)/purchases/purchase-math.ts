@@ -29,7 +29,7 @@ export type LineDraft = {
 const dec = (value: string | number | undefined | null) => {
   if (value === undefined || value === null || value === '') return new Decimal(0);
   try {
-    const d = new Decimal(value);
+    const d = new Decimal(String(value).replace(/,/g, '').trim() || 0);
     return d.isFinite() ? d : new Decimal(0);
   } catch {
     return new Decimal(0);

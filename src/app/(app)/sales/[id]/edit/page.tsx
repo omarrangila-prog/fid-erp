@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
-import { requirePageAccess } from '@/lib/auth/guards';
+import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getRateDefaults } from '@/lib/services/exchange-rate';
 import { getTaxSettings, listTaxCodes } from '@/lib/services/tax';
@@ -34,7 +34,7 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
   });
 
   if (!invoice) notFound();
-  if (invoice.status !== 'DRAFT') redirect(`/sales/${id}`);
+  if (invoice.status === 'REVERSED') redirect(`/sales/${id}`);
 
   const [customers, stock, cashAccounts] = await Promise.all([
     prisma.customer.findMany({
@@ -66,21 +66,22 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
     shipmentId: s.shipmentId,
   }));
 
-  // The stock this draft already holds is reserved, so it does not appear in
-  // the free-stock list. Add each line's own reservation back to its option so
-  // the quantity the user already entered still validates.
+  // Stock this invoice already holds is reserved (draft) or consumed (posted),
+  // so it does not appear as free. Add each line's own quantity back so the
+  // figure the user already entered still validates.
   for (const line of invoice.lines) {
     if (!line.warehouseId) continue;
     const key = `${line.batchId}:${line.warehouseId}`;
     const existing = stockOptions.find((o) => o.value === key);
+    const including = invoice.status === 'POSTED' ? 'including this invoice' : 'including this draft';
     if (existing) {
       existing.availableKg = dec(existing.availableKg).plus(dec(line.quantityKg)).toString();
-      existing.hint = `${existing.warehouseName} · ${formatQuantityKg(existing.availableKg)} available (including this draft)`;
+      existing.hint = `${existing.warehouseName} · ${formatQuantityKg(existing.availableKg)} available (${including})`;
     } else {
       stockOptions.push({
         value: key,
         label: `${line.batch.batchNumber} · ${line.item.itemName}`,
-        hint: `${line.warehouse?.name ?? 'Warehouse'} · reserved by this draft`,
+        hint: `${line.warehouse?.name ?? 'Warehouse'} · held by this invoice`,
         batchId: line.batchId,
         warehouseId: line.warehouseId,
         batchNumber: line.batch.batchNumber,
@@ -109,7 +110,7 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
     <div className="space-y-6">
       <PageHeader
         title={`Edit ${invoice.invoiceNumber}`}
-        description="Only draft invoices can be edited. Once posted, corrections are made by reversal."
+        description="Correct quantity, rate, batch, due date and other details. Totals, stock and the customer ledger are recalculated when you save."
         breadcrumbs={[
           { label: 'Trading' },
           { label: 'Sales', href: '/sales' },
@@ -134,18 +135,23 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
         taxCodes={taxCodes}
         taxLabel={taxSettings.label}
         taxEnabled={taxSettings.enabled}
+        canApprove={can(user, PERMISSIONS.SALES_APPROVE)}
+        canCreateCustomer={can(user, PERMISSIONS.CUSTOMERS_CREATE)}
         defaults={{
           id: invoice.id,
+          status: invoice.status,
+          invoiceNumber: invoice.invoiceNumber,
           invoiceDate: toDateInputValue(invoice.invoiceDate),
           customerId: invoice.customerId,
           currency: invoice.currency,
           rateToUsd: invoice.rateToUsd.toString(),
           rateLocalPerUsd: invoice.rateLocalPerUsd.toString(),
-          dueDate: invoice.dueDate ? invoice.dueDate.toISOString().slice(0, 10) : "",
+          dueDate: invoice.dueDate ? toDateInputValue(invoice.dueDate) : '',
           paymentType: invoice.paymentType,
           cashBankAccountId: invoice.cashBankAccountId ?? '',
           reference: invoice.reference ?? '',
           notes: invoice.notes ?? '',
+          warehouseId: invoice.lines[0]?.warehouseId ?? undefined,
           lines: invoice.lines.map((l) => ({
             stockKey: `${l.batchId}:${l.warehouseId}`,
             quantity: l.quantity.toString(),

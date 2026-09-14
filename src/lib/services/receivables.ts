@@ -85,14 +85,22 @@ export async function getReceivables(params: {
            (
              COALESCE((SELECT SUM(ra."amount") FROM receipt_allocations ra
                          JOIN receipts r ON r."id" = ra."receiptId"
-                        WHERE ra."salesInvoiceId" = si."id" AND r."status" = 'POSTED'), 0)
+                        WHERE ra."salesInvoiceId" = si."id" AND r."status" = 'POSTED'
+                          AND NOT EXISTS (
+                            SELECT 1 FROM cheques ch
+                            WHERE ch."receiptId" = r."id" AND ch.status IN ('BOUNCED', 'CANCELLED')
+                          )), 0)
              + COALESCE((SELECT SUM(cn."totalAmount") FROM credit_notes cn
                           WHERE cn."salesInvoiceId" = si."id" AND cn."status" = 'POSTED'), 0)
            )::text AS "paidAmount",
            (
              COALESCE((SELECT SUM(ra."amountUsd") FROM receipt_allocations ra
                          JOIN receipts r ON r."id" = ra."receiptId"
-                        WHERE ra."salesInvoiceId" = si."id" AND r."status" = 'POSTED'), 0)
+                        WHERE ra."salesInvoiceId" = si."id" AND r."status" = 'POSTED'
+                          AND NOT EXISTS (
+                            SELECT 1 FROM cheques ch
+                            WHERE ch."receiptId" = r."id" AND ch.status IN ('BOUNCED', 'CANCELLED')
+                          )), 0)
              + COALESCE((SELECT SUM(cn."totalAmountUsd") FROM credit_notes cn
                           WHERE cn."salesInvoiceId" = si."id" AND cn."status" = 'POSTED'), 0)
            )::text AS "paidAmountUsd"
@@ -208,14 +216,22 @@ export async function getPayables(params: {
            (
              COALESCE((SELECT SUM(pa."amount") FROM payment_allocations pa
                          JOIN payments p ON p."id" = pa."paymentId"
-                        WHERE pa."purchaseContractId" = pc."id" AND p."status" = 'POSTED'), 0)
+                        WHERE pa."purchaseContractId" = pc."id" AND p."status" = 'POSTED'
+                          AND NOT EXISTS (
+                            SELECT 1 FROM cheques ch
+                            WHERE ch."paymentId" = p."id" AND ch.status IN ('BOUNCED', 'CANCELLED')
+                          )), 0)
              + COALESCE((SELECT SUM(cn."totalAmount") FROM credit_notes cn
                           WHERE cn."purchaseContractId" = pc."id" AND cn."status" = 'POSTED'), 0)
            )::text AS "paidAmount",
            (
              COALESCE((SELECT SUM(pa."amountUsd") FROM payment_allocations pa
                          JOIN payments p ON p."id" = pa."paymentId"
-                        WHERE pa."purchaseContractId" = pc."id" AND p."status" = 'POSTED'), 0)
+                        WHERE pa."purchaseContractId" = pc."id" AND p."status" = 'POSTED'
+                          AND NOT EXISTS (
+                            SELECT 1 FROM cheques ch
+                            WHERE ch."paymentId" = p."id" AND ch.status IN ('BOUNCED', 'CANCELLED')
+                          )), 0)
              + COALESCE((SELECT SUM(cn."totalAmountUsd") FROM credit_notes cn
                           WHERE cn."purchaseContractId" = pc."id" AND cn."status" = 'POSTED'), 0)
            )::text AS "paidAmountUsd",
@@ -240,10 +256,18 @@ export async function getPayables(params: {
            (SELECT s."shipmentNumber" FROM shipments s WHERE s."id" = e."shipmentId") AS "shipmentNumbers",
            COALESCE((SELECT SUM(pa."amount") FROM payment_allocations pa
                        JOIN payments p ON p."id" = pa."paymentId"
-                      WHERE pa."expenseId" = e."id" AND p."status" = 'POSTED'), 0)::text AS "paidAmount",
+                      WHERE pa."expenseId" = e."id" AND p."status" = 'POSTED'
+                        AND NOT EXISTS (
+                          SELECT 1 FROM cheques ch
+                          WHERE ch."paymentId" = p."id" AND ch.status IN ('BOUNCED', 'CANCELLED')
+                        )), 0)::text AS "paidAmount",
            COALESCE((SELECT SUM(pa."amountUsd") FROM payment_allocations pa
                        JOIN payments p ON p."id" = pa."paymentId"
-                      WHERE pa."expenseId" = e."id" AND p."status" = 'POSTED'), 0)::text AS "paidAmountUsd",
+                      WHERE pa."expenseId" = e."id" AND p."status" = 'POSTED'
+                        AND NOT EXISTS (
+                          SELECT 1 FROM cheques ch
+                          WHERE ch."paymentId" = p."id" AND ch.status IN ('BOUNCED', 'CANCELLED')
+                        )), 0)::text AS "paidAmountUsd",
            'EXPENSE' AS kind
     FROM expenses e
     JOIN vendors v ON v."id" = e."vendorId"

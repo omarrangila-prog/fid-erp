@@ -1,5 +1,5 @@
 import type { Tx } from '@/lib/db';
-import { transaction } from '@/lib/db';
+import { prisma, transaction } from '@/lib/db';
 import { ACCOUNT_KEYS, EXPENSE_CATEGORY_SEEDS, PORT_SEEDS, REPORT_GROUPS } from '@/lib/constants';
 import { toMoney } from '@/lib/money';
 import { BusinessRuleError, ConflictError, NotFoundError } from '@/lib/errors';
@@ -433,6 +433,206 @@ export async function provisionCompany(tx: Tx, companyId: string): Promise<void>
   // tax it has no authority to collect.
   await ensureTaxCodes(tx, companyId, company.country);
   await ensurePorts(tx, companyId, company.country);
+}
+
+const REPORT_GROUP_FOR_TYPE: Record<AccountType, string[]> = {
+  ASSET: [REPORT_GROUPS.CURRENT_ASSET, REPORT_GROUPS.NON_CURRENT_ASSET],
+  LIABILITY: [REPORT_GROUPS.CURRENT_LIABILITY, REPORT_GROUPS.NON_CURRENT_LIABILITY],
+  EQUITY: [REPORT_GROUPS.EQUITY],
+  INCOME: [REPORT_GROUPS.REVENUE, REPORT_GROUPS.OTHER_INCOME],
+  EXPENSE: [REPORT_GROUPS.COGS, REPORT_GROUPS.OPERATING, REPORT_GROUPS.OTHER_EXPENSE],
+};
+
+export type ChartAccount = {
+  id: string;
+  code: string;
+  name: string;
+  type: AccountType;
+  reportGroup: string | null;
+  systemKey: string | null;
+  subledgerType: string;
+  isSystem: boolean;
+  currency: string | null;
+  cashBank: { id: string; accountType: CashBankAccountType; currency: string } | null;
+  expenseCategory: { id: string; code: string } | null;
+  balanceUsd: ReturnType<typeof toMoney>;
+  balanceLocal: ReturnType<typeof toMoney>;
+};
+
+export type ChartSection = {
+  key: string;
+  title: string;
+  hint: string;
+  accounts: ChartAccount[];
+};
+
+/**
+ * The company's chart, grouped the way an accountant reads it.
+ *
+ * Missing system heads are created first (idempotent, never deletes). Cash
+ * and bank accounts sit in their own section so "Cash in Hand" and "Bank in
+ * MAD" are visible as themselves rather than buried in a 10xx code.
+ */
+export async function getChartOfAccounts(companyId: string, localCurrency: string): Promise<{
+  sections: ChartSection[];
+  localCurrency: string;
+}> {
+  await transaction(async (tx) => {
+    await ensureChartOfAccounts(tx, companyId);
+    await ensureExpenseCategories(tx, companyId);
+  });
+
+  const accounts = await prisma.account.findMany({
+    where: { companyId, status: 'ACTIVE' },
+    orderBy: { code: 'asc' },
+    include: {
+      cashBankAccounts: { select: { id: true, accountType: true, currency: true }, take: 1 },
+      expenseCategories: { select: { id: true, code: true }, take: 1 },
+    },
+  });
+
+  const totals = await prisma.journalLine.groupBy({
+    by: ['accountId'],
+    where: { journalEntry: { companyId, status: 'POSTED' } },
+    _sum: { debitUsd: true, creditUsd: true, debitLocal: true, creditLocal: true },
+  });
+  const byAccount = new Map(totals.map((row) => [row.accountId, row._sum]));
+
+  const rows: ChartAccount[] = accounts.map((account) => {
+    const sum = byAccount.get(account.id);
+    const debitUsd = toMoney(sum?.debitUsd ?? 0);
+    const creditUsd = toMoney(sum?.creditUsd ?? 0);
+    const debitLocal = toMoney(sum?.debitLocal ?? 0);
+    const creditLocal = toMoney(sum?.creditLocal ?? 0);
+    const signed =
+      account.type === 'LIABILITY' || account.type === 'EQUITY' || account.type === 'INCOME'
+        ? { usd: toMoney(creditUsd.minus(debitUsd)), local: toMoney(creditLocal.minus(debitLocal)) }
+        : { usd: toMoney(debitUsd.minus(creditUsd)), local: toMoney(debitLocal.minus(creditLocal)) };
+
+    return {
+      id: account.id,
+      code: account.code,
+      name: account.name,
+      type: account.type,
+      reportGroup: account.reportGroup,
+      systemKey: account.systemKey,
+      subledgerType: account.subledgerType,
+      isSystem: account.isSystem,
+      currency: account.currency,
+      cashBank: account.cashBankAccounts[0]
+        ? {
+            id: account.cashBankAccounts[0].id,
+            accountType: account.cashBankAccounts[0].accountType,
+            currency: account.cashBankAccounts[0].currency,
+          }
+        : null,
+      expenseCategory: account.expenseCategories[0]
+        ? { id: account.expenseCategories[0].id, code: account.expenseCategories[0].code }
+        : null,
+      balanceUsd: signed.usd,
+      balanceLocal: signed.local,
+    };
+  });
+
+  const take = (predicate: (account: ChartAccount) => boolean) => rows.filter(predicate);
+  const used = new Set<string>();
+  const section = (key: string, title: string, hint: string, predicate: (account: ChartAccount) => boolean): ChartSection => {
+    const accountsInSection = take((account) => !used.has(account.id) && predicate(account));
+    for (const account of accountsInSection) used.add(account.id);
+    return { key, title, hint, accounts: accountsInSection };
+  };
+
+  const sections = [
+    section(
+      'cash-bank',
+      'Cash & Bank',
+      'Cash in Hand, MAD bank accounts, USD accounts and any other drawers or banks.',
+      (account) => account.subledgerType === 'CASH_BANK' || Boolean(account.cashBank),
+    ),
+    section(
+      'assets',
+      'Assets',
+      'Receivables, inventory, advances to suppliers, recoverable tax.',
+      (account) => account.type === 'ASSET',
+    ),
+    section(
+      'liabilities',
+      'Liabilities',
+      'Payables, customer advances, tax payable, cheques issued.',
+      (account) => account.type === 'LIABILITY',
+    ),
+    section(
+      'equity',
+      'Equity',
+      'Capital, opening balance equity and retained earnings.',
+      (account) => account.type === 'EQUITY',
+    ),
+    section(
+      'revenue',
+      'Revenue',
+      'Sales and other income.',
+      (account) => account.type === 'INCOME',
+    ),
+    section(
+      'cogs',
+      'Cost of Goods Sold',
+      'Purchase cost, freight, clearing, duty and other costs of landing the coffee.',
+      (account) => account.type === 'EXPENSE' && account.reportGroup === REPORT_GROUPS.COGS,
+    ),
+    section(
+      'operating',
+      'Operating Expenses',
+      'General company expenses: rent, salaries, travel, professional fees.',
+      (account) => account.type === 'EXPENSE' && account.reportGroup === REPORT_GROUPS.OPERATING,
+    ),
+    section(
+      'other',
+      'Other',
+      'Exchange gain/loss and any remaining heads.',
+      () => true,
+    ),
+  ].filter((group) => group.accounts.length > 0);
+
+  return { sections, localCurrency };
+}
+
+/**
+ * A user-created ledger head. System accounts (AR, AP, inventory, sales) are
+ * never created this way and cannot be replaced by a custom row of the same
+ * code.
+ */
+export async function createLedgerAccount(input: {
+  companyId: string;
+  code: string;
+  name: string;
+  type: AccountType;
+  reportGroup?: string | null;
+}) {
+  const code = input.code.trim();
+  const name = input.name.trim();
+  if (!code) throw new BusinessRuleError('Enter an account code.');
+  if (!name) throw new BusinessRuleError('Enter an account name.');
+
+  const allowed = REPORT_GROUP_FOR_TYPE[input.type];
+  const reportGroup =
+    input.reportGroup && allowed.includes(input.reportGroup) ? input.reportGroup : allowed[0];
+
+  return transaction(async (tx) => {
+    const duplicate = await tx.account.findFirst({ where: { companyId: input.companyId, code } });
+    if (duplicate) throw new ConflictError(`Account code ${code} is already in use.`);
+
+    return tx.account.create({
+      data: {
+        companyId: input.companyId,
+        code,
+        name,
+        type: input.type,
+        reportGroup,
+        isSystem: false,
+        subledgerType: 'NONE',
+      },
+    });
+  });
 }
 
 /**

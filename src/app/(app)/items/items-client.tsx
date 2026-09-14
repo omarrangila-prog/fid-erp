@@ -1,12 +1,20 @@
 'use client';
 
 import * as React from 'react';
-import { Plus, Pencil, Coffee } from 'lucide-react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+import { Plus, Pencil, Coffee, Ban } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { MasterFormSheet, STATUS_OPTIONS, type FieldSpec } from '@/components/shared/master-form';
-import { saveCoffeeItemAction, type MasterFormState } from '@/server/actions/master-actions';
+import {
+  saveCoffeeItemAction,
+  deactivateCoffeeItemAction,
+  type MasterFormState,
+} from '@/server/actions/master-actions';
 import { COFFEE_TYPE_LABELS, COFFEE_PROCESS_LABELS, PACKAGING_LABELS } from '@/lib/constants';
 
 export type ItemRow = {
@@ -38,50 +46,66 @@ export type ItemRow = {
 const asOptions = (map: Record<string, string>) =>
   Object.entries(map).map(([value, label]) => ({ value, label }));
 
+/**
+ * FID's item form, not Zoho's.
+ *
+ * Name, unit, optional SKU, the coffee facts that actually appear on a
+ * contract, and batch/lot tracking — which is always on, so there is no
+ * switch for it. Sales accounts, inventory accounts and valuation methods
+ * are not asked for here.
+ */
 const FIELDS: FieldSpec[] = [
-  { kind: 'section', title: 'Identity', description: 'How this coffee is referred to on contracts and invoices.' },
-  { kind: 'text', name: 'itemCode', label: 'Item code', required: true, placeholder: 'BR-SAN-172' },
+  { kind: 'section', title: 'Item', description: 'Name it once. Every purchase, loading sheet and invoice then uses this record.' },
   {
     kind: 'text',
     name: 'itemName',
-    label: 'Coffee name',
+    label: 'Item name',
     required: true,
-    placeholder: 'Brazil Santos NY2 Screen 17/18',
+    placeholder: 'Uganda Robusta Screen 12',
+    full: true,
   },
-  { kind: 'select', name: 'coffeeType', label: 'Type', required: true, options: asOptions(COFFEE_TYPE_LABELS) },
-  { kind: 'select', name: 'process', label: 'Process', required: true, options: asOptions(COFFEE_PROCESS_LABELS) },
-
-  { kind: 'section', title: 'Origin' },
-  { kind: 'text', name: 'originCountry', label: 'Origin country', required: true, placeholder: 'Brazil' },
-  { kind: 'text', name: 'region', label: 'Region', placeholder: 'Mogiana' },
-  { kind: 'text', name: 'farmEstate', label: 'Farm / estate', full: true },
-
-  { kind: 'section', title: 'Specification' },
-  { kind: 'text', name: 'grade', label: 'Grade', placeholder: 'NY2' },
-  { kind: 'text', name: 'screenSize', label: 'Screen size', placeholder: '17/18' },
-  { kind: 'text', name: 'variety', label: 'Variety', placeholder: 'Mundo Novo' },
-  { kind: 'text', name: 'cropYear', label: 'Crop year', placeholder: '2025/26' },
-  { kind: 'percent', name: 'moisturePct', label: 'Moisture %', placeholder: '11.5' },
-  { kind: 'number', name: 'densityGPerL', label: 'Density (g/L)', placeholder: '700' },
-
-  { kind: 'section', title: 'Packaging', description: 'Bag weight drives the bag count on contracts and receipts.' },
-  { kind: 'select', name: 'packagingType', label: 'Packaging', required: true, options: asOptions(PACKAGING_LABELS) },
-  { kind: 'number', name: 'bagWeightKg', label: 'Bag weight (KG)', placeholder: '60' },
   {
     kind: 'select',
     name: 'defaultUnit',
-    label: 'Default entry unit',
+    label: 'Unit',
     required: true,
     options: [
       { value: 'KG', label: 'KG — kilograms' },
       { value: 'MT', label: 'MT — metric tons' },
       { value: 'BAG', label: 'BAG — bags' },
     ],
-    hint: 'Stock is always held in KG; this is only the unit staff type in.',
+    hint: 'Stock is always held in KG. This is only the unit staff type in.',
   },
-  { kind: 'select', name: 'status', label: 'Status', options: STATUS_OPTIONS },
+  {
+    kind: 'text',
+    name: 'itemCode',
+    label: 'SKU',
+    placeholder: 'Optional',
+    hint: 'Leave blank and the system issues ITM-0001, same as customers.',
+  },
+
+  { kind: 'section', title: 'Coffee details' },
+  { kind: 'select', name: 'coffeeType', label: 'Type', required: true, options: asOptions(COFFEE_TYPE_LABELS) },
+  { kind: 'text', name: 'originCountry', label: 'Origin country', required: true, placeholder: 'Uganda' },
+  { kind: 'text', name: 'screenSize', label: 'Screen size', placeholder: '12' },
+  { kind: 'text', name: 'grade', label: 'Grade' },
+  { kind: 'select', name: 'process', label: 'Process', required: true, options: asOptions(COFFEE_PROCESS_LABELS) },
+  { kind: 'text', name: 'cropYear', label: 'Crop year', placeholder: '2025/26' },
+  { kind: 'text', name: 'region', label: 'Region' },
+
+  {
+    kind: 'section',
+    title: 'Packaging',
+    description: 'Batch and lot are always tracked. Bag weight drives the bag count on contracts and receipts.',
+  },
+  { kind: 'select', name: 'packagingType', label: 'Packaging', required: true, options: asOptions(PACKAGING_LABELS) },
+  { kind: 'number', name: 'bagWeightKg', label: 'Bag weight (KG)', placeholder: '60' },
   { kind: 'textarea', name: 'description', label: 'Description', full: true },
-  { kind: 'textarea', name: 'notes', label: 'Notes', full: true },
+];
+
+const EDIT_FIELDS: FieldSpec[] = [
+  ...FIELDS,
+  { kind: 'select', name: 'status', label: 'Status', options: STATUS_OPTIONS },
 ];
 
 export function ItemsClient({
@@ -89,26 +113,33 @@ export function ItemsClient({
   canCreate,
   openCreate = false,
   canEdit,
+  canDelete,
   showValue,
 }: {
   rows: ItemRow[];
   canCreate: boolean;
   openCreate?: boolean;
   canEdit: boolean;
+  canDelete: boolean;
   showValue: boolean;
 }) {
+  const router = useRouter();
   const [editing, setEditing] = React.useState<ItemRow | null>(null);
   const [creating, setCreating] = React.useState(openCreate && canCreate);
+  const [deactivating, setDeactivating] = React.useState<ItemRow | null>(null);
+  const [pending, startTransition] = React.useTransition();
 
   const columns: DataColumn<ItemRow>[] = [
     {
       id: 'name',
-      header: 'Coffee',
+      header: 'Item',
       mobile: 'title',
       sortValue: (r) => r.itemName,
       cell: (r) => (
         <span>
-          <span className="block font-medium">{r.itemName}</span>
+          <Link href={`/items/${r.id}`} className="block font-medium text-forest-700 hover:underline">
+            {r.itemName}
+          </Link>
           <span className="block text-xs text-ink-subtle">{r.itemCode}</span>
         </span>
       ),
@@ -151,19 +182,10 @@ export function ItemsClient({
       cell: (r) => COFFEE_PROCESS_LABELS[r.process] ?? r.process,
     },
     {
-      id: 'crop',
-      header: 'Crop',
+      id: 'unit',
+      header: 'Unit',
       hideable: true,
-      defaultHidden: true,
-      cell: (r) => r.cropYear ?? '—',
-    },
-    {
-      id: 'bag',
-      header: 'Bag',
-      numeric: true,
-      hideable: true,
-      sortValue: (r) => Number(r.bagWeightKg),
-      cell: (r) => `${r.bagWeightKg} KG`,
+      cell: (r) => r.defaultUnit,
     },
     {
       id: 'available',
@@ -185,15 +207,29 @@ export function ItemsClient({
         </Badge>
       ),
     },
-    ...(canEdit
+    ...(canEdit || canDelete
       ? [
           {
             id: 'actions',
             header: '',
             cell: (r: ItemRow) => (
-              <Button variant="ghost" size="icon" aria-label={`Edit ${r.itemName}`} onClick={() => setEditing(r)}>
-                <Pencil />
-              </Button>
+              <span className="inline-flex items-center gap-0.5">
+                {canEdit ? (
+                  <Button variant="ghost" size="icon" aria-label={`Edit ${r.itemName}`} onClick={() => setEditing(r)}>
+                    <Pencil />
+                  </Button>
+                ) : null}
+                {canDelete && r.status === 'ACTIVE' ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Deactivate ${r.itemName}`}
+                    onClick={() => setDeactivating(r)}
+                  >
+                    <Ban className="text-red-500" />
+                  </Button>
+                ) : null}
+              </span>
             ),
           } satisfies DataColumn<ItemRow>,
         ]
@@ -202,6 +238,21 @@ export function ItemsClient({
 
   void showValue;
 
+  function confirmDeactivate() {
+    if (!deactivating) return;
+    const row = deactivating;
+    startTransition(async () => {
+      const result = await deactivateCoffeeItemAction(row.id);
+      if (!result?.ok) {
+        toast.error(result && 'error' in result ? result.error : 'Could not deactivate this item.');
+        return;
+      }
+      toast.success(result.message);
+      setDeactivating(null);
+      router.refresh();
+    });
+  }
+
   return (
     <>
       <DataTable
@@ -209,17 +260,24 @@ export function ItemsClient({
         columns={columns}
         getRowId={(r) => r.id}
         searchValue={(r) =>
-          `${r.itemName} ${r.itemCode} ${r.originCountry} ${r.region ?? ''} ${r.grade ?? ''} ${r.variety ?? ''} ${r.cropYear ?? ''}`
+          `${r.itemName} ${r.itemCode} ${r.originCountry} ${r.region ?? ''} ${r.grade ?? ''} ${r.variety ?? ''} ${r.cropYear ?? ''} ${r.screenSize ?? ''}`
         }
-        searchPlaceholder="Search by name, origin, grade or crop year…"
-        emptyTitle="No coffee items yet"
+        searchPlaceholder="Search by name, origin, grade or screen…"
+        emptyTitle="No items yet"
         emptyDescription="Create the coffees you trade. Every contract, batch and invoice references one."
-        emptyAction={canCreate ? <Button onClick={() => setCreating(true)}><Plus />Add coffee</Button> : undefined}
+        emptyAction={
+          canCreate ? (
+            <Button onClick={() => setCreating(true)}>
+              <Plus />
+              New Item
+            </Button>
+          ) : undefined
+        }
         toolbar={
           canCreate ? (
             <Button onClick={() => setCreating(true)}>
               <Plus />
-              <span className="hidden sm:inline">New coffee</span>
+              <span className="hidden sm:inline">New Item</span>
               <span className="sm:hidden">New</span>
             </Button>
           ) : undefined
@@ -230,21 +288,22 @@ export function ItemsClient({
         <MasterFormSheet
           open={creating}
           onOpenChange={setCreating}
-          title="New coffee"
-          description="Defined once, then referenced by every contract, lot, batch and invoice."
+          title="New Item"
+          description="Item name, unit, coffee details, then save. Batch and lot are always tracked."
           fields={FIELDS}
           defaults={{
-            coffeeType: 'ARABICA',
-            process: 'WASHED',
+            coffeeType: 'ROBUSTA',
+            process: 'NATURAL',
             packagingType: 'JUTE_BAG',
             bagWeightKg: '60',
             defaultUnit: 'KG',
             status: 'ACTIVE',
+            originCountry: '',
           }}
           action={
             saveCoffeeItemAction.bind(null, null) as (p: MasterFormState, f: FormData) => Promise<MasterFormState>
           }
-          submitLabel="Create coffee"
+          submitLabel="Save item"
         />
       ) : null}
 
@@ -253,13 +312,31 @@ export function ItemsClient({
           open
           onOpenChange={(open) => !open && setEditing(null)}
           title={`Edit ${editing.itemName}`}
-          fields={FIELDS}
+          fields={EDIT_FIELDS}
           defaults={{ ...editing }}
           action={
             saveCoffeeItemAction.bind(null, editing.id) as (p: MasterFormState, f: FormData) => Promise<MasterFormState>
           }
         />
       ) : null}
+
+      <Dialog open={Boolean(deactivating)} onOpenChange={(open) => !open && setDeactivating(null)}>
+        {deactivating ? (
+          <DialogContent
+            title={`Deactivate ${deactivating.itemName}?`}
+            description="It will no longer appear on new purchase orders or invoices. Existing contracts and stock are unchanged."
+          >
+            <div className="flex flex-col-reverse gap-2 px-5 pb-5 sm:flex-row sm:justify-end">
+              <Button variant="outline" onClick={() => setDeactivating(null)} disabled={pending}>
+                Cancel
+              </Button>
+              <Button variant="danger" onClick={confirmDeactivate} loading={pending}>
+                Deactivate
+              </Button>
+            </div>
+          </DialogContent>
+        ) : null}
+      </Dialog>
     </>
   );
 }

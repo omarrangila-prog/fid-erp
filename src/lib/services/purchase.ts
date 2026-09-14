@@ -13,6 +13,7 @@ import { nextReference } from '@/lib/services/numbering';
 import { postJournalEntry, reverseJournalEntry } from '@/lib/services/accounting';
 import { getCompanyContext } from '@/lib/services/company';
 import { writeAudit } from '@/lib/services/audit';
+import { repairSharedContainerAssignments } from '@/lib/services/shipment';
 import { resolveTaxCode } from '@/lib/services/tax';
 import { computePurchaseTotals } from '@/lib/calc/purchase';
 import type { PurchaseContractInput, PurchaseLineInput } from '@/lib/calc/purchase';
@@ -771,6 +772,14 @@ export async function deleteDraftPurchaseContract(params: { id: string; companyI
 
 /** Outstanding quantity still to be received against a contract, per line. */
 export async function getReceiptStatus(tx: Tx, purchaseContractId: string) {
+  const shipment = await tx.shipment.findFirst({
+    where: { purchaseContractId },
+    select: { id: true, companyId: true },
+  });
+  if (shipment) {
+    await repairSharedContainerAssignments(tx, shipment.companyId, shipment.id);
+  }
+
   const rows = await tx.$queryRaw<
     Array<{
       lineId: string;

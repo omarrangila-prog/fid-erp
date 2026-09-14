@@ -7,7 +7,7 @@ import { requirePermission, assertPermission } from '@/lib/auth/guards';
 import { PERMISSIONS, type PermissionCode } from '@/lib/constants';
 import { ConflictError, NotFoundError } from '@/lib/errors';
 import { writeAudit } from '@/lib/services/audit';
-import { createCashBankAccount } from '@/lib/services/chart-of-accounts';
+import { createCashBankAccount, createLedgerAccount } from '@/lib/services/chart-of-accounts';
 import {
   formDataToObject,
   fieldErrors,
@@ -26,6 +26,7 @@ import {
   expenseCategorySchema,
   cashBankAccountSchema,
 } from '@/lib/validation/masters';
+import { ledgerAccountSchema } from '@/lib/validation/finance';
 import { fail, run, type ActionResult } from '@/server/actions/action-utils';
 
 /**
@@ -291,6 +292,34 @@ export async function saveCoffeeItemAction(id: string | null, _prev: MasterFormS
   return saveMaster(ITEM, 'coffeeItem', id, formData);
 }
 
+/** Hide an item from new orders without deleting the history that already used it. */
+export async function deactivateCoffeeItemAction(id: string): Promise<MasterFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.ITEMS_DELETE);
+    const companyId = user.activeCompany.id;
+    const item = await prisma.coffeeItem.findFirst({ where: { id, companyId } });
+    if (!item) throw new NotFoundError('Coffee item');
+
+    await prisma.coffeeItem.update({ where: { id }, data: { status: 'INACTIVE' } });
+    await transaction((tx) =>
+      writeAudit(tx, {
+        companyId,
+        userId: user.id,
+        action: 'COFFEE_ITEM_DEACTIVATED',
+        entityType: 'CoffeeItem',
+        entityId: id,
+        before: { status: item.status },
+        after: { status: 'INACTIVE' },
+      }),
+    );
+    revalidatePath('/items');
+    revalidatePath(`/items/${id}`);
+    return { ok: true, id, message: `${item.itemName} is now inactive.` };
+  } catch (error) {
+    return invalid(error);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Warehouses, agents, shipping lines, expense categories
 // ---------------------------------------------------------------------------
@@ -429,6 +458,41 @@ export async function saveCashBankAccountAction(
 
     revalidatePath('/finance/cash-bank');
     return { ok: true, id: created.id, message: 'Account created.' };
+  } catch (error) {
+    return invalid(error);
+  }
+}
+
+export async function saveLedgerAccountAction(
+  _id: string | null,
+  _prev: MasterFormState,
+  formData: FormData,
+): Promise<MasterFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.ACCOUNTING_POST);
+    const data = ledgerAccountSchema.parse(formDataToObject(formData));
+    const created = await createLedgerAccount({
+      companyId: user.activeCompany.id,
+      code: data.code,
+      name: data.name,
+      type: data.type,
+      reportGroup: data.reportGroup,
+    });
+
+    await transaction((tx) =>
+      writeAudit(tx, {
+        companyId: user.activeCompany.id,
+        userId: user.id,
+        action: 'LEDGER_ACCOUNT_CREATED',
+        entityType: 'Account',
+        entityId: created.id,
+        after: data,
+      }),
+    );
+
+    revalidatePath('/accounting/chart');
+    revalidatePath('/reports/general-ledger');
+    return { ok: true, id: created.id, message: 'Account added to the chart.' };
   } catch (error) {
     return invalid(error);
   }

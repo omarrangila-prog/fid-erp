@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Callout } from '@/components/ui/feedback';
 import { createStockCountAction } from '@/server/actions/compliance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
+import { todayInputValue } from '@/lib/format';
 
 export function StockCountForm({
   warehouses,
@@ -21,7 +22,7 @@ export function StockCountForm({
   const [error, setError] = React.useState<string | null>(null);
 
   const [warehouseId, setWarehouseId] = React.useState(warehouses.find((w) => !w.openCountNumber)?.id ?? '');
-  const [countDate, setCountDate] = React.useState(new Date().toISOString().slice(0, 10));
+  const [countDate, setCountDate] = React.useState(todayInputValue());
   const [notes, setNotes] = React.useState('');
 
   const chosen = warehouses.find((w) => w.id === warehouseId) ?? null;

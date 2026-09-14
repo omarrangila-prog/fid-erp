@@ -11,6 +11,7 @@ import {
   allocateProportionally,
   percentage,
   sum,
+  tryDec,
 } from '@/lib/money';
 
 describe('unit conversion', () => {
@@ -103,5 +104,17 @@ describe('percentage', () => {
 
   it('returns zero rather than NaN when the base is zero', () => {
     expect(percentage('25', '0').toString()).toBe('0');
+  });
+});
+
+describe('tryDec', () => {
+  it('strips thousands separators instead of throwing', () => {
+    expect(tryDec('1,000').toString()).toBe('1000');
+  });
+
+  it('treats incomplete or junk typing as zero', () => {
+    expect(tryDec('.').toString()).toBe('0');
+    expect(tryDec('-').toString()).toBe('0');
+    expect(tryDec('abc').toString()).toBe('0');
   });
 });

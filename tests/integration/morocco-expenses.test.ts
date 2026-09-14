@@ -4,7 +4,7 @@ import { createPurchaseContract, postPurchaseContract } from '@/lib/services/pur
 import { createExpense, postExpense } from '@/lib/services/expense';
 import { createSalesInvoice, postSalesInvoice } from '@/lib/services/sales';
 import { getShipmentProfitabilityById } from '@/lib/services/profitability';
-import { getJobCostSummary } from '@/lib/services/landed-cost';
+import { getJobCostSummary, getShipmentCostSheet } from '@/lib/services/landed-cost';
 import { transaction } from '@/lib/db';
 import { getFinancialPosition } from '@/lib/services/reports';
 import { reconcile } from '@/lib/services/reconciliation';
@@ -135,6 +135,7 @@ describe('the four expenses', () => {
     expect(all).toHaveLength(4);
     expect(all.filter((e) => e.kind === 'SHIPMENT')).toHaveLength(3);
     expect(all.filter((e) => e.kind === 'GENERAL')).toHaveLength(1);
+    expect(all.filter((e) => e.kind === 'SHIPMENT').every((e) => e.purchaseContractId)).toBe(true);
   });
 
   it('refuses a shipment expense that names no shipment', async () => {
@@ -248,6 +249,20 @@ describe('what reaches the coffee', () => {
     );
     expect(descriptions).not.toContain('Staff dinner');
   });
+
+  it('lists every shipment cost on the costing sheet and leaves the dinner out', async () => {
+    const sheet = await getShipmentCostSheet(ctx.morocco.id, shipmentId);
+
+    expect(Number(sheet.goodsUsd)).toBeCloseTo(105_000, 2);
+    expect(Number(sheet.expenseUsd)).toBeCloseTo(3_500, 2);
+    expect(Number(sheet.totalShipmentCostUsd)).toBeCloseTo(108_500, 2);
+    expect(Number(sheet.receivedKg)).toBeCloseTo(20_000, 3);
+    expect(Number(sheet.costPerKgUsd)).toBeCloseTo(5.425, 4);
+    expect(sheet.lines).toHaveLength(3);
+    expect(sheet.lines.map((line) => line.category).sort()).toEqual(
+      ['Broker Commission', 'Clearing Charges', 'Documentation'].sort(),
+    );
+  });
 });
 
 describe('selling half of it', () => {
@@ -302,6 +317,14 @@ describe('selling half of it', () => {
     expect(Number(profit.allocatedLandedCostUsd)).toBeCloseTo(54_250, 2);
     // Unsold coffee is neither revenue nor a loss.
     expect(Number(profit.grossProfitUsd)).toBeCloseTo(15_750, 2);
+  });
+
+  it('shows realised profit on the shipment costing sheet', async () => {
+    const sheet = await getShipmentCostSheet(ctx.morocco.id, shipmentId);
+    expect(Number(sheet.revenueUsd)).toBeCloseTo(70_000, 2);
+    expect(Number(sheet.cogsUsd)).toBeCloseTo(54_250, 2);
+    expect(Number(sheet.grossProfitUsd)).toBeCloseTo(15_750, 2);
+    expect(Number(sheet.profitPerKgUsd)).toBeCloseTo(1.575, 4);
   });
 
   it('keeps the dinner out of the shipment’s profit', async () => {

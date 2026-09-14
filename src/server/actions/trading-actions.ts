@@ -14,6 +14,7 @@ import {
   shipmentDetailsSchema,
   markLoadedSchema,
   documentStatusSchema,
+  shipmentContainersSchema,
 } from '@/lib/validation/trading';
 import {
   createPurchaseContract,
@@ -49,6 +50,7 @@ import {
   updateShipmentDetails,
   markShipmentLoaded,
   updateShipmentEta,
+  saveShipmentContainers,
 } from '@/lib/services/shipment';
 import { fail, type ActionResult } from '@/server/actions/action-utils';
 
@@ -158,6 +160,7 @@ export async function saveGoodsReceiptAction(payload: string): Promise<DocFormSt
 
     revalidatePath('/goods-receipts');
     revalidatePath(`/purchases/${input.purchaseContractId}`);
+    revalidatePath('/loading');
     return { ok: true, id: receipt.id, message: 'Goods receipt created.' };
   } catch (error) {
     return toState(error);
@@ -171,6 +174,7 @@ export async function postGoodsReceiptAction(id: string): Promise<ActionResult<u
     revalidatePath('/goods-receipts');
     revalidatePath('/inventory');
     revalidatePath('/dashboard');
+    revalidatePath('/loading');
     return { ok: true, data: undefined };
   } catch (error) {
     return fail(error);
@@ -216,6 +220,9 @@ export async function saveSalesInvoiceAction(id: string | null, payload: string)
     revalidatePath('/sales');
     revalidatePath(`/sales/${result.id}`);
     revalidatePath('/inventory');
+    revalidatePath('/loading');
+    revalidatePath('/finance/receivables');
+    revalidatePath('/dashboard');
     return { ok: true, id: result.id, message: id ? 'Invoice updated.' : 'Invoice created.' };
   } catch (error) {
     return toState(error);
@@ -424,7 +431,36 @@ export async function changeDocumentStatusAction(shipmentId: string, payload: st
 
     revalidatePath('/shipments');
     revalidatePath(`/shipments/${shipmentId}`);
+    revalidatePath('/loading');
     return { ok: true, id: shipmentId, message: 'Document status updated.' };
+  } catch (error) {
+    return toState(error);
+  }
+}
+
+export async function saveShipmentContainersAction(shipmentId: string, payload: string): Promise<DocFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.SHIPMENTS_UPDATE);
+    const input = shipmentContainersSchema.parse(parseJson(payload));
+
+    await saveShipmentContainers(
+      {
+        companyId: user.activeCompany.id,
+        shipmentId,
+        lines: input.lines.map((line) => ({
+          batchId: line.batchId,
+          containerNumber: line.containerNumber,
+        })),
+      },
+      user.id,
+    );
+
+    revalidatePath('/loading');
+    revalidatePath('/shipments');
+    revalidatePath(`/shipments/${shipmentId}`);
+    revalidatePath('/purchases');
+    revalidatePath('/goods-receipts');
+    return { ok: true, id: shipmentId, message: 'Container numbers saved.' };
   } catch (error) {
     return toState(error);
   }

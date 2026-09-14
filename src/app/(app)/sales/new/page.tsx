@@ -1,14 +1,15 @@
 import type { Metadata } from 'next';
-import { requirePageAccess } from '@/lib/auth/guards';
+import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getRateDefaults } from '@/lib/services/exchange-rate';
 import { getTaxSettings, listTaxCodes } from '@/lib/services/tax';
-import { prisma } from '@/lib/db';
+import { prisma, transaction } from '@/lib/db';
 import { getSellableStock } from '@/lib/services/stock';
 import { formatQuantityKg } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrerequisiteGate, anyMissing, type Prerequisite } from '@/components/shared/prerequisite-gate';
 import { SaleForm, type StockOption } from '@/app/(app)/sales/sale-form';
+import { suggestSalesInvoiceNumber } from '@/lib/services/numbering';
 
 export const metadata: Metadata = { title: 'New Sales Invoice' };
 export const dynamic = 'force-dynamic';
@@ -92,6 +93,7 @@ export default async function NewSalePage() {
   const defaultCurrency = user.activeCompany.localCurrency === 'MAD' ? 'MAD' : 'USD';
 
   const rates = await getRateDefaults(user.activeCompany.id);
+  const invoiceNumber = await transaction((tx) => suggestSalesInvoiceNumber(tx, companyId));
 
   return (
     <div className="space-y-6">
@@ -117,6 +119,9 @@ export default async function NewSalePage() {
         taxCodes={taxCodes}
         taxLabel={taxSettings.label}
         taxEnabled={taxSettings.enabled}
+        canApprove={can(user, PERMISSIONS.SALES_APPROVE)}
+        canCreateCustomer={can(user, PERMISSIONS.CUSTOMERS_CREATE)}
+        defaults={{ invoiceNumber }}
       />
     </div>
   );

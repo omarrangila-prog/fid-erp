@@ -67,7 +67,11 @@ export default async function SalesPage() {
         description="Every line names a batch and the warehouse it leaves. Posting relieves that exact stock and raises the receivable."
         breadcrumbs={[{ label: 'Trading' }, { label: 'Sales' }]}
       />
-      <SalesClient rows={rows} canCreate={can(user, PERMISSIONS.SALES_CREATE)} />
+      <SalesClient
+        rows={rows}
+        canCreate={can(user, PERMISSIONS.SALES_CREATE)}
+        canEdit={can(user, PERMISSIONS.SALES_EDIT)}
+      />
     </div>
   );
 }

@@ -42,7 +42,7 @@ test.describe('the loading sheet', () => {
     await page.goto('/loading');
 
     for (const header of [
-      'S/No', 'Contract date & ref', 'Exporter', 'Consignee',
+      'Contract date & ref', 'Exporter', 'Consignee',
       'Items description', 'Qty', 'Status', 'Containers', 'ETA', 'Documents',
     ]) {
       await expect(
@@ -54,6 +54,7 @@ test.describe('the loading sheet', () => {
     // A real table, not a grid of cards.
     await expect(page.getByRole('table')).toBeVisible();
     await expect(page.getByRole('row').nth(1)).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'S/No', exact: true })).toHaveCount(0);
   });
 
   test('shows both the supplier reference and the FID number', async ({ page }) => {

@@ -167,6 +167,26 @@ export async function postAgentSettlement(params: { id: string; companyId: strin
 
     const collecting = settlement.direction === 'COLLECTION';
 
+    await tx.$queryRaw`SELECT "id" FROM agents WHERE "id" = ${settlement.agentId} AND "companyId" = ${params.companyId} FOR UPDATE`;
+
+    if (collecting) {
+      const position = await getAgentPosition(tx, params.companyId, settlement.agentId);
+      if (dec(settlement.amountUsd).greaterThan(position.holdingUsd.plus('0.01'))) {
+        throw new BusinessRuleError(
+          `${settlement.agent.agentName} is holding ${position.holdingUsd.toFixed(2)} USD. ` +
+            `Recording ${dec(settlement.amountUsd).toFixed(2)} USD would leave the agent owed money he never collected.`,
+        );
+      }
+    } else {
+      const position = await getAgentPosition(tx, params.companyId, settlement.agentId);
+      if (dec(settlement.amountUsd).greaterThan(position.commissionPayableUsd.plus('0.01'))) {
+        throw new BusinessRuleError(
+          `${settlement.agent.agentName} is owed ${position.commissionPayableUsd.toFixed(2)} USD of commission. ` +
+            `Paying ${dec(settlement.amountUsd).toFixed(2)} USD would overpay him.`,
+        );
+      }
+    }
+
     await postJournalEntry(tx, {
       companyId: params.companyId,
       entryDate: settlement.settlementDate,

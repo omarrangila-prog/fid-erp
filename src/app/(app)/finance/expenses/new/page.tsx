@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { requirePageAccess } from '@/lib/auth/guards';
+import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getRateDefaults } from '@/lib/services/exchange-rate';
 import { prisma } from '@/lib/db';
@@ -22,9 +22,16 @@ export default async function NewExpensePage({ searchParams }: { searchParams: P
       select: { id: true, name: true, code: true, capitaliseByDefault: true, kind: true },
     }),
     prisma.shipment.findMany({
-      where: { companyId, purchaseContract: { status: 'POSTED' }, status: { not: 'CLOSED' } },
+      where: { companyId, purchaseContract: { status: 'POSTED' } },
       orderBy: { shipmentNumber: 'desc' },
-      select: { id: true, jobNumber: true, shipmentNumber: true, item: { select: { itemName: true } } },
+      select: {
+        id: true,
+        jobNumber: true,
+        shipmentNumber: true,
+        item: { select: { itemName: true } },
+        vendor: { select: { vendorName: true } },
+        purchaseContract: { select: { contractReference: true, contractNumber: true } },
+      },
     }),
     prisma.vendor.findMany({
       where: { companyId, status: 'ACTIVE' },
@@ -98,9 +105,9 @@ export default async function NewExpensePage({ searchParams }: { searchParams: P
         categories={categoryOptions}
         shipments={shipments.map((s) => ({
           value: s.id,
-          label: `${s.jobNumber} · ${s.item.itemName}`,
-          hint: s.shipmentNumber,
-          keywords: s.shipmentNumber,
+          label: `${s.purchaseContract.contractReference} · ${s.jobNumber}`,
+          hint: `${s.vendor.vendorName} · ${s.shipmentNumber} · ${s.item.itemName}`,
+          keywords: `${s.purchaseContract.contractReference} ${s.purchaseContract.contractNumber} ${s.jobNumber} ${s.shipmentNumber} ${s.vendor.vendorName} ${s.item.itemName}`,
         }))}
         vendors={vendors.map((v) => ({ value: v.id, label: v.vendorName }))}
         agents={agents.map((a) => ({ value: a.id, label: a.agentName }))}
@@ -114,7 +121,9 @@ export default async function NewExpensePage({ searchParams }: { searchParams: P
         }))}
         localCurrency={user.activeCompany.localCurrency}
         defaultLocalRate={rates.local}
+        ratesByCurrency={rates.byCurrency}
         defaultShipmentId={job}
+        canPost={can(user, PERMISSIONS.EXPENSES_POST)}
       />
     </div>
   );

@@ -174,7 +174,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionCode, { module: string; d
 
   [PERMISSIONS.SALES_VIEW]: { module: 'Sales', description: 'View sales invoices' },
   [PERMISSIONS.SALES_CREATE]: { module: 'Sales', description: 'Create draft sales invoices' },
-  [PERMISSIONS.SALES_EDIT]: { module: 'Sales', description: 'Edit draft sales invoices' },
+  [PERMISSIONS.SALES_EDIT]: { module: 'Sales', description: 'Edit saved sales invoices' },
   [PERMISSIONS.SALES_DELETE]: { module: 'Sales', description: 'Delete draft sales invoices' },
   [PERMISSIONS.SALES_APPROVE]: { module: 'Sales', description: 'Approve and post sales invoices' },
   [PERMISSIONS.SALES_REVERSE]: { module: 'Sales', description: 'Reverse posted sales invoices' },
@@ -563,7 +563,7 @@ export const SHIPMENT_STATUS_META: Record<string, { label: string; tone: BadgeTo
   // that it has not — which is what the reader needs to know, whereas the
   // internal event that created the record is not.
   CONTRACT_CREATED: { label: 'Pending Loading', tone: 'neutral' },
-  AWAITING_LOADING: { label: 'Booked, Awaiting Loading', tone: 'warning' },
+  AWAITING_LOADING: { label: 'Pending Loading', tone: 'neutral' },
   LOADED: { label: 'Loaded', tone: 'info' },
   IN_TRANSIT: { label: 'In Transit', tone: 'progress' },
   ARRIVED: { label: 'Arrived', tone: 'info' },

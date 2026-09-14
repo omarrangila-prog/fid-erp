@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
-import { requirePageAccess } from '@/lib/auth/guards';
+import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { toDateInputValue } from '@/lib/format';
@@ -75,6 +75,7 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
         items={itemOptions}
         localCurrency={user.activeCompany.localCurrency}
         defaultLocalRate={contract.rateLocalPerUsd.toString()}
+        canApprove={can(user, PERMISSIONS.PURCHASES_APPROVE)}
         defaults={{
           id: contract.id,
           contractReference: contract.contractReference,

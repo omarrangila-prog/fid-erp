@@ -12,6 +12,7 @@ import { Input, Select, Textarea } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { CHEQUE_STATUS_META } from '@/lib/constants';
 import { changeChequeStatusAction } from '@/server/actions/finance-actions';
+import { todayInputValue } from '@/lib/format';
 
 export type ChequeRow = {
   id: string;
@@ -73,7 +74,7 @@ export function ChequesClient({
   function open(row: ChequeRow, to: string) {
     setError(null);
     setReason('');
-    setEffectiveDate(new Date().toISOString().slice(0, 10));
+    setEffectiveDate(todayInputValue());
     setAccountId(accounts.find((a) => a.currency === row.currency)?.id ?? '');
     setActive({ row, to });
   }

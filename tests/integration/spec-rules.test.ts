@@ -80,6 +80,7 @@ describe('rule 1 — a purchase order must have a contract reference', () => {
         rateToUsd: '1',
         rateLocalPerUsd: '9.85',
         freightAmount: '0',
+        containers: 2,
         lines: [
           { itemId: masters.item.id, quantity: '40000', unit: 'KG', unitPrice: '4.50', bagWeightKg: '60' },
           { itemId: masters.item.id, quantity: '20000', unit: 'KG', unitPrice: '4.20', bagWeightKg: '60' },
@@ -112,7 +113,10 @@ describe('rule 3 — approving a PO creates the loading sheet entry', () => {
     await postPurchaseContract({ id: contractId, companyId, userId: ctx.admin.id });
 
     const rows = (await getLoadingSheet(companyId)).filter((r) => r.contractId === contractId);
-    expect(rows.length).toBe(2);
+    // One shipment, two coffees, two containers total — not 2 + 2 = 4.
+    expect(rows).toHaveLength(1);
+    expect(rows[0].lines).toHaveLength(2);
+    expect(rows[0].containers).toBe(2);
     expect(rows[0].importer).toBe(ctx.morocco.name);
     expect(rows[0].exporter).toBe(masters.vendor.vendorName);
 
@@ -156,6 +160,17 @@ describe('rule 4 — a shipment cannot be marked loaded without the shipping det
       'MSCU2345678',
       'MSCU3456789',
     ]);
+
+    const batches = await prisma.batch.findMany({
+      where: { shipmentId },
+      include: { container: true },
+      orderBy: [{ createdAt: 'asc' }, { batchNumber: 'asc' }],
+    });
+    const numbers = batches.map((b) => b.container?.containerNumber);
+    expect(numbers).toHaveLength(2);
+    expect(numbers[0]).toBe('MSCU1234567');
+    expect(numbers[1]).toBe('MSCU2345678');
+    expect(new Set(numbers).size).toBe(2);
   });
 });
 

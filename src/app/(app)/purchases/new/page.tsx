@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { requirePageAccess } from '@/lib/auth/guards';
+import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getRateDefaults } from '@/lib/services/exchange-rate';
 import { prisma } from '@/lib/db';
@@ -96,6 +96,7 @@ export default async function NewPurchasePage() {
         items={itemOptions}
         localCurrency={user.activeCompany.localCurrency}
         defaultLocalRate={rates.local}
+        canApprove={can(user, PERMISSIONS.PURCHASES_APPROVE)}
       />
     </div>
   );

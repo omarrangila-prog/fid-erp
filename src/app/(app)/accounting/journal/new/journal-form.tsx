@@ -3,7 +3,6 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import Decimal from 'decimal.js';
 import { Plus, Trash2, Scale } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -12,6 +11,7 @@ import { Field } from '@/components/ui/field';
 import { Combobox, type ComboOption } from '@/components/ui/combobox';
 import { Callout } from '@/components/ui/feedback';
 import { cn } from '@/lib/utils';
+import { tryDec, Decimal } from '@/lib/money';
 import { postJournalVoucherAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 
@@ -68,7 +68,7 @@ export function JournalForm({
     let debit = new Decimal(0);
     let credit = new Decimal(0);
     for (const line of lines) {
-      const value = line.amount.trim() === '' ? new Decimal(0) : new Decimal(line.amount || 0);
+      const value = tryDec(line.amount);
       if (line.direction === 'DEBIT') debit = debit.plus(value);
       else credit = credit.plus(value);
     }

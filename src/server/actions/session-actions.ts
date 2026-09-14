@@ -282,6 +282,6 @@ export async function pinLoginAction(
 
   return {
     ok: true,
-    data: { redirectTo: companyCount > 1 && !user.defaultCompanyId ? '/select-company' : '/dashboard' },
+    data: { redirectTo: companyCount > 1 ? '/select-company' : '/dashboard' },
   };
 }

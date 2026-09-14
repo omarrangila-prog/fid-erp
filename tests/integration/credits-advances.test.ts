@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { prisma, resetDatabase, getContext, createMasters, getCashAccount, utcDate, receiveEverything } from '../helpers';
+import { prisma, resetDatabase, getContext, createMasters, getCashAccount, utcDate, receiveEverything, transaction } from '../helpers';
 import { createPurchaseContract, postPurchaseContract } from '@/lib/services/purchase';
 import { createSalesInvoice, postSalesInvoice } from '@/lib/services/sales';
-import { createReceipt, postReceipt } from '@/lib/services/receipt';
+import { createReceipt, postReceipt, getInvoiceOutstanding } from '@/lib/services/receipt';
 import { createPayment, postPayment } from '@/lib/services/payment';
 import { createCreditNote, postCreditNote, reverseCreditNote } from '@/lib/services/credit-note';
 import { getTrialBalanceReport } from '@/lib/services/reports';
@@ -147,6 +147,10 @@ describe('customer credit note', () => {
     const invoice = await prisma.salesInvoice.findUniqueOrThrow({ where: { id: invoiceId } });
     expect(invoice.status).toBe('POSTED');
     expect(Number(invoice.totalAmountUsd)).toBeCloseTo(60000, 2);
+
+    const outstanding = await transaction((tx) => getInvoiceOutstanding(tx, invoiceId));
+    // 60,000 billed, 20,000 collected, 1,200 credited.
+    expect(outstanding.amount.toString()).toBe('38800');
   });
 
   it('returns coffee to the warehouse and reverses its cost of sale', async () => {

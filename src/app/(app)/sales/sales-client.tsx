@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { Plus } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Pencil, Plus } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { StatusBadge, Badge } from '@/components/ui/badge';
@@ -31,7 +32,16 @@ export type SaleRow = {
   shipmentId: string | null;
 };
 
-export function SalesClient({ rows, canCreate }: { rows: SaleRow[]; canCreate: boolean }) {
+export function SalesClient({
+  rows,
+  canCreate,
+  canEdit,
+}: {
+  rows: SaleRow[];
+  canCreate: boolean;
+  canEdit: boolean;
+}) {
+  const router = useRouter();
   const columns: DataColumn<SaleRow>[] = [
     {
       id: 'number',
@@ -124,6 +134,31 @@ export function SalesClient({ rows, canCreate }: { rows: SaleRow[]; canCreate: b
       sortValue: (r) => r.status,
       cell: (r) => <StatusBadge status={r.status} meta={TRANSACTION_STATUS_META} />,
     },
+    ...(canEdit
+      ? [
+          {
+            id: 'actions',
+            header: '',
+            printHidden: true,
+            mobile: 'hidden' as const,
+            cell: (r: SaleRow) =>
+              r.status === 'REVERSED' ? null : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    router.push(`/sales/${r.id}/edit`);
+                  }}
+                >
+                  <Pencil />
+                  Edit Invoice
+                </Button>
+              ),
+          } satisfies DataColumn<SaleRow>,
+        ]
+      : []),
   ];
 
   return (

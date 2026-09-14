@@ -10,6 +10,7 @@ import { Input, Select, Textarea } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { Callout } from '@/components/ui/feedback';
 import { saveGoodsReceiptAction, postGoodsReceiptAction } from '@/server/actions/trading-actions';
+import { todayInputValue } from '@/lib/format';
 
 export type ReceivableBatch = {
   batchId: string;
@@ -81,7 +82,7 @@ function GoodsReceiptDialogBody({
   const [pending, startTransition] = React.useTransition();
   const [error, setError] = React.useState<string | null>(null);
   const [warehouseId, setWarehouseId] = React.useState(defaultWarehouseId ?? warehouses[0]?.id ?? '');
-  const [receiptDate, setReceiptDate] = React.useState(new Date().toISOString().slice(0, 10));
+  const [receiptDate, setReceiptDate] = React.useState(todayInputValue());
   const [reference, setReference] = React.useState('');
   const [notes, setNotes] = React.useState('');
   // Seeded once on mount. The dialog is remounted each time it opens, so the
@@ -270,7 +271,11 @@ function GoodsReceiptDialogBody({
         </div>
 
         <div className="space-y-3">
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">What arrived</h4>
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">Receive container by container</h4>
+          <p className="text-xs text-ink-muted">
+            Each container has its own number, batch and kilograms. This receipt lands in one warehouse; if a
+            container goes to a different location, receive it on a second receipt.
+          </p>
 
           {batches.map((batch) => {
             const rows = lines.filter((l) => l.batchId === batch.batchId);
@@ -278,7 +283,7 @@ function GoodsReceiptDialogBody({
             const over = claimed > Number(batch.outstandingKg) + 0.0005;
 
             return (
-              <div key={batch.batchId} className="space-y-2 rounded-lg border border-line p-3">
+              <div key={batch.batchId} className="space-y-3 rounded-lg border border-line p-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-ink">{batch.itemName}</p>
                   <p className="tnum mt-0.5 text-xs text-ink-muted">
@@ -296,58 +301,68 @@ function GoodsReceiptDialogBody({
                 </div>
 
                 {rows.map((line, index) => (
-                  <div key={line.key} className="grid gap-2 sm:grid-cols-[1fr_1fr_7rem]">
-                    <Field
-                      label={index === 0 ? 'Lot number' : 'Lot number (second lot)'}
-                      htmlFor={`lot-${line.key}`}
-                      required={batch.traceabilityPending}
-                      hint={
-                        index === 0 && batch.traceabilityPending
-                          ? 'Whatever the supplier marked it as.'
-                          : undefined
-                      }
-                    >
-                      <Input
-                        id={`lot-${line.key}`}
-                        value={line.lotNumber}
-                        onChange={(e) => update(line.key, { lotNumber: e.target.value })}
-                        placeholder="120229"
-                      />
-                    </Field>
-
-                    <Field label="Batch number" htmlFor={`batch-${line.key}`} hint="If different from the lot.">
-                      <Input
-                        id={`batch-${line.key}`}
-                        value={line.batchNumber}
-                        onChange={(e) => update(line.key, { batchNumber: e.target.value })}
-                        placeholder="Optional"
-                      />
-                    </Field>
-
-                    <Field label="Quantity" htmlFor={`qty-${line.key}`} required>
-                      <Input
-                        id={`qty-${line.key}`}
-                        value={line.quantityKg}
-                        onChange={(e) => update(line.key, { quantityKg: e.target.value })}
-                        inputMode="decimal"
-                        className="tnum text-right"
-                        placeholder="0"
-                      />
-                    </Field>
-
+                  <div key={line.key} className="space-y-2 rounded-md bg-forest-50/40 p-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">
+                      Container {index + 1}
+                      {line.containerNumber.trim() ? ` · ${line.containerNumber.trim()}` : ''}
+                    </p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <Field label="Container number" htmlFor={`ctr-${line.key}`}>
+                        <Input
+                          id={`ctr-${line.key}`}
+                          value={line.containerNumber}
+                          onChange={(e) => update(line.key, { containerNumber: e.target.value })}
+                          placeholder="MSCU1234567"
+                          className="font-mono"
+                        />
+                      </Field>
+                      <Field
+                        label={index === 0 ? 'Lot number' : 'Lot number (second lot)'}
+                        htmlFor={`lot-${line.key}`}
+                        required={batch.traceabilityPending}
+                        hint={
+                          index === 0 && batch.traceabilityPending
+                            ? 'Whatever the supplier marked it as.'
+                            : undefined
+                        }
+                      >
+                        <Input
+                          id={`lot-${line.key}`}
+                          value={line.lotNumber}
+                          onChange={(e) => update(line.key, { lotNumber: e.target.value })}
+                          placeholder="120229"
+                        />
+                      </Field>
+                      <Field label="Batch number" htmlFor={`batch-${line.key}`} hint="If different from the lot.">
+                        <Input
+                          id={`batch-${line.key}`}
+                          value={line.batchNumber}
+                          onChange={(e) => update(line.key, { batchNumber: e.target.value })}
+                          placeholder="Optional"
+                        />
+                      </Field>
+                      <Field label="Quantity received (KG)" htmlFor={`qty-${line.key}`} required>
+                        <Input
+                          id={`qty-${line.key}`}
+                          value={line.quantityKg}
+                          onChange={(e) => update(line.key, { quantityKg: e.target.value })}
+                          inputMode="decimal"
+                          className="tnum text-right"
+                          placeholder="0"
+                        />
+                      </Field>
+                    </div>
                     {rows.length > 1 ? (
-                      <div className="sm:col-span-3">
-                        <Button variant="ghost" size="sm" onClick={() => removeLine(line.key)}>
-                          Remove this lot
-                        </Button>
-                      </div>
+                      <Button variant="ghost" size="sm" onClick={() => removeLine(line.key)}>
+                        Remove this container
+                      </Button>
                     ) : null}
                   </div>
                 ))}
 
                 <Button variant="outline" size="sm" onClick={() => splitFrom(rows[rows.length - 1])}>
                   <Plus />
-                  Arrived as another lot
+                  Add another container or lot
                 </Button>
               </div>
             );

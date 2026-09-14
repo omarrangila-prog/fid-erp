@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Ship, Users, Anchor, PackageCheck } from 'lucide-react';
+import { Ship, Users, Anchor, PackageCheck, FileText, Boxes } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,9 @@ import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table';
 import { SHIPMENT_STATUS_META, DOCUMENT_STATUS_META, type BadgeTone } from '@/lib/constants';
 import { MarkLoadedDialog } from '@/app/(app)/loading/mark-loaded-dialog';
 import { EtaDialog, ArrivedDialog } from '@/app/(app)/loading/eta-dialog';
+import { DocumentStatusDialog } from '@/app/(app)/loading/document-status-dialog';
+import { ManageContainersDialog } from '@/app/(app)/loading/manage-containers-dialog';
+import { GoodsReceiptDialog, type ReceivableBatch } from '@/app/(app)/purchases/[id]/goods-receipt-dialog';
 
 /** Statuses from which "loaded" is still ahead rather than behind. */
 const NOT_YET_LOADED = ['CONTRACT_CREATED', 'AWAITING_LOADING'];
@@ -30,9 +33,27 @@ export type AllocationRow = {
   settlement: string;
 };
 
+export type LoadingLine = {
+  batchId: string;
+  itemName: string;
+  origin: string | null;
+  lotNumber: string;
+  batchNumber: string;
+  traceabilityPending: boolean;
+  containerNumber: string | null;
+  quantity: string;
+  quantityKg: number;
+  received: string;
+  receivedKg: number;
+  sold: string;
+  available: string;
+  bags: number;
+  outstandingKg: string;
+  bagWeightKg: string;
+};
+
 export type LoadingRow = {
   id: string;
-  serial: number;
   shipmentId: string;
   contractId: string;
   contractDate: string;
@@ -42,26 +63,26 @@ export type LoadingRow = {
   exporter: string;
   importer: string;
   consignee: string | null;
-  itemName: string;
+  lines: LoadingLine[];
   origin: string;
   destination: string | null;
-  lotNumber: string;
-  batchNumber: string;
-  containerNumber: string | null;
+  containerNumbers: string[];
   containers: number;
   quantity: string;
   quantitySort: number;
+  quantityKg: number;
+  receivedKg: number;
   sold: string;
   available: string;
   bags: number;
   status: string;
   documentStatus: string;
   shippingLine: string | null;
+  shippingLineId: string | null;
   bookingNumber: string | null;
   billOfLading: string | null;
   etaDate: string;
   etaSort: number;
-  traceabilityPending: boolean;
   portOfLoading: string | null;
   portOfDischarge: string | null;
   /** The ETA as `2026-04-18`, or null. Separate from `etaSort`, which is a
@@ -70,6 +91,7 @@ export type LoadingRow = {
   remarks: string | null;
   saleStatus: 'UNSOLD' | 'PARTIALLY_SOLD' | 'FULLY_SOLD';
   paymentStatus: string;
+  fullyReceived: boolean;
   allocations: AllocationRow[];
 };
 
@@ -88,6 +110,69 @@ const PAYMENT_META: Record<string, { label: string; tone: BadgeTone }> = {
 };
 
 /**
+ * The four statuses the follow-up sheet actually uses.
+ *
+ * Older rows may still hold Awaiting Loading, In Transit or Customs internally.
+ * Those are shown as Pending Loading, Loaded or Arrived so the sheet does not
+ * invent stages the workflow does not have.
+ */
+function displayStatus(row: LoadingRow): { label: string; tone: BadgeTone } {
+  if (row.fullyReceived) return { label: 'PO Received', tone: 'success' };
+  if (NOT_YET_LOADED.includes(row.status)) return { label: 'Pending Loading', tone: 'neutral' };
+  if (row.status === 'IN_TRANSIT') return { label: 'Loaded', tone: 'info' };
+  if (LANDED.includes(row.status) && row.status !== 'ARRIVED') return { label: 'Arrived', tone: 'info' };
+  return SHIPMENT_STATUS_META[row.status] ?? { label: row.status, tone: 'neutral' };
+}
+
+function itemNames(row: LoadingRow) {
+  return row.lines.map((line) => line.itemName).join(' ');
+}
+
+function ItemsCell({ row }: { row: LoadingRow }) {
+  const count = row.lines.length;
+  return (
+    <span className="block min-w-52">
+      {count > 1 ? (
+        <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">
+          {count} items
+        </span>
+      ) : null}
+      {row.lines.map((line) => (
+        <span key={line.batchId} className="block py-0.5">
+          <span className="block font-medium leading-snug">{line.itemName}</span>
+          <span className="block text-xs text-ink-subtle">
+            {line.quantity}
+            {line.bags > 0 ? ` · ${line.bags} bags` : ''}
+            {line.traceabilityPending
+              ? ' · Lot not yet advised'
+              : line.lotNumber
+                ? ` · Lot ${line.lotNumber}`
+                : ''}
+          </span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function receivableBatches(row: LoadingRow): ReceivableBatch[] {
+  return row.lines
+    .filter((line) => Number(line.outstandingKg) > 0.001)
+    .map((line) => ({
+      batchId: line.batchId,
+      batchNumber: line.batchNumber,
+      itemName: line.itemName,
+      lotNumber: line.lotNumber,
+      containerNumber: line.containerNumber,
+      orderedKg: String(line.quantityKg),
+      receivedKg: String(line.receivedKg),
+      outstandingKg: line.outstandingKg,
+      bagWeightKg: line.bagWeightKg,
+      traceabilityPending: line.traceabilityPending,
+    }));
+}
+
+/**
  * The loading / contract follow-up sheet.
  *
  * Two column sets, because the two businesses are not the same shape. Dubai
@@ -95,37 +180,37 @@ const PAYMENT_META: Record<string, { label: string; tone: BadgeTone }> = {
  * consignee. Morocco buys a container and sells it to many customers over
  * weeks, so its sheet leads with the contract and what is left of it.
  *
- * Neither is a card grid. The client scans dozens of rows looking for one, and
- * cards make that slow — this is a table, with the columns the paper sheet
- * already had.
+ * One row is one shipment — one PO, one reference, one container total — with
+ * the coffees listed underneath. Treating each item line as its own shipment
+ * doubled the container count.
  */
 export function LoadingSheet({
   rows,
   isDubai,
   canExport,
   canUpdate,
+  canReceive,
   shippingLines,
+  warehouses,
+  defaultWarehouseId,
 }: {
   rows: LoadingRow[];
   isDubai: boolean;
   canExport: boolean;
   /** Whether this user may move a consignment along. */
   canUpdate: boolean;
+  canReceive: boolean;
   shippingLines: Array<{ id: string; name: string }>;
+  warehouses: Array<{ id: string; name: string; code: string }>;
+  defaultWarehouseId: string | null;
 }) {
   const [viewing, setViewing] = React.useState<LoadingRow | null>(null);
   const [loadingRow, setLoadingRow] = React.useState<LoadingRow | null>(null);
   const [editingEta, setEditingEta] = React.useState<LoadingRow | null>(null);
   const [arrivingRow, setArrivingRow] = React.useState<LoadingRow | null>(null);
-
-  /** Columns shared by both sheets, in the order the paper sheet uses. */
-  const serial: DataColumn<LoadingRow> = {
-    id: 'serial',
-    header: 'S/No',
-    sortValue: (r) => r.serial,
-    exportValue: (r) => r.serial,
-    cell: (r) => <span className="tabular-nums text-ink-subtle">{r.serial}</span>,
-  };
+  const [receivingRow, setReceivingRow] = React.useState<LoadingRow | null>(null);
+  const [documentsRow, setDocumentsRow] = React.useState<LoadingRow | null>(null);
+  const [containersRow, setContainersRow] = React.useState<LoadingRow | null>(null);
 
   const contract: DataColumn<LoadingRow> = {
     id: 'contract',
@@ -149,47 +234,10 @@ export function LoadingSheet({
     id: 'item',
     header: 'Items description',
     mobile: 'meta',
-    sortValue: (r) => r.itemName,
-    exportValue: (r) => r.itemName,
-    cell: (r) => (
-      <span className="block min-w-44">
-        <span className="block">{r.itemName}</span>
-        <span className="block text-xs text-ink-subtle">
-          {r.traceabilityPending
-            ? 'Lot not yet advised'
-            : `Lot ${r.lotNumber}${r.batchNumber === r.lotNumber ? '' : ` · ${r.batchNumber}`}`}
-        </span>
-      </span>
-    ),
-  };
-
-  /**
-   * Lot and batch get columns of their own.
-   *
-   * They also appear under the coffee name, which is where the eye lands, but
-   * the client tracks consignments by lot — "120229 and 120230, same Screen 12"
-   * — and something you track by needs to be sortable, searchable and in the
-   * spreadsheet. Hidden by default on a sheet that is already wide; one click
-   * from the Columns control.
-   */
-  const lot: DataColumn<LoadingRow> = {
-    id: 'lot',
-    header: 'Lot',
-    hideable: true,
-    defaultHidden: true,
-    sortValue: (r) => r.lotNumber,
-    exportValue: (r) => (r.traceabilityPending ? '' : r.lotNumber),
-    cell: (r) => (r.traceabilityPending ? <span className="text-ink-subtle">—</span> : r.lotNumber),
-  };
-
-  const batch: DataColumn<LoadingRow> = {
-    id: 'batch',
-    header: 'Batch',
-    hideable: true,
-    defaultHidden: true,
-    sortValue: (r) => r.batchNumber,
-    exportValue: (r) => (r.traceabilityPending ? '' : r.batchNumber),
-    cell: (r) => (r.traceabilityPending ? <span className="text-ink-subtle">—</span> : r.batchNumber),
+    sortValue: (r) => itemNames(r),
+    exportValue: (r) =>
+      r.lines.map((line) => `${line.itemName} (${line.quantity}${line.bags ? `, ${line.bags} bags` : ''})`).join('; '),
+    cell: (r) => <ItemsCell row={r} />,
   };
 
   const quantity: DataColumn<LoadingRow> = {
@@ -215,82 +263,81 @@ export function LoadingSheet({
     id: 'status',
     header: 'Status',
     mobile: 'badge',
-    sortValue: (r) => r.status,
-    exportValue: (r) => SHIPMENT_STATUS_META[r.status]?.label ?? r.status,
+    sortValue: (r) => displayStatus(r).label,
+    exportValue: (r) => displayStatus(r).label,
     cell: (r) => {
-      const meta = SHIPMENT_STATUS_META[r.status];
+      const meta = displayStatus(r);
       return (
         <Link href={`/shipments/${r.shipmentId}`}>
-          <Badge tone={meta?.tone ?? 'neutral'}>{meta?.label ?? r.status}</Badge>
+          <Badge tone={meta.tone}>{meta.label}</Badge>
         </Link>
       );
     },
   };
 
-  /**
-   * The one action this screen needs.
-   *
-   * Everything else on the sheet is derived — it fills itself in as documents
-   * are raised elsewhere. Loading is the exception: it is a real event that
-   * somebody has to record, and until now that meant opening the consignment,
-   * changing a status and then editing four more fields. One button.
-   */
   const actions: DataColumn<LoadingRow> = {
     id: 'actions',
     header: '',
     printHidden: true,
     cell: (r) => {
-      if (!canUpdate) return null;
+      const buttons: React.ReactNode[] = [];
 
-      if (NOT_YET_LOADED.includes(r.status)) {
-        return (
-          <Button variant="outline" size="sm" onClick={() => setLoadingRow(r)}>
+      if (NOT_YET_LOADED.includes(r.status) && canUpdate) {
+        buttons.push(
+          <Button key="load" variant="outline" size="sm" onClick={() => setLoadingRow(r)}>
             <Ship />
             Mark loaded
-          </Button>
+          </Button>,
         );
       }
 
-      // Loaded, and on the water. The next real event is that it lands.
-      if (r.status === 'LOADED' || r.status === 'IN_TRANSIT') {
-        return (
-          <Button variant="outline" size="sm" onClick={() => setArrivingRow(r)}>
+      if ((r.status === 'LOADED' || r.status === 'IN_TRANSIT' || LANDED.includes(r.status)) && canUpdate) {
+        buttons.push(
+          <Button key="docs" variant="outline" size="sm" onClick={() => setDocumentsRow(r)}>
+            <FileText />
+            Update documents
+          </Button>,
+        );
+        buttons.push(
+          <Button key="ctr" variant="outline" size="sm" onClick={() => setContainersRow(r)}>
+            <Boxes />
+            Manage containers
+          </Button>,
+        );
+      }
+
+      if ((r.status === 'LOADED' || r.status === 'IN_TRANSIT') && canUpdate) {
+        buttons.push(
+          <Button key="arrived" variant="outline" size="sm" onClick={() => setArrivingRow(r)}>
             <Anchor />
             Mark arrived
-          </Button>
+          </Button>,
         );
       }
 
-      /*
-       * Arrived, so the next thing anybody wants is to receive it — and the
-       * receipt lives on the purchase order, because that is where the ordered
-       * quantities and the batches are. One click from here rather than a
-       * hunt through the purchase list.
-       */
-      if (LANDED.includes(r.status) && Number(r.available.replace(/[^\d.]/g, '')) >= 0) {
-        return (
-          <Button variant="accent" size="sm" asChild>
-            <Link href={`/purchases/${r.contractId}`}>
+      if (LANDED.includes(r.status) && !r.fullyReceived && receivableBatches(r).length > 0) {
+        buttons.push(
+          canReceive ? (
+            <Button key="receive" variant="accent" size="sm" onClick={() => setReceivingRow(r)}>
               <PackageCheck />
-              Receive
-            </Link>
-          </Button>
+              Receive PO
+            </Button>
+          ) : (
+            <Button key="receive" variant="accent" size="sm" asChild>
+              <Link href={`/purchases/${r.contractId}`}>
+                <PackageCheck />
+                Receive PO
+              </Link>
+            </Button>
+          ),
         );
       }
 
-      return null;
+      if (buttons.length === 0) return null;
+      return <div className="flex flex-col items-stretch gap-1">{buttons}</div>;
     },
   };
 
-  /*
-   * The shipping details, on the sheet rather than inside each consignment.
-   *
-   * They were only visible by opening the container one at a time, which for
-   * eight or fifteen live shipments means eight or fifteen page loads to
-   * answer one question. They are entered once when the consignment is marked
-   * loaded and appear here immediately; scroll right and the whole book is on
-   * one page.
-   */
   const origin: DataColumn<LoadingRow> = {
     id: 'origin',
     header: 'Origin',
@@ -343,19 +390,21 @@ export function LoadingSheet({
     exportValue: (r) => DOCUMENT_STATUS_META[r.documentStatus]?.label ?? r.documentStatus,
     cell: (r) => {
       const meta = DOCUMENT_STATUS_META[r.documentStatus];
-      return <Badge tone={meta?.tone ?? 'neutral'}>{meta?.label ?? r.documentStatus}</Badge>;
+      const badge = <Badge tone={meta?.tone ?? 'neutral'}>{meta?.label ?? r.documentStatus}</Badge>;
+      if (!canUpdate) return badge;
+      return (
+        <button
+          type="button"
+          onClick={() => setDocumentsRow(r)}
+          className="rounded px-0.5 py-0.5 text-left hover:bg-forest-50"
+          title="Update document status"
+        >
+          {badge}
+        </button>
+      );
     },
   };
 
-  /*
-   * The ETA is edited here, in the row.
-   *
-   * A shipping line moves a date every two or three days, and staff walk the
-   * live consignments updating fifteen or twenty at a sitting. Opening each
-   * shipment to change one date is fifteen page loads to do five minutes of
-   * work. There is no limit and no approval: it is a date somebody was told,
-   * and every change is written to the audit trail with the date it replaced.
-   */
   const eta: DataColumn<LoadingRow> = {
     id: 'eta',
     header: 'ETA',
@@ -385,15 +434,6 @@ export function LoadingSheet({
     cell: (r) => <span className="block max-w-56 truncate text-xs text-ink-muted">{r.remarks ?? '—'}</span>,
   };
 
-  /**
-   * Consignee, on the Dubai sheet only.
-   *
-   * Dubai trades container to container and the consignee is a real party on
-   * the bill of lading. Morocco imports under its own name and sells the
-   * container on to several customers afterwards, so there is no consignee to
-   * name — the client asked for the column to go, and the customers who bought
-   * from the container are listed beneath the row anyway.
-   */
   const consignee: DataColumn<LoadingRow> = {
     id: 'consignee',
     header: 'Consignee',
@@ -437,7 +477,6 @@ export function LoadingSheet({
   const allocationsColumn: DataColumn<LoadingRow> = {
     id: 'allocations',
     header: '',
-    // A column of buttons has no meaning on a printed sheet.
     printHidden: true,
     cell: (r) =>
       r.allocations.length > 0 ? (
@@ -447,9 +486,7 @@ export function LoadingSheet({
       ) : null,
   };
 
-  // --- Dubai: the paper sheet, container by container ----------------------
   const dubaiColumns: DataColumn<LoadingRow>[] = [
-    serial,
     contract,
     {
       id: 'exporter',
@@ -469,17 +506,7 @@ export function LoadingSheet({
     },
     consignee,
     itemColumn,
-    lot,
-    batch,
     quantity,
-    {
-      id: 'origin',
-      header: 'Origin',
-      hideable: true,
-      sortValue: (r) => r.origin,
-      exportValue: (r) => r.origin,
-      cell: (r) => r.origin,
-    },
     {
       id: 'destination',
       header: 'Destination',
@@ -498,12 +525,20 @@ export function LoadingSheet({
       header: 'Containers',
       numeric: true,
       sortValue: (r) => r.containers,
-      exportValue: (r) => r.containerNumber ?? String(r.containers),
+      exportValue: (r) => (r.containerNumbers.length > 0 ? r.containerNumbers.join(', ') : String(r.containers)),
       cell: (r) => (
-        <span className="block whitespace-nowrap">
-          <span className="block font-mono text-xs">{r.containerNumber ?? '—'}</span>
+        <button
+          type="button"
+          onClick={() => canUpdate && setContainersRow(r)}
+          className="block whitespace-nowrap rounded px-0.5 text-left hover:bg-forest-50 disabled:hover:bg-transparent"
+          disabled={!canUpdate}
+          title={canUpdate ? 'Edit container numbers' : undefined}
+        >
+          <span className="block font-mono text-xs">
+            {r.containerNumbers.length > 0 ? r.containerNumbers.join(', ') : '—'}
+          </span>
           <span className="block text-xs text-ink-subtle">{r.containers} ctr</span>
-        </span>
+        </button>
       ),
     },
     eta,
@@ -514,9 +549,7 @@ export function LoadingSheet({
     actions,
   ];
 
-  // --- Morocco: the simpler follow-up sheet --------------------------------
   const moroccoColumns: DataColumn<LoadingRow>[] = [
-    serial,
     {
       id: 'company',
       header: 'Company name',
@@ -527,8 +560,6 @@ export function LoadingSheet({
     },
     contract,
     itemColumn,
-    lot,
-    batch,
     quantity,
     {
       id: 'containerQty',
@@ -536,7 +567,7 @@ export function LoadingSheet({
       numeric: true,
       sortValue: (r) => r.containers,
       exportValue: (r) => r.containers,
-      cell: (r) => <span className="tabular-nums">{r.containers}</span>,
+      cell: (r) => <span className="tabular-nums font-medium">{r.containers}</span>,
     },
     status,
     origin,
@@ -547,10 +578,10 @@ export function LoadingSheet({
     {
       id: 'blOrContainer',
       header: 'B/L or container',
-      exportValue: (r) => r.billOfLading ?? r.containerNumber ?? '',
+      exportValue: (r) => r.billOfLading ?? r.containerNumbers.join(', '),
       cell: (r) => (
         <span className="block whitespace-nowrap font-mono text-xs">
-          {r.billOfLading ?? r.containerNumber ?? '—'}
+          {r.billOfLading ?? (r.containerNumbers.length > 0 ? r.containerNumbers.join(', ') : '—')}
         </span>
       ),
     },
@@ -585,17 +616,27 @@ export function LoadingSheet({
         exportHref={canExport ? '/api/export/loading-sheet' : undefined}
         searchValue={(r) =>
           [
-            r.contractReference, r.contractNumber, r.exporter, r.consignee, r.itemName,
-            r.lotNumber, r.batchNumber, r.containerNumber, r.billOfLading, r.bookingNumber,
-            r.shippingLine, r.origin, r.destination, r.remarks,
+            r.contractReference,
+            r.contractNumber,
+            r.exporter,
+            r.consignee,
+            itemNames(r),
+            ...r.lines.map((line) => `${line.lotNumber} ${line.batchNumber}`),
+            ...r.containerNumbers,
+            r.billOfLading,
+            r.bookingNumber,
+            r.shippingLine,
+            r.origin,
+            r.destination,
+            r.remarks,
             ...r.allocations.map((a) => `${a.customerName} ${a.invoiceNumber}`),
           ]
             .filter(Boolean)
             .join(' ')
         }
-        searchPlaceholder="Search contract, container, B/L, customer…"
+        searchPlaceholder="Search contract, coffee, container, B/L, customer…"
         emptyTitle="Nothing loading yet"
-        emptyDescription="Approve a purchase contract and its containers appear here automatically — there is no separate sheet to fill in."
+        emptyDescription="Approve a purchase order and its shipment appears here automatically — there is no separate sheet to fill in."
       />
 
       {editingEta ? (
@@ -623,25 +664,54 @@ export function LoadingSheet({
           contractNumber={loadingRow.contractNumber}
           shippingLines={shippingLines}
           defaults={{
-            // From `etaIso`, not `etaSort`. The sort key holds
-            // Number.MAX_SAFE_INTEGER when there is no ETA so the row sorts
-            // last, and `new Date(…).toISOString()` on that throws
-            // "RangeError: Invalid time value" — which is every consignment
-            // that has not shipped, meaning every consignment this button
-            // exists for. It crashed the dialog every time it was opened.
             etaDate: loadingRow.etaIso,
             bookingNumber: loadingRow.bookingNumber,
             billOfLading: loadingRow.billOfLading,
-            containerNumber: loadingRow.containerNumber,
+            shippingLineId: loadingRow.shippingLineId,
+            portOfLoading: loadingRow.portOfLoading,
+            portOfDischarge: loadingRow.portOfDischarge,
+            containerNumbers: loadingRow.containerNumbers,
+            containers: loadingRow.containers,
           }}
+        />
+      ) : null}
+
+      {documentsRow ? (
+        <DocumentStatusDialog
+          shipmentId={documentsRow.shipmentId}
+          contractNumber={documentsRow.contractNumber}
+          currentStatus={documentsRow.documentStatus}
+          onClose={() => setDocumentsRow(null)}
+        />
+      ) : null}
+
+      {containersRow ? (
+        <ManageContainersDialog
+          shipmentId={containersRow.shipmentId}
+          contractNumber={containersRow.contractNumber}
+          lines={containersRow.lines}
+          knownNumbers={containersRow.containerNumbers}
+          onClose={() => setContainersRow(null)}
+        />
+      ) : null}
+
+      {receivingRow ? (
+        <GoodsReceiptDialog
+          open
+          onOpenChange={(open) => !open && setReceivingRow(null)}
+          purchaseContractId={receivingRow.contractId}
+          contractNumber={receivingRow.contractNumber}
+          batches={receivableBatches(receivingRow)}
+          warehouses={warehouses}
+          defaultWarehouseId={defaultWarehouseId}
         />
       ) : null}
 
       <Dialog open={Boolean(viewing)} onOpenChange={(open) => !open && setViewing(null)}>
         {viewing ? (
           <DialogContent
-            title={`Sales from ${viewing.batchNumber}`}
-            description={`${viewing.quantity} purchased on ${viewing.contractReference}. ${viewing.sold} sold, ${viewing.available} still available.`}
+            title={`Sales from ${viewing.contractReference}`}
+            description={`${viewing.quantity} purchased. ${viewing.sold} sold, ${viewing.available} still available.`}
           >
             <div className="overflow-x-auto px-5 pb-5">
               <Table>

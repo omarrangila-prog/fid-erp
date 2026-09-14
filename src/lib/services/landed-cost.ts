@@ -1,6 +1,8 @@
 import type { Tx } from '@/lib/db';
-import { Decimal, dec, toMoney, toUnitCost, allocateProportionally, sum } from '@/lib/money';
+import { prisma } from '@/lib/db';
+import { Decimal, dec, toMoney, toUnitCost, allocateProportionally, sum, toQuantity } from '@/lib/money';
 import { BusinessRuleError } from '@/lib/errors';
+import { lockBatch } from '@/lib/services/inventory';
 
 /**
  * Landed cost engine.
@@ -89,9 +91,27 @@ export async function applyLandedCost(
     );
   }
 
+  for (const id of [...batches.map((b) => b.id)].sort()) {
+    await lockBatch(tx, params.companyId, id);
+  }
+
+  const locked = await tx.batch.findMany({
+    where: { id: { in: batches.map((b) => b.id) } },
+    select: {
+      id: true,
+      batchNumber: true,
+      orderedQuantityKg: true,
+      receivedQuantityKg: true,
+      soldQuantityKg: true,
+      purchaseCostUsd: true,
+      capitalisedCostUsd: true,
+    },
+    orderBy: { batchNumber: 'asc' },
+  });
+
   // Allocation basis is the ordered quantity: freight and clearing cover the
   // whole shipment, whether or not every container has landed yet.
-  const weights = batches.map((b) => dec(b.orderedQuantityKg));
+  const weights = locked.map((b) => dec(b.orderedQuantityKg));
   const totalOrdered = sum(weights);
   if (totalOrdered.lessThanOrEqualTo(0)) {
     throw new BusinessRuleError('This job has no ordered quantity to spread the cost over.');
@@ -100,8 +120,8 @@ export async function applyLandedCost(
   const split = allocateProportionally(amountUsd, weights);
   const allocations: LandedCostAllocation[] = [];
 
-  for (let i = 0; i < batches.length; i += 1) {
-    const batch = batches[i];
+  for (let i = 0; i < locked.length; i += 1) {
+    const batch = locked[i];
     const allocatedUsd = split[i];
     if (allocatedUsd.isZero()) continue;
 
@@ -316,5 +336,69 @@ export async function getJobCostSummary(tx: Tx, companyId: string, shipmentId: s
     bags,
     landedCostPerKgUsd: orderedKg.greaterThan(0) ? toUnitCost(totalLandedUsd.dividedBy(orderedKg)) : new Decimal(0),
     landedCostPerBagUsd: bags > 0 ? toMoney(totalLandedUsd.dividedBy(bags)) : new Decimal(0),
+  };
+}
+
+export type ShipmentCostLine = {
+  expenseId: string;
+  expenseNumber: string;
+  category: string;
+  amountUsd: Decimal;
+  amount: Decimal;
+  currency: string;
+  capitalised: boolean;
+  paid: boolean;
+};
+
+/** The costing / profitability sheet for one consignment. */
+export async function getShipmentCostSheet(companyId: string, shipmentId: string) {
+  const job = await getJobCostSummary(prisma as Tx, companyId, shipmentId);
+
+  const expenses = await prisma.expense.findMany({
+    where: { companyId, shipmentId, status: 'POSTED', kind: 'SHIPMENT' },
+    include: { expenseCategory: { select: { name: true } } },
+    orderBy: [{ expenseDate: 'asc' }, { expenseNumber: 'asc' }],
+  });
+
+  const lines: ShipmentCostLine[] = expenses.map((expense) => ({
+    expenseId: expense.id,
+    expenseNumber: expense.expenseNumber,
+    category: expense.expenseCategory.name,
+    amountUsd: toMoney(expense.amountUsd),
+    amount: toMoney(expense.amount),
+    currency: expense.currency,
+    capitalised: expense.capitaliseToLandedCost,
+    paid: Boolean(expense.cashBankAccountId),
+  }));
+
+  const expenseUsd = toMoney(sum(lines.map((line) => line.amountUsd)));
+  const totalShipmentCostUsd = toMoney(job.goodsUsd.plus(expenseUsd));
+  const receivedKg = toQuantity(job.receivedKg);
+  const basisKg = receivedKg.greaterThan(0) ? receivedKg : toQuantity(job.orderedKg);
+
+  const invoices = await prisma.salesInvoice.findMany({
+    where: { companyId, shipmentId, status: 'POSTED' },
+    select: { subtotalUsd: true, costOfGoodsUsd: true },
+  });
+  const revenueUsd = toMoney(sum(invoices.map((invoice) => dec(invoice.subtotalUsd))));
+  const cogsUsd = toMoney(sum(invoices.map((invoice) => dec(invoice.costOfGoodsUsd))));
+  const grossProfitUsd = toMoney(revenueUsd.minus(cogsUsd));
+  const soldKg = toQuantity(job.soldKg);
+
+  return {
+    goodsUsd: job.goodsUsd,
+    capitalisedUsd: job.capitalisedUsd,
+    expenseUsd,
+    totalShipmentCostUsd,
+    orderedKg: toQuantity(job.orderedKg),
+    receivedKg,
+    soldKg,
+    costPerKgUsd: basisKg.greaterThan(0) ? toUnitCost(totalShipmentCostUsd.dividedBy(basisKg)) : new Decimal(0),
+    revenueUsd,
+    cogsUsd,
+    grossProfitUsd,
+    profitPerKgUsd: soldKg.greaterThan(0) ? toUnitCost(grossProfitUsd.dividedBy(soldKg)) : new Decimal(0),
+    profitPct: revenueUsd.greaterThan(0) ? grossProfitUsd.dividedBy(revenueUsd).times(100) : new Decimal(0),
+    lines,
   };
 }

@@ -54,6 +54,9 @@ const CATALOGUE: Catalogued[] = [
     keywords: 'profit margin per kg landed cost job', permission: PERMISSIONS.PROFITS_VIEW },
 
   // --- Accounting ------------------------------------------------------------
+  { href: '/accounting/chart', title: 'Chart of Accounts', category: 'Accounting', pinned: false,
+    description: 'Every ledger head: cash, banks, receivables, payables, inventory, sales, COGS and expenses.',
+    keywords: 'chart of accounts coa cash bank ar ap inventory sales cogs expenses', permission: PERMISSIONS.ACCOUNTING_VIEW },
   { href: '/reports/trial-balance', title: 'Trial Balance', category: 'Accounting', pinned: false,
     description: 'Every account with a balance, in USD and local currency.',
     keywords: 'tb debit credit accounts', permission: PERMISSIONS.ACCOUNTING_VIEW },

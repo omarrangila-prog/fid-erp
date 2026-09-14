@@ -1,5 +1,7 @@
-import { prisma } from '@/lib/db';
+import { prisma, type Tx } from '@/lib/db';
 import { Decimal, dec, toQuantity, toMoney } from '@/lib/money';
+import { repairSharedContainerAssignments } from '@/lib/services/shipment';
+
 
 /**
  * The loading / contract follow-up sheet.
@@ -12,10 +14,14 @@ import { Decimal, dec, toQuantity, toMoney } from '@/lib/money';
  * a payment moves the payment status. There is no separate loading-sheet
  * record to fall out of step with the rest of the system.
  *
- * One row per batch, because a batch is the smallest thing that has its own
- * container, its own lot and its own buyer. Dubai works container to
- * container, so a row is usually a whole container; Morocco splits a container
- * across many customers, so a row carries its allocations underneath it.
+ * One row per shipment — which is to say per purchase order, since approving
+ * an order creates its shipment. A contract for two coffees in two containers
+ * is one consignment: one supplier, one reference, one booking, one ETA, two
+ * containers in total. It used to be one row per batch, so a two-item order
+ * appeared twice and carried "2 containers" on each line, which read as four.
+ * The item lines now sit under the shipment they belong to, and everything
+ * that belongs to the consignment — containers, status, shipping details,
+ * customers it was sold to — is stated once.
  */
 
 export type Allocation = {
@@ -31,8 +37,29 @@ export type Allocation = {
   settlement: 'PAID' | 'PARTIAL' | 'UNPAID' | 'OVERDUE';
 };
 
-export type LoadingSheetRow = {
+/** One coffee on the consignment: a purchase-order line, received as a batch. */
+export type LoadingSheetLine = {
   batchId: string;
+  itemName: string;
+  origin: string | null;
+  lotNumber: string;
+  batchNumber: string;
+  /**
+   * True while the supplier has not yet said which coffee fills the contract,
+   * so the lot and batch above are a placeholder the system issued. The sheet
+   * says so rather than showing a number that looks like the supplier's.
+   */
+  traceabilityPending: boolean;
+  containerNumber: string | null;
+  quantityKg: Decimal;
+  receivedKg: Decimal;
+  soldKg: Decimal;
+  availableKg: Decimal;
+  bags: number;
+  bagWeightKg: Decimal;
+};
+
+export type LoadingSheetRow = {
   shipmentId: string;
   contractId: string;
 
@@ -49,21 +76,22 @@ export type LoadingSheetRow = {
   consignee: string | null;
   allocations: Allocation[];
 
-  itemName: string;
+  /** The coffees on the order, one line each. Never fewer than one. */
+  lines: LoadingSheetLine[];
+  /** Origin of the consignment: the order's, or the coffees' when it names none. */
   origin: string;
   destination: string | null;
-  lotNumber: string;
-  batchNumber: string;
+  /** Container numbers recorded so far, across every line. */
+  containerNumbers: string[];
   /**
-   * True while the supplier has not yet said which coffee fills the contract,
-   * so the lot and batch above are a placeholder the system issued. The sheet
-   * says so rather than showing a number that looks like the supplier's.
+   * Containers on the consignment, stated once. The number on the order when
+   * it was given, otherwise however many distinct containers the lines carry.
    */
-  traceabilityPending: boolean;
-  containerNumber: string | null;
   containers: number;
 
+  /** Totals across the lines. */
   quantityKg: Decimal;
+  receivedKg: Decimal;
   soldKg: Decimal;
   reservedKg: Decimal;
   availableKg: Decimal;
@@ -72,6 +100,7 @@ export type LoadingSheetRow = {
   status: string;
   documentStatus: string;
   shippingLine: string | null;
+  shippingLineId: string | null;
   bookingNumber: string | null;
   /** Shown on the sheet so a container can be tracked without opening it. */
   portOfLoading: string | null;
@@ -80,7 +109,7 @@ export type LoadingSheetRow = {
   etaDate: Date | null;
   remarks: string | null;
 
-  /** Derived from the batch's own allocations, never stored. */
+  /** Derived from the lines' own allocations, never stored. */
   saleStatus: 'UNSOLD' | 'PARTIALLY_SOLD' | 'FULLY_SOLD';
   /** Derived from what has actually been received against those invoices. */
   paymentStatus: 'NONE' | 'UNPAID' | 'PARTIAL' | 'PAID' | 'OVERDUE';
@@ -118,61 +147,56 @@ export async function getLoadingSheet(companyId: string): Promise<LoadingSheetRo
     select: { name: true },
   });
 
-  const batches = await prisma.batch.findMany({
+  // Repair the known duplicate-container assignment without deleting anything.
+  await repairSharedContainerAssignments(prisma as Tx, companyId);
+
+  const shipments = await prisma.shipment.findMany({
     where: { companyId, purchaseContract: { status: 'POSTED' } },
-    orderBy: [{ createdAt: 'desc' }, { batchNumber: 'asc' }],
+    orderBy: [{ createdAt: 'desc' }],
     include: {
-      item: { select: { itemName: true, originCountry: true } },
-      lot: { select: { lotNumber: true } },
-      container: { select: { containerNumber: true } },
+      shippingLine: { select: { id: true, name: true } },
+      customer: { select: { customerName: true } },
+      containerList: { orderBy: { createdAt: 'asc' }, select: { id: true, containerNumber: true } },
       purchaseContract: {
         select: {
           id: true,
           contractNumber: true,
           contractReference: true,
           contractDate: true,
+          origin: true,
           destination: true,
           portOfLoading: true,
           vendor: { select: { vendorName: true } },
         },
       },
-      shipment: {
-        select: {
-          id: true,
-          status: true,
-          documentStatus: true,
-          bookingNumber: true,
-          billOfLading: true,
-          etaDate: true,
-          destination: true,
-          portOfLoading: true,
-          portOfDischarge: true,
-          containers: true,
-          notes: true,
-          shippingLine: { select: { name: true } },
-          customer: { select: { customerName: true } },
-        },
-      },
-      invoiceLines: {
-        where: { salesInvoice: { status: 'POSTED' } },
-        select: {
-          quantityKg: true,
-          lineTotal: true,
-          salesInvoice: {
+      batches: {
+        where: { status: 'ACTIVE' },
+        orderBy: [{ createdAt: 'asc' }, { batchNumber: 'asc' }],
+        include: {
+          item: { select: { itemName: true, originCountry: true } },
+          lot: { select: { lotNumber: true } },
+          container: { select: { containerNumber: true } },
+          invoiceLines: {
+            where: { salesInvoice: { status: 'POSTED' } },
             select: {
-              id: true,
-              invoiceNumber: true,
-              invoiceDate: true,
-              dueDate: true,
-              currency: true,
-              totalAmount: true,
-              customerId: true,
-              customer: { select: { customerName: true } },
-              allocations: {
-                where: { receipt: { status: 'POSTED' } },
-                select: { amount: true },
+              quantityKg: true,
+              salesInvoice: {
+                select: {
+                  id: true,
+                  invoiceNumber: true,
+                  invoiceDate: true,
+                  dueDate: true,
+                  currency: true,
+                  totalAmount: true,
+                  customerId: true,
+                  customer: { select: { customerName: true } },
+                  allocations: {
+                    where: { receipt: { status: 'POSTED' } },
+                    select: { amount: true },
+                  },
+                  creditNotes: { where: { status: 'POSTED' }, select: { totalAmount: true } },
+                },
               },
-              creditNotes: { where: { status: 'POSTED' }, select: { totalAmount: true } },
             },
           },
         },
@@ -182,108 +206,151 @@ export async function getLoadingSheet(companyId: string): Promise<LoadingSheetRo
 
   const today = new Date();
 
-  return batches.map((batch) => {
-    // One allocation per invoice, so a customer who bought twice from the same
-    // batch shows twice — which is what actually happened.
-    const byInvoice = new Map<string, Allocation>();
+  return shipments
+    .filter((shipment) => shipment.batches.length > 0)
+    .map((shipment) => {
+      // One allocation per invoice across the whole consignment, so a
+      // customer who bought two coffees from it on one invoice shows once
+      // with both quantities, and one who bought twice shows twice — which
+      // is what actually happened.
+      const byInvoice = new Map<string, Allocation>();
 
-    for (const line of batch.invoiceLines) {
-      const invoice = line.salesInvoice;
-      const existing = byInvoice.get(invoice.id);
+      for (const batch of shipment.batches) {
+        for (const line of batch.invoiceLines) {
+          const invoice = line.salesInvoice;
+          const existing = byInvoice.get(invoice.id);
 
-      if (existing) {
-        existing.quantityKg = toQuantity(existing.quantityKg.plus(line.quantityKg));
-        continue;
+          if (existing) {
+            existing.quantityKg = toQuantity(existing.quantityKg.plus(line.quantityKg));
+            continue;
+          }
+
+          const total = dec(invoice.totalAmount);
+          const received = invoice.allocations.reduce((sum, a) => sum.plus(a.amount), new Decimal(0));
+          const credited = invoice.creditNotes.reduce((sum, n) => sum.plus(n.totalAmount), new Decimal(0));
+
+          byInvoice.set(invoice.id, {
+            customerName: invoice.customer.customerName,
+            customerId: invoice.customerId,
+            invoiceId: invoice.id,
+            invoiceNumber: invoice.invoiceNumber,
+            invoiceDate: invoice.invoiceDate,
+            quantityKg: toQuantity(line.quantityKg),
+            amount: toMoney(total),
+            currency: invoice.currency,
+            outstanding: toMoney(total.minus(received).minus(credited)),
+            settlement: settlementOf(total, received, credited, invoice.dueDate, today),
+          });
+        }
       }
 
-      const total = dec(invoice.totalAmount);
-      const received = invoice.allocations.reduce((sum, a) => sum.plus(a.amount), new Decimal(0));
-      const credited = invoice.creditNotes.reduce((sum, n) => sum.plus(n.totalAmount), new Decimal(0));
+      const allocations = [...byInvoice.values()].sort(
+        (a, b) => a.invoiceDate.getTime() - b.invoiceDate.getTime(),
+      );
 
-      byInvoice.set(invoice.id, {
-        customerName: invoice.customer.customerName,
-        customerId: invoice.customerId,
-        invoiceId: invoice.id,
-        invoiceNumber: invoice.invoiceNumber,
-        invoiceDate: invoice.invoiceDate,
-        quantityKg: toQuantity(line.quantityKg),
-        amount: toMoney(total),
-        currency: invoice.currency,
-        outstanding: toMoney(total.minus(received).minus(credited)),
-        settlement: settlementOf(total, received, credited, invoice.dueDate, today),
-      });
-    }
+      const lines: LoadingSheetLine[] = shipment.batches.map((batch) => ({
+        batchId: batch.id,
+        itemName: batch.item.itemName,
+        origin: batch.item.originCountry,
+        lotNumber: batch.lot.lotNumber,
+        batchNumber: batch.batchNumber,
+        traceabilityPending: batch.traceabilityPending,
+        containerNumber: batch.container?.containerNumber ?? null,
+        quantityKg: toQuantity(batch.orderedQuantityKg),
+        receivedKg: toQuantity(batch.receivedQuantityKg),
+        soldKg: toQuantity(batch.soldQuantityKg),
+        availableKg: toQuantity(batch.availableQuantityKg),
+        bags: batch.orderedBags,
+        bagWeightKg: toQuantity(batch.bagWeightKg),
+      }));
 
-    const allocations = [...byInvoice.values()].sort(
-      (a, b) => a.invoiceDate.getTime() - b.invoiceDate.getTime(),
-    );
+      const sumOf = (pick: (line: LoadingSheetLine) => Decimal) =>
+        toQuantity(lines.reduce((total, line) => total.plus(pick(line)), new Decimal(0)));
+      const quantityKg = sumOf((l) => l.quantityKg);
+      const receivedKg = sumOf((l) => l.receivedKg);
+      const soldKg = sumOf((l) => l.soldKg);
+      const availableKg = sumOf((l) => l.availableKg);
+      const reservedKg = toQuantity(
+        shipment.batches.reduce((total, b) => total.plus(b.allocatedQuantityKg), new Decimal(0)),
+      );
+      const bags = lines.reduce((total, line) => total + line.bags, 0);
 
-    const quantityKg = toQuantity(batch.orderedQuantityKg);
-    const soldKg = toQuantity(batch.soldQuantityKg);
-    const reservedKg = toQuantity(batch.allocatedQuantityKg);
-    const availableKg = toQuantity(batch.availableQuantityKg);
+      // Containers are a fact about the consignment, not about each coffee on
+      // it. Numbers recorded on the shipment itself are included even when a
+      // batch has not been pointed at them yet, otherwise two boxes collapse
+      // into one on the sheet.
+      const seen = new Set<string>();
+      const containerNumbers: string[] = [];
+      for (const number of [
+        ...shipment.containerList.map((container) => container.containerNumber),
+        ...lines.map((line) => line.containerNumber),
+      ]) {
+        if (!number || seen.has(number)) continue;
+        seen.add(number);
+        containerNumbers.push(number);
+      }
+      const containers = shipment.containers > 0 ? shipment.containers : containerNumbers.length;
 
-    // Sold or unsold is arithmetic on the allocations, not a label somebody
-    // typed. A container is only "sold" when every kilogram of it has gone.
-    const saleStatus: LoadingSheetRow['saleStatus'] =
-      soldKg.lessThanOrEqualTo('0.001')
-        ? 'UNSOLD'
-        : soldKg.greaterThanOrEqualTo(quantityKg.minus('0.001'))
-          ? 'FULLY_SOLD'
-          : 'PARTIALLY_SOLD';
+      const origins = [...new Set(lines.map((l) => l.origin).filter((o): o is string => Boolean(o)))];
+      const origin = shipment.purchaseContract.origin?.trim() || origins.join(', ');
 
-    const names = [...new Set(allocations.map((a) => a.customerName))];
-    const consignee =
-      names.length === 0
-        ? (batch.shipment.customer?.customerName ?? null)
-        : names.length === 1
-          ? names[0]
-          : `${names.length} customers`;
+      // Sold or unsold is arithmetic on the allocations, not a label somebody
+      // typed. A consignment is only "sold" when every kilogram of it has gone.
+      const saleStatus: LoadingSheetRow['saleStatus'] =
+        soldKg.lessThanOrEqualTo('0.001')
+          ? 'UNSOLD'
+          : soldKg.greaterThanOrEqualTo(quantityKg.minus('0.001'))
+            ? 'FULLY_SOLD'
+            : 'PARTIALLY_SOLD';
 
-    return {
-      batchId: batch.id,
-      shipmentId: batch.shipmentId,
-      contractId: batch.purchaseContract.id,
+      const names = [...new Set(allocations.map((a) => a.customerName))];
+      const consignee =
+        names.length === 0
+          ? (shipment.customer?.customerName ?? null)
+          : names.length === 1
+            ? names[0]
+            : `${names.length} customers`;
 
-      contractDate: batch.purchaseContract.contractDate,
-      contractReference: batch.purchaseContract.contractReference,
-      contractNumber: batch.purchaseContract.contractNumber,
+      return {
+        shipmentId: shipment.id,
+        contractId: shipment.purchaseContract.id,
 
-      exporter: batch.purchaseContract.vendor.vendorName,
-      importer: company.name,
-      consignee,
-      allocations,
+        contractDate: shipment.purchaseContract.contractDate,
+        contractReference: shipment.purchaseContract.contractReference,
+        contractNumber: shipment.purchaseContract.contractNumber,
 
-      itemName: batch.item.itemName,
-      origin: batch.item.originCountry,
-      destination:
-        batch.shipment.destination ??
-        batch.shipment.portOfDischarge ??
-        batch.purchaseContract.destination,
-      lotNumber: batch.lot.lotNumber,
-      batchNumber: batch.batchNumber,
-      traceabilityPending: batch.traceabilityPending,
-      portOfLoading: batch.shipment.portOfLoading ?? batch.purchaseContract.portOfLoading,
-      portOfDischarge: batch.shipment.portOfDischarge,
-      containerNumber: batch.container?.containerNumber ?? null,
-      containers: batch.container ? 1 : batch.shipment.containers,
+        exporter: shipment.purchaseContract.vendor.vendorName,
+        importer: company.name,
+        consignee,
+        allocations,
 
-      quantityKg,
-      soldKg,
-      reservedKg,
-      availableKg,
-      bags: batch.orderedBags,
+        lines,
+        origin,
+        destination:
+          shipment.destination ?? shipment.portOfDischarge ?? shipment.purchaseContract.destination,
+        containerNumbers,
+        containers,
 
-      status: batch.shipment.status,
-      documentStatus: batch.shipment.documentStatus,
-      shippingLine: batch.shipment.shippingLine?.name ?? null,
-      bookingNumber: batch.shipment.bookingNumber,
-      billOfLading: batch.shipment.billOfLading,
-      etaDate: batch.shipment.etaDate,
-      remarks: batch.shipment.notes,
+        quantityKg,
+        receivedKg,
+        soldKg,
+        reservedKg,
+        availableKg,
+        bags,
 
-      saleStatus,
-      paymentStatus: rollUpPayment(allocations),
-    };
-  });
+        status: shipment.status,
+        documentStatus: shipment.documentStatus,
+        shippingLine: shipment.shippingLine?.name ?? null,
+        shippingLineId: shipment.shippingLineId,
+        bookingNumber: shipment.bookingNumber,
+        portOfLoading: shipment.portOfLoading ?? shipment.purchaseContract.portOfLoading,
+        portOfDischarge: shipment.portOfDischarge,
+        billOfLading: shipment.billOfLading,
+        etaDate: shipment.etaDate,
+        remarks: shipment.notes,
+
+        saleStatus,
+        paymentStatus: rollUpPayment(allocations),
+      };
+    });
 }

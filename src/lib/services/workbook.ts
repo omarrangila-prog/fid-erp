@@ -165,9 +165,20 @@ function isNumeric(type: ColumnType | undefined): boolean {
 }
 
 /** The filename an export downloads as: report, company and date. */
-export function workbookFileName(title: string, companyCode: string): string {
+export function workbookFileName(title: string, companyCode: string, extension = 'xlsx'): string {
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  return `${companyCode}-${slug}-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  return `${companyCode}-${slug}-${new Date().toISOString().slice(0, 10)}.${extension}`;
+}
+
+/** A UTF-8 CSV with a BOM so Excel opens the characters correctly. */
+export function buildCsv(headers: string[], rows: Array<Array<string | number | null | undefined>>): Buffer {
+  const escape = (value: string | number | null | undefined) => {
+    const text = value == null ? '' : String(value);
+    if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+    return text;
+  };
+  const lines = [headers.map(escape).join(','), ...rows.map((row) => row.map(escape).join(','))];
+  return Buffer.from(`\uFEFF${lines.join('\r\n')}`, 'utf8');
 }
 
 // ---------------------------------------------------------------------------

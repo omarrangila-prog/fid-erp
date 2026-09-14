@@ -17,12 +17,14 @@ import type { LedgerResult, LedgerView as LedgerViewMode } from '@/lib/services/
 export function LedgerView({
   ledger,
   basePath,
+  extraQuery,
   partyCurrency,
   localCurrency,
   emptyDescription,
 }: {
   ledger: LedgerResult;
   basePath: string;
+  extraQuery?: Record<string, string | undefined>;
   partyCurrency: string;
   localCurrency: string;
   emptyDescription: string;
@@ -34,6 +36,16 @@ export function LedgerView({
   ];
 
   const currency = ledger.viewCurrency;
+  const hrefFor = (mode: LedgerViewMode) => {
+    const params = new URLSearchParams();
+    params.set('view', mode);
+    if (extraQuery) {
+      for (const [key, value] of Object.entries(extraQuery)) {
+        if (value) params.set(key, value);
+      }
+    }
+    return `${basePath}?${params.toString()}`;
+  };
 
   return (
     <Card>
@@ -42,13 +54,16 @@ export function LedgerView({
           <CardTitle>Ledger</CardTitle>
           <CardDescription>
             Every row keeps the exchange rate it was posted at. Switching the view does not re-convert anything.
+            {ledger.view === 'TRANSACTION'
+              ? ' Amounts on each line are shown in the currency of that voucher.'
+              : ''}
           </CardDescription>
         </div>
         <div className="inline-flex shrink-0 rounded-lg border border-line-strong p-0.5">
           {modes.map((option) => (
             <Link
               key={option.mode}
-              href={`${basePath}?view=${option.mode}`}
+              href={hrefFor(option.mode)}
               title={option.hint}
               className={cn(
                 'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
@@ -96,6 +111,7 @@ export function LedgerView({
                     ledger.view === 'USD' ? row.debitUsd : ledger.view === 'LOCAL' ? row.debitLocal : row.debit;
                   const credit =
                     ledger.view === 'USD' ? row.creditUsd : ledger.view === 'LOCAL' ? row.creditLocal : row.credit;
+                  const amountCurrency = ledger.view === 'TRANSACTION' ? row.currency : currency;
 
                   return (
                     <TR key={`${row.journalEntryId}-${index}`}>
@@ -111,8 +127,8 @@ export function LedgerView({
                           {row.currency === currency ? '—' : formatRate(row.rateToUsd)}
                         </TD>
                       ) : null}
-                      <TD numeric>{debit.greaterThan(0) ? formatMoney(debit, currency) : '—'}</TD>
-                      <TD numeric>{credit.greaterThan(0) ? formatMoney(credit, currency) : '—'}</TD>
+                      <TD numeric>{debit.greaterThan(0) ? formatMoney(debit, amountCurrency) : '—'}</TD>
+                      <TD numeric>{credit.greaterThan(0) ? formatMoney(credit, amountCurrency) : '—'}</TD>
                       <TD numeric className="font-medium">
                         {formatMoney(row.balance, currency)}
                       </TD>

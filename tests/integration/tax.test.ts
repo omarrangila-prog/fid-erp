@@ -1,9 +1,10 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { prisma, resetDatabase, getContext, createMasters, getCashAccount, utcDate, receiveEverything } from '../helpers';
+import { prisma, resetDatabase, getContext, createMasters, getCashAccount, utcDate, receiveEverything, transaction } from '../helpers';
 import { createPurchaseContract, postPurchaseContract } from '@/lib/services/purchase';
 import { createSalesInvoice, postSalesInvoice } from '@/lib/services/sales';
 import { createExpense, postExpense } from '@/lib/services/expense';
 import { createCreditNote, postCreditNote, reverseCreditNote } from '@/lib/services/credit-note';
+import { createPayment, postPayment, getContractOutstanding } from '@/lib/services/payment';
 import { enableTax, listTaxCodes, resolveTaxCode, NO_TAX } from '@/lib/services/tax';
 import { getTaxReturn, fileTaxReturn, currentTaxPeriod } from '@/lib/services/tax-return';
 import { reconcile } from '@/lib/services/reconciliation';
@@ -155,6 +156,35 @@ describe('a purchase carrying recoverable input tax', () => {
     const payables = await getPayables({ companyId: ctx.dubai.id, onlyOutstanding: true });
     const row = payables.find((entry) => entry.contractNumber.includes('PO'))!;
     expect(Number(row.outstandingAmountUsd)).toBeCloseTo(42_000, 2);
+  });
+
+  it('lets a payment settle the tax as well as the goods', async () => {
+    const contract = await prisma.purchaseContract.findFirstOrThrow({
+      where: { companyId: ctx.dubai.id, contractReference: 'VAT-PO-1' },
+    });
+    const bank = await getCashAccount(ctx.dubai.id, 'USD');
+    const outstanding = await transaction((tx) => getContractOutstanding(tx, contract.id));
+    expect(Number(outstanding.amount)).toBeCloseTo(42_000, 2);
+
+    const payment = await createPayment(
+      {
+        companyId: ctx.dubai.id,
+        paymentDate: utcDate('2026-02-01'),
+        vendorId: masters.vendor.id,
+        currency: 'USD',
+        amount: '42000',
+        rateToUsd: '1',
+        rateLocalPerUsd: '3.6725',
+        paymentMethod: 'BANK_TRANSFER',
+        cashBankAccountId: bank.id,
+        allocations: [{ purchaseContractId: contract.id, amount: '42000' }],
+      },
+      ctx.admin.id,
+    );
+    await postPayment({ id: payment.id, companyId: ctx.dubai.id, userId: ctx.admin.id });
+
+    const after = await transaction((tx) => getContractOutstanding(tx, contract.id));
+    expect(Number(after.amount)).toBeCloseTo(0, 2);
   });
 });
 

@@ -12,8 +12,8 @@ import { Field } from '@/components/ui/field';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Combobox, type ComboOption } from '@/components/ui/combobox';
 import { Callout, EmptyState } from '@/components/ui/feedback';
-import { dec, sum, convertToUsd } from '@/lib/money';
-import { formatMoney, formatDate } from '@/lib/format';
+import { dec, tryDec, sum, convertToUsd } from '@/lib/money';
+import { formatMoney, formatDate, todayInputValue } from '@/lib/format';
 import { savePaymentAction, postPaymentAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { accountsFor } from '@/lib/cash-account-choice';
@@ -39,12 +39,14 @@ export function PaymentForm({
   contracts,
   localCurrency,
   defaultLocalRate,
+  canPost = true,
 }: {
   vendors: Array<ComboOption & { currency: string }>;
   accounts: Array<ComboOption & { currency: string; accountType: 'CASH' | 'PETTY_CASH' | 'BANK' }>;
   contracts: OpenContract[];
   localCurrency: string;
   defaultLocalRate: string;
+  canPost?: boolean;
 }) {
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
@@ -52,7 +54,7 @@ export function PaymentForm({
   const [fieldIssues, setFieldIssues] = React.useState<Record<string, string>>({});
 
   const [form, setForm] = React.useState({
-    paymentDate: new Date().toISOString().slice(0, 10),
+    paymentDate: todayInputValue(),
     vendorId: null as string | null,
     currency: 'USD',
     amount: '',
@@ -93,7 +95,7 @@ export function PaymentForm({
     }
   }, [form.amount, form.rateToUsd, form.currency, isForeign]);
 
-  const allocatedTotal = sum(Object.values(allocations).filter(Boolean).map((v) => dec(v)));
+  const allocatedTotal = sum(Object.values(allocations).filter(Boolean).map((v) => tryDec(v)));
 
   function submit(andPost: boolean) {
     setError(null);
@@ -351,9 +353,11 @@ export function PaymentForm({
         <Button variant="outline" onClick={() => submit(false)} loading={busy}>
           Save draft
         </Button>
-        <Button variant="accent" onClick={() => submit(true)} loading={busy}>
-          Save and post
-        </Button>
+        {canPost ? (
+          <Button variant="accent" onClick={() => submit(true)} loading={busy}>
+            Save and post
+          </Button>
+        ) : null}
       </div>
     </div>
   );

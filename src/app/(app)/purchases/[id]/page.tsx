@@ -157,6 +157,11 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
               value={formatMoney(dec(contract.freightAmount).plus(dec(contract.otherCharges)), contract.currency)}
             />
             <Metric label="Contract value" value={formatMoney(contract.totalValue, contract.currency)} />
+            <Metric
+              label="Posted to supplier"
+              value={formatMoney(dec(contract.totalValue).plus(contract.taxAmount), contract.currency)}
+              hint="Goods + freight + tax. This is the amount on the supplier ledger."
+            />
             {outstanding ? (
               <Metric
                 label="Still owed"

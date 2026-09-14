@@ -6,6 +6,7 @@ import { prisma } from '@/lib/db';
 import {
   buildWorkbook,
   buildStatementWorkbook,
+  buildCsv,
   workbookFileName,
   type StatementRow,
 } from '@/lib/services/workbook';
@@ -26,6 +27,7 @@ import {
 } from '@/lib/services/reports';
 import { getTaxReturn } from '@/lib/services/tax-return';
 import { reconcile } from '@/lib/services/reconciliation';
+import { getCustomerLedger, ledgerKindToSourceType, type LedgerView } from '@/lib/services/ledger';
 import type { SessionUser } from '@/lib/auth/session';
 
 /**
@@ -44,6 +46,7 @@ type Report = {
   title: string;
   permission: string;
   build: (user: SessionUser, query: URLSearchParams) => Promise<Buffer>;
+  csv?: (user: SessionUser, query: URLSearchParams) => Promise<{ headers: string[]; rows: Array<Array<string | number | null | undefined>> }>;
 };
 
 /**
@@ -73,6 +76,55 @@ function asDay(date: Date): string {
   return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
 }
 
+function ledgerView(query: URLSearchParams): LedgerView {
+  const view = query.get('view');
+  return view === 'USD' || view === 'LOCAL' || view === 'TRANSACTION' ? view : 'TRANSACTION';
+}
+
+async function customerLedgerExport(user: SessionUser, query: URLSearchParams) {
+  const customerId = query.get('customer');
+  if (!customerId) throw new NotFoundError('Customer');
+
+  const customer = await prisma.customer.findFirst({
+    where: { id: customerId, companyId: user.activeCompany.id },
+    select: { customerName: true, customerCode: true, primaryCurrency: true },
+  });
+  if (!customer) throw new NotFoundError('Customer');
+
+  const view = ledgerView(query);
+  const from = dateParam(query, 'from');
+  const to = dateParam(query, 'to');
+  const ledger = await getCustomerLedger({
+    companyId: user.activeCompany.id,
+    customerId,
+    view,
+    localCurrency: user.activeCompany.localCurrency,
+    partyCurrency: customer.primaryCurrency,
+    from,
+    to,
+    sourceType: ledgerKindToSourceType(query.get('kind')),
+  });
+
+  const headers = ['Date', 'Voucher', 'Type', 'Reference', 'Description', 'Debit', 'Credit', 'Balance', 'Currency'];
+  const rows: Array<Array<string | number | null | undefined>> = [
+    ['', '', '', '', 'Opening balance', '', '', Number(ledger.openingBalance), ledger.viewCurrency],
+    ...ledger.rows.map((row) => [
+      asDay(row.entryDate),
+      row.entryNumber,
+      row.sourceType.replaceAll('_', ' '),
+      row.reference,
+      row.description,
+      Number(row.debit),
+      Number(row.credit),
+      Number(row.balance),
+      row.currency,
+    ]),
+    ['', '', '', '', 'Closing balance', Number(ledger.totalDebit), Number(ledger.totalCredit), Number(ledger.closingBalance), ledger.viewCurrency],
+  ];
+
+  return { customer, ledger, headers, rows, from, to, view };
+}
+
 /** Statement rows for one block of a two-currency financial statement. */
 function pnlSection(title: string, lines: PnlLine[], total: { usd: unknown; local: unknown }): StatementRow[] {
   return [
@@ -99,20 +151,21 @@ const REPORTS: Record<string, Report> = {
       return buildWorkbook({
         companyName: user.activeCompany.name,
         title: 'Loading Follow-Up',
-        subtitle: `${rows.length} container${rows.length === 1 ? '' : 's'} on the book`,
-        rows: rows.map((row, index) => ({ ...row, serial: index + 1 })),
+        subtitle: `${rows.length} shipment${rows.length === 1 ? '' : 's'} on the book`,
+        rows,
         totals: ['Quantity (KG)', 'Sold (KG)', 'Available (KG)'],
         columns: [
-          { header: 'S/No', value: (r) => r.serial, type: 'integer', width: 7 },
           { header: 'Contract date', value: (r) => r.contractDate, type: 'date' },
           { header: 'Contract ref', value: (r) => r.contractReference },
           { header: 'FID number', value: (r) => r.contractNumber },
           { header: isDubai ? 'Exporter' : 'Company name', value: (r) => r.exporter },
           { header: 'Importer', value: (r) => r.importer },
           { header: 'Consignee', value: (r) => r.consignee ?? '' },
-          { header: 'Items description', value: (r) => r.itemName },
-          { header: 'Lot', value: (r) => r.lotNumber },
-          { header: 'Batch', value: (r) => r.batchNumber },
+          {
+            header: 'Items description',
+            value: (r) => r.lines.map((line) => `${line.itemName} (${Number(line.quantityKg)} KG)`).join('; '),
+            width: 42,
+          },
           { header: 'Quantity (KG)', value: (r) => Number(r.quantityKg), type: 'quantity' },
           { header: 'Sold (KG)', value: (r) => Number(r.soldKg), type: 'quantity' },
           { header: 'Available (KG)', value: (r) => Number(r.availableKg), type: 'quantity' },
@@ -120,9 +173,12 @@ const REPORTS: Record<string, Report> = {
           { header: 'Destination', value: (r) => r.destination ?? '' },
           { header: 'Status', value: (r) => r.status.replace(/_/g, ' ') },
           { header: 'Containers', value: (r) => r.containers, type: 'integer' },
-          { header: 'Container no.', value: (r) => r.containerNumber ?? '' },
+          { header: 'Container no.', value: (r) => r.containerNumbers.join(', ') },
           { header: 'B/L', value: (r) => r.billOfLading ?? '' },
           { header: 'Shipping line', value: (r) => r.shippingLine ?? '' },
+          { header: 'Booking no.', value: (r) => r.bookingNumber ?? '' },
+          { header: 'Port of loading', value: (r) => r.portOfLoading ?? '' },
+          { header: 'Port of discharge', value: (r) => r.portOfDischarge ?? '' },
           { header: 'ETA', value: (r) => r.etaDate ?? '', type: 'date' },
           { header: 'Sale status', value: (r) => r.saleStatus.replace(/_/g, ' ') },
           { header: 'Payment', value: (r) => (r.paymentStatus === 'NONE' ? '' : r.paymentStatus) },
@@ -141,13 +197,17 @@ const REPORTS: Record<string, Report> = {
 
       // One row per customer allocation, plus a row for anything unsold, so
       // the sheet totals back to what was purchased.
+      const itemLabel = (row: (typeof sheet)[number]) => row.lines.map((line) => line.itemName).join('; ');
+      const batchLabel = (row: (typeof sheet)[number]) =>
+        row.lines.map((line) => line.batchNumber).filter(Boolean).join(', ');
+
       const rows = sheet.flatMap((row) =>
         row.allocations.length === 0
           ? [{
               contractReference: row.contractReference,
               contractNumber: row.contractNumber,
-              batchNumber: row.batchNumber,
-              itemName: row.itemName,
+              batchNumber: batchLabel(row),
+              itemName: itemLabel(row),
               purchased: Number(row.quantityKg),
               customerName: '— unsold —',
               invoiceNumber: '',
@@ -162,8 +222,8 @@ const REPORTS: Record<string, Report> = {
           : row.allocations.map((allocation) => ({
               contractReference: row.contractReference,
               contractNumber: row.contractNumber,
-              batchNumber: row.batchNumber,
-              itemName: row.itemName,
+              batchNumber: batchLabel(row),
+              itemName: itemLabel(row),
               purchased: Number(row.quantityKg),
               customerName: allocation.customerName,
               invoiceNumber: allocation.invoiceNumber,
@@ -789,6 +849,39 @@ const REPORTS: Record<string, Report> = {
       });
     },
   },
+
+  'customer-ledger': {
+    title: 'Customer Ledger',
+    permission: PERMISSIONS.LEDGERS_VIEW,
+    build: async (user, query) => {
+      const data = await customerLedgerExport(user, query);
+      const range =
+        data.from || data.to
+          ? `${data.from ? asDay(data.from) : 'start'} to ${data.to ? asDay(data.to) : 'today'}`
+          : 'all dates';
+      return buildWorkbook({
+        companyName: user.activeCompany.name,
+        title: `Statement — ${data.customer.customerName}`,
+        subtitle: `${data.customer.customerCode} · ${data.view} · ${range}`,
+        rows: data.ledger.rows,
+        columns: [
+          { header: 'Date', value: (r) => r.entryDate, type: 'date' },
+          { header: 'Voucher', value: (r) => r.entryNumber },
+          { header: 'Type', value: (r) => r.sourceType.replaceAll('_', ' ') },
+          { header: 'Reference', value: (r) => r.reference ?? '' },
+          { header: 'Description', value: (r) => r.description, width: 40 },
+          { header: 'Debit', value: (r) => Number(r.debit), type: 'money' },
+          { header: 'Credit', value: (r) => Number(r.credit), type: 'money' },
+          { header: 'Balance', value: (r) => Number(r.balance), type: 'money' },
+          { header: 'Currency', value: (r) => r.currency },
+        ],
+      });
+    },
+    csv: async (user, query) => {
+      const data = await customerLedgerExport(user, query);
+      return { headers: data.headers, rows: data.rows };
+    },
+  },
 };
 
 /** The heading an expense grouping deserves once it is a column. */
@@ -809,8 +902,24 @@ export async function GET(request: Request, context: { params: Promise<{ report:
     const definition = REPORTS[report];
     if (!definition) throw new NotFoundError('Report');
 
+    const query = new URL(request.url).searchParams;
     const user = await requirePermission(definition.permission as never);
-    const workbook = await definition.build(user, new URL(request.url).searchParams);
+
+    if (query.get('format') === 'csv') {
+      if (!definition.csv) throw new NotFoundError('Report');
+      const { headers, rows } = await definition.csv(user, query);
+      const body = buildCsv(headers, rows);
+      return new NextResponse(new Uint8Array(body), {
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Length': String(body.byteLength),
+          'Content-Disposition': `attachment; filename="${workbookFileName(definition.title, user.activeCompany.code, 'csv')}"`,
+          'Cache-Control': 'private, no-store',
+        },
+      });
+    }
+
+    const workbook = await definition.build(user, query);
 
     return new NextResponse(new Uint8Array(workbook), {
       headers: {

@@ -74,7 +74,7 @@ describe('Dubai: one container, one buyer', () => {
     const row = sheet.find((entry) => entry.contractReference === 'INV JAN26/3995');
     expect(row, 'the contract should appear on the loading sheet without anyone creating a row').toBeDefined();
     expect(row!.contractNumber).toMatch(/^FID-DXB-PO-/);
-    expect(row!.containerNumber).toBe('C001');
+    expect(row!.containerNumbers).toContain('C001');
 
     // The importer is the FID company, never typed by the user.
     expect(row!.importer).toBe(ctx.dubai.name);
@@ -84,7 +84,7 @@ describe('Dubai: one container, one buyer', () => {
     expect(row!.paymentStatus).toBe('NONE');
 
     shipmentId = row!.shipmentId;
-    batchId = row!.batchId;
+    batchId = row!.lines[0].batchId;
   });
 
   it('does not put the coffee in a warehouse merely because it was ordered', async () => {
@@ -120,7 +120,9 @@ describe('Dubai: one container, one buyer', () => {
       await changeShipmentStatus({ shipmentId, companyId: ctx.dubai.id, userId: ctx.admin.id, toStatus });
     }
 
-    const row = (await getLoadingSheet(ctx.dubai.id)).find((entry) => entry.batchId === batchId)!;
+    const row = (await getLoadingSheet(ctx.dubai.id)).find((entry) =>
+      entry.lines.some((line) => line.batchId === batchId),
+    )!;
     expect(row.billOfLading).toBe('MAEU-2026-77120');
     expect(row.status).toBe('LOADED');
     expect(row.etaDate?.toISOString().slice(0, 10)).toBe('2026-02-18');
@@ -152,7 +154,9 @@ describe('Dubai: one container, one buyer', () => {
     invoiceId = invoice.id;
     await postSalesInvoice({ id: invoice.id, companyId: ctx.dubai.id, userId: ctx.admin.id });
 
-    const row = (await getLoadingSheet(ctx.dubai.id)).find((entry) => entry.batchId === batchId)!;
+    const row = (await getLoadingSheet(ctx.dubai.id)).find((entry) =>
+      entry.lines.some((line) => line.batchId === batchId),
+    )!;
     // Nobody typed the consignee onto the sheet; the sale supplied it.
     expect(row.consignee).toBe(masters.customer.customerName);
     expect(row.saleStatus).toBe('FULLY_SOLD');
@@ -205,7 +209,9 @@ describe('Dubai: one container, one buyer', () => {
   });
 
   it('shows the payment on the loading sheet and the customer ledger', async () => {
-    const row = (await getLoadingSheet(ctx.dubai.id)).find((entry) => entry.batchId === batchId)!;
+    const row = (await getLoadingSheet(ctx.dubai.id)).find((entry) =>
+      entry.lines.some((line) => line.batchId === batchId),
+    )!;
     // Part paid, but the balance is still past its due date, and being overdue
     // is what the person chasing it needs to see.
     expect(row.paymentStatus).toBe('OVERDUE');
@@ -343,7 +349,9 @@ describe('Morocco: one container split across four customers', () => {
   });
 
   it('reports 14,000 KG sold and 6,000 KG remaining', async () => {
-    const row = (await getLoadingSheet(ctx.morocco.id)).find((entry) => entry.batchId === batchId)!;
+    const row = (await getLoadingSheet(ctx.morocco.id)).find((entry) =>
+      entry.lines.some((line) => line.batchId === batchId),
+    )!;
 
     expect(Number(row.quantityKg)).toBeCloseTo(20_000, 3);
     expect(Number(row.soldKg)).toBeCloseTo(14_000, 3);
