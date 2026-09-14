@@ -587,15 +587,15 @@ export const SHIPMENT_STATUS_META: Record<string, { label: string; tone: BadgeTo
  * whoever needs them to release the coffee.
  */
 export const DOCUMENT_STATUS_META: Record<string, { label: string; tone: BadgeTone }> = {
-  DRAFT_PENDING: { label: 'Awaiting Draft', tone: 'neutral' },
-  DRAFT_RECEIVED: { label: 'Draft Received', tone: 'info' },
-  UNDER_APPROVAL: { label: 'Under Approval', tone: 'warning' },
-  APPROVED: { label: 'Approved', tone: 'info' },
+  DRAFT_PENDING: { label: 'Pending', tone: 'neutral' },
   ORIGINALS_WITH_SUPPLIER: { label: 'With Supplier', tone: 'progress' },
+  DRAFT_RECEIVED: { label: 'Received', tone: 'info' },
+  UNDER_APPROVAL: { label: 'Awaiting Approval', tone: 'warning' },
+  APPROVED: { label: 'Approved', tone: 'info' },
+  COMPLETED: { label: 'Complete', tone: 'success' },
   DISPATCHED: { label: 'Sent', tone: 'progress' },
   WITH_BANK: { label: 'With Bank', tone: 'progress' },
   WITH_CUSTOMER: { label: 'With Customer', tone: 'info' },
-  COMPLETED: { label: 'Complete', tone: 'success' },
 };
 
 export const TRANSACTION_STATUS_META: Record<string, { label: string; tone: BadgeTone }> = {

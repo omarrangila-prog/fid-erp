@@ -27,7 +27,7 @@ import {
 } from '@/lib/services/reports';
 import { getTaxReturn } from '@/lib/services/tax-return';
 import { reconcile } from '@/lib/services/reconciliation';
-import { getCustomerLedger, ledgerKindToSourceType, type LedgerView } from '@/lib/services/ledger';
+import { getCustomerLedger, getVendorLedger, ledgerKindToSourceType, type LedgerView } from '@/lib/services/ledger';
 import type { SessionUser } from '@/lib/auth/session';
 
 /**
@@ -123,6 +123,50 @@ async function customerLedgerExport(user: SessionUser, query: URLSearchParams) {
   ];
 
   return { customer, ledger, headers, rows, from, to, view };
+}
+
+async function vendorLedgerExport(user: SessionUser, query: URLSearchParams) {
+  const vendorId = query.get('vendor');
+  if (!vendorId) throw new NotFoundError('Supplier');
+
+  const vendor = await prisma.vendor.findFirst({
+    where: { id: vendorId, companyId: user.activeCompany.id },
+    select: { vendorName: true, vendorCode: true, primaryCurrency: true },
+  });
+  if (!vendor) throw new NotFoundError('Supplier');
+
+  const view = ledgerView(query);
+  const from = dateParam(query, 'from');
+  const to = dateParam(query, 'to');
+  const ledger = await getVendorLedger({
+    companyId: user.activeCompany.id,
+    vendorId,
+    view,
+    localCurrency: user.activeCompany.localCurrency,
+    partyCurrency: vendor.primaryCurrency,
+    from,
+    to,
+    sourceType: ledgerKindToSourceType(query.get('kind'), 'vendor'),
+  });
+
+  const headers = ['Date', 'Voucher', 'Type', 'Reference', 'Description', 'Debit', 'Credit', 'Balance', 'Currency'];
+  const rows: Array<Array<string | number | null | undefined>> = [
+    ['', '', '', '', 'Opening balance', '', '', Number(ledger.openingBalance), ledger.viewCurrency],
+    ...ledger.rows.map((row) => [
+      asDay(row.entryDate),
+      row.entryNumber,
+      row.sourceType.replaceAll('_', ' '),
+      row.reference,
+      row.description,
+      Number(row.debit),
+      Number(row.credit),
+      Number(row.balance),
+      row.currency,
+    ]),
+    ['', '', '', '', 'Closing balance', Number(ledger.totalDebit), Number(ledger.totalCredit), Number(ledger.closingBalance), ledger.viewCurrency],
+  ];
+
+  return { vendor, ledger, headers, rows, from, to, view };
 }
 
 /** Statement rows for one block of a two-currency financial statement. */
@@ -879,6 +923,39 @@ const REPORTS: Record<string, Report> = {
     },
     csv: async (user, query) => {
       const data = await customerLedgerExport(user, query);
+      return { headers: data.headers, rows: data.rows };
+    },
+  },
+
+  'vendor-ledger': {
+    title: 'Supplier Ledger',
+    permission: PERMISSIONS.LEDGERS_VIEW,
+    build: async (user, query) => {
+      const data = await vendorLedgerExport(user, query);
+      const range =
+        data.from || data.to
+          ? `${data.from ? asDay(data.from) : 'start'} to ${data.to ? asDay(data.to) : 'today'}`
+          : 'all dates';
+      return buildWorkbook({
+        companyName: user.activeCompany.name,
+        title: `Statement — ${data.vendor.vendorName}`,
+        subtitle: `${data.vendor.vendorCode} · ${data.view} · ${range}`,
+        rows: data.ledger.rows,
+        columns: [
+          { header: 'Date', value: (r) => r.entryDate, type: 'date' },
+          { header: 'Voucher', value: (r) => r.entryNumber },
+          { header: 'Type', value: (r) => r.sourceType.replaceAll('_', ' ') },
+          { header: 'Reference', value: (r) => r.reference ?? '' },
+          { header: 'Description', value: (r) => r.description, width: 40 },
+          { header: 'Debit', value: (r) => Number(r.debit), type: 'money' },
+          { header: 'Credit', value: (r) => Number(r.credit), type: 'money' },
+          { header: 'Balance', value: (r) => Number(r.balance), type: 'money' },
+          { header: 'Currency', value: (r) => r.currency },
+        ],
+      });
+    },
+    csv: async (user, query) => {
+      const data = await vendorLedgerExport(user, query);
       return { headers: data.headers, rows: data.rows };
     },
   },

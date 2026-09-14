@@ -9,8 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { Callout } from '@/components/ui/feedback';
-import { updateShipmentEtaAction, markShipmentArrivedAction } from '@/server/actions/trading-actions';
-import { todayInputValue } from '@/lib/format';
+import { updateShipmentEtaAction, markShipmentArrivedAction, getShipmentEtaHistoryAction } from '@/server/actions/trading-actions';
+import { formatDate, formatDateTime, todayInputValue } from '@/lib/format';
 
 /**
  * Change an expected arrival, from the row it is on.
@@ -37,6 +37,19 @@ export function EtaDialog({
   const [pending, startTransition] = React.useTransition();
   const [error, setError] = React.useState<string | null>(null);
   const [eta, setEta] = React.useState(currentEta ?? '');
+  const [history, setHistory] = React.useState<
+    Array<{ changedAt: string; changedBy: string; from: string | null; to: string | null }>
+  >([]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    getShipmentEtaHistoryAction(shipmentId).then((result) => {
+      if (!cancelled && result.ok) setHistory(result.rows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [shipmentId]);
 
   function submit() {
     setError(null);
@@ -86,9 +99,26 @@ export function EtaDialog({
         </Field>
 
         <Callout tone="info">
-          Every change is recorded against the date it replaced, so the history of a shipment&rsquo;s slippage is on the
-          audit trail whenever anyone wants it.
+          Change it as often as the line changes it. Every previous date stays on this shipment.
         </Callout>
+
+        {history.length > 0 ? (
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-subtle">Previous ETAs</p>
+            <ul className="space-y-1.5">
+              {history.map((row) => (
+                <li key={row.changedAt} className="flex flex-wrap items-baseline justify-between gap-2 text-xs">
+                  <span className="text-ink">
+                    {formatDate(row.from)} → {formatDate(row.to)}
+                  </span>
+                  <span className="text-ink-subtle">
+                    {row.changedBy} · {formatDateTime(row.changedAt)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </div>
     </Sheet>
   );

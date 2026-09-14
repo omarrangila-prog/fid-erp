@@ -15,6 +15,7 @@ export function LedgerToolbar({
   printPath,
   exportReport,
   customerId,
+  vendorId,
   view,
   from,
   to,
@@ -41,6 +42,7 @@ export function LedgerToolbar({
     to: toDate,
     kind: kindValue === 'ALL' ? undefined : kindValue,
     customer: customerId,
+    vendor: vendorId,
   };
 
   function apply(path = basePath) {

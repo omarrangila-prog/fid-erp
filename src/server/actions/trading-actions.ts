@@ -51,6 +51,7 @@ import {
   markShipmentLoaded,
   updateShipmentEta,
   saveShipmentContainers,
+  getEtaHistory,
 } from '@/lib/services/shipment';
 import { fail, type ActionResult } from '@/server/actions/action-utils';
 
@@ -393,6 +394,29 @@ export async function updateShipmentEtaAction(shipmentId: string, etaDate: strin
     return { ok: true, id: shipmentId, message: 'ETA updated.' };
   } catch (error) {
     return toState(error);
+  }
+}
+
+/** The ETA dialog shows every previous date, who changed it, and when. */
+export async function getShipmentEtaHistoryAction(shipmentId: string): Promise<
+  | { ok: true; rows: Array<{ changedAt: string; changedBy: string; from: string | null; to: string | null }> }
+  | { ok: false; error: string }
+> {
+  try {
+    const user = await requirePermission(PERMISSIONS.SHIPMENTS_VIEW);
+    const rows = await getEtaHistory(user.activeCompany.id, shipmentId);
+    return {
+      ok: true,
+      rows: rows.map((row) => ({
+        changedAt: row.changedAt.toISOString(),
+        changedBy: row.changedBy,
+        from: row.from,
+        to: row.to,
+      })),
+    };
+  } catch (error) {
+    const failed = fail(error);
+    return { ok: false, error: failed.ok ? 'The ETA history could not be read.' : failed.error };
   }
 }
 

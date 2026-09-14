@@ -206,10 +206,13 @@ async function buildLedger(params: {
   };
 }
 
-/** Filter a party ledger to invoices, receipts, or everything. */
-export function ledgerKindToSourceType(kind?: string | null): string | undefined {
-  if (kind === 'INVOICES') return 'SALES_INVOICE';
-  if (kind === 'PAYMENTS') return 'RECEIPT';
+/** Filter a party ledger to invoices, receipts/payments, or everything. */
+export function ledgerKindToSourceType(
+  kind?: string | null,
+  party: 'customer' | 'vendor' = 'customer',
+): string | undefined {
+  if (kind === 'INVOICES') return party === 'vendor' ? 'PURCHASE_CONTRACT' : 'SALES_INVOICE';
+  if (kind === 'PAYMENTS') return party === 'vendor' ? 'PAYMENT' : 'RECEIPT';
   return undefined;
 }
 

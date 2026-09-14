@@ -5,7 +5,7 @@ import { HandCoins } from 'lucide-react';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
-import { getVendorLedger, type LedgerView as LedgerViewMode } from '@/lib/services/ledger';
+import { getVendorLedger, ledgerKindToSourceType, type LedgerView as LedgerViewMode } from '@/lib/services/ledger';
 import { getPayables } from '@/lib/services/receivables';
 import { formatMoney } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
@@ -13,6 +13,7 @@ import { Metric, MetricGrid } from '@/components/shared/stat-card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { LedgerView } from '@/components/shared/ledger-view';
+import { LedgerToolbar } from '@/app/(app)/ledgers/ledger-toolbar';
 import { Callout } from '@/components/ui/feedback';
 
 export const dynamic = 'force-dynamic';
@@ -28,16 +29,19 @@ export default async function VendorLedgerPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; from?: string; to?: string; kind?: string }>;
 }) {
-  const [{ id }, { view }] = await Promise.all([params, searchParams]);
+  const [{ id }, query] = await Promise.all([params, searchParams]);
   const user = await requirePageAccess(PERMISSIONS.LEDGERS_VIEW);
   const companyId = user.activeCompany.id;
 
   const vendor = await prisma.vendor.findFirst({ where: { id, companyId } });
   if (!vendor) notFound();
 
-  const mode: LedgerViewMode = view === 'USD' || view === 'LOCAL' || view === 'TRANSACTION' ? view : 'TRANSACTION';
+  const mode: LedgerViewMode =
+    query.view === 'USD' || query.view === 'LOCAL' || query.view === 'TRANSACTION' ? query.view : 'TRANSACTION';
+  const from = query.from ? new Date(`${query.from}T00:00:00.000Z`) : undefined;
+  const to = query.to ? new Date(`${query.to}T00:00:00.000Z`) : undefined;
 
   const [ledger, payables] = await Promise.all([
     getVendorLedger({
@@ -46,6 +50,9 @@ export default async function VendorLedgerPage({
       view: mode,
       localCurrency: user.activeCompany.localCurrency,
       partyCurrency: vendor.primaryCurrency,
+      from,
+      to,
+      sourceType: ledgerKindToSourceType(query.kind, 'vendor'),
     }),
     getPayables({ companyId, vendorId: id, onlyOutstanding: true }),
   ]);
@@ -96,15 +103,27 @@ export default async function VendorLedgerPage({
         <Metric label="Outstanding" value={formatMoney(outstanding, vendor.primaryCurrency)} />
       </MetricGrid>
 
+      <LedgerToolbar
+        basePath={`/ledgers/vendors/${id}`}
+        printPath={`/ledgers/vendors/${id}/print`}
+        exportReport="vendor-ledger"
+        vendorId={id}
+        view={mode}
+        from={query.from ?? ''}
+        to={query.to ?? ''}
+        kind={query.kind ?? 'ALL'}
+      />
+
       <Callout tone="info">
         The supplier ledger is the posted payable — goods, freight and tax together, not the coffee rate alone.
-        If the purchase was in USD, switch to the USD view so the figure matches the contract. Each line shows
-        that voucher’s own currency.
+        If the purchase was in USD, switch to the USD view so the figure matches the contract. Export includes every
+        row in the date range, not only what is on this page.
       </Callout>
 
       <LedgerView
         ledger={ledger}
         basePath={`/ledgers/vendors/${id}`}
+        extraQuery={{ from: query.from, to: query.to, kind: query.kind }}
         partyCurrency={vendor.primaryCurrency}
         localCurrency={user.activeCompany.localCurrency}
         emptyDescription="Approve a purchase contract or post a payment to open this supplier's ledger."
