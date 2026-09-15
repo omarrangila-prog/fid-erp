@@ -11,6 +11,7 @@ import { getCompanyContext } from '@/lib/services/company';
 import { resolveSubledgerLeg } from '@/lib/services/subledger';
 import { writeAudit } from '@/lib/services/audit';
 import { resolveTaxCode, computeLineTax, NO_TAX, supplierInvoiceIncludesInputTax, supplierGrossPayable } from '@/lib/services/tax';
+import { EXPENSE_TRACE_OMIT, expenseTraceIds, expenseTraceWrite, expensesHaveTraceColumns } from '@/lib/services/expense-columns';
 
 /**
  * ExpenseService — shipment and operating costs.
@@ -285,8 +286,7 @@ export async function createExpense(input: ExpenseInput, userId: string) {
         expenseCategoryId: input.expenseCategoryId,
         shipmentId: input.shipmentId ?? null,
         purchaseContractId: input.purchaseContractId ?? null,
-        containerId: input.containerId ?? null,
-        batchId: input.batchId ?? null,
+        ...(await expenseTraceWrite(tx, input)),
         vendorId: input.vendorId ?? null,
         payableToAgentId: input.payableToAgentId ?? null,
         agentId: input.agentId ?? null,
@@ -309,6 +309,7 @@ export async function createExpense(input: ExpenseInput, userId: string) {
         status: 'DRAFT',
         createdById: userId,
       },
+      omit: EXPENSE_TRACE_OMIT,
     });
 
     await writeAudit(tx, {
@@ -332,7 +333,10 @@ export async function createExpense(input: ExpenseInput, userId: string) {
 
 export async function updateExpense(id: string, input: ExpenseInput, userId: string) {
   return transaction(async (tx) => {
-    const existing = await tx.expense.findFirst({ where: { id, companyId: input.companyId } });
+    const existing = await tx.expense.findFirst({
+      where: { id, companyId: input.companyId },
+      omit: EXPENSE_TRACE_OMIT,
+    });
     if (!existing) throw new NotFoundError('Expense');
     if (existing.status !== 'DRAFT') {
       throw new BusinessRuleError('Only draft expenses can be edited. Reverse the expense to correct a posted one.');
@@ -350,8 +354,7 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
         expenseCategoryId: input.expenseCategoryId,
         shipmentId: input.shipmentId ?? null,
         purchaseContractId: input.purchaseContractId ?? null,
-        containerId: input.containerId ?? null,
-        batchId: input.batchId ?? null,
+        ...(await expenseTraceWrite(tx, input)),
         vendorId: input.vendorId ?? null,
         payableToAgentId: input.payableToAgentId ?? null,
         agentId: input.agentId ?? null,
@@ -372,6 +375,7 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
         reference: input.reference ?? null,
         description: input.description ?? null,
       },
+      omit: EXPENSE_TRACE_OMIT,
     });
 
     await writeAudit(tx, {
@@ -400,8 +404,10 @@ export async function postExpense(params: { id: string; companyId: string; userI
       throw new BusinessRuleError(`This expense is already ${locked[0].status.toLowerCase()} and cannot be posted again.`);
     }
 
+    const hasTrace = await expensesHaveTraceColumns(tx);
     const expense = await tx.expense.findUniqueOrThrow({
       where: { id: params.id },
+      ...(hasTrace ? {} : { omit: EXPENSE_TRACE_OMIT }),
       include: {
         expenseCategory: true,
         cashBankAccount: true,
@@ -515,8 +521,7 @@ export async function postExpense(params: { id: string; companyId: string; userI
         shipmentId: expense.shipmentId,
         amountUsd: expense.amountUsd,
         reference: expense.expenseNumber,
-        containerId: expense.containerId,
-        batchId: expense.batchId,
+        ...expenseTraceIds(expense, hasTrace),
       });
 
       // The engine has already split the cost three ways by kilograms. Any
@@ -595,6 +600,7 @@ export async function postExpense(params: { id: string; companyId: string; userI
     const posted = await tx.expense.update({
       where: { id: expense.id },
       data: { status: 'POSTED', postedAt: new Date() },
+      omit: EXPENSE_TRACE_OMIT,
     });
 
     await writeAudit(tx, {
@@ -621,7 +627,11 @@ export async function reverseExpense(params: { id: string; companyId: string; us
     if (locked.length === 0) throw new NotFoundError('Expense');
     if (locked[0].status !== 'POSTED') throw new BusinessRuleError('Only a posted expense can be reversed.');
 
-    const expense = await tx.expense.findUniqueOrThrow({ where: { id: params.id } });
+    const hasTrace = await expensesHaveTraceColumns(tx);
+    const expense = await tx.expense.findUniqueOrThrow({
+      where: { id: params.id },
+      ...(hasTrace ? {} : { omit: EXPENSE_TRACE_OMIT }),
+    });
     const reversalDate = new Date();
 
     // Unwind the capitalisation before reversing the journal so the batch
@@ -632,8 +642,7 @@ export async function reverseExpense(params: { id: string; companyId: string; us
         shipmentId: expense.shipmentId,
         amountUsd: dec(expense.amountUsd).negated(),
         reference: `${expense.expenseNumber} reversal`,
-        containerId: expense.containerId,
-        batchId: expense.batchId,
+        ...expenseTraceIds(expense, hasTrace),
       });
     }
 
@@ -649,6 +658,7 @@ export async function reverseExpense(params: { id: string; companyId: string; us
     const reversed = await tx.expense.update({
       where: { id: params.id },
       data: { status: 'REVERSED', reversedAt: reversalDate, reversalReason: params.reason },
+      omit: EXPENSE_TRACE_OMIT,
     });
 
     await writeAudit(tx, {
@@ -667,7 +677,10 @@ export async function reverseExpense(params: { id: string; companyId: string; us
 
 export async function deleteDraftExpense(params: { id: string; companyId: string; userId: string }) {
   return transaction(async (tx) => {
-    const expense = await tx.expense.findFirst({ where: { id: params.id, companyId: params.companyId } });
+    const expense = await tx.expense.findFirst({
+      where: { id: params.id, companyId: params.companyId },
+      omit: EXPENSE_TRACE_OMIT,
+    });
     if (!expense) throw new NotFoundError('Expense');
     if (expense.status !== 'DRAFT') {
       throw new BusinessRuleError('Only draft expenses can be deleted. Posted expenses must be reversed.');
@@ -680,6 +693,6 @@ export async function deleteDraftExpense(params: { id: string; companyId: string
       entityId: expense.id,
       before: { expenseNumber: expense.expenseNumber, amount: expense.amount },
     });
-    await tx.expense.delete({ where: { id: params.id } });
+    await tx.expense.delete({ where: { id: params.id }, omit: EXPENSE_TRACE_OMIT });
   });
 }

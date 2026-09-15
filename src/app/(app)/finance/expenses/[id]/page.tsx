@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/feedback';
 import { VoucherActions } from '@/components/shared/voucher-actions';
 import { getWarehouseLabels } from '@/lib/services/stock';
+import { EXPENSE_TRACE_OMIT, expensesHaveTraceColumns } from '@/lib/services/expense-columns';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,13 +28,19 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
   const { id } = await params;
   const user = await requirePageAccess(PERMISSIONS.EXPENSES_VIEW);
 
+  const hasTrace = await expensesHaveTraceColumns();
   const expense = await prisma.expense.findFirst({
     where: { id, companyId: user.activeCompany.id },
+    ...(hasTrace ? {} : { omit: EXPENSE_TRACE_OMIT }),
     include: {
       expenseCategory: true,
       shipment: { select: { id: true, jobNumber: true, shipmentNumber: true } },
-      container: { select: { containerNumber: true } },
-      batch: { select: { batchNumber: true } },
+      ...(hasTrace
+        ? {
+            container: { select: { containerNumber: true } },
+            batch: { select: { batchNumber: true } },
+          }
+        : {}),
       vendor: { select: { id: true, vendorName: true } },
       agent: { select: { agentName: true } },
       payableToAgent: { select: { id: true, agentName: true } },
@@ -148,8 +155,12 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
                 '—'
               )}
             </DetailRow>
-            <DetailRow label="Container">{expense.container?.containerNumber ?? 'Whole shipment'}</DetailRow>
-            <DetailRow label="Batch">{expense.batch?.batchNumber ?? 'Every batch'}</DetailRow>
+            <DetailRow label="Container">
+              {'container' in expense ? (expense.container?.containerNumber ?? 'Whole shipment') : 'Whole shipment'}
+            </DetailRow>
+            <DetailRow label="Batch">
+              {'batch' in expense ? (expense.batch?.batchNumber ?? 'Every batch') : 'Every batch'}
+            </DetailRow>
             <DetailRow label="Warehouse">{warehouses.byExpense.get(expense.id) || '—'}</DetailRow>
             {unpaid ? (
               <DetailRow label="Settlement">

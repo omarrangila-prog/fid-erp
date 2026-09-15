@@ -4,6 +4,7 @@ import { getCommissionPaidByExpense } from '@/lib/services/agent-commission';
 import { Decimal, dec, toMoney, toUnitCost, allocateProportionally, sum, toQuantity } from '@/lib/money';
 import { BusinessRuleError } from '@/lib/errors';
 import { lockBatch } from '@/lib/services/inventory';
+import { EXPENSE_TRACE_OMIT, expensesHaveTraceColumns } from '@/lib/services/expense-columns';
 
 /**
  * Landed cost engine.
@@ -375,12 +376,18 @@ export type ShipmentCostLine = {
 export async function getShipmentCostSheet(companyId: string, shipmentId: string) {
   const job = await getJobCostSummary(prisma as Tx, companyId, shipmentId);
 
+  const hasTrace = await expensesHaveTraceColumns();
   const expenses = await prisma.expense.findMany({
     where: { companyId, shipmentId, status: 'POSTED', kind: 'SHIPMENT' },
+    ...(hasTrace ? {} : { omit: EXPENSE_TRACE_OMIT }),
     include: {
       expenseCategory: { select: { name: true } },
-      container: { select: { containerNumber: true } },
-      batch: { select: { batchNumber: true } },
+      ...(hasTrace
+        ? {
+            container: { select: { containerNumber: true } },
+            batch: { select: { batchNumber: true } },
+          }
+        : {}),
       allocations: { select: { payment: { select: { status: true } } } },
     },
     orderBy: [{ expenseDate: 'asc' }, { expenseNumber: 'asc' }],
@@ -404,8 +411,8 @@ export async function getShipmentCostSheet(companyId: string, shipmentId: string
       currency: expense.currency,
       capitalised: expense.capitaliseToLandedCost,
       paid: Boolean(expense.cashBankAccountId) || settledByAllocation || settledByCommission,
-      containerNumber: expense.container?.containerNumber ?? null,
-      batchNumber: expense.batch?.batchNumber ?? null,
+      containerNumber: 'container' in expense ? (expense.container?.containerNumber ?? null) : null,
+      batchNumber: 'batch' in expense ? (expense.batch?.batchNumber ?? null) : null,
     };
   });
 

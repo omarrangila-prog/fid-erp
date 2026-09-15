@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db';
 import { Decimal, dec, toMoney } from '@/lib/money';
+import { EXPENSE_TRACE_OMIT, expensesHaveTraceColumns } from '@/lib/services/expense-columns';
 
 /**
  * Agent commission register.
@@ -78,9 +79,11 @@ export async function getCommissionPaidByExpense(companyId: string): Promise<Map
 }
 
 export async function getAgentCommissionRegister(companyId: string): Promise<AgentCommissionRow[]> {
+  const hasTrace = await expensesHaveTraceColumns();
   const expenses = await prisma.expense.findMany({
     where: { companyId, status: 'POSTED', payableToAgentId: { not: null } },
     orderBy: [{ expenseDate: 'desc' }, { expenseNumber: 'desc' }],
+    ...(hasTrace ? {} : { omit: EXPENSE_TRACE_OMIT }),
     include: {
       payableToAgent: { select: { id: true, agentName: true } },
       purchaseContract: { select: { id: true, contractReference: true, contractNumber: true } },
@@ -91,8 +94,12 @@ export async function getAgentCommissionRegister(companyId: string): Promise<Age
           purchaseContract: { select: { id: true, contractReference: true, contractNumber: true } },
         },
       },
-      container: { select: { containerNumber: true } },
-      batch: { select: { batchNumber: true } },
+      ...(hasTrace
+        ? {
+            container: { select: { containerNumber: true } },
+            batch: { select: { batchNumber: true } },
+          }
+        : {}),
     },
   });
 
@@ -114,8 +121,8 @@ export async function getAgentCommissionRegister(companyId: string): Promise<Age
       contractReference: contract?.contractReference ?? contract?.contractNumber ?? null,
       shipmentId: expense.shipment?.id ?? null,
       jobNumber: expense.shipment?.jobNumber ?? null,
-      containerNumber: expense.container?.containerNumber ?? null,
-      batchNumber: expense.batch?.batchNumber ?? null,
+      containerNumber: 'container' in expense ? (expense.container?.containerNumber ?? null) : null,
+      batchNumber: 'batch' in expense ? (expense.batch?.batchNumber ?? null) : null,
       currency: expense.currency,
       amount: toMoney(expense.amount),
       amountUsd,
