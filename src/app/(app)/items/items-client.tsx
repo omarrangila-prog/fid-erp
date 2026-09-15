@@ -187,6 +187,25 @@ export function ItemsClient({
       cell: (r) => r.defaultUnit,
     },
     {
+      id: 'warehouse',
+      header: 'Warehouse',
+      mobile: 'meta',
+      sortValue: (r) => r.warehouses.map((w) => w.warehouseName).join(', '),
+      exportValue: (r) => r.warehouses.map((w) => w.warehouseName).join(', '),
+      cell: (r) =>
+        r.warehouses.length > 0 ? (
+          <span className="block min-w-28">
+            {r.warehouses.map((warehouse) => (
+              <span key={warehouse.warehouseName} className="block">
+                {warehouse.warehouseName}
+              </span>
+            ))}
+          </span>
+        ) : (
+          <span className="text-ink-subtle">—</span>
+        ),
+    },
+    {
       id: 'available',
       header: 'Available',
       mobile: 'meta',
@@ -282,7 +301,7 @@ export function ItemsClient({
         getRowId={(r) => r.id}
         rowHref={(r) => `/items/${r.id}`}
         searchValue={(r) =>
-          `${r.itemName} ${r.itemCode} ${r.originCountry} ${r.region ?? ''} ${r.grade ?? ''} ${r.variety ?? ''} ${r.cropYear ?? ''} ${r.screenSize ?? ''}`
+          `${r.itemName} ${r.itemCode} ${r.originCountry} ${r.region ?? ''} ${r.grade ?? ''} ${r.variety ?? ''} ${r.cropYear ?? ''} ${r.screenSize ?? ''} ${r.warehouses.map((w) => w.warehouseName).join(' ')}`
         }
         searchPlaceholder="Search by name, origin, grade or screen…"
         emptyTitle="No items yet"

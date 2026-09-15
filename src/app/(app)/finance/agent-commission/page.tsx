@@ -4,6 +4,7 @@ import { Plus } from 'lucide-react';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getAgentCommissionRegister } from '@/lib/services/agent-commission';
+import { getWarehouseLabels } from '@/lib/services/stock';
 import { formatMoney, formatDate, formatRate } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
@@ -21,7 +22,10 @@ export const dynamic = 'force-dynamic';
 
 export default async function AgentCommissionPage() {
   const user = await requirePageAccess(PERMISSIONS.EXPENSES_VIEW);
-  const rows = await getAgentCommissionRegister(user.activeCompany.id);
+  const [rows, warehouses] = await Promise.all([
+    getAgentCommissionRegister(user.activeCompany.id),
+    getWarehouseLabels(user.activeCompany.id),
+  ]);
 
   const outstanding = rows.reduce((sum, row) => sum.plus(row.remainingUsd), dec(0));
   const unpaidCount = rows.filter((row) => row.status !== 'PAID').length;
@@ -46,6 +50,7 @@ export default async function AgentCommissionPage() {
     paidUsd: formatMoney(row.paidUsd, 'USD'),
     remainingUsd: formatMoney(row.remainingUsd, 'USD'),
     remainingSort: Number(row.remainingUsd),
+    warehouseNames: warehouses.byExpense.get(row.expenseId) ?? '',
     status: row.status,
   }));
 

@@ -26,6 +26,7 @@ export type AgeingRow = {
   outstandingUsd: string;
   bucket: string;
   daysOverdue: number;
+  warehouseNames: string;
   status: string;
 };
 
@@ -83,6 +84,14 @@ export function AgeingClient({
     },
     ...(showEta ? [{ id: 'eta', header: 'ETA', hideable: true, cell: (r: AgeingRow) => r.eta } satisfies DataColumn<AgeingRow>] : []),
     { id: 'job', header: 'Job', hideable: true, cell: (r) => r.job ?? '—' },
+    {
+      id: 'warehouse',
+      header: 'Warehouse',
+      mobile: 'meta',
+      sortValue: (r) => r.warehouseNames,
+      exportValue: (r) => r.warehouseNames,
+      cell: (r) => r.warehouseNames || '—',
+    },
     { id: 'original', header: 'Original', numeric: true, hideable: true, cell: (r) => r.original },
     { id: 'paid', header: 'Settled', numeric: true, hideable: true, cell: (r) => r.paid },
     {
@@ -128,7 +137,7 @@ export function AgeingClient({
       getRowId={(r) => r.id}
       rowHref={(r) => r.documentHref}
       pageSize={50}
-      searchValue={(r) => `${r.documentNumber} ${r.party} ${r.job ?? ''}`}
+      searchValue={(r) => `${r.documentNumber} ${r.party} ${r.job ?? ''} ${r.warehouseNames}`}
       searchPlaceholder={`Search ${documentLabel.toLowerCase()} or ${partyLabel.toLowerCase()}…`}
       exportHref={canExport ? exportHref : undefined}
       emptyTitle="Nothing outstanding"

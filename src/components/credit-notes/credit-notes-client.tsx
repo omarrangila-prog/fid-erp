@@ -26,6 +26,7 @@ export type CreditNoteRow = {
   totalLabel: string;
   totalSort: number;
   returnsStock: boolean;
+  warehouseNames: string;
   status: string;
 };
 
@@ -97,6 +98,14 @@ export function CreditNotesClient({
           )}
         </span>
       ),
+    },
+    {
+      id: 'warehouse',
+      header: 'Warehouse',
+      mobile: 'meta',
+      sortValue: (r) => r.warehouseNames,
+      exportValue: (r) => r.warehouseNames,
+      cell: (r) => r.warehouseNames || '—',
     },
     {
       id: 'reason',
@@ -171,7 +180,7 @@ export function CreditNotesClient({
         data={rows}
         columns={columns}
         getRowId={(r) => r.id}
-        searchValue={(r) => `${r.number} ${r.party} ${r.reason} ${r.againstDocument ?? ''}`}
+        searchValue={(r) => `${r.number} ${r.party} ${r.reason} ${r.againstDocument ?? ''} ${r.warehouseNames}`}
         searchPlaceholder={`Search ${noun}s…`}
         emptyTitle={`No ${noun}s yet`}
         emptyDescription={

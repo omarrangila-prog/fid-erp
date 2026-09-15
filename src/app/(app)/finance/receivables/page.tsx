@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getReceivables, summariseAgeing, AGEING_LABELS } from '@/lib/services/receivables';
+import { getWarehouseLabels } from '@/lib/services/stock';
 import { formatMoney, formatDate, daysUntil } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { StatCard } from '@/components/shared/stat-card';
@@ -12,7 +13,10 @@ export const dynamic = 'force-dynamic';
 
 export default async function ReceivablesPage() {
   const user = await requirePageAccess(PERMISSIONS.RECEIVABLES_VIEW);
-  const receivables = await getReceivables({ companyId: user.activeCompany.id, onlyOutstanding: true });
+  const [receivables, warehouses] = await Promise.all([
+    getReceivables({ companyId: user.activeCompany.id, onlyOutstanding: true }),
+    getWarehouseLabels(user.activeCompany.id),
+  ]);
   const ageing = summariseAgeing(receivables);
 
   const rows: AgeingRow[] = receivables.map((r) => {
@@ -37,6 +41,7 @@ export default async function ReceivablesPage() {
       outstandingUsd: formatMoney(r.outstandingAmountUsd, 'USD'),
       bucket: r.bucket,
       daysOverdue: days !== null && days < 0 ? Math.abs(days) : 0,
+      warehouseNames: warehouses.byInvoice.get(r.invoiceId) ?? '',
       status: r.status,
     };
   });

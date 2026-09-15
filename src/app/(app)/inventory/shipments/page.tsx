@@ -45,6 +45,7 @@ export default async function ShipmentStockPage() {
               <TR className="hover:bg-transparent">
                 <TH>Shipment</TH>
                 <TH>Coffee</TH>
+                <TH>Warehouse</TH>
                 <TH>Supplier</TH>
                 <TH>Buyer</TH>
                 <TH>ETA</TH>
@@ -65,6 +66,7 @@ export default async function ShipmentStockPage() {
                     </Link>
                   </TD>
                   <TD>{r.itemName}</TD>
+                  <TD>{r.warehouseNames || '—'}</TD>
                   <TD>{r.vendorName}</TD>
                   <TD>{r.customerName ?? <span className="text-ink-subtle">Unsold</span>}</TD>
                   <TD>{formatDate(r.etaDate)}</TD>
@@ -81,7 +83,7 @@ export default async function ShipmentStockPage() {
             </TBody>
             <TFoot>
               <tr>
-                <TD colSpan={5}>Total</TD>
+                <TD colSpan={6}>Total</TD>
                 <TD numeric>{formatQuantityKg(totals.received)}</TD>
                 <TD />
                 <TD numeric>{formatQuantityKg(totals.sold)}</TD>

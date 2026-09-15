@@ -25,6 +25,7 @@ export type CommissionRow = {
   paidUsd: string;
   remainingUsd: string;
   remainingSort: number;
+  warehouseNames: string;
   status: 'UNPAID' | 'PARTIAL' | 'PAID';
 };
 
@@ -85,6 +86,14 @@ export function AgentCommissionClient({ rows }: { rows: CommissionRow[] }) {
         ),
     },
     { id: 'container', header: 'Container', hideable: true, cell: (r) => r.container ?? '—' },
+    {
+      id: 'warehouse',
+      header: 'Warehouse',
+      mobile: 'meta',
+      sortValue: (r) => r.warehouseNames,
+      exportValue: (r) => r.warehouseNames,
+      cell: (r) => r.warehouseNames || '—',
+    },
     { id: 'currency', header: 'Currency', hideable: true, cell: (r) => r.currency },
     { id: 'amount', header: 'Amount', numeric: true, cell: (r) => r.amount },
     { id: 'rate', header: 'Rate to USD', numeric: true, hideable: true, cell: (r) => r.rate },
@@ -118,7 +127,7 @@ export function AgentCommissionClient({ rows }: { rows: CommissionRow[] }) {
       columns={columns}
       getRowId={(r) => r.id}
       searchValue={(r) =>
-        [r.number, r.agentName, r.contractReference, r.job, r.container].filter(Boolean).join(' ')
+        [r.number, r.agentName, r.contractReference, r.job, r.container, r.warehouseNames].filter(Boolean).join(' ')
       }
       emptyTitle="No agent commission yet"
       emptyDescription="Record an unpaid shipment expense owed to an agent. It appears here immediately, even before it is paid."

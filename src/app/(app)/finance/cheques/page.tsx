@@ -3,6 +3,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma, transaction } from '@/lib/db';
 import { getChequeSummary } from '@/lib/services/cheque';
+import { getWarehouseLabels } from '@/lib/services/stock';
 import { formatMoney, formatDate } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { StatCard } from '@/components/shared/stat-card';
@@ -17,7 +18,7 @@ export default async function ChequesPage() {
   const user = await requirePageAccess(PERMISSIONS.CHEQUES_VIEW);
   const companyId = user.activeCompany.id;
 
-  const [cheques, accounts, summary] = await Promise.all([
+  const [cheques, accounts, summary, warehouses] = await Promise.all([
     prisma.cheque.findMany({
       where: { companyId },
       orderBy: [{ chequeDate: 'desc' }],
@@ -34,6 +35,7 @@ export default async function ChequesPage() {
       select: { id: true, name: true, currency: true },
     }),
     transaction((tx) => getChequeSummary(tx, companyId)),
+    getWarehouseLabels(companyId),
   ]);
 
   const rows: ChequeRow[] = cheques.map((c) => ({
@@ -57,6 +59,11 @@ export default async function ChequesPage() {
       : c.payment
         ? `/finance/payments/${c.payment.id}`
         : null,
+    warehouseNames: c.receipt
+      ? (warehouses.byReceipt.get(c.receipt.id) ?? '')
+      : c.payment
+        ? (warehouses.byPayment.get(c.payment.id) ?? '')
+        : '',
   }));
 
   const onHand = summary.filter((s) => s.direction === 'INBOUND' && ['RECEIVED', 'DEPOSITED'].includes(s.status));

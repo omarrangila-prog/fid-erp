@@ -183,6 +183,7 @@ export type ShipmentStockRow = {
   itemName: string;
   vendorName: string;
   customerName: string | null;
+  warehouseNames: string;
   receivedKg: Decimal;
   allocatedKg: Decimal;
   soldKg: Decimal;
@@ -200,6 +201,7 @@ export async function getShipmentStock(companyId: string): Promise<ShipmentStock
       itemName: string;
       vendorName: string;
       customerName: string | null;
+      warehouseNames: string;
       receivedKg: string;
       allocatedKg: string;
       soldKg: string;
@@ -209,6 +211,11 @@ export async function getShipmentStock(companyId: string): Promise<ShipmentStock
   >`
     SELECT s."id" AS "shipmentId", s."shipmentNumber", s."status"::text AS status, s."etaDate",
            i."itemName", v."vendorName", c."customerName",
+           COALESCE((SELECT string_agg(DISTINCT w."name", ', ' ORDER BY w."name")
+                       FROM inventory_balances ib
+                       JOIN warehouses w ON w."id" = ib."warehouseId"
+                       JOIN batches b2 ON b2."id" = ib."batchId"
+                      WHERE b2."shipmentId" = s."id" AND ib."onHandKg" > 0), '') AS "warehouseNames",
            COALESCE(SUM(b."receivedQuantityKg"), 0)::text  AS "receivedKg",
            COALESCE(SUM(b."allocatedQuantityKg"), 0)::text AS "allocatedKg",
            COALESCE(SUM(b."soldQuantityKg"), 0)::text      AS "soldKg",
@@ -233,6 +240,7 @@ export async function getShipmentStock(companyId: string): Promise<ShipmentStock
     itemName: row.itemName,
     vendorName: row.vendorName,
     customerName: row.customerName,
+    warehouseNames: String(row.warehouseNames ?? ''),
     receivedKg: toQuantity(row.receivedKg),
     allocatedKg: toQuantity(row.allocatedKg),
     soldKg: toQuantity(row.soldKg),
@@ -653,8 +661,11 @@ export async function getWarehouseStockByItem(
   return result;
 }
 
-function joinWarehouseNames(names: Iterable<string>): string {
-  return [...new Set(names)].filter(Boolean).sort((a, b) => a.localeCompare(b)).join(', ');
+export function joinWarehouseNames(names: Iterable<string>): string {
+  return [...new Set([...names].flatMap((name) => name.split(',').map((part) => part.trim())))]
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b))
+    .join(', ');
 }
 
 /**

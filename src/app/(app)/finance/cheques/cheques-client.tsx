@@ -31,6 +31,7 @@ export type ChequeRow = {
   bounceReason: string | null;
   voucherNumber: string | null;
   voucherHref: string | null;
+  warehouseNames: string;
 };
 
 /** Which statuses a cheque can move to next, mirroring the service's rules. */
@@ -121,6 +122,14 @@ export function ChequesClient({
       ),
     },
     { id: 'party', header: 'Party', mobile: 'meta', sortValue: (r) => r.party, cell: (r) => r.party },
+    {
+      id: 'warehouse',
+      header: 'Warehouse',
+      mobile: 'meta',
+      sortValue: (r) => r.warehouseNames,
+      exportValue: (r) => r.warehouseNames,
+      cell: (r) => r.warehouseNames || '—',
+    },
     { id: 'date', header: 'Cheque date', mobile: 'meta', sortValue: (r) => r.chequeDateSort, cell: (r) => r.chequeDate },
     {
       id: 'amount',
@@ -182,7 +191,7 @@ export function ChequesClient({
         data={rows}
         columns={columns}
         getRowId={(r) => r.id}
-        searchValue={(r) => `${r.chequeNumber} ${r.party} ${r.bankName}`}
+        searchValue={(r) => `${r.chequeNumber} ${r.party} ${r.bankName} ${r.warehouseNames}`}
         searchPlaceholder="Search cheque number, party or bank…"
         emptyAction={emptyAction}
         emptyTitle="No cheques recorded"

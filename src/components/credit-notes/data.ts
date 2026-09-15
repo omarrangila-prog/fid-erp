@@ -4,6 +4,7 @@ import { dec, toMoney } from '@/lib/money';
 import { formatMoney, formatDate, formatQuantityKg } from '@/lib/format';
 import { getTaxSettings, listTaxCodes, supplierGrossPayable } from '@/lib/services/tax';
 import { getRateDefaults } from '@/lib/services/exchange-rate';
+import { getWarehouseLabels, joinWarehouseNames } from '@/lib/services/stock';
 import type { CreditNoteRow } from '@/components/credit-notes/credit-notes-client';
 import type {
   CreditParty,
@@ -32,9 +33,11 @@ export async function loadCreditNoteRows(
       vendor: { select: { vendorName: true } },
       salesInvoice: { select: { invoiceNumber: true } },
       purchaseContract: { select: { contractNumber: true } },
-      lines: { select: { batchId: true } },
+      lines: { select: { batchId: true, warehouse: { select: { name: true } } } },
     },
   });
+
+  const warehouses = await getWarehouseLabels(companyId);
 
   return notes.map((note) => ({
     id: note.id,
@@ -50,6 +53,14 @@ export async function loadCreditNoteRows(
     totalLabel: formatMoney(note.totalAmount, note.currency),
     totalSort: Number(note.totalAmountUsd),
     returnsStock: note.lines.some((line) => line.batchId !== null),
+    warehouseNames: joinWarehouseNames([
+      note.salesInvoiceId ? (warehouses.byInvoice.get(note.salesInvoiceId) ?? '') : '',
+      note.purchaseContractId ? (warehouses.byContract.get(note.purchaseContractId) ?? '') : '',
+      ...note.lines.flatMap((line) => [
+        line.warehouse?.name ?? '',
+        line.batchId ? (warehouses.byBatch.get(line.batchId) ?? '') : '',
+      ]),
+    ]),
     status: note.status,
   }));
 }

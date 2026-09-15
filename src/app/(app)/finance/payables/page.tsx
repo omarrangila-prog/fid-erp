@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getPayables, summariseAgeing, AGEING_LABELS } from '@/lib/services/receivables';
+import { getWarehouseLabels } from '@/lib/services/stock';
 import { formatMoney, formatDate, daysUntil } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { StatCard } from '@/components/shared/stat-card';
@@ -12,7 +13,10 @@ export const dynamic = 'force-dynamic';
 
 export default async function PayablesPage() {
   const user = await requirePageAccess(PERMISSIONS.PAYABLES_VIEW);
-  const payables = await getPayables({ companyId: user.activeCompany.id, onlyOutstanding: true });
+  const [payables, warehouses] = await Promise.all([
+    getPayables({ companyId: user.activeCompany.id, onlyOutstanding: true }),
+    getWarehouseLabels(user.activeCompany.id),
+  ]);
   const ageing = summariseAgeing(payables);
 
   const rows: AgeingRow[] = payables.map((p) => {
@@ -37,6 +41,10 @@ export default async function PayablesPage() {
       outstandingUsd: formatMoney(p.outstandingAmountUsd, 'USD'),
       bucket: p.bucket,
       daysOverdue: days !== null && days < 0 ? Math.abs(days) : 0,
+      warehouseNames:
+        p.kind === 'EXPENSE'
+          ? (warehouses.byExpense.get(p.contractId) ?? '')
+          : (warehouses.byContract.get(p.contractId) ?? ''),
       status: p.status,
     };
   });
