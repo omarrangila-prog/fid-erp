@@ -12,8 +12,18 @@ export const metadata: Metadata = { title: 'Expense Categories' };
 export const dynamic = 'force-dynamic';
 
 const FIELDS: FieldSpec[] = [
-  { kind: 'text', name: 'code', label: 'Code', required: true, placeholder: 'CLEARING' },
+  { kind: 'text', name: 'code', label: 'Code', placeholder: 'CLEARING', hint: 'Issued automatically if left blank.' },
   { kind: 'text', name: 'name', label: 'Category name', required: true, placeholder: 'Clearing Charges' },
+  {
+    kind: 'select',
+    name: 'kind',
+    label: 'Type',
+    required: true,
+    options: [
+      { value: 'SHIPMENT', label: 'Shipment expense' },
+      { value: 'GENERAL', label: 'General company expense' },
+    ],
+  },
   { kind: 'select', name: 'status', label: 'Status', options: STATUS_OPTIONS },
   { kind: 'textarea', name: 'description', label: 'Description', full: true },
   {
@@ -71,6 +81,7 @@ export default async function ExpenseCategoriesPage() {
       code: c.code,
       name: c.name,
       description: c.description,
+      kind: c.kind,
       capitaliseByDefault: c.capitaliseByDefault,
       status: c.status,
     },
@@ -96,7 +107,7 @@ export default async function ExpenseCategoriesPage() {
         rows={rows}
         columns={COLUMNS}
         fields={FIELDS}
-        createDefaults={{ status: 'ACTIVE', capitaliseByDefault: true }}
+        createDefaults={{ status: 'ACTIVE', kind: 'SHIPMENT', capitaliseByDefault: true }}
         action={saveExpenseCategoryAction}
         entityLabel="Expense category"
         canCreate={can(user, PERMISSIONS.EXPENSE_CATEGORIES_MANAGE)}

@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getChartOfAccounts } from '@/lib/services/chart-of-accounts';
+import { getRateDefaults } from '@/lib/services/exchange-rate';
 import { formatMoney } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -10,6 +11,9 @@ import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/tabl
 import { Badge } from '@/components/ui/badge';
 import { Callout } from '@/components/ui/feedback';
 import { AddLedgerAccountButton } from '@/app/(app)/accounting/chart/add-account-button';
+import { AccountRowActions } from '@/app/(app)/accounting/chart/account-row-actions';
+import { PrintButton } from '@/components/shared/print-button';
+import { PrintHeader } from '@/components/shared/print-header';
 
 export const metadata: Metadata = { title: 'Chart of Accounts' };
 export const dynamic = 'force-dynamic';
@@ -26,10 +30,11 @@ function cashBankLabel(accountType: string) {
 
 export default async function ChartOfAccountsPage() {
   const user = await requirePageAccess(PERMISSIONS.ACCOUNTING_VIEW);
-  const { sections, localCurrency } = await getChartOfAccounts(
-    user.activeCompany.id,
-    user.activeCompany.localCurrency,
-  );
+  const canPost = can(user, PERMISSIONS.ACCOUNTING_POST);
+  const [{ sections, localCurrency }, rates] = await Promise.all([
+    getChartOfAccounts(user.activeCompany.id, user.activeCompany.localCurrency),
+    getRateDefaults(user.activeCompany.id),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -37,7 +42,17 @@ export default async function ChartOfAccountsPage() {
         title="Chart of Accounts"
         description="Every ledger head this company posts to — cash, banks, receivables, payables, inventory, sales, cost of sales and expenses."
         breadcrumbs={[{ label: 'Accounting' }, { label: 'Chart of Accounts' }]}
-        actions={can(user, PERMISSIONS.ACCOUNTING_POST) ? <AddLedgerAccountButton /> : undefined}
+        actions={
+          <>
+            <PrintButton />
+            {canPost ? <AddLedgerAccountButton /> : null}
+          </>
+        }
+      />
+      <PrintHeader
+        title="Chart of Accounts"
+        companyName={user.activeCompany.name}
+        country={user.activeCompany.country}
       />
 
       <Callout tone="info" title="Posting is automatic for ordinary trade">
@@ -47,7 +62,7 @@ export default async function ChartOfAccountsPage() {
         <Link href="/finance/cash-bank" className="font-medium text-forest-800 hover:underline">
           Cash &amp; Bank
         </Link>
-        .
+        . Customer, supplier and agent openings belong on those ledgers, not on the control account.
       </Callout>
 
       {sections.map((section) => (
@@ -66,11 +81,12 @@ export default async function ChartOfAccountsPage() {
                     <TH>Type</TH>
                     <TH numeric>Balance USD</TH>
                     <TH numeric>Balance {localCurrency}</TH>
+                    {canPost ? <TH className="print:hidden"> </TH> : null}
                   </TR>
                 </THead>
                 <TBody>
                   {section.accounts.map((account) => (
-                    <TR key={account.id}>
+                    <TR key={account.id} className={account.status === 'INACTIVE' ? 'opacity-60' : undefined}>
                       <TD className="font-mono text-xs">{account.code}</TD>
                       <TD>
                         <Link
@@ -89,11 +105,31 @@ export default async function ChartOfAccountsPage() {
                           {account.expenseCategory ? (
                             <Badge tone="neutral">{account.expenseCategory.code}</Badge>
                           ) : null}
+                          {account.status === 'INACTIVE' ? <Badge tone="neutral">Inactive</Badge> : null}
                         </span>
                       </TD>
                       <TD className="text-xs capitalize text-ink-muted">{typeLabel(account.type)}</TD>
                       <TD numeric>{formatMoney(account.balanceUsd, 'USD')}</TD>
                       <TD numeric>{formatMoney(account.balanceLocal, localCurrency)}</TD>
+                      {canPost ? (
+                        <TD className="print:hidden">
+                          <AccountRowActions
+                            account={{
+                              id: account.id,
+                              code: account.code,
+                              name: account.name,
+                              type: account.type,
+                              reportGroup: account.reportGroup,
+                              isSystem: account.isSystem,
+                              status: account.status,
+                              subledgerType: account.subledgerType,
+                              cashBank: account.cashBank ? { id: account.cashBank.id } : null,
+                            }}
+                            localCurrency={localCurrency}
+                            defaultLocalRate={rates.local}
+                          />
+                        </TD>
+                      ) : null}
                     </TR>
                   ))}
                 </TBody>

@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 import { dec } from '@/lib/money';
 import { formatQuantityKg, formatDate, daysUntil } from '@/lib/format';
 import { getShipmentSettlement } from '@/lib/services/shipment';
+import { getWarehouseLabels } from '@/lib/services/stock';
 import { PageHeader } from '@/components/shared/page-header';
 import { EmptyAction } from '@/components/shared/empty-action';
 import { ShipmentsClient, type ShipmentRow } from '@/app/(app)/shipments/shipments-client';
@@ -16,18 +17,21 @@ export default async function ShipmentsPage() {
   const user = await requirePageAccess(PERMISSIONS.SHIPMENTS_VIEW);
   const companyId = user.activeCompany.id;
 
-  const shipments = await prisma.shipment.findMany({
-    where: { companyId, purchaseContract: { status: 'POSTED' } },
-    orderBy: [{ etaDate: 'asc' }, { shipmentNumber: 'desc' }],
-    include: {
-      purchaseContract: { select: { contractNumber: true } },
-      vendor: { select: { vendorName: true } },
-      customer: { select: { customerName: true } },
-      item: { select: { itemName: true } },
-      shippingLine: { select: { name: true } },
-      batches: { select: { orderedQuantityKg: true, soldQuantityKg: true, orderedBags: true } },
-    },
-  });
+  const [shipments, warehouses] = await Promise.all([
+    prisma.shipment.findMany({
+      where: { companyId, purchaseContract: { status: 'POSTED' } },
+      orderBy: [{ etaDate: 'asc' }, { shipmentNumber: 'desc' }],
+      include: {
+        purchaseContract: { select: { contractNumber: true } },
+        vendor: { select: { vendorName: true } },
+        customer: { select: { customerName: true } },
+        item: { select: { itemName: true } },
+        shippingLine: { select: { name: true } },
+        batches: { select: { orderedQuantityKg: true, soldQuantityKg: true, orderedBags: true } },
+      },
+    }),
+    getWarehouseLabels(companyId),
+  ]);
 
   const rows: ShipmentRow[] = await Promise.all(
     shipments.map(async (s) => {
@@ -61,6 +65,7 @@ export default async function ShipmentsPage() {
         settlement: settlement.status,
         soldPct,
         soldLabel: sold.greaterThan(0) ? `${soldPct.toFixed(0)}%` : 'Unsold',
+        warehouseNames: warehouses.byShipment.get(s.id) ?? '',
       };
     }),
   );

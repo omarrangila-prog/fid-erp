@@ -3,11 +3,22 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { prisma, transaction } from '@/lib/db';
-import { requirePermission, assertPermission } from '@/lib/auth/guards';
+import { requirePermission, assertPermission, requireAnyPermission } from '@/lib/auth/guards';
 import { PERMISSIONS, type PermissionCode } from '@/lib/constants';
 import { ConflictError, NotFoundError } from '@/lib/errors';
 import { writeAudit } from '@/lib/services/audit';
-import { createCashBankAccount, createLedgerAccount } from '@/lib/services/chart-of-accounts';
+import {
+  createCashBankAccount,
+  createLedgerAccount,
+  updateLedgerAccount,
+  deactivateLedgerAccount,
+  reactivateLedgerAccount,
+  postAccountOpeningBalance,
+} from '@/lib/services/chart-of-accounts';
+import { quickCreateExpenseCategory } from '@/lib/services/expense-category';
+import { quickCreateAgent } from '@/lib/services/agent';
+import { dec } from '@/lib/money';
+import { ledgerAccountSchema, ledgerAccountUpdateSchema, ledgerOpeningSchema } from '@/lib/validation/finance';
 import {
   formDataToObject,
   fieldErrors,
@@ -26,7 +37,6 @@ import {
   expenseCategorySchema,
   cashBankAccountSchema,
 } from '@/lib/validation/masters';
-import { ledgerAccountSchema } from '@/lib/validation/finance';
 import { fail, run, type ActionResult } from '@/server/actions/action-utils';
 
 /**
@@ -137,6 +147,25 @@ async function saveMaster<S extends z.ZodTypeAny>(
     });
     if (duplicate) {
       throw new ConflictError(`${config.label} code "${uniqueValue}" is already in use.`);
+    }
+
+    // Agent names are what people pick on a receipt. Two people called the
+    // same thing on the list is how the wrong clearing ledger gets posted.
+    if (delegate === 'agent') {
+      const agentName = String(data.agentName ?? '').trim();
+      if (agentName) {
+        const nameClash = await model.findFirst({
+          where: {
+            companyId,
+            agentName: { equals: agentName, mode: 'insensitive' },
+            ...(id ? { NOT: { id } } : {}),
+          },
+          select: { id: true },
+        });
+        if (nameClash) {
+          throw new ConflictError(`An agent named "${agentName}" already exists.`);
+        }
+      }
     }
 
     const before = id ? await model.findUnique({ where: { id } }) : null;
@@ -352,6 +381,48 @@ export async function saveAgentAction(id: string | null, _prev: MasterFormState,
   return saveMaster(AGENT, 'agent', id, formData);
 }
 
+/**
+ * Create an agent without leaving the receipt.
+ *
+ * Collection has to name who is holding the money. Sending the user to the
+ * master list, inventing a code, then coming back to start the voucher again
+ * is the friction this removes. The name is enough; the code is issued here.
+ */
+export async function quickCreateAgentAction(
+  payload: string,
+): Promise<ActionResult<{ id: string; agentName: string; agentCode: string; phone: string | null }>> {
+  return run(async () => {
+    const user = await requireAnyPermission([
+      PERMISSIONS.RECEIPTS_CREATE,
+      PERMISSIONS.EXPENSES_CREATE,
+      PERMISSIONS.AGENTS_MANAGE,
+    ]);
+
+    const input = z
+      .object({
+        agentName: requiredText('Agent name'),
+        phone: optionalText(40),
+        notes: optionalText(1000),
+      })
+      .parse(JSON.parse(payload) as unknown);
+
+    const created = await quickCreateAgent({
+      companyId: user.activeCompany.id,
+      userId: user.id,
+      agentName: input.agentName,
+      phone: input.phone,
+      notes: input.notes,
+    });
+
+    revalidatePath('/agents');
+    revalidatePath('/finance/receipts/new');
+    revalidatePath('/finance/expenses/new');
+    revalidatePath('/ledgers/agents');
+
+    return created;
+  });
+}
+
 const SHIPPING_LINE: MasterConfig<typeof shippingLineSchema> = {
   schema: shippingLineSchema,
   viewPermission: PERMISSIONS.SHIPPING_LINES_VIEW,
@@ -394,6 +465,46 @@ export async function saveExpenseCategoryAction(id: string | null, _prev: Master
   return saveMaster(EXPENSE_CATEGORY, 'expenseCategory', id, formData);
 }
 
+/**
+ * Create a category without leaving the expense voucher.
+ *
+ * New kinds of cost show up after the company is already trading. Sending the
+ * user to the master list, inventing a code, then coming back to start the
+ * voucher again is the friction this removes. The type (shipment or general)
+ * is taken from the form they are already filling in.
+ */
+export async function quickCreateExpenseCategoryAction(
+  payload: string,
+): Promise<ActionResult<{ id: string; name: string; code: string; kind: 'SHIPMENT' | 'GENERAL'; capitaliseByDefault: boolean }>> {
+  return run(async () => {
+    const user = await requireAnyPermission([
+      PERMISSIONS.EXPENSES_CREATE,
+      PERMISSIONS.EXPENSE_CATEGORIES_MANAGE,
+    ]);
+
+    const input = z
+      .object({
+        name: requiredText('Category name'),
+        description: optionalText(400),
+        kind: z.enum(['SHIPMENT', 'GENERAL']),
+      })
+      .parse(JSON.parse(payload) as unknown);
+
+    const created = await quickCreateExpenseCategory({
+      companyId: user.activeCompany.id,
+      userId: user.id,
+      name: input.name,
+      description: input.description,
+      kind: input.kind,
+    });
+
+    revalidatePath('/expense-categories');
+    revalidatePath('/finance/expenses/new');
+
+    return created;
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Cash and bank accounts — these also create a backing GL account
 // ---------------------------------------------------------------------------
@@ -422,6 +533,7 @@ export async function saveCashBankAccountAction(
           accountType: data.accountType,
           bankName: data.bankName,
           accountNumber: data.accountNumber,
+          status: data.status,
           ...(hasPostings === 0
             ? { currency: data.currency, openingBalance: data.openingBalance }
             : {}),
@@ -441,10 +553,40 @@ export async function saveCashBankAccountAction(
       );
 
       revalidatePath('/finance/cash-bank');
+      revalidatePath(`/finance/cash-bank/${id}`);
       return { ok: true, id: updated.id, message: 'Account saved.' };
     }
 
-    const created = await createCashBankAccount({ companyId, ...data }, user.id);
+    let code = data.code;
+    if (!code) {
+      const used = await prisma.cashBankAccount.count({ where: { companyId } });
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        const candidate = `CBA-${String(used + 1 + attempt).padStart(4, '0')}`;
+        const clash = await prisma.cashBankAccount.findFirst({
+          where: { companyId, code: candidate },
+          select: { id: true },
+        });
+        if (!clash) {
+          code = candidate;
+          break;
+        }
+      }
+      code ??= `CBA-${Date.now().toString(36).toUpperCase()}`;
+    }
+
+    const created = await createCashBankAccount(
+      {
+        companyId,
+        code,
+        name: data.name,
+        accountType: data.accountType,
+        currency: data.currency,
+        openingBalance: data.openingBalance,
+        bankName: data.bankName,
+        accountNumber: data.accountNumber,
+      },
+      user.id,
+    );
     await transaction((tx) =>
       writeAudit(tx, {
         companyId,
@@ -464,24 +606,64 @@ export async function saveCashBankAccountAction(
 }
 
 export async function saveLedgerAccountAction(
-  _id: string | null,
+  id: string | null,
   _prev: MasterFormState,
   formData: FormData,
 ): Promise<MasterFormState> {
   try {
     const user = await requirePermission(PERMISSIONS.ACCOUNTING_POST);
-    const data = ledgerAccountSchema.parse(formDataToObject(formData));
+    const companyId = user.activeCompany.id;
+    const raw = formDataToObject(formData);
+
+    if (id) {
+      const data = ledgerAccountUpdateSchema.parse(raw);
+      const updated = await updateLedgerAccount({
+        id,
+        companyId,
+        code: data.code ?? undefined,
+        name: data.name,
+        reportGroup: data.reportGroup,
+      });
+
+      await transaction((tx) =>
+        writeAudit(tx, {
+          companyId,
+          userId: user.id,
+          action: 'LEDGER_ACCOUNT_UPDATED',
+          entityType: 'Account',
+          entityId: updated.id,
+          after: data,
+        }),
+      );
+
+      revalidatePath('/accounting/chart');
+      revalidatePath('/reports/general-ledger');
+      return { ok: true, id: updated.id, message: 'Account updated.' };
+    }
+
+    const data = ledgerAccountSchema.parse(raw);
     const created = await createLedgerAccount({
-      companyId: user.activeCompany.id,
+      companyId,
       code: data.code,
       name: data.name,
       type: data.type,
       reportGroup: data.reportGroup,
     });
 
+    if (data.openingAmount && !dec(data.openingAmount).isZero()) {
+      await postAccountOpeningBalance({
+        accountId: created.id,
+        companyId,
+        userId: user.id,
+        amount: data.openingAmount,
+        asOf: data.openingDate ?? new Date(),
+        currency: user.activeCompany.localCurrency,
+      });
+    }
+
     await transaction((tx) =>
       writeAudit(tx, {
-        companyId: user.activeCompany.id,
+        companyId,
         userId: user.id,
         action: 'LEDGER_ACCOUNT_CREATED',
         entityType: 'Account',
@@ -493,6 +675,89 @@ export async function saveLedgerAccountAction(
     revalidatePath('/accounting/chart');
     revalidatePath('/reports/general-ledger');
     return { ok: true, id: created.id, message: 'Account added to the chart.' };
+  } catch (error) {
+    return invalid(error);
+  }
+}
+
+export async function deactivateLedgerAccountAction(id: string): Promise<MasterFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.ACCOUNTING_POST);
+    const updated = await deactivateLedgerAccount({ id, companyId: user.activeCompany.id });
+    await transaction((tx) =>
+      writeAudit(tx, {
+        companyId: user.activeCompany.id,
+        userId: user.id,
+        action: 'LEDGER_ACCOUNT_DEACTIVATED',
+        entityType: 'Account',
+        entityId: updated.id,
+        after: { status: 'INACTIVE' },
+      }),
+    );
+    revalidatePath('/accounting/chart');
+    revalidatePath('/accounting/journal/new');
+    return { ok: true, id: updated.id, message: 'Account deactivated.' };
+  } catch (error) {
+    return invalid(error);
+  }
+}
+
+export async function reactivateLedgerAccountAction(id: string): Promise<MasterFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.ACCOUNTING_POST);
+    const updated = await reactivateLedgerAccount({ id, companyId: user.activeCompany.id });
+    await transaction((tx) =>
+      writeAudit(tx, {
+        companyId: user.activeCompany.id,
+        userId: user.id,
+        action: 'LEDGER_ACCOUNT_REACTIVATED',
+        entityType: 'Account',
+        entityId: updated.id,
+        after: { status: 'ACTIVE' },
+      }),
+    );
+    revalidatePath('/accounting/chart');
+    return { ok: true, id: updated.id, message: 'Account reactivated.' };
+  } catch (error) {
+    return invalid(error);
+  }
+}
+
+export async function postLedgerOpeningAction(
+  id: string,
+  _prev: MasterFormState,
+  formData: FormData,
+): Promise<MasterFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.ACCOUNTING_POST);
+    const data = ledgerOpeningSchema.parse(formDataToObject(formData));
+    const result = await postAccountOpeningBalance({
+      accountId: id,
+      companyId: user.activeCompany.id,
+      userId: user.id,
+      amount: data.amount,
+      asOf: data.asOf,
+      currency: data.currency,
+      rateToUsd: data.rateToUsd,
+      rateLocalPerUsd: data.rateLocalPerUsd,
+    });
+
+    await transaction((tx) =>
+      writeAudit(tx, {
+        companyId: user.activeCompany.id,
+        userId: user.id,
+        action: 'LEDGER_OPENING_POSTED',
+        entityType: 'Account',
+        entityId: id,
+        after: { amount: data.amount, currency: data.currency, kind: result.kind },
+      }),
+    );
+
+    revalidatePath('/accounting/chart');
+    revalidatePath('/reports/general-ledger');
+    revalidatePath('/reports/trial-balance');
+    revalidatePath('/finance/cash-bank');
+    return { ok: true, id, message: 'Opening balance posted.' };
   } catch (error) {
     return invalid(error);
   }

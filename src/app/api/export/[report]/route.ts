@@ -12,7 +12,7 @@ import {
 } from '@/lib/services/workbook';
 import { getLoadingSheet } from '@/lib/services/loading-sheet';
 import { getReceivables, getPayables } from '@/lib/services/receivables';
-import { getBatchStock, getStockAgeing } from '@/lib/services/stock';
+import { getBatchStock, getStockAgeing, getInventoryValuation } from '@/lib/services/stock';
 import {
   getTrialBalanceReport,
   getProfitAndLoss,
@@ -22,12 +22,24 @@ import {
   getJournalReport,
   getExpenseReport,
   getFinancialPosition,
+  getForexGainLoss,
   type ExpenseGrouping,
   type PnlLine,
 } from '@/lib/services/reports';
+import { getAgentCommissionRegister } from '@/lib/services/agent-commission';
 import { getTaxReturn } from '@/lib/services/tax-return';
 import { reconcile } from '@/lib/services/reconciliation';
 import { getCustomerLedger, getVendorLedger, ledgerKindToSourceType, type LedgerView } from '@/lib/services/ledger';
+import {
+  getShipmentProfitability,
+  getCustomerProfitability,
+  getProductProfitability,
+  getBatchProfitability,
+  getContainerProfitability,
+  getMonthlyProfitability,
+  getCompanyProfitSummary,
+  getCogsReport,
+} from '@/lib/services/profitability';
 import type { SessionUser } from '@/lib/auth/session';
 
 /**
@@ -192,43 +204,69 @@ const REPORTS: Record<string, Report> = {
       const rows = await getLoadingSheet(user.activeCompany.id);
       const isDubai = user.activeCompany.localCurrency === 'AED';
 
+      const moroccoColumns = [
+        { header: 'Contract ref', value: (r: (typeof rows)[number]) => r.contractReference },
+        { header: 'FID number', value: (r: (typeof rows)[number]) => r.contractNumber },
+        { header: 'Exporter', value: (r: (typeof rows)[number]) => r.exporter },
+        { header: 'Importer', value: (r: (typeof rows)[number]) => r.importer },
+        {
+          header: 'Item',
+          value: (r: (typeof rows)[number]) =>
+            r.lines.map((line) => `${line.itemName} (${Number(line.quantityKg)} KG)`).join('; '),
+          width: 42,
+        },
+        { header: 'Quantity (KG)', value: (r: (typeof rows)[number]) => Number(r.quantityKg), type: 'quantity' as const },
+        { header: 'Containers', value: (r: (typeof rows)[number]) => r.containers, type: 'integer' as const },
+        { header: 'Status', value: (r: (typeof rows)[number]) => r.status.replace(/_/g, ' ') },
+        { header: 'Shipping line', value: (r: (typeof rows)[number]) => r.shippingLine ?? '' },
+        {
+          header: 'Booking / B/L',
+          value: (r: (typeof rows)[number]) => [r.bookingNumber, r.billOfLading].filter(Boolean).join(' · '),
+        },
+        { header: 'Container no.', value: (r: (typeof rows)[number]) => r.containerNumbers.join(', ') },
+        { header: 'ETA', value: (r: (typeof rows)[number]) => r.etaDate ?? '', type: 'date' as const },
+      ];
+
+      const dubaiColumns = [
+        { header: 'Contract date', value: (r: (typeof rows)[number]) => r.contractDate, type: 'date' as const },
+        { header: 'Contract ref', value: (r: (typeof rows)[number]) => r.contractReference },
+        { header: 'FID number', value: (r: (typeof rows)[number]) => r.contractNumber },
+        { header: 'Exporter', value: (r: (typeof rows)[number]) => r.exporter },
+        { header: 'Importer', value: (r: (typeof rows)[number]) => r.importer },
+        { header: 'Consignee', value: (r: (typeof rows)[number]) => r.consignee ?? '' },
+        {
+          header: 'Items description',
+          value: (r: (typeof rows)[number]) =>
+            r.lines.map((line) => `${line.itemName} (${Number(line.quantityKg)} KG)`).join('; '),
+          width: 42,
+        },
+        { header: 'Quantity (KG)', value: (r: (typeof rows)[number]) => Number(r.quantityKg), type: 'quantity' as const },
+        { header: 'Sold (KG)', value: (r: (typeof rows)[number]) => Number(r.soldKg), type: 'quantity' as const },
+        { header: 'Available (KG)', value: (r: (typeof rows)[number]) => Number(r.availableKg), type: 'quantity' as const },
+        { header: 'Origin', value: (r: (typeof rows)[number]) => r.origin },
+        { header: 'Destination', value: (r: (typeof rows)[number]) => r.destination ?? '' },
+        { header: 'Status', value: (r: (typeof rows)[number]) => r.status.replace(/_/g, ' ') },
+        { header: 'Containers', value: (r: (typeof rows)[number]) => r.containers, type: 'integer' as const },
+        { header: 'Container no.', value: (r: (typeof rows)[number]) => r.containerNumbers.join(', ') },
+        { header: 'B/L', value: (r: (typeof rows)[number]) => r.billOfLading ?? '' },
+        { header: 'Shipping line', value: (r: (typeof rows)[number]) => r.shippingLine ?? '' },
+        { header: 'Booking no.', value: (r: (typeof rows)[number]) => r.bookingNumber ?? '' },
+        { header: 'Port of loading', value: (r: (typeof rows)[number]) => r.portOfLoading ?? '' },
+        { header: 'Port of discharge', value: (r: (typeof rows)[number]) => r.portOfDischarge ?? '' },
+        { header: 'ETA', value: (r: (typeof rows)[number]) => r.etaDate ?? '', type: 'date' as const },
+        { header: 'Sale status', value: (r: (typeof rows)[number]) => r.saleStatus.replace(/_/g, ' ') },
+        { header: 'Payment', value: (r: (typeof rows)[number]) => (r.paymentStatus === 'NONE' ? '' : r.paymentStatus) },
+        { header: 'Documents', value: (r: (typeof rows)[number]) => r.documentStatus.replace(/_/g, ' ') },
+        { header: 'Remarks', value: (r: (typeof rows)[number]) => r.remarks ?? '', width: 32 },
+      ];
+
       return buildWorkbook({
         companyName: user.activeCompany.name,
         title: 'Loading Follow-Up',
         subtitle: `${rows.length} shipment${rows.length === 1 ? '' : 's'} on the book`,
         rows,
-        totals: ['Quantity (KG)', 'Sold (KG)', 'Available (KG)'],
-        columns: [
-          { header: 'Contract date', value: (r) => r.contractDate, type: 'date' },
-          { header: 'Contract ref', value: (r) => r.contractReference },
-          { header: 'FID number', value: (r) => r.contractNumber },
-          { header: isDubai ? 'Exporter' : 'Company name', value: (r) => r.exporter },
-          { header: 'Importer', value: (r) => r.importer },
-          { header: 'Consignee', value: (r) => r.consignee ?? '' },
-          {
-            header: 'Items description',
-            value: (r) => r.lines.map((line) => `${line.itemName} (${Number(line.quantityKg)} KG)`).join('; '),
-            width: 42,
-          },
-          { header: 'Quantity (KG)', value: (r) => Number(r.quantityKg), type: 'quantity' },
-          { header: 'Sold (KG)', value: (r) => Number(r.soldKg), type: 'quantity' },
-          { header: 'Available (KG)', value: (r) => Number(r.availableKg), type: 'quantity' },
-          { header: 'Origin', value: (r) => r.origin },
-          { header: 'Destination', value: (r) => r.destination ?? '' },
-          { header: 'Status', value: (r) => r.status.replace(/_/g, ' ') },
-          { header: 'Containers', value: (r) => r.containers, type: 'integer' },
-          { header: 'Container no.', value: (r) => r.containerNumbers.join(', ') },
-          { header: 'B/L', value: (r) => r.billOfLading ?? '' },
-          { header: 'Shipping line', value: (r) => r.shippingLine ?? '' },
-          { header: 'Booking no.', value: (r) => r.bookingNumber ?? '' },
-          { header: 'Port of loading', value: (r) => r.portOfLoading ?? '' },
-          { header: 'Port of discharge', value: (r) => r.portOfDischarge ?? '' },
-          { header: 'ETA', value: (r) => r.etaDate ?? '', type: 'date' },
-          { header: 'Sale status', value: (r) => r.saleStatus.replace(/_/g, ' ') },
-          { header: 'Payment', value: (r) => (r.paymentStatus === 'NONE' ? '' : r.paymentStatus) },
-          { header: 'Documents', value: (r) => r.documentStatus.replace(/_/g, ' ') },
-          { header: 'Remarks', value: (r) => r.remarks ?? '', width: 32 },
-        ],
+        totals: isDubai ? ['Quantity (KG)', 'Sold (KG)', 'Available (KG)'] : ['Quantity (KG)'],
+        columns: isDubai ? dubaiColumns : moroccoColumns,
       });
     },
   },
@@ -420,6 +458,103 @@ const REPORTS: Record<string, Report> = {
           { header: 'Available (KG)', value: (r) => Number(r.availableKg), type: 'quantity' },
           { header: 'Cost/KG (USD)', value: (r) => Number(r.unitCostUsd), type: 'number' },
           { header: 'Value (USD)', value: (r) => Number(r.valueUsd), type: 'money' },
+        ],
+      });
+    },
+  },
+
+  profitability: {
+    title: 'Profitability',
+    permission: PERMISSIONS.PROFITS_VIEW,
+    build: async (user, query) => {
+      const companyId = user.activeCompany.id;
+      const view = query.get('view') ?? 'shipment';
+      const summary = await getCompanyProfitSummary({ companyId });
+
+      if (view === 'customer' || view === 'product' || view === 'batch' || view === 'container') {
+        const rows =
+          view === 'customer'
+            ? await getCustomerProfitability({ companyId })
+            : view === 'product'
+              ? await getProductProfitability({ companyId })
+              : view === 'batch'
+                ? await getBatchProfitability({ companyId })
+                : await getContainerProfitability({ companyId });
+        const titles = { customer: 'Customer', product: 'Coffee', batch: 'Batch', container: 'Container' } as const;
+        return buildWorkbook({
+          companyName: user.activeCompany.name,
+          title: 'Profitability',
+          subtitle: `By ${titles[view].toLowerCase()} · gross profit USD ${Number(summary.grossProfitUsd).toFixed(2)}`,
+          rows,
+          totals: ['Quantity (KG)', 'Revenue (USD)', 'Cost (USD)', 'Gross profit (USD)'],
+          columns: [
+            { header: titles[view], value: (r) => r.label, width: 32 },
+            { header: 'Detail', value: (r) => r.sublabel ?? '' },
+            { header: 'Quantity (KG)', value: (r) => Number(r.quantityKg), type: 'quantity' },
+            { header: 'Revenue (USD)', value: (r) => Number(r.revenueUsd), type: 'money' },
+            { header: 'Cost (USD)', value: (r) => Number(r.cogsUsd), type: 'money' },
+            { header: 'Gross profit (USD)', value: (r) => Number(r.grossProfitUsd), type: 'money' },
+            { header: 'Per KG (USD)', value: (r) => Number(r.profitPerKgUsd), type: 'money' },
+            { header: 'Margin', value: (r) => Number(r.grossMarginPct) / 100, type: 'percent' },
+          ],
+        });
+      }
+
+      if (view === 'month') {
+        const rows = await getMonthlyProfitability({ companyId, months: 12 });
+        return buildWorkbook({
+          companyName: user.activeCompany.name,
+          title: 'Profitability',
+          subtitle: 'Last twelve months, USD',
+          rows,
+          totals: ['Revenue (USD)', 'Cost of goods (USD)', 'Gross profit (USD)', 'Expenses (USD)', 'Net profit (USD)'],
+          columns: [
+            { header: 'Month', value: (r) => r.month },
+            { header: 'Revenue (USD)', value: (r) => Number(r.revenueUsd), type: 'money' },
+            { header: 'Cost of goods (USD)', value: (r) => Number(r.cogsUsd), type: 'money' },
+            { header: 'Gross profit (USD)', value: (r) => Number(r.grossProfitUsd), type: 'money' },
+            { header: 'Expenses (USD)', value: (r) => Number(r.expensesUsd), type: 'money' },
+            { header: 'Net profit (USD)', value: (r) => Number(r.netProfitUsd), type: 'money' },
+          ],
+        });
+      }
+
+      const rows = await getShipmentProfitability({ companyId });
+      const local = user.activeCompany.localCurrency;
+      const byContract = view === 'contract';
+      return buildWorkbook({
+        companyName: user.activeCompany.name,
+        title: 'Profitability',
+        subtitle: `${byContract ? 'By contract' : 'By job'} · net profit USD ${Number(summary.netProfitUsd).toFixed(2)}`,
+        rows,
+        totals: ['Sold (KG)', 'Revenue (USD)', `Revenue (${local})`, 'Landed cost (USD)', 'Gross profit (USD)', 'Other costs (USD)', 'Net profit (USD)', `Net profit (${local})`],
+        columns: [
+          ...(byContract
+            ? [
+                { header: 'Contract ref', value: (r: (typeof rows)[number]) => r.contractReference, width: 22 },
+                { header: 'Contract', value: (r: (typeof rows)[number]) => r.contractNumber },
+                { header: 'Job', value: (r: (typeof rows)[number]) => r.jobNumber },
+              ]
+            : [
+                { header: 'Job', value: (r: (typeof rows)[number]) => r.jobNumber },
+                { header: 'Shipment', value: (r: (typeof rows)[number]) => r.shipmentNumber },
+                { header: 'Contract ref', value: (r: (typeof rows)[number]) => r.contractReference, width: 22 },
+              ]),
+          { header: 'Coffee', value: (r) => r.itemName, width: 28 },
+          { header: 'Status', value: (r) => r.status },
+          { header: 'Sold (KG)', value: (r) => Number(r.soldQuantityKg), type: 'quantity' as const },
+          { header: 'Remaining (KG)', value: (r) => Number(r.remainingQuantityKg), type: 'quantity' as const },
+          { header: 'Revenue (USD)', value: (r) => Number(r.salesRevenueUsd), type: 'money' as const },
+          { header: `Revenue (${local})`, value: (r) => Number(r.salesRevenueLocal), type: 'money' as const },
+          { header: 'Landed cost (USD)', value: (r) => Number(r.allocatedLandedCostUsd), type: 'money' as const },
+          { header: `Landed cost (${local})`, value: (r) => Number(r.allocatedLandedCostLocal), type: 'money' as const },
+          { header: 'Gross profit (USD)', value: (r) => Number(r.grossProfitUsd), type: 'money' as const },
+          { header: 'Other costs (USD)', value: (r) => Number(r.otherCostsUsd), type: 'money' as const },
+          { header: 'Net profit (USD)', value: (r) => Number(r.netProfitUsd), type: 'money' as const },
+          { header: `Net profit (${local})`, value: (r) => Number(r.netProfitLocal), type: 'money' as const },
+          { header: 'Per KG (USD)', value: (r) => Number(r.profitPerKgUsd), type: 'money' as const },
+          { header: `Per KG (${local})`, value: (r) => Number(r.profitPerKgLocal), type: 'money' as const },
+          { header: 'Margin', value: (r) => Number(r.netMarginPct) / 100, type: 'percent' as const },
         ],
       });
     },
@@ -889,6 +1024,129 @@ const REPORTS: Record<string, Report> = {
           { header: 'Right', value: (r) => r.right.label, width: 28 },
           { header: 'Right value', value: (r) => Number(r.right.value), type: 'money' },
           { header: 'Difference USD', value: (r) => Number(r.differenceUsd), type: 'money' },
+        ],
+      });
+    },
+  },
+
+  forex: {
+    title: 'Forex Gain / Loss',
+    permission: PERMISSIONS.ACCOUNTING_VIEW,
+    build: async (user, query) => {
+      const from = dateParam(query, 'from') ?? startOfYear();
+      const to = dateParam(query, 'to') ?? new Date();
+      const local = user.activeCompany.localCurrency;
+      const report = await getForexGainLoss({ companyId: user.activeCompany.id, from, to });
+
+      return buildWorkbook({
+        companyName: user.activeCompany.name,
+        title: 'Forex Gain / Loss',
+        subtitle: `${period(from, to)} · net USD ${Number(report.netUsd).toFixed(2)} (positive is a loss)`,
+        rows: report.rows,
+        totals: ['Loss USD', 'Gain USD', `Loss ${local}`, `Gain ${local}`],
+        columns: [
+          { header: 'Date', value: (r) => r.entryDate, type: 'date' },
+          { header: 'Voucher', value: (r) => r.entryNumber },
+          { header: 'Source', value: (r) => r.sourceType.replaceAll('_', ' ') },
+          { header: 'Description', value: (r) => r.description, width: 40 },
+          { header: 'Currency', value: (r) => r.currency },
+          { header: 'Loss USD', value: (r) => Number(r.debitUsd), type: 'money' },
+          { header: 'Gain USD', value: (r) => Number(r.creditUsd), type: 'money' },
+          { header: `Loss ${local}`, value: (r) => Number(r.debitLocal), type: 'money' },
+          { header: `Gain ${local}`, value: (r) => Number(r.creditLocal), type: 'money' },
+        ],
+      });
+    },
+  },
+
+  'inventory-valuation': {
+    title: 'Inventory Valuation',
+    permission: PERMISSIONS.INVENTORY_VIEW,
+    build: async (user) => {
+      const rows = await getInventoryValuation(user.activeCompany.id);
+      const showCost = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
+      return buildWorkbook({
+        companyName: user.activeCompany.name,
+        title: 'Inventory Valuation',
+        subtitle: showCost
+          ? 'On-hand stock at each batch landed cost'
+          : 'On-hand quantities. Cost figures are not part of your access.',
+        rows,
+        totals: showCost ? ['On hand (KG)', 'Available (KG)', 'Value (USD)'] : ['On hand (KG)', 'Available (KG)'],
+        columns: [
+          { header: 'Warehouse', value: (r) => r.warehouseName, width: 26 },
+          { header: 'Code', value: (r) => r.warehouseCode },
+          { header: 'Coffee', value: (r) => r.itemName, width: 28 },
+          { header: 'Batch', value: (r) => r.batchNumber },
+          { header: 'Lot', value: (r) => r.lotNumber },
+          { header: 'Container', value: (r) => r.containerNumber ?? '' },
+          { header: 'On hand (KG)', value: (r) => Number(r.onHandKg), type: 'quantity' },
+          { header: 'Available (KG)', value: (r) => Number(r.availableKg), type: 'quantity' },
+          ...(showCost
+            ? [
+                { header: 'Landed / KG (USD)', value: (r: (typeof rows)[number]) => Number(r.landedUnitCostUsd), type: 'money' as const },
+                { header: 'Value (USD)', value: (r: (typeof rows)[number]) => Number(r.valueUsd), type: 'money' as const },
+              ]
+            : []),
+        ],
+      });
+    },
+  },
+
+  cogs: {
+    title: 'Cost of Goods Sold',
+    permission: PERMISSIONS.PROFITS_VIEW,
+    build: async (user, query) => {
+      const from = dateParam(query, 'from') ?? startOfYear();
+      const to = dateParam(query, 'to') ?? new Date();
+      const rows = await getCogsReport({ companyId: user.activeCompany.id, from, to });
+      return buildWorkbook({
+        companyName: user.activeCompany.name,
+        title: 'Cost of Goods Sold',
+        subtitle: period(from, to),
+        rows,
+        totals: ['Quantity (KG)', 'Revenue (USD)', 'COGS (USD)', 'Gross profit (USD)'],
+        columns: [
+          { header: 'Date', value: (r) => r.invoiceDate, type: 'date' },
+          { header: 'Invoice', value: (r) => r.invoiceNumber },
+          { header: 'Customer', value: (r) => r.customerName, width: 28 },
+          { header: 'Coffee', value: (r) => r.itemName, width: 28 },
+          { header: 'Batch', value: (r) => r.batchNumber },
+          { header: 'Warehouse', value: (r) => r.warehouseName ?? '' },
+          { header: 'Quantity (KG)', value: (r) => Number(r.quantityKg), type: 'quantity' },
+          { header: 'Revenue (USD)', value: (r) => Number(r.revenueUsd), type: 'money' },
+          { header: 'COGS (USD)', value: (r) => Number(r.cogsUsd), type: 'money' },
+          { header: 'Gross profit (USD)', value: (r) => Number(r.grossProfitUsd), type: 'money' },
+        ],
+      });
+    },
+  },
+
+  'agent-commission': {
+    title: 'Agent Commission',
+    permission: PERMISSIONS.EXPENSES_VIEW,
+    build: async (user) => {
+      const rows = await getAgentCommissionRegister(user.activeCompany.id);
+      return buildWorkbook({
+        companyName: user.activeCompany.name,
+        title: 'Agent Commission',
+        subtitle: 'Commission agreed on a shipment, whether or not it has been paid',
+        rows,
+        totals: ['Amount USD', 'Paid USD', 'Outstanding USD'],
+        columns: [
+          { header: 'Voucher', value: (r) => r.expenseNumber },
+          { header: 'Date', value: (r) => r.expenseDate, type: 'date' },
+          { header: 'Agent', value: (r) => r.agentName, width: 26 },
+          { header: 'Contract ref', value: (r) => r.contractReference ?? '', width: 22 },
+          { header: 'Shipment', value: (r) => r.jobNumber ?? '' },
+          { header: 'Container', value: (r) => r.containerNumber ?? '' },
+          { header: 'Currency', value: (r) => r.currency },
+          { header: 'Amount', value: (r) => Number(r.amount), type: 'money' },
+          { header: 'Rate to USD', value: (r) => Number(r.rateToUsd), type: 'number' },
+          { header: 'Amount USD', value: (r) => Number(r.amountUsd), type: 'money' },
+          { header: 'Paid USD', value: (r) => Number(r.paidUsd), type: 'money' },
+          { header: 'Outstanding USD', value: (r) => Number(r.remainingUsd), type: 'money' },
+          { header: 'Status', value: (r) => r.status },
         ],
       });
     },

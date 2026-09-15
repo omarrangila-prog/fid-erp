@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
-import { getItemStock } from '@/lib/services/stock';
+import { getItemStock, getWarehouseStockByItem } from '@/lib/services/stock';
 import { formatQuantityKg } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { ItemsClient, type ItemRow } from '@/app/(app)/items/items-client';
@@ -20,16 +20,19 @@ export default async function ItemsPage({
   const user = await requirePageAccess(PERMISSIONS.ITEMS_VIEW);
   const companyId = user.activeCompany.id;
 
-  const [items, stock] = await Promise.all([
+  const [items, stock, warehouseStock] = await Promise.all([
     prisma.coffeeItem.findMany({ where: { companyId }, orderBy: { itemName: 'asc' } }),
     getItemStock(companyId),
+    getWarehouseStockByItem(companyId),
   ]);
 
   const stockByItem = new Map(stock.map((s) => [s.itemId, s]));
 
   const rows: ItemRow[] = items.map((i) => {
     const s = stockByItem.get(i.id);
-    const availableKg = Number(s?.availableKg ?? 0);
+    const byWarehouse = warehouseStock.get(i.id);
+    const warehouseAvailable = Number(byWarehouse?.totalAvailableKg ?? 0);
+    const availableKg = warehouseAvailable > 0 ? warehouseAvailable : Number(s?.availableKg ?? 0);
     return {
       id: i.id,
       itemCode: i.itemCode,
@@ -54,6 +57,11 @@ export default async function ItemsPage({
       availableKg,
       availableLabel: availableKg > 0 ? formatQuantityKg(availableKg) : '—',
       bags: 0,
+      warehouses: (byWarehouse?.warehouses ?? []).map((warehouse) => ({
+        warehouseName: warehouse.warehouseName,
+        availableLabel: formatQuantityKg(warehouse.availableKg),
+        availableKg: Number(warehouse.availableKg),
+      })),
     };
   });
 
@@ -61,7 +69,7 @@ export default async function ItemsPage({
     <div className="space-y-6">
       <PageHeader
         title="Items"
-        description="Every coffee you trade, named once. Batch and lot are always tracked."
+        description="Every coffee you trade, named once. Available stock is shown per warehouse."
         breadcrumbs={[{ label: 'Trading' }, { label: 'Items' }]}
       />
       <ItemsClient

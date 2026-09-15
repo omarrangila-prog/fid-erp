@@ -76,7 +76,7 @@ export function JournalForm({
   }, [lines]);
 
   const balanced = totals.difference.isZero() && totals.debit.greaterThan(0);
-  const complete = lines.every((line) => line.accountId && Number(line.amount) > 0);
+  const complete = lines.every((line) => line.accountId && tryDec(line.amount).greaterThan(0));
 
   function updateLine(key: string, patch: Partial<Line>) {
     setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));

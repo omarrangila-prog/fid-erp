@@ -31,6 +31,7 @@ export type AllocationRow = {
   amount: string;
   outstanding: string;
   settlement: string;
+  warehouseNames: string;
 };
 
 export type LoadingLine = {
@@ -50,6 +51,7 @@ export type LoadingLine = {
   bags: number;
   outstandingKg: string;
   bagWeightKg: string;
+  warehouseNames: string;
 };
 
 export type LoadingRow = {
@@ -92,6 +94,7 @@ export type LoadingRow = {
   saleStatus: 'UNSOLD' | 'PARTIALLY_SOLD' | 'FULLY_SOLD';
   paymentStatus: string;
   fullyReceived: boolean;
+  warehouseNames: string;
   allocations: AllocationRow[];
 };
 
@@ -113,12 +116,12 @@ const PAYMENT_META: Record<string, { label: string; tone: BadgeTone }> = {
  * The four statuses the follow-up sheet actually uses.
  *
  * Older rows may still hold Awaiting Loading, In Transit or Customs internally.
- * Those are shown as Pending Loading, Loaded or Arrived so the sheet does not
+ * Those are shown as Not loaded yet, Loaded or Arrived so the sheet does not
  * invent stages the workflow does not have.
  */
 function displayStatus(row: LoadingRow): { label: string; tone: BadgeTone } {
   if (row.fullyReceived) return { label: 'PO Received', tone: 'success' };
-  if (NOT_YET_LOADED.includes(row.status)) return { label: 'Pending Loading', tone: 'neutral' };
+  if (NOT_YET_LOADED.includes(row.status)) return { label: 'Not loaded yet', tone: 'neutral' };
   if (row.status === 'IN_TRANSIT') return { label: 'Loaded', tone: 'info' };
   if (LANDED.includes(row.status) && row.status !== 'ARRIVED') return { label: 'Arrived', tone: 'info' };
   return SHIPMENT_STATUS_META[row.status] ?? { label: row.status, tone: 'neutral' };
@@ -148,6 +151,7 @@ function ItemsCell({ row }: { row: LoadingRow }) {
               : line.lotNumber
                 ? ` · Lot ${line.lotNumber}`
                 : ''}
+            {line.warehouseNames ? ` · ${line.warehouseNames}` : ''}
           </span>
         </span>
       ))}
@@ -240,6 +244,15 @@ export function LoadingSheet({
     cell: (r) => <ItemsCell row={r} />,
   };
 
+  const warehouseColumn: DataColumn<LoadingRow> = {
+    id: 'warehouse',
+    header: 'Warehouse',
+    mobile: 'meta',
+    sortValue: (r) => r.warehouseNames,
+    exportValue: (r) => r.warehouseNames,
+    cell: (r) => r.warehouseNames || '—',
+  };
+
   const quantity: DataColumn<LoadingRow> = {
     id: 'quantity',
     header: 'Qty',
@@ -267,9 +280,22 @@ export function LoadingSheet({
     exportValue: (r) => displayStatus(r).label,
     cell: (r) => {
       const meta = displayStatus(r);
+      const badge = <Badge tone={meta.tone}>{meta.label}</Badge>;
+      if (NOT_YET_LOADED.includes(r.status) && canUpdate) {
+        return (
+          <button
+            type="button"
+            onClick={() => setLoadingRow(r)}
+            className="rounded px-0.5 py-0.5 text-left hover:bg-forest-50"
+            title="Enter shipping details and mark loaded"
+          >
+            {badge}
+          </button>
+        );
+      }
       return (
         <Link href={`/shipments/${r.shipmentId}`}>
-          <Badge tone={meta.tone}>{meta.label}</Badge>
+          {badge}
         </Link>
       );
     },
@@ -506,6 +532,7 @@ export function LoadingSheet({
     },
     consignee,
     itemColumn,
+    warehouseColumn,
     quantity,
     {
       id: 'destination',
@@ -551,44 +578,95 @@ export function LoadingSheet({
 
   const moroccoColumns: DataColumn<LoadingRow>[] = [
     {
-      id: 'company',
-      header: 'Company name',
+      ...contract,
+      header: 'Contract Ref',
+    },
+    {
+      id: 'exporter',
+      header: 'Exporter',
       mobile: 'title',
       sortValue: (r) => r.exporter,
       exportValue: (r) => r.exporter,
       cell: (r) => <span className="block min-w-32 font-medium">{r.exporter}</span>,
     },
-    contract,
-    itemColumn,
+    {
+      id: 'importer',
+      header: 'Importer',
+      mobile: 'meta',
+      sortValue: (r) => r.importer,
+      exportValue: (r) => r.importer,
+      cell: (r) => <span className="block min-w-32">{r.importer}</span>,
+    },
+    {
+      ...itemColumn,
+      header: 'Item',
+    },
+    warehouseColumn,
     quantity,
     {
-      id: 'containerQty',
-      header: 'Container qty',
+      id: 'containers',
+      header: 'Containers',
       numeric: true,
       sortValue: (r) => r.containers,
-      exportValue: (r) => r.containers,
-      cell: (r) => <span className="tabular-nums font-medium">{r.containers}</span>,
-    },
-    status,
-    origin,
-    shippingLine,
-    booking,
-    loadPort,
-    dischargePort,
-    {
-      id: 'blOrContainer',
-      header: 'B/L or container',
-      exportValue: (r) => r.billOfLading ?? r.containerNumbers.join(', '),
+      exportValue: (r) => (r.containerNumbers.length > 0 ? r.containerNumbers.join(', ') : String(r.containers)),
       cell: (r) => (
-        <span className="block whitespace-nowrap font-mono text-xs">
-          {r.billOfLading ?? (r.containerNumbers.length > 0 ? r.containerNumbers.join(', ') : '—')}
+        <span className="block whitespace-nowrap">
+          <span className="block tabular-nums font-medium">{r.containers}</span>
+          <span className="block font-mono text-xs text-ink-subtle">
+            {r.containerNumbers.length > 0 ? r.containerNumbers.join(', ') : '—'}
+          </span>
         </span>
       ),
+    },
+    status,
+    { ...shippingLine, hideable: false },
+    {
+      id: 'bookingBl',
+      header: 'Booking / B/L',
+      sortValue: (r) => r.bookingNumber ?? r.billOfLading ?? '',
+      exportValue: (r) => [r.bookingNumber, r.billOfLading].filter(Boolean).join(' · '),
+      cell: (r) => (
+        <span className="block whitespace-nowrap font-mono text-xs">
+          {r.bookingNumber || r.billOfLading ? (
+            <>
+              {r.bookingNumber ? <span className="block">{r.bookingNumber}</span> : null}
+              {r.billOfLading ? <span className="block text-ink-subtle">{r.billOfLading}</span> : null}
+            </>
+          ) : (
+            <span className="text-ink-subtle">—</span>
+          )}
+        </span>
+      ),
+    },
+    {
+      id: 'containerNumbers',
+      header: 'Container numbers',
+      exportValue: (r) => r.containerNumbers.join(', '),
+      cell: (r) => (
+        <span className="block whitespace-nowrap font-mono text-xs">
+          {r.containerNumbers.length > 0 ? r.containerNumbers.join(', ') : '—'}
+        </span>
+      ),
+    },
+    eta,
+    {
+      ...origin,
+      defaultHidden: true,
+    },
+    {
+      ...loadPort,
+      defaultHidden: true,
+    },
+    {
+      ...dischargePort,
+      defaultHidden: true,
     },
     {
       id: 'sold',
       header: 'Sold / left',
       numeric: true,
+      hideable: true,
+      defaultHidden: true,
       exportValue: (r) => `${r.sold} of ${r.quantity}`,
       cell: (r) => (
         <span className="block whitespace-nowrap">
@@ -597,10 +675,9 @@ export function LoadingSheet({
         </span>
       ),
     },
-    documents,
-    payment,
-    eta,
-    remarks,
+    { ...documents, hideable: true, defaultHidden: true },
+    { ...payment, hideable: true, defaultHidden: true },
+    { ...remarks, defaultHidden: true },
     allocationsColumn,
     actions,
   ];
@@ -621,7 +698,7 @@ export function LoadingSheet({
             r.exporter,
             r.consignee,
             itemNames(r),
-            ...r.lines.map((line) => `${line.lotNumber} ${line.batchNumber}`),
+            ...r.lines.map((line) => `${line.lotNumber} ${line.batchNumber} ${line.warehouseNames}`),
             ...r.containerNumbers,
             r.billOfLading,
             r.bookingNumber,
@@ -719,6 +796,7 @@ export function LoadingSheet({
                   <TR>
                     <TH>Customer</TH>
                     <TH>Invoice</TH>
+                    <TH>Warehouse</TH>
                     <TH numeric>Quantity</TH>
                     <TH numeric>Value</TH>
                     <TH numeric>Outstanding</TH>
@@ -747,6 +825,7 @@ export function LoadingSheet({
                           </Link>
                           <span className="block text-xs text-ink-subtle">{allocation.invoiceDate}</span>
                         </TD>
+                        <TD>{allocation.warehouseNames || '—'}</TD>
                         <TD numeric>{allocation.quantity}</TD>
                         <TD numeric>{allocation.amount}</TD>
                         <TD numeric>{allocation.outstanding}</TD>

@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: 'Agents' };
 export const dynamic = 'force-dynamic';
 
 const FIELDS: FieldSpec[] = [
-  { kind: 'text', name: 'agentCode', label: 'Agent code', required: true, placeholder: 'AGT-DXB-01' },
+  { kind: 'text', name: 'agentCode', label: 'Agent code', placeholder: 'AGT-0001', hint: 'Issued automatically if left blank.' },
   { kind: 'text', name: 'agentName', label: 'Agent name', required: true },
   { kind: 'text', name: 'contactPerson', label: 'Contact person' },
   { kind: 'tel', name: 'phone', label: 'Phone' },
@@ -74,7 +74,7 @@ export default async function AgentsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Agents"
-        description="Clearing, forwarding and commission agents. Expenses and cheques can be attributed to an agent."
+        description="People who collect from customers or earn commission. Names are master records — add, edit or deactivate here. Historical receipts keep the agent they were posted against."
         breadcrumbs={[{ label: 'Masters' }, { label: 'Agents' }]}
       />
       <SimpleMasterTable

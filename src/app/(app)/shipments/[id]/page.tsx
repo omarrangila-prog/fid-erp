@@ -200,6 +200,8 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                     <TR className="hover:bg-transparent">
                       <TH>Category</TH>
                       <TH>Voucher</TH>
+                      <TH>Container</TH>
+                      <TH>Batch</TH>
                       <TH>Treatment</TH>
                       <TH numeric>Amount</TH>
                       <TH numeric>USD</TH>
@@ -214,6 +216,8 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                             {line.expenseNumber}
                           </Link>
                         </TD>
+                        <TD className="text-xs text-ink-muted">{line.containerNumber ?? 'Whole job'}</TD>
+                        <TD className="text-xs text-ink-muted">{line.batchNumber ?? 'Every batch'}</TD>
                         <TD>
                           <Badge tone={line.capitalised ? 'info' : 'neutral'}>
                             {line.capitalised ? 'In stock cost' : 'P&L'}
@@ -287,6 +291,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                     <TH>Batch</TH>
                     <TH>Lot</TH>
                     <TH>Container</TH>
+                    <TH>Warehouse</TH>
                     <TH numeric>Received</TH>
                     <TH numeric>Sold</TH>
                     <TH numeric>Available</TH>
@@ -303,6 +308,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                       </TD>
                       <TD>{b.lotNumber}</TD>
                       <TD className="text-xs">{b.containerNumber ?? '—'}</TD>
+                      <TD>{b.warehouseNames || '—'}</TD>
                       <TD numeric>{formatQuantityKg(b.receivedKg)}</TD>
                       <TD numeric>{formatQuantityKg(b.soldKg)}</TD>
                       <TD numeric className="font-medium">{formatQuantityKg(b.availableKg)}</TD>

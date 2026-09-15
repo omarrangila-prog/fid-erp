@@ -7,6 +7,7 @@ import { formatMoney } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrintButton } from '@/components/shared/print-button';
 import { PrintHeader } from '@/components/shared/print-header';
+import { Button } from '@/components/ui/button';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { Callout, EmptyState } from '@/components/ui/feedback';
 import { dec } from '@/lib/money';
@@ -36,7 +37,14 @@ export default async function AgentLedgersPage() {
         title="Agent Ledgers"
         description="Money collected by agents and not yet handed over, and commission owed to them."
         breadcrumbs={[{ label: 'Accounting' }, { label: 'Agent Ledgers' }]}
-        actions={<PrintButton />}
+        actions={
+          <>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/finance/agent-commission">Commission register</Link>
+            </Button>
+            <PrintButton />
+          </>
+        }
       />
       <PrintHeader
         title="Agent Ledgers"

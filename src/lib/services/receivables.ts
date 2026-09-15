@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db';
 import { Decimal, dec, toMoney } from '@/lib/money';
+import { supplierGrossPayable } from '@/lib/services/tax';
 
 /**
  * Receivables and payables with ageing.
@@ -193,24 +194,28 @@ export async function getPayables(params: {
       contractReference: string;
       contractDate: Date;
       dueDate: Date | null;
-      vendorId: string;
-      vendorName: string;
+      vendorId: string | null;
+      vendorName: string | null;
+      vendorCountry: string | null;
+      companyCountry: string | null;
       shipmentNumbers: string | null;
       currency: string;
-      purchaseValue: string;
-      purchaseValueUsd: string;
+      netAmount: string;
+      taxAmount: string;
+      netAmountUsd: string;
+      taxAmountUsd: string;
       paidAmount: string;
       paidAmountUsd: string;
       kind: 'CONTRACT' | 'EXPENSE';
     }>
   >`
     SELECT pc."id" AS "contractId", pc."contractNumber", pc."contractReference", pc."contractDate", pc."dueDate",
-           pc."vendorId", v."vendorName", pc."currency",
-           -- Gross of tax: the payable is what the supplier invoiced, and
-           -- recoverable input tax is part of that even though it never
-           -- reached the cost of the coffee.
-           (pc."totalValue" + pc."taxAmount")::text AS "purchaseValue",
-           (pc."totalValueUsd" + pc."taxAmountUsd")::text AS "purchaseValueUsd",
+           pc."vendorId", v."vendorName", v."country" AS "vendorCountry", c."country" AS "companyCountry",
+           pc."currency",
+           pc."totalValue"::text AS "netAmount",
+           pc."taxAmount"::text AS "taxAmount",
+           pc."totalValueUsd"::text AS "netAmountUsd",
+           pc."taxAmountUsd"::text AS "taxAmountUsd",
            (SELECT string_agg(s."shipmentNumber", ', ' ORDER BY s."shipmentNumber")
               FROM shipments s WHERE s."purchaseContractId" = pc."id") AS "shipmentNumbers",
            (
@@ -238,21 +243,24 @@ export async function getPayables(params: {
            'CONTRACT' AS kind
     FROM purchase_contracts pc
     JOIN vendors v ON v."id" = pc."vendorId"
+    JOIN companies c ON c."id" = pc."companyId"
     WHERE pc."companyId" = ${params.companyId}
       AND pc."status" = 'POSTED'
       AND (${params.vendorId ?? null}::text IS NULL OR pc."vendorId" = ${params.vendorId ?? null})
 
     UNION ALL
 
-    -- Costs owed to the supplier rather than paid from an account. The bill is
-    -- gross of tax for the same reason a contract is: the supplier is paid what
-    -- they invoiced, recoverable tax included.
+    -- Costs booked unpaid rather than paid from an account. A named supplier
+    -- is optional: the cost still has to be paid later.
     SELECT e."id" AS "contractId", e."expenseNumber" AS "contractNumber",
            COALESCE(e."reference", ec."name") AS "contractReference", e."expenseDate" AS "contractDate",
            e."expenseDate" AS "dueDate",
-           e."vendorId", v."vendorName", e."currency",
-           (e."amount" + e."taxAmount")::text AS "purchaseValue",
-           (e."amountUsd" + e."taxAmountUsd")::text AS "purchaseValueUsd",
+           e."vendorId", v."vendorName", v."country" AS "vendorCountry", c."country" AS "companyCountry",
+           e."currency",
+           e."amount"::text AS "netAmount",
+           e."taxAmount"::text AS "taxAmount",
+           e."amountUsd"::text AS "netAmountUsd",
+           e."taxAmountUsd"::text AS "taxAmountUsd",
            (SELECT s."shipmentNumber" FROM shipments s WHERE s."id" = e."shipmentId") AS "shipmentNumbers",
            COALESCE((SELECT SUM(pa."amount") FROM payment_allocations pa
                        JOIN payments p ON p."id" = pa."paymentId"
@@ -270,11 +278,11 @@ export async function getPayables(params: {
                         )), 0)::text AS "paidAmountUsd",
            'EXPENSE' AS kind
     FROM expenses e
-    JOIN vendors v ON v."id" = e."vendorId"
+    LEFT JOIN vendors v ON v."id" = e."vendorId"
+    JOIN companies c ON c."id" = e."companyId"
     JOIN expense_categories ec ON ec."id" = e."expenseCategoryId"
     WHERE e."companyId" = ${params.companyId}
       AND e."status" = 'POSTED'
-      AND e."vendorId" IS NOT NULL
       AND e."cashBankAccountId" IS NULL
       AND e."payableToAgentId" IS NULL
       AND (${params.vendorId ?? null}::text IS NULL OR e."vendorId" = ${params.vendorId ?? null})
@@ -283,7 +291,15 @@ export async function getPayables(params: {
   `;
 
   const shaped = rows.map((row): PayableRow => {
-    const purchaseValue = toMoney(row.purchaseValue);
+    const payable = supplierGrossPayable({
+      netAmount: row.netAmount,
+      taxAmount: row.taxAmount,
+      netAmountUsd: row.netAmountUsd,
+      taxAmountUsd: row.taxAmountUsd,
+      vendorCountry: row.vendorCountry,
+      companyCountry: row.companyCountry,
+    });
+    const purchaseValue = payable.amount;
     const paidAmount = toMoney(row.paidAmount);
     const outstandingAmount = toMoney(purchaseValue.minus(paidAmount));
 
@@ -298,15 +314,15 @@ export async function getPayables(params: {
       contractReference: row.contractReference,
       contractDate: row.contractDate,
       dueDate: row.dueDate,
-      vendorId: row.vendorId,
-      vendorName: row.vendorName,
+      vendorId: row.vendorId ?? '',
+      vendorName: row.vendorName ?? 'Unpaid — pay later',
       shipmentNumbers: row.shipmentNumbers ? row.shipmentNumbers.split(', ') : [],
       currency: row.currency,
       purchaseValue,
       paidAmount,
       outstandingAmount,
-      purchaseValueUsd: toMoney(row.purchaseValueUsd),
-      outstandingAmountUsd: toMoney(dec(row.purchaseValueUsd).minus(dec(row.paidAmountUsd))),
+      purchaseValueUsd: payable.amountUsd,
+      outstandingAmountUsd: toMoney(payable.amountUsd.minus(dec(row.paidAmountUsd))),
       bucket: bucketFor(row.dueDate),
       status,
     };

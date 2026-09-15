@@ -18,11 +18,12 @@ import { getLoadingSheet } from '@/lib/services/loading-sheet';
 import { getBatchStock } from '@/lib/services/stock';
 import { getCustomerLedger, getVendorLedger } from '@/lib/services/ledger';
 import { getCashBankBalance } from '@/lib/services/accounting';
-import { getChartOfAccounts } from '@/lib/services/chart-of-accounts';
+import { getChartOfAccounts, createLedgerAccount, updateLedgerAccount, deactivateLedgerAccount, postAccountOpeningBalance } from '@/lib/services/chart-of-accounts';
 import { getShipmentCostSheet } from '@/lib/services/landed-cost';
 import { getTrialBalanceReport, getProfitAndLoss, getBalanceSheet } from '@/lib/services/reports';
 import { reconcile } from '@/lib/services/reconciliation';
-import { buildCsv } from '@/lib/services/workbook';
+import { buildCsv, buildWorkbook } from '@/lib/services/workbook';
+import { getShipmentProfitability } from '@/lib/services/profitability';
 import { DOCUMENT_STATUS_META } from '@/lib/constants';
 import { dec } from '@/lib/money';
 
@@ -330,7 +331,7 @@ describe('6 — inventory KG matches received stock', () => {
     const warehouseA = stock.find((row) => row.batchId === batchAId);
     const warehouseB = stock.find((row) => row.batchId === batchBId);
     expect(warehouseA?.warehouseNames).toMatch(/Casablanca Warehouse A/);
-    expect(warehouseB?.warehouseNames).toMatch(/Casablanca Warehouse B/);
+    expect(warehouseB?.warehouseNames).toMatch(/Ridwan Warehouse/);
 
     await expect(
       createSalesInvoice(
@@ -718,5 +719,143 @@ describe('PDF controls — agent clearing and frozen FX', () => {
 
     const stored = await prisma.receipt.findUniqueOrThrow({ where: { id: receipt.id } });
     expect(Number(stored.rateToUsd)).toBeCloseTo(9.85, 6);
+  });
+});
+
+describe('16 — Chart of Accounts edit, deactivate and opening balance', () => {
+  it('renames a custom head, posts an opening and refuses to deactivate a system account', async () => {
+    const created = await createLedgerAccount({
+      companyId,
+      code: '6210',
+      name: 'Warehouse rent',
+      type: 'EXPENSE',
+      reportGroup: 'OPERATING',
+    });
+
+    const renamed = await updateLedgerAccount({
+      id: created.id,
+      companyId,
+      name: 'Casablanca warehouse rent',
+      reportGroup: 'OPERATING',
+    });
+    expect(renamed.name).toBe('Casablanca warehouse rent');
+
+    await postAccountOpeningBalance({
+      accountId: created.id,
+      companyId,
+      userId: ctx.admin.id,
+      amount: '10000',
+      asOf: utcDate('2026-01-01'),
+      currency: 'MAD',
+      rateToUsd: '9.85',
+      rateLocalPerUsd: '9.85',
+    });
+
+    const chart = await getChartOfAccounts(companyId, 'MAD');
+    const rent = chart.sections.flatMap((section) => section.accounts).find((account) => account.id === created.id);
+    expect(rent?.name).toBe('Casablanca warehouse rent');
+    expect(Number(rent?.balanceUsd ?? 0)).toBeCloseTo(10000 / 9.85, 2);
+
+    await expect(
+      postAccountOpeningBalance({
+        accountId: created.id,
+        companyId,
+        userId: ctx.admin.id,
+        amount: '1',
+        asOf: utcDate('2026-01-02'),
+        currency: 'MAD',
+        rateToUsd: '9.85',
+        rateLocalPerUsd: '9.85',
+      }),
+    ).rejects.toThrow(/already has an opening/i);
+
+    const sales = await prisma.account.findFirstOrThrow({
+      where: { companyId, systemKey: 'SALES_REVENUE' },
+    });
+    await expect(deactivateLedgerAccount({ id: sales.id, companyId })).rejects.toThrow(/system account/i);
+
+    await deactivateLedgerAccount({ id: created.id, companyId });
+    const after = await getChartOfAccounts(companyId, 'MAD');
+    const hidden = after.sections
+      .find((section) => section.key === 'inactive')
+      ?.accounts.find((account) => account.id === created.id);
+    expect(hidden?.status).toBe('INACTIVE');
+
+    const tb = await getTrialBalanceReport({ companyId });
+    expect(tb.isBalanced).toBe(true);
+  });
+});
+
+describe('17 — a shipment expense can land on one container and batch', () => {
+  it('capitalises against BATCH-A only and leaves BATCH-B untouched', async () => {
+    const before = await prisma.batch.findMany({
+      where: { id: { in: [batchAId, batchBId] } },
+      select: { id: true, batchNumber: true, capitalisedCostUsd: true, containerId: true },
+    });
+    const beforeA = before.find((row) => row.batchNumber === 'BATCH-A')!;
+    const beforeB = before.find((row) => row.batchNumber === 'BATCH-B')!;
+
+    const clearing = await prisma.expenseCategory.findFirstOrThrow({
+      where: { companyId, code: 'CLEARING' },
+    });
+
+    const targeted = await createExpense(
+      {
+        companyId,
+        expenseDate: utcDate('2026-04-12'),
+        expenseCategoryId: clearing.id,
+        shipmentId,
+        containerId: beforeA.containerId,
+        batchId: batchAId,
+        currency: 'MAD',
+        amount: '985',
+        rateToUsd: '9.85',
+        rateLocalPerUsd: '9.85',
+        paymentMethod: 'CASH',
+        cashBankAccountId: cashMadId,
+        kind: 'SHIPMENT',
+        capitaliseToLandedCost: true,
+        description: 'Inspection on container A',
+      },
+      ctx.admin.id,
+    );
+    await postExpense({ id: targeted.id, companyId, userId: ctx.admin.id });
+
+    const after = await prisma.batch.findMany({
+      where: { id: { in: [batchAId, batchBId] } },
+      select: { batchNumber: true, capitalisedCostUsd: true },
+    });
+    const afterA = after.find((row) => row.batchNumber === 'BATCH-A')!;
+    const afterB = after.find((row) => row.batchNumber === 'BATCH-B')!;
+
+    expect(Number(afterA.capitalisedCostUsd) - Number(beforeA.capitalisedCostUsd)).toBeCloseTo(100, 2);
+    expect(Number(afterB.capitalisedCostUsd)).toBeCloseTo(Number(beforeB.capitalisedCostUsd), 2);
+
+    const sheet = await getShipmentCostSheet(companyId, shipmentId);
+    const line = sheet.lines.find((row) => row.expenseId === targeted.id);
+    expect(line?.batchNumber).toBe('BATCH-A');
+    expect(line?.containerNumber).toBe('MSCU1111111');
+  });
+});
+
+describe('18 — profitability exports as a real Excel workbook', () => {
+  it('writes a workbook whose first two bytes are PK', async () => {
+    const rows = await getShipmentProfitability({ companyId });
+    expect(rows.length).toBeGreaterThan(0);
+
+    const buffer = await buildWorkbook({
+      companyName: 'FID Trading International SARL',
+      title: 'Profitability',
+      subtitle: 'By job',
+      rows,
+      columns: [
+        { header: 'Job', value: (r) => r.jobNumber },
+        { header: 'Revenue (USD)', value: (r) => Number(r.salesRevenueUsd), type: 'money' },
+        { header: 'Net profit (USD)', value: (r) => Number(r.netProfitUsd), type: 'money' },
+      ],
+    });
+
+    expect(buffer.subarray(0, 2).toString()).toBe('PK');
+    expect(buffer.byteLength).toBeGreaterThan(2_000);
   });
 });

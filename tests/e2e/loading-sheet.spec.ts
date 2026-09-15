@@ -96,14 +96,24 @@ test.describe('the loading sheet', () => {
     await expect(page.getByText(/happening at FID Trading International SARL/)).toBeVisible({ timeout: 20_000 });
 
     await page.goto('/loading');
-    for (const header of ['Company name', 'Container qty', 'B/L or container', 'Shipping line', 'Sold / left']) {
+    for (const header of [
+      'Contract Ref',
+      'Exporter',
+      'Importer',
+      'Item',
+      'Qty',
+      'Containers',
+      'Status',
+      'Shipping line',
+      'Booking / B/L',
+      'ETA',
+    ]) {
       await expect(
         page.getByRole('columnheader', { name: header, exact: true }),
         `the Morocco sheet should have a ${header} column`,
       ).toBeVisible();
     }
-    // Dubai's container-centric columns are absent here.
-    await expect(page.getByRole('columnheader', { name: 'Exporter', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('columnheader', { name: 'Exporter', exact: true })).toBeVisible();
 
     /*
      * And no consignee, which is the half of the split that matters.

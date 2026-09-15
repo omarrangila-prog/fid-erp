@@ -14,6 +14,8 @@ import {
 import { getReceivables } from '@/lib/services/receivables';
 import { getCashBankBalance } from '@/lib/services/accounting';
 import { reconcile } from '@/lib/services/reconciliation';
+import { getAgentCommissionRegister } from '@/lib/services/agent-commission';
+import { getShipmentCostSheet } from '@/lib/services/landed-cost';
 import { dec, toMoney } from '@/lib/money';
 
 /**
@@ -521,5 +523,49 @@ describe('a cash sale', () => {
 
     const saved = await prisma.salesInvoice.findUniqueOrThrow({ where: { id: invoice.id } });
     expect(saved.cashBankAccountId).toBeNull();
+  });
+});
+
+describe('the commission register', () => {
+  it('lists the unpaid commission against the agent', async () => {
+    const rows = await getAgentCommissionRegister(companyId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].agentId).toBe(agentId);
+    expect(rows[0].status).toBe('UNPAID');
+    expect(Number(rows[0].amountUsd)).toBeCloseTo(1000, 2);
+    expect(Number(rows[0].remainingUsd)).toBeCloseTo(1000, 2);
+
+    const sheet = await getShipmentCostSheet(companyId, shipmentId);
+    const line = sheet.lines.find((row) => row.expenseId === rows[0].expenseId);
+    expect(line?.paid).toBe(false);
+  });
+
+  it('marks the line paid after a posted commission settlement', async () => {
+    const bank = await getCashAccount(companyId, 'MAD');
+    const settlement = await createAgentSettlement(
+      {
+        companyId,
+        agentId,
+        settlementDate: utcDate('2026-05-06'),
+        direction: 'COMMISSION',
+        cashBankAccountId: bank.id,
+        currency: 'MAD',
+        amount: '9850',
+        rateToUsd: '9.85',
+        rateLocalPerUsd: '9.85',
+        reference: 'Commission paid to Ridwan',
+      },
+      ctx.admin.id,
+    );
+    await postAgentSettlement({ id: settlement.id, companyId, userId: ctx.admin.id });
+
+    const rows = await getAgentCommissionRegister(companyId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('PAID');
+    expect(Number(rows[0].remainingUsd)).toBeCloseTo(0, 2);
+
+    const sheet = await getShipmentCostSheet(companyId, shipmentId);
+    const line = sheet.lines.find((row) => row.expenseId === rows[0].expenseId);
+    expect(line?.paid).toBe(true);
   });
 });

@@ -177,20 +177,35 @@ export const stockTransferSchema = z.object({
  * consignment marked loaded that cannot say when it lands or who is carrying
  * it tells the loading sheet's reader nothing.
  */
-export const markLoadedSchema = z.object({
-  loadingDate: dateString('Loading date'),
-  etaDate: dateString('Estimated arrival'),
-  shippingLineId: requiredChoice('Shipping line'),
-  bookingNumber: optionalText(60),
-  billOfLading: optionalText(60),
-  /** Every container on the consignment; "3 containers" means three numbers. */
-  containerNumbers: z.array(optionalText(40)).max(40).optional(),
-  vesselName: optionalText(120),
-  voyageNumber: optionalText(60),
-  portOfLoading: optionalText(120),
-  portOfDischarge: optionalText(120),
-  notes: optionalText(600),
-});
+export const markLoadedSchema = z
+  .object({
+    loadingDate: dateString('Loading date'),
+    etaDate: dateString('Estimated arrival'),
+    shippingLineId: requiredChoice('Shipping line'),
+    bookingNumber: optionalText(60),
+    billOfLading: optionalText(60),
+    /** Every container on the consignment; "3 containers" means three numbers. */
+    containerNumbers: z.array(optionalText(40)).max(40).optional(),
+    vesselName: optionalText(120),
+    voyageNumber: optionalText(60),
+    portOfLoading: optionalText(120),
+    portOfDischarge: optionalText(120),
+    notes: optionalText(600),
+  })
+  .superRefine((data, ctx) => {
+    const identified =
+      Boolean(data.bookingNumber?.trim()) ||
+      Boolean(data.billOfLading?.trim()) ||
+      (data.containerNumbers ?? []).some((value) => Boolean(value?.trim()));
+    if (!identified) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['bookingNumber'],
+        message:
+          'Identify the consignment with a booking or B/L number, or with the container numbers. Loaded cannot be recorded without one of those.',
+      });
+    }
+  });
 
 export const shipmentStatusSchema = z.object({
   toStatus: z.enum([

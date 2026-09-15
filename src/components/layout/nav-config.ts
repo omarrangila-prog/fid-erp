@@ -109,6 +109,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Payments Received', href: '/finance/receipts', icon: ArrowDownToLine, permissions: [PERMISSIONS.RECEIPTS_VIEW] },
       { label: 'Payments Made', href: '/finance/payments', icon: ArrowUpFromLine, permissions: [PERMISSIONS.PAYMENTS_VIEW] },
       { label: 'Expenses', href: '/finance/expenses', icon: Receipt, permissions: [PERMISSIONS.EXPENSES_VIEW] },
+      { label: 'Agent Commission', href: '/finance/agent-commission', icon: HandCoins, permissions: [PERMISSIONS.EXPENSES_VIEW] },
       { label: 'Cheques', href: '/finance/cheques', icon: FileCheck, permissions: [PERMISSIONS.CHEQUES_VIEW] },
       { label: 'Cash & Bank Accounts', href: '/finance/cash-bank', icon: Wallet, permissions: [PERMISSIONS.CASHBANK_VIEW] },
       { label: 'Receivables', href: '/finance/receivables', icon: CircleDollarSign, permissions: [PERMISSIONS.RECEIVABLES_VIEW] },

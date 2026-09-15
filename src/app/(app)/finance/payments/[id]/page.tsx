@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { StatusBadge, Badge } from '@/components/ui/badge';
 import { Callout } from '@/components/ui/feedback';
 import { VoucherActions } from '@/components/shared/voucher-actions';
+import { getWarehouseLabels } from '@/lib/services/stock';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,6 +44,7 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
 
   if (!payment) notFound();
 
+  const warehouses = await getWarehouseLabels(user.activeCompany.id);
   const applied = sum(payment.allocations.map((a) => dec(a.amountUsd)));
   const onAccount = dec(payment.amountUsd).minus(applied);
 
@@ -132,6 +134,16 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-medium text-forest-800">{target.number}</span>
                       <span className="block text-xs text-ink-subtle">{formatDate(target.date)}</span>
+                      {(() => {
+                        const label = allocation.purchaseContract
+                          ? warehouses.byContract.get(allocation.purchaseContract.id)
+                          : allocation.expense
+                            ? warehouses.byExpense.get(allocation.expense.id)
+                            : undefined;
+                        return label ? (
+                          <span className="block text-xs text-ink-subtle">{label}</span>
+                        ) : null;
+                      })()}
                     </span>
                     <span className="shrink-0 text-right">
                       <span className="tnum block text-sm font-semibold">
@@ -163,6 +175,7 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
               <DetailRow label="Method">{PAYMENT_METHOD_LABELS[payment.paymentMethod]}</DetailRow>
               <DetailRow label="Account">{payment.cashBankAccount?.name ?? 'Cheques issued'}</DetailRow>
               <DetailRow label="Reference">{payment.reference ?? '—'}</DetailRow>
+              <DetailRow label="Warehouse">{warehouses.byPayment.get(payment.id) || '—'}</DetailRow>
               <DetailRow label={`Rate to ${user.activeCompany.localCurrency}`}>
                 {formatRate(payment.rateLocalPerUsd)}
               </DetailRow>

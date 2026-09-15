@@ -39,6 +39,7 @@ export function PaymentForm({
   contracts,
   localCurrency,
   defaultLocalRate,
+  preselectedExpenseId,
   canPost = true,
 }: {
   vendors: Array<ComboOption & { currency: string }>;
@@ -46,6 +47,7 @@ export function PaymentForm({
   contracts: OpenContract[];
   localCurrency: string;
   defaultLocalRate: string;
+  preselectedExpenseId?: string;
   canPost?: boolean;
 }) {
   const router = useRouter();
@@ -53,12 +55,14 @@ export function PaymentForm({
   const [error, setError] = React.useState<string | null>(null);
   const [fieldIssues, setFieldIssues] = React.useState<Record<string, string>>({});
 
+  const preselected = contracts.find((c) => c.kind === 'EXPENSE' && c.id === preselectedExpenseId);
+
   const [form, setForm] = React.useState({
     paymentDate: todayInputValue(),
-    vendorId: null as string | null,
-    currency: 'USD',
-    amount: '',
-    rateToUsd: '1',
+    vendorId: preselected?.vendorId ?? null,
+    currency: preselected?.currency ?? 'USD',
+    amount: preselected?.outstanding ?? '',
+    rateToUsd: preselected && preselected.currency !== 'USD' ? defaultLocalRate : '1',
     rateLocalPerUsd: defaultLocalRate,
     paymentMethod: 'BANK_TRANSFER',
     cashBankAccountId: null as string | null,
@@ -69,10 +73,15 @@ export function PaymentForm({
     bankName: '',
   });
 
-  const [allocations, setAllocations] = React.useState<Record<string, string>>({});
+  const [allocations, setAllocations] = React.useState<Record<string, string>>(
+    preselected ? { [preselected.id]: preselected.outstanding } : {},
+  );
 
   const vendorContracts = React.useMemo(
-    () => contracts.filter((c) => c.vendorId === form.vendorId),
+    () =>
+      contracts.filter(
+        (c) => c.vendorId === form.vendorId || (c.kind === 'EXPENSE' && !c.vendorId && Boolean(form.vendorId)),
+      ),
     [contracts, form.vendorId],
   );
 
@@ -182,7 +191,11 @@ export function PaymentForm({
               value={form.vendorId}
               onChange={(value) => {
                 setForm({ ...form, vendorId: value });
-                setAllocations({});
+                setAllocations(
+                  preselected && !preselected.vendorId
+                    ? { [preselected.id]: preselected.outstanding }
+                    : {},
+                );
               }}
               placeholder="Choose a supplier…"
             />

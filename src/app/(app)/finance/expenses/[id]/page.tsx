@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { Banknote, HandCoins } from 'lucide-react';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, TRANSACTION_STATUS_META, PAYMENT_METHOD_LABELS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
@@ -9,8 +10,10 @@ import { PageHeader } from '@/components/shared/page-header';
 import { Metric, MetricGrid, DetailRow } from '@/components/shared/stat-card';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatusBadge, Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/feedback';
 import { VoucherActions } from '@/components/shared/voucher-actions';
+import { getWarehouseLabels } from '@/lib/services/stock';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,14 +32,23 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
     include: {
       expenseCategory: true,
       shipment: { select: { id: true, jobNumber: true, shipmentNumber: true } },
+      container: { select: { containerNumber: true } },
+      batch: { select: { batchNumber: true } },
       vendor: { select: { id: true, vendorName: true } },
       agent: { select: { agentName: true } },
+      payableToAgent: { select: { id: true, agentName: true } },
       cashBankAccount: { select: { name: true } },
       createdBy: { select: { name: true } },
     },
   });
 
   if (!expense) notFound();
+
+  const warehouses = await getWarehouseLabels(user.activeCompany.id);
+  const unpaid = expense.status === 'POSTED' && !expense.cashBankAccountId;
+  const recordPayment = unpaid && !expense.payableToAgent && can(user, PERMISSIONS.PAYMENTS_CREATE);
+  const payAgentCommission =
+    unpaid && expense.payableToAgent && can(user, PERMISSIONS.AGENTS_VIEW);
 
   return (
     <div className="space-y-6">
@@ -62,13 +74,31 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
           </>
         }
         actions={
-          <VoucherActions
-            kind="expense"
-            id={expense.id}
-            status={expense.status}
-            canPost={can(user, PERMISSIONS.EXPENSES_POST)}
-            canDelete={can(user, PERMISSIONS.EXPENSES_DELETE)}
-          />
+          <>
+            {recordPayment ? (
+              <Button asChild>
+                <Link href={`/finance/payments/new?expense=${expense.id}`}>
+                  <Banknote />
+                  Record payment
+                </Link>
+              </Button>
+            ) : null}
+            {payAgentCommission && expense.payableToAgent ? (
+              <Button asChild>
+                <Link href={`/agents/${expense.payableToAgent.id}`}>
+                  <HandCoins />
+                  Pay commission
+                </Link>
+              </Button>
+            ) : null}
+            <VoucherActions
+              kind="expense"
+              id={expense.id}
+              status={expense.status}
+              canPost={can(user, PERMISSIONS.EXPENSES_POST)}
+              canDelete={can(user, PERMISSIONS.EXPENSES_DELETE)}
+            />
+          </>
         }
       />
 
@@ -118,18 +148,41 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
                 '—'
               )}
             </DetailRow>
-            <DetailRow label="Method">{PAYMENT_METHOD_LABELS[expense.paymentMethod]}</DetailRow>
-            <DetailRow label="Paid from">{expense.cashBankAccount?.name ?? 'On credit'}</DetailRow>
-            <DetailRow label="Supplier">
-              {expense.vendor ? (
+            <DetailRow label="Container">{expense.container?.containerNumber ?? 'Whole shipment'}</DetailRow>
+            <DetailRow label="Batch">{expense.batch?.batchNumber ?? 'Every batch'}</DetailRow>
+            <DetailRow label="Warehouse">{warehouses.byExpense.get(expense.id) || '—'}</DetailRow>
+            {unpaid ? (
+              <DetailRow label="Settlement">
+                {expense.payableToAgent
+                  ? `Unpaid · owed to ${expense.payableToAgent.agentName}`
+                  : expense.vendor
+                    ? `Unpaid · owed to ${expense.vendor.vendorName}`
+                    : 'Unpaid'}
+              </DetailRow>
+            ) : (
+              <>
+                <DetailRow label="Method">{PAYMENT_METHOD_LABELS[expense.paymentMethod]}</DetailRow>
+                <DetailRow label="Paid from">{expense.cashBankAccount?.name ?? 'On credit'}</DetailRow>
+              </>
+            )}
+            {expense.vendor ? (
+              <DetailRow label="Supplier">
                 <Link href={`/vendors/${expense.vendor.id}`} className="text-gold-700 hover:underline">
                   {expense.vendor.vendorName}
                 </Link>
-              ) : (
-                '—'
-              )}
-            </DetailRow>
-            <DetailRow label="Agent">{expense.agent?.agentName ?? '—'}</DetailRow>
+              </DetailRow>
+            ) : null}
+            {expense.payableToAgent || expense.agent ? (
+              <DetailRow label="Agent">
+                {expense.payableToAgent ? (
+                  <Link href={`/agents/${expense.payableToAgent.id}`} className="text-gold-700 hover:underline">
+                    {expense.payableToAgent.agentName}
+                  </Link>
+                ) : (
+                  expense.agent?.agentName ?? '—'
+                )}
+              </DetailRow>
+            ) : null}
             <DetailRow label="Reference">{expense.reference ?? '—'}</DetailRow>
             <DetailRow label="Created by">
               {expense.createdBy.name}

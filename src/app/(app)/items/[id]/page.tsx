@@ -11,7 +11,7 @@ import {
 } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { dec } from '@/lib/money';
-import { getBatchStock } from '@/lib/services/stock';
+import { getBatchStock, getItemWarehouseStock } from '@/lib/services/stock';
 import { formatDate, formatMoney, formatQuantityKg } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Badge, StatusBadge } from '@/components/ui/badge';
@@ -20,6 +20,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent, TabCount } from '@/components
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/feedback';
 import { StatCard, DetailRow } from '@/components/shared/stat-card';
+import { ItemWarehouseStock } from '@/app/(app)/items/[id]/item-warehouse-stock';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,9 +50,12 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
 
   if (!item) notFound();
 
-  const batches = await getBatchStock({ companyId, itemId: id, includeEmpty: true });
+  const [batches, warehouseStock] = await Promise.all([
+    getBatchStock({ companyId, itemId: id, includeEmpty: true }),
+    getItemWarehouseStock(companyId, id),
+  ]);
 
-  const availableKg = batches.reduce((a, b) => a.plus(b.availableKg), dec(0));
+  const availableKg = warehouseStock.totalAvailableKg;
   const soldKg = batches.reduce((a, b) => a.plus(b.soldKg), dec(0));
   const receivedKg = batches.reduce((a, b) => a.plus(b.receivedKg), dec(0));
   const stockValueUsd = batches.reduce((a, b) => a.plus(b.stockValueUsd), dec(0));
@@ -72,6 +76,27 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
             {item.cropYear ? <Badge tone="neutral">Crop {item.cropYear}</Badge> : null}
           </>
         }
+      />
+
+      <ItemWarehouseStock
+        totalAvailableKg={warehouseStock.totalAvailableKg.toString()}
+        warehouses={warehouseStock.warehouses.map((warehouse) => ({
+          warehouseId: warehouse.warehouseId,
+          warehouseName: warehouse.warehouseName,
+          warehouseCode: warehouse.warehouseCode,
+          availableKg: warehouse.availableKg.toString(),
+          reservedKg: warehouse.reservedKg.toString(),
+          bags: warehouse.bags,
+          lines: warehouse.lines.map((line) => ({
+            batchId: line.batchId,
+            batchNumber: line.batchNumber,
+            lotNumber: line.lotNumber,
+            containerNumber: line.containerNumber,
+            availableKg: line.availableKg.toString(),
+            reservedKg: line.reservedKg.toString(),
+            bags: line.bags,
+          })),
+        }))}
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -161,6 +186,7 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
                 <THead>
                   <TR className="hover:bg-transparent">
                     <TH>Batch</TH>
+                    <TH>Warehouse</TH>
                     <TH>Shipment</TH>
                     <TH numeric>Received</TH>
                     <TH numeric>Sold</TH>
@@ -181,6 +207,7 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
                           {batch.batchNumber}
                         </Link>
                       </TD>
+                      <TD>{batch.warehouseNames || '—'}</TD>
                       <TD>{batch.shipmentNumber}</TD>
                       <TD numeric>{formatQuantityKg(batch.receivedKg)}</TD>
                       <TD numeric>{formatQuantityKg(batch.soldKg)}</TD>

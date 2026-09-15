@@ -2,6 +2,10 @@ import { prisma, type Tx } from '@/lib/db';
 import { Decimal, dec, toQuantity, toMoney } from '@/lib/money';
 import { repairSharedContainerAssignments } from '@/lib/services/shipment';
 
+function uniqueNames(names: Iterable<string>): string {
+  return [...new Set(names)].filter(Boolean).sort((a, b) => a.localeCompare(b)).join(', ');
+}
+
 
 /**
  * The loading / contract follow-up sheet.
@@ -35,6 +39,7 @@ export type Allocation = {
   currency: string;
   outstanding: Decimal;
   settlement: 'PAID' | 'PARTIAL' | 'UNPAID' | 'OVERDUE';
+  warehouseNames: string;
 };
 
 /** One coffee on the consignment: a purchase-order line, received as a batch. */
@@ -57,6 +62,7 @@ export type LoadingSheetLine = {
   availableKg: Decimal;
   bags: number;
   bagWeightKg: Decimal;
+  warehouseNames: string;
 };
 
 export type LoadingSheetRow = {
@@ -113,6 +119,7 @@ export type LoadingSheetRow = {
   saleStatus: 'UNSOLD' | 'PARTIALLY_SOLD' | 'FULLY_SOLD';
   /** Derived from what has actually been received against those invoices. */
   paymentStatus: 'NONE' | 'UNPAID' | 'PARTIAL' | 'PAID' | 'OVERDUE';
+  warehouseNames: string;
 };
 
 /**
@@ -176,10 +183,18 @@ export async function getLoadingSheet(companyId: string): Promise<LoadingSheetRo
           item: { select: { itemName: true, originCountry: true } },
           lot: { select: { lotNumber: true } },
           container: { select: { containerNumber: true } },
+          warehouse: { select: { name: true } },
+          balances: {
+            where: {
+              OR: [{ onHandKg: { gt: 0 } }, { availableKg: { gt: 0 } }, { reservedKg: { gt: 0 } }],
+            },
+            select: { warehouse: { select: { name: true } } },
+          },
           invoiceLines: {
             where: { salesInvoice: { status: 'POSTED' } },
             select: {
               quantityKg: true,
+              warehouse: { select: { name: true } },
               salesInvoice: {
                 select: {
                   id: true,
@@ -222,6 +237,11 @@ export async function getLoadingSheet(companyId: string): Promise<LoadingSheetRo
 
           if (existing) {
             existing.quantityKg = toQuantity(existing.quantityKg.plus(line.quantityKg));
+            if (line.warehouse?.name && !existing.warehouseNames.includes(line.warehouse.name)) {
+              existing.warehouseNames = uniqueNames(
+                [...existing.warehouseNames.split(', '), line.warehouse.name],
+              );
+            }
             continue;
           }
 
@@ -240,6 +260,7 @@ export async function getLoadingSheet(companyId: string): Promise<LoadingSheetRo
             currency: invoice.currency,
             outstanding: toMoney(total.minus(received).minus(credited)),
             settlement: settlementOf(total, received, credited, invoice.dueDate, today),
+            warehouseNames: line.warehouse?.name ?? '',
           });
         }
       }
@@ -262,6 +283,10 @@ export async function getLoadingSheet(companyId: string): Promise<LoadingSheetRo
         availableKg: toQuantity(batch.availableQuantityKg),
         bags: batch.orderedBags,
         bagWeightKg: toQuantity(batch.bagWeightKg),
+        warehouseNames: uniqueNames([
+          ...batch.balances.map((row) => row.warehouse.name),
+          batch.warehouse?.name ?? '',
+        ]),
       }));
 
       const sumOf = (pick: (line: LoadingSheetLine) => Decimal) =>
@@ -351,6 +376,7 @@ export async function getLoadingSheet(companyId: string): Promise<LoadingSheetRo
 
         saleStatus,
         paymentStatus: rollUpPayment(allocations),
+        warehouseNames: uniqueNames(lines.flatMap((line) => line.warehouseNames.split(', '))),
       };
     });
 }

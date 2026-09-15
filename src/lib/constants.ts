@@ -562,8 +562,8 @@ export const SHIPMENT_STATUS_META: Record<string, { label: string; tone: BadgeTo
   // find out what has shipped, and the honest answer for a new consignment is
   // that it has not — which is what the reader needs to know, whereas the
   // internal event that created the record is not.
-  CONTRACT_CREATED: { label: 'Pending Loading', tone: 'neutral' },
-  AWAITING_LOADING: { label: 'Pending Loading', tone: 'neutral' },
+  CONTRACT_CREATED: { label: 'Not loaded yet', tone: 'neutral' },
+  AWAITING_LOADING: { label: 'Not loaded yet', tone: 'neutral' },
   LOADED: { label: 'Loaded', tone: 'info' },
   IN_TRANSIT: { label: 'In Transit', tone: 'progress' },
   ARRIVED: { label: 'Arrived', tone: 'info' },
@@ -654,6 +654,12 @@ export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   CASH: 'Cash',
   BANK_TRANSFER: 'Bank Transfer',
   CHEQUE: 'Cheque',
+  AGENT_COLLECTION: 'Agent cheque / Agent collection',
+};
+
+export const PAYMENT_TYPE_LABELS: Record<string, string> = {
+  CASH: 'Cash',
+  CREDIT: 'Credit',
 };
 
 export const INCOTERM_LABELS: Record<string, string> = {
@@ -762,6 +768,8 @@ export const EXPENSE_CATEGORY_SEEDS: Array<{
   { code: 'DOCUMENTATION', name: 'Documentation', kind: 'SHIPMENT', capitalise: true },
   { code: 'HANDLING', name: 'Handling', kind: 'SHIPMENT', capitalise: true },
   { code: 'LABOUR', name: 'Labour', kind: 'SHIPMENT', capitalise: true },
+  { code: 'WHCHARGES', name: 'Warehouse Charges', kind: 'SHIPMENT', capitalise: true },
+  { code: 'DELIVERY', name: 'Local Delivery', kind: 'SHIPMENT', capitalise: true },
   { code: 'LOADING', name: 'Loading / Stuffing', kind: 'SHIPMENT', capitalise: true },
   { code: 'INSPECTION', name: 'Quality Inspection', kind: 'SHIPMENT', capitalise: true },
   { code: 'SHPSTORAGE', name: 'Shipment Storage', kind: 'SHIPMENT', capitalise: true },
@@ -773,6 +781,7 @@ export const EXPENSE_CATEGORY_SEEDS: Array<{
   /// levies a shipment genuinely bears. Reclaimable VAT goes to the tax
   /// account through the expense's own tax code, never through here.
   { code: 'SHPTAX', name: 'Shipment Tax / Levies', kind: 'SHIPMENT', capitalise: true },
+  { code: 'IMPORTVAT', name: 'Import VAT', kind: 'SHIPMENT', capitalise: true },
   // Shipment-linked for reporting, but not a cost of getting the coffee in:
   // it belongs to the profit and loss the period it was incurred.
   { code: 'SHPBANK', name: 'Shipment Bank Charges', kind: 'SHIPMENT', capitalise: false },

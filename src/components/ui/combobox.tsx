@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import * as Popover from '@radix-ui/react-popover';
-import { Check, ChevronsUpDown, Search } from 'lucide-react';
+import { Check, ChevronsUpDown, Plus, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export type ComboOption = {
@@ -31,6 +31,8 @@ export function Combobox({
   invalid,
   autoFocus,
   wrap = false,
+  createLabel,
+  onCreate,
   'aria-label': ariaLabel,
 }: {
   options: ComboOption[];
@@ -49,6 +51,10 @@ export function Combobox({
   autoFocus?: boolean;
   /** Let a long coffee name wrap instead of collapsing to an ellipsis. */
   wrap?: boolean;
+  /** Extra action pinned at the top of the list, e.g. "Add New Category". */
+  createLabel?: string;
+  /** Receives the current search text so a create dialog can pre-fill the name. */
+  onCreate?: (query?: string) => void;
 }) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState('');
@@ -116,6 +122,23 @@ export function Combobox({
               className="h-10 w-full bg-transparent text-sm outline-none placeholder:text-ink-subtle"
             />
           </div>
+
+          {createLabel && onCreate ? (
+            <div className="border-b border-line p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  const typed = query.trim();
+                  setOpen(false);
+                  window.setTimeout(() => onCreate(typed || undefined), 0);
+                }}
+                className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm font-medium text-forest-800 transition-colors hover:bg-forest-50"
+              >
+                <Plus className="size-4 shrink-0" />
+                {createLabel}
+              </button>
+            </div>
+          ) : null}
 
           <div id={listboxId} className="max-h-64 overflow-y-auto p-1" role="listbox" aria-label={ariaLabel ?? 'Options'}>
             {filtered.length === 0 ? (

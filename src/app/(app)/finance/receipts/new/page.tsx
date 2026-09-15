@@ -33,7 +33,7 @@ export default async function NewReceiptPage({
       select: { id: true, name: true, code: true, currency: true, accountType: true },
     }),
     getReceivables({ companyId, onlyOutstanding: true }),
-    // For a cheque written in an agent's name rather than the company's.
+    // Who can collect a customer payment that has not yet reached FID.
     prisma.agent.findMany({
       where: { companyId, status: 'ACTIVE' },
       orderBy: { agentName: 'asc' },
@@ -98,7 +98,7 @@ export default async function NewReceiptPage({
     <div className="space-y-6">
       <PageHeader
         title="New Receipt"
-        description="Record money received from a customer and apply it to their invoices."
+        description="Record money received from a customer — including collections still sitting with an agent."
         breadcrumbs={[{ label: 'Finance' }, { label: 'Receipts', href: '/finance/receipts' }, { label: 'New' }]}
       />
       <ReceiptForm

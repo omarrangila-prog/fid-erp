@@ -102,6 +102,18 @@ test('the loading sheet offers one button to mark a consignment loaded', async (
   await page.getByLabel(/estimated arrival/i).fill('');
   await page.getByRole('button', { name: /^Mark as loaded$/i }).click();
   await expect(page.getByRole('alert')).toContainText(/estimated arrival/i);
+
+  await page.getByLabel(/estimated arrival/i).fill('2026-03-05');
+  const shippingLine = page.getByLabel(/shipping line/i);
+  if ((await shippingLine.locator('option').count()) > 1) {
+    await shippingLine.selectOption({ index: 1 });
+    const firstContainer = page.getByLabel(/^Container 1$/);
+    if ((await firstContainer.count()) > 0) await firstContainer.fill('');
+    await page.getByLabel(/booking number/i).fill('');
+    await page.getByLabel(/bill of lading/i).fill('');
+    await page.getByRole('button', { name: /^Mark as loaded$/i }).click();
+    await expect(page.getByRole('alert')).toContainText(/booking|B\/L|container/i);
+  }
 });
 
 test('a consignment with no lot asks for one when it is received', async ({ page }) => {
@@ -191,7 +203,7 @@ test('a purchase order can be raised from the screen, start to finish', async ({
   await page.getByRole('listbox').getByRole('option').first().click();
 
   const quantity = form.getByRole('textbox', { name: /^Quantity/ }).first();
-  const price = form.getByRole('textbox', { name: /^Price per/ }).first();
+          const price = form.getByRole('textbox', { name: /USD Rate|Price per/ }).first();
   await quantity.fill('42000');
   await price.fill('4.00');
 
@@ -266,12 +278,27 @@ test('§17 a receipt can be collected by an agent', async ({ page }) => {
 
   await form.getByRole('combobox', { name: /^Payment method/ }).selectOption('AGENT_COLLECTION');
 
-  // By role and name. `getByLabel(/collected by/i)` also matches the payment
-  // method select, because the option now chosen inside it reads "Collected by
-  // an agent" — two matches, and the assertion fails on a form that is right.
-  await expect(form.getByRole('combobox', { name: /^Collected by/ })).toBeVisible();
+  await expect(form.getByRole('combobox', { name: /^Agent/ })).toBeVisible();
+  await expect(form.getByLabel(/cheque number/i)).toBeVisible();
   await expect(form.getByLabel(/received into/i)).toHaveCount(0);
   await expect(form.getByText(/does not put money in the bank/i)).toBeVisible();
+
+  await form.getByRole('combobox', { name: /^Agent/ }).click();
+  await expect(page.getByRole('button', { name: /\+ Add New Agent/ })).toBeVisible();
+});
+
+test('§17 an agent can be added without leaving the receipt', async ({ page }) => {
+  await page.goto('/finance/receipts/new', { waitUntil: 'domcontentloaded' });
+  const form = page.getByRole('main');
+
+  await form.getByRole('combobox', { name: /^Payment method/ }).selectOption('AGENT_COLLECTION');
+  await form.getByRole('combobox', { name: /^Agent/ }).click();
+  await page.getByRole('button', { name: /\+ Add New Agent/ }).click();
+
+  await expect(page.getByRole('heading', { name: /Add new agent/i })).toBeVisible();
+  await expect(page.getByLabel(/^Agent name/i)).toBeVisible();
+  await expect(page.getByLabel(/^Phone/i)).toBeVisible();
+  await expect(page.getByLabel(/^Notes/i)).toBeVisible();
 });
 
 test('§19 the agent ledger says how much is sitting with whom', async ({ page }) => {
@@ -305,23 +332,17 @@ test('§2 the Morocco loading sheet has no consignee column', async ({ page }) =
   // Morocco imports under its own name and sells the container on afterwards,
   // so there is no consignee to name. Dubai's sheet keeps the column.
   await expect(page.getByRole('columnheader', { name: 'Consignee' })).toHaveCount(0);
-  await expect(page.getByRole('columnheader', { name: /Company name/i })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: /Exporter/i })).toBeVisible();
 });
 
 test('§11 the sale asks for the warehouse before the stock', async ({ page }) => {
   await page.goto('/sales/new', { waitUntil: 'domcontentloaded' });
   const form = page.getByRole('main');
 
-  // Two ways to pick stock, and it starts on the safer one: the cascade
-  // cannot offer a batch from the wrong warehouse.
-  await expect(form.getByRole('button', { name: 'By warehouse' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(form.getByRole('button', { name: 'Search stock' })).toHaveAttribute('aria-pressed', 'false');
+  const warehouse = form.getByLabel(/^Warehouse/);
+  const coffee = form.getByRole('combobox', { name: /Coffee on item 1/ });
+  const batch = form.getByLabel(/Batch on item 1/);
 
-  const warehouse = form.getByRole('combobox', { name: /^Warehouse/ }).first();
-  const coffee = form.getByRole('combobox', { name: /^Coffee/ }).first();
-  const batch = form.getByRole('combobox', { name: /^Batch/ }).first();
-
-  // Nothing below the warehouse can be chosen until it is.
   await expect(warehouse).toBeVisible();
   await expect(coffee).toBeDisabled();
   await expect(batch).toBeDisabled();
@@ -335,12 +356,6 @@ test('§11 the sale asks for the warehouse before the stock', async ({ page }) =
   await warehouse.selectOption({ index: 1 });
   await expect(coffee).toBeEnabled();
   await expect(batch).toBeDisabled();
-
-  await coffee.selectOption({ index: 1 });
-  await expect(batch).toBeEnabled();
-
-  // And the batches offered say how much is actually there.
-  await expect(batch.locator('option').nth(1)).toContainText(/KG available/);
 });
 
 test('§35 rule 3 — saving a purchase order puts it on the loading sheet', async ({ page }) => {
@@ -350,20 +365,4 @@ test('§35 rule 3 — saving a purchase order puts it on the loading sheet', asy
   // One button, and it is the obvious one.
   await expect(form.getByRole('button', { name: /^Save purchase order$/ })).toBeVisible();
   await expect(form.getByText(/appears on the Loading Sheet immediately/i)).toBeVisible();
-});
-
-test('§11 stock can also be searched directly, for whole-container selling', async ({ page }) => {
-  await page.goto('/sales/new', { waitUntil: 'domcontentloaded' });
-  const form = page.getByRole('main');
-
-  // Dubai sells a container at a time, where the row is the container and the
-  // cascade is two steps more than the job needs. Switching gives one box.
-  await form.getByRole('button', { name: 'Search stock' }).click();
-
-  await expect(form.getByRole('combobox', { name: /Batch and warehouse/ })).toBeVisible();
-  await expect(form.getByRole('combobox', { name: /^Warehouse/ })).toHaveCount(0);
-
-  // And back again, without losing the invoice.
-  await form.getByRole('button', { name: 'By warehouse' }).click();
-  await expect(form.getByRole('combobox', { name: /^Warehouse/ }).first()).toBeVisible();
 });

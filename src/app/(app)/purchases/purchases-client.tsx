@@ -31,6 +31,7 @@ export type PurchaseRow = {
   receivedLabel: string;
   outstandingLabel: string;
   outstandingUsd: number;
+  warehouseNames: string;
 };
 
 export function PurchasesClient({
@@ -79,6 +80,13 @@ export function PurchasesClient({
       header: 'Coffee',
       hideable: true,
       cell: (r) => <span className="block max-w-56 truncate text-xs">{r.itemNames}</span>,
+    },
+    {
+      id: 'warehouse',
+      header: 'Warehouse',
+      mobile: 'meta',
+      sortValue: (r) => r.warehouseNames,
+      cell: (r) => r.warehouseNames || '—',
     },
     {
       id: 'quantity',
@@ -171,7 +179,7 @@ export function PurchasesClient({
       getRowId={(r) => r.id}
       rowHref={(r) => `/purchases/${r.id}`}
       searchValue={(r) =>
-        `${r.contractNumber} ${r.contractReference} ${r.supplierContractNo ?? ''} ${r.vendorName} ${r.itemNames} ${r.jobNumber ?? ''}`
+        `${r.contractNumber} ${r.contractReference} ${r.supplierContractNo ?? ''} ${r.vendorName} ${r.itemNames} ${r.jobNumber ?? ''} ${r.warehouseNames}`
       }
       searchPlaceholder="Search by contract, reference, supplier or coffee…"
       emptyTitle="No purchase contracts yet"

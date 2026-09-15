@@ -7,6 +7,7 @@ import { prisma, transaction } from '@/lib/db';
 import { dec } from '@/lib/money';
 import { getReceiptStatus } from '@/lib/services/purchase';
 import { getContractOutstanding } from '@/lib/services/payment';
+import { supplierGrossPayable } from '@/lib/services/tax';
 import { formatMoney, formatQuantityKg, formatDate, formatDateTime, formatRate } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Metric, MetricGrid, DetailRow } from '@/components/shared/stat-card';
@@ -17,6 +18,7 @@ import { Callout } from '@/components/ui/feedback';
 import { AttachmentPanel } from '@/components/attachments/attachment-panel';
 import { loadAttachments } from '@/components/attachments/load';
 import { PurchaseDetailToolbar } from '@/app/(app)/purchases/[id]/detail-toolbar';
+import { getWarehouseLabels } from '@/lib/services/stock';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,7 +58,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
     ? await loadAttachments(user.activeCompany.id, 'PurchaseContract', contract.id)
     : [];
 
-  const [receiptStatus, outstanding, warehouses] = await Promise.all([
+  const [receiptStatus, outstanding, warehouses, warehouseLabels] = await Promise.all([
     transaction((tx) => getReceiptStatus(tx, contract.id)),
     contract.status === 'POSTED'
       ? transaction((tx) => getContractOutstanding(tx, contract.id))
@@ -66,12 +68,22 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
       orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
       select: { id: true, name: true, code: true, isDefault: true },
     }),
+    getWarehouseLabels(companyId),
   ]);
 
+  const warehouseByLineId = new Map(
+    receiptStatus.map((row) => [row.lineId, warehouseLabels.byBatch.get(row.batchId) || '—']),
+  );
   const totalOrdered = receiptStatus.reduce((a, r) => a.plus(r.orderedKg), dec(0));
   const totalReceived = receiptStatus.reduce((a, r) => a.plus(r.receivedKg), dec(0));
   const fullyReceived = totalOrdered.greaterThan(0) && totalReceived.greaterThanOrEqualTo(totalOrdered);
   const job = contract.shipments[0];
+  const supplierPayable = supplierGrossPayable({
+    netAmount: contract.totalValue,
+    taxAmount: contract.taxAmount,
+    vendorCountry: contract.vendor.country,
+    companyCountry: user.activeCompany.country,
+  });
 
   return (
     <div className="space-y-6">
@@ -159,8 +171,12 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
             <Metric label="Contract value" value={formatMoney(contract.totalValue, contract.currency)} />
             <Metric
               label="Posted to supplier"
-              value={formatMoney(dec(contract.totalValue).plus(contract.taxAmount), contract.currency)}
-              hint="Goods + freight + tax. This is the amount on the supplier ledger."
+              value={formatMoney(supplierPayable.amount, contract.currency)}
+              hint={
+                supplierPayable.taxOnSupplierInvoice
+                  ? 'Goods + freight + tax billed by this supplier.'
+                  : 'Contract value. Import tax is not owed to this supplier.'
+              }
             />
             {outstanding ? (
               <Metric
@@ -188,6 +204,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                     <TH>Coffee</TH>
                     <TH>Lot / Batch</TH>
                     <TH>Container</TH>
+                    <TH>Warehouse</TH>
                     <TH numeric>Quantity</TH>
                     <TH numeric>Bags</TH>
                     {showCost ? (
@@ -215,6 +232,9 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                         <span className="block text-xs text-ink-subtle">{line.batchNumber}</span>
                       </TD>
                       <TD className="text-xs">{line.containerNumber ?? '—'}</TD>
+                      <TD className="text-xs">
+                        {warehouseByLineId.get(line.id) || warehouseLabels.byContract.get(contract.id) || '—'}
+                      </TD>
                       <TD numeric>{formatQuantityKg(line.quantityKg)}</TD>
                       <TD numeric>{line.bags.toLocaleString()}</TD>
                       {showCost ? (
@@ -333,6 +353,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                     <TH>Batch</TH>
                     <TH>Coffee</TH>
                     <TH>Lot</TH>
+                    <TH>Warehouse</TH>
                     <TH numeric>Ordered</TH>
                     <TH numeric>Received</TH>
                     <TH numeric>Outstanding</TH>
@@ -344,6 +365,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                       <TD className="font-medium">{r.batchNumber}</TD>
                       <TD>{r.itemName}</TD>
                       <TD>{r.lotNumber}</TD>
+                      <TD>{warehouseLabels.byBatch.get(r.batchId) || '—'}</TD>
                       <TD numeric>{formatQuantityKg(r.orderedKg)}</TD>
                       <TD numeric>{formatQuantityKg(r.receivedKg)}</TD>
                       <TD numeric className={r.outstandingKg.greaterThan(0) ? 'font-medium text-amber-700' : 'text-gold-700'}>

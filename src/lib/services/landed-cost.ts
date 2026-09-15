@@ -1,5 +1,6 @@
 import type { Tx } from '@/lib/db';
 import { prisma } from '@/lib/db';
+import { getCommissionPaidByExpense } from '@/lib/services/agent-commission';
 import { Decimal, dec, toMoney, toUnitCost, allocateProportionally, sum, toQuantity } from '@/lib/money';
 import { BusinessRuleError } from '@/lib/errors';
 import { lockBatch } from '@/lib/services/inventory';
@@ -67,12 +68,22 @@ export async function applyLandedCost(
     shipmentId: string;
     amountUsd: Decimal | string | number;
     reference: string;
+    /** Spread across this container's batches only. */
+    containerId?: string | null;
+    /** Put the whole amount on this one batch. */
+    batchId?: string | null;
   },
 ): Promise<LandedCostResult> {
   const amountUsd = toMoney(params.amountUsd);
 
   const batches = await tx.batch.findMany({
-    where: { companyId: params.companyId, shipmentId: params.shipmentId, status: 'ACTIVE' },
+    where: {
+      companyId: params.companyId,
+      shipmentId: params.shipmentId,
+      status: 'ACTIVE',
+      ...(params.batchId ? { id: params.batchId } : {}),
+      ...(params.containerId && !params.batchId ? { containerId: params.containerId } : {}),
+    },
     select: {
       id: true,
       batchNumber: true,
@@ -86,6 +97,14 @@ export async function applyLandedCost(
   });
 
   if (batches.length === 0) {
+    if (params.batchId) {
+      throw new BusinessRuleError('That batch is not on this shipment, so the cost cannot be capitalised against it.');
+    }
+    if (params.containerId) {
+      throw new BusinessRuleError(
+        'This container has no coffee batches on this shipment, so the cost cannot be capitalised against it.',
+      );
+    }
     throw new BusinessRuleError(
       'This job has no coffee batches, so a direct shipment cost cannot be capitalised against it.',
     );
@@ -348,6 +367,8 @@ export type ShipmentCostLine = {
   currency: string;
   capitalised: boolean;
   paid: boolean;
+  containerNumber: string | null;
+  batchNumber: string | null;
 };
 
 /** The costing / profitability sheet for one consignment. */
@@ -356,20 +377,37 @@ export async function getShipmentCostSheet(companyId: string, shipmentId: string
 
   const expenses = await prisma.expense.findMany({
     where: { companyId, shipmentId, status: 'POSTED', kind: 'SHIPMENT' },
-    include: { expenseCategory: { select: { name: true } } },
+    include: {
+      expenseCategory: { select: { name: true } },
+      container: { select: { containerNumber: true } },
+      batch: { select: { batchNumber: true } },
+      allocations: { select: { payment: { select: { status: true } } } },
+    },
     orderBy: [{ expenseDate: 'asc' }, { expenseNumber: 'asc' }],
   });
 
-  const lines: ShipmentCostLine[] = expenses.map((expense) => ({
-    expenseId: expense.id,
-    expenseNumber: expense.expenseNumber,
-    category: expense.expenseCategory.name,
-    amountUsd: toMoney(expense.amountUsd),
-    amount: toMoney(expense.amount),
-    currency: expense.currency,
-    capitalised: expense.capitaliseToLandedCost,
-    paid: Boolean(expense.cashBankAccountId),
-  }));
+  const commissionPaid = expenses.some((expense) => expense.payableToAgentId)
+    ? await getCommissionPaidByExpense(companyId)
+    : new Map<string, Decimal>();
+
+  const lines: ShipmentCostLine[] = expenses.map((expense) => {
+    const settledByAllocation = expense.allocations.some((allocation) => allocation.payment.status === 'POSTED');
+    const settledByCommission =
+      Boolean(expense.payableToAgentId) &&
+      toMoney(commissionPaid.get(expense.id) ?? 0).greaterThanOrEqualTo(toMoney(expense.amountUsd).minus('0.01'));
+    return {
+      expenseId: expense.id,
+      expenseNumber: expense.expenseNumber,
+      category: expense.expenseCategory.name,
+      amountUsd: toMoney(expense.amountUsd),
+      amount: toMoney(expense.amount),
+      currency: expense.currency,
+      capitalised: expense.capitaliseToLandedCost,
+      paid: Boolean(expense.cashBankAccountId) || settledByAllocation || settledByCommission,
+      containerNumber: expense.container?.containerNumber ?? null,
+      batchNumber: expense.batch?.batchNumber ?? null,
+    };
+  });
 
   const expenseUsd = toMoney(sum(lines.map((line) => line.amountUsd)));
   const totalShipmentCostUsd = toMoney(job.goodsUsd.plus(expenseUsd));

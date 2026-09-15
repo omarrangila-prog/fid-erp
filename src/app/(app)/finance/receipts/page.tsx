@@ -5,6 +5,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, TRANSACTION_STATUS_META, PAYMENT_METHOD_LABELS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { formatMoney, formatDate, formatRate } from '@/lib/format';
+import { getWarehouseLabels } from '@/lib/services/stock';
 import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import { VoucherTable, type VoucherRow } from '@/components/shared/voucher-table';
@@ -15,16 +16,20 @@ export const dynamic = 'force-dynamic';
 
 export default async function ReceiptsPage() {
   const user = await requirePageAccess(PERMISSIONS.RECEIPTS_VIEW);
+  const companyId = user.activeCompany.id;
 
-  const receipts = await prisma.receipt.findMany({
-    where: { companyId: user.activeCompany.id },
-    orderBy: [{ receiptDate: 'desc' }, { receiptNumber: 'desc' }],
-    include: {
-      customer: { select: { customerName: true } },
-      cashBankAccount: { select: { name: true } },
-      allocations: { select: { id: true } },
-    },
-  });
+  const [receipts, warehouses] = await Promise.all([
+    prisma.receipt.findMany({
+      where: { companyId },
+      orderBy: [{ receiptDate: 'desc' }, { receiptNumber: 'desc' }],
+      include: {
+        customer: { select: { customerName: true } },
+        cashBankAccount: { select: { name: true } },
+        allocations: { select: { id: true } },
+      },
+    }),
+    getWarehouseLabels(companyId),
+  ]);
 
   const rows: VoucherRow[] = receipts.map((r) => ({
     id: r.id,
@@ -42,6 +47,7 @@ export default async function ReceiptsPage() {
     reference: r.reference,
     allocationCount: r.allocations.length,
     status: r.status,
+    warehouseNames: warehouses.byReceipt.get(r.id) ?? '',
   }));
 
   return (

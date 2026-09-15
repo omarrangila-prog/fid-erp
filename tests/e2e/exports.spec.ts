@@ -48,6 +48,7 @@ for (const [report, expected] of [
   ['general-ledger', 'general-ledger'],
   ['journal', 'journal'],
   ['expenses', 'expense-report'],
+  ['profitability', 'profitability'],
   ['financial-position', 'financial-position'],
   ['reconciliation', 'reconciliation'],
 ] as const) {
@@ -79,6 +80,7 @@ for (const [path, query, expectedHref] of [
   ['/reports/profit-loss', '?from=2026-01-01&to=2026-06-30', '/api/export/profit-loss?from=2026-01-01&to=2026-06-30'],
   ['/reports/balance-sheet', '?asOf=2026-06-30', '/api/export/balance-sheet?asOf=2026-06-30'],
   ['/reports/cash-flow', '?from=2026-01-01&to=2026-06-30', '/api/export/cash-flow?from=2026-01-01&to=2026-06-30'],
+  ['/profitability', '?view=customer', '/api/export/profitability?view=customer'],
 ] as const) {
   test(`${path} carries its period into the Excel link`, async ({ page }) => {
     await page.goto(`${path}${query}`);

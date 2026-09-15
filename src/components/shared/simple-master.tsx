@@ -129,7 +129,7 @@ export function SimpleMasterTable({
           canCreate ? (
             <Button onClick={() => setCreating(true)}>
               <Plus />
-              <span className="hidden sm:inline">New {entityLabel.toLowerCase()}</span>
+              <span className="hidden sm:inline">Add {entityLabel.toLowerCase()}</span>
               <span className="sm:hidden">New</span>
             </Button>
           ) : undefined

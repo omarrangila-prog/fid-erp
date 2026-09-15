@@ -634,6 +634,40 @@
     display: table-footer-group;
   }
 
+  /*
+   * Printed reports should read like a spreadsheet, not like a screenshot of
+   * the app. Gridlines, a green header row and banded lines are what the
+   * client already knows from Excel, and "Save as PDF" is how every report
+   * becomes a PDF.
+   */
+  main table {
+    border-collapse: collapse !important;
+    font-family: Calibri, 'Segoe UI', Arial, sans-serif;
+  }
+
+  main th,
+  main td {
+    border: 0.5pt solid #8f8f8f !important;
+  }
+
+  main thead th {
+    background: #217346 !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+  }
+
+  main tbody tr:nth-child(even) td {
+    background: #e2efda !important;
+  }
+
+  main tfoot td {
+    background: #c6efce !important;
+    font-weight: 700 !important;
+    border-top: 1pt solid #217346 !important;
+  }
+
   /* A wide table must not be clipped at the paper edge. */
   .overflow-x-auto {
     overflow: visible !important;

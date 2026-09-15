@@ -70,6 +70,7 @@ export function MasterFormSheet({
   action,
   submitLabel = 'Save',
   onSaved,
+  before,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -80,6 +81,8 @@ export function MasterFormSheet({
   action: (prev: MasterFormState, formData: FormData) => Promise<MasterFormState>;
   submitLabel?: string;
   onSaved?: (id: string) => void;
+  /** Extra content above the fields, e.g. live warehouse stock on an item. */
+  before?: React.ReactNode;
 }) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState(action, null);
@@ -124,6 +127,8 @@ export function MasterFormSheet({
             <span>{state.error}</span>
           </div>
         ) : null}
+
+        {before ? <div className="rounded-lg border border-line bg-forest-50/40 p-3">{before}</div> : null}
 
         <div className="grid gap-4 sm:grid-cols-2">
           {fields.map((field, index) => {

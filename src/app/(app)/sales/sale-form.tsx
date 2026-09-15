@@ -611,7 +611,7 @@ export function SaleForm({
                     </div>
                   </Field>
 
-                  <Field label={`Rate / ${line.unit === 'BAG' ? 'bag' : line.unit}`} required className="lg:col-span-3">
+                  <Field label={`Price / ${line.unit === 'BAG' ? 'bag' : line.unit}`} required className="lg:col-span-3">
                     <MoneyInput
                       currency={header.currency}
                       value={line.unitPrice}

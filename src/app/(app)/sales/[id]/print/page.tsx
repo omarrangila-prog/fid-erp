@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { requirePageAccess } from '@/lib/auth/guards';
-import { PERMISSIONS } from '@/lib/constants';
+import { PERMISSIONS, PAYMENT_TYPE_LABELS } from '@/lib/constants';
 import { prisma, transaction } from '@/lib/db';
 import { dec, toMoney } from '@/lib/money';
 import { getInvoiceOutstanding } from '@/lib/services/receipt';
@@ -37,6 +37,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
           item: { select: { itemName: true, originCountry: true, grade: true, screenSize: true, cropYear: true } },
           batch: { select: { batchNumber: true, lot: { select: { lotNumber: true } } } },
           container: { select: { containerNumber: true } },
+          warehouse: { select: { name: true } },
         },
       },
     },
@@ -52,6 +53,9 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
   const totalKg = invoice.lines.reduce((sum, line) => sum.plus(line.quantityKg), dec(0));
   const totalBags = invoice.lines.reduce((sum, line) => sum + line.bags, 0);
   const paid = outstanding ? toMoney(dec(invoice.totalAmount).minus(outstanding.amount)) : dec(0);
+  const warehouses = [
+    ...new Set(invoice.lines.map((line) => line.warehouse?.name).filter((name): name is string => Boolean(name))),
+  ];
 
   return (
     <div className="mx-auto w-full max-w-[52rem] space-y-6">
@@ -134,6 +138,18 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
             <dt className="text-ink-subtle">Currency</dt>
             <dd className="font-medium text-ink">{invoice.currency}</dd>
 
+            <dt className="text-ink-subtle">Payment type</dt>
+            <dd className="font-medium text-ink">
+              {PAYMENT_TYPE_LABELS[invoice.paymentType] ?? invoice.paymentType}
+            </dd>
+
+            {warehouses.length > 0 ? (
+              <>
+                <dt className="text-ink-subtle">Warehouse</dt>
+                <dd className="font-medium text-ink">{warehouses.join(', ')}</dd>
+              </>
+            ) : null}
+
             {invoice.reference ? (
               <>
                 <dt className="text-ink-subtle">Your reference</dt>
@@ -189,6 +205,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
                     </p>
                     <p className="mt-0.5 text-[11px] text-ink-subtle">
                       {[
+                        line.warehouse?.name ?? null,
                         line.batch?.lot?.lotNumber ? `Lot ${line.batch.lot.lotNumber}` : null,
                         line.batch?.batchNumber ? `Batch ${line.batch.batchNumber}` : null,
                         line.container?.containerNumber ? `Container ${line.container.containerNumber}` : null,

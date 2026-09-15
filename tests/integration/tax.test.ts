@@ -95,16 +95,32 @@ describe('registration', () => {
 });
 
 describe('a purchase carrying recoverable input tax', () => {
+  let domesticVendorId: string;
+
   it('keeps the tax out of what the coffee cost', async () => {
     const purchaseCodes = await listTaxCodes(ctx.dubai.id, 'PURCHASE');
     const purchaseStd = purchaseCodes.find((code) => code.treatment === 'STANDARD')!.id;
+
+    // Input tax on AP is only for a supplier who bills UAE VAT. A Brazilian
+    // estate does not; that case is covered below.
+    const domestic = await prisma.vendor.create({
+      data: {
+        companyId: ctx.dubai.id,
+        vendorCode: 'SUP-DXB-VAT',
+        vendorName: 'Dubai Local Coffee Trader',
+        country: 'United Arab Emirates',
+        primaryCurrency: 'USD',
+        paymentTermDays: 30,
+      },
+    });
+    domesticVendorId = domestic.id;
 
     const contract = await createPurchaseContract(
       {
         companyId: ctx.dubai.id,
         contractReference: 'VAT-PO-1',
         contractDate: utcDate('2026-01-05'),
-        vendorId: masters.vendor.id,
+        vendorId: domesticVendorId,
         currency: 'USD',
         rateToUsd: '1',
         rateLocalPerUsd: '3.6725',
@@ -170,7 +186,7 @@ describe('a purchase carrying recoverable input tax', () => {
       {
         companyId: ctx.dubai.id,
         paymentDate: utcDate('2026-02-01'),
-        vendorId: masters.vendor.id,
+        vendorId: domesticVendorId,
         currency: 'USD',
         amount: '42000',
         rateToUsd: '1',
@@ -185,6 +201,59 @@ describe('a purchase carrying recoverable input tax', () => {
 
     const after = await transaction((tx) => getContractOutstanding(tx, contract.id));
     expect(Number(after.amount)).toBeCloseTo(0, 2);
+  });
+
+  it('does not put UAE VAT on a Brazilian exporter even if a tax code is sent', async () => {
+    const purchaseCodes = await listTaxCodes(ctx.dubai.id, 'PURCHASE');
+    const purchaseStd = purchaseCodes.find((code) => code.treatment === 'STANDARD')!.id;
+
+    const contract = await createPurchaseContract(
+      {
+        companyId: ctx.dubai.id,
+        contractReference: 'VAT-PO-FOREIGN',
+        contractDate: utcDate('2026-01-06'),
+        vendorId: masters.vendor.id,
+        currency: 'USD',
+        rateToUsd: '1',
+        rateLocalPerUsd: '3.6725',
+        freightAmount: '0',
+        lines: [
+          {
+            itemId: masters.item.id,
+            lotNumber: 'VAT-FOREIGN-LOT',
+            batchNumber: 'VAT-FOREIGN-B001',
+            quantity: '10000',
+            unit: 'KG',
+            unitPrice: '4.00',
+            bagWeightKg: '60',
+            taxCodeId: purchaseStd,
+          },
+        ],
+      },
+      ctx.admin.id,
+    );
+
+    expect(Number(contract.totalValue)).toBeCloseTo(40_000, 2);
+    expect(Number(contract.taxAmount)).toBe(0);
+
+    await postPurchaseContract({ id: contract.id, companyId: ctx.dubai.id, userId: ctx.admin.id });
+
+    const entry = await prisma.journalEntry.findFirstOrThrow({
+      where: { sourceType: 'PURCHASE_CONTRACT', sourceId: contract.id },
+      include: { lines: true },
+    });
+    const ap = await prisma.account.findFirstOrThrow({
+      where: { companyId: ctx.dubai.id, systemKey: 'ACCOUNTS_PAYABLE' },
+    });
+    const vat = await prisma.account.findFirstOrThrow({
+      where: { companyId: ctx.dubai.id, systemKey: 'VAT_INPUT' },
+    });
+    const apLine = entry.lines.find((line) => line.accountId === ap.id);
+    expect(Number(apLine?.creditUsd)).toBeCloseTo(40_000, 2);
+    expect(entry.lines.some((line) => line.accountId === vat.id)).toBe(false);
+
+    const outstanding = await transaction((tx) => getContractOutstanding(tx, contract.id));
+    expect(Number(outstanding.amount)).toBeCloseTo(40_000, 2);
   });
 });
 
@@ -472,3 +541,63 @@ describe('the filing period', () => {
     expect(period.to.toISOString().slice(0, 10)).toBe('2026-04-30');
   });
 });
+
+describe('Morocco buying from a foreign estate', () => {
+  it('does not put 20% TVA on the supplier payable', async () => {
+    await enableTax({
+      companyId: ctx.morocco.id,
+      userId: ctx.admin.id,
+      registrationNumber: 'ICE123456789',
+    });
+    const moroccoMasters = await createMasters(ctx.morocco.id, { currency: 'MAD' });
+
+    const contract = await createPurchaseContract(
+      {
+        companyId: ctx.morocco.id,
+        contractReference: 'MA-UGANDA-PO',
+        contractDate: utcDate('2026-01-10'),
+        vendorId: moroccoMasters.vendor.id,
+        currency: 'USD',
+        rateToUsd: '1',
+        rateLocalPerUsd: '9.85',
+        freightAmount: '0',
+        lines: [
+          {
+            itemId: moroccoMasters.item.id,
+            quantity: '10000',
+            unit: 'KG',
+            unitPrice: '16.628232',
+            bagWeightKg: '60',
+          },
+        ],
+      },
+      ctx.admin.id,
+    );
+
+    expect(Number(contract.taxAmount)).toBe(0);
+    expect(Number(contract.totalValue)).toBeCloseTo(166_282.32, 2);
+
+    await postPurchaseContract({ id: contract.id, companyId: ctx.morocco.id, userId: ctx.admin.id });
+
+    const entry = await prisma.journalEntry.findFirstOrThrow({
+      where: { sourceType: 'PURCHASE_CONTRACT', sourceId: contract.id },
+      include: { lines: true },
+    });
+    const ap = await prisma.account.findFirstOrThrow({
+      where: { companyId: ctx.morocco.id, systemKey: 'ACCOUNTS_PAYABLE' },
+    });
+    const vat = await prisma.account.findFirstOrThrow({
+      where: { companyId: ctx.morocco.id, systemKey: 'VAT_INPUT' },
+    });
+    const apLine = entry.lines.find((line) => line.accountId === ap.id);
+    expect(Number(apLine?.credit)).toBeCloseTo(166_282.32, 2);
+    expect(entry.lines.some((line) => line.accountId === vat.id)).toBe(false);
+
+    const outstanding = await transaction((tx) => getContractOutstanding(tx, contract.id));
+    expect(Number(outstanding.amount)).toBeCloseTo(166_282.32, 2);
+
+    const payables = await getPayables({ companyId: ctx.morocco.id, vendorId: moroccoMasters.vendor.id });
+    expect(Number(payables[0]?.outstandingAmount)).toBeCloseTo(166_282.32, 2);
+  });
+});
+

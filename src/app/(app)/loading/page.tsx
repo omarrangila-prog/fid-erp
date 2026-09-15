@@ -54,6 +54,7 @@ export default async function LoadingPage() {
       bags: line.bags,
       outstandingKg: Math.max(0, Number(line.quantityKg) - Number(line.receivedKg)).toFixed(3),
       bagWeightKg: line.bagWeightKg.toString(),
+      warehouseNames: line.warehouseNames,
     }));
 
     return {
@@ -94,6 +95,7 @@ export default async function LoadingPage() {
       saleStatus: row.saleStatus,
       paymentStatus: row.paymentStatus,
       fullyReceived: receivedKg > 0 && receivedKg >= quantityKg - 0.001,
+      warehouseNames: row.warehouseNames,
       allocations: row.allocations.map((allocation) => ({
         customerId: allocation.customerId,
         customerName: allocation.customerName,
@@ -104,6 +106,7 @@ export default async function LoadingPage() {
         amount: formatMoney(allocation.amount, allocation.currency),
         outstanding: formatMoney(allocation.outstanding, allocation.currency),
         settlement: allocation.settlement,
+        warehouseNames: allocation.warehouseNames,
       })),
     };
   });

@@ -65,7 +65,8 @@ export const coffeeItemSchema = z.object({
 });
 
 export const warehouseSchema = z.object({
-  code: requiredText('Warehouse code', 40),
+  /** Optional, and issued as WH-0001 when left blank. See customerCode. */
+  code: optionalText(40),
   name: requiredText('Warehouse name'),
   location: optionalText(200),
   country: optionalText(100),
@@ -75,7 +76,8 @@ export const warehouseSchema = z.object({
 });
 
 export const agentSchema = z.object({
-  agentCode: requiredText('Agent code', 40),
+  /** Optional, and issued as AGT-0001 when left blank. See customerCode. */
+  agentCode: optionalText(40),
   agentName: requiredText('Agent name'),
   contactPerson: optionalText(120),
   phone: optionalText(40),
@@ -86,7 +88,7 @@ export const agentSchema = z.object({
 });
 
 export const shippingLineSchema = z.object({
-  code: requiredText('Code', 30),
+  code: optionalText(30),
   name: requiredText('Shipping line name'),
   contactInformation: optionalText(400),
   notes: optionalText(1000),
@@ -94,7 +96,7 @@ export const shippingLineSchema = z.object({
 });
 
 export const portSchema = z.object({
-  code: requiredText('Code', 12),
+  code: optionalText(20),
   name: requiredText('Port name'),
   country: optionalText(80),
   notes: optionalText(500),
@@ -102,21 +104,24 @@ export const portSchema = z.object({
 });
 
 export const expenseCategorySchema = z.object({
-  code: requiredText('Code', 30),
+  code: optionalText(30),
   name: requiredText('Category name'),
   description: optionalText(400),
+  kind: z.enum(['SHIPMENT', 'GENERAL']).default('SHIPMENT'),
   capitaliseByDefault: z.coerce.boolean().default(false),
   status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),
 });
 
 export const cashBankAccountSchema = z.object({
-  code: requiredText('Account code', 40),
+  /** Optional on create; issued as CBA-0001 when left blank. */
+  code: optionalText(40),
   name: requiredText('Account name'),
   accountType: z.enum(['CASH', 'PETTY_CASH', 'BANK']),
   currency: currencyCode,
   openingBalance: optionalDecimalString('Opening balance'),
   bankName: optionalText(120),
   accountNumber: optionalText(60),
+  status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),
 });
 
 export type CustomerInput = z.infer<typeof customerSchema>;

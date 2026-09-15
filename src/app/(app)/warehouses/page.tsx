@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: 'Warehouses' };
 export const dynamic = 'force-dynamic';
 
 const FIELDS: FieldSpec[] = [
-  { kind: 'text', name: 'code', label: 'Warehouse code', required: true, placeholder: 'MA-CASA-A' },
+  { kind: 'text', name: 'code', label: 'Warehouse code', placeholder: 'WH-0001', hint: 'Issued automatically if left blank.' },
   { kind: 'text', name: 'name', label: 'Warehouse name', required: true, placeholder: 'Casablanca Warehouse A' },
   { kind: 'text', name: 'location', label: 'Location', placeholder: 'Casablanca' },
   { kind: 'text', name: 'country', label: 'Country' },
@@ -90,7 +90,7 @@ export default async function WarehousesPage() {
     <div className="space-y-6">
       <PageHeader
         title="Warehouses"
-        description="Stock is held per warehouse. A goods receipt must name one, and sales deplete the warehouse they are sold from."
+        description="Stock is held per warehouse. Names can be edited and new warehouses added at any time. Changing a name does not alter historical goods receipts or stock movements."
         breadcrumbs={[{ label: 'Masters' }, { label: 'Warehouses' }]}
       />
       <SimpleMasterTable

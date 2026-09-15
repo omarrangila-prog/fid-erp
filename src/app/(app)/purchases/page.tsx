@@ -4,6 +4,7 @@ import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { dec, toQuantity } from '@/lib/money';
 import { getPayables } from '@/lib/services/receivables';
+import { getWarehouseLabels } from '@/lib/services/stock';
 import { formatDate, formatMoney, formatQuantityKg } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { PurchasesClient, type PurchaseRow } from '@/app/(app)/purchases/purchases-client';
@@ -16,7 +17,7 @@ export default async function PurchasesPage() {
   const companyId = user.activeCompany.id;
   const showCost = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
 
-  const [contracts, payables] = await Promise.all([
+  const [contracts, payables, warehouses] = await Promise.all([
     prisma.purchaseContract.findMany({
       where: { companyId },
       orderBy: [{ contractDate: 'desc' }, { contractNumber: 'desc' }],
@@ -28,6 +29,7 @@ export default async function PurchasesPage() {
       },
     }),
     getPayables({ companyId }),
+    getWarehouseLabels(companyId),
   ]);
 
   const payableByContract = new Map(payables.map((p) => [p.contractId, p]));
@@ -66,6 +68,7 @@ export default async function PurchasesPage() {
       receivedLabel: c.status === 'POSTED' ? `${receivedPct}%` : '—',
       outstandingUsd,
       outstandingLabel: outstandingUsd > 0 ? formatMoney(outstandingUsd, 'USD') : '—',
+      warehouseNames: warehouses.byContract.get(c.id) ?? '',
     };
   });
 

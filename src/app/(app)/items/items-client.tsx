@@ -41,6 +41,7 @@ export type ItemRow = {
   availableKg: number;
   availableLabel: string;
   bags: number;
+  warehouses: Array<{ warehouseName: string; availableLabel: string; availableKg: number }>;
 };
 
 const asOptions = (map: Record<string, string>) =>
@@ -137,9 +138,7 @@ export function ItemsClient({
       sortValue: (r) => r.itemName,
       cell: (r) => (
         <span>
-          <Link href={`/items/${r.id}`} className="block font-medium text-forest-700 hover:underline">
-            {r.itemName}
-          </Link>
+          <span className="block font-medium text-forest-700">{r.itemName}</span>
           <span className="block text-xs text-ink-subtle">{r.itemCode}</span>
         </span>
       ),
@@ -190,12 +189,33 @@ export function ItemsClient({
     {
       id: 'available',
       header: 'Available',
-      numeric: true,
       mobile: 'meta',
       sortValue: (r) => r.availableKg,
-      cell: (r) => (
-        <span className={r.availableKg > 0 ? 'font-medium text-ink' : 'text-ink-subtle'}>{r.availableLabel}</span>
-      ),
+      exportValue: (r) =>
+        r.warehouses.length > 0
+          ? r.warehouses.map((w) => `${w.warehouseName}: ${w.availableLabel}`).join(' · ')
+          : r.availableLabel,
+      cell: (r) =>
+        r.warehouses.length > 0 ? (
+          <span className="block min-w-44 space-y-0.5">
+            {r.warehouses.map((warehouse) => (
+              <span key={warehouse.warehouseName} className="flex items-baseline justify-between gap-3">
+                <span className="min-w-0 truncate text-ink">{warehouse.warehouseName}</span>
+                <span className="tnum shrink-0 font-medium text-forest-800">{warehouse.availableLabel}</span>
+              </span>
+            ))}
+            {r.warehouses.length > 1 ? (
+              <span className="flex items-baseline justify-between gap-3 border-t border-line pt-0.5 text-xs">
+                <span className="text-ink-subtle">Total</span>
+                <span className="tnum font-semibold text-ink">{r.availableLabel}</span>
+              </span>
+            ) : null}
+          </span>
+        ) : (
+          <span className={r.availableKg > 0 ? 'font-medium text-forest-700' : 'text-ink-subtle'}>
+            {r.availableLabel}
+          </span>
+        ),
     },
     {
       id: 'status',
@@ -212,6 +232,7 @@ export function ItemsClient({
           {
             id: 'actions',
             header: '',
+            printHidden: true,
             cell: (r: ItemRow) => (
               <span className="inline-flex items-center gap-0.5">
                 {canEdit ? (
@@ -259,6 +280,7 @@ export function ItemsClient({
         data={rows}
         columns={columns}
         getRowId={(r) => r.id}
+        rowHref={(r) => `/items/${r.id}`}
         searchValue={(r) =>
           `${r.itemName} ${r.itemCode} ${r.originCountry} ${r.region ?? ''} ${r.grade ?? ''} ${r.variety ?? ''} ${r.cropYear ?? ''} ${r.screenSize ?? ''}`
         }
@@ -313,9 +335,56 @@ export function ItemsClient({
           onOpenChange={(open) => !open && setEditing(null)}
           title={`Edit ${editing.itemName}`}
           fields={EDIT_FIELDS}
-          defaults={{ ...editing }}
+          defaults={{
+            itemName: editing.itemName,
+            itemCode: editing.itemCode,
+            coffeeType: editing.coffeeType,
+            originCountry: editing.originCountry,
+            region: editing.region,
+            farmEstate: editing.farmEstate,
+            grade: editing.grade,
+            screenSize: editing.screenSize,
+            variety: editing.variety,
+            process: editing.process,
+            cropYear: editing.cropYear,
+            moisturePct: editing.moisturePct,
+            densityGPerL: editing.densityGPerL,
+            packagingType: editing.packagingType,
+            bagWeightKg: editing.bagWeightKg,
+            defaultUnit: editing.defaultUnit,
+            description: editing.description,
+            notes: editing.notes,
+            status: editing.status,
+          }}
           action={
             saveCoffeeItemAction.bind(null, editing.id) as (p: MasterFormState, f: FormData) => Promise<MasterFormState>
+          }
+          before={
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">Stock by warehouse</p>
+              {editing.warehouses.length > 0 ? (
+                <ul className="mt-2 space-y-1 text-sm">
+                  {editing.warehouses.map((warehouse) => (
+                    <li key={warehouse.warehouseName} className="flex justify-between gap-3">
+                      <span className="text-ink">{warehouse.warehouseName}</span>
+                      <span className="tnum font-medium text-forest-800">{warehouse.availableLabel}</span>
+                    </li>
+                  ))}
+                  <li className="flex justify-between gap-3 border-t border-line pt-1 font-semibold">
+                    <span>Total available</span>
+                    <span className="tnum">{editing.availableLabel}</span>
+                  </li>
+                </ul>
+              ) : (
+                <p className="mt-2 text-sm text-ink-muted">
+                  None of this coffee is in a warehouse yet.{' '}
+                  <Link href={`/items/${editing.id}`} className="font-medium text-forest-800 hover:underline">
+                    Open the item
+                  </Link>{' '}
+                  to see the full stock board.
+                </p>
+              )}
+            </div>
           }
         />
       ) : null}

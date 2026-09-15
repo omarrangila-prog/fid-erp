@@ -20,15 +20,25 @@ import { PrintHeader } from '@/components/shared/print-header';
 export const metadata: Metadata = { title: 'Journal' };
 export const dynamic = 'force-dynamic';
 
-export default async function JournalPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
-  const { from, to } = await searchParams;
+export default async function JournalPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ from?: string; to?: string; q?: string }>;
+}) {
+  const { from, to, q } = await searchParams;
   const user = await requirePageAccess(PERMISSIONS.ACCOUNTING_VIEW);
   const local = user.activeCompany.localCurrency;
 
   const fromDate = from ? new Date(`${from}T00:00:00.000Z`) : new Date(Date.UTC(new Date().getUTCFullYear(), 0, 1));
   const toDate = to ? new Date(`${to}T00:00:00.000Z`) : new Date();
 
-  const entries = await getJournalReport({ companyId: user.activeCompany.id, from: fromDate, to: toDate, limit: 200 });
+  const entries = await getJournalReport({
+    companyId: user.activeCompany.id,
+    from: fromDate,
+    to: toDate,
+    q,
+    limit: q?.trim() ? 500 : 200,
+  });
 
   return (
     <div className="space-y-6">
@@ -60,7 +70,14 @@ export default async function JournalPage({ searchParams }: { searchParams: Prom
       <DateRangePicker defaultFrom={fromDate.toISOString().slice(0, 10)} defaultTo={toDate.toISOString().slice(0, 10)} />
 
       {entries.length === 0 ? (
-        <EmptyState title="No entries in this period" description="Post a document to create journal entries." />
+        <EmptyState
+          title={q?.trim() ? 'No matching entries' : 'No entries in this period'}
+          description={
+            q?.trim()
+              ? `Nothing in this period matches “${q}”.`
+              : 'Post a document to create journal entries.'
+          }
+        />
       ) : (
         <div className="space-y-4">
           {entries.map((entry) => {

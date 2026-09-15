@@ -24,8 +24,11 @@ import {
   getCashFlow,
   getJournalReport,
   getExpenseReport,
+  getForexGainLoss,
 } from '@/lib/services/reports';
 import { getDashboard } from '@/lib/services/dashboard';
+import { getInventoryValuation } from '@/lib/services/stock';
+import { getCogsReport } from '@/lib/services/profitability';
 import { dec } from '@/lib/money';
 
 /**
@@ -279,6 +282,8 @@ describe('dashboard', () => {
     expect(data.warehouseStock.length).toBeGreaterThan(0);
     expect(data.monthly).toHaveLength(12);
     expect(data.receivables.ageing).toHaveLength(5);
+    expect(data.sales.monthUsd).toBeDefined();
+    expect(data.sales.cashUsd.plus(data.sales.creditUsd).toString()).toBe(data.sales.monthUsd.toString());
   });
 });
 
@@ -290,5 +295,25 @@ describe('the ledger agrees with the operational reports', () => {
 
     const invoice = await prisma.salesInvoice.findUniqueOrThrow({ where: { id: invoiceId } });
     expect(glCogs.toString()).toBe(dec(invoice.costOfGoodsUsd).toString());
+  });
+});
+
+describe('named report screens', () => {
+  it('assembles forex, inventory valuation and COGS without throwing', async () => {
+    const forex = await getForexGainLoss({ companyId: ctx.dubai.id, ...ALL_TIME });
+    expect(forex.account).toBeTruthy();
+    expect(forex.netUsd).toBeDefined();
+
+    const valuation = await getInventoryValuation(ctx.dubai.id);
+    expect(valuation.length).toBeGreaterThan(0);
+    expect(valuation.every((row) => Number(row.onHandKg) > 0)).toBe(true);
+    const value = valuation.reduce((sum, row) => sum.plus(row.valueUsd), dec(0));
+    expect(value.toString()).toBe('45500');
+
+    const cogs = await getCogsReport({ companyId: ctx.dubai.id, ...ALL_TIME });
+    expect(cogs.length).toBeGreaterThan(0);
+    const cogsUsd = cogs.reduce((sum, row) => sum.plus(row.cogsUsd), dec(0));
+    const invoice = await prisma.salesInvoice.findUniqueOrThrow({ where: { id: invoiceId } });
+    expect(cogsUsd.toString()).toBe(dec(invoice.costOfGoodsUsd).toString());
   });
 });

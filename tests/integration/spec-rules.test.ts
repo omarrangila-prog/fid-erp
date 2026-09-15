@@ -8,7 +8,7 @@ import { createPayment, postPayment } from '@/lib/services/payment';
 import { createExpense, postExpense } from '@/lib/services/expense';
 import { markShipmentLoaded } from '@/lib/services/shipment';
 import { getLoadingSheet } from '@/lib/services/loading-sheet';
-import { getBatchStock } from '@/lib/services/stock';
+import { getBatchStock, getItemWarehouseStock, getWarehouseStockByItem, getWarehouseLabels } from '@/lib/services/stock';
 import { getCustomerBalance, getVendorBalance, getCashBankBalance } from '@/lib/services/accounting';
 import { getAgentPositions } from '@/lib/services/agent-ledger';
 import { reconcile } from '@/lib/services/reconciliation';
@@ -135,6 +135,21 @@ describe('rule 4 — a shipment cannot be marked loaded without the shipping det
     ).rejects.toThrow(/estimated arrival|shipping line/i);
   });
 
+  it('refuses without a booking, a B/L or a container number', async () => {
+    await expect(
+      markShipmentLoaded(
+        {
+          companyId,
+          shipmentId,
+          loadingDate: utcDate('2026-02-01'),
+          etaDate: utcDate('2026-03-05'),
+          shippingLineId: masters.shippingLine.id,
+        },
+        ctx.admin.id,
+      ),
+    ).rejects.toThrow(/booking|B\/L|container/i);
+  });
+
   it('accepts once the line and the arrival are given, with three containers', async () => {
     await markShipmentLoaded(
       {
@@ -232,6 +247,42 @@ describe('rule 6 — inventory is warehouse-wise and batch-wise', () => {
     const total = stock.reduce((sum, r) => sum.plus(dec(r.availableKg)), dec(0));
     expect(total.toString()).toBe('40000');
   });
+
+  it('shows the same coffee split by warehouse on the item, with batch and container underneath', async () => {
+    const itemId = (
+      await prisma.batch.findFirstOrThrow({
+        where: { id: batchAId },
+        select: { itemId: true },
+      })
+    ).itemId;
+
+    const byWarehouse = await getItemWarehouseStock(companyId, itemId);
+    const here = byWarehouse.warehouses.find((row) => row.warehouseId === warehouseA.id);
+    expect(here).toBeTruthy();
+    expect(dec(here!.availableKg).toString()).toBe('40000');
+    expect(here!.lines.map((line) => line.batchNumber).sort()).toEqual(['BATCH-001', 'BATCH-002']);
+    expect(here!.lines.map((line) => line.containerNumber).sort()).toEqual(['MSCU1234567', 'MSCU2345678']);
+    expect(dec(byWarehouse.totalAvailableKg).toString()).toBe('40000');
+
+    const listed = await getWarehouseStockByItem(companyId);
+    const onList = listed.get(itemId);
+    expect(onList).toBeTruthy();
+    expect(dec(onList!.totalAvailableKg).toString()).toBe('40000');
+    expect(onList!.warehouses.find((row) => row.warehouseId === warehouseA.id)?.availableKg.toString()).toBe('40000');
+
+    const labels = await getWarehouseLabels(companyId);
+    expect(labels.byContract.get(contractId)).toBe(warehouseA.name);
+    expect(labels.byShipment.get(shipmentId)).toBe(warehouseA.name);
+    expect(labels.byBatch.get(batchAId)).toBe(warehouseA.name);
+
+    const sheet = (await getLoadingSheet(companyId)).find((row) => row.contractId === contractId);
+    expect(sheet?.warehouseNames).toBe(warehouseA.name);
+    expect(
+      sheet?.lines
+        .filter((line) => line.receivedKg.greaterThan(0))
+        .every((line) => line.warehouseNames === warehouseA.name),
+    ).toBe(true);
+  });
 });
 
 describe('rules 7 and 8 — a sale needs a batch, and cannot exceed it', () => {
@@ -298,6 +349,11 @@ describe('rules 7 and 8 — a sale needs a batch, and cannot exceed it', () => {
 
     expect(dec(before.availableKg).minus(dec(after.availableKg)).toString()).toBe('3000');
     expect(dec(other.availableKg).toString()).toBe('19960');
+
+    const itemStock = await getItemWarehouseStock(companyId, masters.item.id);
+    const atWarehouse = itemStock.warehouses.find((row) => row.warehouseId === warehouseA.id);
+    expect(dec(atWarehouse!.availableKg).toString()).toBe('37000');
+    expect(dec(itemStock.totalAvailableKg).toString()).toBe('37000');
   });
 });
 
@@ -438,6 +494,39 @@ describe('rules 11 and 12 — paid expenses hit cash, unpaid ones hit payables',
     expect(Number(await control('AGENT_COMMISSION_PAYABLE'))).toBeCloseTo(-1000, 2);
     const position = (await getAgentPositions(companyId)).find((p) => p.agentId === agent.id)!;
     expect(Number(position.commissionPayableUsd)).toBeCloseTo(1000, 2);
+  });
+
+  it('an unpaid expense with no supplier or agent still leaves cash alone', async () => {
+    const cash = await getCashAccount(companyId, 'MAD');
+    const category = await prisma.expenseCategory.findFirstOrThrow({
+      where: { companyId, status: 'ACTIVE', kind: 'SHIPMENT' },
+      orderBy: { code: 'asc' },
+    });
+    const before = await prisma.$transaction((tx) => getCashBankBalance(tx, companyId, cash.id));
+    const payableBefore = Number(await control('ACCOUNTS_PAYABLE'));
+
+    const expense = await createExpense(
+      {
+        companyId,
+        expenseDate: utcDate('2026-04-12'),
+        expenseCategoryId: category.id,
+        shipmentId,
+        currency: 'MAD',
+        amount: '2500',
+        rateToUsd: '9.85',
+        rateLocalPerUsd: '9.85',
+        description: 'Unpaid freight, to be paid later',
+      },
+      ctx.admin.id,
+    );
+    await postExpense({ id: expense.id, companyId, userId: ctx.admin.id });
+
+    const after = await prisma.$transaction((tx) => getCashBankBalance(tx, companyId, cash.id));
+    expect(dec(after).toString()).toBe(dec(before).toString());
+    expect(expense.vendorId).toBeNull();
+    expect(expense.cashBankAccountId).toBeNull();
+    expect(expense.payableToAgentId).toBeNull();
+    expect(Number(await control('ACCOUNTS_PAYABLE'))).toBeLessThan(payableBefore);
   });
 });
 

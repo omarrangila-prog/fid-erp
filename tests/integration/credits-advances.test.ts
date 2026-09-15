@@ -5,6 +5,7 @@ import { createSalesInvoice, postSalesInvoice } from '@/lib/services/sales';
 import { createReceipt, postReceipt, getInvoiceOutstanding } from '@/lib/services/receipt';
 import { createPayment, postPayment } from '@/lib/services/payment';
 import { createCreditNote, postCreditNote, reverseCreditNote } from '@/lib/services/credit-note';
+import { getShipmentProfitabilityById } from '@/lib/services/profitability';
 import { getTrialBalanceReport } from '@/lib/services/reports';
 import { reconcile } from '@/lib/services/reconciliation';
 
@@ -181,6 +182,18 @@ describe('customer credit note', () => {
 
     // 500 KG at the batch's 4.00 landed cost comes back out of cost of sales.
     expect((await balanceOf(ctx.dubai.id, 'COST_OF_GOODS_SOLD')) - cogsBefore).toBeCloseTo(-2000, 2);
+  });
+
+  it('takes the credit off the shipment profit, not only the company P&L', async () => {
+    const batch = await prisma.batch.findUniqueOrThrow({
+      where: { id: batchId },
+      select: { shipmentId: true, soldQuantityKg: true },
+    });
+    const profit = (await getShipmentProfitabilityById(ctx.dubai.id, batch.shipmentId))!;
+    // 60,000 billed, 1,200 quality allowance, 3,000 of returned coffee.
+    expect(Number(profit.salesRevenueUsd)).toBeCloseTo(55_800, 2);
+    expect(Number(profit.soldQuantityKg)).toBeCloseTo(Number(batch.soldQuantityKg), 3);
+    expect(Number(profit.soldQuantityKg)).toBeCloseTo(9_500, 3);
   });
 
   it('refuses to credit more than the invoice is worth', async () => {

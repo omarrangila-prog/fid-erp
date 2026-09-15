@@ -387,10 +387,12 @@ export async function overrideShipmentPaymentStatus(input: {
  * carrying it, the booking and the bill of lading — and this is the single
  * action that takes it.
  *
- * It refuses to move the status without the arrival date and the shipping
- * line, because a consignment marked loaded that cannot say when it arrives or
- * who is carrying it tells the person reading the loading sheet nothing, and a
- * status that means nothing is worse than no status: it stops them asking.
+ * It refuses to move the status without the arrival date, the shipping line,
+ * and an identification of the consignment — a booking or B/L number, or the
+ * container numbers. A consignment marked loaded that cannot say when it
+ * arrives, who is carrying it or which boxes are on the water tells the person
+ * reading the loading sheet nothing, and a status that means nothing is worse
+ * than no status: it stops them asking.
  *
  * Everything here also reaches the loading sheet, which reads it from the
  * shipment rather than holding a copy.
@@ -450,6 +452,18 @@ export async function markShipmentLoaded(
       );
     }
 
+    const bookingNumber = (input.bookingNumber ?? shipment.bookingNumber ?? '').trim();
+    const billOfLading = (input.billOfLading ?? shipment.billOfLading ?? '').trim();
+    const containerNumbers = [
+      ...new Set((input.containerNumbers ?? []).map((n) => n.trim()).filter(Boolean)),
+    ];
+    if (!bookingNumber && !billOfLading && containerNumbers.length === 0) {
+      throw new BusinessRuleError(
+        'Before this can be marked loaded it needs a booking or B/L number, or the container numbers. ' +
+          'Those are how the consignment is identified on the water.',
+      );
+    }
+
     if (input.shippingLineId) {
       const line = await tx.shippingLine.findFirst({
         where: { id: input.shippingLineId, companyId: input.companyId },
@@ -472,10 +486,6 @@ export async function markShipmentLoaded(
      * asked for three fields and typed the same number twice is a slip, not a
      * reason to lose the other two.
      */
-    const containerNumbers = [
-      ...new Set((input.containerNumbers ?? []).map((n) => n.trim()).filter(Boolean)),
-    ];
-
     if (containerNumbers.length > 0) {
       const ids: string[] = [];
 

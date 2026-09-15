@@ -5,6 +5,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, TRANSACTION_STATUS_META, PAYMENT_METHOD_LABELS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { formatMoney, formatDate, formatRate } from '@/lib/format';
+import { getWarehouseLabels } from '@/lib/services/stock';
 import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import { VoucherTable, type VoucherRow } from '@/components/shared/voucher-table';
@@ -15,16 +16,20 @@ export const dynamic = 'force-dynamic';
 
 export default async function PaymentsPage() {
   const user = await requirePageAccess(PERMISSIONS.PAYMENTS_VIEW);
+  const companyId = user.activeCompany.id;
 
-  const payments = await prisma.payment.findMany({
-    where: { companyId: user.activeCompany.id },
-    orderBy: [{ paymentDate: 'desc' }, { paymentNumber: 'desc' }],
-    include: {
-      vendor: { select: { vendorName: true } },
-      cashBankAccount: { select: { name: true } },
-      allocations: { select: { id: true } },
-    },
-  });
+  const [payments, warehouses] = await Promise.all([
+    prisma.payment.findMany({
+      where: { companyId },
+      orderBy: [{ paymentDate: 'desc' }, { paymentNumber: 'desc' }],
+      include: {
+        vendor: { select: { vendorName: true } },
+        cashBankAccount: { select: { name: true } },
+        allocations: { select: { id: true } },
+      },
+    }),
+    getWarehouseLabels(companyId),
+  ]);
 
   const rows: VoucherRow[] = payments.map((p) => ({
     id: p.id,
@@ -42,6 +47,7 @@ export default async function PaymentsPage() {
     reference: p.reference,
     allocationCount: p.allocations.length,
     status: p.status,
+    warehouseNames: warehouses.byPayment.get(p.id) ?? '',
   }));
 
   return (

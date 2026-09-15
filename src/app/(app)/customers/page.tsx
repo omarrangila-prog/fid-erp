@@ -29,17 +29,35 @@ export default async function CustomersPage({
     getReceivables({ companyId, onlyOutstanding: true }),
   ]);
 
-  const outstandingByCustomer = new Map<string, number>();
+  const outstandingByCustomer = new Map<string, { amount: number; currency: string; usd: number }>();
   for (const row of receivables) {
-    outstandingByCustomer.set(
-      row.customerId,
-      (outstandingByCustomer.get(row.customerId) ?? 0) + Number(row.outstandingAmountUsd),
-    );
+    const existing = outstandingByCustomer.get(row.customerId);
+    if (!existing) {
+      outstandingByCustomer.set(row.customerId, {
+        amount: Number(row.outstandingAmount),
+        currency: row.currency,
+        usd: Number(row.outstandingAmountUsd),
+      });
+      continue;
+    }
+    existing.usd += Number(row.outstandingAmountUsd);
+    if (existing.currency === row.currency) {
+      existing.amount += Number(row.outstandingAmount);
+    } else {
+      existing.currency = 'MIXED';
+    }
   }
 
   // Decimals are formatted here so nothing but plain data crosses to the client.
   const rows: CustomerRow[] = customers.map((c) => {
-    const outstandingUsd = outstandingByCustomer.get(c.id) ?? 0;
+    const outstanding = outstandingByCustomer.get(c.id);
+    const outstandingUsd = outstanding?.usd ?? 0;
+    const outstandingLabel =
+      !outstanding || outstandingUsd === 0
+        ? '—'
+        : outstanding.currency === 'MIXED'
+          ? formatMoney(outstanding.usd, 'USD')
+          : formatMoney(outstanding.amount, outstanding.currency);
     return {
       id: c.id,
       customerCode: c.customerCode,
@@ -55,7 +73,7 @@ export default async function CustomersPage({
       creditLimit: c.creditLimit.toString(),
       creditLimitLabel: formatMoney(c.creditLimit, c.primaryCurrency),
       outstandingUsd,
-      outstandingLabel: outstandingUsd > 0 ? formatMoney(outstandingUsd, 'USD') : '—',
+      outstandingLabel,
       invoiceCount: c._count.salesInvoices,
       status: c.status,
     };

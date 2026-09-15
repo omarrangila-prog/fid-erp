@@ -21,6 +21,7 @@ export type VoucherRow = {
   reference: string | null;
   allocationCount: number;
   status: string;
+  warehouseNames: string;
 };
 
 /** Shared list for receipts and payments, which differ only in wording. */
@@ -51,6 +52,13 @@ export function VoucherTable({
     },
     { id: 'date', header: 'Date', mobile: 'meta', sortValue: (r) => r.dateSort, cell: (r) => r.date },
     { id: 'party', header: partyLabel, mobile: 'meta', sortValue: (r) => r.party, cell: (r) => r.party },
+    {
+      id: 'warehouse',
+      header: 'Warehouse',
+      mobile: 'meta',
+      sortValue: (r) => r.warehouseNames,
+      cell: (r) => r.warehouseNames || '—',
+    },
     {
       id: 'amount',
       header: 'Amount',
@@ -96,7 +104,7 @@ export function VoucherTable({
       columns={columns}
       getRowId={(r) => r.id}
       rowHref={(r) => `${basePath}/${r.id}`}
-      searchValue={(r) => `${r.number} ${r.party} ${r.reference ?? ''} ${r.account}`}
+      searchValue={(r) => `${r.number} ${r.party} ${r.reference ?? ''} ${r.account} ${r.warehouseNames}`}
       searchPlaceholder="Search voucher, party or reference…"
       emptyAction={emptyAction}
       emptyTitle={emptyTitle}

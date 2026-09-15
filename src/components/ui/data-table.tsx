@@ -344,12 +344,14 @@ export function DataTable<T>({
                           className={column.className}
                           data-print={column.printHidden ? 'hide' : undefined}
                         >
-                          {href && index === 0 ? (
-                            <Link href={href} className="block font-medium text-forest-800 hover:text-gold-700">
-                              {column.cell(row)}
-                            </Link>
-                          ) : href ? (
-                            <Link href={href} className="block text-inherit">
+                          {href && !column.printHidden ? (
+                            <Link
+                              href={href}
+                              className={cn(
+                                'block text-inherit',
+                                index === 0 && 'font-medium text-forest-800 hover:text-gold-700',
+                              )}
+                            >
                               {column.cell(row)}
                             </Link>
                           ) : (

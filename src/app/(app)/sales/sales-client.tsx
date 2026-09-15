@@ -30,6 +30,7 @@ export type SaleRow = {
   status: string;
   jobNumber: string | null;
   shipmentId: string | null;
+  warehouseNames: string;
 };
 
 export function SalesClient({
@@ -57,6 +58,13 @@ export function SalesClient({
       mobile: 'meta',
       sortValue: (r) => r.customerName,
       cell: (r) => r.customerName,
+    },
+    {
+      id: 'warehouse',
+      header: 'Warehouse',
+      mobile: 'meta',
+      sortValue: (r) => r.warehouseNames,
+      cell: (r) => r.warehouseNames || '—',
     },
     {
       id: 'quantity',
@@ -167,7 +175,7 @@ export function SalesClient({
       columns={columns}
       getRowId={(r) => r.id}
       rowHref={(r) => `/sales/${r.id}`}
-      searchValue={(r) => `${r.invoiceNumber} ${r.customerName} ${r.jobNumber ?? ''}`}
+      searchValue={(r) => `${r.invoiceNumber} ${r.customerName} ${r.jobNumber ?? ''} ${r.warehouseNames}`}
       searchPlaceholder="Search by invoice, customer or job…"
       emptyTitle="No sales invoices yet"
       emptyDescription="Sell coffee from a batch in a warehouse. Posting raises the receivable and relieves the stock."

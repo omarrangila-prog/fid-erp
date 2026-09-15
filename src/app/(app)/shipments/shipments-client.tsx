@@ -30,6 +30,7 @@ export type ShipmentRow = {
   settlement: string;
   soldPct: number;
   soldLabel: string;
+  warehouseNames: string;
 };
 
 export function ShipmentsClient({
@@ -54,6 +55,13 @@ export function ShipmentsClient({
       ),
     },
     { id: 'coffee', header: 'Coffee', mobile: 'meta', sortValue: (r) => r.itemName, cell: (r) => r.itemName },
+    {
+      id: 'warehouse',
+      header: 'Warehouse',
+      mobile: 'meta',
+      sortValue: (r) => r.warehouseNames,
+      cell: (r) => r.warehouseNames || '—',
+    },
     { id: 'vendor', header: 'Supplier', mobile: 'meta', sortValue: (r) => r.vendorName, cell: (r) => r.vendorName },
     {
       id: 'quantity',
@@ -156,7 +164,7 @@ export function ShipmentsClient({
       getRowId={(r) => r.id}
       rowHref={(r) => `/shipments/${r.id}`}
       searchValue={(r) =>
-        `${r.shipmentNumber} ${r.jobNumber} ${r.contractNumber} ${r.vendorName} ${r.itemName} ${r.bookingNumber ?? ''} ${r.billOfLading ?? ''} ${r.vesselName ?? ''}`
+        `${r.shipmentNumber} ${r.jobNumber} ${r.contractNumber} ${r.vendorName} ${r.itemName} ${r.bookingNumber ?? ''} ${r.billOfLading ?? ''} ${r.vesselName ?? ''} ${r.warehouseNames}`
       }
       searchPlaceholder="Search by shipment, job, booking, B/L or vessel…"
       emptyAction={emptyAction}

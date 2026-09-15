@@ -24,6 +24,7 @@ export type ExpenseRow = {
   enteredBy: string;
   reference: string | null;
   status: string;
+  warehouseNames: string;
 };
 
 export function ExpensesClient({
@@ -53,6 +54,14 @@ export function ExpensesClient({
       ),
     },
     { id: 'job', header: 'Job', mobile: 'meta', exportValue: (r) => r.job ?? '', cell: (r) => r.job ?? '—' },
+    {
+      id: 'warehouse',
+      header: 'Warehouse',
+      mobile: 'meta',
+      sortValue: (r) => r.warehouseNames,
+      exportValue: (r) => r.warehouseNames,
+      cell: (r) => r.warehouseNames || '—',
+    },
     { id: 'payee', header: 'Payee', hideable: true, exportValue: (r) => r.payee ?? '', cell: (r) => r.payee ?? '—' },
     { id: 'enteredBy', header: 'Entered by', hideable: true, defaultHidden: true, exportValue: (r) => r.enteredBy, cell: (r) => r.enteredBy },
     {
@@ -107,7 +116,7 @@ export function ExpensesClient({
       columns={columns}
       getRowId={(r) => r.id}
       rowHref={(r) => `/finance/expenses/${r.id}`}
-      searchValue={(r) => `${r.number} ${r.category} ${r.job ?? ''} ${r.reference ?? ''}`}
+      searchValue={(r) => `${r.number} ${r.category} ${r.job ?? ''} ${r.reference ?? ''} ${r.warehouseNames}`}
       searchPlaceholder="Search voucher, category or job…"
       emptyAction={emptyAction}
       emptyTitle="No expenses yet"

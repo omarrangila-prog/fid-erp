@@ -5,6 +5,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { formatMoney, formatDate } from '@/lib/format';
+import { getWarehouseLabels } from '@/lib/services/stock';
 import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import { EmptyAction } from '@/components/shared/empty-action';
@@ -15,19 +16,23 @@ export const dynamic = 'force-dynamic';
 
 export default async function ExpensesPage() {
   const user = await requirePageAccess(PERMISSIONS.EXPENSES_VIEW);
+  const companyId = user.activeCompany.id;
 
-  const expenses = await prisma.expense.findMany({
-    where: { companyId: user.activeCompany.id },
-    orderBy: [{ expenseDate: 'desc' }, { expenseNumber: 'desc' }],
-    include: {
-      expenseCategory: { select: { name: true } },
-      shipment: { select: { id: true, jobNumber: true } },
-      cashBankAccount: { select: { name: true } },
-      vendor: { select: { vendorName: true } },
-      agent: { select: { agentName: true } },
-      createdBy: { select: { name: true } },
-    },
-  });
+  const [expenses, warehouses] = await Promise.all([
+    prisma.expense.findMany({
+      where: { companyId },
+      orderBy: [{ expenseDate: 'desc' }, { expenseNumber: 'desc' }],
+      include: {
+        expenseCategory: { select: { name: true } },
+        shipment: { select: { id: true, jobNumber: true } },
+        cashBankAccount: { select: { name: true } },
+        vendor: { select: { vendorName: true } },
+        agent: { select: { agentName: true } },
+        createdBy: { select: { name: true } },
+      },
+    }),
+    getWarehouseLabels(companyId),
+  ]);
 
   const rows: ExpenseRow[] = expenses.map((e) => ({
     id: e.id,
@@ -48,6 +53,7 @@ export default async function ExpensesPage() {
     enteredBy: e.createdBy.name,
     reference: e.reference,
     status: e.status,
+    warehouseNames: warehouses.byExpense.get(e.id) ?? '',
   }));
 
   return (

@@ -317,6 +317,10 @@ describe('selling half of it', () => {
     expect(Number(profit.allocatedLandedCostUsd)).toBeCloseTo(54_250, 2);
     // Unsold coffee is neither revenue nor a loss.
     expect(Number(profit.grossProfitUsd)).toBeCloseTo(15_750, 2);
+    expect(profit.contractReference).toBe('MA-EXP-2026-01');
+    expect(Number(profit.salesRevenueLocal)).toBeCloseTo(700_000, 2);
+    expect(Number(profit.allocatedLandedCostLocal)).toBeCloseTo(542_500, 2);
+    expect(Number(profit.grossProfitLocal)).toBeCloseTo(157_500, 2);
   });
 
   it('shows realised profit on the shipment costing sheet', async () => {

@@ -12,7 +12,12 @@ import { PaymentForm, type OpenContract } from '@/app/(app)/finance/payments/pay
 export const metadata: Metadata = { title: 'New Payment' };
 export const dynamic = 'force-dynamic';
 
-export default async function NewPaymentPage() {
+export default async function NewPaymentPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ expense?: string }>;
+}) {
+  const { expense } = await searchParams;
   const user = await requirePageAccess(PERMISSIONS.PAYMENTS_CREATE);
   const companyId = user.activeCompany.id;
 
@@ -101,6 +106,7 @@ export default async function NewPaymentPage() {
         contracts={contracts}
         localCurrency={user.activeCompany.localCurrency}
         defaultLocalRate={rates.local}
+        preselectedExpenseId={expense}
         canPost={can(user, PERMISSIONS.PAYMENTS_POST)}
       />
     </div>

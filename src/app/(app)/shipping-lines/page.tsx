@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: 'Shipping Lines' };
 export const dynamic = 'force-dynamic';
 
 const FIELDS: FieldSpec[] = [
-  { kind: 'text', name: 'code', label: 'Code', required: true, placeholder: 'MSC' },
+  { kind: 'text', name: 'code', label: 'Code', placeholder: 'MSC', hint: 'Issued automatically if left blank.' },
   { kind: 'text', name: 'name', label: 'Shipping line', required: true, placeholder: 'Mediterranean Shipping Company' },
   { kind: 'select', name: 'status', label: 'Status', options: STATUS_OPTIONS },
   { kind: 'textarea', name: 'contactInformation', label: 'Contact information', full: true },

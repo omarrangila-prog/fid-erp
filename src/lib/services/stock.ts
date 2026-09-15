@@ -398,6 +398,389 @@ export async function getSellableStock(companyId: string): Promise<SellableStock
   }));
 }
 
+export type ItemWarehouseLine = {
+  batchId: string;
+  batchNumber: string;
+  lotNumber: string;
+  containerNumber: string | null;
+  onHandKg: Decimal;
+  reservedKg: Decimal;
+  availableKg: Decimal;
+  bags: number;
+};
+
+export type ItemWarehouseGroup = {
+  warehouseId: string;
+  warehouseName: string;
+  warehouseCode: string;
+  onHandKg: Decimal;
+  reservedKg: Decimal;
+  availableKg: Decimal;
+  bags: number;
+  lines: ItemWarehouseLine[];
+};
+
+export type ItemWarehouseStock = {
+  warehouses: ItemWarehouseGroup[];
+  totalOnHandKg: Decimal;
+  totalReservedKg: Decimal;
+  totalAvailableKg: Decimal;
+};
+
+type WarehouseMovementRow = {
+  itemId: string;
+  warehouseId: string;
+  warehouseName: string;
+  warehouseCode: string;
+  batchId: string;
+  batchNumber: string;
+  lotNumber: string;
+  containerNumber: string | null;
+  onHandKg: string;
+  reservedKg: string;
+  bags: string;
+};
+
+/**
+ * Physical stock from the movement ledger, with the warehouse cache as a
+ * fallback so older receipts still show a location if a cache row exists.
+ */
+async function loadWarehouseMovements(
+  companyId: string,
+  itemId?: string,
+): Promise<WarehouseMovementRow[]> {
+  const [fromLedger, fromCache] = await Promise.all([
+    prisma.$queryRaw<WarehouseMovementRow[]>`
+      SELECT b."itemId",
+             t."warehouseId",
+             w."name" AS "warehouseName",
+             w."code" AS "warehouseCode",
+             t."batchId",
+             b."batchNumber",
+             l."lotNumber",
+             ct."containerNumber",
+             COALESCE(SUM(CASE WHEN t."transactionType" NOT IN ('RESERVATION','RESERVATION_RELEASE')
+                               THEN t."quantityKg" ELSE 0 END), 0)::text AS "onHandKg",
+             COALESCE(SUM(CASE WHEN t."transactionType" IN ('RESERVATION','RESERVATION_RELEASE')
+                               THEN t."quantityKg" ELSE 0 END), 0)::text AS "reservedKg",
+             COALESCE(SUM(CASE WHEN t."transactionType" NOT IN ('RESERVATION','RESERVATION_RELEASE')
+                               THEN t."bags" ELSE 0 END), 0)::text AS bags
+      FROM inventory_transactions t
+      JOIN warehouses w ON w."id" = t."warehouseId"
+      JOIN batches b ON b."id" = t."batchId"
+      JOIN lots l ON l."id" = b."lotId"
+      LEFT JOIN containers ct ON ct."id" = b."containerId"
+      WHERE t."companyId" = ${companyId}
+        AND (${itemId ?? null}::text IS NULL OR b."itemId" = ${itemId ?? null})
+      GROUP BY b."itemId", t."warehouseId", w."name", w."code", t."batchId",
+               b."batchNumber", l."lotNumber", ct."containerNumber"
+    `,
+    prisma.$queryRaw<WarehouseMovementRow[]>`
+      SELECT ib."itemId",
+             ib."warehouseId",
+             w."name" AS "warehouseName",
+             w."code" AS "warehouseCode",
+             ib."batchId",
+             b."batchNumber",
+             l."lotNumber",
+             ct."containerNumber",
+             ib."onHandKg"::text AS "onHandKg",
+             ib."reservedKg"::text AS "reservedKg",
+             ib."bags"::text AS bags
+      FROM inventory_balances ib
+      JOIN warehouses w ON w."id" = ib."warehouseId"
+      JOIN batches b ON b."id" = ib."batchId"
+      JOIN lots l ON l."id" = b."lotId"
+      LEFT JOIN containers ct ON ct."id" = b."containerId"
+      WHERE ib."companyId" = ${companyId}
+        AND (${itemId ?? null}::text IS NULL OR ib."itemId" = ${itemId ?? null})
+    `,
+  ]);
+
+  const byKey = new Map<string, WarehouseMovementRow>();
+  for (const row of fromCache) {
+    byKey.set(`${row.itemId}:${row.warehouseId}:${row.batchId}`, row);
+  }
+  // The ledger is the authority whenever a movement exists for that location.
+  for (const row of fromLedger) {
+    byKey.set(`${row.itemId}:${row.warehouseId}:${row.batchId}`, row);
+  }
+  return [...byKey.values()];
+}
+
+function emptyWarehouseGroup(
+  warehouse: { id: string; name: string; code: string },
+): ItemWarehouseGroup {
+  return {
+    warehouseId: warehouse.id,
+    warehouseName: warehouse.name,
+    warehouseCode: warehouse.code,
+    onHandKg: toQuantity(0),
+    reservedKg: toQuantity(0),
+    availableKg: toQuantity(0),
+    bags: 0,
+    lines: [],
+  };
+}
+
+function applyMovementRow(group: ItemWarehouseGroup, row: WarehouseMovementRow) {
+  const onHandKg = toQuantity(row.onHandKg);
+  const reservedKg = toQuantity(row.reservedKg);
+  const availableKg = toQuantity(onHandKg.minus(reservedKg));
+  const bags = Number(row.bags);
+  if (onHandKg.eq(0) && reservedKg.eq(0) && availableKg.eq(0) && bags === 0) return;
+
+  group.onHandKg = toQuantity(group.onHandKg.plus(onHandKg));
+  group.reservedKg = toQuantity(group.reservedKg.plus(reservedKg));
+  group.availableKg = toQuantity(group.availableKg.plus(availableKg));
+  group.bags += bags;
+  group.lines.push({
+    batchId: row.batchId,
+    batchNumber: row.batchNumber,
+    lotNumber: row.lotNumber,
+    containerNumber: row.containerNumber,
+    onHandKg,
+    reservedKg,
+    availableKg,
+    bags,
+  });
+}
+
+function finaliseWarehouseGroups(groups: Map<string, ItemWarehouseGroup>): ItemWarehouseStock {
+  const result = [...groups.values()].sort((a, b) =>
+    a.warehouseName.localeCompare(b.warehouseName),
+  );
+  for (const group of result) {
+    group.lines.sort((a, b) => a.batchNumber.localeCompare(b.batchNumber));
+  }
+  return {
+    warehouses: result,
+    totalOnHandKg: result.reduce((sum, group) => sum.plus(group.onHandKg), dec(0)),
+    totalReservedKg: result.reduce((sum, group) => sum.plus(group.reservedKg), dec(0)),
+    totalAvailableKg: result.reduce((sum, group) => sum.plus(group.availableKg), dec(0)),
+  };
+}
+
+/**
+ * Live stock of one coffee, split by warehouse, then by batch / lot / container.
+ *
+ * Opening the item answers "where is it?" before anything else. A sale deducts
+ * only the warehouse and batch on the invoice; a transfer moves quantity
+ * between warehouses and leaves the company total unchanged.
+ */
+export async function getItemWarehouseStock(
+  companyId: string,
+  itemId: string,
+): Promise<ItemWarehouseStock> {
+  const [warehouses, movements] = await Promise.all([
+    prisma.warehouse.findMany({
+      where: { companyId },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true, code: true, status: true },
+    }),
+    loadWarehouseMovements(companyId, itemId),
+  ]);
+
+  const groups = new Map<string, ItemWarehouseGroup>();
+  for (const warehouse of warehouses) {
+    if (warehouse.status !== 'ACTIVE') continue;
+    groups.set(warehouse.id, emptyWarehouseGroup(warehouse));
+  }
+
+  for (const row of movements) {
+    let group = groups.get(row.warehouseId);
+    if (!group) {
+      group = emptyWarehouseGroup({
+        id: row.warehouseId,
+        name: row.warehouseName,
+        code: row.warehouseCode,
+      });
+      groups.set(row.warehouseId, group);
+    }
+    applyMovementRow(group, row);
+  }
+
+  return finaliseWarehouseGroups(groups);
+}
+
+export type ItemWarehouseListRow = {
+  itemId: string;
+  warehouses: Array<{ warehouseId: string; warehouseName: string; availableKg: Decimal }>;
+  totalAvailableKg: Decimal;
+};
+
+/**
+ * Warehouse split for every coffee, used on the items list so stock location
+ * is visible without opening a second screen.
+ */
+export async function getWarehouseStockByItem(
+  companyId: string,
+): Promise<Map<string, ItemWarehouseListRow>> {
+  const movements = await loadWarehouseMovements(companyId);
+  const byItem = new Map<string, Map<string, { warehouseId: string; warehouseName: string; availableKg: Decimal }>>();
+
+  for (const row of movements) {
+    const availableKg = toQuantity(dec(row.onHandKg).minus(row.reservedKg));
+    if (availableKg.eq(0) && toQuantity(row.onHandKg).eq(0)) continue;
+    let warehouses = byItem.get(row.itemId);
+    if (!warehouses) {
+      warehouses = new Map();
+      byItem.set(row.itemId, warehouses);
+    }
+    const existing = warehouses.get(row.warehouseId);
+    if (existing) {
+      existing.availableKg = toQuantity(existing.availableKg.plus(availableKg));
+    } else {
+      warehouses.set(row.warehouseId, {
+        warehouseId: row.warehouseId,
+        warehouseName: row.warehouseName,
+        availableKg,
+      });
+    }
+  }
+
+  const result = new Map<string, ItemWarehouseListRow>();
+  for (const [itemId, warehouses] of byItem) {
+    const list = [...warehouses.values()].sort((a, b) =>
+      a.warehouseName.localeCompare(b.warehouseName),
+    );
+    result.set(itemId, {
+      itemId,
+      warehouses: list,
+      totalAvailableKg: list.reduce((sum, row) => sum.plus(row.availableKg), dec(0)),
+    });
+  }
+  return result;
+}
+
+function joinWarehouseNames(names: Iterable<string>): string {
+  return [...new Set(names)].filter(Boolean).sort((a, b) => a.localeCompare(b)).join(', ');
+}
+
+/**
+ * Warehouse names rolled up for lists: batch, shipment, purchase contract,
+ * sales invoice. Used so every operational screen can say where the coffee is.
+ */
+export async function getWarehouseLabels(companyId: string): Promise<{
+  byBatch: Map<string, string>;
+  byShipment: Map<string, string>;
+  byContract: Map<string, string>;
+  byInvoice: Map<string, string>;
+  byReceipt: Map<string, string>;
+  byPayment: Map<string, string>;
+  byExpense: Map<string, string>;
+}> {
+  const [stockRows, invoiceRows, receiptAllocs, paymentAllocs, expenses] = await Promise.all([
+    prisma.$queryRaw<
+      Array<{
+        batchId: string;
+        shipmentId: string;
+        purchaseContractId: string;
+        warehouseName: string;
+      }>
+    >`
+      SELECT b."id" AS "batchId",
+             b."shipmentId",
+             b."purchaseContractId",
+             w."name" AS "warehouseName"
+      FROM inventory_balances ib
+      JOIN warehouses w ON w."id" = ib."warehouseId"
+      JOIN batches b ON b."id" = ib."batchId"
+      WHERE ib."companyId" = ${companyId}
+        AND (ib."onHandKg" > 0 OR ib."availableKg" > 0 OR ib."reservedKg" > 0)
+    `,
+    prisma.$queryRaw<Array<{ invoiceId: string; warehouseName: string }>>`
+      SELECT sil."salesInvoiceId" AS "invoiceId", w."name" AS "warehouseName"
+      FROM sales_invoice_lines sil
+      JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
+      JOIN warehouses w ON w."id" = sil."warehouseId"
+      WHERE si."companyId" = ${companyId}
+    `,
+    prisma.receiptAllocation.findMany({
+      where: { receipt: { companyId } },
+      select: { receiptId: true, salesInvoiceId: true },
+    }),
+    prisma.paymentAllocation.findMany({
+      where: { payment: { companyId } },
+      select: { paymentId: true, purchaseContractId: true, expenseId: true },
+    }),
+    prisma.expense.findMany({
+      where: { companyId },
+      select: { id: true, shipmentId: true },
+    }),
+  ]);
+
+  const byBatch = new Map<string, Set<string>>();
+  const byShipment = new Map<string, Set<string>>();
+  const byContract = new Map<string, Set<string>>();
+  const byInvoice = new Map<string, Set<string>>();
+
+  const add = (map: Map<string, Set<string>>, key: string, name: string) => {
+    if (!key || !name) return;
+    let set = map.get(key);
+    if (!set) {
+      set = new Set();
+      map.set(key, set);
+    }
+    set.add(name);
+  };
+
+  for (const row of stockRows) {
+    add(byBatch, row.batchId, row.warehouseName);
+    add(byShipment, row.shipmentId, row.warehouseName);
+    add(byContract, row.purchaseContractId, row.warehouseName);
+  }
+  for (const row of invoiceRows) {
+    add(byInvoice, row.invoiceId, row.warehouseName);
+  }
+
+  const collapse = (map: Map<string, Set<string>>) => {
+    const out = new Map<string, string>();
+    for (const [key, names] of map) out.set(key, joinWarehouseNames(names));
+    return out;
+  };
+
+  const byBatchOut = collapse(byBatch);
+  const byShipmentOut = collapse(byShipment);
+  const byContractOut = collapse(byContract);
+  const byInvoiceOut = collapse(byInvoice);
+
+  const byExpenseSets = new Map<string, Set<string>>();
+  for (const expense of expenses) {
+    const label = expense.shipmentId ? byShipmentOut.get(expense.shipmentId) : undefined;
+    if (label) {
+      for (const name of label.split(', ')) add(byExpenseSets, expense.id, name);
+    }
+  }
+  const byExpenseOut = collapse(byExpenseSets);
+
+  const byReceiptSets = new Map<string, Set<string>>();
+  for (const allocation of receiptAllocs) {
+    const label = byInvoiceOut.get(allocation.salesInvoiceId);
+    if (label) for (const name of label.split(', ')) add(byReceiptSets, allocation.receiptId, name);
+  }
+
+  const byPaymentSets = new Map<string, Set<string>>();
+  for (const allocation of paymentAllocs) {
+    const fromContract = allocation.purchaseContractId
+      ? byContractOut.get(allocation.purchaseContractId)
+      : undefined;
+    const fromExpense = allocation.expenseId ? byExpenseOut.get(allocation.expenseId) : undefined;
+    const label = fromContract || fromExpense;
+    if (label) for (const name of label.split(', ')) add(byPaymentSets, allocation.paymentId, name);
+  }
+
+  return {
+    byBatch: byBatchOut,
+    byShipment: byShipmentOut,
+    byContract: byContractOut,
+    byInvoice: byInvoiceOut,
+    byReceipt: collapse(byReceiptSets),
+    byPayment: collapse(byPaymentSets),
+    byExpense: byExpenseOut,
+  };
+}
+
 /** Stock held per warehouse for one batch — the "where is it?" answer. */
 export async function getBatchLocations(companyId: string, batchId: string) {
   const rows = await prisma.inventoryBalance.findMany({
@@ -535,3 +918,75 @@ export async function getStockAgeing(companyId: string): Promise<StockAgeingRow[
 
 /** The ageing buckets in order, so a summary can show empty ones too. */
 export const STOCK_AGEING_BUCKETS = AGEING_BUCKETS;
+
+export type InventoryValuationLine = {
+  warehouseId: string;
+  warehouseName: string;
+  warehouseCode: string;
+  itemId: string;
+  itemName: string;
+  batchId: string;
+  batchNumber: string;
+  lotNumber: string;
+  containerNumber: string | null;
+  onHandKg: Decimal;
+  availableKg: Decimal;
+  landedUnitCostUsd: Decimal;
+  valueUsd: Decimal;
+};
+
+/** On-hand stock at landed cost, warehouse then batch. */
+export async function getInventoryValuation(companyId: string): Promise<InventoryValuationLine[]> {
+  const rows = await prisma.$queryRaw<
+    Array<{
+      warehouseId: string;
+      warehouseName: string;
+      warehouseCode: string;
+      itemId: string;
+      itemName: string;
+      batchId: string;
+      batchNumber: string;
+      lotNumber: string;
+      containerNumber: string | null;
+      onHandKg: string;
+      availableKg: string;
+      landedUnitCostUsd: string;
+    }>
+  >`
+    SELECT w."id" AS "warehouseId", w."name" AS "warehouseName", w."code" AS "warehouseCode",
+           ci."id" AS "itemId", ci."itemName",
+           b."id" AS "batchId", b."batchNumber", l."lotNumber", c."containerNumber",
+           ib."onHandKg"::text AS "onHandKg",
+           ib."availableKg"::text AS "availableKg",
+           b."landedUnitCostUsd"::text AS "landedUnitCostUsd"
+      FROM inventory_balances ib
+      JOIN warehouses w ON w."id" = ib."warehouseId"
+      JOIN batches b ON b."id" = ib."batchId"
+      JOIN lots l ON l."id" = b."lotId"
+      JOIN coffee_items ci ON ci."id" = b."itemId"
+      LEFT JOIN containers c ON c."id" = b."containerId"
+     WHERE ib."companyId" = ${companyId} AND ib."onHandKg" > 0
+     ORDER BY w."name", ci."itemName", b."batchNumber"
+  `;
+
+  return rows.map((row) => {
+    const onHandKg = toQuantity(row.onHandKg);
+    const landedUnitCostUsd = toMoney(row.landedUnitCostUsd);
+    return {
+      warehouseId: row.warehouseId,
+      warehouseName: row.warehouseName,
+      warehouseCode: row.warehouseCode,
+      itemId: row.itemId,
+      itemName: row.itemName,
+      batchId: row.batchId,
+      batchNumber: row.batchNumber,
+      lotNumber: row.lotNumber,
+      containerNumber: row.containerNumber,
+      onHandKg,
+      availableKg: toQuantity(row.availableKg),
+      landedUnitCostUsd,
+      valueUsd: toMoney(onHandKg.times(landedUnitCostUsd)),
+    };
+  });
+}
+

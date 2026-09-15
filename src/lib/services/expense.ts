@@ -10,7 +10,7 @@ import { applyLandedCost } from '@/lib/services/landed-cost';
 import { getCompanyContext } from '@/lib/services/company';
 import { resolveSubledgerLeg } from '@/lib/services/subledger';
 import { writeAudit } from '@/lib/services/audit';
-import { resolveTaxCode, computeLineTax } from '@/lib/services/tax';
+import { resolveTaxCode, computeLineTax, NO_TAX, supplierInvoiceIncludesInputTax, supplierGrossPayable } from '@/lib/services/tax';
 
 /**
  * ExpenseService — shipment and operating costs.
@@ -20,8 +20,9 @@ import { resolveTaxCode, computeLineTax } from '@/lib/services/tax';
  * three-way currency record as a receipt, and shipment net profit is reduced by
  * the USD equivalent captured at the time of posting.
  *
- * An expense is either paid immediately from a cash/bank account, or booked to
- * a vendor's payable. Exactly one of the two must be supplied.
+ * An expense is either paid immediately from a cash/bank account, or booked
+ * unpaid to be paid later. Unpaid costs still raise shipment landed cost on
+ * the day they are recorded. A named supplier or agent is optional.
  */
 
 export type ExpenseInput = {
@@ -30,6 +31,8 @@ export type ExpenseInput = {
   expenseCategoryId: string;
   shipmentId?: string | null;
   purchaseContractId?: string | null;
+  containerId?: string | null;
+  batchId?: string | null;
   vendorId?: string | null;
   agentId?: string | null;
   /** Owed to this agent rather than paid now — commission, typically. */
@@ -77,21 +80,15 @@ function computeExpenseAmounts(input: ExpenseInput & { localCurrency: string }) 
 
 async function validateReferences(tx: Tx, input: ExpenseInput) {
   /*
-   * Three ways to settle a cost, and exactly one of them.
+   * Paid now from cash or bank, or booked unpaid to pay later.
    *
-   * Paid now from cash or bank; owed to a supplier; or owed to an agent —
-   * commission, typically, which the client agrees per shipment and the agent
-   * collects later. The third is what makes an unpaid commission a real cost
-   * of the shipment on the day it is agreed without pretending any money has
-   * moved.
+   * A named supplier or agent is optional. Unpaid with no payee credits
+   * accounts payable as an accrual; Record payment later moves the cash.
+   * Owed to an agent still credits commission payable so the agent ledger
+   * stays complete when that path is used from tests or older vouchers.
    */
   const settlements = [input.cashBankAccountId, input.vendorId, input.payableToAgentId].filter(Boolean);
 
-  if (settlements.length === 0) {
-    throw new BusinessRuleError(
-      'Say how this cost is settled: paid from an account, owed to a supplier, or owed to an agent.',
-    );
-  }
   if (settlements.length > 1) {
     throw new BusinessRuleError(
       'A cost is settled one way only — paid from cash/bank, owed to a supplier, or owed to an agent. Record the payment separately.',
@@ -155,6 +152,41 @@ async function validateReferences(tx: Tx, input: ExpenseInput) {
    */
   const kind = input.kind ?? (input.shipmentId ? 'SHIPMENT' : category.kind);
 
+  if ((input.containerId || input.batchId) && !input.shipmentId) {
+    throw new BusinessRuleError('A container or batch can only be named on a shipment expense.');
+  }
+  if (kind === 'GENERAL' && (input.containerId || input.batchId)) {
+    throw new BusinessRuleError('A general company expense does not belong to a container or a batch.');
+  }
+
+  if (input.containerId) {
+    const container = await tx.container.findFirst({
+      where: { id: input.containerId, companyId: input.companyId },
+      select: { id: true, shipmentId: true, containerNumber: true },
+    });
+    if (!container) throw new NotFoundError('Container');
+    if (container.shipmentId !== input.shipmentId) {
+      throw new BusinessRuleError(`${container.containerNumber} does not belong to this shipment.`);
+    }
+  }
+
+  if (input.batchId) {
+    const batch = await tx.batch.findFirst({
+      where: { id: input.batchId, companyId: input.companyId },
+      select: { id: true, shipmentId: true, containerId: true, batchNumber: true },
+    });
+    if (!batch) throw new NotFoundError('Batch');
+    if (batch.shipmentId !== input.shipmentId) {
+      throw new BusinessRuleError(`${batch.batchNumber} does not belong to this shipment.`);
+    }
+    if (input.containerId && batch.containerId && batch.containerId !== input.containerId) {
+      throw new BusinessRuleError(`${batch.batchNumber} is not in that container.`);
+    }
+    if (!input.containerId && batch.containerId) {
+      input.containerId = batch.containerId;
+    }
+  }
+
   // A shipment cost has to say which shipment. Without that it cannot reach a
   // job cost report, a landed cost or a profitability figure — it would be an
   // overhead wearing a shipment category's name.
@@ -198,14 +230,27 @@ async function resolveExpenseTax(
 ) {
   const company = await tx.company.findUniqueOrThrow({
     where: { id: input.companyId },
-    select: { taxEnabled: true },
+    select: { taxEnabled: true, country: true },
   });
-  const code = await resolveTaxCode(tx, {
-    companyId: input.companyId,
-    taxEnabled: company.taxEnabled,
-    taxCodeId: input.taxCodeId,
-    appliesTo: 'PURCHASE',
-  });
+  let vendorCountry: string | null = null;
+  if (input.vendorId) {
+    const vendor = await tx.vendor.findFirst({
+      where: { id: input.vendorId, companyId: input.companyId },
+      select: { country: true },
+    });
+    vendorCountry = vendor?.country ?? null;
+  }
+  // A bill paid from cash with no supplier is a local invoice — tax still applies.
+  // A named foreign supplier does not charge the company's VAT/TVA.
+  const taxOnInvoice = !input.vendorId || supplierInvoiceIncludesInputTax(vendorCountry, company.country);
+  const code = taxOnInvoice
+    ? await resolveTaxCode(tx, {
+        companyId: input.companyId,
+        taxEnabled: company.taxEnabled,
+        taxCodeId: input.taxCodeId,
+        appliesTo: 'PURCHASE',
+      })
+    : NO_TAX;
   const computed = computeLineTax({
     netAmount: amounts.amount,
     ratePct: code.ratePct,
@@ -240,6 +285,8 @@ export async function createExpense(input: ExpenseInput, userId: string) {
         expenseCategoryId: input.expenseCategoryId,
         shipmentId: input.shipmentId ?? null,
         purchaseContractId: input.purchaseContractId ?? null,
+        containerId: input.containerId ?? null,
+        batchId: input.batchId ?? null,
         vendorId: input.vendorId ?? null,
         payableToAgentId: input.payableToAgentId ?? null,
         agentId: input.agentId ?? null,
@@ -303,6 +350,8 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
         expenseCategoryId: input.expenseCategoryId,
         shipmentId: input.shipmentId ?? null,
         purchaseContractId: input.purchaseContractId ?? null,
+        containerId: input.containerId ?? null,
+        batchId: input.batchId ?? null,
         vendorId: input.vendorId ?? null,
         payableToAgentId: input.payableToAgentId ?? null,
         agentId: input.agentId ?? null,
@@ -365,10 +414,23 @@ export async function postExpense(params: { id: string; companyId: string; userI
     // ---------------------------------------------------------------------
     // The credit side: paid from cash/bank, or owed to a supplier.
     // ---------------------------------------------------------------------
-    // Gross: the supplier is paid the bill including tax. Only the net reaches
-    // the expense or the batch below; the tax goes to VAT recoverable.
-    const grossAmount = toMoney(dec(expense.amount).plus(expense.taxAmount));
-    const grossAmountUsd = toMoney(dec(expense.amountUsd).plus(expense.taxAmountUsd));
+    // A local bill (cash, or a supplier in the same tax jurisdiction) is paid
+    // gross of tax. A foreign supplier is paid the net — their invoice does
+    // not carry the buyer's VAT/TVA.
+    const payable = supplierGrossPayable({
+      netAmount: expense.amount,
+      taxAmount: expense.taxAmount,
+      netAmountUsd: expense.amountUsd,
+      taxAmountUsd: expense.taxAmountUsd,
+      vendorCountry: expense.vendor?.country,
+      companyCountry: company.country,
+    });
+    const grossAmount = expense.vendorId
+      ? payable.amount
+      : toMoney(dec(expense.amount).plus(expense.taxAmount));
+    const grossAmountUsd = expense.vendorId
+      ? payable.amountUsd
+      : toMoney(dec(expense.amountUsd).plus(expense.taxAmountUsd));
 
     const creditLine: JournalLineInput = expense.cashBankAccountId
       ? {
@@ -393,10 +455,8 @@ export async function postExpense(params: { id: string; companyId: string; userI
           agentId: expense.payableToAgentId,
           shipmentId: expense.shipmentId,
         }
-      : (() => {
-          if (!expense.vendor) {
-            throw new BusinessRuleError('This expense has no payment account, supplier or agent.');
-          }
+      : expense.vendor
+      ? (() => {
           const ap = resolveSubledgerLeg({
             partyCurrency: expense.vendor.primaryCurrency,
             voucherCurrency: expense.currency,
@@ -417,7 +477,16 @@ export async function postExpense(params: { id: string; companyId: string; userI
             vendorId: expense.vendorId,
             shipmentId: expense.shipmentId,
           };
-        })();
+        })()
+      : {
+          accountKey: ACCOUNT_KEYS.ACCOUNTS_PAYABLE,
+          direction: 'CREDIT' as const,
+          currency: expense.currency,
+          amount: grossAmount,
+          rateToUsd: expense.rateToUsd,
+          description: `Unpaid ${expense.expenseCategory.name} — to be paid later`,
+          shipmentId: expense.shipmentId,
+        };
 
     // ---------------------------------------------------------------------
     // The debit side.
@@ -429,7 +498,7 @@ export async function postExpense(params: { id: string; companyId: string; userI
     // ---------------------------------------------------------------------
     const debitLines: JournalLineInput[] = [];
 
-    if (dec(expense.taxAmount).greaterThan(0)) {
+    if (dec(expense.taxAmount).greaterThan(0) && (!expense.vendorId || payable.taxOnSupplierInvoice)) {
       debitLines.push({
         accountKey: ACCOUNT_KEYS.VAT_INPUT,
         direction: 'DEBIT',
@@ -437,7 +506,6 @@ export async function postExpense(params: { id: string; companyId: string; userI
         amount: expense.taxAmount,
         rateToUsd: expense.rateToUsd,
         description: `Input tax on ${expense.expenseNumber}`,
-        vendorId: expense.vendorId,
       });
     }
 
@@ -447,6 +515,8 @@ export async function postExpense(params: { id: string; companyId: string; userI
         shipmentId: expense.shipmentId,
         amountUsd: expense.amountUsd,
         reference: expense.expenseNumber,
+        containerId: expense.containerId,
+        batchId: expense.batchId,
       });
 
       // The engine has already split the cost three ways by kilograms. Any
@@ -562,6 +632,8 @@ export async function reverseExpense(params: { id: string; companyId: string; us
         shipmentId: expense.shipmentId,
         amountUsd: dec(expense.amountUsd).negated(),
         reference: `${expense.expenseNumber} reversal`,
+        containerId: expense.containerId,
+        batchId: expense.batchId,
       });
     }
 

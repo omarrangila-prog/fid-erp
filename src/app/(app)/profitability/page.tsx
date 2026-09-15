@@ -20,12 +20,16 @@ import { StatusBadge } from '@/components/ui/badge';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { Callout } from '@/components/ui/feedback';
 import { cn } from '@/lib/utils';
+import { PrintButton } from '@/components/shared/print-button';
+import { ExcelLink, exportHref } from '@/components/shared/excel-link';
+import { PrintHeader } from '@/components/shared/print-header';
 
 export const metadata: Metadata = { title: 'Profitability' };
 export const dynamic = 'force-dynamic';
 
 const VIEWS = [
   { key: 'shipment', label: 'By job' },
+  { key: 'contract', label: 'By contract' },
   { key: 'customer', label: 'By customer' },
   { key: 'product', label: 'By coffee' },
   { key: 'batch', label: 'By batch' },
@@ -37,16 +41,29 @@ export default async function ProfitabilityPage({ searchParams }: { searchParams
   const { view } = await searchParams;
   const user = await requirePageAccess(PERMISSIONS.PROFITS_VIEW);
   const companyId = user.activeCompany.id;
+  const local = user.activeCompany.localCurrency;
   const active = VIEWS.find((v) => v.key === view)?.key ?? 'shipment';
 
   const summary = await getCompanyProfitSummary({ companyId });
 
   return (
-    <div className="space-y-6">
+    <div className="print-landscape space-y-6">
       <PageHeader
         title="Profitability"
         description="Margin measured only on coffee that has actually sold. Unsold stock stays on the balance sheet."
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Profitability' }]}
+        actions={
+          <>
+            <ExcelLink href={exportHref('profitability', { view: active })} />
+            <PrintButton />
+          </>
+        }
+      />
+      <PrintHeader
+        title="Profitability"
+        companyName={user.activeCompany.name}
+        country={user.activeCompany.country}
+        period={VIEWS.find((v) => v.key === active)?.label}
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
@@ -77,7 +94,7 @@ export default async function ProfitabilityPage({ searchParams }: { searchParams
         commission, storage — appear separately as other costs.
       </Callout>
 
-      <div className="inline-flex flex-wrap gap-0.5 rounded-lg border border-line-strong p-0.5">
+      <div className="inline-flex flex-wrap gap-0.5 rounded-lg border border-line-strong p-0.5" data-print="hide">
         {VIEWS.map((option) => (
           <Link
             key={option.key}
@@ -92,28 +109,41 @@ export default async function ProfitabilityPage({ searchParams }: { searchParams
         ))}
       </div>
 
-      {active === 'shipment' ? <ShipmentTable companyId={companyId} /> : null}
+      {active === 'shipment' ? <ShipmentTable companyId={companyId} local={local} lead="job" /> : null}
+      {active === 'contract' ? <ShipmentTable companyId={companyId} local={local} lead="contract" /> : null}
       {active === 'month' ? <MonthlyTable companyId={companyId} /> : null}
-      {active !== 'shipment' && active !== 'month' ? <BreakdownTable companyId={companyId} kind={active} /> : null}
+      {active !== 'shipment' && active !== 'contract' && active !== 'month' ? (
+        <BreakdownTable companyId={companyId} kind={active} />
+      ) : null}
     </div>
   );
 }
 
-async function ShipmentTable({ companyId }: { companyId: string }) {
+async function ShipmentTable({
+  companyId,
+  local,
+  lead,
+}: {
+  companyId: string;
+  local: string;
+  lead: 'job' | 'contract';
+}) {
   const rows = await getShipmentProfitability({ companyId });
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Job profitability</CardTitle>
-        <CardDescription>Each job is a purchase contract, its containers and everything sold from it.</CardDescription>
+        <CardTitle>{lead === 'contract' ? 'Contract profitability' : 'Job profitability'}</CardTitle>
+        <CardDescription>
+          Purchase cost converted to {local} at the contract rate, plus shipment costs. USD remains the group view.
+        </CardDescription>
       </CardHeader>
       <CardContent className="px-0 pb-0">
-        <TableWrap className="rounded-none border-0 border-t">
+            <TableWrap className="rounded-none border-0 border-t" data-wide-sheet>
           <Table>
             <THead>
               <TR className="hover:bg-transparent">
-                <TH>Job</TH>
+                <TH>{lead === 'contract' ? 'Contract' : 'Job'}</TH>
                 <TH>Coffee</TH>
                 <TH>Status</TH>
                 <TH numeric>Sold</TH>
@@ -138,10 +168,17 @@ async function ShipmentTable({ companyId }: { companyId: string }) {
                 rows.map((row) => (
                   <TR key={row.shipmentId}>
                     <TD>
-                      <Link href={`/shipments/${row.shipmentId}`} className="font-medium text-forest-800 hover:text-gold-700">
-                        <span className="block">{row.shipmentNumber}</span>
-                        <span className="block text-xs font-normal text-ink-subtle">{row.jobNumber}</span>
-                      </Link>
+                      {lead === 'contract' ? (
+                        <Link href={`/purchases/${row.contractId}`} className="font-medium text-forest-800 hover:text-gold-700">
+                          <span className="block">{row.contractReference}</span>
+                          <span className="block text-xs font-normal text-ink-subtle">{row.contractNumber}</span>
+                        </Link>
+                      ) : (
+                        <Link href={`/shipments/${row.shipmentId}`} className="font-medium text-forest-800 hover:text-gold-700">
+                          <span className="block">{row.shipmentNumber}</span>
+                          <span className="block text-xs font-normal text-ink-subtle">{row.jobNumber}</span>
+                        </Link>
+                      )}
                     </TD>
                     <TD>{row.itemName}</TD>
                     <TD>
@@ -149,19 +186,39 @@ async function ShipmentTable({ companyId }: { companyId: string }) {
                     </TD>
                     <TD numeric>{formatQuantityKg(row.soldQuantityKg)}</TD>
                     <TD numeric className="text-ink-muted">{formatQuantityKg(row.remainingQuantityKg)}</TD>
-                    <TD numeric>{formatMoney(row.salesRevenueUsd, 'USD')}</TD>
-                    <TD numeric className="text-ink-muted">{formatMoney(row.allocatedLandedCostUsd, 'USD')}</TD>
+                    <TD numeric>
+                      {formatMoney(row.salesRevenueUsd, 'USD')}
+                      <span className="block text-xs text-ink-subtle">{formatMoney(row.salesRevenueLocal, local)}</span>
+                    </TD>
+                    <TD numeric className="text-ink-muted">
+                      {formatMoney(row.allocatedLandedCostUsd, 'USD')}
+                      <span className="block text-xs">{formatMoney(row.allocatedLandedCostLocal, local)}</span>
+                    </TD>
                     <TD numeric className={row.grossProfitUsd.greaterThanOrEqualTo(0) ? 'text-gold-700' : 'text-red-600'}>
                       {formatMoney(row.grossProfitUsd, 'USD')}
+                      <span className="block text-xs font-normal text-ink-subtle">
+                        {formatMoney(row.grossProfitLocal, local)}
+                      </span>
                     </TD>
-                    <TD numeric className="text-ink-muted">{formatMoney(row.otherCostsUsd, 'USD')}</TD>
+                    <TD numeric className="text-ink-muted">
+                      {formatMoney(row.otherCostsUsd, 'USD')}
+                      <span className="block text-xs">{formatMoney(row.otherCostsLocal, local)}</span>
+                    </TD>
                     <TD
                       numeric
                       className={cn('font-semibold', row.netProfitUsd.greaterThanOrEqualTo(0) ? 'text-gold-700' : 'text-red-600')}
                     >
                       {formatMoney(row.netProfitUsd, 'USD')}
+                      <span className="block text-xs font-normal text-ink-subtle">
+                        {formatMoney(row.netProfitLocal, local)}
+                      </span>
                     </TD>
-                    <TD numeric>{formatMoney(row.profitPerKgUsd, 'USD')}</TD>
+                    <TD numeric>
+                      {formatMoney(row.profitPerKgUsd, 'USD')}
+                      <span className="block text-xs font-normal text-ink-subtle">
+                        {formatMoney(row.profitPerKgLocal, local)}
+                      </span>
+                    </TD>
                     <TD numeric>{formatPercent(row.netMarginPct)}</TD>
                   </TR>
                 ))
@@ -210,7 +267,7 @@ async function BreakdownTable({
         <CardDescription>Based on cost of goods frozen on each invoice line at the moment it was posted.</CardDescription>
       </CardHeader>
       <CardContent className="px-0 pb-0">
-        <TableWrap className="rounded-none border-0 border-t">
+            <TableWrap className="rounded-none border-0 border-t" data-wide-sheet>
           <Table>
             <THead>
               <TR className="hover:bg-transparent">
@@ -269,7 +326,7 @@ async function MonthlyTable({ companyId }: { companyId: string }) {
         <CardDescription>The last twelve months, in USD.</CardDescription>
       </CardHeader>
       <CardContent className="px-0 pb-0">
-        <TableWrap className="rounded-none border-0 border-t">
+            <TableWrap className="rounded-none border-0 border-t" data-wide-sheet>
           <Table>
             <THead>
               <TR className="hover:bg-transparent">

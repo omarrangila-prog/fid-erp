@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { StatusBadge, Badge } from '@/components/ui/badge';
 import { Callout } from '@/components/ui/feedback';
 import { VoucherActions } from '@/components/shared/voucher-actions';
+import { getWarehouseLabels } from '@/lib/services/stock';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,6 +30,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
     where: { id, companyId: user.activeCompany.id },
     include: {
       customer: true,
+      agent: { select: { id: true, agentName: true } },
       cashBankAccount: true,
       createdBy: { select: { name: true } },
       cheque: { include: { statusHistory: { orderBy: { changedAt: 'desc' }, include: { changedBy: { select: { name: true } } } } } },
@@ -38,6 +40,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
 
   if (!receipt) notFound();
 
+  const warehouses = await getWarehouseLabels(user.activeCompany.id);
   const applied = sum(receipt.allocations.map((a) => dec(a.amountUsd)));
   const onAccount = dec(receipt.amountUsd).minus(applied);
 
@@ -87,6 +90,21 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
         </Callout>
       ) : null}
 
+      {receipt.paymentMethod === 'AGENT_COLLECTION' ? (
+        <Callout tone="info" title="Held by the agent — not yet in cash or bank">
+          This reduced the customer&rsquo;s outstanding. FID cash and bank have not increased. The amount is
+          receivable from{' '}
+          {receipt.agent ? (
+            <Link href={`/agents/${receipt.agent.id}`} className="underline">
+              {receipt.agent.agentName}
+            </Link>
+          ) : (
+            'the agent'
+          )}{' '}
+          until you record <strong>Received from agent</strong> on their ledger.
+        </Callout>
+      ) : null}
+
       <MetricGrid>
         <Metric label="Amount received" value={formatMoney(receipt.amount, receipt.currency)} />
         <Metric label="USD equivalent" value={formatMoney(receipt.amountUsd, 'USD')} />
@@ -132,6 +150,9 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                     </span>
                     <span className="block text-xs text-ink-subtle">
                       {formatDate(allocation.salesInvoice.invoiceDate)}
+                      {warehouses.byInvoice.get(allocation.salesInvoice.id)
+                        ? ` · ${warehouses.byInvoice.get(allocation.salesInvoice.id)}`
+                        : ''}
                     </span>
                   </span>
                   <span className="shrink-0 text-right">
@@ -162,8 +183,22 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                 </DetailRow>
                 <DetailRow label="Date">{formatDate(receipt.receiptDate)}</DetailRow>
                 <DetailRow label="Method">{PAYMENT_METHOD_LABELS[receipt.paymentMethod]}</DetailRow>
-                <DetailRow label="Account">{receipt.cashBankAccount?.name ?? 'Cheques on hand'}</DetailRow>
+                {receipt.agent ? (
+                  <DetailRow label="Agent">
+                    <Link href={`/agents/${receipt.agent.id}`} className="text-gold-700 hover:underline">
+                      {receipt.agent.agentName}
+                    </Link>
+                  </DetailRow>
+                ) : null}
+                <DetailRow label="Account">
+                  {receipt.paymentMethod === 'AGENT_COLLECTION'
+                    ? 'Agent clearing'
+                    : (receipt.cashBankAccount?.name ?? 'Cheques on hand')}
+                </DetailRow>
                 <DetailRow label="Reference">{receipt.reference ?? '—'}</DetailRow>
+                <DetailRow label="Warehouse">
+                  {warehouses.byReceipt.get(receipt.id) || '—'}
+                </DetailRow>
                 <DetailRow label={`Rate to ${user.activeCompany.localCurrency}`}>
                   {formatRate(receipt.rateLocalPerUsd)}
                 </DetailRow>

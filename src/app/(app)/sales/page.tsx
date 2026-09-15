@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 import { dec } from '@/lib/money';
 import { formatMoney, formatQuantityKg, formatDate, daysUntil } from '@/lib/format';
 import { getReceivables } from '@/lib/services/receivables';
+import { getWarehouseLabels } from '@/lib/services/stock';
 import { PageHeader } from '@/components/shared/page-header';
 import { SalesClient, type SaleRow } from '@/app/(app)/sales/sales-client';
 
@@ -15,7 +16,7 @@ export default async function SalesPage() {
   const user = await requirePageAccess(PERMISSIONS.SALES_VIEW);
   const companyId = user.activeCompany.id;
 
-  const [invoices, receivables] = await Promise.all([
+  const [invoices, receivables, warehouses] = await Promise.all([
     prisma.salesInvoice.findMany({
       where: { companyId },
       orderBy: [{ invoiceDate: 'desc' }, { invoiceNumber: 'desc' }],
@@ -26,6 +27,7 @@ export default async function SalesPage() {
       },
     }),
     getReceivables({ companyId }),
+    getWarehouseLabels(companyId),
   ]);
 
   const receivableByInvoice = new Map(receivables.map((r) => [r.invoiceId, r]));
@@ -57,6 +59,7 @@ export default async function SalesPage() {
       status: inv.status,
       jobNumber: inv.shipment?.jobNumber ?? null,
       shipmentId: inv.shipment?.id ?? null,
+      warehouseNames: warehouses.byInvoice.get(inv.id) ?? '',
     };
   });
 

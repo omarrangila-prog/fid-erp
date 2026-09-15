@@ -14,7 +14,8 @@ import type { AgentSettlementDirection } from '@prisma/client';
  *
  * Some customers never pay the company directly. They hand a cheque to the
  * agent who introduced the trade, written in the agent's own name, and the
- * agent passes the money on later. The client named one: Ridwan.
+ * agent passes the money on later. Who that agent is comes from the agent
+ * master — names are not written into the posting rules.
  *
  * That is two events, not one, and the system has to hold the gap between
  * them:

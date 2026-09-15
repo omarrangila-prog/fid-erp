@@ -271,6 +271,7 @@ export default async function DashboardPage() {
             tone="sales"
             deltaPct={salesDeltaPct}
             deltaLabel="vs last month"
+            note={`${formatMoneyCompact(data.sales.todayUsd, 'USD')} today · cash ${formatMoneyCompact(data.sales.cashUsd, 'USD')} / credit ${formatMoneyCompact(data.sales.creditUsd, 'USD')} this month`}
             href="/sales"
             linkLabel="View sales"
           />

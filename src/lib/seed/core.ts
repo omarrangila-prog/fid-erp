@@ -101,7 +101,7 @@ export const COMPANY_SEEDS: CompanySeed[] = [
     // Morocco runs two warehouses; stock is tracked separately at each.
     warehouses: [
       { code: 'MA-CASA-A', name: 'Casablanca Warehouse A', location: 'Casablanca', port: 'Casablanca', isDefault: true },
-      { code: 'MA-CASA-B', name: 'Casablanca Warehouse B', location: 'Casablanca' },
+      { code: 'MA-CASA-B', name: 'Ridwan Warehouse', location: 'Casablanca' },
     ],
     cashAccounts: [
       { code: 'MA-CASH-MAD', name: 'Cash in Hand', accountType: 'CASH', currency: 'MAD' },

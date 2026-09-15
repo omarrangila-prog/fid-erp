@@ -28,6 +28,9 @@ export type ShipmentProfitability = {
   shipmentId: string;
   shipmentNumber: string;
   jobNumber: string;
+  contractId: string;
+  contractNumber: string;
+  contractReference: string;
   status: string;
   itemName: string;
   vendorName: string;
@@ -51,12 +54,23 @@ export type ShipmentProfitability = {
   profitPerKgUsd: Decimal;
   grossMarginPct: Decimal;
   netMarginPct: Decimal;
+  /** Purchase USD converted at the contract rate, plus local costs. */
+  goodsCostLocal: Decimal;
+  allocatedLandedCostLocal: Decimal;
+  salesRevenueLocal: Decimal;
+  otherCostsLocal: Decimal;
+  grossProfitLocal: Decimal;
+  netProfitLocal: Decimal;
+  profitPerKgLocal: Decimal;
 };
 
 type RawRow = {
   shipmentId: string;
   shipmentNumber: string;
   jobNumber: string;
+  contractId: string;
+  contractNumber: string;
+  contractReference: string;
   status: string;
   itemName: string;
   vendorName: string;
@@ -70,6 +84,10 @@ type RawRow = {
   allocatedLandedCostUsd: string;
   salesRevenueUsd: string;
   otherCostsUsd: string;
+  goodsCostLocal: string;
+  allocatedLandedCostLocal: string;
+  salesRevenueLocal: string;
+  otherCostsLocal: string;
 };
 
 function shape(row: RawRow): ShipmentProfitability {
@@ -83,11 +101,20 @@ function shape(row: RawRow): ShipmentProfitability {
   const otherCostsUsd = toMoney(row.otherCostsUsd);
   const grossProfitUsd = toMoney(salesRevenueUsd.minus(allocatedLandedCostUsd));
   const netProfitUsd = toMoney(grossProfitUsd.minus(otherCostsUsd));
+  const goodsCostLocal = toMoney(row.goodsCostLocal);
+  const allocatedLandedCostLocal = toMoney(row.allocatedLandedCostLocal);
+  const salesRevenueLocal = toMoney(row.salesRevenueLocal);
+  const otherCostsLocal = toMoney(row.otherCostsLocal);
+  const grossProfitLocal = toMoney(salesRevenueLocal.minus(allocatedLandedCostLocal));
+  const netProfitLocal = toMoney(grossProfitLocal.minus(otherCostsLocal));
 
   return {
     shipmentId: row.shipmentId,
     shipmentNumber: row.shipmentNumber,
     jobNumber: row.jobNumber,
+    contractId: row.contractId,
+    contractNumber: row.contractNumber,
+    contractReference: row.contractReference,
     status: row.status,
     itemName: row.itemName,
     vendorName: row.vendorName,
@@ -113,6 +140,15 @@ function shape(row: RawRow): ShipmentProfitability {
       : new Decimal(0),
     grossMarginPct: percentage(grossProfitUsd, salesRevenueUsd),
     netMarginPct: percentage(netProfitUsd, salesRevenueUsd),
+    goodsCostLocal,
+    allocatedLandedCostLocal,
+    salesRevenueLocal,
+    otherCostsLocal,
+    grossProfitLocal,
+    netProfitLocal,
+    profitPerKgLocal: soldQuantityKg.greaterThan(0)
+      ? toUnitCost(netProfitLocal.dividedBy(soldQuantityKg))
+      : new Decimal(0),
   };
 }
 
@@ -125,6 +161,7 @@ export async function getShipmentProfitability(params: {
   const rows = await prisma.$queryRaw<RawRow[]>`
     SELECT
       s."id" AS "shipmentId", s."shipmentNumber", s."jobNumber", s."status"::text AS status,
+      pc."id" AS "contractId", pc."contractNumber", pc."contractReference",
       ci."itemName", v."vendorName",
       (SELECT string_agg(DISTINCT c2."customerName", ', ')
          FROM sales_invoices si2
@@ -139,16 +176,58 @@ export async function getShipmentProfitability(params: {
       -- Landed cost of what actually sold, at each batch's current landed rate.
       COALESCE((SELECT SUM(b."soldQuantityKg" * b."landedUnitCostUsd")
                   FROM batches b WHERE b."shipmentId" = s."id"), 0)::text AS "allocatedLandedCostUsd",
-      COALESCE((SELECT SUM(si."subtotalUsd") FROM sales_invoices si
-                 WHERE si."shipmentId" = s."id" AND si."status" = 'POSTED'), 0)::text AS "salesRevenueUsd",
+      (COALESCE((SELECT SUM(si."subtotalUsd") FROM sales_invoices si
+                  WHERE si."shipmentId" = s."id" AND si."status" = 'POSTED'), 0)
+       - COALESCE((SELECT SUM(cn."subtotalAmountUsd") FROM credit_notes cn
+                    WHERE cn."companyId" = s."companyId" AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'
+                      AND (
+                        EXISTS (
+                          SELECT 1 FROM sales_invoices si3
+                          WHERE si3."id" = cn."salesInvoiceId" AND si3."shipmentId" = s."id"
+                        )
+                        OR EXISTS (
+                          SELECT 1 FROM credit_note_lines cnl
+                          JOIN batches b3 ON b3."id" = cnl."batchId"
+                          WHERE cnl."creditNoteId" = cn."id" AND b3."shipmentId" = s."id"
+                        )
+                      )), 0))::text AS "salesRevenueUsd",
       -- Only period costs. Capitalised costs already sit inside landed cost.
       COALESCE((SELECT SUM(e."amountUsd") FROM expenses e
                  WHERE e."shipmentId" = s."id" AND e."status" = 'POSTED'
-                   AND e."capitaliseToLandedCost" = false), 0)::text AS "otherCostsUsd"
+                   AND e."capitaliseToLandedCost" = false), 0)::text AS "otherCostsUsd",
+      COALESCE((SELECT SUM(b."purchaseCostUsd" * pc."rateLocalPerUsd")
+                  FROM batches b WHERE b."shipmentId" = s."id"), 0)::text AS "goodsCostLocal",
+      COALESCE((SELECT SUM(b."soldQuantityKg" * b."landedUnitCostUsd" * pc."rateLocalPerUsd")
+                  FROM batches b WHERE b."shipmentId" = s."id"), 0)::text AS "allocatedLandedCostLocal",
+      (COALESCE((SELECT SUM(
+                   CASE WHEN si."currency" = co."localCurrency" THEN si."subtotal"
+                        ELSE si."subtotalUsd" * si."rateLocalPerUsd" END)
+                   FROM sales_invoices si
+                  WHERE si."shipmentId" = s."id" AND si."status" = 'POSTED'), 0)
+       - COALESCE((SELECT SUM(
+                     CASE WHEN cn."currency" = co."localCurrency" THEN cn."subtotalAmount"
+                          ELSE cn."subtotalAmountUsd" * cn."rateLocalPerUsd" END)
+                     FROM credit_notes cn
+                    WHERE cn."companyId" = s."companyId" AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'
+                      AND (
+                        EXISTS (
+                          SELECT 1 FROM sales_invoices si4
+                          WHERE si4."id" = cn."salesInvoiceId" AND si4."shipmentId" = s."id"
+                        )
+                        OR EXISTS (
+                          SELECT 1 FROM credit_note_lines cnl2
+                          JOIN batches b4 ON b4."id" = cnl2."batchId"
+                          WHERE cnl2."creditNoteId" = cn."id" AND b4."shipmentId" = s."id"
+                        )
+                      )), 0))::text AS "salesRevenueLocal",
+      COALESCE((SELECT SUM(e."amountLocal") FROM expenses e
+                 WHERE e."shipmentId" = s."id" AND e."status" = 'POSTED'
+                   AND e."capitaliseToLandedCost" = false), 0)::text AS "otherCostsLocal"
     FROM shipments s
     JOIN coffee_items ci ON ci."id" = s."itemId"
     JOIN vendors v ON v."id" = s."vendorId"
     JOIN purchase_contracts pc ON pc."id" = s."purchaseContractId"
+    JOIN companies co ON co."id" = s."companyId"
     WHERE s."companyId" = ${params.companyId}
       AND pc."status" = 'POSTED'
       AND (${params.shipmentId ?? null}::text IS NULL OR s."id" = ${params.shipmentId ?? null})
@@ -192,11 +271,16 @@ export async function getCompanyProfitSummary(params: { companyId: string; from?
                    AND e."capitaliseToLandedCost" = false
                    AND (${params.from ?? null}::date IS NULL OR e."expenseDate" >= ${params.from ?? null}::date)
                    AND (${params.to ?? null}::date IS NULL OR e."expenseDate" <= ${params.to ?? null}::date)), 0)::text AS expenses,
-      COALESCE((SELECT SUM(sil."quantityKg") FROM sales_invoice_lines sil
-                 JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
-                WHERE si."companyId" = ${params.companyId} AND si."status" = 'POSTED'
+      (COALESCE((SELECT SUM(sil."quantityKg") FROM sales_invoice_lines sil
+                  JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
+                 WHERE si."companyId" = ${params.companyId} AND si."status" = 'POSTED'
                    AND (${params.from ?? null}::date IS NULL OR si."invoiceDate" >= ${params.from ?? null}::date)
-                   AND (${params.to ?? null}::date IS NULL OR si."invoiceDate" <= ${params.to ?? null}::date)), 0)::text AS "soldKg"
+                   AND (${params.to ?? null}::date IS NULL OR si."invoiceDate" <= ${params.to ?? null}::date)), 0)
+       - COALESCE((SELECT SUM(cnl."quantityKg") FROM credit_note_lines cnl
+                    JOIN credit_notes cn ON cn."id" = cnl."creditNoteId"
+                   WHERE cn."companyId" = ${params.companyId} AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'
+                     AND (${params.from ?? null}::date IS NULL OR cn."creditDate" >= ${params.from ?? null}::date)
+                     AND (${params.to ?? null}::date IS NULL OR cn."creditDate" <= ${params.to ?? null}::date)), 0))::text AS "soldKg"
   `;
 
   const revenue = toMoney(rows[0]?.revenue ?? 0);
@@ -246,9 +330,22 @@ function shapeBreakdown(rows: BreakdownRow[]) {
 export async function getCustomerProfitability(params: { companyId: string; from?: Date; to?: Date }) {
   const rows = await prisma.$queryRaw<BreakdownRow[]>`
     SELECT c."id" AS key, c."customerName" AS label, c."country" AS sublabel,
-           COALESCE(SUM(sil."lineTotalUsd"), 0)::text AS revenue,
-           COALESCE(SUM(sil."costTotalUsd"), 0)::text AS cogs,
-           COALESCE(SUM(sil."quantityKg"), 0)::text   AS qty
+           (COALESCE(SUM(sil."lineTotalUsd"), 0)
+            - COALESCE((SELECT SUM(cn."subtotalAmountUsd") FROM credit_notes cn
+                         WHERE cn."customerId" = c."id" AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'
+                           AND (${params.from ?? null}::date IS NULL OR cn."creditDate" >= ${params.from ?? null}::date)
+                           AND (${params.to ?? null}::date IS NULL OR cn."creditDate" <= ${params.to ?? null}::date)), 0))::text AS revenue,
+           (COALESCE(SUM(sil."costTotalUsd"), 0)
+            - COALESCE((SELECT SUM(cn."costOfGoodsUsd") FROM credit_notes cn
+                         WHERE cn."customerId" = c."id" AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'
+                           AND (${params.from ?? null}::date IS NULL OR cn."creditDate" >= ${params.from ?? null}::date)
+                           AND (${params.to ?? null}::date IS NULL OR cn."creditDate" <= ${params.to ?? null}::date)), 0))::text AS cogs,
+           (COALESCE(SUM(sil."quantityKg"), 0)
+            - COALESCE((SELECT SUM(cnl."quantityKg") FROM credit_note_lines cnl
+                         JOIN credit_notes cn ON cn."id" = cnl."creditNoteId"
+                        WHERE cn."customerId" = c."id" AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'
+                          AND (${params.from ?? null}::date IS NULL OR cn."creditDate" >= ${params.from ?? null}::date)
+                          AND (${params.to ?? null}::date IS NULL OR cn."creditDate" <= ${params.to ?? null}::date)), 0))::text AS qty
     FROM sales_invoice_lines sil
     JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
     JOIN customers c ON c."id" = si."customerId"
@@ -330,12 +427,18 @@ export async function getMonthlyProfitability(params: { companyId: string; month
       )::date AS month
     )
     SELECT to_char(p."month", 'YYYY-MM') AS month,
-      COALESCE((SELECT SUM(si."subtotalUsd") FROM sales_invoices si
-                 WHERE si."companyId" = ${params.companyId} AND si."status" = 'POSTED'
-                   AND date_trunc('month', si."invoiceDate") = p."month"), 0)::text AS revenue,
-      COALESCE((SELECT SUM(si."costOfGoodsUsd") FROM sales_invoices si
-                 WHERE si."companyId" = ${params.companyId} AND si."status" = 'POSTED'
-                   AND date_trunc('month', si."invoiceDate") = p."month"), 0)::text AS cogs,
+      (COALESCE((SELECT SUM(si."subtotalUsd") FROM sales_invoices si
+                  WHERE si."companyId" = ${params.companyId} AND si."status" = 'POSTED'
+                    AND date_trunc('month', si."invoiceDate") = p."month"), 0)
+       - COALESCE((SELECT SUM(cn."subtotalAmountUsd") FROM credit_notes cn
+                    WHERE cn."companyId" = ${params.companyId} AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'
+                      AND date_trunc('month', cn."creditDate") = p."month"), 0))::text AS revenue,
+      (COALESCE((SELECT SUM(si."costOfGoodsUsd") FROM sales_invoices si
+                  WHERE si."companyId" = ${params.companyId} AND si."status" = 'POSTED'
+                    AND date_trunc('month', si."invoiceDate") = p."month"), 0)
+       - COALESCE((SELECT SUM(cn."costOfGoodsUsd") FROM credit_notes cn
+                    WHERE cn."companyId" = ${params.companyId} AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'
+                      AND date_trunc('month', cn."creditDate") = p."month"), 0))::text AS cogs,
       COALESCE((SELECT SUM(e."amountUsd") FROM expenses e
                  WHERE e."companyId" = ${params.companyId} AND e."status" = 'POSTED'
                    AND e."capitaliseToLandedCost" = false
@@ -388,3 +491,96 @@ export async function getMonthlyPurchases(params: { companyId: string; months?: 
     quantityKg: toQuantity(row.qty),
   }));
 }
+
+export type CogsLine = {
+  invoiceId: string;
+  invoiceNumber: string;
+  invoiceDate: Date;
+  customerName: string;
+  itemName: string;
+  batchNumber: string;
+  warehouseName: string | null;
+  quantityKg: Decimal;
+  revenueUsd: Decimal;
+  cogsUsd: Decimal;
+  grossProfitUsd: Decimal;
+  source: 'INVOICE' | 'CREDIT';
+};
+
+/** Posted cost of goods sold, line by line, for the named report. */
+export async function getCogsReport(params: { companyId: string; from?: Date; to?: Date }): Promise<CogsLine[]> {
+  const rows = await prisma.$queryRaw<
+    Array<{
+      invoiceId: string;
+      invoiceNumber: string;
+      invoiceDate: Date;
+      customerName: string;
+      itemName: string;
+      batchNumber: string;
+      warehouseName: string | null;
+      quantityKg: string;
+      revenueUsd: string;
+      cogsUsd: string;
+      source: string;
+    }>
+  >`
+    SELECT * FROM (
+      SELECT si."id" AS "invoiceId", si."invoiceNumber", si."invoiceDate",
+             c."customerName", ci."itemName", b."batchNumber", w."name" AS "warehouseName",
+             sil."quantityKg"::text AS "quantityKg",
+             sil."lineTotalUsd"::text AS "revenueUsd",
+             sil."costTotalUsd"::text AS "cogsUsd",
+             'INVOICE'::text AS source
+        FROM sales_invoice_lines sil
+        JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
+        JOIN customers c ON c."id" = si."customerId"
+        JOIN coffee_items ci ON ci."id" = sil."itemId"
+        JOIN batches b ON b."id" = sil."batchId"
+        LEFT JOIN warehouses w ON w."id" = sil."warehouseId"
+       WHERE si."companyId" = ${params.companyId} AND si."status" = 'POSTED'
+         AND (${params.from ?? null}::date IS NULL OR si."invoiceDate" >= ${params.from ?? null}::date)
+         AND (${params.to ?? null}::date IS NULL OR si."invoiceDate" <= ${params.to ?? null}::date)
+      UNION ALL
+      SELECT cn."id" AS "invoiceId", cn."creditNoteNumber" AS "invoiceNumber", cn."creditDate" AS "invoiceDate",
+             c."customerName",
+             COALESCE(ci."itemName", 'Credit note') AS "itemName",
+             COALESCE(b."batchNumber", '—') AS "batchNumber",
+             w."name" AS "warehouseName",
+             (-cnl."quantityKg")::text AS "quantityKg",
+             (-cnl."lineTotalUsd")::text AS "revenueUsd",
+             (-cnl."costTotalUsd")::text AS "cogsUsd",
+             'CREDIT'::text AS source
+        FROM credit_note_lines cnl
+        JOIN credit_notes cn ON cn."id" = cnl."creditNoteId"
+        JOIN customers c ON c."id" = cn."customerId"
+        LEFT JOIN coffee_items ci ON ci."id" = cnl."itemId"
+        LEFT JOIN batches b ON b."id" = cnl."batchId"
+        LEFT JOIN warehouses w ON w."id" = cnl."warehouseId"
+       WHERE cn."companyId" = ${params.companyId} AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'
+         AND (cnl."quantityKg" > 0 OR cnl."costTotalUsd" > 0)
+         AND (${params.from ?? null}::date IS NULL OR cn."creditDate" >= ${params.from ?? null}::date)
+         AND (${params.to ?? null}::date IS NULL OR cn."creditDate" <= ${params.to ?? null}::date)
+    ) lines
+    ORDER BY "invoiceDate", "invoiceNumber"
+  `;
+
+  return rows.map((row) => {
+    const revenueUsd = toMoney(row.revenueUsd);
+    const cogsUsd = toMoney(row.cogsUsd);
+    return {
+      invoiceId: row.invoiceId,
+      invoiceNumber: row.invoiceNumber,
+      invoiceDate: row.invoiceDate,
+      customerName: row.customerName,
+      itemName: row.itemName,
+      batchNumber: row.batchNumber,
+      warehouseName: row.warehouseName,
+      quantityKg: toQuantity(row.quantityKg),
+      revenueUsd,
+      cogsUsd,
+      grossProfitUsd: toMoney(revenueUsd.minus(cogsUsd)),
+      source: row.source === 'CREDIT' ? 'CREDIT' : 'INVOICE',
+    };
+  });
+}
+

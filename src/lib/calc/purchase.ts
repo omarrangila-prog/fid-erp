@@ -241,7 +241,7 @@ export function computePurchaseTotals(input: {
     totalValueUsd: convertToUsd(totalValue, input.rateToUsd, input.currency),
     taxAmount,
     taxAmountUsd: toMoney(sum(lines.map((l) => l.taxAmountUsd))),
-    /** What the supplier is actually owed: goods and charges, plus tax. */
+    /** Document gross: goods and charges, plus tax when a rate was applied. */
     grossPayable: toMoney(totalValue.plus(taxAmount)),
     totalQuantityKg: toQuantity(sum(lines.map((l) => l.quantityKg))),
     totalBags: lines.reduce((acc, l) => acc + l.bags, 0),

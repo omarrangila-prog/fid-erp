@@ -726,6 +726,7 @@ model Container {
   inventoryTxns    InventoryTransaction[]
   receiptLines     GoodsReceiptLine[]
   transferLines    StockTransferLine[]
+  expenses         Expense[]
 
   @@unique([companyId, containerNumber])
   @@index([companyId, shipmentId])
@@ -1141,6 +1142,7 @@ model Batch {
   transferLines    StockTransferLine[]
   creditNoteLines  CreditNoteLine[]
   stockCountLines  StockCountLine[]
+  expenses         Expense[]
 
   @@unique([companyId, batchNumber])
   @@index([companyId, itemId])
@@ -1583,6 +1585,10 @@ model Expense {
   expenseCategoryId      String
   shipmentId             String?
   purchaseContractId     String?
+  /// Optional: this cost belongs to one container on the shipment, not the whole job.
+  containerId            String?
+  /// Optional: this cost belongs to one batch, not every batch on the job.
+  batchId                String?
   vendorId               String?
   agentId                String?
   /// Owed to this agent rather than paid now or owed to a supplier. Commission
@@ -1624,6 +1630,8 @@ model Expense {
   expenseCategory  ExpenseCategory     @relation(fields: [expenseCategoryId], references: [id])
   shipment         Shipment?           @relation(fields: [shipmentId], references: [id])
   purchaseContract PurchaseContract?   @relation(fields: [purchaseContractId], references: [id])
+  container        Container?          @relation(fields: [containerId], references: [id])
+  batch            Batch?              @relation(fields: [batchId], references: [id])
   vendor           Vendor?             @relation(fields: [vendorId], references: [id])
   agent            Agent?              @relation(fields: [agentId], references: [id])
   payableToAgent   Agent?              @relation("ExpensePayableToAgent", fields: [payableToAgentId], references: [id])
@@ -1636,6 +1644,8 @@ model Expense {
   @@index([companyId, status])
   @@index([companyId, expenseDate])
   @@index([shipmentId])
+  @@index([containerId])
+  @@index([batchId])
   @@index([companyId, expenseCategoryId])
   @@map("expenses")
 }

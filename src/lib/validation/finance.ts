@@ -39,7 +39,7 @@ export const receiptSchema = z
     agentId: optionalCuid,
     cheque: chequeDetails.nullish(),
     shipmentId: optionalCuid,
-    reference: optionalText(60),
+    reference: optionalText(120),
     description: optionalText(600),
     allocations: z
       .array(z.object({ salesInvoiceId: cuid, amount: decimalString('Allocation') }))
@@ -105,6 +105,8 @@ export const expenseSchema = z.object({
   expenseCategoryId: cuid,
   shipmentId: optionalCuid,
   purchaseContractId: optionalCuid,
+  containerId: optionalCuid,
+  batchId: optionalCuid,
   vendorId: optionalCuid,
   agentId: optionalCuid,
   /** Owed to this agent rather than paid now — commission, typically. */
@@ -185,4 +187,20 @@ export const ledgerAccountSchema = z.object({
   name: requiredText('Account name', 120),
   type: z.enum(['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE']),
   reportGroup: optionalText(40),
+  openingAmount: optionalDecimalString('Opening balance'),
+  openingDate: optionalDateString,
+});
+
+export const ledgerAccountUpdateSchema = z.object({
+  code: optionalText(20),
+  name: requiredText('Account name', 120),
+  reportGroup: optionalText(40),
+});
+
+export const ledgerOpeningSchema = z.object({
+  amount: decimalString('Opening balance'),
+  asOf: dateString('Opening date'),
+  currency: currencyCode,
+  rateToUsd: decimalString('Exchange rate'),
+  rateLocalPerUsd: decimalString('Local exchange rate'),
 });

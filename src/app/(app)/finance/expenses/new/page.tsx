@@ -2,9 +2,9 @@ import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getRateDefaults } from '@/lib/services/exchange-rate';
-import { prisma } from '@/lib/db';
+import { prisma, transaction } from '@/lib/db';
+import { ensureExpenseCategories } from '@/lib/services/chart-of-accounts';
 import { PageHeader } from '@/components/shared/page-header';
-import { PrerequisiteGate, anyMissing, type Prerequisite } from '@/components/shared/prerequisite-gate';
 import { ExpenseForm, type CategoryOption } from '@/app/(app)/finance/expenses/expense-form';
 
 export const metadata: Metadata = { title: 'New Expense' };
@@ -15,7 +15,9 @@ export default async function NewExpensePage({ searchParams }: { searchParams: P
   const user = await requirePageAccess(PERMISSIONS.EXPENSES_CREATE);
   const companyId = user.activeCompany.id;
 
-  const [categories, shipments, vendors, agents, accounts] = await Promise.all([
+  await transaction((tx) => ensureExpenseCategories(tx, companyId));
+
+  const [categories, shipments, agents, accounts, containers, batches] = await Promise.all([
     prisma.expenseCategory.findMany({
       where: { companyId, status: 'ACTIVE' },
       orderBy: [{ kind: 'asc' }, { name: 'asc' }],
@@ -33,11 +35,6 @@ export default async function NewExpensePage({ searchParams }: { searchParams: P
         purchaseContract: { select: { contractReference: true, contractNumber: true } },
       },
     }),
-    prisma.vendor.findMany({
-      where: { companyId, status: 'ACTIVE' },
-      orderBy: { vendorName: 'asc' },
-      select: { id: true, vendorName: true },
-    }),
     prisma.agent.findMany({
       where: { companyId, status: 'ACTIVE' },
       orderBy: { agentName: 'asc' },
@@ -48,40 +45,17 @@ export default async function NewExpensePage({ searchParams }: { searchParams: P
       orderBy: [{ accountType: 'asc' }, { name: 'asc' }],
       select: { id: true, name: true, code: true, currency: true, accountType: true },
     }),
+    prisma.container.findMany({
+      where: { companyId, shipmentId: { not: null }, status: 'ACTIVE' },
+      orderBy: { containerNumber: 'asc' },
+      select: { id: true, containerNumber: true, shipmentId: true },
+    }),
+    prisma.batch.findMany({
+      where: { companyId, status: 'ACTIVE' },
+      orderBy: { batchNumber: 'asc' },
+      select: { id: true, batchNumber: true, shipmentId: true, containerId: true },
+    }),
   ]);
-
-  const prerequisites: Prerequisite[] = [
-    {
-      met: categories.length > 0,
-      label: 'An expense category',
-      description: 'The category decides whether a cost raises the landed cost of the coffee or is charged to the period.',
-      href: '/expense-categories',
-      actionLabel: 'Open categories',
-    },
-    {
-      met: accounts.length > 0,
-      label: 'A cash or bank account',
-      description: 'Every expense is paid from somewhere.',
-      href: '/finance/cash-bank',
-      actionLabel: 'Open cash & bank',
-    },
-  ];
-
-  if (anyMissing(prerequisites)) {
-    return (
-      <div className="space-y-6">
-        <PageHeader
-          title="New Expense"
-          breadcrumbs={[{ label: 'Finance' }, { label: 'Expenses', href: '/finance/expenses' }, { label: 'New' }]}
-        />
-        <PrerequisiteGate
-          title="Before you can record an expense"
-          description="An expense needs a category to classify it and an account to pay it from."
-          prerequisites={prerequisites}
-        />
-      </div>
-    );
-  }
 
   const categoryOptions: CategoryOption[] = categories.map((c) => ({
     value: c.id,
@@ -94,11 +68,26 @@ export default async function NewExpensePage({ searchParams }: { searchParams: P
 
   const rates = await getRateDefaults(user.activeCompany.id);
 
+  const traceByShipment: Record<string, { containers: Array<{ value: string; label: string }>; batches: Array<{ value: string; label: string; containerId: string | null }> }> = {};
+  for (const container of containers) {
+    if (!container.shipmentId) continue;
+    const entry = (traceByShipment[container.shipmentId] ??= { containers: [], batches: [] });
+    entry.containers.push({ value: container.id, label: container.containerNumber });
+  }
+  for (const batch of batches) {
+    const entry = (traceByShipment[batch.shipmentId] ??= { containers: [], batches: [] });
+    entry.batches.push({
+      value: batch.id,
+      label: batch.batchNumber,
+      containerId: batch.containerId,
+    });
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="New Expense"
-        description="Record a shipment or operating cost."
+        description="Record a shipment or operating cost. Unpaid books the cost now; pay from cash or bank later."
         breadcrumbs={[{ label: 'Finance' }, { label: 'Expenses', href: '/finance/expenses' }, { label: 'New' }]}
       />
       <ExpenseForm
@@ -109,7 +98,6 @@ export default async function NewExpensePage({ searchParams }: { searchParams: P
           hint: `${s.vendor.vendorName} · ${s.shipmentNumber} · ${s.item.itemName}`,
           keywords: `${s.purchaseContract.contractReference} ${s.purchaseContract.contractNumber} ${s.jobNumber} ${s.shipmentNumber} ${s.vendor.vendorName} ${s.item.itemName}`,
         }))}
-        vendors={vendors.map((v) => ({ value: v.id, label: v.vendorName }))}
         agents={agents.map((a) => ({ value: a.id, label: a.agentName }))}
         accounts={accounts.map((a) => ({
           value: a.id,
@@ -124,6 +112,7 @@ export default async function NewExpensePage({ searchParams }: { searchParams: P
         ratesByCurrency={rates.byCurrency}
         defaultShipmentId={job}
         canPost={can(user, PERMISSIONS.EXPENSES_POST)}
+        traceByShipment={traceByShipment}
       />
     </div>
   );

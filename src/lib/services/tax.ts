@@ -66,6 +66,58 @@ export function taxRegimeFor(country: string | null | undefined) {
 }
 
 /**
+ * True when the supplier bills the company's VAT/TVA on their own invoice.
+ *
+ * A Ugandan exporter selling to Morocco does not invoice Moroccan TVA; that
+ * tax is never a supplier payable. The same for a Brazilian estate selling to
+ * Dubai. Only a supplier in the same tax jurisdiction — the same country, or
+ * the same known regime (UAE/Dubai, Morocco/Maroc) — puts tax on accounts
+ * payable.
+ *
+ * An empty or unknown country is treated as foreign. Coffee exporters are
+ * almost never in the buying company's jurisdiction, and silently putting the
+ * statutory rate on AP is how the live books were overstated.
+ */
+export function supplierInvoiceIncludesInputTax(
+  vendorCountry: string | null | undefined,
+  companyCountry: string | null | undefined,
+): boolean {
+  const vendor = (vendorCountry ?? '').trim().toLowerCase();
+  const company = (companyCountry ?? '').trim().toLowerCase();
+  if (!vendor || !company) return false;
+  if (vendor === company) return true;
+
+  const vendorRegime = taxRegimeFor(vendorCountry);
+  const companyRegime = taxRegimeFor(companyCountry);
+  if (vendorRegime === DEFAULT_TAX_REGIME || companyRegime === DEFAULT_TAX_REGIME) return false;
+  return vendorRegime.label === companyRegime.label && vendorRegime.standardRatePct === companyRegime.standardRatePct;
+}
+
+/**
+ * What is actually owed to the supplier: the net (goods, freight, charges),
+ * plus tax only when that tax was on their invoice.
+ */
+export function supplierGrossPayable(params: {
+  netAmount: Decimal | string | number;
+  taxAmount: Decimal | string | number;
+  netAmountUsd?: Decimal | string | number | null;
+  taxAmountUsd?: Decimal | string | number | null;
+  vendorCountry?: string | null;
+  companyCountry?: string | null;
+}): { amount: Decimal; amountUsd: Decimal; taxOnSupplierInvoice: boolean } {
+  const taxOnSupplierInvoice = supplierInvoiceIncludesInputTax(params.vendorCountry, params.companyCountry);
+  const net = dec(params.netAmount);
+  const tax = taxOnSupplierInvoice ? dec(params.taxAmount) : new Decimal(0);
+  const netUsd = params.netAmountUsd == null ? net : dec(params.netAmountUsd);
+  const taxUsd = taxOnSupplierInvoice && params.taxAmountUsd != null ? dec(params.taxAmountUsd) : new Decimal(0);
+  return {
+    taxOnSupplierInvoice,
+    amount: toMoney(net.plus(tax)),
+    amountUsd: toMoney(netUsd.plus(taxUsd)),
+  };
+}
+
+/**
  * Creates the standard set of codes for a company. Idempotent, so switching
  * tax off and on again does not duplicate them, and an administrator who has
  * edited a rate keeps their edit.

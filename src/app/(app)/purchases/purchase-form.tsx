@@ -16,7 +16,7 @@ import { INCOTERM_LABELS } from '@/lib/constants';
 import { savePurchaseContractAction, postPurchaseContractAction } from '@/server/actions/trading-actions';
 import { computePurchaseTotalsClient, type LineDraft } from '@/app/(app)/purchases/purchase-math';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
-import { todayInputValue } from '@/lib/format';
+import { todayInputValue, formatMoney } from '@/lib/format';
 
 /**
  * Purchase contract entry.
@@ -482,7 +482,7 @@ export function PurchaseForm({
                     </div>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                     <Field label="Coffee" required error={lineError(index, 'itemId')} className="lg:col-span-2">
                       <Combobox
                         options={items}
@@ -510,13 +510,29 @@ export function PurchaseForm({
                     </Field>
 
 
-                    <Field label={`Price per ${line.unit === 'BAG' ? 'bag' : line.unit}`} required error={lineError(index, 'unitPrice')}>
+                    <Field
+                      label={
+                        header.currency === 'USD'
+                          ? `USD Rate / ${line.unit === 'BAG' ? 'bag' : line.unit}`
+                          : `Price per ${line.unit === 'BAG' ? 'bag' : line.unit}`
+                      }
+                      required
+                      error={lineError(index, 'unitPrice')}
+                    >
                       <MoneyInput
                         currency={header.currency}
                         value={line.unitPrice}
                         onChange={(e) => updateLine(line.key, { unitPrice: e.target.value })}
                         placeholder="4.50"
+                        aria-label={header.currency === 'USD' ? 'USD Rate per unit' : 'Price per unit'}
                       />
+                    </Field>
+                    <Field label={header.currency === 'USD' ? 'Total USD' : `Total ${header.currency}`}>
+                      <div className="tnum flex h-10 items-center justify-end rounded-lg border border-line bg-surface px-3 text-sm font-semibold">
+                        {totals.lines[index]
+                          ? formatMoney(totals.lines[index].lineSubtotal, header.currency)
+                          : '—'}
+                      </div>
                     </Field>
 
 
@@ -657,7 +673,9 @@ export function PurchaseForm({
                 ['Containers', String(totals.totalContainers)],
                 ['Goods value', `${header.currency} ${totals.subtotal.toLocaleString()}`],
                 ['Contract value', `${header.currency} ${totals.totalValue.toLocaleString()}`],
-                ['In USD', `USD ${totals.totalValueUsd.toLocaleString()}`],
+                header.currency === 'USD'
+                  ? ['Total USD', `USD ${totals.totalValueUsd.toLocaleString()}`]
+                  : ['In USD', `USD ${totals.totalValueUsd.toLocaleString()}`],
               ].map(([label, value]) => (
                 <div key={label}>
                   <dt className="text-[11px] text-ink-subtle">{label}</dt>

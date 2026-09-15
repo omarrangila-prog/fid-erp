@@ -6,7 +6,8 @@ import { BusinessRuleError, ConflictError, NotFoundError } from '@/lib/errors';
 import { postJournalEntry } from '@/lib/services/accounting';
 import { getCompanyContext } from '@/lib/services/company';
 import { ensureTaxCodes } from '@/lib/services/tax';
-import type { AccountType, CashBankAccountType, SubledgerType } from '@prisma/client';
+import { getRateDefaults } from '@/lib/services/exchange-rate';
+import type { AccountType, CashBankAccountType, RecordStatus, SubledgerType } from '@prisma/client';
 
 /**
  * Company provisioning: the chart of accounts, the standard expense categories
@@ -452,6 +453,7 @@ export type ChartAccount = {
   systemKey: string | null;
   subledgerType: string;
   isSystem: boolean;
+  status: RecordStatus;
   currency: string | null;
   cashBank: { id: string; accountType: CashBankAccountType; currency: string } | null;
   expenseCategory: { id: string; code: string } | null;
@@ -483,7 +485,7 @@ export async function getChartOfAccounts(companyId: string, localCurrency: strin
   });
 
   const accounts = await prisma.account.findMany({
-    where: { companyId, status: 'ACTIVE' },
+    where: { companyId },
     orderBy: { code: 'asc' },
     include: {
       cashBankAccounts: { select: { id: true, accountType: true, currency: true }, take: 1 },
@@ -518,6 +520,7 @@ export async function getChartOfAccounts(companyId: string, localCurrency: strin
       systemKey: account.systemKey,
       subledgerType: account.subledgerType,
       isSystem: account.isSystem,
+      status: account.status,
       currency: account.currency,
       cashBank: account.cashBankAccounts[0]
         ? {
@@ -542,54 +545,61 @@ export async function getChartOfAccounts(companyId: string, localCurrency: strin
     return { key, title, hint, accounts: accountsInSection };
   };
 
+  const live = (account: ChartAccount) => account.status === 'ACTIVE';
   const sections = [
     section(
       'cash-bank',
       'Cash & Bank',
       'Cash in Hand, MAD bank accounts, USD accounts and any other drawers or banks.',
-      (account) => account.subledgerType === 'CASH_BANK' || Boolean(account.cashBank),
+      (account) => live(account) && (account.subledgerType === 'CASH_BANK' || Boolean(account.cashBank)),
     ),
     section(
       'assets',
       'Assets',
       'Receivables, inventory, advances to suppliers, recoverable tax.',
-      (account) => account.type === 'ASSET',
+      (account) => live(account) && account.type === 'ASSET',
     ),
     section(
       'liabilities',
       'Liabilities',
       'Payables, customer advances, tax payable, cheques issued.',
-      (account) => account.type === 'LIABILITY',
+      (account) => live(account) && account.type === 'LIABILITY',
     ),
     section(
       'equity',
       'Equity',
       'Capital, opening balance equity and retained earnings.',
-      (account) => account.type === 'EQUITY',
+      (account) => live(account) && account.type === 'EQUITY',
     ),
     section(
       'revenue',
       'Revenue',
       'Sales and other income.',
-      (account) => account.type === 'INCOME',
+      (account) => live(account) && account.type === 'INCOME',
     ),
     section(
       'cogs',
       'Cost of Goods Sold',
       'Purchase cost, freight, clearing, duty and other costs of landing the coffee.',
-      (account) => account.type === 'EXPENSE' && account.reportGroup === REPORT_GROUPS.COGS,
+      (account) => live(account) && account.type === 'EXPENSE' && account.reportGroup === REPORT_GROUPS.COGS,
     ),
     section(
       'operating',
       'Operating Expenses',
       'General company expenses: rent, salaries, travel, professional fees.',
-      (account) => account.type === 'EXPENSE' && account.reportGroup === REPORT_GROUPS.OPERATING,
+      (account) => live(account) && account.type === 'EXPENSE' && account.reportGroup === REPORT_GROUPS.OPERATING,
     ),
     section(
       'other',
       'Other',
       'Exchange gain/loss and any remaining heads.',
-      () => true,
+      (account) => live(account),
+    ),
+    section(
+      'inactive',
+      'Inactive',
+      'Hidden from new journals. History that already names them still resolves.',
+      (account) => account.status === 'INACTIVE',
     ),
   ].filter((group) => group.accounts.length > 0);
 
@@ -632,6 +642,202 @@ export async function createLedgerAccount(input: {
         subledgerType: 'NONE',
       },
     });
+  });
+}
+
+/**
+ * Rename a head, move it on the statements, or (for a custom head) change its
+ * code. Type is frozen after create: flipping an expense into an asset would
+ * rewrite every report that already used it.
+ */
+export async function updateLedgerAccount(input: {
+  id: string;
+  companyId: string;
+  code?: string;
+  name: string;
+  reportGroup?: string | null;
+}) {
+  const name = input.name.trim();
+  if (!name) throw new BusinessRuleError('Enter an account name.');
+
+  return transaction(async (tx) => {
+    const account = await tx.account.findFirst({ where: { id: input.id, companyId: input.companyId } });
+    if (!account) throw new NotFoundError('Account');
+
+    const allowed = REPORT_GROUP_FOR_TYPE[account.type];
+    const reportGroup =
+      input.reportGroup && allowed.includes(input.reportGroup) ? input.reportGroup : account.reportGroup;
+
+    let code = account.code;
+    if (input.code && input.code.trim() !== account.code) {
+      if (account.isSystem) {
+        throw new BusinessRuleError(`${account.name} is a system account, so its code cannot be changed.`);
+      }
+      code = input.code.trim();
+      const duplicate = await tx.account.findFirst({
+        where: { companyId: input.companyId, code, NOT: { id: account.id } },
+      });
+      if (duplicate) throw new ConflictError(`Account code ${code} is already in use.`);
+    }
+
+    return tx.account.update({
+      where: { id: account.id },
+      data: { code, name, reportGroup },
+    });
+  });
+}
+
+/**
+ * Hide a custom head from new postings. System accounts, cash/bank drawers and
+ * expense-category heads stay: the posting engine and the category screen
+ * still need them.
+ */
+export async function deactivateLedgerAccount(input: { id: string; companyId: string }) {
+  return transaction(async (tx) => {
+    const account = await tx.account.findFirst({
+      where: { id: input.id, companyId: input.companyId },
+      include: {
+        cashBankAccounts: { select: { id: true, name: true }, take: 1 },
+        expenseCategories: { select: { id: true, name: true }, take: 1 },
+      },
+    });
+    if (!account) throw new NotFoundError('Account');
+    if (account.status === 'INACTIVE') return account;
+    if (account.isSystem || account.systemKey) {
+      throw new BusinessRuleError(
+        `${account.name} is a system account and cannot be deactivated. Posting depends on it.`,
+      );
+    }
+    if (account.cashBankAccounts[0]) {
+      throw new BusinessRuleError(
+        `${account.name} is a cash or bank account. Retire it under Cash & Bank, not from the chart.`,
+      );
+    }
+    if (account.expenseCategories[0]) {
+      throw new BusinessRuleError(
+        `${account.name} belongs to the expense category ${account.expenseCategories[0].name}. Deactivate the category instead.`,
+      );
+    }
+
+    return tx.account.update({ where: { id: account.id }, data: { status: 'INACTIVE' } });
+  });
+}
+
+export async function reactivateLedgerAccount(input: { id: string; companyId: string }) {
+  return transaction(async (tx) => {
+    const account = await tx.account.findFirst({ where: { id: input.id, companyId: input.companyId } });
+    if (!account) throw new NotFoundError('Account');
+    return tx.account.update({ where: { id: account.id }, data: { status: 'ACTIVE' } });
+  });
+}
+
+/**
+ * Opening balance for one ledger head.
+ *
+ * Cash and bank keep theirs on the drawer itself, the same way a receipt
+ * already reads them. Every other head is a journal against Opening Balance
+ * Equity, so the trial balance still balances. Control accounts for
+ * customers, suppliers and agents are refused: those openings belong on the
+ * party, not on the control.
+ */
+export async function postAccountOpeningBalance(input: {
+  accountId: string;
+  companyId: string;
+  userId: string;
+  amount: string | number;
+  asOf: Date;
+  currency?: string;
+  rateToUsd?: string | number;
+  rateLocalPerUsd?: string | number;
+}) {
+  const amount = toMoney(input.amount);
+  if (amount.isZero()) {
+    throw new BusinessRuleError('Enter an opening amount.');
+  }
+  if (amount.isNegative()) {
+    throw new BusinessRuleError('An opening balance cannot be negative. Use a journal voucher instead.');
+  }
+
+  return transaction(async (tx) => {
+    const account = await tx.account.findFirst({
+      where: { id: input.accountId, companyId: input.companyId },
+      include: { cashBankAccounts: { select: { id: true, name: true, currency: true }, take: 1 } },
+    });
+    if (!account) throw new NotFoundError('Account');
+    if (account.status !== 'ACTIVE') {
+      throw new BusinessRuleError(`${account.name} is inactive, so an opening cannot be posted to it.`);
+    }
+
+    const cashBank = account.cashBankAccounts[0];
+    if (cashBank) {
+      await tx.cashBankAccount.update({
+        where: { id: cashBank.id },
+        data: { openingBalance: amount },
+      });
+      return { kind: 'cash-bank' as const, accountId: account.id, cashBankAccountId: cashBank.id };
+    }
+
+    if (account.subledgerType === 'CUSTOMER' || account.subledgerType === 'VENDOR' || account.subledgerType === 'AGENT') {
+      throw new BusinessRuleError(
+        `${account.name} is a control account. Set the opening on the customer, supplier or agent, not here.`,
+      );
+    }
+    if (account.systemKey === ACCOUNT_KEYS.OPENING_BALANCE_EQUITY) {
+      throw new BusinessRuleError('Opening Balance Equity is the other side of every opening. It cannot have one of its own.');
+    }
+
+    const already = await tx.journalLine.findFirst({
+      where: {
+        accountId: account.id,
+        journalEntry: { companyId: input.companyId, sourceType: 'OPENING_BALANCE', status: 'POSTED' },
+      },
+      select: { id: true },
+    });
+    if (already) {
+      throw new BusinessRuleError(
+        `${account.name} already has an opening balance. Reverse that journal if the figure was wrong.`,
+      );
+    }
+
+    const company = await getCompanyContext(tx, input.companyId);
+    const currency = (input.currency ?? company.localCurrency).toUpperCase();
+    const rates = await getRateDefaults(input.companyId, input.asOf);
+    const rateToUsd = input.rateToUsd ?? (currency === 'USD' ? '1' : rates.byCurrency[currency] ?? rates.local);
+    const rateLocalPerUsd =
+      input.rateLocalPerUsd ?? (currency === company.localCurrency.toUpperCase() ? rateToUsd : rates.local);
+
+    const debitNormal = account.type === 'ASSET' || account.type === 'EXPENSE';
+
+    await postJournalEntry(tx, {
+      companyId: input.companyId,
+      entryDate: input.asOf,
+      description: `Opening balance — ${account.code} ${account.name}`,
+      sourceType: 'OPENING_BALANCE',
+      sourceId: account.id,
+      createdById: input.userId,
+      localCurrency: company.localCurrency,
+      rateLocalPerUsd,
+      lines: [
+        {
+          accountId: account.id,
+          direction: debitNormal ? 'DEBIT' : 'CREDIT',
+          currency,
+          amount,
+          rateToUsd,
+          description: 'Opening balance',
+        },
+        {
+          accountKey: ACCOUNT_KEYS.OPENING_BALANCE_EQUITY,
+          direction: debitNormal ? 'CREDIT' : 'DEBIT',
+          currency,
+          amount,
+          rateToUsd,
+          description: `Opening — ${account.name}`,
+        },
+      ],
+    });
+
+    return { kind: 'journal' as const, accountId: account.id };
   });
 }
 

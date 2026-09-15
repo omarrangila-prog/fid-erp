@@ -2,7 +2,7 @@ import 'server-only';
 import { prisma } from '@/lib/db';
 import { dec, toMoney } from '@/lib/money';
 import { formatMoney, formatDate, formatQuantityKg } from '@/lib/format';
-import { getTaxSettings, listTaxCodes } from '@/lib/services/tax';
+import { getTaxSettings, listTaxCodes, supplierGrossPayable } from '@/lib/services/tax';
 import { getRateDefaults } from '@/lib/services/exchange-rate';
 import type { CreditNoteRow } from '@/components/credit-notes/credit-notes-client';
 import type {
@@ -126,12 +126,19 @@ export async function loadCreditNoteFormData(companyId: string, type: 'CUSTOMER'
               currency: true,
               totalValue: true,
               taxAmount: true,
+              vendor: { select: { country: true } },
+              company: { select: { country: true } },
               creditNotes: { where: { status: 'POSTED' }, select: { totalAmount: true } },
             },
           })
           .then((rows) =>
             rows.map((row) => {
-              const gross = dec(row.totalValue).plus(row.taxAmount);
+              const gross = supplierGrossPayable({
+                netAmount: row.totalValue,
+                taxAmount: row.taxAmount,
+                vendorCountry: row.vendor.country,
+                companyCountry: row.company.country,
+              }).amount;
               const credited = row.creditNotes.reduce((sum, note) => sum.plus(note.totalAmount), dec(0));
               return {
                 id: row.id,

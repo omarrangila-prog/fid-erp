@@ -13,6 +13,7 @@ import { getCompanyContext } from '@/lib/services/company';
 import { getReceivables, summariseAgeing } from '@/lib/services/receivables';
 import { getContainerProfitability } from '@/lib/services/profitability';
 import { getTrialBalanceReport } from '@/lib/services/reports';
+import { getItemWarehouseStock, getWarehouseStockByItem } from '@/lib/services/stock';
 
 /**
  * The operational scenarios from the acceptance list: Morocco's two warehouses,
@@ -88,6 +89,24 @@ describe('Morocco — two warehouses, and a transfer that must not invent coffee
     expect(after.b).toBe(25000);
     // The whole point: 75,000 + 25,000 is still 100,000, not 125,000.
     expect(after.total).toBe(100000);
+  });
+
+  it('shows the same split on the item, with company total unchanged', async () => {
+    const itemStock = await getItemWarehouseStock(ctx.morocco.id, masters.item.id);
+    const atA = itemStock.warehouses.find((row) => row.warehouseId === warehouseA);
+    const atB = itemStock.warehouses.find((row) => row.warehouseId === warehouseB);
+
+    expect(Number(atA?.availableKg)).toBe(75000);
+    expect(Number(atB?.availableKg)).toBe(25000);
+    expect(Number(itemStock.totalAvailableKg)).toBe(100000);
+    expect(atA?.lines.map((line) => line.batchNumber)).toEqual(['MA-B001']);
+    expect(atB?.lines.map((line) => line.batchNumber)).toEqual(['MA-B001']);
+
+    const listed = await getWarehouseStockByItem(ctx.morocco.id);
+    const onList = listed.get(masters.item.id);
+    expect(Number(onList?.warehouses.find((row) => row.warehouseId === warehouseA)?.availableKg)).toBe(75000);
+    expect(Number(onList?.warehouses.find((row) => row.warehouseId === warehouseB)?.availableKg)).toBe(25000);
+    expect(Number(onList?.totalAvailableKg)).toBe(100000);
   });
 
   it('refuses to move more than the source warehouse holds', async () => {

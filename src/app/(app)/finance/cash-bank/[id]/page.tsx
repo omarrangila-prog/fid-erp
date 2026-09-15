@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { requirePageAccess } from '@/lib/auth/guards';
+import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getCashBook } from '@/lib/services/reports';
@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/feedback';
+import { EditCashBankAccountButton } from '@/app/(app)/finance/cash-bank/account-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +27,6 @@ export default async function CashBookPage({ params }: { params: Promise<{ id: s
 
   const exists = await prisma.cashBankAccount.findFirst({
     where: { id, companyId: user.activeCompany.id },
-    select: { id: true },
   });
   if (!exists) notFound();
 
@@ -35,6 +35,7 @@ export default async function CashBookPage({ params }: { params: Promise<{ id: s
 
   const totalIn = book.rows.reduce((a, r) => a.plus(r.moneyIn), book.openingBalance.minus(book.openingBalance));
   const totalOut = book.rows.reduce((a, r) => a.plus(r.moneyOut), book.openingBalance.minus(book.openingBalance));
+  const canManage = can(user, PERMISSIONS.CASHBANK_MANAGE);
 
   return (
     <div className="space-y-6">
@@ -46,7 +47,31 @@ export default async function CashBookPage({ params }: { params: Promise<{ id: s
           { label: 'Cash & Bank', href: '/finance/cash-bank' },
           { label: book.account.name },
         ]}
-        meta={<Badge tone="neutral">{currency}</Badge>}
+        meta={
+          <>
+            <Badge tone="neutral">{currency}</Badge>
+            <Badge tone={exists.status === 'ACTIVE' ? 'success' : 'neutral'}>
+              {exists.status === 'ACTIVE' ? 'Active' : 'Inactive'}
+            </Badge>
+          </>
+        }
+        actions={
+          canManage ? (
+            <EditCashBankAccountButton
+              account={{
+                id: exists.id,
+                code: exists.code,
+                name: exists.name,
+                accountType: exists.accountType,
+                currency: exists.currency,
+                openingBalance: exists.openingBalance.toString(),
+                bankName: exists.bankName,
+                accountNumber: exists.accountNumber,
+                status: exists.status,
+              }}
+            />
+          ) : undefined
+        }
       />
 
       <MetricGrid className="lg:grid-cols-4">

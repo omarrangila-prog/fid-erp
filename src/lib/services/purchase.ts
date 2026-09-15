@@ -14,7 +14,7 @@ import { postJournalEntry, reverseJournalEntry } from '@/lib/services/accounting
 import { getCompanyContext } from '@/lib/services/company';
 import { writeAudit } from '@/lib/services/audit';
 import { repairSharedContainerAssignments } from '@/lib/services/shipment';
-import { resolveTaxCode } from '@/lib/services/tax';
+import { NO_TAX, resolveTaxCode, supplierGrossPayable, supplierInvoiceIncludesInputTax } from '@/lib/services/tax';
 import { computePurchaseTotals } from '@/lib/calc/purchase';
 import type { PurchaseContractInput, PurchaseLineInput } from '@/lib/calc/purchase';
 
@@ -66,17 +66,26 @@ async function assertReferenceIsFree(tx: Tx, companyId: string, reference: strin
 async function applyServerTaxRates(tx: Tx, input: PurchaseContractInput): Promise<PurchaseContractInput> {
   const company = await tx.company.findUniqueOrThrow({
     where: { id: input.companyId },
-    select: { taxEnabled: true },
+    select: { taxEnabled: true, country: true },
   });
+  const vendor = await tx.vendor.findFirst({
+    where: { id: input.vendorId, companyId: input.companyId },
+    select: { country: true },
+  });
+  // A foreign exporter does not invoice the buyer's VAT/TVA. Forcing the
+  // statutory rate onto that purchase is how AP was overstated by 20%.
+  const taxOnInvoice = supplierInvoiceIncludesInputTax(vendor?.country, company.country);
 
   const lines = [];
   for (const line of input.lines) {
-    const code = await resolveTaxCode(tx, {
-      companyId: input.companyId,
-      taxEnabled: company.taxEnabled,
-      taxCodeId: line.taxCodeId,
-      appliesTo: 'PURCHASE',
-    });
+    const code = taxOnInvoice
+      ? await resolveTaxCode(tx, {
+          companyId: input.companyId,
+          taxEnabled: company.taxEnabled,
+          taxCodeId: line.taxCodeId,
+          appliesTo: 'PURCHASE',
+        })
+      : NO_TAX;
     lines.push({ ...line, taxCodeId: code.id, taxRatePct: code.ratePct.toString() });
   }
   return { ...input, lines };
@@ -414,7 +423,11 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
 
     const contract = await tx.purchaseContract.findUniqueOrThrow({
       where: { id: params.id },
-      include: { lines: { orderBy: { lineNumber: 'asc' } }, vendor: true },
+      include: {
+        lines: { orderBy: { lineNumber: 'asc' } },
+        vendor: true,
+        company: { select: { country: true } },
+      },
     });
 
     if (contract.lines.length === 0) {
@@ -575,6 +588,18 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
     }
 
     // --- 6: accounting -----------------------------------------------------
+    // Tax sits on AP only when the supplier billed it (same tax jurisdiction).
+    // A foreign coffee exporter is owed the contract value, not the buyer's TVA.
+    const payable = supplierGrossPayable({
+      netAmount: contract.totalValue,
+      taxAmount: contract.taxAmount,
+      netAmountUsd: contract.totalValueUsd,
+      taxAmountUsd: contract.taxAmountUsd,
+      vendorCountry: contract.vendor.country,
+      companyCountry: contract.company.country,
+    });
+    const taxOnSupplier = payable.taxOnSupplierInvoice && dec(contract.taxAmount).greaterThan(0);
+
     await postJournalEntry(tx, {
       companyId: params.companyId,
       entryDate: contract.contractDate,
@@ -596,7 +621,7 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
           vendorId: contract.vendorId,
           shipmentId: shipment.id,
         },
-        ...(dec(contract.taxAmount).greaterThan(0)
+        ...(taxOnSupplier
           ? [
               {
                 accountKey: ACCOUNT_KEYS.VAT_INPUT,
@@ -605,7 +630,6 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
                 amount: contract.taxAmount,
                 rateToUsd: contract.rateToUsd,
                 description: `Input tax on ${contract.contractNumber}`,
-                vendorId: contract.vendorId,
                 purchaseContractId: contract.id,
               },
             ]
@@ -614,9 +638,7 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
           accountKey: ACCOUNT_KEYS.ACCOUNTS_PAYABLE,
           direction: 'CREDIT',
           currency: contract.currency,
-          // Gross: the supplier is owed the goods and the tax on them. Only
-          // the goods reached inventory above; the tax went to VAT recoverable.
-          amount: toMoney(dec(contract.totalValue).plus(contract.taxAmount)),
+          amount: payable.amount,
           rateToUsd: contract.rateToUsd,
           description: `Payable to ${contract.vendor.vendorName}`,
           vendorId: contract.vendorId,

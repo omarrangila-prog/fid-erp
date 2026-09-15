@@ -79,7 +79,7 @@ export async function getLowStock(companyId: string, thresholdKg = 5000, limit =
 }
 
 export async function getDashboard(params: { companyId: string; from?: Date; to?: Date }) {
-  const [position, profit, receivables, payables, monthly, shipments, warehouseStock, itemStock, alerts, agents] =
+  const [position, profit, receivables, payables, monthly, shipments, warehouseStock, itemStock, alerts, agents, sales] =
     await Promise.all([
       getFinancialPosition({ companyId: params.companyId }),
       getCompanyProfitSummary({ companyId: params.companyId, from: params.from, to: params.to }),
@@ -94,6 +94,7 @@ export async function getDashboard(params: { companyId: string; from?: Date; to?
       // clearing account existed there was nowhere to ask this, because an
       // agent's cheque went straight into the bank.
       getAgentPositions(params.companyId),
+      getSalesSnapshot(params.companyId),
     ]);
 
   const today = new Date();
@@ -153,6 +154,7 @@ export async function getDashboard(params: { companyId: string; from?: Date; to?
       ageing: summariseAgeing(payables),
       count: payables.length,
     },
+    sales,
   };
 }
 
@@ -242,6 +244,42 @@ export async function getWarehouseStock(companyId: string) {
     bags: Number(r.bags),
     valueUsd: toMoney(r.valueUsd),
   }));
+}
+
+/** Posted sales split the way the brief asks to see them: today, month, cash, credit. */
+async function getSalesSnapshot(companyId: string) {
+  const now = new Date();
+  const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+
+  const rows = await prisma.$queryRaw<
+    Array<{ paymentType: string; todayUsd: string; monthUsd: string; todayCount: number; monthCount: number }>
+  >`
+    SELECT si."paymentType"::text AS "paymentType",
+           COALESCE(SUM(si."totalAmountUsd") FILTER (WHERE si."invoiceDate" >= ${startOfToday}), 0)::text AS "todayUsd",
+           COALESCE(SUM(si."totalAmountUsd"), 0)::text AS "monthUsd",
+           COUNT(*) FILTER (WHERE si."invoiceDate" >= ${startOfToday})::int AS "todayCount",
+           COUNT(*)::int AS "monthCount"
+      FROM sales_invoices si
+     WHERE si."companyId" = ${companyId}
+       AND si."status" = 'POSTED'
+       AND si."invoiceDate" >= ${startOfMonth}
+     GROUP BY si."paymentType"
+  `;
+
+  const cash = rows.find((row) => row.paymentType === 'CASH');
+  const credit = rows.find((row) => row.paymentType === 'CREDIT');
+  const todayUsd = toMoney(dec(cash?.todayUsd ?? 0).plus(credit?.todayUsd ?? 0));
+  const monthUsd = toMoney(dec(cash?.monthUsd ?? 0).plus(credit?.monthUsd ?? 0));
+
+  return {
+    todayUsd,
+    monthUsd,
+    cashUsd: toMoney(cash?.monthUsd ?? 0),
+    creditUsd: toMoney(credit?.monthUsd ?? 0),
+    todayCount: (cash?.todayCount ?? 0) + (credit?.todayCount ?? 0),
+    monthCount: (cash?.monthCount ?? 0) + (credit?.monthCount ?? 0),
+  };
 }
 
 async function getTopItemStock(companyId: string) {

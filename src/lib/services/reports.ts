@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db';
 import { Decimal, dec, toMoney, toQuantity } from '@/lib/money';
-import { REPORT_GROUPS } from '@/lib/constants';
+import { REPORT_GROUPS, ACCOUNT_KEYS } from '@/lib/constants';
 import { getCompanyContext } from '@/lib/services/company';
 import type { Tx } from '@/lib/db';
 
@@ -603,8 +603,10 @@ export async function getJournalReport(params: {
   from?: Date;
   to?: Date;
   sourceType?: string;
+  q?: string;
   limit?: number;
 }) {
+  const needle = params.q?.trim();
   return prisma.journalEntry.findMany({
     where: {
       companyId: params.companyId,
@@ -612,6 +614,14 @@ export async function getJournalReport(params: {
       ...(params.sourceType ? { sourceType: params.sourceType as never } : {}),
       ...(params.from || params.to
         ? { entryDate: { ...(params.from ? { gte: params.from } : {}), ...(params.to ? { lte: params.to } : {}) } }
+        : {}),
+      ...(needle
+        ? {
+            OR: [
+              { entryNumber: { contains: needle, mode: 'insensitive' } },
+              { description: { contains: needle, mode: 'insensitive' } },
+            ],
+          }
         : {}),
     },
     include: {
@@ -771,3 +781,99 @@ export async function getExpenseSplit(params: { companyId: string; from?: Date; 
     },
   };
 }
+
+export type ForexMovement = {
+  entryId: string;
+  entryNumber: string;
+  entryDate: Date;
+  description: string;
+  sourceType: string;
+  currency: string;
+  debitUsd: Decimal;
+  creditUsd: Decimal;
+  debitLocal: Decimal;
+  creditLocal: Decimal;
+};
+
+/**
+ * Movements through Foreign Exchange Gain/Loss.
+ *
+ * The account is an expense head: a debit is a loss, a credit is a gain. The
+ * original purchase or sale is never rewritten — only this account moves when
+ * a later payment uses a different rate.
+ */
+export async function getForexGainLoss(params: { companyId: string; from?: Date; to?: Date }) {
+  const account = await prisma.account.findFirst({
+    where: { companyId: params.companyId, systemKey: ACCOUNT_KEYS.FX_GAIN_LOSS },
+    select: { id: true, code: true, name: true },
+  });
+  if (!account) {
+    return {
+      account: null,
+      rows: [] as ForexMovement[],
+      lossUsd: toMoney(0),
+      gainUsd: toMoney(0),
+      netUsd: toMoney(0),
+      lossLocal: toMoney(0),
+      gainLocal: toMoney(0),
+      netLocal: toMoney(0),
+    };
+  }
+
+  const rows = await prisma.$queryRaw<
+    Array<{
+      entryId: string;
+      entryNumber: string;
+      entryDate: Date;
+      description: string;
+      sourceType: string;
+      currency: string;
+      debitUsd: string;
+      creditUsd: string;
+      debitLocal: string;
+      creditLocal: string;
+    }>
+  >`
+    SELECT je."id" AS "entryId", je."entryNumber", je."entryDate", je."description",
+           je."sourceType"::text AS "sourceType", jl."currency",
+           jl."debitUsd"::text AS "debitUsd", jl."creditUsd"::text AS "creditUsd",
+           jl."debitLocal"::text AS "debitLocal", jl."creditLocal"::text AS "creditLocal"
+      FROM journal_lines jl
+      JOIN journal_entries je ON je."id" = jl."journalEntryId"
+     WHERE je."companyId" = ${params.companyId} AND je."status" = 'POSTED'
+       AND jl."accountId" = ${account.id}
+       AND (${params.from ?? null}::date IS NULL OR je."entryDate" >= ${params.from ?? null}::date)
+       AND (${params.to ?? null}::date IS NULL OR je."entryDate" <= ${params.to ?? null}::date)
+     ORDER BY je."entryDate", je."entryNumber"
+  `;
+
+  const shaped: ForexMovement[] = rows.map((row) => ({
+    entryId: row.entryId,
+    entryNumber: row.entryNumber,
+    entryDate: row.entryDate,
+    description: row.description,
+    sourceType: row.sourceType,
+    currency: row.currency,
+    debitUsd: toMoney(row.debitUsd),
+    creditUsd: toMoney(row.creditUsd),
+    debitLocal: toMoney(row.debitLocal),
+    creditLocal: toMoney(row.creditLocal),
+  }));
+
+  const lossUsd = toMoney(shaped.reduce((sum, row) => sum.plus(row.debitUsd), new Decimal(0)));
+  const gainUsd = toMoney(shaped.reduce((sum, row) => sum.plus(row.creditUsd), new Decimal(0)));
+  const lossLocal = toMoney(shaped.reduce((sum, row) => sum.plus(row.debitLocal), new Decimal(0)));
+  const gainLocal = toMoney(shaped.reduce((sum, row) => sum.plus(row.creditLocal), new Decimal(0)));
+
+  return {
+    account,
+    rows: shaped,
+    lossUsd,
+    gainUsd,
+    netUsd: toMoney(lossUsd.minus(gainUsd)),
+    lossLocal,
+    gainLocal,
+    netLocal: toMoney(lossLocal.minus(gainLocal)),
+  };
+}
+

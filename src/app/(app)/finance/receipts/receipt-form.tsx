@@ -17,6 +17,7 @@ import { formatMoney, formatDate, todayInputValue } from '@/lib/format';
 import { saveReceiptAction, postReceiptAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { accountsFor } from '@/lib/cash-account-choice';
+import { AddAgentDialog } from '@/app/(app)/finance/receipts/add-agent';
 
 /**
  * Customer receipt.
@@ -56,7 +57,7 @@ export function ReceiptForm({
   defaultLocalRate: string;
   ratesByCurrency?: Record<string, string>;
   preselectedInvoiceId?: string;
-  /** For a cheque written in someone else's name. Master data, never a literal. */
+  /** Collection agents from the master list. Names are never hardcoded. */
   agents: Array<{ id: string; name: string }>;
   canPost?: boolean;
 }) {
@@ -64,6 +65,10 @@ export function ReceiptForm({
   const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
   const [fieldIssues, setFieldIssues] = React.useState<Record<string, string>>({});
+  const [addAgentOpen, setAddAgentOpen] = React.useState(false);
+  const [agentOptions, setAgentOptions] = React.useState<ComboOption[]>(() =>
+    agents.map((agent) => ({ value: agent.id, label: agent.name })),
+  );
 
   const preselected = invoices.find((i) => i.id === preselectedInvoiceId);
   const initialCurrency = preselected?.currency ?? 'USD';
@@ -89,7 +94,7 @@ export function ReceiptForm({
     chequeDate: '',
     bankName: '',
     beneficiary: '',
-    agentId: '',
+    agentId: null as string | null,
   });
 
   const [allocations, setAllocations] = React.useState<Record<string, string>>(
@@ -147,6 +152,16 @@ export function ReceiptForm({
     setError(null);
     setFieldIssues({});
 
+    if (isAgentCollection && !form.agentId) {
+      setFieldIssues({ agentId: 'Choose the agent who collected this money.' });
+      focusFirstError();
+      return;
+    }
+
+    const agentCollectionReference = [form.chequeNumber.trim() ? `Cheque ${form.chequeNumber.trim()}` : '', form.reference.trim()]
+      .filter(Boolean)
+      .join(' · ');
+
     const payload = {
       receiptDate: form.receiptDate,
       customerId: form.customerId,
@@ -157,19 +172,19 @@ export function ReceiptForm({
       rateLocalPerUsd: form.currency === localCurrency ? form.rateToUsd || '1' : form.rateLocalPerUsd,
       paymentMethod: form.paymentMethod,
       cashBankAccountId: cashBankAccountId ?? '',
-      agentId: isAgentCollection ? form.agentId : '',
+      agentId: isAgentCollection || isCheque ? (form.agentId ?? '') : '',
       cheque: isCheque
         ? {
             chequeNumber: form.chequeNumber,
             chequeDate: form.chequeDate || form.receiptDate,
             bankName: form.bankName,
             beneficiary: form.beneficiary,
-            agentId: form.agentId,
+            agentId: form.agentId ?? '',
             notes: '',
           }
         : null,
       shipmentId: '',
-      reference: form.reference,
+      reference: isAgentCollection ? agentCollectionReference : form.reference,
       description: form.description,
       allocations: Object.entries(allocations)
         .filter(([, amount]) => amount && Number(amount) > 0)
@@ -215,7 +230,7 @@ export function ReceiptForm({
       <Card>
         <CardHeader>
           <CardTitle>Receipt</CardTitle>
-          <CardDescription>Who paid, how much, and into which account.</CardDescription>
+          <CardDescription>Who paid, how much, and how the money arrived.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Customer" required error={fieldIssues.customerId}>
@@ -249,8 +264,8 @@ export function ReceiptForm({
             >
               <option value="BANK_TRANSFER">Bank transfer</option>
               <option value="CASH">Cash</option>
-              <option value="CHEQUE">Cheque</option>
-              <option value="AGENT_COLLECTION">Collected by an agent</option>
+              <option value="CHEQUE">Cheque (held by FID)</option>
+              <option value="AGENT_COLLECTION">Agent cheque / Agent collection</option>
             </Select>
           </Field>
 
@@ -306,28 +321,51 @@ export function ReceiptForm({
           ) : null}
 
           {isAgentCollection ? (
-            <Field
-              label="Collected by"
-              required
-              hint="The money stays with the agent until he hands it over."
-              error={fieldIssues.agentId}
-            >
-              <Select value={form.agentId} onChange={(e) => setForm({ ...form, agentId: e.target.value })}>
-                <option value="">Choose an agent…</option>
-                {agents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            <>
+              <Field
+                label="Agent"
+                htmlFor="receiptAgent"
+                required
+                hint={
+                  agentOptions.length === 0
+                    ? 'Open the list and choose + Add New Agent.'
+                    : 'The money stays with the agent until they hand it over. Cash and bank do not increase yet.'
+                }
+                error={fieldIssues.agentId}
+              >
+                <Combobox
+                  id="receiptAgent"
+                  options={agentOptions}
+                  value={form.agentId}
+                  onChange={(value) => setForm({ ...form, agentId: value })}
+                  placeholder="Choose an agent…"
+                  emptyText="No matching agent"
+                  createLabel="+ Add New Agent"
+                  onCreate={() => setAddAgentOpen(true)}
+                  invalid={Boolean(fieldIssues.agentId)}
+                />
+              </Field>
+              <Field
+                label="Cheque number"
+                hint="Where applicable. This is a note on the collection, not a cheque FID is holding."
+              >
+                <Input
+                  value={form.chequeNumber}
+                  onChange={(e) => setForm({ ...form, chequeNumber: e.target.value })}
+                  placeholder="Optional"
+                />
+              </Field>
+            </>
           ) : null}
 
-          <Field label="Reference">
+          <Field
+            label={isAgentCollection ? 'Reference / remarks' : 'Reference'}
+            hint={isAgentCollection ? 'Optional.' : undefined}
+          >
             <Input
               value={form.reference}
               onChange={(e) => setForm({ ...form, reference: e.target.value })}
-              placeholder="Transfer reference"
+              placeholder={isAgentCollection ? 'Optional' : 'Transfer reference'}
             />
           </Field>
         </CardContent>
@@ -335,8 +373,8 @@ export function ReceiptForm({
 
       {isAgentCollection ? (
         <Callout tone="info" title="This does not put money in the bank">
-          The customer&rsquo;s invoice is settled and the amount is recorded as held by the agent. It reaches cash or
-          bank when you record the agent handing it over, on the agent&rsquo;s own page.
+          The customer&rsquo;s outstanding falls by this amount. FID cash and bank do not increase. The money is
+          receivable from the agent until you record <strong>Received from agent</strong> on their ledger page.
         </Callout>
       ) : null}
 
@@ -345,7 +383,9 @@ export function ReceiptForm({
           <CardHeader>
             <CardTitle>Cheque details</CardTitle>
             <CardDescription>
-              A cheque is recorded as an asset in hand. It only reaches the bank when you mark it cleared.
+              Use this when FID is holding the cheque. If the customer gave the cheque to an agent, choose{' '}
+              <strong>Agent cheque / Agent collection</strong> instead — otherwise cash would appear to land here
+              when it is still with the agent.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-3">
@@ -360,12 +400,11 @@ export function ReceiptForm({
             </Field>
 
             {/*
-              A customer's cheque is not always written out to FID. It is often
-              made out to whoever introduced the trade, and the client named
-              one: the cheque says Rizwan, the debt is the customer's. Recording
-              the name the cheque actually carries is the only way the two can
-              be matched when it clears — and the agent comes from the agent
-              master, so nobody's name is written into the system itself.
+              A customer's cheque is not always written out to this company. It
+              is often made out to the agent who introduced the trade. The name
+              on the cheque is recorded here so the two can be matched when it
+              clears. Who that agent is comes from the agent master — nobody's
+              name is written into the system itself.
             */}
             <Field
               label="Made out to"
@@ -378,15 +417,21 @@ export function ReceiptForm({
               />
             </Field>
 
-            <Field label="Agent" hint="If the cheque is in an agent's name.">
-              <Select value={form.agentId} onChange={(e) => setForm({ ...form, agentId: e.target.value })}>
-                <option value="">Not through an agent</option>
-                {agents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.name}
-                  </option>
-                ))}
-              </Select>
+            <Field
+              label="Agent"
+              htmlFor="chequeAgent"
+              hint="If the cheque is in an agent's name. Prefer Agent collection when the agent is holding it."
+            >
+              <Combobox
+                id="chequeAgent"
+                options={agentOptions}
+                value={form.agentId}
+                onChange={(value) => setForm({ ...form, agentId: value })}
+                placeholder="Not through an agent"
+                emptyText="No matching agent"
+                createLabel="+ Add New Agent"
+                onCreate={() => setAddAgentOpen(true)}
+              />
             </Field>
           </CardContent>
         </Card>
@@ -522,9 +567,23 @@ export function ReceiptForm({
       </Card>
 
       <Callout tone="info">
-        Posting credits the customer&rsquo;s ledger in their own currency, increases the account the money landed in by
-        the exact amount received, and records the rate used — all in one transaction.
+        {isAgentCollection
+          ? 'Posting credits the customer’s ledger and records the amount as pending with the agent. FID cash and bank do not move until you record Received from agent.'
+          : 'Posting credits the customer’s ledger in their own currency, increases the account the money landed in by the exact amount received, and records the rate used — all in one transaction.'}
       </Callout>
+
+      <AddAgentDialog
+        open={addAgentOpen}
+        onOpenChange={setAddAgentOpen}
+        onCreated={(created) => {
+          setAgentOptions((current) =>
+            current.some((option) => option.value === created.value)
+              ? current
+              : [...current, created].sort((a, b) => a.label.localeCompare(b.label)),
+          );
+          setForm((current) => ({ ...current, agentId: created.value }));
+        }}
+      />
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button variant="outline" onClick={() => router.back()} disabled={busy}>

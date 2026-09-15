@@ -20,10 +20,9 @@ import { todayInputValue } from '@/lib/format';
  * arrival date to give. It all appears at once when the supplier actually
  * ships, and this is where it is taken.
  *
- * Arrival date and shipping line are required. Everything else is genuinely
- * optional: a booking number often precedes the B/L by a fortnight, and
- * demanding both would put the user back where they started, unable to record
- * what they know because they cannot yet record what they do not.
+ * Arrival date and shipping line are required. So is identification: a
+ * booking or B/L number, or the individual container numbers. One booking
+ * routinely covers several boxes.
  */
 export function MarkLoadedDialog({
   open,
@@ -133,6 +132,16 @@ function MarkLoadedBody({
     }
     if (!form.shippingLineId) {
       setError('Choose the shipping line carrying this consignment.');
+      return;
+    }
+    const identified =
+      Boolean(form.bookingNumber.trim()) ||
+      Boolean(form.billOfLading.trim()) ||
+      containerNumbers.some((value) => value.trim());
+    if (!identified) {
+      setError(
+        'Enter a booking or B/L number, or at least one container number. Loaded cannot be recorded without identifying the consignment.',
+      );
       return;
     }
 
@@ -289,9 +298,8 @@ function MarkLoadedBody({
         </Field>
 
         <Callout tone="info">
-          Anything you leave blank can be added later from the consignment itself — a bill of lading that has not been
-          issued yet should not stop you recording that the coffee is on the water. The same is true of container
-          numbers: enter the ones you have.
+          Shipping line and estimated arrival are required. Identify the consignment with a booking or B/L
+          number, or with the container numbers — one booking can cover several boxes.
         </Callout>
       </div>
     </Sheet>

@@ -115,9 +115,10 @@ export default async function VendorLedgerPage({
       />
 
       <Callout tone="info">
-        The supplier ledger is the posted payable — goods, freight and tax together, not the coffee rate alone.
-        If the purchase was in USD, switch to the USD view so the figure matches the contract. Export includes every
-        row in the date range, not only what is on this page.
+        The supplier ledger is the posted payable — the contract value. Tax appears here only when the supplier
+        billed it, not when the buying company accounts for import VAT/TVA itself. If the purchase was in USD,
+        switch to the USD view so the figure matches the contract. Export includes every row in the date range, not
+        only what is on this page.
       </Callout>
 
       <LedgerView

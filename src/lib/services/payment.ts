@@ -9,6 +9,7 @@ import { getCompanyContext } from '@/lib/services/company';
 import { resolveSubledgerLeg } from '@/lib/services/subledger';
 import type { PaymentMethod } from '@prisma/client';
 import { writeAudit } from '@/lib/services/audit';
+import { supplierGrossPayable } from '@/lib/services/tax';
 
 /**
  * PaymentService — money out to vendors. The mirror image of ReceiptService:
@@ -65,6 +66,8 @@ export async function getContractOutstanding(
       taxAmountUsd: true,
       currency: true,
       status: true,
+      vendor: { select: { country: true } },
+      company: { select: { country: true } },
     },
   });
 
@@ -87,9 +90,16 @@ export async function getContractOutstanding(
     WHERE cn."purchaseContractId" = ${contractId} AND cn."status" = 'POSTED'
   `;
 
-  const gross = contract.status === 'POSTED' ? dec(contract.totalValue).plus(contract.taxAmount) : new Decimal(0);
-  const grossUsd =
-    contract.status === 'POSTED' ? dec(contract.totalValueUsd).plus(contract.taxAmountUsd) : new Decimal(0);
+  const payable = supplierGrossPayable({
+    netAmount: contract.totalValue,
+    taxAmount: contract.taxAmount,
+    netAmountUsd: contract.totalValueUsd,
+    taxAmountUsd: contract.taxAmountUsd,
+    vendorCountry: contract.vendor.country,
+    companyCountry: contract.company.country,
+  });
+  const gross = contract.status === 'POSTED' ? payable.amount : new Decimal(0);
+  const grossUsd = contract.status === 'POSTED' ? payable.amountUsd : new Decimal(0);
   const settled = dec(rows[0]?.amount ?? 0).plus(credits[0]?.amount ?? 0);
   const settledUsd = dec(rows[0]?.amountUsd ?? 0).plus(credits[0]?.amountUsd ?? 0);
 
@@ -117,6 +127,8 @@ export async function getExpenseOutstanding(
       cashBankAccountId: true,
       payableToAgentId: true,
       vendorId: true,
+      vendor: { select: { country: true } },
+      company: { select: { country: true } },
     },
   });
 
@@ -132,11 +144,18 @@ export async function getExpenseOutstanding(
       )
   `;
 
-  // Gross of tax: the supplier is paid what they billed.
-  const payable =
-    expense.status === 'POSTED' && expense.vendorId && !expense.cashBankAccountId && !expense.payableToAgentId;
-  const gross = payable ? dec(expense.amount).plus(expense.taxAmount) : new Decimal(0);
-  const grossUsd = payable ? dec(expense.amountUsd).plus(expense.taxAmountUsd) : new Decimal(0);
+  const isUnpaidBill =
+    expense.status === 'POSTED' && !expense.cashBankAccountId && !expense.payableToAgentId;
+  const payable = supplierGrossPayable({
+    netAmount: expense.amount,
+    taxAmount: expense.taxAmount,
+    netAmountUsd: expense.amountUsd,
+    taxAmountUsd: expense.taxAmountUsd,
+    vendorCountry: expense.vendor?.country,
+    companyCountry: expense.company.country,
+  });
+  const gross = isUnpaidBill ? payable.amount : new Decimal(0);
+  const grossUsd = isUnpaidBill ? payable.amountUsd : new Decimal(0);
 
   return {
     amount: toMoney(gross.minus(dec(rows[0]?.amount ?? 0))),
@@ -199,9 +218,9 @@ async function buildAllocations(
             },
           });
           if (!expense) throw new NotFoundError('Cost in allocation');
-          if (!expense.vendorId || expense.cashBankAccountId || expense.payableToAgentId) {
+          if (expense.cashBankAccountId || expense.payableToAgentId) {
             throw new BusinessRuleError(
-              `Cost ${expense.expenseNumber} is not owed to a supplier, so a supplier payment cannot settle it.`,
+              `Cost ${expense.expenseNumber} is not unpaid, so a supplier payment cannot settle it.`,
             );
           }
           return {
@@ -217,7 +236,7 @@ async function buildAllocations(
           };
         })();
 
-    if (document.vendorId !== params.vendorId) {
+    if (document.vendorId && document.vendorId !== params.vendorId) {
       throw new BusinessRuleError(`${document.label} belongs to a different vendor.`);
     }
     if (document.status !== 'POSTED') {
