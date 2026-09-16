@@ -4,7 +4,6 @@ import { getCommissionPaidByExpense } from '@/lib/services/agent-commission';
 import { Decimal, dec, toMoney, toUnitCost, allocateProportionally, sum, toQuantity, convertFromUsd, KG_PER_MT } from '@/lib/money';
 import { BusinessRuleError } from '@/lib/errors';
 import { lockBatch } from '@/lib/services/inventory';
-import { EXPENSE_TRACE_OMIT, expensesHaveTraceColumns } from '@/lib/services/expense-columns';
 
 /**
  * Landed cost engine.
@@ -407,20 +406,14 @@ export async function getShipmentCostSheet(companyId: string, shipmentId: string
   const localCurrency = company.localCurrency;
   const goodsLocal = convertFromUsd(job.goodsUsd, rateLocalPerUsd, localCurrency);
 
-  const hasTrace = await expensesHaveTraceColumns();
   const [expenses, purchaseBatches] = await Promise.all([
     prisma.expense.findMany({
       where: { companyId, shipmentId, status: 'POSTED', kind: 'SHIPMENT' },
-      ...(hasTrace ? {} : { omit: EXPENSE_TRACE_OMIT }),
       include: {
         expenseCategory: { select: { name: true } },
         cashBankAccount: { select: { name: true } },
-        ...(hasTrace
-          ? {
-              container: { select: { containerNumber: true } },
-              batch: { select: { batchNumber: true } },
-            }
-          : {}),
+        container: { select: { containerNumber: true } },
+        batch: { select: { batchNumber: true } },
         allocations: { select: { payment: { select: { status: true } } } },
       },
       orderBy: [{ expenseDate: 'asc' }, { expenseNumber: 'asc' }],

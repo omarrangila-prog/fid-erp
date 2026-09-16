@@ -354,19 +354,14 @@ export async function resolveTaxCode(
     return { id: code.id, code: code.code, ratePct: dec(code.ratePct), treatment: code.treatment };
   }
 
-  const fallback = await tx.taxCode.findFirst({
-    where: {
-      companyId: params.companyId,
-      status: 'ACTIVE',
-      isDefault: true,
-      appliesTo: { in: [params.appliesTo, 'BOTH'] as TaxAppliesTo[] },
-    },
-    select: { id: true, code: true, ratePct: true, treatment: true },
-  });
-
-  return fallback
-    ? { id: fallback.id, code: fallback.code, ratePct: dec(fallback.ratePct), treatment: fallback.treatment }
-    : NO_TAX;
+  // No code named means no tax. This used to fall back to the company's
+  // default code, which was the standard rate — so a purchase order sent
+  // without a code, an expense typed without one and a credit-note line
+  // left on the first option all quietly acquired 20% TVA. A MAD 7,400
+  // transport bill left cash as 8,880 and a USD 166,282 supplier balance
+  // showed as 199,539. Tax is charged when somebody chooses a rated code,
+  // and at no other time.
+  return NO_TAX;
 }
 
 /**

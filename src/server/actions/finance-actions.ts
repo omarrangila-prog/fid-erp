@@ -17,7 +17,7 @@ import {
 } from '@/lib/validation/finance';
 import { createReceipt, updateReceipt, postReceipt, reverseReceipt, deleteDraftReceipt } from '@/lib/services/receipt';
 import { createPayment, updatePayment, postPayment, reversePayment, deleteDraftPayment } from '@/lib/services/payment';
-import { createExpense, updateExpense, postExpense, reverseExpense, deleteDraftExpense, stripUnselectedExpenseTax } from '@/lib/services/expense';
+import { createExpense, updateExpense, postExpense, reverseExpense, deleteDraftExpense } from '@/lib/services/expense';
 import { changeChequeStatus } from '@/lib/services/cheque';
 import { createAgentSettlement, postAgentSettlement } from '@/lib/services/agent-ledger';
 import { postRevaluation } from '@/lib/services/revaluation';
@@ -254,28 +254,6 @@ export async function deleteExpenseAction(id: string): Promise<ActionResult<unde
     return fail(error);
   }
 }
-
-export async function stripUnselectedExpenseTaxAction(
-  id: string,
-  reason: string,
-): Promise<ActionResult<undefined>> {
-  try {
-    const user = await requirePermission(PERMISSIONS.EXPENSES_POST);
-    await stripUnselectedExpenseTax({ id, companyId: user.activeCompany.id, userId: user.id, reason });
-    revalidateAll([
-      ...paths.expenses,
-      `/finance/expenses/${id}`,
-      '/shipments',
-      '/finance/cash-bank',
-      '/reports/general-ledger',
-      '/accounting/chart',
-    ]);
-    return { ok: true, data: undefined };
-  } catch (error) {
-    return fail(error);
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Cheques
 // ---------------------------------------------------------------------------

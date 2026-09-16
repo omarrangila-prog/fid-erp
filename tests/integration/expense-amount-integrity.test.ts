@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { prisma, resetDatabase, getContext, createMasters, utcDate, receiveEverything } from '../helpers';
 import { createPurchaseContract, postPurchaseContract } from '@/lib/services/purchase';
-import { createExpense, postExpense, updateExpense, reverseExpense, stripUnselectedExpenseTax } from '@/lib/services/expense';
+import { createExpense, postExpense, updateExpense, reverseExpense } from '@/lib/services/expense';
 import { getShipmentCostSheet } from '@/lib/services/landed-cost';
 import { getCashBook, getTrialBalanceReport, getGeneralLedger } from '@/lib/services/reports';
 import { postCashBankTransfer } from '@/lib/services/cash-transfer';
@@ -222,7 +222,11 @@ describe('observed FX 9.6000 MAD per USD', () => {
 });
 
 describe('silent 20% TVA already posted as 8,880', () => {
-  it('restates the original cash and VAT lines to 7,400 without reversing landed cost', async () => {
+  it('is corrected by reversal and re-entry, and the ledger keeps both', async () => {
+    // What was posted stays posted. A journal line is never edited or removed
+    // from a posted entry — the cash book has to be able to show that 8,880
+    // went out and 8,880 came back, or nobody can trust what it shows for
+    // anything else. The correction is the reversal plus the right voucher.
     const expense = await createExpense(
       {
         companyId: ctx.morocco.id,
@@ -236,76 +240,66 @@ describe('silent 20% TVA already posted as 8,880', () => {
         cashBankAccountId: cashId,
         paymentMethod: 'CASH',
         kind: 'SHIPMENT',
+        taxCodeId: standardPurchaseTaxId,
         description: 'Historical silent TVA',
       },
       ctx.admin.id,
     );
-
-    await prisma.expense.update({
-      where: { id: expense.id },
-      data: {
-        taxCodeId: standardPurchaseTaxId,
-        taxRatePct: 20,
-        taxAmount: 1480,
-        taxAmountUsd: convertToUsd('1480', '9.6', 'MAD'),
-      },
-    });
-
     await postExpense({ id: expense.id, companyId: ctx.morocco.id, userId: ctx.admin.id });
 
     const bookBefore = await getCashBook({ companyId: ctx.morocco.id, cashBankAccountId: cashId });
     expect(Number(bookBefore.rows.find((row) => row.sourceId === expense.id)?.moneyOut)).toBeCloseTo(8880, 2);
+    const cashBefore = await cashMovement(cashId);
 
-    const vatBefore = await glUsd(ACCOUNT_KEYS.VAT_INPUT);
-    const sheetBefore = await getShipmentCostSheet(ctx.morocco.id, shipmentId);
-    const landedBefore = Number(sheetBefore.lines.find((line) => line.expenseId === expense.id)?.amountUsd);
-
-    await stripUnselectedExpenseTax({
+    await reverseExpense({
       id: expense.id,
       companyId: ctx.morocco.id,
       userId: ctx.admin.id,
-      reason: 'Tax was never selected on the voucher. Video evidence 7400 became 8880.',
+      reason: 'Tax was never selected on the voucher.',
     });
 
-    const restated = await prisma.expense.findUniqueOrThrow({
-      where: { id: expense.id },
-      select: { amount: true, taxAmount: true, taxCodeId: true, amountUsd: true, currency: true },
+    const corrected = await createExpense(
+      {
+        companyId: ctx.morocco.id,
+        expenseDate: utcDate('2026-08-03'),
+        expenseCategoryId: transportId,
+        shipmentId,
+        currency: 'MAD',
+        amount: '7400',
+        rateToUsd: '9.6',
+        rateLocalPerUsd: '9.6',
+        cashBankAccountId: cashId,
+        paymentMethod: 'CASH',
+        kind: 'SHIPMENT',
+        description: 'Transport, re-entered without tax',
+      },
+      ctx.admin.id,
+    );
+    await postExpense({ id: corrected.id, companyId: ctx.morocco.id, userId: ctx.admin.id });
+
+    // The original is untouched and reversed; the ledger shows all three.
+    const original = await prisma.expense.findUniqueOrThrow({ where: { id: expense.id } });
+    expect(original.status).toBe('REVERSED');
+    expect(Number(original.taxAmount)).toBe(1480);
+    const originalJournals = await prisma.journalEntry.findMany({
+      where: { sourceType: 'EXPENSE', sourceId: expense.id, status: 'POSTED' },
+      include: { lines: true },
     });
-    expect(Number(restated.amount)).toBe(7400);
-    expect(restated.currency).toBe('MAD');
-    expect(Number(restated.taxAmount)).toBe(0);
-    expect(restated.taxCodeId).toBeNull();
-    expect(Number(restated.amountUsd)).toBeCloseTo(770.8333, 4);
+    expect(originalJournals).toHaveLength(2);
+    expect(originalJournals.every((entry) => entry.lines.length >= 3)).toBe(true);
+
+    // Net cash movement is the 7,400 that was really spent.
+    const cashAfter = await cashMovement(cashId);
+    expect(Number(dec(cashAfter).minus(cashBefore))).toBeCloseTo(-7400 + 8880, 2);
 
     const bookAfter = await getCashBook({ companyId: ctx.morocco.id, cashBankAccountId: cashId });
-    expect(Number(bookAfter.rows.find((row) => row.sourceId === expense.id)?.moneyOut)).toBeCloseTo(7400, 2);
-    expect(bookAfter.rows.some((row) => Number(row.moneyOut) === 8880 && row.sourceId === expense.id)).toBe(false);
+    expect(Number(bookAfter.rows.find((row) => row.sourceId === expense.id)?.moneyOut)).toBeCloseTo(8880, 2);
+    expect(Number(bookAfter.rows.find((row) => row.sourceId === corrected.id)?.moneyOut)).toBeCloseTo(7400, 2);
 
-    const vatAfter = await glUsd(ACCOUNT_KEYS.VAT_INPUT);
-    expect(vatAfter).toBeCloseTo(vatBefore - Number(convertToUsd('1480', '9.6', 'MAD')), 2);
-
-    const cashAccount = await prisma.cashBankAccount.findUniqueOrThrow({
-      where: { id: cashId },
-      select: { glAccountId: true },
-    });
-    const ledger = await getGeneralLedger({
-      companyId: ctx.morocco.id,
-      accountId: cashAccount.glAccountId,
-      currency: 'MAD',
-    });
-    expect(ledger.rows.some((row) => row.sourceId === expense.id && Number(row.credit) === 7400)).toBe(true);
-    expect(ledger.rows.some((row) => row.sourceId === expense.id && Number(row.credit) === 8880)).toBe(false);
-
-    const sheetAfter = await getShipmentCostSheet(ctx.morocco.id, shipmentId);
-    const landedAfter = sheetAfter.lines.find((line) => line.expenseId === expense.id);
-    expect(Number(landedAfter?.amount)).toBe(7400);
-    expect(Number(landedAfter?.amountUsd)).toBeCloseTo(landedBefore, 4);
-    expect(sheetAfter.lines.filter((line) => line.expenseId === expense.id)).toHaveLength(1);
-
-    const journals = await prisma.journalEntry.count({
-      where: { sourceType: 'EXPENSE', sourceId: expense.id, isReversal: false, status: 'POSTED' },
-    });
-    expect(journals).toBe(1);
+    // The shipment carries the cost once.
+    const sheet = await getShipmentCostSheet(ctx.morocco.id, shipmentId);
+    expect(sheet.lines.filter((line) => line.expenseId === expense.id)).toHaveLength(0);
+    expect(Number(sheet.lines.find((line) => line.expenseId === corrected.id)?.amount)).toBe(7400);
   });
 });
 

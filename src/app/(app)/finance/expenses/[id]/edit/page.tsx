@@ -7,7 +7,6 @@ import { toDateInputValue } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { ExpenseForm } from '@/app/(app)/finance/expenses/expense-form';
 import { loadExpenseFormOptions } from '@/app/(app)/finance/expenses/load-expense-form';
-import { EXPENSE_TRACE_OMIT, expensesHaveTraceColumns } from '@/lib/services/expense-columns';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,10 +19,8 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 export default async function EditExpensePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requirePageAccess(PERMISSIONS.EXPENSES_CREATE);
-  const hasTrace = await expensesHaveTraceColumns();
   const expense = await prisma.expense.findFirst({
     where: { id, companyId: user.activeCompany.id },
-    ...(hasTrace ? {} : { omit: EXPENSE_TRACE_OMIT }),
   });
   if (!expense) notFound();
   if (expense.status !== 'DRAFT') redirect(`/finance/expenses/${expense.id}`);
@@ -61,8 +58,8 @@ export default async function EditExpensePage({ params }: { params: Promise<{ id
           kind: expense.kind,
           expenseCategoryId: expense.expenseCategoryId,
           shipmentId: expense.shipmentId,
-          containerId: hasTrace && 'containerId' in expense ? (expense.containerId as string | null) : null,
-          batchId: hasTrace && 'batchId' in expense ? (expense.batchId as string | null) : null,
+          containerId: expense.containerId,
+          batchId: expense.batchId,
           agentId: expense.agentId,
           currency: expense.currency,
           amount: expense.amount.toString(),

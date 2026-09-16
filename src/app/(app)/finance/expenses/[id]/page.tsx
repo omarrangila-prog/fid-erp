@@ -13,10 +13,7 @@ import { StatusBadge, Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/feedback';
 import { VoucherActions } from '@/components/shared/voucher-actions';
-import { StripExpenseTaxButton } from '@/app/(app)/finance/expenses/strip-expense-tax';
 import { getWarehouseLabels } from '@/lib/services/stock';
-import { EXPENSE_TRACE_OMIT, expensesHaveTraceColumns } from '@/lib/services/expense-columns';
-import { looksLikeSilentDefaultTax } from '@/lib/services/expense';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,19 +27,13 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
   const { id } = await params;
   const user = await requirePageAccess(PERMISSIONS.EXPENSES_VIEW);
 
-  const hasTrace = await expensesHaveTraceColumns();
   const expense = await prisma.expense.findFirst({
     where: { id, companyId: user.activeCompany.id },
-    ...(hasTrace ? {} : { omit: EXPENSE_TRACE_OMIT }),
     include: {
       expenseCategory: true,
       shipment: { select: { id: true, jobNumber: true, shipmentNumber: true } },
-      ...(hasTrace
-        ? {
-            container: { select: { containerNumber: true } },
-            batch: { select: { batchNumber: true } },
-          }
-        : {}),
+      container: { select: { containerNumber: true } },
+      batch: { select: { batchNumber: true } },
       vendor: { select: { id: true, vendorName: true } },
       agent: { select: { agentName: true } },
       payableToAgent: { select: { id: true, agentName: true } },
@@ -58,10 +49,6 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
   const recordPayment = unpaid && !expense.payableToAgent && can(user, PERMISSIONS.PAYMENTS_CREATE);
   const payAgentCommission =
     unpaid && expense.payableToAgent && can(user, PERMISSIONS.AGENTS_VIEW);
-  const silentTax =
-    expense.status === 'POSTED' &&
-    looksLikeSilentDefaultTax(expense) &&
-    can(user, PERMISSIONS.EXPENSES_POST);
 
   return (
     <div className="space-y-6">
@@ -109,14 +96,6 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
                 </Link>
               </Button>
             ) : null}
-            {silentTax ? (
-              <StripExpenseTaxButton
-                id={expense.id}
-                originalAmount={formatMoney(expense.amount, expense.currency, { showCode: false })}
-                currency={expense.currency}
-                grossAmount={formatMoney(expense.amount.plus(expense.taxAmount), expense.currency, { showCode: false })}
-              />
-            ) : null}
             <VoucherActions
               kind="expense"
               id={expense.id}
@@ -135,12 +114,11 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
         </Callout>
       ) : null}
 
-      {silentTax ? (
-        <Callout tone="danger" title="Cash moved 20% more than the amount entered">
-          A default 20% TVA was posted onto cash even though this voucher did not name a tax code. Cash currently
-          shows {formatMoney(expense.amount.plus(expense.taxAmount), expense.currency)} instead of{' '}
-          {formatMoney(expense.amount, expense.currency)}. Landed cost already uses the net amount. Restate cash to
-          the amount entered so the cash book, general ledger and shipment cost all agree.
+      {expense.status === 'POSTED' && expense.taxAmount.greaterThan(0) ? (
+        <Callout tone="info" title="This voucher carries tax">
+          {formatMoney(expense.amount, expense.currency)} net plus {formatMoney(expense.taxAmount, expense.currency)}{' '}
+          tax left the account — {formatMoney(expense.amount.plus(expense.taxAmount), expense.currency)} in all. If no
+          tax was meant, reverse this voucher and enter it again without a tax code; the ledger keeps both.
         </Callout>
       ) : null}
 

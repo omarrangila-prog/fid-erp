@@ -6,7 +6,6 @@ import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { formatMoney, formatDate } from '@/lib/format';
 import { getWarehouseLabels } from '@/lib/services/stock';
-import { EXPENSE_TRACE_OMIT } from '@/lib/services/expense-columns';
 import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import { EmptyAction } from '@/components/shared/empty-action';
@@ -22,7 +21,6 @@ export default async function ExpensesPage() {
   const [expenses, warehouses] = await Promise.all([
     prisma.expense.findMany({
       where: { companyId },
-      omit: EXPENSE_TRACE_OMIT,
       orderBy: [{ expenseDate: 'desc' }, { expenseNumber: 'desc' }],
       include: {
         expenseCategory: { select: { name: true } },

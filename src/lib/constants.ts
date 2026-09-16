@@ -887,9 +887,12 @@ export const TAX_CODE_SEEDS: Array<{
   appliesTo: 'SALES' | 'PURCHASE' | 'BOTH';
   isDefault?: boolean;
 }> = [
-  { code: 'STD', name: 'Standard rate', ratePct: 0, treatment: 'STANDARD', appliesTo: 'BOTH', isDefault: true },
+  // The default — what a dropdown shows before anyone touches it — is the
+  // exempt code. The client charges TVA on some sales and not others, and the
+  // safe starting point is none: a rate must be chosen, never assumed.
+  { code: 'STD', name: 'Standard rate', ratePct: 0, treatment: 'STANDARD', appliesTo: 'BOTH' },
   { code: 'ZERO', name: 'Zero-rated export', ratePct: 0, treatment: 'ZERO_RATED', appliesTo: 'SALES' },
-  { code: 'EXEMPT', name: 'Exempt supply', ratePct: 0, treatment: 'EXEMPT', appliesTo: 'BOTH' },
+  { code: 'EXEMPT', name: 'Exempt supply', ratePct: 0, treatment: 'EXEMPT', appliesTo: 'BOTH', isDefault: true },
   { code: 'OOS', name: 'Out of scope', ratePct: 0, treatment: 'OUT_OF_SCOPE', appliesTo: 'BOTH' },
   { code: 'RC', name: 'Reverse charge (import)', ratePct: 0, treatment: 'REVERSE_CHARGE', appliesTo: 'PURCHASE' },
 ];
