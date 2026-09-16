@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { MasterFormSheet, type FieldSpec } from '@/components/shared/master-form';
 import type { MasterFormState } from '@/server/actions/master-actions';
+import { RowActions, type RowAction } from '@/components/shared/row-actions';
 import type { BadgeTone } from '@/lib/constants';
 
 /**
@@ -35,6 +36,8 @@ export type SimpleColumnSpec = {
 export type SimpleRow = {
   id: string;
   data: Record<string, string | number | null>;
+  /** Screen-specific row actions, shown before Edit. */
+  actions?: RowAction[];
   /** Values used to pre-fill the edit form. */
   formValues: Record<string, string | number | boolean | null>;
   searchText: string;
@@ -92,19 +95,21 @@ export function SimpleMasterTable({
         },
       }),
     ),
-    ...(canEdit
-      ? [
-          {
-            id: 'actions',
-            header: '',
-            cell: (row: SimpleRow) => (
-              <Button variant="ghost" size="icon" aria-label={`Edit ${row.title}`} onClick={() => setEditing(row)}>
-                <Pencil />
-              </Button>
-            ),
-          } satisfies DataColumn<SimpleRow>,
-        ]
-      : []),
+    {
+      id: 'actions',
+      header: 'Actions',
+      mobile: 'action',
+      pin: 'right',
+      printHidden: true,
+      cell: (row: SimpleRow) => (
+        <RowActions
+          actions={[
+            ...(row.actions ?? []),
+            { label: 'Edit', icon: Pencil, show: canEdit, onSelect: () => setEditing(row) },
+          ]}
+        />
+      ),
+    } satisfies DataColumn<SimpleRow>,
   ];
 
   return (

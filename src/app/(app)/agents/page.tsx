@@ -2,6 +2,9 @@ import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
+import { BookOpen, ArrowDownToLine } from 'lucide-react';
+import { formatMoney } from '@/lib/format';
+import { getAgentPositions } from '@/lib/services/agent-ledger';
 import { PageHeader } from '@/components/shared/page-header';
 import { SimpleMasterTable, type SimpleRow, type SimpleColumnSpec } from '@/components/shared/simple-master';
 import { STATUS_OPTIONS, type FieldSpec } from '@/components/shared/master-form';
@@ -27,7 +30,11 @@ const COLUMNS: SimpleColumnSpec[] = [
   { id: 'contact', header: 'Contact', key: 'contactPerson', mobile: 'meta' },
   { id: 'phone', header: 'Phone', key: 'phone', hideable: true },
   { id: 'email', header: 'Email', key: 'email', hideable: true, defaultHidden: true },
-  { id: 'commission', header: 'Commission', key: 'commission', kind: 'number', mobile: 'meta' },
+  { id: 'commission', header: 'Commission %', key: 'commission', kind: 'number', mobile: 'meta' },
+  // What the agent is actually holding and what he is owed — the two figures
+  // that decide whether to chase him or pay him, from the agent ledger.
+  { id: 'holding', header: 'Holding for us', key: 'holding', kind: 'number', mobile: 'meta' },
+  { id: 'payable', header: 'Commission owed', key: 'payable', kind: 'number', mobile: 'meta' },
   {
     id: 'status',
     header: 'Status',
@@ -40,10 +47,15 @@ const COLUMNS: SimpleColumnSpec[] = [
 
 export default async function AgentsPage() {
   const user = await requirePageAccess(PERMISSIONS.AGENTS_VIEW);
-  const agents = await prisma.agent.findMany({
-    where: { companyId: user.activeCompany.id },
-    orderBy: { agentName: 'asc' },
-  });
+  const [agents, positions] = await Promise.all([
+    prisma.agent.findMany({
+      where: { companyId: user.activeCompany.id },
+      orderBy: { agentName: 'asc' },
+    }),
+    getAgentPositions(user.activeCompany.id),
+  ]);
+  const positionByAgent = new Map(positions.map((p) => [p.agentId, p]));
+  const localCurrency = user.activeCompany.localCurrency;
 
   const rows: SimpleRow[] = agents.map((a) => ({
     id: a.id,
@@ -56,8 +68,22 @@ export default async function AgentsPage() {
       phone: a.phone,
       email: a.email,
       commission: `${a.commissionPct.toString()}%`,
+      holding: (() => {
+        const p = positionByAgent.get(a.id);
+        return p && Number(p.holdingLocal) !== 0 ? formatMoney(p.holdingLocal, localCurrency) : '—';
+      })(),
+      payable: (() => {
+        const p = positionByAgent.get(a.id);
+        return p && Number(p.commissionPayableLocal) !== 0
+          ? formatMoney(p.commissionPayableLocal, localCurrency)
+          : '—';
+      })(),
       status: a.status === 'ACTIVE' ? 'Active' : 'Inactive',
     },
+    actions: [
+      { label: 'Ledger', href: `/ledgers/agents?agent=${a.id}`, icon: BookOpen },
+      { label: 'Receive from agent', href: `/finance/agent-commission?agent=${a.id}`, icon: ArrowDownToLine },
+    ],
     formValues: {
       agentCode: a.agentCode,
       agentName: a.agentName,
