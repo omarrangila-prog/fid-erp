@@ -84,6 +84,8 @@ export function PinPad({ accounts }: { accounts: PinAccount[] }) {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+    // press/backspace close over pending; re-subscribing every render is fine.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keep the pad responsive without wrapping each key handler
   }, [selected, digits, pending]);
 
   if (!selected) {

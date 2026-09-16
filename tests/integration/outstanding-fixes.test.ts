@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { prisma, resetDatabase, getContext, createMasters, getCashAccount, utcDate, transaction } from '../helpers';
 import { createPurchaseContract, postPurchaseContract } from '@/lib/services/purchase';
-import { createGoodsReceipt, postGoodsReceipt } from '@/lib/services/goods-receipt';
+import { createGoodsReceipt } from '@/lib/services/goods-receipt';
 import { createExpense, postExpense } from '@/lib/services/expense';
 import { postJournalEntry, reverseJournalEntry } from '@/lib/services/accounting';
 import { ACCOUNT_KEYS } from '@/lib/constants';

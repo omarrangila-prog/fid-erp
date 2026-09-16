@@ -7,6 +7,7 @@ import {
   createMasters,
   utcDate,
   receiveEverything,
+  getCashAccount,
 } from '../helpers';
 import { createPurchaseContract, postPurchaseContract } from '@/lib/services/purchase';
 import {
@@ -16,7 +17,9 @@ import {
   cancelSalesInvoice,
   type SalesInvoiceInput,
 } from '@/lib/services/sales';
-import { getCustomerBalance, getSystemAccount, postJournalEntry } from '@/lib/services/accounting';
+import { createReceipt, postReceipt, getInvoiceOutstanding } from '@/lib/services/receipt';
+import { createExpense, postExpense } from '@/lib/services/expense';
+import { getCustomerBalance, getSystemAccount, postJournalEntry, getCashBankBalance } from '@/lib/services/accounting';
 import { getCustomerLedger } from '@/lib/services/ledger';
 import { customerSchema } from '@/lib/validation/masters';
 import { ACCOUNT_KEYS } from '@/lib/constants';
@@ -233,6 +236,88 @@ describe('delete invoice reverses stock, AR and the ledger', () => {
       where: { sourceType: 'SALES_INVOICE', sourceId: invoice.id },
     });
     expect(entries).toHaveLength(2);
+  });
+});
+
+describe('credit invoice then Record Payment', () => {
+  it('posts the receipt, reduces what the customer owes, and refuses to delete the invoice until the receipt is reversed', async () => {
+    const bank = await getCashAccount(ctx.morocco.id, 'USD');
+    const invoice = await createSalesInvoice(saleInput(), ctx.admin.id);
+    await postSalesInvoice({ id: invoice.id, companyId: ctx.morocco.id, userId: ctx.admin.id });
+
+    const outstandingAfterSale = await transaction((tx) => getInvoiceOutstanding(tx, invoice.id));
+    expect(outstandingAfterSale.amount.toString()).toBe('3000');
+
+    const cashBefore = await transaction((tx) => getCashBankBalance(tx, ctx.morocco.id, bank.id));
+
+    const receipt = await createReceipt(
+      {
+        companyId: ctx.morocco.id,
+        receiptDate: utcDate('2026-03-05'),
+        customerId,
+        currency: 'USD',
+        amount: '3000',
+        rateToUsd: '1',
+        rateLocalPerUsd: '9.85',
+        paymentMethod: 'BANK_TRANSFER',
+        cashBankAccountId: bank.id,
+        allocations: [{ salesInvoiceId: invoice.id, amount: '3000' }],
+      },
+      ctx.admin.id,
+    );
+    await postReceipt({ id: receipt.id, companyId: ctx.morocco.id, userId: ctx.admin.id });
+
+    const outstandingAfterPay = await transaction((tx) => getInvoiceOutstanding(tx, invoice.id));
+    expect(outstandingAfterPay.amount.toString()).toBe('0');
+
+    const cashAfter = await transaction((tx) => getCashBankBalance(tx, ctx.morocco.id, bank.id));
+    expect(dec(cashAfter).minus(cashBefore).toString()).toBe('3000');
+
+    await expect(
+      cancelSalesInvoice({
+        id: invoice.id,
+        companyId: ctx.morocco.id,
+        userId: ctx.admin.id,
+        reason: 'Trying to delete a paid invoice',
+      }),
+    ).rejects.toThrow(/receipts are allocated/i);
+  });
+});
+
+describe('unpaid shipment expense without cash or bank', () => {
+  it('books the cost and a payable, and does not touch cash', async () => {
+    const category = await prisma.expenseCategory.findFirstOrThrow({
+      where: { companyId: ctx.morocco.id, kind: 'SHIPMENT' },
+    });
+    const shipment = await prisma.shipment.findFirstOrThrow({ where: { companyId: ctx.morocco.id } });
+    const cash = await prisma.cashBankAccount.findFirstOrThrow({
+      where: { companyId: ctx.morocco.id, currency: 'USD', accountType: 'CASH' },
+    });
+    const cashBefore = await transaction((tx) => getCashBankBalance(tx, ctx.morocco.id, cash.id));
+
+    const expense = await createExpense(
+      {
+        companyId: ctx.morocco.id,
+        expenseDate: utcDate('2026-03-10'),
+        expenseCategoryId: category.id,
+        shipmentId: shipment.id,
+        currency: 'USD',
+        amount: '1000',
+        rateToUsd: '1',
+        rateLocalPerUsd: '9.85',
+        kind: 'SHIPMENT',
+        description: 'Unpaid agent commission',
+      },
+      ctx.admin.id,
+    );
+    await postExpense({ id: expense.id, companyId: ctx.morocco.id, userId: ctx.admin.id });
+
+    const stored = await prisma.expense.findUniqueOrThrow({ where: { id: expense.id } });
+    expect(stored.cashBankAccountId).toBeNull();
+    expect(stored.status).toBe('POSTED');
+
+    const cashAfter = await transaction((tx) => getCashBankBalance(tx, ctx.morocco.id, cash.id));
+    expect(cashAfter.toString()).toBe(cashBefore.toString());
   });
 });
 

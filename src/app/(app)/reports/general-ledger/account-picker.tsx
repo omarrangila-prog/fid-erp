@@ -52,6 +52,7 @@ export function AccountPicker({
       </Field>
       <Field label="Currency" className="w-40">
         <Select value={ccy} onChange={(e) => setCcy(e.target.value)}>
+          <option value="ALL">All — listed separately</option>
           <option value="USD">USD</option>
           <option value="MAD">MAD</option>
           <option value="AED">AED</option>

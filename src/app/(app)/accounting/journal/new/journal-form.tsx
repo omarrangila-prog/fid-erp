@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 import { tryDec, Decimal } from '@/lib/money';
 import { postJournalVoucherAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
+import { AddJournalAccountDialog, type CreatedJournalAccount } from '@/app/(app)/accounting/journal/new/add-account';
 
 export type AccountOption = ComboOption & { accountType: string };
 
@@ -65,6 +66,9 @@ export function JournalForm({
   const [rateToUsd, setRateToUsd] = React.useState('1');
   const [localRate, setLocalRate] = React.useState(defaultLocalRate);
   const [customerId, setCustomerId] = React.useState<string | null>(null);
+  const [accountOptions, setAccountOptions] = React.useState(accounts);
+  const [addAccountFor, setAddAccountFor] = React.useState<string | null>(null);
+  const [addAccountName, setAddAccountName] = React.useState('');
   const [lines, setLines] = React.useState<Line[]>(() => [emptyLine(0), emptyLine(1)]);
   const [error, setError] = React.useState<string | null>(null);
   const nextKey = React.useRef(2);
@@ -93,6 +97,25 @@ export function JournalForm({
 
   function removeLine(key: string) {
     setLines((current) => (current.length <= 2 ? current : current.filter((line) => line.key !== key)));
+  }
+
+  function openAddAccount(lineKey: string, typed?: string) {
+    setAddAccountFor(lineKey);
+    setAddAccountName(typed ?? '');
+  }
+
+  function onAccountCreated(created: CreatedJournalAccount) {
+    const option: AccountOption = {
+      value: created.id,
+      label: `${created.code} — ${created.name}`,
+      hint: created.type.replaceAll('_', ' ').toLowerCase(),
+      keywords: `${created.code} ${created.name} ${created.type}`,
+      accountType: created.type,
+    };
+    setAccountOptions((current) => (current.some((row) => row.value === created.id) ? current : [...current, option]));
+    if (addAccountFor) updateLine(addAccountFor, { accountId: created.id });
+    setAddAccountFor(null);
+    setAddAccountName('');
   }
 
   /**
@@ -261,14 +284,29 @@ export function JournalForm({
             >
               <div className="sm:col-span-5">
                 <Field label={index === 0 ? 'Account' : ''} htmlFor={`acct-${line.key}`} required={index === 0}>
-                  <Combobox
-                    id={`acct-${line.key}`}
-                    aria-label={`Line ${index + 1} account`}
-                    options={accounts}
-                    value={line.accountId}
-                    onChange={(value) => updateLine(line.key, { accountId: value ?? "" })}
-                    placeholder="Choose an account…"
-                  />
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                    <div className="min-w-0 flex-1">
+                      <Combobox
+                        id={`acct-${line.key}`}
+                        aria-label={`Line ${index + 1} account`}
+                        options={accountOptions}
+                        value={line.accountId || null}
+                        onChange={(value) => updateLine(line.key, { accountId: value ?? '' })}
+                        placeholder="Choose an account…"
+                        createLabel="+ Add New Account"
+                        onCreate={(query) => openAddAccount(line.key, query)}
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="shrink-0"
+                      onClick={() => openAddAccount(line.key)}
+                    >
+                      <Plus />
+                      Add Account
+                    </Button>
+                  </div>
                 </Field>
               </div>
 
@@ -371,6 +409,19 @@ export function JournalForm({
           {error}
         </Callout>
       ) : null}
+
+      <AddJournalAccountDialog
+        open={addAccountFor !== null}
+        onOpenChange={(next) => {
+          if (!next) {
+            setAddAccountFor(null);
+            setAddAccountName('');
+          }
+        }}
+        initialName={addAccountName}
+        defaultCurrency={currency}
+        onCreated={onAccountCreated}
+      />
     </div>
   );
 }

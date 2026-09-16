@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { chooseCompany } from './settle';
 
 /**
  * The Morocco workflow, in a browser.
@@ -27,7 +28,7 @@ async function signInToMorocco(page: Page) {
   await page.waitForURL(/\/(dashboard|select-company)/, { waitUntil: 'domcontentloaded' });
 
   if (page.url().includes('select-company')) {
-    await page.getByRole('link', { name: /FID Trading International SARL/ }).first().click();
+    await chooseCompany(page, /FID Trading International SARL/);
     await page.waitForURL(/\/dashboard/, { waitUntil: 'domcontentloaded' });
     return;
   }
@@ -263,8 +264,8 @@ test('§13–14 the invoice asks whether it is cash or credit', async ({ page })
 test('§9 a customer can be added without leaving the invoice', async ({ page }) => {
   await page.goto('/sales/new', { waitUntil: 'domcontentloaded' });
 
-  await page.getByRole('button', { name: /New customer/i }).click();
-  await expect(page.getByRole('heading', { name: /New customer/i })).toBeVisible();
+  await page.getByRole('button', { name: /^Add Customer$/ }).click();
+  await expect(page.getByRole('heading', { name: /^Add Customer$/ })).toBeVisible();
   await expect(page.getByLabel(/customer name/i)).toBeVisible();
 
   // It asks only what an invoice needs.

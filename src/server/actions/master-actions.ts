@@ -14,6 +14,7 @@ import {
   deactivateLedgerAccount,
   reactivateLedgerAccount,
   postAccountOpeningBalance,
+  quickCreateJournalAccount,
 } from '@/lib/services/chart-of-accounts';
 import { quickCreateExpenseCategory } from '@/lib/services/expense-category';
 import { quickCreateAgent } from '@/lib/services/agent';
@@ -715,6 +716,42 @@ export async function saveLedgerAccountAction(
   } catch (error) {
     return invalid(error);
   }
+}
+
+export async function quickCreateJournalAccountAction(
+  payload: string,
+): Promise<ActionResult<{ id: string; code: string; name: string; type: string; currency: string | null }>> {
+  return run(async () => {
+    const user = await requirePermission(PERMISSIONS.ACCOUNTING_POST);
+    const input = z
+      .object({
+        name: requiredText('Account name', 120),
+        kind: requiredText('Account type', 40),
+        currency: currencyCode,
+      })
+      .parse(JSON.parse(payload) as unknown);
+
+    const created = await quickCreateJournalAccount({
+      companyId: user.activeCompany.id,
+      userId: user.id,
+      name: input.name,
+      kind: input.kind,
+      currency: input.currency,
+    });
+
+    revalidatePath('/accounting/chart');
+    revalidatePath('/accounting/journal/new');
+    revalidatePath('/reports/general-ledger');
+    revalidatePath('/reports/journal');
+
+    return {
+      id: created.id,
+      code: created.code,
+      name: created.name,
+      type: created.type,
+      currency: created.currency,
+    };
+  });
 }
 
 export async function deactivateLedgerAccountAction(id: string): Promise<MasterFormState> {

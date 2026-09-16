@@ -298,13 +298,19 @@ export function SaleForm({
       return;
     }
 
-    const { warehouseId: _warehouseId, ...headerFields } = header;
     const payload = {
-      ...headerFields,
+      invoiceNumber: header.invoiceNumber,
+      invoiceDate: header.invoiceDate,
+      customerId: header.customerId ?? '',
+      currency: header.currency,
+      rateToUsd: header.rateToUsd,
+      rateLocalPerUsd: header.rateLocalPerUsd,
       dueDate: header.dueDate || undefined,
       paymentType: header.paymentType,
       cashBankAccountId: header.paymentType === 'CASH' ? header.cashBankAccountId : '',
       shipmentId: '',
+      reference: header.reference,
+      notes: header.notes,
       lines: lines
         .filter((line) => line.stockKey)
         .map((line) => {

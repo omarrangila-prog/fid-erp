@@ -74,6 +74,7 @@ function AddExpenseCategoryBody({
 
   function submit(event?: React.FormEvent) {
     event?.preventDefault();
+    if (pending) return;
     setError(null);
     if (!name.trim()) {
       setError('Enter the category name.');

@@ -140,7 +140,6 @@ export function InvoiceActionsMenu({
   canReverse: boolean;
   canApprove?: boolean;
 }) {
-  const router = useRouter();
   const showEdit = canEdit && (status === 'DRAFT' || status === 'POSTED');
   const canCancel = canCancelSalesInvoice(status, { canDelete, canReverse, canEdit, canApprove });
   if (!showEdit && !canCancel) return null;
@@ -174,7 +173,7 @@ export function InvoiceActionsMenu({
             data-fid-pop
             align="end"
             sideOffset={4}
-            className="animate-in-soft z-50 min-w-48 rounded-lg border border-line bg-surface p-1 shadow-lg"
+            className="animate-in-soft z-[110] min-w-48 rounded-lg border border-line bg-surface p-1 shadow-lg"
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();

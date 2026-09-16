@@ -31,7 +31,8 @@ export default async function GeneralLedgerPage({
     select: { id: true, code: true, name: true, type: true },
   });
 
-  const selectedCurrency = currency === 'MAD' || currency === 'AED' || currency === 'USD' ? currency : 'USD';
+  const selectedCurrency =
+    currency === 'ALL' || currency === 'MAD' || currency === 'AED' || currency === 'USD' ? currency : 'USD';
 
   const selectedId = account && accounts.some((a) => a.id === account) ? account : accounts[0]?.id;
 
@@ -81,7 +82,10 @@ export default async function GeneralLedgerPage({
               {ledger.account.code} · {ledger.account.name}
             </CardTitle>
               <CardDescription>
-                {titleCase(ledger.account.type)} account · {ledger.viewCurrency} only
+                {titleCase(ledger.account.type)} account
+                {ledger.mixedCurrencies
+                  ? ' · all currencies listed separately — USD and MAD are never added together'
+                  : ` · ${ledger.viewCurrency} only`}
               </CardDescription>
           </CardHeader>
           <CardContent className="px-0 pb-0">
@@ -93,23 +97,26 @@ export default async function GeneralLedgerPage({
                     <TH>Entry</TH>
                     <TH>Description</TH>
                     <TH>Source</TH>
+                    {ledger.mixedCurrencies ? <TH>Currency</TH> : null}
                     <TH numeric>Debit</TH>
                     <TH numeric>Credit</TH>
-                    <TH numeric>Balance</TH>
+                    {ledger.mixedCurrencies ? null : <TH numeric>Balance</TH>}
                   </TR>
                 </THead>
                 <TBody>
-                  <TR className="bg-forest-50/40 hover:bg-forest-50/40">
-                    <TD colSpan={6} className="text-xs font-medium text-ink-muted">
-                      Opening balance
-                    </TD>
-                    <TD numeric className="font-semibold">
-                      {formatMoney(ledger.openingBalance, ledger.viewCurrency)}
-                    </TD>
-                  </TR>
+                  {ledger.mixedCurrencies ? null : (
+                    <TR className="bg-forest-50/40 hover:bg-forest-50/40">
+                      <TD colSpan={6} className="text-xs font-medium text-ink-muted">
+                        Opening balance
+                      </TD>
+                      <TD numeric className="font-semibold">
+                        {formatMoney(ledger.openingBalance, ledger.viewCurrency)}
+                      </TD>
+                    </TR>
+                  )}
                   {ledger.rows.length === 0 ? (
                     <TR>
-                      <TD colSpan={7} className="py-8 text-center text-xs text-ink-subtle">
+                      <TD colSpan={ledger.mixedCurrencies ? 7 : 7} className="py-8 text-center text-xs text-ink-subtle">
                         No movements on this account in the selected period.
                       </TD>
                     </TR>
@@ -125,25 +132,30 @@ export default async function GeneralLedgerPage({
                           ) : null}
                         </TD>
                         <TD className="text-xs">{titleCase(row.sourceType)}</TD>
+                        {ledger.mixedCurrencies ? <TD className="text-xs">{row.currency}</TD> : null}
                         <TD numeric>
                           {row.debit.greaterThan(0) ? formatMoney(row.debit, row.currency) : '—'}
                         </TD>
                         <TD numeric>
                           {row.credit.greaterThan(0) ? formatMoney(row.credit, row.currency) : '—'}
                         </TD>
-                        <TD numeric className="font-medium">
-                          {formatMoney(row.balance, ledger.viewCurrency)}
-                        </TD>
+                        {ledger.mixedCurrencies ? null : (
+                          <TD numeric className="font-medium">
+                            {formatMoney(row.balance, ledger.viewCurrency)}
+                          </TD>
+                        )}
                       </TR>
                     ))
                   )}
                 </TBody>
-                <TFoot>
-                  <tr>
-                    <TD colSpan={6}>Closing balance</TD>
-                    <TD numeric>{formatMoney(ledger.closingBalance, ledger.viewCurrency)}</TD>
-                  </tr>
-                </TFoot>
+                {ledger.mixedCurrencies ? null : (
+                  <TFoot>
+                    <tr>
+                      <TD colSpan={6}>Closing balance</TD>
+                      <TD numeric>{formatMoney(ledger.closingBalance, ledger.viewCurrency)}</TD>
+                    </tr>
+                  </TFoot>
+                )}
               </Table>
             </TableWrap>
           </CardContent>

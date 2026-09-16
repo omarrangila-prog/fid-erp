@@ -7,6 +7,8 @@ import { postJournalEntry } from '@/lib/services/accounting';
 import { getCompanyContext } from '@/lib/services/company';
 import { ensureTaxCodes } from '@/lib/services/tax';
 import { getRateDefaults } from '@/lib/services/exchange-rate';
+import { writeAudit } from '@/lib/services/audit';
+import { resolveJournalAccountKind } from '@/lib/services/journal-account-kind';
 import type { AccountType, CashBankAccountType, RecordStatus, SubledgerType } from '@prisma/client';
 
 /**
@@ -617,6 +619,7 @@ export async function createLedgerAccount(input: {
   name: string;
   type: AccountType;
   reportGroup?: string | null;
+  currency?: string | null;
 }) {
   const code = input.code.trim();
   const name = input.name.trim();
@@ -626,6 +629,10 @@ export async function createLedgerAccount(input: {
   const allowed = REPORT_GROUP_FOR_TYPE[input.type];
   const reportGroup =
     input.reportGroup && allowed.includes(input.reportGroup) ? input.reportGroup : allowed[0];
+  const currency = input.currency ? input.currency.trim().toUpperCase() : null;
+  if (currency && !/^[A-Z]{3}$/.test(currency)) {
+    throw new BusinessRuleError('Use a three-letter currency code such as USD or MAD.');
+  }
 
   return transaction(async (tx) => {
     const duplicate = await tx.account.findFirst({ where: { companyId: input.companyId, code } });
@@ -638,10 +645,89 @@ export async function createLedgerAccount(input: {
         name,
         type: input.type,
         reportGroup,
+        currency,
         isSystem: false,
         subledgerType: 'NONE',
       },
     });
+  });
+}
+
+async function nextCodeInSeries(tx: Tx, companyId: string, series: number): Promise<string> {
+  const start = String(series);
+  const existing = await tx.account.findMany({
+    where: { companyId, code: { startsWith: start.slice(0, 2) } },
+    select: { code: true },
+  });
+  const taken = new Set(existing.map((row) => row.code));
+  for (let offset = 0; offset < 400; offset += 1) {
+    const code = String(series + offset);
+    if (!taken.has(code)) return code;
+  }
+  return `${series}-${Date.now().toString(36).toUpperCase()}`;
+}
+
+/**
+ * Create a named ledger head from a journal voucher — Ahmed as a current
+ * account, a loan, an extra expense head — without leaving the entry.
+ *
+ * One head, both directions. Debiting Ahmed means Ahmed owes the company;
+ * crediting Ahmed means the company owes Ahmed. The net lives on the Balance
+ * Sheet. Nothing here posts to the Profit & Loss unless the user picks Income
+ * or Expense as the type.
+ */
+export async function quickCreateJournalAccount(params: {
+  companyId: string;
+  userId: string;
+  name: string;
+  kind: string;
+  currency: string;
+}) {
+  const kind = resolveJournalAccountKind(params.kind);
+  if (!kind) throw new BusinessRuleError('Choose what kind of account this is.');
+
+  const name = params.name.trim();
+  if (!name) throw new BusinessRuleError('Enter the account name.');
+
+  const currency = params.currency.trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currency)) {
+    throw new BusinessRuleError('Use a three-letter currency code such as USD or MAD.');
+  }
+
+  return transaction(async (tx) => {
+    const nameClash = await tx.account.findFirst({
+      where: { companyId: params.companyId, name: { equals: name, mode: 'insensitive' }, status: 'ACTIVE' },
+      select: { id: true, name: true, code: true },
+    });
+    if (nameClash) {
+      throw new ConflictError(`${nameClash.name} (${nameClash.code}) is already on the chart.`);
+    }
+
+    const code = await nextCodeInSeries(tx, params.companyId, kind.series);
+
+    const created = await tx.account.create({
+      data: {
+        companyId: params.companyId,
+        code,
+        name,
+        type: kind.type,
+        reportGroup: kind.reportGroup,
+        currency,
+        isSystem: false,
+        subledgerType: 'NONE',
+      },
+    });
+
+    await writeAudit(tx, {
+      companyId: params.companyId,
+      userId: params.userId,
+      action: 'LEDGER_ACCOUNT_CREATED',
+      entityType: 'Account',
+      entityId: created.id,
+      after: { code, name, kind: kind.value, currency, reportGroup: kind.reportGroup },
+    });
+
+    return created;
   });
 }
 

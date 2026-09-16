@@ -477,8 +477,9 @@ export async function getGeneralLedger(params: {
     select: { id: true, code: true, name: true, type: true },
   });
 
+  const allCurrencies = params.currency === 'ALL';
   const currencyFilter = params.currency && params.currency !== 'ALL' ? params.currency : null;
-  const useOriginal = Boolean(currencyFilter);
+  const useOriginal = Boolean(currencyFilter) || allCurrencies;
 
   const openingRows = currencyFilter
     ? await prisma.$queryRaw<Array<{ net: string | null }>>`
@@ -558,13 +559,13 @@ export async function getGeneralLedger(params: {
         ORDER BY je."entryDate", je."entryNumber", jl."lineNumber"
       `;
 
-  let running = toMoney(dec(openingRows[0]?.net ?? 0));
+  let running = allCurrencies ? toMoney(0) : toMoney(dec(openingRows[0]?.net ?? 0));
   const opening = running;
 
   const shaped: GeneralLedgerRow[] = rows.map((row) => {
     const debitMove = useOriginal ? dec(row.debit) : dec(row.debitUsd);
     const creditMove = useOriginal ? dec(row.credit) : dec(row.creditUsd);
-    running = toMoney(running.plus(debitMove).minus(creditMove));
+    if (!allCurrencies) running = toMoney(running.plus(debitMove).minus(creditMove));
     return {
       entryId: row.entryId,
       entryNumber: row.entryNumber,
@@ -582,7 +583,7 @@ export async function getGeneralLedger(params: {
     };
   });
 
-  const viewCurrency = currencyFilter ?? 'USD';
+  const viewCurrency = allCurrencies ? 'ALL' : (currencyFilter ?? 'USD');
   return {
     account,
     openingBalanceUsd: opening,
@@ -590,6 +591,7 @@ export async function getGeneralLedger(params: {
     openingBalance: opening,
     closingBalance: running,
     viewCurrency,
+    mixedCurrencies: allCurrencies,
     rows: shaped,
   };
 }

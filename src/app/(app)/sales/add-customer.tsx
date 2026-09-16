@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { toast } from 'sonner';
 import { AlertCircle, UserPlus } from 'lucide-react';
-import { Sheet } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
@@ -38,9 +38,9 @@ export function AddCustomer({
 }) {
   const [internalOpen, setInternalOpen] = React.useState(false);
   const isControlled = open !== undefined;
-  const sheetOpen = isControlled ? open : internalOpen;
+  const dialogOpen = isControlled ? open : internalOpen;
 
-  function setSheetOpen(next: boolean) {
+  function setDialogOpen(next: boolean) {
     if (!isControlled) setInternalOpen(next);
     onOpenChange?.(next);
   }
@@ -48,28 +48,30 @@ export function AddCustomer({
   return (
     <>
       {isControlled ? null : (
-        <Button type="button" variant="outline" size="sm" onClick={() => setSheetOpen(true)}>
+        <Button type="button" variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
           <UserPlus />
           {triggerLabel}
         </Button>
       )}
 
-      {sheetOpen ? (
-        <AddCustomerSheet
-          defaultCurrency={defaultCurrency}
-          initialName={initialName}
-          onClose={() => setSheetOpen(false)}
-          onCreated={(customer) => {
-            onCreated(customer);
-            setSheetOpen(false);
-          }}
-        />
-      ) : null}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        {dialogOpen ? (
+          <AddCustomerBody
+            defaultCurrency={defaultCurrency}
+            initialName={initialName}
+            onClose={() => setDialogOpen(false)}
+            onCreated={(customer) => {
+              onCreated(customer);
+              setDialogOpen(false);
+            }}
+          />
+        ) : null}
+      </Dialog>
     </>
   );
 }
 
-function AddCustomerSheet({
+function AddCustomerBody({
   defaultCurrency,
   initialName,
   onClose,
@@ -80,7 +82,6 @@ function AddCustomerSheet({
   onClose: () => void;
   onCreated: (customer: { id: string; name: string; currency: string }) => void;
 }) {
-  const formId = React.useId().replace(/:/g, '');
   const [pending, startTransition] = React.useTransition();
   const [error, setError] = React.useState<string | null>(null);
   const [form, setForm] = React.useState({
@@ -117,24 +118,11 @@ function AddCustomerSheet({
   }
 
   return (
-    <Sheet
-      open
-      onOpenChange={(next) => !next && onClose()}
+    <DialogContent
       title="Add Customer"
       description="Saved to the customer list and selected on this invoice immediately."
-      width="md"
-      footer={
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
-            Cancel
-          </Button>
-          <Button type="submit" form={formId} loading={pending}>
-            Save
-          </Button>
-        </div>
-      }
     >
-      <form id={formId} noValidate onSubmit={submit} className="space-y-4">
+      <form noValidate onSubmit={submit} className="space-y-4">
         {error ? (
           <div
             role="alert"
@@ -187,7 +175,16 @@ function AddCustomerSheet({
             />
           </Field>
         </div>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
+            Cancel
+          </Button>
+          <Button type="submit" loading={pending}>
+            Save
+          </Button>
+        </DialogFooter>
       </form>
-    </Sheet>
+    </DialogContent>
   );
 }

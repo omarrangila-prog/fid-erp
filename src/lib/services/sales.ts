@@ -7,7 +7,7 @@ import {
   sum,
   type EntryUnit,
 } from '@/lib/money';
-import { ACCOUNT_KEYS, DOC_TYPES } from '@/lib/constants';
+import { ACCOUNT_KEYS } from '@/lib/constants';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
 import { allocateSalesInvoiceNumber, retireSalesInvoiceNumber } from '@/lib/services/numbering';
 import { postJournalEntry, reverseJournalEntry, type JournalLineInput } from '@/lib/services/accounting';

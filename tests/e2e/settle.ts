@@ -23,3 +23,16 @@ export async function settle(page: Page): Promise<void> {
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   });
 }
+
+/**
+ * Company picker on /select-company is a <button>, not a link. Older specs
+ * waited on role=link and hung for the full 90s after a successful PIN login.
+ */
+export async function chooseCompany(page: Page, name: RegExp): Promise<void> {
+  const button = page.getByRole('button', { name });
+  if (await button.count()) {
+    await button.first().click();
+    return;
+  }
+  await page.getByRole('link', { name }).first().click();
+}

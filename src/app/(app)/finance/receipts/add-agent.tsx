@@ -63,6 +63,7 @@ function AddAgentBody({
 
   function submit(event?: React.FormEvent) {
     event?.preventDefault();
+    if (pending) return;
     setError(null);
     if (!agentName.trim()) {
       setError('Enter the agent name.');
