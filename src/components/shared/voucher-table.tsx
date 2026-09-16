@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
+import { VoucherRowActions } from '@/components/shared/voucher-actions';
 import { StatusBadge, Badge } from '@/components/ui/badge';
 import type { BadgeTone } from '@/lib/constants';
 
@@ -33,6 +34,9 @@ export function VoucherTable({
   emptyTitle,
   emptyDescription,
   emptyAction,
+  kind,
+  canPost = false,
+  canDelete = false,
 }: {
   rows: VoucherRow[];
   basePath: string;
@@ -41,6 +45,10 @@ export function VoucherTable({
   emptyTitle: string;
   emptyDescription: string;
   emptyAction?: React.ReactNode;
+  /** Which voucher this is, for the row actions. */
+  kind?: 'receipt' | 'payment';
+  canPost?: boolean;
+  canDelete?: boolean;
 }) {
   const columns: DataColumn<VoucherRow>[] = [
     {
@@ -96,6 +104,20 @@ export function VoucherTable({
       sortValue: (r) => r.status,
       cell: (r) => <StatusBadge status={r.status} meta={statusMeta} />,
     },
+    ...(kind
+      ? [
+          {
+            id: 'actions',
+            header: 'Actions',
+            mobile: 'action' as const,
+            pin: 'right' as const,
+            printHidden: true,
+            cell: (r: VoucherRow) => (
+              <VoucherRowActions kind={kind} id={r.id} status={r.status} canPost={canPost} canDelete={canDelete} />
+            ),
+          } satisfies DataColumn<VoucherRow>,
+        ]
+      : []),
   ];
 
   return (
@@ -106,6 +128,12 @@ export function VoucherTable({
       rowHref={(r) => `${basePath}/${r.id}`}
       searchValue={(r) => `${r.number} ${r.party} ${r.reference ?? ''} ${r.account} ${r.warehouseNames}`}
       searchPlaceholder="Search voucher, party or reference…"
+      filters={[
+        { id: 'status', label: 'Status', value: (r) => r.status },
+        { id: 'party', label: partyLabel, value: (r) => r.party },
+        { id: 'method', label: 'Method', value: (r) => r.method },
+        { id: 'currency', label: 'Currency', value: (r) => r.currency },
+      ]}
       emptyAction={emptyAction}
       emptyTitle={emptyTitle}
       emptyDescription={emptyDescription}

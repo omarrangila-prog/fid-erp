@@ -76,6 +76,9 @@ export default async function PaymentsPage() {
         }
         rows={rows}
         basePath="/finance/payments"
+        kind="payment"
+        canPost={can(user, PERMISSIONS.PAYMENTS_POST)}
+        canDelete={can(user, PERMISSIONS.PAYMENTS_DELETE)}
         partyLabel="Supplier"
         statusMeta={TRANSACTION_STATUS_META}
         emptyTitle="No payments yet"

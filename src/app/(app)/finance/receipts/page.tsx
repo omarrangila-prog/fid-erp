@@ -76,6 +76,9 @@ export default async function ReceiptsPage() {
         }
         rows={rows}
         basePath="/finance/receipts"
+        kind="receipt"
+        canPost={can(user, PERMISSIONS.RECEIPTS_POST)}
+        canDelete={can(user, PERMISSIONS.RECEIPTS_DELETE)}
         partyLabel="Customer"
         statusMeta={TRANSACTION_STATUS_META}
         emptyTitle="No receipts yet"
