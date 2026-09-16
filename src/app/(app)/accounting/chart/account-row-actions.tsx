@@ -1,9 +1,10 @@
 'use client';
 
+import { BookOpen, Pencil, Scale, Undo2 } from 'lucide-react';
+
 import * as React from 'react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
 import { MasterFormSheet, type FieldSpec } from '@/components/shared/master-form';
 import {
   deactivateLedgerAccountAction,
@@ -14,7 +15,7 @@ import {
 import { STATEMENT_GROUP_OPTIONS } from '@/app/(app)/accounting/chart/add-account-button';
 import { todayInputValue } from '@/lib/format';
 import { ledgerHref } from '@/lib/ledger-currency';
-import Link from 'next/link';
+import { RowActions } from '@/components/shared/row-actions';
 
 export type ChartRowAccount = {
   id: string;
@@ -84,18 +85,21 @@ export function AccountRowActions({
     { kind: 'text', name: 'rateLocalPerUsd', label: `Rate to ${localCurrency}`, required: true },
   ];
 
-  async function deactivate() {
-    if (account.isSystem) return;
-    if (!window.confirm(`Deactivate ${account.code} ${account.name}? Existing journals keep it.`)) return;
+  /*
+   * The confirmation is the shared dialog now, not window.confirm: a browser
+   * prompt cannot say what deactivating actually does, and it looked like a
+   * different application every time it appeared.
+   */
+  async function deactivate(): Promise<{ ok: boolean; error?: string }> {
+    if (account.isSystem) return { ok: false, error: 'A system account cannot be deactivated.' };
     setBusy(true);
     const result = await deactivateLedgerAccountAction(account.id);
     setBusy(false);
     if (!result?.ok) {
-      toast.error(result && 'error' in result ? result.error : 'Could not deactivate this account.');
-      return;
+      return { ok: false, error: result && 'error' in result ? result.error : 'Could not deactivate this account.' };
     }
-    toast.success(result.message);
     router.refresh();
+    return { ok: true };
   }
 
   async function reactivate() {
@@ -117,27 +121,35 @@ export function AccountRowActions({
     account.subledgerType !== 'AGENT';
 
   return (
-    <div className="flex flex-wrap justify-end gap-1" data-print="hide">
-      <Button asChild variant="ghost" size="sm">
-        <Link href={ledgerHref(account.id, account.cashBank?.currency ?? account.currency)}>View ledger</Link>
-      </Button>
-      <Button variant="ghost" size="sm" onClick={() => setEditOpen(true)}>
-        Edit
-      </Button>
-      {canOpen ? (
-        <Button variant="ghost" size="sm" onClick={() => setOpeningOpen(true)}>
-          Opening
-        </Button>
-      ) : null}
-      {account.status === 'INACTIVE' ? (
-        <Button variant="ghost" size="sm" onClick={reactivate} disabled={busy}>
-          Reactivate
-        </Button>
-      ) : !account.isSystem && !account.cashBank ? (
-        <Button variant="ghost" size="sm" onClick={deactivate} disabled={busy}>
-          Deactivate
-        </Button>
-      ) : null}
+    <div data-print="hide">
+      <RowActions
+        actions={[
+          { label: 'Ledger', href: ledgerHref(account.id, account.cashBank?.currency ?? account.currency), icon: BookOpen },
+          { label: 'Edit', icon: Pencil, onSelect: () => setEditOpen(true) },
+          { label: 'Opening balance', icon: Scale, show: canOpen, onSelect: () => setOpeningOpen(true) },
+          {
+            label: 'Reactivate',
+            icon: Undo2,
+            show: account.status === 'INACTIVE',
+            disabled: busy,
+            onSelect: reactivate,
+          },
+        ]}
+        destructive={
+          account.status === 'INACTIVE' || account.isSystem || account.cashBank
+            ? undefined
+            : {
+                // Not a financial document: no reversal, and the journals
+                // that already name it keep naming it.
+                status: 'ACTIVE',
+                noun: 'account',
+                cancelLabel: 'Deactivate',
+                description:
+                  'The account stops appearing when a journal is coded. Every entry already posted to it keeps it, and its balance stays on the statements. It can be reactivated at any time.',
+                run: async () => deactivate(),
+              }
+        }
+      />
 
       <MasterFormSheet
         open={editOpen}

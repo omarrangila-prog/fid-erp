@@ -80,9 +80,11 @@ export default async function ChartOfAccountsPage() {
                     <TH>Code</TH>
                     <TH>Account</TH>
                     <TH>Type</TH>
+                    <TH>Currency</TH>
+                    <TH>Status</TH>
                     <TH numeric>Balance USD</TH>
                     <TH numeric>Balance {localCurrency}</TH>
-                    {canPost ? <TH className="print:hidden"> </TH> : null}
+                    <TH className="text-right print:hidden">Actions</TH>
                   </TR>
                 </THead>
                 <TBody>
@@ -116,10 +118,22 @@ export default async function ChartOfAccountsPage() {
                         </span>
                       </TD>
                       <TD className="text-xs capitalize text-ink-muted">{typeLabel(account.type)}</TD>
+                      <TD className="text-xs">
+                        {account.currency ?? account.cashBank?.currency ?? (
+                          <span className="text-ink-subtle" title="Carries several currencies">
+                            any
+                          </span>
+                        )}
+                      </TD>
+                      <TD>
+                        <Badge tone={account.status === 'INACTIVE' ? 'neutral' : 'success'}>
+                          {account.status === 'INACTIVE' ? 'Inactive' : 'Active'}
+                        </Badge>
+                      </TD>
                       <TD numeric>{formatMoney(account.balanceUsd, 'USD')}</TD>
                       <TD numeric>{formatMoney(account.balanceLocal, localCurrency)}</TD>
-                      {canPost ? (
-                        <TD className="print:hidden">
+                      <TD className="text-right print:hidden">
+                        {canPost ? (
                           <AccountRowActions
                             account={{
                               id: account.id,
@@ -138,8 +152,23 @@ export default async function ChartOfAccountsPage() {
                             localCurrency={localCurrency}
                             defaultLocalRate={rates.local}
                           />
-                        </TD>
-                      ) : null}
+                        ) : (
+                          // Read-only users still get the one action that
+                          // matters from a chart: opening the ledger.
+                          <Link
+                            href={ledgerHref(
+                              account.id,
+                              resolveLedgerViewCurrency({
+                                accountCurrency: account.currency,
+                                cashBankCurrency: account.cashBank?.currency,
+                              }),
+                            )}
+                            className="text-xs font-medium text-forest-800 hover:text-gold-700"
+                          >
+                            Ledger
+                          </Link>
+                        )}
+                      </TD>
                     </TR>
                   ))}
                 </TBody>
