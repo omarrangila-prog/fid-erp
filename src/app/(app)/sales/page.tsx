@@ -76,6 +76,7 @@ export default async function SalesPage() {
         canEdit={can(user, PERMISSIONS.SALES_EDIT)}
         canDelete={can(user, PERMISSIONS.SALES_DELETE)}
         canReverse={can(user, PERMISSIONS.SALES_REVERSE)}
+        canApprove={can(user, PERMISSIONS.SALES_APPROVE)}
       />
     </div>
   );

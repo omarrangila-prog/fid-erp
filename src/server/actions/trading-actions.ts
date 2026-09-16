@@ -292,11 +292,15 @@ export async function deleteSalesInvoiceAction(
       select: { status: true },
     });
     if (!invoice) {
-      assertPermission(user, PERMISSIONS.SALES_DELETE);
+      if (!canAny(user, [PERMISSIONS.SALES_DELETE, PERMISSIONS.SALES_EDIT])) {
+        assertPermission(user, PERMISSIONS.SALES_DELETE);
+      }
     } else if (invoice.status === 'DRAFT') {
-      assertPermission(user, PERMISSIONS.SALES_DELETE);
+      if (!canAny(user, [PERMISSIONS.SALES_DELETE, PERMISSIONS.SALES_EDIT])) {
+        assertPermission(user, PERMISSIONS.SALES_DELETE);
+      }
     } else if (invoice.status === 'POSTED' || invoice.status === 'REVERSED') {
-      if (!canAny(user, [PERMISSIONS.SALES_DELETE, PERMISSIONS.SALES_REVERSE])) {
+      if (!canAny(user, [PERMISSIONS.SALES_DELETE, PERMISSIONS.SALES_REVERSE, PERMISSIONS.SALES_APPROVE])) {
         assertPermission(user, PERMISSIONS.SALES_REVERSE);
       }
     } else {

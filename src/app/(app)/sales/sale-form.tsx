@@ -19,6 +19,7 @@ import { preferZeroRateTax } from '@/lib/tax-default';
 import { saveSalesInvoiceAction, postSalesInvoiceAction } from '@/server/actions/trading-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { AddCustomer } from '@/app/(app)/sales/add-customer';
+import { InvoiceDeleteButton, canCancelSalesInvoice } from '@/app/(app)/sales/[id]/sale-actions';
 
 /**
  * Sales invoice entry.
@@ -97,6 +98,8 @@ export function SaleForm({
   defaults,
   canApprove = true,
   canCreateCustomer = true,
+  canDelete = false,
+  canReverse = false,
 }: {
   customers: Array<ComboOption & { currency: string }>;
   cashAccounts: Array<{ id: string; name: string; code: string; currency: string }>;
@@ -111,6 +114,8 @@ export function SaleForm({
   defaults?: SaleFormDefaults;
   canApprove?: boolean;
   canCreateCustomer?: boolean;
+  canDelete?: boolean;
+  canReverse?: boolean;
 }) {
   const defaultTaxCodeId = preferZeroRateTax(taxCodes)?.id ?? '';
   const taxOptions = React.useMemo(
@@ -846,7 +851,18 @@ export function SaleForm({
         </Callout>
       )}
 
-      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
+        {defaults?.id &&
+        canCancelSalesInvoice(defaults.status ?? 'DRAFT', {
+          canDelete,
+          canReverse,
+          canEdit: true,
+          canApprove,
+        }) ? (
+          <div className="sm:mr-auto">
+            <InvoiceDeleteButton id={defaults.id} status={defaults.status ?? 'DRAFT'} />
+          </div>
+        ) : null}
         <Button variant="outline" onClick={() => router.back()} disabled={busy}>
           Cancel
         </Button>

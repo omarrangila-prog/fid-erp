@@ -344,7 +344,7 @@ export function DataTable<T>({
                           className={column.className}
                           data-print={column.printHidden ? 'hide' : undefined}
                         >
-                          {href && !column.printHidden ? (
+                          {href && column.mobile !== 'action' && !column.printHidden ? (
                             <Link
                               href={href}
                               className={cn(

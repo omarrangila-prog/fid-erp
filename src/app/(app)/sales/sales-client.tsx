@@ -1,13 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Pencil, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { StatusBadge, Badge } from '@/components/ui/badge';
 import { TRANSACTION_STATUS_META, SETTLEMENT_STATUS_META } from '@/lib/constants';
-import { InvoiceDeleteButton } from '@/app/(app)/sales/[id]/sale-actions';
+import { InvoiceActionsMenu } from '@/app/(app)/sales/[id]/sale-actions';
 
 export type SaleRow = {
   id: string;
@@ -40,14 +39,15 @@ export function SalesClient({
   canEdit,
   canDelete,
   canReverse,
+  canApprove,
 }: {
   rows: SaleRow[];
   canCreate: boolean;
   canEdit: boolean;
   canDelete: boolean;
   canReverse: boolean;
+  canApprove: boolean;
 }) {
-  const router = useRouter();
   const columns: DataColumn<SaleRow>[] = [
     {
       id: 'number',
@@ -147,51 +147,24 @@ export function SalesClient({
       sortValue: (r) => r.status,
       cell: (r) => <StatusBadge status={r.status} meta={TRANSACTION_STATUS_META} />,
     },
-    ...(canEdit || canDelete || canReverse
+    ...(canEdit || canDelete || canReverse || canApprove
       ? [
           {
             id: 'actions',
             header: '',
             printHidden: true,
             mobile: 'action' as const,
-            cell: (r: SaleRow) => {
-              const canCancel =
-                r.status === 'DRAFT'
-                  ? canDelete
-                  : r.status === 'POSTED'
-                    ? canDelete || canReverse
-                    : r.status === 'REVERSED'
-                      ? canDelete || canReverse
-                      : false;
-              const showEdit = canEdit && (r.status === 'DRAFT' || r.status === 'POSTED');
-              if (!canCancel && !showEdit) return null;
-              return (
-                <div
-                  className="flex flex-wrap items-center justify-end gap-1"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                  }}
-                >
-                  {showEdit ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        router.push(`/sales/${r.id}/edit`);
-                      }}
-                    >
-                      <Pencil />
-                      Edit
-                    </Button>
-                  ) : null}
-                  {canCancel ? <InvoiceDeleteButton id={r.id} status={r.status} /> : null}
-                </div>
-              );
-            },
+            className: 'sticky right-0 z-10 bg-surface shadow-[-8px_0_12px_-8px_rgba(15,23,42,0.18)]',
+            cell: (r: SaleRow) => (
+              <InvoiceActionsMenu
+                id={r.id}
+                status={r.status}
+                canEdit={canEdit}
+                canDelete={canDelete}
+                canReverse={canReverse}
+                canApprove={canApprove}
+              />
+            ),
           } satisfies DataColumn<SaleRow>,
         ]
       : []),

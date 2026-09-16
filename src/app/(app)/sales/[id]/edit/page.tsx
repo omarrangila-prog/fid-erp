@@ -137,6 +137,8 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
         taxEnabled={taxSettings.enabled}
         canApprove={can(user, PERMISSIONS.SALES_APPROVE)}
         canCreateCustomer={can(user, PERMISSIONS.CUSTOMERS_CREATE)}
+        canDelete={can(user, PERMISSIONS.SALES_DELETE)}
+        canReverse={can(user, PERMISSIONS.SALES_REVERSE)}
         defaults={{
           id: invoice.id,
           status: invoice.status,
