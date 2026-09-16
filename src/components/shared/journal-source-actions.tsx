@@ -1,4 +1,3 @@
-import { Eye, Pencil } from 'lucide-react';
 import { RowActions } from '@/components/shared/row-actions';
 import { journalSourceEditHref, journalSourceHref } from '@/lib/journal-source';
 
@@ -27,8 +26,8 @@ export function JournalSourceActions({
     <RowActions
       inline={1}
       actions={[
-        { label: 'View source', href: view, icon: Eye },
-        { label: 'Edit source', href: edit ?? view, icon: Pencil, show: Boolean(edit && edit !== view) },
+        { label: 'View source', href: view, icon: 'view' as const },
+        { label: 'Edit source', href: edit ?? view, icon: 'edit' as const, show: Boolean(edit && edit !== view) },
       ]}
     />
   );

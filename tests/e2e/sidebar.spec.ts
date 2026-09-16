@@ -43,7 +43,7 @@ async function signIn(page: Page) {
   }
   await page.waitForURL(/\/(dashboard|select-company)/, { waitUntil: 'domcontentloaded' });
   if (page.url().includes('select-company')) {
-    await page.getByRole('link', { name: /FID Trading L\.L\.C\./i }).first().click();
+    await page.getByRole('button', { name: /FID Trading L\.L\.C\./i }).or(page.getByRole('link', { name: /FID Trading L\.L\.C\./i })).first().click();
     await page.waitForURL(/\/dashboard/, { waitUntil: 'domcontentloaded' });
   }
 }

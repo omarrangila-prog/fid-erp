@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
-import { BookOpen, ArrowDownToLine } from 'lucide-react';
 import { formatMoney } from '@/lib/format';
 import { getAgentPositions } from '@/lib/services/agent-ledger';
 import { PageHeader } from '@/components/shared/page-header';
@@ -81,8 +80,8 @@ export default async function AgentsPage() {
       status: a.status === 'ACTIVE' ? 'Active' : 'Inactive',
     },
     actions: [
-      { label: 'Ledger', href: `/ledgers/agents?agent=${a.id}`, icon: BookOpen },
-      { label: 'Receive from agent', href: `/finance/agent-commission?agent=${a.id}`, icon: ArrowDownToLine },
+      { label: 'Ledger', href: `/ledgers/agents?agent=${a.id}`, icon: 'ledger' as const },
+      { label: 'Receive from agent', href: `/finance/agent-commission?agent=${a.id}`, icon: 'moneyIn' as const },
     ],
     formValues: {
       agentCode: a.agentCode,

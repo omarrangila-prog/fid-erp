@@ -4,7 +4,10 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { MoreHorizontal, Eye, Pencil, Trash2 } from 'lucide-react';
+import {
+  MoreHorizontal, Eye, Pencil, Trash2, BookOpen, HandCoins, ArrowDownToLine, ArrowUpFromLine,
+  FileText, Printer, ArrowLeftRight, History, Layers, Ship, PackageCheck, Calculator, ShoppingCart,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/ui/confirm';
@@ -25,12 +28,42 @@ import { ConfirmDialog } from '@/components/ui/confirm';
  * user is asked first and the reason goes on the audit trail.
  */
 
+/**
+ * Icons a server-rendered row may ask for by name.
+ *
+ * A Server Component cannot hand a Client Component a function, and a React
+ * icon is one — passing `icon: BookOpen` from a page crashed the render with
+ * "Functions cannot be passed directly to Client Components". So a row built
+ * on the server names its icon and the client resolves it here; a row built
+ * in a client component can still pass the component itself.
+ */
+export const ROW_ACTION_ICONS = {
+  view: Eye,
+  edit: Pencil,
+  ledger: BookOpen,
+  money: HandCoins,
+  moneyIn: ArrowDownToLine,
+  moneyOut: ArrowUpFromLine,
+  document: FileText,
+  print: Printer,
+  transfer: ArrowLeftRight,
+  history: History,
+  layers: Layers,
+  ship: Ship,
+  receive: PackageCheck,
+  costing: Calculator,
+  cart: ShoppingCart,
+} as const;
+
+export type RowActionIcon = keyof typeof ROW_ACTION_ICONS;
+
 export type RowAction = {
   label: string;
   /** A link for navigation, or `onSelect` for something that happens here. */
   href?: string;
   onSelect?: () => void;
-  icon?: React.ComponentType<{ className?: string }>;
+  /** A component (client only) or a name from ROW_ACTION_ICONS (anywhere). */
+  icon?: React.ComponentType<{ className?: string }> | RowActionIcon;
   /** Hidden entirely when false — used for permissions. */
   show?: boolean;
   disabled?: boolean;
@@ -174,11 +207,23 @@ export function RowActions({
   );
 }
 
+/**
+ * Renders the icon a row asked for, by name or by component.
+ *
+ * Resolving it into a local `const Icon` and rendering that reads to React's
+ * lint as creating a component during render, so the lookup lives inside a
+ * component of its own.
+ */
+function ActionIcon({ icon, className }: { icon: RowAction['icon']; className: string }) {
+  if (!icon) return null;
+  const Resolved = typeof icon === 'string' ? ROW_ACTION_ICONS[icon] : icon;
+  return <Resolved className={className} />;
+}
+
 function ActionButton({ action }: { action: RowAction }) {
-  const Icon = action.icon;
   const content = (
     <>
-      {Icon ? <Icon className="size-3.5" /> : null}
+      <ActionIcon icon={action.icon} className="size-3.5" />
       {action.label}
     </>
   );
@@ -209,7 +254,6 @@ function ActionButton({ action }: { action: RowAction }) {
 }
 
 function MenuItem({ action }: { action: RowAction }) {
-  const Icon = action.icon;
   const className =
     'flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm outline-none data-[highlighted]:bg-surface-sunken data-[disabled]:opacity-50';
 
@@ -217,7 +261,7 @@ function MenuItem({ action }: { action: RowAction }) {
     return (
       <DropdownMenu.Item asChild>
         <Link href={action.href} className={className}>
-          {Icon ? <Icon className="size-4" /> : null}
+          <ActionIcon icon={action.icon} className="size-4" />
           {action.label}
         </Link>
       </DropdownMenu.Item>
@@ -232,7 +276,7 @@ function MenuItem({ action }: { action: RowAction }) {
         action.onSelect?.();
       }}
     >
-      {Icon ? <Icon className="size-4" /> : null}
+      <ActionIcon icon={action.icon} className="size-4" />
       {action.label}
     </DropdownMenu.Item>
   );

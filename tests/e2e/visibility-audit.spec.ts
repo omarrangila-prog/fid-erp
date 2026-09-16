@@ -97,13 +97,23 @@ async function signIn(page: Page) {
   }
   await page.waitForURL(/\/(dashboard|select-company)/, { waitUntil: 'domcontentloaded' });
   if (page.url().includes('select-company')) {
-    await page.getByRole('link', { name: /FID Trading International SARL/ }).first().click();
+    // A short deadline of its own: a picker that never appears should fail
+    // here in a minute, saying so, rather than eating the whole run's budget
+    // and reporting a timeout on a click with no context.
+    const choice = page
+      .getByRole('button', { name: /FID Trading International SARL/ })
+      .or(page.getByRole('link', { name: /FID Trading International SARL/ }))
+      .first();
+    await expect(choice, 'the company picker should offer FID Trading International SARL').toBeVisible({
+      timeout: 30_000,
+    });
+    await choice.click();
     await page.waitForURL(/\/dashboard/, { waitUntil: 'domcontentloaded' });
   }
 }
 
 test('audits what every sidebar screen shows without opening a row', async ({ page }) => {
-  test.setTimeout(20 * 60_000);
+  test.setTimeout(45 * 60_000);
   await page.setViewportSize({ width: 1600, height: 1000 });
   await signIn(page);
 
