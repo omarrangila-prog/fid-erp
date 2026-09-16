@@ -2,7 +2,8 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Ship, Users, Anchor, PackageCheck, FileText, Boxes } from 'lucide-react';
+import { Ship, Users, Anchor, PackageCheck, FileText, Boxes, CalendarClock, Calculator } from 'lucide-react';
+import { RowActions } from '@/components/shared/row-actions';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -303,64 +304,55 @@ export function LoadingSheet({
 
   const actions: DataColumn<LoadingRow> = {
     id: 'actions',
-    header: '',
+    header: 'Actions',
     printHidden: true,
+    pin: 'right',
     cell: (r) => {
-      const buttons: React.ReactNode[] = [];
+      const landed = LANDED.includes(r.status);
+      const sailing = r.status === 'LOADED' || r.status === 'IN_TRANSIT';
+      const canReceiveNow = landed && !r.fullyReceived && receivableBatches(r).length > 0;
 
-      if (NOT_YET_LOADED.includes(r.status) && canUpdate) {
-        buttons.push(
-          <Button key="load" variant="outline" size="sm" onClick={() => setLoadingRow(r)}>
-            <Ship />
-            Mark loaded
-          </Button>,
-        );
-      }
-
-      if ((r.status === 'LOADED' || r.status === 'IN_TRANSIT' || LANDED.includes(r.status)) && canUpdate) {
-        buttons.push(
-          <Button key="docs" variant="outline" size="sm" onClick={() => setDocumentsRow(r)}>
-            <FileText />
-            Update documents
-          </Button>,
-        );
-        buttons.push(
-          <Button key="ctr" variant="outline" size="sm" onClick={() => setContainersRow(r)}>
-            <Boxes />
-            Manage containers
-          </Button>,
-        );
-      }
-
-      if ((r.status === 'LOADED' || r.status === 'IN_TRANSIT') && canUpdate) {
-        buttons.push(
-          <Button key="arrived" variant="outline" size="sm" onClick={() => setArrivingRow(r)}>
-            <Anchor />
-            Mark arrived
-          </Button>,
-        );
-      }
-
-      if (LANDED.includes(r.status) && !r.fullyReceived && receivableBatches(r).length > 0) {
-        buttons.push(
-          canReceive ? (
-            <Button key="receive" variant="accent" size="sm" onClick={() => setReceivingRow(r)}>
-              <PackageCheck />
-              Receive PO
-            </Button>
-          ) : (
-            <Button key="receive" variant="accent" size="sm" asChild>
-              <Link href={`/purchases/${r.contractId}`}>
-                <PackageCheck />
-                Receive PO
-              </Link>
-            </Button>
-          ),
-        );
-      }
-
-      if (buttons.length === 0) return null;
-      return <div className="flex flex-col items-stretch gap-1">{buttons}</div>;
+      return (
+        <RowActions
+          inline={1}
+          actions={[
+            {
+              label: 'Mark loaded',
+              icon: Ship,
+              show: canUpdate && NOT_YET_LOADED.includes(r.status),
+              onSelect: () => setLoadingRow(r),
+            },
+            {
+              label: 'Mark arrived',
+              icon: Anchor,
+              show: canUpdate && sailing,
+              onSelect: () => setArrivingRow(r),
+            },
+            {
+              label: 'Receive PO',
+              icon: PackageCheck,
+              show: canReceiveNow,
+              ...(canReceive ? { onSelect: () => setReceivingRow(r) } : { href: `/purchases/${r.contractId}` }),
+            },
+            { label: 'Update ETA', icon: CalendarClock, show: canUpdate, onSelect: () => setEditingEta(r) },
+            {
+              label: 'Manage containers',
+              icon: Boxes,
+              show: canUpdate && (sailing || landed),
+              onSelect: () => setContainersRow(r),
+            },
+            {
+              label: 'Update documents',
+              icon: FileText,
+              show: canUpdate && (sailing || landed),
+              onSelect: () => setDocumentsRow(r),
+            },
+            { label: 'View shipment', href: `/shipments/${r.shipmentId}`, icon: Ship, overflowOnly: true },
+            { label: 'Purchase order', href: `/purchases/${r.contractId}`, icon: FileText, overflowOnly: true },
+            { label: 'Shipment costing', href: `/shipments/${r.shipmentId}`, icon: Calculator, overflowOnly: true },
+          ]}
+        />
+      );
     },
   };
 

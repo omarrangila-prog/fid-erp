@@ -110,65 +110,67 @@ test('audits what every sidebar screen shows without opening a row', async ({ pa
   for (const entry of PAGES) {
     await page.goto(entry.href, { waitUntil: 'domcontentloaded' });
     await page.locator('main').first().waitFor({ state: 'visible' });
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(250);
 
-    const broke = await page
-      .getByRole('heading', { name: /this page could|something went wrong/i })
-      .count();
+    // One pass over the DOM rather than twenty locator round-trips: the
+    // per-query cost across thirty-five screens was the whole time budget.
+    const seen = await page.evaluate(() => {
+      const main = document.querySelector('main') ?? document.body;
+      const text = (el: Element | null) => (el?.textContent ?? '').trim().replace(/\s+/g, ' ');
 
-    const main = page.getByRole('main');
-    const columns = await main.getByRole('columnheader').allInnerTexts();
-    const rows = await main.getByRole('row').count();
+      const columns = [...main.querySelectorAll('thead th')].map((th) => text(th)).filter(Boolean);
+      const bodyRows = main.querySelectorAll('tbody tr').length;
 
-    // What a person can press on a row, without opening it first.
-    const rowActionNames = new Set<string>();
-    for (const name of [
-      'view', 'open', 'edit', 'delete', 'cancel', 'reverse', 'ledger', 'record payment',
-      'pay', 'receive', 'costing', 'print', 'documents', 'transfer', 'actions', 'more',
-    ]) {
-      const count = await main.getByRole('button', { name: new RegExp(name, 'i') }).count();
-      const links = await main.getByRole('link', { name: new RegExp(`^${name}$`, 'i') }).count();
-      if (count + links > 0) rowActionNames.add(name);
-    }
+      // Anything pressable inside the last cell of a row, or a column called
+      // Actions, counts as reachable without opening the row.
+      const actionCells = [...main.querySelectorAll('tbody tr > td:last-child')];
+      const rowActionLabels = new Set<string>();
+      for (const cell of actionCells) {
+        for (const el of cell.querySelectorAll('button, a')) {
+          const label = text(el) || el.getAttribute('aria-label') || '';
+          if (label) rowActionLabels.add(label.toLowerCase());
+        }
+      }
 
-    // A dedicated actions column, or buttons living loose in the last cell.
-    const hasRowActionColumn =
-      columns.some((c) => /action/i.test(c)) ||
-      (await main.locator('td:last-child button, td:last-child a[role="button"]').count()) > 0;
+      const labels = [...main.querySelectorAll('label')].map((l) => text(l).toLowerCase());
+      const controls = [...main.querySelectorAll('select, input[type="date"]')].length;
 
-    const filters: string[] = [];
-    for (const label of ['from', 'to', 'status', 'customer', 'supplier', 'currency', 'warehouse', 'account', 'shipment', 'item', 'type']) {
-      if ((await main.getByLabel(new RegExp(`^${label}`, 'i')).count()) > 0) filters.push(label);
-    }
+      const topButtons = [...main.querySelectorAll('button, a')]
+        .map((el) => text(el))
+        .filter(Boolean);
 
-    const hasSearch = (await main.getByPlaceholder(/search/i).count()) > 0;
-    const hasExport =
-      (await main.getByRole('link', { name: /excel|csv|export/i }).count()) +
-        (await main.getByRole('button', { name: /excel|csv|export/i }).count()) >
-      0;
-    const hasPrint =
-      (await main.getByRole('button', { name: /print/i }).count()) +
-        (await main.getByRole('link', { name: /print/i }).count()) >
-      0;
+      return {
+        broke: /this page could|something went wrong/i.test(text(main.querySelector('h1, h2'))),
+        columns,
+        bodyRows,
+        rowActionLabels: [...rowActionLabels],
+        hasActionsHeader: columns.some((c) => /action/i.test(c)),
+        labels,
+        controls,
+        hasSearch: Boolean(main.querySelector('input[placeholder*="earch" i]')),
+        hasExport: topButtons.some((b) => /excel|csv|export/i.test(b)),
+        hasPrint: topButtons.some((b) => /print/i.test(b)),
+        createButtons: [...new Set(topButtons.filter((b) => /^(new|add|\+)/i.test(b)))],
+      };
+    });
 
-    const createButtons = (
-      await main.getByRole('link', { name: /^(new|add|\+)/i }).allInnerTexts()
-    ).concat(await main.getByRole('button', { name: /^(new|add|\+)/i }).allInnerTexts());
+    const filters = ['from', 'to', 'status', 'customer', 'supplier', 'currency', 'warehouse', 'account', 'shipment', 'item', 'type']
+      .filter((name) => seen.labels.some((l) => l.startsWith(name)));
 
     findings.push({
       group: entry.group,
       label: entry.label,
       href: entry.href,
-      columns: columns.map((c) => c.trim()).filter(Boolean),
-      rows: Math.max(rows - 1, 0),
-      rowActions: [...rowActionNames],
-      hasRowActionColumn,
+      columns: seen.columns,
+      rows: seen.bodyRows,
+      rowActions: seen.rowActionLabels,
+      hasRowActionColumn: seen.hasActionsHeader || seen.rowActionLabels.length > 0,
       filters,
-      hasSearch,
-      hasExport,
-      hasPrint,
-      createButtons: [...new Set(createButtons.map((c) => c.trim().replace(/\s+/g, ' ')))].filter(Boolean),
-      note: broke > 0 ? 'PAGE ERRORED' : '',
+      hasSearch: seen.hasSearch,
+      hasExport: seen.hasExport,
+      hasPrint: seen.hasPrint,
+      createButtons: seen.createButtons,
+      note: seen.broke ? 'PAGE ERRORED' : '',
     });
   }
 

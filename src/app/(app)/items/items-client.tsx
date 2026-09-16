@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Plus, Pencil, Coffee, Ban } from 'lucide-react';
+import { Plus, Pencil, Coffee } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +15,8 @@ import {
   deactivateCoffeeItemAction,
   type MasterFormState,
 } from '@/server/actions/master-actions';
+import { History, Layers, ArrowLeftRight } from 'lucide-react';
+import { RowActions, viewAction } from '@/components/shared/row-actions';
 import { COFFEE_TYPE_LABELS, COFFEE_PROCESS_LABELS, PACKAGING_LABELS } from '@/lib/constants';
 
 export type ItemRow = {
@@ -41,6 +43,9 @@ export type ItemRow = {
   availableKg: number;
   availableLabel: string;
   bags: number;
+  batchCount: number;
+  lastMovedLabel: string;
+  lastMovedSort: number;
   warehouses: Array<{ warehouseName: string; availableLabel: string; availableKg: number }>;
 };
 
@@ -246,34 +251,54 @@ export function ItemsClient({
         </Badge>
       ),
     },
-    ...(canEdit || canDelete
-      ? [
-          {
-            id: 'actions',
-            header: '',
-            printHidden: true,
-            cell: (r: ItemRow) => (
-              <span className="inline-flex items-center gap-0.5">
-                {canEdit ? (
-                  <Button variant="ghost" size="icon" aria-label={`Edit ${r.itemName}`} onClick={() => setEditing(r)}>
-                    <Pencil />
-                  </Button>
-                ) : null}
-                {canDelete && r.status === 'ACTIVE' ? (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Deactivate ${r.itemName}`}
-                    onClick={() => setDeactivating(r)}
-                  >
-                    <Ban className="text-red-500" />
-                  </Button>
-                ) : null}
-              </span>
-            ),
-          } satisfies DataColumn<ItemRow>,
-        ]
-      : []),
+    {
+      id: 'batches',
+      header: 'Batches',
+      numeric: true,
+      hideable: true,
+      sortValue: (r) => r.batchCount,
+      exportValue: (r) => r.batchCount,
+      cell: (r) => (r.batchCount > 0 ? r.batchCount : <span className="text-ink-subtle">—</span>),
+    },
+    {
+      id: 'lastMoved',
+      header: 'Last movement',
+      hideable: true,
+      sortValue: (r) => r.lastMovedSort,
+      exportValue: (r) => r.lastMovedLabel,
+      cell: (r) => <span className="whitespace-nowrap">{r.lastMovedLabel}</span>,
+    },
+    {
+      id: 'actions',
+      header: 'Actions',
+      mobile: 'action',
+      pin: 'right',
+      printHidden: true,
+      cell: (r: ItemRow) => (
+        <RowActions
+          actions={[
+            viewAction(`/items/${r.id}`),
+            { label: 'Edit', icon: Pencil, show: canEdit, onSelect: () => setEditing(r) },
+            { label: 'Stock ledger', href: `/inventory/movements?item=${r.id}`, icon: History },
+            { label: 'Batches', href: `/inventory/batches?item=${r.id}`, icon: Layers },
+            { label: 'Transfer', href: '/inventory/transfers/new', icon: ArrowLeftRight, show: r.availableKg > 0 },
+          ]}
+          destructive={{
+            status: 'ACTIVE',
+            noun: 'item',
+            show: canDelete && r.status === 'ACTIVE',
+            cancelLabel: 'Deactivate',
+            description:
+              'The coffee stops appearing on new contracts and invoices. Existing batches, stock and history are untouched, and it can be reactivated from its own page.',
+            run: async (reason) => {
+              void reason;
+              const result = await deactivateCoffeeItemAction(r.id);
+              return { ok: Boolean(result?.ok), error: result && 'error' in result ? result.error : undefined };
+            },
+          }}
+        />
+      ),
+    } satisfies DataColumn<ItemRow>,
   ];
 
   void showValue;

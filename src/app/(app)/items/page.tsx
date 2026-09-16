@@ -3,7 +3,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getItemStock, getWarehouseStockByItem } from '@/lib/services/stock';
-import { formatQuantityKg } from '@/lib/format';
+import { formatQuantityKg, formatDate } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { ItemsClient, type ItemRow } from '@/app/(app)/items/items-client';
 
@@ -20,11 +20,24 @@ export default async function ItemsPage({
   const user = await requirePageAccess(PERMISSIONS.ITEMS_VIEW);
   const companyId = user.activeCompany.id;
 
-  const [items, stock, warehouseStock] = await Promise.all([
+  const [items, stock, warehouseStock, traffic] = await Promise.all([
     prisma.coffeeItem.findMany({ where: { companyId }, orderBy: { itemName: 'asc' } }),
     getItemStock(companyId),
     getWarehouseStockByItem(companyId),
+    // How many batches carry this coffee, and when it last moved — the two
+    // things the client checks before selling, read from the stock ledger
+    // rather than recomputed.
+    prisma.$queryRaw<Array<{ itemId: string; batches: bigint; lastAt: Date | null }>>`
+      SELECT b."itemId",
+             COUNT(DISTINCT b."id") AS batches,
+             MAX(t."transactionDate") AS "lastAt"
+      FROM batches b
+      LEFT JOIN inventory_transactions t ON t."batchId" = b."id"
+      WHERE b."companyId" = ${companyId} AND b."status" = 'ACTIVE'
+      GROUP BY b."itemId"`,
   ]);
+
+  const activityByItem = new Map(traffic.map((row) => [row.itemId, row]));
 
   const stockByItem = new Map(stock.map((s) => [s.itemId, s]));
 
@@ -57,6 +70,12 @@ export default async function ItemsPage({
       availableKg,
       availableLabel: availableKg > 0 ? formatQuantityKg(availableKg) : '—',
       bags: 0,
+      batchCount: Number(activityByItem.get(i.id)?.batches ?? 0),
+      lastMovedLabel: (() => {
+        const at = activityByItem.get(i.id)?.lastAt;
+        return at ? formatDate(at) : '—';
+      })(),
+      lastMovedSort: activityByItem.get(i.id)?.lastAt?.getTime() ?? 0,
       warehouses: (byWarehouse?.warehouses ?? []).map((warehouse) => ({
         warehouseName: warehouse.warehouseName,
         availableLabel: formatQuantityKg(warehouse.availableKg),
