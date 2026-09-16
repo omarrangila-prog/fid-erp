@@ -7,7 +7,7 @@ import { getCashBook, getTrialBalanceReport, getGeneralLedger } from '@/lib/serv
 import { postCashBankTransfer } from '@/lib/services/cash-transfer';
 import { enableTax } from '@/lib/services/tax';
 import { ACCOUNT_KEYS } from '@/lib/constants';
-import { toMoney, dec, convertToUsd } from '@/lib/money';
+import { toMoney, dec } from '@/lib/money';
 import { formatMoney } from '@/lib/format';
 
 /**
@@ -366,7 +366,10 @@ describe('unpaid expense', () => {
         rateToUsd: '1',
         rateLocalPerUsd: '10',
         kind: 'SHIPMENT',
-        description: 'Unpaid agent commission',
+        // Unpaid means owed to someone: a cost with no payee would sit on the
+        // supplier control account with no supplier's statement showing it.
+        vendorId: masters.vendor.id,
+        description: 'Unpaid clearing, to be paid later',
       },
       ctx.admin.id,
     );

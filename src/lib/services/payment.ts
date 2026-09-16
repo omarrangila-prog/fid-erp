@@ -682,12 +682,24 @@ export async function postPayment(params: { id: string; companyId: string; userI
       const label = allocation.purchaseContract
         ? allocation.purchaseContract.contractNumber
         : allocation.expense!.expenseNumber;
+      // In the supplier's ledger currency, at the document's own rate — the
+      // same statement the accrual made when the bill was booked.
+      const leg = resolveSubledgerLeg({
+        partyCurrency: payment.vendor.primaryCurrency,
+        voucherCurrency: document.currency,
+        voucherAmount: toMoney(allocation.amount),
+        voucherRateToUsd: document.rateToUsd,
+        voucherAmountUsd: bookedUsd,
+        localCurrency: company.localCurrency,
+        rateLocalPerUsd: document.rateLocalPerUsd,
+        partyLabel: payment.vendor.vendorName,
+      });
       return {
         accountKey: ACCOUNT_KEYS.ACCOUNTS_PAYABLE,
         direction: 'DEBIT' as const,
-        currency: document.currency,
-        amount: toMoney(allocation.amount),
-        rateToUsd: document.rateToUsd,
+        currency: leg.currency,
+        amount: leg.amount,
+        rateToUsd: leg.rateToUsd,
         bookedUsd,
         bookedLocal,
         description: `Settles ${label}`,

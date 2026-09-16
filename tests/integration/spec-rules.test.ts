@@ -496,7 +496,7 @@ describe('rules 11 and 12 — paid expenses hit cash, unpaid ones hit payables',
     expect(Number(position.commissionPayableUsd)).toBeCloseTo(1000, 2);
   });
 
-  it('an unpaid expense with no supplier or agent still leaves cash alone', async () => {
+  it('an unpaid expense owed to a supplier leaves cash alone and lands on that supplier', async () => {
     const cash = await getCashAccount(companyId, 'MAD');
     const category = await prisma.expenseCategory.findFirstOrThrow({
       where: { companyId, status: 'ACTIVE', kind: 'SHIPMENT' },
@@ -511,6 +511,7 @@ describe('rules 11 and 12 — paid expenses hit cash, unpaid ones hit payables',
         expenseDate: utcDate('2026-04-12'),
         expenseCategoryId: category.id,
         shipmentId,
+        vendorId: masters.vendor.id,
         currency: 'MAD',
         amount: '2500',
         rateToUsd: '9.85',
@@ -523,10 +524,26 @@ describe('rules 11 and 12 — paid expenses hit cash, unpaid ones hit payables',
 
     const after = await prisma.$transaction((tx) => getCashBankBalance(tx, companyId, cash.id));
     expect(dec(after).toString()).toBe(dec(before).toString());
-    expect(expense.vendorId).toBeNull();
-    expect(expense.cashBankAccountId).toBeNull();
-    expect(expense.payableToAgentId).toBeNull();
     expect(Number(await control('ACCOUNTS_PAYABLE'))).toBeLessThan(payableBefore);
+
+    // A cost with nobody to pay is refused: it would sit on the supplier
+    // control account with no supplier's statement showing it.
+    await expect(
+      createExpense(
+        {
+          companyId,
+          expenseDate: utcDate('2026-04-12'),
+          expenseCategoryId: category.id,
+          shipmentId,
+          currency: 'MAD',
+          amount: '100',
+          rateToUsd: '9.85',
+          rateLocalPerUsd: '9.85',
+          description: 'Owed to nobody',
+        },
+        ctx.admin.id,
+      ),
+    ).rejects.toThrow(/say how this cost is settled/i);
   });
 });
 

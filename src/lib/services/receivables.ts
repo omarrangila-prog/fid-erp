@@ -33,6 +33,10 @@ export function bucketFor(dueDate: Date | null): AgeingBucket {
 }
 
 export type ReceivableRow = {
+  /** The currency the customer's ledger is kept in. */
+  partyCurrency: string;
+  /** Local units per USD on the invoice, for restating it in the local currency. */
+  rateLocalPerUsd: Decimal;
   invoiceId: string;
   invoiceNumber: string;
   invoiceDate: Date;
@@ -71,6 +75,8 @@ export async function getReceivables(params: {
       shipmentNumber: string | null;
       etaDate: Date | null;
       currency: string;
+      rateLocalPerUsd: string;
+      partyCurrency: string;
       originalAmount: string;
       originalAmountUsd: string;
       paidAmount: string;
@@ -80,7 +86,7 @@ export async function getReceivables(params: {
     SELECT si."id" AS "invoiceId", si."invoiceNumber", si."invoiceDate", si."dueDate",
            si."customerId", c."customerName",
            si."shipmentId", s."shipmentNumber", s."etaDate",
-           si."currency",
+           si."currency", si."rateLocalPerUsd"::text AS "rateLocalPerUsd", c."primaryCurrency" AS "partyCurrency",
            si."totalAmount"::text AS "originalAmount",
            si."totalAmountUsd"::text AS "originalAmountUsd",
            (
@@ -137,6 +143,8 @@ export async function getReceivables(params: {
       shipmentNumber: row.shipmentNumber,
       etaDate: row.etaDate,
       currency: row.currency,
+      partyCurrency: row.partyCurrency,
+      rateLocalPerUsd: dec(row.rateLocalPerUsd),
       originalAmount,
       paidAmount,
       outstandingAmount,
@@ -156,6 +164,10 @@ export async function getReceivables(params: {
 }
 
 export type PayableRow = {
+  /** The currency the supplier's ledger is kept in. */
+  partyCurrency: string;
+  /** Local units per USD on the document, for restating it in the local currency. */
+  rateLocalPerUsd: Decimal;
   /**
    * What the supplier is owed for. A purchase contract is the coffee itself; an
    * expense is a cost booked against the supplier rather than paid on the spot
@@ -200,6 +212,8 @@ export async function getPayables(params: {
       companyCountry: string | null;
       shipmentNumbers: string | null;
       currency: string;
+      rateLocalPerUsd: string;
+      partyCurrency: string | null;
       netAmount: string;
       taxAmount: string;
       netAmountUsd: string;
@@ -211,7 +225,7 @@ export async function getPayables(params: {
   >`
     SELECT pc."id" AS "contractId", pc."contractNumber", pc."contractReference", pc."contractDate", pc."dueDate",
            pc."vendorId", v."vendorName", v."country" AS "vendorCountry", c."country" AS "companyCountry",
-           pc."currency",
+           pc."currency", pc."rateLocalPerUsd"::text AS "rateLocalPerUsd", v."primaryCurrency" AS "partyCurrency",
            pc."totalValue"::text AS "netAmount",
            pc."taxAmount"::text AS "taxAmount",
            pc."totalValueUsd"::text AS "netAmountUsd",
@@ -250,13 +264,12 @@ export async function getPayables(params: {
 
     UNION ALL
 
-    -- Costs booked unpaid rather than paid from an account. A named supplier
-    -- is optional: the cost still has to be paid later.
+    -- Costs owed to a supplier rather than paid from an account.
     SELECT e."id" AS "contractId", e."expenseNumber" AS "contractNumber",
            COALESCE(e."reference", ec."name") AS "contractReference", e."expenseDate" AS "contractDate",
            e."expenseDate" AS "dueDate",
            e."vendorId", v."vendorName", v."country" AS "vendorCountry", c."country" AS "companyCountry",
-           e."currency",
+           e."currency", e."rateLocalPerUsd"::text AS "rateLocalPerUsd", v."primaryCurrency" AS "partyCurrency",
            e."amount"::text AS "netAmount",
            e."taxAmount"::text AS "taxAmount",
            e."amountUsd"::text AS "netAmountUsd",
@@ -278,13 +291,14 @@ export async function getPayables(params: {
                         )), 0)::text AS "paidAmountUsd",
            'EXPENSE' AS kind
     FROM expenses e
-    LEFT JOIN vendors v ON v."id" = e."vendorId"
+    JOIN vendors v ON v."id" = e."vendorId"
     JOIN companies c ON c."id" = e."companyId"
     JOIN expense_categories ec ON ec."id" = e."expenseCategoryId"
     WHERE e."companyId" = ${params.companyId}
       AND e."status" = 'POSTED'
       AND e."cashBankAccountId" IS NULL
       AND e."payableToAgentId" IS NULL
+      AND e."vendorId" IS NOT NULL
       AND (${params.vendorId ?? null}::text IS NULL OR e."vendorId" = ${params.vendorId ?? null})
 
     ORDER BY "dueDate" ASC NULLS LAST, "contractDate" ASC
@@ -318,6 +332,8 @@ export async function getPayables(params: {
       vendorName: row.vendorName ?? 'Unpaid — pay later',
       shipmentNumbers: row.shipmentNumbers ? row.shipmentNumbers.split(', ') : [],
       currency: row.currency,
+      partyCurrency: row.partyCurrency ?? row.currency,
+      rateLocalPerUsd: dec(row.rateLocalPerUsd),
       purchaseValue,
       paidAmount,
       outstandingAmount,
@@ -367,4 +383,63 @@ export async function getUnappliedCredits(companyId: string) {
 
   const find = (type: string) => toMoney(rows.find((row) => row.type === type)?.total ?? 0);
   return { customerUsd: find('CUSTOMER'), vendorUsd: find('VENDOR') };
+}
+
+/**
+ * The same credits, per party and in that party's own ledger currency.
+ *
+ * The USD figure above is enough to reconcile a control account. It is not
+ * enough to reconcile one customer's statement, which is kept in their
+ * currency — so this restates each credit the way the ledger line was
+ * written: at the credit note's own rates.
+ */
+export async function getUnappliedCreditsByParty(companyId: string) {
+  const company = await prisma.company.findUniqueOrThrow({
+    where: { id: companyId },
+    select: { localCurrency: true },
+  });
+  const localCode = company.localCurrency.toUpperCase();
+
+  const rows = await prisma.$queryRaw<
+    Array<{
+      type: string;
+      partyId: string;
+      partyCurrency: string;
+      currency: string;
+      amount: string;
+      amountUsd: string;
+      rateLocalPerUsd: string;
+    }>
+  >`
+    SELECT cn."type"::text AS type,
+           COALESCE(cn."customerId", cn."vendorId") AS "partyId",
+           COALESCE(c."primaryCurrency", v."primaryCurrency") AS "partyCurrency",
+           cn."currency",
+           cn."totalAmount"::text AS amount,
+           cn."totalAmountUsd"::text AS "amountUsd",
+           cn."rateLocalPerUsd"::text AS "rateLocalPerUsd"
+    FROM credit_notes cn
+    LEFT JOIN customers c ON c."id" = cn."customerId"
+    LEFT JOIN vendors v ON v."id" = cn."vendorId"
+    WHERE cn."companyId" = ${companyId}
+      AND cn."status" = 'POSTED'
+      AND cn."salesInvoiceId" IS NULL
+      AND cn."purchaseContractId" IS NULL
+      AND COALESCE(cn."customerId", cn."vendorId") IS NOT NULL`;
+
+  const byParty = new Map<string, Decimal>();
+  for (const row of rows) {
+    const party = (row.partyCurrency ?? row.currency).toUpperCase();
+    const amount =
+      party === row.currency.toUpperCase()
+        ? dec(row.amount)
+        : party === 'USD'
+          ? dec(row.amountUsd)
+          : party === localCode
+            ? toMoney(dec(row.amountUsd).times(row.rateLocalPerUsd))
+            : dec(row.amount);
+    const key = `${row.type}|${row.partyId}|${party}`;
+    byParty.set(key, (byParty.get(key) ?? new Decimal(0)).plus(amount));
+  }
+  return byParty;
 }

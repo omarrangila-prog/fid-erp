@@ -456,8 +456,8 @@ export async function getShipmentCostSheet(companyId: string, shipmentId: string
       capitalised: expense.capitaliseToLandedCost,
       paid: Boolean(expense.cashBankAccountId) || settledByAllocation || settledByCommission,
       paidFrom: expense.cashBankAccount?.name ?? null,
-      containerNumber: 'container' in expense ? (expense.container?.containerNumber ?? null) : null,
-      batchNumber: 'batch' in expense ? (expense.batch?.batchNumber ?? null) : null,
+      containerNumber: expense.container?.containerNumber ?? null,
+      batchNumber: expense.batch?.batchNumber ?? null,
     };
   });
 

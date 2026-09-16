@@ -80,15 +80,21 @@ function computeExpenseAmounts(input: ExpenseInput & { localCurrency: string }) 
 
 async function validateReferences(tx: Tx, input: ExpenseInput) {
   /*
-   * Paid now from cash or bank, or booked unpaid to pay later.
+   * Paid now from cash or bank, or owed — to a supplier, or to an agent.
    *
-   * A named supplier or agent is optional. Unpaid with no payee credits
-   * accounts payable as an accrual; Record payment later moves the cash.
-   * Owed to an agent still credits commission payable so the agent ledger
-   * stays complete when that path is used from tests or older vouchers.
+   * One of the three, always. An unpaid cost with nobody named was credited
+   * to Accounts Payable with no supplier on the line: the supplier control
+   * account then carried a balance no supplier's statement showed, and there
+   * was no one to raise the payment to. A cost that is not paid is owed to
+   * someone, and the voucher says who.
    */
   const settlements = [input.cashBankAccountId, input.vendorId, input.payableToAgentId].filter(Boolean);
 
+  if (settlements.length === 0) {
+    throw new BusinessRuleError(
+      'Say how this cost is settled: paid from an account, owed to a supplier, or owed to an agent.',
+    );
+  }
   if (settlements.length > 1) {
     throw new BusinessRuleError(
       'A cost is settled one way only — paid from cash/bank, owed to a supplier, or owed to an agent. Record the payment separately.',
@@ -488,15 +494,9 @@ export async function postExpense(params: { id: string; companyId: string; userI
             shipmentId: expense.shipmentId,
           };
         })()
-      : {
-          accountKey: ACCOUNT_KEYS.ACCOUNTS_PAYABLE,
-          direction: 'CREDIT' as const,
-          currency: expense.currency,
-          amount: grossAmount,
-          rateToUsd: expense.rateToUsd,
-          description: `Unpaid ${expense.expenseCategory.name} — to be paid later`,
-          shipmentId: expense.shipmentId,
-        };
+      : (() => {
+          throw new BusinessRuleError('This expense has no payment account, supplier or agent.');
+        })();
 
     // ---------------------------------------------------------------------
     // The debit side.

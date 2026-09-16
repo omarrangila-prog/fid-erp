@@ -309,7 +309,10 @@ describe('unpaid shipment expense without cash or bank', () => {
         rateToUsd: '1',
         rateLocalPerUsd: '9.85',
         kind: 'SHIPMENT',
-        description: 'Unpaid agent commission',
+        // Unpaid means owed to someone: a cost with no payee would sit on the
+        // supplier control account with no supplier's statement showing it.
+        vendorId: masters.vendor.id,
+        description: 'Unpaid clearing, to be paid later',
       },
       ctx.admin.id,
     );

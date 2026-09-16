@@ -617,6 +617,9 @@ export async function postReceiptIn(tx: Tx, params: { id: string; companyId: str
   // This replaces a split done in USD, which for a MAD customer paying a MAD
   // invoice on a day the rate had moved credited part of the dirhams to
   // "Customer Advances" and left the rest of the invoice showing as owed.
+  // The customer's ledger is kept in one currency — theirs — so the line is
+  // stated in that currency at the invoice's own rate, exactly as the invoice
+  // was when it was raised. Same rule as the accrual, same rule everywhere.
   const localCode = company.localCurrency.toUpperCase();
   const settlementLines = receipt.allocations.map((allocation) => {
     const invoice = allocation.salesInvoice;
@@ -625,12 +628,22 @@ export async function postReceiptIn(tx: Tx, params: { id: string; companyId: str
       invoice.currency === localCode
         ? toMoney(allocation.amount)
         : convertFromUsd(bookedUsd, invoice.rateLocalPerUsd, localCode);
+    const leg = resolveSubledgerLeg({
+      partyCurrency: receipt.customer.primaryCurrency,
+      voucherCurrency: invoice.currency,
+      voucherAmount: toMoney(allocation.amount),
+      voucherRateToUsd: invoice.rateToUsd,
+      voucherAmountUsd: bookedUsd,
+      localCurrency: company.localCurrency,
+      rateLocalPerUsd: invoice.rateLocalPerUsd,
+      partyLabel: receipt.customer.customerName,
+    });
     return {
       accountKey: ACCOUNT_KEYS.ACCOUNTS_RECEIVABLE,
       direction: 'CREDIT' as const,
-      currency: invoice.currency,
-      amount: toMoney(allocation.amount),
-      rateToUsd: invoice.rateToUsd,
+      currency: leg.currency,
+      amount: leg.amount,
+      rateToUsd: leg.rateToUsd,
       bookedUsd,
       bookedLocal,
       description: `Settles ${invoice.invoiceNumber}`,

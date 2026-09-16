@@ -2,7 +2,12 @@ import { prisma } from '@/lib/db';
 import { Decimal, dec, toMoney } from '@/lib/money';
 import { getTrialBalanceReport, getBalanceSheet, getFinancialPosition } from '@/lib/services/reports';
 import { getCompanyProfitSummary } from '@/lib/services/profitability';
-import { getReceivables, getPayables, getUnappliedCredits } from '@/lib/services/receivables';
+import {
+  getReceivables,
+  getPayables,
+  getUnappliedCredits,
+  getUnappliedCreditsByParty,
+} from '@/lib/services/receivables';
 
 /**
  * Does the ledger agree with the operational records?
@@ -196,6 +201,112 @@ export async function reconcile(companyId: string): Promise<ReconciliationResult
       dec(profit.cogsUsd),
     ),
   );
+
+  // --- Sub-ledgers, in the party's own currency -----------------------------
+  // The USD checks above can pass while a customer's MAD statement is wrong:
+  // MAD 8,680 still showing as owed on an invoice paid to the dirham, and
+  // MAD 8,680 sitting as a credit, net to zero in USD. So the receivable and
+  // payable ledgers are also compared with the open documents customer by
+  // customer and currency by currency, with nothing converted.
+  const arNative = await prisma.$queryRaw<Array<{ partyId: string; currency: string; net: string }>>`
+    SELECT jl."customerId" AS "partyId", jl."currency", SUM(jl."debit" - jl."credit")::text AS net
+    FROM journal_lines jl
+    JOIN journal_entries je ON je."id" = jl."journalEntryId"
+    JOIN accounts a ON a."id" = jl."accountId"
+    WHERE je."companyId" = ${companyId} AND je."status" = 'POSTED'
+      AND a."systemKey" = 'ACCOUNTS_RECEIVABLE' AND jl."customerId" IS NOT NULL
+    GROUP BY jl."customerId", jl."currency"`;
+  // A document is restated in the party's ledger currency the way the
+  // ledger line was: at the document's own rates.
+  const localCode = (await prisma.company.findUniqueOrThrow({ where: { id: companyId }, select: { localCurrency: true } }))
+    .localCurrency.toUpperCase();
+  const inPartyCurrency = (row: {
+    currency: string;
+    partyCurrency: string;
+    rateLocalPerUsd: Decimal;
+    outstandingAmount: Decimal;
+    outstandingAmountUsd: Decimal;
+  }) => {
+    const party = row.partyCurrency.toUpperCase();
+    if (party === row.currency.toUpperCase()) return row.outstandingAmount;
+    if (party === 'USD') return row.outstandingAmountUsd;
+    if (party === localCode) return toMoney(row.outstandingAmountUsd.times(row.rateLocalPerUsd));
+    return row.outstandingAmount;
+  };
+
+  // A credit raised without naming an invoice reduces what the party owes but
+  // belongs to no document, exactly as in the USD checks above.
+  const unappliedByParty = await getUnappliedCreditsByParty(companyId);
+
+  const arDocs = new Map<string, Decimal>();
+  for (const row of await getReceivables({ companyId, onlyOutstanding: true })) {
+    const key = `${row.customerId}|${row.partyCurrency.toUpperCase()}`;
+    arDocs.set(key, (arDocs.get(key) ?? new Decimal(0)).plus(inPartyCurrency(row)));
+  }
+  for (const [key, amount] of unappliedByParty) {
+    const [type, partyId, currency] = key.split('|');
+    if (type !== 'CUSTOMER') continue;
+    const at = `${partyId}|${currency}`;
+    arDocs.set(at, (arDocs.get(at) ?? new Decimal(0)).minus(amount));
+  }
+  const arKeys = new Set([...arNative.map((r) => `${r.partyId}|${r.currency}`), ...arDocs.keys()]);
+  let arNativeFaults = 0;
+  for (const key of arKeys) {
+    const [partyId, currency] = key.split('|');
+    const ledger = dec(arNative.find((r) => r.partyId === partyId && r.currency === currency)?.net ?? 0);
+    const docs = arDocs.get(key) ?? new Decimal(0);
+    if (ledger.minus(docs).abs().greaterThan(TOLERANCE)) arNativeFaults += 1;
+  }
+  checks.push({
+    id: 'receivables-native',
+    group: 'Sub-ledgers',
+    label: 'Each customer agrees with the ledger in their own currency',
+    explanation:
+      'For every customer and currency, the open invoices must equal the receivable ledger with nothing converted. A difference here is invisible to the USD check when it nets to zero across accounts.',
+    left: { label: 'Customer/currency pairs out of step', value: String(arNativeFaults) },
+    right: { label: 'Expected', value: '0' },
+    differenceUsd: String(arNativeFaults),
+    passed: arNativeFaults === 0,
+  });
+
+  const apNative = await prisma.$queryRaw<Array<{ partyId: string; currency: string; net: string }>>`
+    SELECT jl."vendorId" AS "partyId", jl."currency", SUM(jl."credit" - jl."debit")::text AS net
+    FROM journal_lines jl
+    JOIN journal_entries je ON je."id" = jl."journalEntryId"
+    JOIN accounts a ON a."id" = jl."accountId"
+    WHERE je."companyId" = ${companyId} AND je."status" = 'POSTED'
+      AND a."systemKey" = 'ACCOUNTS_PAYABLE' AND jl."vendorId" IS NOT NULL
+    GROUP BY jl."vendorId", jl."currency"`;
+  const apDocs = new Map<string, Decimal>();
+  for (const row of await getPayables({ companyId, onlyOutstanding: true })) {
+    const key = `${row.vendorId}|${row.partyCurrency.toUpperCase()}`;
+    apDocs.set(key, (apDocs.get(key) ?? new Decimal(0)).plus(inPartyCurrency(row)));
+  }
+  for (const [key, amount] of unappliedByParty) {
+    const [type, partyId, currency] = key.split('|');
+    if (type !== 'VENDOR') continue;
+    const at = `${partyId}|${currency}`;
+    apDocs.set(at, (apDocs.get(at) ?? new Decimal(0)).minus(amount));
+  }
+  const apKeys = new Set([...apNative.map((r) => `${r.partyId}|${r.currency}`), ...apDocs.keys()]);
+  let apNativeFaults = 0;
+  for (const key of apKeys) {
+    const [partyId, currency] = key.split('|');
+    const ledger = dec(apNative.find((r) => r.partyId === partyId && r.currency === currency)?.net ?? 0);
+    const docs = apDocs.get(key) ?? new Decimal(0);
+    if (ledger.minus(docs).abs().greaterThan(TOLERANCE)) apNativeFaults += 1;
+  }
+  checks.push({
+    id: 'payables-native',
+    group: 'Sub-ledgers',
+    label: 'Each supplier agrees with the ledger in their own currency',
+    explanation:
+      'For every supplier and currency, the open contracts and bills must equal the payable ledger with nothing converted.',
+    left: { label: 'Supplier/currency pairs out of step', value: String(apNativeFaults) },
+    right: { label: 'Expected', value: '0' },
+    differenceUsd: String(apNativeFaults),
+    passed: apNativeFaults === 0,
+  });
 
   // --- Cash and bank -----------------------------------------------------
   // Invariants D and E: the cash book and the bank book must equal their
