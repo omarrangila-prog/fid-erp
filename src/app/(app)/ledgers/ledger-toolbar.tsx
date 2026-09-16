@@ -3,7 +3,8 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { ChevronDown, Download, FileSpreadsheet, FileText, Printer, Share2 } from 'lucide-react';
+import Link from 'next/link';
+import { ChevronDown, Download, FileSpreadsheet, FileText, Printer, Share2, Plus } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
@@ -109,6 +110,50 @@ export function LedgerToolbar({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        {/*
+          Starting the transaction the ledger just made you think of, without
+          leaving the ledger. A customer's page offers an invoice and a
+          receipt; a supplier's a contract and a payment; both a journal.
+        */}
+        {customerId ? (
+          <>
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/sales/new?customer=${customerId}`}>
+                <Plus />
+                Invoice
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/finance/receipts/new?customer=${customerId}`}>
+                <Plus />
+                Receipt
+              </Link>
+            </Button>
+          </>
+        ) : null}
+        {vendorId ? (
+          <>
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/purchases/new?vendor=${vendorId}`}>
+                <Plus />
+                Contract
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/finance/payments/new?vendor=${vendorId}`}>
+                <Plus />
+                Payment
+              </Link>
+            </Button>
+          </>
+        ) : null}
+        <Button asChild variant="outline" size="sm">
+          <Link href="/accounting/journal/new">
+            <Plus />
+            Journal entry
+          </Link>
+        </Button>
+
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
             <Button variant="outline" size="sm">

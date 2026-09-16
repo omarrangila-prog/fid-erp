@@ -81,9 +81,12 @@ export function LedgerView({
               <THead>
                 <TR className="hover:bg-transparent">
                   <TH>Date</TH>
+                  <TH>Voucher</TH>
                   <TH>Reference</TH>
+                  <TH>Type</TH>
                   <TH>Description</TH>
                   <TH>Shipment</TH>
+                  <TH>Currency</TH>
                   <TH numeric>Debit</TH>
                   <TH numeric>Credit</TH>
                   <TH numeric>Balance</TH>
@@ -92,7 +95,7 @@ export function LedgerView({
               </THead>
               <TBody>
                 <TR className="bg-forest-50/40 hover:bg-forest-50/40">
-                  <TD colSpan={6} className="text-xs font-medium text-ink-muted">
+                  <TD colSpan={9} className="text-xs font-medium text-ink-muted">
                     Opening balance ({currency})
                   </TD>
                   <TD numeric className="font-semibold">
@@ -103,13 +106,13 @@ export function LedgerView({
 
                 {ledger.rows.map((row, index) => (
                   <TR key={`${row.journalEntryId}-${index}`}>
-                    <TD>{formatDate(row.entryDate)}</TD>
-                    <TD className="font-medium">{row.reference ?? row.entryNumber}</TD>
-                    <TD>
-                      <span className="block">{row.description}</span>
-                      <span className="block text-xs text-ink-subtle">{titleCase(row.sourceType)}</span>
-                    </TD>
+                    <TD className="whitespace-nowrap">{formatDate(row.entryDate)}</TD>
+                    <TD className="font-medium whitespace-nowrap">{row.entryNumber}</TD>
+                    <TD className="text-xs">{row.reference ?? '—'}</TD>
+                    <TD className="whitespace-nowrap text-xs">{titleCase(row.sourceType)}</TD>
+                    <TD>{row.description}</TD>
                     <TD className="text-xs">{row.shipmentNumber ?? '—'}</TD>
+                    <TD className="text-xs">{row.currency}</TD>
                     <TD numeric>{row.debit.greaterThan(0) ? formatMoney(row.debit, row.currency) : '—'}</TD>
                     <TD numeric>{row.credit.greaterThan(0) ? formatMoney(row.credit, row.currency) : '—'}</TD>
                     <TD numeric className="font-medium">
@@ -127,7 +130,7 @@ export function LedgerView({
               </TBody>
               <TFoot>
                 <tr>
-                  <TD colSpan={4}>Closing balance ({currency})</TD>
+                  <TD colSpan={7}>Closing balance ({currency})</TD>
                   <TD numeric>{formatMoney(ledger.totalDebit, currency)}</TD>
                   <TD numeric>{formatMoney(ledger.totalCredit, currency)}</TD>
                   <TD numeric>{formatMoney(ledger.closingBalance, currency)}</TD>

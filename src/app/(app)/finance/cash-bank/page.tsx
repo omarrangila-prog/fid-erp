@@ -7,6 +7,7 @@ import { getFinancialPosition } from '@/lib/services/reports';
 import { formatMoney } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { CashAccountRowActions } from '@/app/(app)/finance/cash-bank/cash-account-row-actions';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { CashBankAccountButton } from '@/app/(app)/finance/cash-bank/account-button';
@@ -73,6 +74,7 @@ export default async function CashBankPage() {
                   <TH>Currency</TH>
                   <TH numeric>Balance</TH>
                   <TH numeric>USD equivalent</TH>
+                  <TH className="text-right">Actions</TH>
                 </TR>
               </THead>
               <TBody>
@@ -103,6 +105,13 @@ export default async function CashBankPage() {
                       </TD>
                       <TD numeric className="text-ink-muted">
                         {account.currency === 'USD' ? '—' : formatMoney(account.balanceUsd, 'USD')}
+                      </TD>
+                      <TD className="text-right">
+                        <CashAccountRowActions
+                          accountId={account.accountId}
+                          glAccountId={account.glAccountId}
+                          currency={account.currency}
+                        />
                       </TD>
                     </TR>
                   );

@@ -299,6 +299,8 @@ export async function getBalanceSheet(params: { companyId: string; asOf: Date })
 
 export type CashPosition = {
   accountId: string;
+  /** The ledger account behind the drawer, so the GL is one click away. */
+  glAccountId: string;
   code: string;
   name: string;
   accountType: string;
@@ -315,6 +317,7 @@ export async function getFinancialPosition(params: { companyId: string; asOf?: D
   const cashRows = await prisma.$queryRaw<
     Array<{
       accountId: string;
+      glAccountId: string;
       code: string;
       name: string;
       accountType: string;
@@ -324,7 +327,7 @@ export async function getFinancialPosition(params: { companyId: string; asOf?: D
       movementUsd: string;
     }>
   >`
-    SELECT cba."id" AS "accountId", cba."code", cba."name",
+    SELECT cba."id" AS "accountId", cba."glAccountId", cba."code", cba."name",
            cba."accountType"::text AS "accountType", cba."currency",
            cba."openingBalance"::text AS opening,
            COALESCE((SELECT SUM(jl."debit" - jl."credit") FROM journal_lines jl
@@ -342,6 +345,7 @@ export async function getFinancialPosition(params: { companyId: string; asOf?: D
 
   const accounts: CashPosition[] = cashRows.map((row) => ({
     accountId: row.accountId,
+    glAccountId: row.glAccountId,
     code: row.code,
     name: row.name,
     accountType: row.accountType,

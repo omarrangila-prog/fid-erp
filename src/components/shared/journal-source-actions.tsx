@@ -1,4 +1,5 @@
-import Link from 'next/link';
+import { Eye, Pencil } from 'lucide-react';
+import { RowActions } from '@/components/shared/row-actions';
 import { journalSourceEditHref, journalSourceHref } from '@/lib/journal-source';
 
 /** View / Edit source for a derived ledger, cash-book or GL row. */
@@ -15,16 +16,20 @@ export function JournalSourceActions({
   const edit = sourceId ? journalSourceEditHref(sourceType, sourceId) : null;
   if (!view) return <span className="text-ink-subtle">—</span>;
 
+  /*
+   * A ledger line is derived: it exists because a document was posted, and it
+   * is never edited on its own — that would put the ledger out of step with
+   * the document it came from. So the actions go to the source: the invoice,
+   * the expense, the journal voucher. Cancelling is offered there too, where
+   * the consequences can be stated properly.
+   */
   return (
-    <div className="flex flex-wrap justify-end gap-x-2 gap-y-1 text-xs">
-      <Link href={view} className="font-medium text-forest-800 hover:text-gold-700">
-        View source
-      </Link>
-      {edit && edit !== view ? (
-        <Link href={edit} className="text-ink-muted hover:text-gold-700">
-          Edit source
-        </Link>
-      ) : null}
-    </div>
+    <RowActions
+      inline={1}
+      actions={[
+        { label: 'View source', href: view, icon: Eye },
+        { label: 'Edit source', href: edit ?? view, icon: Pencil, show: Boolean(edit && edit !== view) },
+      ]}
+    />
   );
 }
