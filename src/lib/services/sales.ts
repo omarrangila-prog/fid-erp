@@ -1037,111 +1037,6 @@ export async function deleteDraftSalesInvoice(params: { id: string; companyId: s
   });
 }
 
-/**
- * Remove a cancelled invoice from Sales.
- *
- * Journals, stock movements and reversing entries stay in the books — they
- * are the audit trail. Only the cancelled sales document is taken off the
- * list. Refused while a live receipt or credit note still points at it.
- */
-export async function deleteReversedSalesInvoice(params: {
-  id: string;
-  companyId: string;
-  userId: string;
-}) {
-  return transaction((tx) => deleteReversedSalesInvoiceIn(tx, params));
-}
-
-async function deleteReversedSalesInvoiceIn(
-  tx: Tx,
-  params: { id: string; companyId: string; userId: string },
-) {
-  const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>`
-    SELECT "id", "status"::text FROM sales_invoices
-    WHERE "id" = ${params.id} AND "companyId" = ${params.companyId}
-    FOR UPDATE
-  `;
-  if (locked.length === 0) throw new NotFoundError('Sales invoice');
-  if (locked[0].status !== 'REVERSED') {
-    throw new BusinessRuleError(
-      'Only a cancelled invoice can be removed from the list. Posted invoices must be cancelled first.',
-    );
-  }
-
-  const invoice = await tx.salesInvoice.findUniqueOrThrow({
-    where: { id: params.id },
-    include: {
-      allocations: { include: { receipt: { select: { status: true, receiptNumber: true } } } },
-      creditNotes: { select: { id: true, status: true, creditNoteNumber: true } },
-    },
-  });
-
-  const liveReceipts = invoice.allocations.filter((a) => a.receipt.status === 'POSTED');
-  if (liveReceipts.length > 0) {
-    throw new BusinessRuleError(
-      'Receipts are still allocated to this invoice. Reverse those receipts before removing it.',
-    );
-  }
-
-  const liveCredits = invoice.creditNotes.filter((n) => n.status === 'POSTED');
-  if (liveCredits.length > 0) {
-    throw new BusinessRuleError(
-      `Credit note ${liveCredits[0].creditNoteNumber} is still posted against this invoice.`,
-    );
-  }
-
-  const journals = await tx.journalEntry.findMany({
-    where: { sourceType: 'SALES_INVOICE', sourceId: invoice.id },
-    select: { id: true, description: true },
-  });
-  for (const journal of journals) {
-    const marker = `[${invoice.invoiceNumber}]`;
-    if (!journal.description.includes(invoice.invoiceNumber)) {
-      await tx.journalEntry.update({
-        where: { id: journal.id },
-        data: { description: `${marker} ${journal.description}` },
-      });
-    }
-  }
-
-  await tx.journalLine.updateMany({
-    where: { salesInvoiceId: invoice.id },
-    data: { salesInvoiceId: null },
-  });
-  await tx.receiptAllocation.deleteMany({ where: { salesInvoiceId: invoice.id } });
-  await tx.creditNote.updateMany({
-    where: { salesInvoiceId: invoice.id },
-    data: { salesInvoiceId: null },
-  });
-  await tx.attachment.deleteMany({
-    where: { companyId: params.companyId, entityType: 'SalesInvoice', entityId: invoice.id },
-  });
-
-  await writeAudit(tx, {
-    companyId: params.companyId,
-    userId: params.userId,
-    action: 'SALES_INVOICE_REMOVED',
-    entityType: 'SalesInvoice',
-    entityId: invoice.id,
-    before: {
-      invoiceNumber: invoice.invoiceNumber,
-      status: invoice.status,
-      totalAmount: invoice.totalAmount,
-      reversalReason: invoice.reversalReason,
-    },
-  });
-
-  await tx.salesInvoice.delete({ where: { id: invoice.id } });
-}
-
-/**
- * Delete Invoice — one action for every status.
- *
- * A draft is removed and its stock reservation released. A posted invoice is
- * reversed (stock, receivable and ledger move back together) and then taken
- * off the sales list. An already-cancelled invoice is removed from the list
- * without touching the books again.
- */
 export async function cancelSalesInvoice(params: {
   id: string;
   companyId: string;
@@ -1154,26 +1049,28 @@ export async function cancelSalesInvoice(params: {
   });
   if (!invoice) throw new NotFoundError('Sales invoice');
 
+  // A draft has touched nothing but a reservation, so it can go. A posted
+  // invoice has moved stock, a receivable and the ledger; the only honest
+  // way to take it back is a reversal, and the reversed document stays —
+  // it is what every journal line and receipt allocation still points at.
+  // The cancelled invoice used to be deleted physically after reversal,
+  // which nulled its journal lines' source and removed the allocations of
+  // posted receipts, so the ledger had lines with no document behind them
+  // and receipts that no longer said what they had settled.
   if (invoice.status === 'DRAFT') {
     await deleteDraftSalesInvoice(params);
     return { status: 'DELETED' };
   }
 
   if (invoice.status === 'POSTED') {
-    const reason = params.reason?.trim() || 'Invoice deleted';
-    // Reverse and remove in one commit so a failed cleanup cannot leave a
-    // stranded REVERSED invoice on the sales list.
-    await transaction(async (tx) => {
-      await reverseSalesInvoiceIn(tx, { ...params, reason });
-      await deleteReversedSalesInvoiceIn(tx, params);
-    }, 40_000);
-    return { status: 'DELETED' };
+    const reason = params.reason?.trim() || 'Invoice cancelled';
+    await reverseSalesInvoice({ ...params, reason });
+    return { status: 'REVERSED' };
   }
 
   if (invoice.status === 'REVERSED') {
-    await deleteReversedSalesInvoice(params);
-    return { status: 'DELETED' };
+    return { status: 'REVERSED' };
   }
 
-  throw new BusinessRuleError(`This invoice cannot be deleted from status ${invoice.status}.`);
+  throw new BusinessRuleError(`This invoice cannot be cancelled from status ${invoice.status}.`);
 }

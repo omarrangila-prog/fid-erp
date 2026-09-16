@@ -232,24 +232,18 @@ export function InvoiceDeleteButton({
     <ConfirmDialog
       open={open}
       onOpenChange={setOpen}
-      title={
-        posted
-          ? 'Delete this posted invoice?'
-          : reversed
-            ? 'Remove this cancelled invoice?'
-            : 'Delete this draft?'
-      }
+      title={posted ? 'Cancel this posted invoice?' : reversed ? 'This invoice is already cancelled' : 'Delete this draft?'}
       description={
         posted
-          ? 'Stock returns to the warehouse it left, the customer balance is reversed, and a contra journal is written so the ledger stays in balance. The cancelled document is then removed from Sales. Journals stay in the books.'
+          ? 'Stock returns to the warehouse it left, the customer balance is reversed, and a contra journal is written so the ledger stays in balance. The invoice stays in the books marked as cancelled — nothing is deleted, and you can find it under "Show cancelled" on the Sales list.'
           : reversed
-            ? 'Removes this cancelled invoice from Sales. Journals, stock movements and reversing entries stay in the books — they are not deleted.'
+            ? 'Its journals, stock movements and reversing entries are in the books and stay there. There is nothing further to do.'
             : 'The stock this draft was holding is released back to the warehouse.'
       }
-      confirmLabel={reversed ? 'Remove from list' : posted ? 'Delete invoice' : 'Delete draft'}
+      confirmLabel={reversed ? 'Close' : posted ? 'Cancel invoice' : 'Delete draft'}
       variant="danger"
       requireReason={posted}
-      reasonLabel="Why is this invoice being deleted?"
+      reasonLabel="Why is this invoice being cancelled?"
       onConfirm={async (reason) => {
         setBusy(true);
         try {
@@ -259,13 +253,7 @@ export function InvoiceDeleteButton({
           }
           if (onDeleted) onDeleted(result.data);
           else {
-            toast.success(
-              reversed
-                ? 'Cancelled invoice removed from the list.'
-                : result.data.status === 'DELETED'
-                  ? 'Invoice deleted.'
-                  : 'Invoice cancelled.',
-            );
+            toast.success(result.data.status === 'DELETED' ? 'Draft deleted.' : 'Invoice cancelled.');
             router.push('/sales');
             router.refresh();
           }
@@ -288,7 +276,7 @@ export function InvoiceDeleteButton({
           }}
         >
           <Trash2 className="size-4" />
-          Delete invoice
+          {posted ? 'Cancel invoice' : reversed ? 'Cancelled' : 'Delete draft'}
         </DropdownMenu.Item>
         {dialog}
       </>
@@ -305,7 +293,7 @@ export function InvoiceDeleteButton({
         onClick={openConfirm}
       >
         <Trash2 />
-        Delete invoice
+        {posted ? 'Cancel invoice' : reversed ? 'Cancelled' : 'Delete draft'}
       </Button>
       {dialog}
     </>

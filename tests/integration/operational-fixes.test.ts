@@ -176,10 +176,13 @@ describe('delete invoice reverses stock, AR and the ledger', () => {
       userId: ctx.admin.id,
       reason: 'Entered in error',
     });
-    expect(cancelled.status).toBe('DELETED');
+    // Cancelled, not deleted: the document stays, marked reversed, because
+    // every journal line and receipt allocation still points at it.
+    expect(cancelled.status).toBe('REVERSED');
 
-    const gone = await prisma.salesInvoice.findUnique({ where: { id: invoice.id } });
-    expect(gone).toBeNull();
+    const kept = await prisma.salesInvoice.findUniqueOrThrow({ where: { id: invoice.id } });
+    expect(kept.status).toBe('REVERSED');
+    expect(kept.reversalReason).toBe('Entered in error');
 
     const stockAfterCancel = await prisma.inventoryBalance.findUniqueOrThrow({
       where: { batchId_warehouseId: { batchId, warehouseId } },
@@ -199,7 +202,7 @@ describe('delete invoice reverses stock, AR and the ledger', () => {
     expect(entries[1].reversalOfId).toBe(entries[0].id);
   });
 
-  it('removes an already-cancelled invoice from the list without reversing again', async () => {
+  it('leaves an already-cancelled invoice as it is, without reversing again', async () => {
     const invoice = await createSalesInvoice(saleInput(), ctx.admin.id);
     await postSalesInvoice({ id: invoice.id, companyId: ctx.morocco.id, userId: ctx.admin.id });
     await reverseSalesInvoice({
@@ -222,8 +225,8 @@ describe('delete invoice reverses stock, AR and the ledger', () => {
       companyId: ctx.morocco.id,
       userId: ctx.admin.id,
     });
-    expect(removed.status).toBe('DELETED');
-    expect(await prisma.salesInvoice.findUnique({ where: { id: invoice.id } })).toBeNull();
+    expect(removed.status).toBe('REVERSED');
+    expect((await prisma.salesInvoice.findUniqueOrThrow({ where: { id: invoice.id } })).status).toBe('REVERSED');
 
     const stockAfterRemove = await prisma.inventoryBalance.findUniqueOrThrow({
       where: { batchId_warehouseId: { batchId, warehouseId } },

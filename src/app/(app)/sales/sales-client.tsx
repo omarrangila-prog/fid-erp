@@ -1,5 +1,6 @@
 'use client';
 
+import * as React from 'react';
 import Link from 'next/link';
 import { Plus } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
@@ -48,6 +49,16 @@ export function SalesClient({
   canReverse: boolean;
   canApprove: boolean;
 }) {
+  // A cancelled invoice stays in the books and on this list, out of the way
+  // by default. It is never deleted: its journals and the receipts that
+  // settled it still point at it.
+  const [showCancelled, setShowCancelled] = React.useState(false);
+  const visible = React.useMemo(
+    () => (showCancelled ? rows : rows.filter((r) => r.status !== 'REVERSED')),
+    [rows, showCancelled],
+  );
+  const cancelledCount = rows.length - visible.length;
+
   const columns: DataColumn<SaleRow>[] = [
     {
       id: 'number',
@@ -172,7 +183,7 @@ export function SalesClient({
 
   return (
     <DataTable
-      data={rows}
+      data={visible}
       columns={columns}
       getRowId={(r) => r.id}
       rowHref={(r) => `/sales/${r.id}`}
@@ -191,15 +202,28 @@ export function SalesClient({
         ) : undefined
       }
       toolbar={
-        canCreate ? (
-          <Button asChild>
-            <Link href="/sales/new">
-              <Plus />
-              <span className="hidden sm:inline">New invoice</span>
-              <span className="sm:hidden">New</span>
-            </Link>
-          </Button>
-        ) : undefined
+        <>
+          {rows.some((r) => r.status === 'REVERSED') ? (
+            <label className="flex items-center gap-2 text-sm text-ink-muted">
+              <input
+                type="checkbox"
+                checked={showCancelled}
+                onChange={(e) => setShowCancelled(e.target.checked)}
+                className="size-4 rounded border-line"
+              />
+              Show cancelled{showCancelled ? '' : ` (${cancelledCount})`}
+            </label>
+          ) : null}
+          {canCreate ? (
+            <Button asChild>
+              <Link href="/sales/new">
+                <Plus />
+                <span className="hidden sm:inline">New invoice</span>
+                <span className="sm:hidden">New</span>
+              </Link>
+            </Button>
+          ) : null}
+        </>
       }
     />
   );
