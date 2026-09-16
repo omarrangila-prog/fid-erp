@@ -117,7 +117,14 @@ type RawLedgerRow = {
  */
 const REFERENCE_SQL = `
   CASE je."sourceType"
-    WHEN 'SALES_INVOICE'     THEN (SELECT si."invoiceNumber"  FROM sales_invoices si     WHERE si."id"  = je."sourceId")
+    WHEN 'SALES_INVOICE'     THEN COALESCE(
+      (SELECT si."invoiceNumber" FROM sales_invoices si WHERE si."id" = je."sourceId"),
+      CASE
+        WHEN je."description" LIKE '[%]%' THEN split_part(substr(je."description", 2), ']', 1)
+        ELSE NULL
+      END,
+      je."entryNumber"
+    )
     WHEN 'RECEIPT'           THEN (SELECT r."receiptNumber"   FROM receipts r            WHERE r."id"   = je."sourceId")
     WHEN 'PURCHASE_CONTRACT' THEN (SELECT pc."contractNumber" FROM purchase_contracts pc WHERE pc."id"  = je."sourceId")
     WHEN 'PAYMENT'           THEN (SELECT p."paymentNumber"   FROM payments p            WHERE p."id"   = je."sourceId")

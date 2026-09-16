@@ -156,8 +156,15 @@ export function SalesClient({
             mobile: 'action' as const,
             cell: (r: SaleRow) => {
               const canCancel =
-                r.status === 'DRAFT' ? canDelete : r.status === 'POSTED' ? canDelete || canReverse : false;
-              if (r.status === 'REVERSED') return null;
+                r.status === 'DRAFT'
+                  ? canDelete
+                  : r.status === 'POSTED'
+                    ? canDelete || canReverse
+                    : r.status === 'REVERSED'
+                      ? canDelete || canReverse
+                      : false;
+              const showEdit = canEdit && (r.status === 'DRAFT' || r.status === 'POSTED');
+              if (!canCancel && !showEdit) return null;
               return (
                 <div
                   className="flex flex-wrap items-center justify-end gap-1"
@@ -166,7 +173,7 @@ export function SalesClient({
                     event.stopPropagation();
                   }}
                 >
-                  {canEdit ? (
+                  {showEdit ? (
                     <Button
                       type="button"
                       variant="ghost"

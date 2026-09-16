@@ -47,7 +47,14 @@ export function SaleActions({
     }
   }
 
-  const canCancel = status === 'DRAFT' ? canDelete : status === 'POSTED' ? canDelete || canReverse : false;
+  const canCancel =
+    status === 'DRAFT'
+      ? canDelete
+      : status === 'POSTED'
+        ? canDelete || canReverse
+        : status === 'REVERSED'
+          ? canDelete || canReverse
+          : false;
 
   return (
     <>
@@ -74,10 +81,15 @@ export function SaleActions({
           id={id}
           status={status}
           disabled={busy}
-          onDeleted={(result) => {
-            toast.success(result.status === 'DELETED' ? 'Invoice deleted.' : 'Invoice cancelled. Stock, customer balance and the ledger have been reversed.');
-            if (result.status === 'DELETED') router.push('/sales');
-            else router.refresh();
+          onDeleted={() => {
+            toast.success(
+              status === 'POSTED'
+                ? 'Invoice cancelled and removed. Stock, customer balance and the ledger have been reversed.'
+                : status === 'REVERSED'
+                  ? 'Cancelled invoice removed from the list. Journals and stock history are unchanged.'
+                  : 'Invoice deleted.',
+            );
+            router.push('/sales');
           }}
         />
       ) : null}
@@ -105,8 +117,9 @@ export function SaleActions({
 }
 
 /**
- * Delete on every invoice. Drafts are removed. Posted invoices are reversed so
- * stock, the customer balance and the ledger all move back together.
+ * Delete on every invoice. Drafts are removed. Posted invoices are reversed
+ * and then taken off the sales list. Already-cancelled invoices are removed
+ * from the list; journals and stock history stay.
  */
 export function InvoiceDeleteButton({
   id,
@@ -123,14 +136,13 @@ export function InvoiceDeleteButton({
   const [open, setOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const posted = status === 'POSTED';
-
-  if (status === 'REVERSED') return null;
+  const reversed = status === 'REVERSED';
 
   return (
     <>
       <Button
         type="button"
-        variant={posted ? 'outline' : 'ghost'}
+        variant={posted || reversed ? 'outline' : 'ghost'}
         size="sm"
         disabled={disabled || busy}
         onClick={(event) => {
@@ -146,13 +158,21 @@ export function InvoiceDeleteButton({
       <ConfirmDialog
         open={open}
         onOpenChange={setOpen}
-        title={posted ? 'Delete this posted invoice?' : 'Delete this draft?'}
+        title={
+          posted
+            ? 'Delete this posted invoice?'
+            : reversed
+              ? 'Remove this cancelled invoice?'
+              : 'Delete this draft?'
+        }
         description={
           posted
-            ? 'Stock returns to the warehouse it left, the customer balance is reversed, and a contra journal is written so the ledger stays in balance. Refused if a receipt is still allocated to this invoice.'
-            : 'The stock this draft was holding is released back to the warehouse.'
+            ? 'Stock returns to the warehouse it left, the customer balance is reversed, and a contra journal is written so the ledger stays in balance. The cancelled document is then removed from Sales. Journals stay in the books.'
+            : reversed
+              ? 'Removes this cancelled invoice from Sales. Journals, stock movements and reversing entries stay in the books — they are not deleted.'
+              : 'The stock this draft was holding is released back to the warehouse.'
         }
-        confirmLabel={posted ? 'Delete invoice' : 'Delete draft'}
+        confirmLabel={reversed ? 'Remove from list' : posted ? 'Delete invoice' : 'Delete draft'}
         variant="danger"
         requireReason={posted}
         reasonLabel="Why is this invoice being deleted?"
@@ -165,7 +185,14 @@ export function InvoiceDeleteButton({
             }
             if (onDeleted) onDeleted(result.data);
             else {
-              toast.success(result.data.status === 'DELETED' ? 'Invoice deleted.' : 'Invoice cancelled.');
+              toast.success(
+                reversed
+                  ? 'Cancelled invoice removed from the list.'
+                  : result.data.status === 'DELETED'
+                    ? 'Invoice deleted.'
+                    : 'Invoice cancelled.',
+              );
+              router.push('/sales');
               router.refresh();
             }
           } finally {

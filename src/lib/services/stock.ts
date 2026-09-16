@@ -298,7 +298,10 @@ export async function getStockMovements(params: {
            b."batchNumber", i."itemName", s."shipmentNumber",
            it."referenceType", it."referenceId",
            CASE
-             WHEN it."referenceType" LIKE 'SALES_INVOICE%'     THEN (SELECT si."invoiceNumber"  FROM sales_invoices si     WHERE si."id" = it."referenceId")
+             WHEN it."referenceType" LIKE 'SALES_INVOICE%'     THEN COALESCE(
+               (SELECT si."invoiceNumber" FROM sales_invoices si WHERE si."id" = it."referenceId"),
+               it."notes"
+             )
              WHEN it."referenceType" LIKE 'PURCHASE_CONTRACT%' THEN (SELECT pc."contractNumber" FROM purchase_contracts pc WHERE pc."id" = it."referenceId")
              ELSE NULL
            END AS "referenceLabel",

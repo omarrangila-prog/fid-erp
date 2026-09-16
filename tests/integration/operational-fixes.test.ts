@@ -12,6 +12,7 @@ import { createPurchaseContract, postPurchaseContract } from '@/lib/services/pur
 import {
   createSalesInvoice,
   postSalesInvoice,
+  reverseSalesInvoice,
   cancelSalesInvoice,
   type SalesInvoiceInput,
 } from '@/lib/services/sales';
@@ -122,10 +123,10 @@ describe('delete invoice reverses stock, AR and the ledger', () => {
       userId: ctx.admin.id,
       reason: 'Entered in error',
     });
-    expect(cancelled.status).toBe('REVERSED');
+    expect(cancelled.status).toBe('DELETED');
 
-    const reversed = await prisma.salesInvoice.findUniqueOrThrow({ where: { id: invoice.id } });
-    expect(reversed.status).toBe('REVERSED');
+    const gone = await prisma.salesInvoice.findUnique({ where: { id: invoice.id } });
+    expect(gone).toBeNull();
 
     const stockAfterCancel = await prisma.inventoryBalance.findUniqueOrThrow({
       where: { batchId_warehouseId: { batchId, warehouseId } },
@@ -143,6 +144,45 @@ describe('delete invoice reverses stock, AR and the ledger', () => {
     expect(entries[0].isReversal).toBe(false);
     expect(entries[1].isReversal).toBe(true);
     expect(entries[1].reversalOfId).toBe(entries[0].id);
+  });
+
+  it('removes an already-cancelled invoice from the list without reversing again', async () => {
+    const invoice = await createSalesInvoice(saleInput(), ctx.admin.id);
+    await postSalesInvoice({ id: invoice.id, companyId: ctx.morocco.id, userId: ctx.admin.id });
+    await reverseSalesInvoice({
+      id: invoice.id,
+      companyId: ctx.morocco.id,
+      userId: ctx.admin.id,
+      reason: 'Entered in error',
+    });
+
+    const leftover = await prisma.salesInvoice.findUniqueOrThrow({ where: { id: invoice.id } });
+    expect(leftover.status).toBe('REVERSED');
+
+    const stockBeforeRemove = await prisma.inventoryBalance.findUniqueOrThrow({
+      where: { batchId_warehouseId: { batchId, warehouseId } },
+    });
+    const balanceBeforeRemove = await transaction((tx) => getCustomerBalance(tx, ctx.morocco.id, customerId));
+
+    const removed = await cancelSalesInvoice({
+      id: invoice.id,
+      companyId: ctx.morocco.id,
+      userId: ctx.admin.id,
+    });
+    expect(removed.status).toBe('DELETED');
+    expect(await prisma.salesInvoice.findUnique({ where: { id: invoice.id } })).toBeNull();
+
+    const stockAfterRemove = await prisma.inventoryBalance.findUniqueOrThrow({
+      where: { batchId_warehouseId: { batchId, warehouseId } },
+    });
+    expect(dec(stockAfterRemove.availableKg).toString()).toBe(dec(stockBeforeRemove.availableKg).toString());
+    const balanceAfterRemove = await transaction((tx) => getCustomerBalance(tx, ctx.morocco.id, customerId));
+    expect(balanceAfterRemove.toString()).toBe(balanceBeforeRemove.toString());
+
+    const entries = await prisma.journalEntry.findMany({
+      where: { sourceType: 'SALES_INVOICE', sourceId: invoice.id },
+    });
+    expect(entries).toHaveLength(2);
   });
 });
 

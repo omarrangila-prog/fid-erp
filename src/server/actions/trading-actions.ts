@@ -295,7 +295,7 @@ export async function deleteSalesInvoiceAction(
       assertPermission(user, PERMISSIONS.SALES_DELETE);
     } else if (invoice.status === 'DRAFT') {
       assertPermission(user, PERMISSIONS.SALES_DELETE);
-    } else if (invoice.status === 'POSTED') {
+    } else if (invoice.status === 'POSTED' || invoice.status === 'REVERSED') {
       if (!canAny(user, [PERMISSIONS.SALES_DELETE, PERMISSIONS.SALES_REVERSE])) {
         assertPermission(user, PERMISSIONS.SALES_REVERSE);
       }
