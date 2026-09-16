@@ -40,7 +40,7 @@ export function Field({
   const detail = error ? (
     <p className="text-xs font-medium text-red-600">{error}</p>
   ) : hint ? (
-    <p className="text-xs text-ink-subtle">{hint}</p>
+    <div className="text-xs text-ink-subtle">{hint}</div>
   ) : null;
 
   // With an explicit id we associate by `for`. Without one — which is most

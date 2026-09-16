@@ -462,6 +462,7 @@ export type GeneralLedgerRow = {
   debitUsd: Decimal;
   creditUsd: Decimal;
   balanceUsd: Decimal;
+  balance: Decimal;
 };
 
 export async function getGeneralLedger(params: {
@@ -469,55 +470,101 @@ export async function getGeneralLedger(params: {
   accountId: string;
   from?: Date;
   to?: Date;
+  currency?: string;
 }) {
   const account = await prisma.account.findFirstOrThrow({
     where: { id: params.accountId, companyId: params.companyId },
     select: { id: true, code: true, name: true, type: true },
   });
 
-  const openingRows = await prisma.$queryRaw<Array<{ net: string | null }>>`
-    SELECT SUM(jl."debitUsd" - jl."creditUsd")::text AS net
-    FROM journal_lines jl
-    JOIN journal_entries je ON je."id" = jl."journalEntryId"
-    WHERE je."companyId" = ${params.companyId} AND je."status" = 'POSTED'
-      AND jl."accountId" = ${params.accountId}
-      AND ${params.from ?? null}::date IS NOT NULL AND je."entryDate" < ${params.from ?? null}::date
-  `;
+  const currencyFilter = params.currency && params.currency !== 'ALL' ? params.currency : null;
+  const useOriginal = Boolean(currencyFilter);
 
-  const rows = await prisma.$queryRaw<
-    Array<{
-      entryId: string;
-      entryNumber: string;
-      entryDate: Date;
-      description: string;
-      sourceType: string;
-      currency: string;
-      debit: string;
-      credit: string;
-      debitUsd: string;
-      creditUsd: string;
-      reference: string | null;
-    }>
-  >`
-    SELECT je."id" AS "entryId", je."entryNumber", je."entryDate", je."description",
-           je."sourceType"::text AS "sourceType", jl."currency",
-           jl."debit"::text AS debit, jl."credit"::text AS credit,
-           jl."debitUsd"::text AS "debitUsd", jl."creditUsd"::text AS "creditUsd",
-           jl."description" AS reference
-    FROM journal_lines jl
-    JOIN journal_entries je ON je."id" = jl."journalEntryId"
-    WHERE je."companyId" = ${params.companyId} AND je."status" = 'POSTED'
-      AND jl."accountId" = ${params.accountId}
-      AND (${params.from ?? null}::date IS NULL OR je."entryDate" >= ${params.from ?? null}::date)
-      AND (${params.to ?? null}::date IS NULL OR je."entryDate" <= ${params.to ?? null}::date)
-    ORDER BY je."entryDate", je."entryNumber", jl."lineNumber"
-  `;
+  const openingRows = currencyFilter
+    ? await prisma.$queryRaw<Array<{ net: string | null }>>`
+        SELECT SUM(jl."debit" - jl."credit")::text AS net
+        FROM journal_lines jl
+        JOIN journal_entries je ON je."id" = jl."journalEntryId"
+        WHERE je."companyId" = ${params.companyId} AND je."status" = 'POSTED'
+          AND jl."accountId" = ${params.accountId}
+          AND jl."currency" = ${currencyFilter}
+          AND ${params.from ?? null}::date IS NOT NULL AND je."entryDate" < ${params.from ?? null}::date
+      `
+    : await prisma.$queryRaw<Array<{ net: string | null }>>`
+        SELECT SUM(jl."debitUsd" - jl."creditUsd")::text AS net
+        FROM journal_lines jl
+        JOIN journal_entries je ON je."id" = jl."journalEntryId"
+        WHERE je."companyId" = ${params.companyId} AND je."status" = 'POSTED'
+          AND jl."accountId" = ${params.accountId}
+          AND ${params.from ?? null}::date IS NOT NULL AND je."entryDate" < ${params.from ?? null}::date
+      `;
+
+  const rows = currencyFilter
+    ? await prisma.$queryRaw<
+        Array<{
+          entryId: string;
+          entryNumber: string;
+          entryDate: Date;
+          description: string;
+          sourceType: string;
+          currency: string;
+          debit: string;
+          credit: string;
+          debitUsd: string;
+          creditUsd: string;
+          reference: string | null;
+        }>
+      >`
+        SELECT je."id" AS "entryId", je."entryNumber", je."entryDate", je."description",
+               je."sourceType"::text AS "sourceType", jl."currency",
+               jl."debit"::text AS debit, jl."credit"::text AS credit,
+               jl."debitUsd"::text AS "debitUsd", jl."creditUsd"::text AS "creditUsd",
+               jl."description" AS reference
+        FROM journal_lines jl
+        JOIN journal_entries je ON je."id" = jl."journalEntryId"
+        WHERE je."companyId" = ${params.companyId} AND je."status" = 'POSTED'
+          AND jl."accountId" = ${params.accountId}
+          AND jl."currency" = ${currencyFilter}
+          AND (${params.from ?? null}::date IS NULL OR je."entryDate" >= ${params.from ?? null}::date)
+          AND (${params.to ?? null}::date IS NULL OR je."entryDate" <= ${params.to ?? null}::date)
+        ORDER BY je."entryDate", je."entryNumber", jl."lineNumber"
+      `
+    : await prisma.$queryRaw<
+        Array<{
+          entryId: string;
+          entryNumber: string;
+          entryDate: Date;
+          description: string;
+          sourceType: string;
+          currency: string;
+          debit: string;
+          credit: string;
+          debitUsd: string;
+          creditUsd: string;
+          reference: string | null;
+        }>
+      >`
+        SELECT je."id" AS "entryId", je."entryNumber", je."entryDate", je."description",
+               je."sourceType"::text AS "sourceType", jl."currency",
+               jl."debit"::text AS debit, jl."credit"::text AS credit,
+               jl."debitUsd"::text AS "debitUsd", jl."creditUsd"::text AS "creditUsd",
+               jl."description" AS reference
+        FROM journal_lines jl
+        JOIN journal_entries je ON je."id" = jl."journalEntryId"
+        WHERE je."companyId" = ${params.companyId} AND je."status" = 'POSTED'
+          AND jl."accountId" = ${params.accountId}
+          AND (${params.from ?? null}::date IS NULL OR je."entryDate" >= ${params.from ?? null}::date)
+          AND (${params.to ?? null}::date IS NULL OR je."entryDate" <= ${params.to ?? null}::date)
+        ORDER BY je."entryDate", je."entryNumber", jl."lineNumber"
+      `;
 
   let running = toMoney(dec(openingRows[0]?.net ?? 0));
   const opening = running;
 
   const shaped: GeneralLedgerRow[] = rows.map((row) => {
-    running = toMoney(running.plus(dec(row.debitUsd)).minus(dec(row.creditUsd)));
+    const debitMove = useOriginal ? dec(row.debit) : dec(row.debitUsd);
+    const creditMove = useOriginal ? dec(row.credit) : dec(row.creditUsd);
+    running = toMoney(running.plus(debitMove).minus(creditMove));
     return {
       entryId: row.entryId,
       entryNumber: row.entryNumber,
@@ -531,10 +578,20 @@ export async function getGeneralLedger(params: {
       debitUsd: dec(row.debitUsd),
       creditUsd: dec(row.creditUsd),
       balanceUsd: running,
+      balance: running,
     };
   });
 
-  return { account, openingBalanceUsd: opening, closingBalanceUsd: running, rows: shaped };
+  const viewCurrency = currencyFilter ?? 'USD';
+  return {
+    account,
+    openingBalanceUsd: opening,
+    closingBalanceUsd: running,
+    openingBalance: opening,
+    closingBalance: running,
+    viewCurrency,
+    rows: shaped,
+  };
 }
 
 /** Cash book / bank book: every movement through one cash or bank account. */

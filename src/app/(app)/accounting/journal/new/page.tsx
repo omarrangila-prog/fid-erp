@@ -13,11 +13,18 @@ export const dynamic = 'force-dynamic';
 export default async function NewJournalEntryPage() {
   const user = await requirePageAccess(PERMISSIONS.ACCOUNTING_POST);
 
-  const accounts = await prisma.account.findMany({
-    where: { companyId: user.activeCompany.id, status: 'ACTIVE' },
-    orderBy: { code: 'asc' },
-    select: { id: true, code: true, name: true, type: true },
-  });
+  const [accounts, customerRows] = await Promise.all([
+    prisma.account.findMany({
+      where: { companyId: user.activeCompany.id, status: 'ACTIVE' },
+      orderBy: { code: 'asc' },
+      select: { id: true, code: true, name: true, type: true },
+    }),
+    prisma.customer.findMany({
+      where: { companyId: user.activeCompany.id, status: 'ACTIVE' },
+      orderBy: { customerName: 'asc' },
+      select: { id: true, customerName: true, customerCode: true, primaryCurrency: true },
+    }),
+  ]);
 
   const options: AccountOption[] = accounts.map((account) => ({
     value: account.id,
@@ -42,8 +49,15 @@ export default async function NewJournalEntryPage() {
       />
       <JournalForm
         accounts={options}
+        customers={customerRows.map((c) => ({
+          value: c.id,
+          label: c.customerName,
+          hint: `${c.customerCode} · ${c.primaryCurrency}`,
+          keywords: c.customerCode,
+        }))}
         localCurrency={user.activeCompany.localCurrency}
         defaultLocalRate={rates.local}
+        ratesByCurrency={rates.byCurrency}
         today={toDateInputValue(new Date())}
       />
     </div>

@@ -1,18 +1,16 @@
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import { formatMoney, formatDate, formatRate, titleCase } from '@/lib/format';
+import { formatMoney, formatDate, titleCase } from '@/lib/format';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/feedback';
-import type { LedgerResult, LedgerView as LedgerViewMode } from '@/lib/services/ledger';
+import { ledgerCurrencyTabs, type LedgerResult } from '@/lib/services/ledger';
 
 /**
- * The dual-view party ledger.
+ * Party ledger filtered by the currency the voucher was actually raised in.
  *
- * Switching the view reads a different stored column — the USD equivalent, the
- * local equivalent, or the original transaction amount — all of which were
- * frozen when each voucher was posted. Nothing is re-converted at read time, so
- * changing today's rate cannot restate last month's ledger.
+ * USD shows USD transactions and the USD balance. MAD shows MAD transactions
+ * and the MAD balance. The two are never added into one total.
  */
 export function LedgerView({
   ledger,
@@ -29,19 +27,16 @@ export function LedgerView({
   localCurrency: string;
   emptyDescription: string;
 }) {
-  const modes: Array<{ mode: LedgerViewMode; label: string; hint: string }> = [
-    { mode: 'TRANSACTION', label: partyCurrency, hint: 'As each voucher was raised' },
-    { mode: 'USD', label: 'USD', hint: 'Group reporting' },
-    { mode: 'LOCAL', label: localCurrency, hint: 'Local books' },
-  ];
-
+  const currencies = ledgerCurrencyTabs(localCurrency, partyCurrency);
+  const selected = ledger.currencyFilter ?? ledger.viewCurrency;
   const currency = ledger.viewCurrency;
-  const hrefFor = (mode: LedgerViewMode) => {
+
+  const hrefFor = (code: string) => {
     const params = new URLSearchParams();
-    params.set('view', mode);
+    params.set('currency', code);
     if (extraQuery) {
       for (const [key, value] of Object.entries(extraQuery)) {
-        if (value) params.set(key, value);
+        if (value && key !== 'view' && key !== 'currency') params.set(key, value);
       }
     }
     return `${basePath}?${params.toString()}`;
@@ -53,24 +48,22 @@ export function LedgerView({
         <div>
           <CardTitle>Ledger</CardTitle>
           <CardDescription>
-            Every row keeps the exchange rate it was posted at. Switching the view does not re-convert anything.
-            {ledger.view === 'TRANSACTION'
-              ? ' Amounts on each line are shown in the currency of that voucher.'
-              : ''}
+            Choose a currency to see only that currency’s transactions and balance. USD and MAD are never mixed into
+            one total.
           </CardDescription>
         </div>
         <div className="inline-flex shrink-0 rounded-lg border border-line-strong p-0.5">
-          {modes.map((option) => (
+          {currencies.map((code) => (
             <Link
-              key={option.mode}
-              href={hrefFor(option.mode)}
-              title={option.hint}
+              key={code}
+              href={hrefFor(code)}
+              title={`Show ${code} transactions only`}
               className={cn(
                 'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                ledger.view === option.mode ? 'bg-forest-800 text-white' : 'text-ink-muted hover:text-ink',
+                selected === code ? 'bg-forest-800 text-white' : 'text-ink-muted hover:text-ink',
               )}
             >
-              {option.label}
+              {code}
             </Link>
           ))}
         </div>
@@ -79,7 +72,7 @@ export function LedgerView({
       <CardContent className="px-0 pb-0">
         {ledger.rows.length === 0 ? (
           <div className="p-5">
-            <EmptyState title="No ledger entries" description={emptyDescription} />
+            <EmptyState title={`No ${currency} ledger entries`} description={emptyDescription} />
           </div>
         ) : (
           <TableWrap className="rounded-none border-0 border-t">
@@ -90,7 +83,6 @@ export function LedgerView({
                   <TH>Reference</TH>
                   <TH>Description</TH>
                   <TH>Shipment</TH>
-                  {ledger.view !== 'TRANSACTION' ? <TH numeric>Rate</TH> : null}
                   <TH numeric>Debit</TH>
                   <TH numeric>Credit</TH>
                   <TH numeric>Balance</TH>
@@ -98,47 +90,34 @@ export function LedgerView({
               </THead>
               <TBody>
                 <TR className="bg-forest-50/40 hover:bg-forest-50/40">
-                  <TD colSpan={ledger.view !== 'TRANSACTION' ? 7 : 6} className="text-xs font-medium text-ink-muted">
-                    Opening balance
+                  <TD colSpan={6} className="text-xs font-medium text-ink-muted">
+                    Opening balance ({currency})
                   </TD>
                   <TD numeric className="font-semibold">
                     {formatMoney(ledger.openingBalance, currency)}
                   </TD>
                 </TR>
 
-                {ledger.rows.map((row, index) => {
-                  const debit =
-                    ledger.view === 'USD' ? row.debitUsd : ledger.view === 'LOCAL' ? row.debitLocal : row.debit;
-                  const credit =
-                    ledger.view === 'USD' ? row.creditUsd : ledger.view === 'LOCAL' ? row.creditLocal : row.credit;
-                  const amountCurrency = ledger.view === 'TRANSACTION' ? row.currency : currency;
-
-                  return (
-                    <TR key={`${row.journalEntryId}-${index}`}>
-                      <TD>{formatDate(row.entryDate)}</TD>
-                      <TD className="font-medium">{row.reference ?? row.entryNumber}</TD>
-                      <TD>
-                        <span className="block">{row.description}</span>
-                        <span className="block text-xs text-ink-subtle">{titleCase(row.sourceType)}</span>
-                      </TD>
-                      <TD className="text-xs">{row.shipmentNumber ?? '—'}</TD>
-                      {ledger.view !== 'TRANSACTION' ? (
-                        <TD numeric className="text-xs text-ink-muted">
-                          {row.currency === currency ? '—' : formatRate(row.rateToUsd)}
-                        </TD>
-                      ) : null}
-                      <TD numeric>{debit.greaterThan(0) ? formatMoney(debit, amountCurrency) : '—'}</TD>
-                      <TD numeric>{credit.greaterThan(0) ? formatMoney(credit, amountCurrency) : '—'}</TD>
-                      <TD numeric className="font-medium">
-                        {formatMoney(row.balance, currency)}
-                      </TD>
-                    </TR>
-                  );
-                })}
+                {ledger.rows.map((row, index) => (
+                  <TR key={`${row.journalEntryId}-${index}`}>
+                    <TD>{formatDate(row.entryDate)}</TD>
+                    <TD className="font-medium">{row.reference ?? row.entryNumber}</TD>
+                    <TD>
+                      <span className="block">{row.description}</span>
+                      <span className="block text-xs text-ink-subtle">{titleCase(row.sourceType)}</span>
+                    </TD>
+                    <TD className="text-xs">{row.shipmentNumber ?? '—'}</TD>
+                    <TD numeric>{row.debit.greaterThan(0) ? formatMoney(row.debit, row.currency) : '—'}</TD>
+                    <TD numeric>{row.credit.greaterThan(0) ? formatMoney(row.credit, row.currency) : '—'}</TD>
+                    <TD numeric className="font-medium">
+                      {formatMoney(row.balance, currency)}
+                    </TD>
+                  </TR>
+                ))}
               </TBody>
               <TFoot>
                 <tr>
-                  <TD colSpan={ledger.view !== 'TRANSACTION' ? 5 : 4}>Closing balance</TD>
+                  <TD colSpan={4}>Closing balance ({currency})</TD>
                   <TD numeric>{formatMoney(ledger.totalDebit, currency)}</TD>
                   <TD numeric>{formatMoney(ledger.totalCredit, currency)}</TD>
                   <TD numeric>{formatMoney(ledger.closingBalance, currency)}</TD>

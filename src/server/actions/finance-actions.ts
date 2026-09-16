@@ -314,7 +314,7 @@ export async function postJournalVoucherAction(payload: string): Promise<DocForm
       });
     });
 
-    revalidateAll(['/accounting/journal', '/reports', '/dashboard']);
+    revalidateAll(['/accounting/journal', '/reports', '/ledgers/customers', '/ledgers/vendors', '/dashboard']);
     return { ok: true, id: entry.id, message: `Journal voucher ${entry.entryNumber} posted.` };
   } catch (error) {
     return toState(error);

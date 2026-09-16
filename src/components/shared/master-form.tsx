@@ -60,18 +60,7 @@ export type FieldSpec =
     }
   | { kind: 'section'; title: string; description?: string };
 
-export function MasterFormSheet({
-  open,
-  onOpenChange,
-  title,
-  description,
-  fields,
-  defaults,
-  action,
-  submitLabel = 'Save',
-  onSaved,
-  before,
-}: {
+type MasterFormSheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
@@ -83,10 +72,32 @@ export function MasterFormSheet({
   onSaved?: (id: string) => void;
   /** Extra content above the fields, e.g. live warehouse stock on an item. */
   before?: React.ReactNode;
-}) {
+};
+
+/**
+ * Remount when the sheet opens so a previous successful save cannot leave the
+ * form stuck on `{ ok: true }` (which would immediately close it again) and so
+ * default values are fresh.
+ */
+export function MasterFormSheet(props: MasterFormSheetProps) {
+  return <MasterFormSheetBody key={props.open ? 'open' : 'closed'} {...props} />;
+}
+
+function MasterFormSheetBody({
+  open,
+  onOpenChange,
+  title,
+  description,
+  fields,
+  defaults,
+  action,
+  submitLabel = 'Save',
+  onSaved,
+  before,
+}: MasterFormSheetProps) {
   const router = useRouter();
+  const formId = React.useId().replace(/:/g, '');
   const [state, formAction, pending] = useActionState(action, null);
-  const formRef = React.useRef<HTMLFormElement>(null);
 
   React.useEffect(() => {
     if (state?.ok) {
@@ -108,16 +119,16 @@ export function MasterFormSheet({
       width="lg"
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
             Cancel
           </Button>
-          <Button onClick={() => formRef.current?.requestSubmit()} loading={pending}>
+          <Button type="submit" form={formId} loading={pending}>
             {submitLabel}
           </Button>
         </div>
       }
     >
-      <form ref={formRef} action={formAction} className="space-y-5">
+      <form id={formId} noValidate action={formAction} className="space-y-5">
         {state && !state.ok ? (
           <div
             role="alert"
@@ -276,7 +287,7 @@ export function MasterFormSheet({
                   <Input
                     id={field.name}
                     name={field.name}
-                    type={field.kind === 'date' ? 'date' : field.kind === 'email' ? 'email' : field.kind === 'tel' ? 'tel' : 'text'}
+                    type={field.kind === 'date' ? 'date' : field.kind === 'tel' ? 'tel' : 'text'}
                     inputMode={field.kind === 'number' || field.kind === 'percent' ? 'decimal' : undefined}
                     placeholder={field.placeholder}
                     defaultValue={defaultValue == null ? '' : String(defaultValue)}

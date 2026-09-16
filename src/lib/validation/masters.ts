@@ -1,6 +1,12 @@
 import { z } from 'zod';
 import { currencyCode, optionalDecimalString, optionalText, requiredText } from '@/lib/validation/common';
 
+/** Blank, omitted, or a real address — never a Zod puzzle. */
+const optionalEmail = z
+  .union([z.literal(''), z.email('Enter a valid email address.')])
+  .optional()
+  .transform((v) => v || null);
+
 /** Master data schemas. These are shared by the forms and the server actions. */
 
 export const customerSchema = z.object({
@@ -17,7 +23,7 @@ export const customerSchema = z.object({
   contactPerson: optionalText(120),
   phone: optionalText(40),
   whatsapp: optionalText(40),
-  email: z.union([z.literal(''), z.email('Enter a valid email address.')]).transform((v) => v || null),
+  email: optionalEmail,
   address: optionalText(400),
   primaryCurrency: currencyCode,
   creditLimit: optionalDecimalString('Credit limit'),
@@ -33,7 +39,7 @@ export const vendorSchema = z.object({
   contactPerson: optionalText(120),
   phone: optionalText(40),
   whatsapp: optionalText(40),
-  email: z.union([z.literal(''), z.email('Enter a valid email address.')]).transform((v) => v || null),
+  email: optionalEmail,
   address: optionalText(400),
   primaryCurrency: currencyCode,
   bankDetails: optionalText(600),
@@ -81,7 +87,7 @@ export const agentSchema = z.object({
   agentName: requiredText('Agent name'),
   contactPerson: optionalText(120),
   phone: optionalText(40),
-  email: z.union([z.literal(''), z.email('Enter a valid email address.')]).transform((v) => v || null),
+  email: optionalEmail,
   commissionPct: optionalDecimalString('Commission'),
   notes: optionalText(1000),
   status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),

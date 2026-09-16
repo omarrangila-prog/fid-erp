@@ -126,7 +126,7 @@ async function saveMaster<S extends z.ZodTypeAny>(
      * collides next month. Left blank it becomes CUS-0001, SUP-0001 and so on,
      * counting past anything already taken.
      */
-    if (!String(data[config.uniqueField] ?? '').trim()) {
+    if (!String(data[config.uniqueField] ?? '').trim() || data[config.uniqueField] == null) {
       data[config.uniqueField] = await nextMasterCode(delegate, config, companyId);
     }
 
@@ -270,7 +270,9 @@ export async function quickCreateCustomerAction(
     });
 
     revalidatePath('/customers');
+    revalidatePath('/sales');
     revalidatePath('/sales/new');
+    revalidatePath('/ledgers/customers');
 
     return {
       id: customer.id,

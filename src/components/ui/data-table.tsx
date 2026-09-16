@@ -26,7 +26,7 @@ export type DataColumn<T> = {
   hideable?: boolean;
   defaultHidden?: boolean;
   /** Where this column appears in the mobile card layout. */
-  mobile?: 'title' | 'badge' | 'meta' | 'hidden';
+  mobile?: 'title' | 'badge' | 'meta' | 'hidden' | 'action';
   className?: string;
   footer?: React.ReactNode;
   /**
@@ -384,6 +384,7 @@ export function DataTable<T>({
               const title = columns.find((c) => c.mobile === 'title');
               const badge = columns.find((c) => c.mobile === 'badge');
               const metas = columns.filter((c) => c.mobile === 'meta' && !hidden.has(c.id));
+              const actions = columns.filter((c) => c.mobile === 'action');
               const body = (
                 <>
                   <div className="flex items-start justify-between gap-3">
@@ -407,17 +408,22 @@ export function DataTable<T>({
                 </>
               );
 
-              return href ? (
-                <Link
-                  key={getRowId(row)}
-                  href={href}
-                  className="block rounded-xl border border-line bg-surface p-4 transition-colors active:bg-forest-50"
-                >
-                  {body}
-                </Link>
-              ) : (
+              return (
                 <div key={getRowId(row)} className="rounded-xl border border-line bg-surface p-4">
-                  {body}
+                  {href ? (
+                    <Link href={href} className="block transition-colors active:bg-forest-50">
+                      {body}
+                    </Link>
+                  ) : (
+                    body
+                  )}
+                  {actions.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap justify-end gap-1 border-t border-line pt-3">
+                      {actions.map((column) => (
+                        <div key={column.id}>{column.cell(row)}</div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               );
             })}

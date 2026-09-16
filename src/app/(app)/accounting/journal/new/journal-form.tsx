@@ -44,13 +44,17 @@ const emptyLine = (index: number): Line => ({
  */
 export function JournalForm({
   accounts,
+  customers = [],
   localCurrency,
   defaultLocalRate,
+  ratesByCurrency,
   today,
 }: {
   accounts: AccountOption[];
+  customers?: ComboOption[];
   localCurrency: string;
   defaultLocalRate: string;
+  ratesByCurrency: Record<string, string>;
   today: string;
 }) {
   const router = useRouter();
@@ -60,6 +64,7 @@ export function JournalForm({
   const [currency, setCurrency] = React.useState('USD');
   const [rateToUsd, setRateToUsd] = React.useState('1');
   const [localRate, setLocalRate] = React.useState(defaultLocalRate);
+  const [customerId, setCustomerId] = React.useState<string | null>(null);
   const [lines, setLines] = React.useState<Line[]>(() => [emptyLine(0), emptyLine(1)]);
   const [error, setError] = React.useState<string | null>(null);
   const nextKey = React.useRef(2);
@@ -144,6 +149,7 @@ export function JournalForm({
             amount: line.amount,
             rateToUsd,
             description: line.description.trim() || undefined,
+            customerId: customerId || undefined,
           })),
         }),
       );
@@ -175,19 +181,19 @@ export function JournalForm({
           <Field label="Entry date" htmlFor="jv-date" required>
             <Input id="jv-date" autoFocus type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} />
           </Field>
-          <Field label="Currency" htmlFor="jv-currency" required>
+          <Field label="Currency" htmlFor="jv-currency" required hint="The amount you type is kept in this currency.">
             <Select
               id="jv-currency"
               value={currency}
               onChange={(e) => {
                 const next = e.target.value;
                 setCurrency(next);
-                if (next === 'USD') setRateToUsd('1');
-                else if (next === localCurrency) setRateToUsd(defaultLocalRate);
+                setRateToUsd(next === 'USD' ? '1' : (ratesByCurrency[next] ?? defaultLocalRate));
               }}
             >
-              <option value="USD">USD</option>
-              <option value={localCurrency}>{localCurrency}</option>
+              <option value="USD">USD — US Dollar</option>
+              <option value="MAD">MAD — Moroccan Dirham</option>
+              <option value="AED">AED — UAE Dirham</option>
             </Select>
           </Field>
           <Field
@@ -207,6 +213,22 @@ export function JournalForm({
           <Field label={`${localCurrency} per USD`} htmlFor="jv-local" hint="Used for the local-currency books." required>
             <Input id="jv-local" value={localRate} onChange={(e) => setLocalRate(e.target.value)} className="tnum" />
           </Field>
+          <div className="sm:col-span-2 lg:col-span-4">
+            <Field
+              label="Customer (optional)"
+              htmlFor="jv-customer"
+              hint="If this entry belongs on a customer’s ledger, pick them and debit or credit Accounts Receivable."
+            >
+              <Combobox
+                id="jv-customer"
+                options={customers}
+                value={customerId}
+                onChange={setCustomerId}
+                placeholder="None — general ledger only"
+                emptyText="No customers"
+              />
+            </Field>
+          </div>
           <div className="sm:col-span-2 lg:col-span-4">
             <Field label="Description" htmlFor="jv-description" required hint="Why this entry exists — it appears on the journal report.">
               <Input
@@ -305,11 +327,11 @@ export function JournalForm({
         <CardContent className="flex flex-col gap-4 pt-4 sm:flex-row sm:items-center sm:justify-between">
           <dl className="grid grid-cols-3 gap-3 text-sm sm:gap-4">
             <div>
-              <dt className="text-xs text-ink-muted">Total debits</dt>
+              <dt className="text-xs text-ink-muted">Total debits ({currency})</dt>
               <dd className="tnum font-semibold text-ink">{totals.debit.toFixed(2)}</dd>
             </div>
             <div>
-              <dt className="text-xs text-ink-muted">Total credits</dt>
+              <dt className="text-xs text-ink-muted">Total credits ({currency})</dt>
               <dd className="tnum font-semibold text-ink">{totals.credit.toFixed(2)}</dd>
             </div>
             <div>

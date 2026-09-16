@@ -7,6 +7,7 @@ import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { StatusBadge, Badge } from '@/components/ui/badge';
 import { TRANSACTION_STATUS_META, SETTLEMENT_STATUS_META } from '@/lib/constants';
+import { InvoiceDeleteButton } from '@/app/(app)/sales/[id]/sale-actions';
 
 export type SaleRow = {
   id: string;
@@ -37,10 +38,14 @@ export function SalesClient({
   rows,
   canCreate,
   canEdit,
+  canDelete,
+  canReverse,
 }: {
   rows: SaleRow[];
   canCreate: boolean;
   canEdit: boolean;
+  canDelete: boolean;
+  canReverse: boolean;
 }) {
   const router = useRouter();
   const columns: DataColumn<SaleRow>[] = [
@@ -142,28 +147,44 @@ export function SalesClient({
       sortValue: (r) => r.status,
       cell: (r) => <StatusBadge status={r.status} meta={TRANSACTION_STATUS_META} />,
     },
-    ...(canEdit
+    ...(canEdit || canDelete || canReverse
       ? [
           {
             id: 'actions',
             header: '',
             printHidden: true,
-            mobile: 'hidden' as const,
-            cell: (r: SaleRow) =>
-              r.status === 'REVERSED' ? null : (
-                <Button
-                  variant="ghost"
-                  size="sm"
+            mobile: 'action' as const,
+            cell: (r: SaleRow) => {
+              const canCancel =
+                r.status === 'DRAFT' ? canDelete : r.status === 'POSTED' ? canDelete || canReverse : false;
+              if (r.status === 'REVERSED') return null;
+              return (
+                <div
+                  className="flex flex-wrap items-center justify-end gap-1"
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    router.push(`/sales/${r.id}/edit`);
                   }}
                 >
-                  <Pencil />
-                  Edit Invoice
-                </Button>
-              ),
+                  {canEdit ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        router.push(`/sales/${r.id}/edit`);
+                      }}
+                    >
+                      <Pencil />
+                      Edit
+                    </Button>
+                  ) : null}
+                  {canCancel ? <InvoiceDeleteButton id={r.id} status={r.status} /> : null}
+                </div>
+              );
+            },
           } satisfies DataColumn<SaleRow>,
         ]
       : []),

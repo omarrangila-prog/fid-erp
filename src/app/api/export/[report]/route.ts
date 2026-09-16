@@ -29,7 +29,7 @@ import {
 import { getAgentCommissionRegister } from '@/lib/services/agent-commission';
 import { getTaxReturn } from '@/lib/services/tax-return';
 import { reconcile } from '@/lib/services/reconciliation';
-import { getCustomerLedger, getVendorLedger, ledgerKindToSourceType, type LedgerView } from '@/lib/services/ledger';
+import { getCustomerLedger, getVendorLedger, ledgerKindToSourceType, resolvePartyLedgerQuery } from '@/lib/services/ledger';
 import {
   getShipmentProfitability,
   getCustomerProfitability,
@@ -88,11 +88,6 @@ function asDay(date: Date): string {
   return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
 }
 
-function ledgerView(query: URLSearchParams): LedgerView {
-  const view = query.get('view');
-  return view === 'USD' || view === 'LOCAL' || view === 'TRANSACTION' ? view : 'TRANSACTION';
-}
-
 async function customerLedgerExport(user: SessionUser, query: URLSearchParams) {
   const customerId = query.get('customer');
   if (!customerId) throw new NotFoundError('Customer');
@@ -103,13 +98,19 @@ async function customerLedgerExport(user: SessionUser, query: URLSearchParams) {
   });
   if (!customer) throw new NotFoundError('Customer');
 
-  const view = ledgerView(query);
+  const resolved = resolvePartyLedgerQuery({
+    view: query.get('view') ?? undefined,
+    currency: query.get('currency') ?? undefined,
+    localCurrency: user.activeCompany.localCurrency,
+    partyCurrency: customer.primaryCurrency,
+  });
   const from = dateParam(query, 'from');
   const to = dateParam(query, 'to');
   const ledger = await getCustomerLedger({
     companyId: user.activeCompany.id,
     customerId,
-    view,
+    view: resolved.view,
+    currency: resolved.currency,
     localCurrency: user.activeCompany.localCurrency,
     partyCurrency: customer.primaryCurrency,
     from,
@@ -134,7 +135,7 @@ async function customerLedgerExport(user: SessionUser, query: URLSearchParams) {
     ['', '', '', '', 'Closing balance', Number(ledger.totalDebit), Number(ledger.totalCredit), Number(ledger.closingBalance), ledger.viewCurrency],
   ];
 
-  return { customer, ledger, headers, rows, from, to, view };
+  return { customer, ledger, headers, rows, from, to, view: resolved.view };
 }
 
 async function vendorLedgerExport(user: SessionUser, query: URLSearchParams) {
@@ -147,13 +148,19 @@ async function vendorLedgerExport(user: SessionUser, query: URLSearchParams) {
   });
   if (!vendor) throw new NotFoundError('Supplier');
 
-  const view = ledgerView(query);
+  const resolved = resolvePartyLedgerQuery({
+    view: query.get('view') ?? undefined,
+    currency: query.get('currency') ?? undefined,
+    localCurrency: user.activeCompany.localCurrency,
+    partyCurrency: vendor.primaryCurrency,
+  });
   const from = dateParam(query, 'from');
   const to = dateParam(query, 'to');
   const ledger = await getVendorLedger({
     companyId: user.activeCompany.id,
     vendorId,
-    view,
+    view: resolved.view,
+    currency: resolved.currency,
     localCurrency: user.activeCompany.localCurrency,
     partyCurrency: vendor.primaryCurrency,
     from,
@@ -178,7 +185,7 @@ async function vendorLedgerExport(user: SessionUser, query: URLSearchParams) {
     ['', '', '', '', 'Closing balance', Number(ledger.totalDebit), Number(ledger.totalCredit), Number(ledger.closingBalance), ledger.viewCurrency],
   ];
 
-  return { vendor, ledger, headers, rows, from, to, view };
+  return { vendor, ledger, headers, rows, from, to, view: resolved.view };
 }
 
 /** Statement rows for one block of a two-currency financial statement. */
@@ -743,6 +750,7 @@ const REPORTS: Record<string, Report> = {
         accountId: account.id,
         from: dateParam(query, 'from'),
         to: dateParam(query, 'to'),
+        currency: query.get('currency') || 'USD',
       });
 
       return buildWorkbook({

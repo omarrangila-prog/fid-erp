@@ -22,28 +22,46 @@ import { quickCreateCustomerAction } from '@/server/actions/master-actions';
  */
 export function AddCustomer({
   defaultCurrency,
+  initialName,
+  open,
+  onOpenChange,
   onCreated,
+  triggerLabel = 'Add Customer',
 }: {
   defaultCurrency: string;
+  initialName?: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   /** Called with the new customer so the invoice can select it immediately. */
   onCreated: (customer: { id: string; name: string; currency: string }) => void;
+  triggerLabel?: string;
 }) {
-  const [open, setOpen] = React.useState(false);
+  const [internalOpen, setInternalOpen] = React.useState(false);
+  const isControlled = open !== undefined;
+  const sheetOpen = isControlled ? open : internalOpen;
+
+  function setSheetOpen(next: boolean) {
+    if (!isControlled) setInternalOpen(next);
+    onOpenChange?.(next);
+  }
 
   return (
     <>
-      <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(true)}>
-        <UserPlus />
-        New customer
-      </Button>
+      {isControlled ? null : (
+        <Button type="button" variant="outline" size="sm" onClick={() => setSheetOpen(true)}>
+          <UserPlus />
+          {triggerLabel}
+        </Button>
+      )}
 
-      {open ? (
+      {sheetOpen ? (
         <AddCustomerSheet
           defaultCurrency={defaultCurrency}
-          onClose={() => setOpen(false)}
+          initialName={initialName}
+          onClose={() => setSheetOpen(false)}
           onCreated={(customer) => {
             onCreated(customer);
-            setOpen(false);
+            setSheetOpen(false);
           }}
         />
       ) : null}
@@ -53,25 +71,29 @@ export function AddCustomer({
 
 function AddCustomerSheet({
   defaultCurrency,
+  initialName,
   onClose,
   onCreated,
 }: {
   defaultCurrency: string;
+  initialName?: string;
   onClose: () => void;
   onCreated: (customer: { id: string; name: string; currency: string }) => void;
 }) {
+  const formId = React.useId().replace(/:/g, '');
   const [pending, startTransition] = React.useTransition();
   const [error, setError] = React.useState<string | null>(null);
   const [form, setForm] = React.useState({
-    customerName: '',
-    primaryCurrency: defaultCurrency,
+    customerName: initialName?.trim() ?? '',
+    primaryCurrency: defaultCurrency || 'USD',
     country: '',
     phone: '',
   });
 
   const set = (patch: Partial<typeof form>) => setForm((prev) => ({ ...prev, ...patch }));
 
-  function submit() {
+  function submit(event?: React.FormEvent) {
+    event?.preventDefault();
     setError(null);
     if (!form.customerName.trim()) {
       setError('Enter the customer’s name.');
@@ -79,13 +101,17 @@ function AddCustomerSheet({
     }
 
     startTransition(async () => {
-      const result = await quickCreateCustomerAction(JSON.stringify(form));
-      if (!result.ok) {
-        setError(result.error);
-        return;
+      try {
+        const result = await quickCreateCustomerAction(JSON.stringify(form));
+        if (!result?.ok) {
+          setError(result?.error || 'The customer could not be saved.');
+          return;
+        }
+        toast.success(`${result.data.name} added.`);
+        onCreated({ id: result.data.id, name: result.data.name, currency: result.data.currency });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'The customer could not be saved.');
       }
-      toast.success(`${result.data.name} added.`);
-      onCreated(result.data);
     });
   }
 
@@ -93,21 +119,21 @@ function AddCustomerSheet({
     <Sheet
       open
       onOpenChange={(next) => !next && onClose()}
-      title="New customer"
-      description="Just enough to raise the invoice. The rest can be filled in later."
+      title="Add Customer"
+      description="Saved to the customer list and selected on this invoice immediately."
       width="md"
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button variant="outline" onClick={onClose} disabled={pending}>
+          <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
-          <Button onClick={submit} loading={pending}>
-            Add and select
+          <Button type="submit" form={formId} loading={pending}>
+            Save
           </Button>
         </div>
       }
     >
-      <div className="space-y-4">
+      <form id={formId} onSubmit={submit} className="space-y-4">
         {error ? (
           <div
             role="alert"
@@ -121,6 +147,7 @@ function AddCustomerSheet({
         <Field label="Customer name" htmlFor="newCustomerName" required>
           <Input
             id="newCustomerName"
+            name="customerName"
             autoFocus
             value={form.customerName}
             onChange={(e) => set({ customerName: e.target.value })}
@@ -130,26 +157,36 @@ function AddCustomerSheet({
         <Field label="Currency" htmlFor="newCustomerCurrency" required hint="The currency they are invoiced in.">
           <Select
             id="newCustomerCurrency"
+            name="primaryCurrency"
             value={form.primaryCurrency}
             onChange={(e) => set({ primaryCurrency: e.target.value })}
           >
             <option value="USD">USD — US Dollar</option>
-            <option value="AED">AED — UAE Dirham</option>
             <option value="MAD">MAD — Moroccan Dirham</option>
+            <option value="AED">AED — UAE Dirham</option>
           </Select>
         </Field>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Country" htmlFor="newCustomerCountry">
-            <Input id="newCustomerCountry" value={form.country} onChange={(e) => set({ country: e.target.value })} />
+            <Input
+              id="newCustomerCountry"
+              name="country"
+              value={form.country}
+              onChange={(e) => set({ country: e.target.value })}
+            />
           </Field>
 
           <Field label="Phone" htmlFor="newCustomerPhone">
-            <Input id="newCustomerPhone" value={form.phone} onChange={(e) => set({ phone: e.target.value })} />
+            <Input
+              id="newCustomerPhone"
+              name="phone"
+              value={form.phone}
+              onChange={(e) => set({ phone: e.target.value })}
+            />
           </Field>
         </div>
-
-      </div>
+      </form>
     </Sheet>
   );
 }

@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { Combobox } from '@/components/ui/combobox';
-import { Input } from '@/components/ui/input';
+import { Input, Select } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 
@@ -12,22 +12,26 @@ export function AccountPicker({
   selectedId,
   from,
   to,
+  currency,
 }: {
   accounts: Array<{ id: string; code: string; name: string; type: string }>;
   selectedId: string;
   from: string;
   to: string;
+  currency: string;
 }) {
   const router = useRouter();
   const [account, setAccount] = React.useState<string | null>(selectedId || null);
   const [fromDate, setFrom] = React.useState(from);
   const [toDate, setTo] = React.useState(to);
+  const [ccy, setCcy] = React.useState(currency || 'USD');
 
   function apply() {
     const params = new URLSearchParams();
     if (account) params.set('account', account);
     if (fromDate) params.set('from', fromDate);
     if (toDate) params.set('to', toDate);
+    if (ccy) params.set('currency', ccy);
     router.push(`/reports/general-ledger?${params.toString()}`);
   }
 
@@ -45,6 +49,13 @@ export function AccountPicker({
           onChange={setAccount}
           placeholder="Choose an account…"
         />
+      </Field>
+      <Field label="Currency" className="w-40">
+        <Select value={ccy} onChange={(e) => setCcy(e.target.value)}>
+          <option value="USD">USD</option>
+          <option value="MAD">MAD</option>
+          <option value="AED">AED</option>
+        </Select>
       </Field>
       <Field label="From" className="w-40">
         <Input type="date" value={fromDate} onChange={(e) => setFrom(e.target.value)} />

@@ -5,7 +5,7 @@ import { HandCoins } from 'lucide-react';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
-import { getVendorLedger, ledgerKindToSourceType, type LedgerView as LedgerViewMode } from '@/lib/services/ledger';
+import { getVendorLedger, ledgerKindToSourceType, resolvePartyLedgerQuery } from '@/lib/services/ledger';
 import { getPayables } from '@/lib/services/receivables';
 import { formatMoney } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
@@ -29,7 +29,7 @@ export default async function VendorLedgerPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ view?: string; from?: string; to?: string; kind?: string }>;
+  searchParams: Promise<{ view?: string; from?: string; to?: string; kind?: string; currency?: string }>;
 }) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const user = await requirePageAccess(PERMISSIONS.LEDGERS_VIEW);
@@ -38,8 +38,12 @@ export default async function VendorLedgerPage({
   const vendor = await prisma.vendor.findFirst({ where: { id, companyId } });
   if (!vendor) notFound();
 
-  const mode: LedgerViewMode =
-    query.view === 'USD' || query.view === 'LOCAL' || query.view === 'TRANSACTION' ? query.view : 'TRANSACTION';
+  const resolved = resolvePartyLedgerQuery({
+    view: query.view,
+    currency: query.currency,
+    localCurrency: user.activeCompany.localCurrency,
+    partyCurrency: vendor.primaryCurrency,
+  });
   const from = query.from ? new Date(`${query.from}T00:00:00.000Z`) : undefined;
   const to = query.to ? new Date(`${query.to}T00:00:00.000Z`) : undefined;
 
@@ -47,7 +51,8 @@ export default async function VendorLedgerPage({
     getVendorLedger({
       companyId,
       vendorId: id,
-      view: mode,
+      view: resolved.view,
+      currency: resolved.currency,
       localCurrency: user.activeCompany.localCurrency,
       partyCurrency: vendor.primaryCurrency,
       from,
@@ -74,7 +79,7 @@ export default async function VendorLedgerPage({
         ]}
         meta={
           <>
-            <Badge tone="neutral">Ledger in {vendor.primaryCurrency}</Badge>
+            <Badge tone="neutral">Viewing {ledger.viewCurrency}</Badge>
             <Badge tone={vendor.status === 'ACTIVE' ? 'success' : 'neutral'}>
               {vendor.status === 'ACTIVE' ? 'Active' : 'Inactive'}
             </Badge>
@@ -108,23 +113,21 @@ export default async function VendorLedgerPage({
         printPath={`/ledgers/vendors/${id}/print`}
         exportReport="vendor-ledger"
         vendorId={id}
-        view={mode}
+        view={resolved.view}
+        currency={resolved.currency ?? ''}
         from={query.from ?? ''}
         to={query.to ?? ''}
         kind={query.kind ?? 'ALL'}
       />
 
       <Callout tone="info">
-        The supplier ledger is the posted payable — the contract value. Tax appears here only when the supplier
-        billed it, not when the buying company accounts for import VAT/TVA itself. If the purchase was in USD,
-        switch to the USD view so the figure matches the contract. Export includes every row in the date range, not
-        only what is on this page.
+        The USD and MAD tabs each show only that currency’s vouchers and balance. They are never added together.
       </Callout>
 
       <LedgerView
         ledger={ledger}
         basePath={`/ledgers/vendors/${id}`}
-        extraQuery={{ from: query.from, to: query.to, kind: query.kind }}
+        extraQuery={{ from: query.from, to: query.to, kind: query.kind, currency: resolved.currency }}
         partyCurrency={vendor.primaryCurrency}
         localCurrency={user.activeCompany.localCurrency}
         emptyDescription="Approve a purchase contract or post a payment to open this supplier's ledger."

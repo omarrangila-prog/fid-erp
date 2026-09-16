@@ -17,6 +17,7 @@ export function LedgerToolbar({
   customerId,
   vendorId,
   view,
+  currency,
   from,
   to,
   kind,
@@ -27,6 +28,7 @@ export function LedgerToolbar({
   customerId?: string;
   vendorId?: string;
   view: string;
+  currency?: string;
   from: string;
   to: string;
   kind: string;
@@ -38,6 +40,7 @@ export function LedgerToolbar({
 
   const filters = {
     view,
+    currency,
     from: fromDate,
     to: toDate,
     kind: kindValue === 'ALL' ? undefined : kindValue,
@@ -47,7 +50,8 @@ export function LedgerToolbar({
 
   function apply(path = basePath) {
     const params = new URLSearchParams();
-    if (view) params.set('view', view);
+    if (currency) params.set('currency', currency);
+    else if (view) params.set('view', view);
     if (fromDate) params.set('from', fromDate);
     if (toDate) params.set('to', toDate);
     if (kindValue && kindValue !== 'ALL') params.set('kind', kindValue);
@@ -57,7 +61,8 @@ export function LedgerToolbar({
 
   const printHref = (() => {
     const params = new URLSearchParams();
-    if (view) params.set('view', view);
+    if (currency) params.set('currency', currency);
+    else if (view) params.set('view', view);
     if (fromDate) params.set('from', fromDate);
     if (toDate) params.set('to', toDate);
     if (kindValue && kindValue !== 'ALL') params.set('kind', kindValue);

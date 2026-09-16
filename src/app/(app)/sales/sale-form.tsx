@@ -118,6 +118,8 @@ export function SaleForm({
     [taxCodes],
   );
   const router = useRouter();
+  const [addCustomerOpen, setAddCustomerOpen] = React.useState(false);
+  const [addCustomerName, setAddCustomerName] = React.useState('');
   const [customers, setCustomers] = React.useState(initialCustomers);
   const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
@@ -369,56 +371,90 @@ export function SaleForm({
           <CardDescription>Customer, dates, and the warehouse this invoice is issued from.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Field
-            label="Customer"
-            htmlFor="customerId"
-            required
-            error={fieldIssues.customerId}
-            className="lg:col-span-2"
-            hint={
-              canCreateCustomer ? (
-                <AddCustomer
-                  defaultCurrency={header.currency}
-                  onCreated={(customer) => {
-                    setCustomers((prev) =>
-                      [
-                        ...prev,
-                        {
-                          value: customer.id,
-                          label: customer.name,
-                          hint: customer.currency,
-                          currency: customer.currency,
-                        },
-                      ].sort((a, b) => a.label.localeCompare(b.label)),
-                    );
-                    setHeader({
-                      ...header,
-                      customerId: customer.id,
-                      currency: customer.currency,
-                      rateToUsd: customer.currency === 'USD' ? '1' : header.rateToUsd,
-                    });
+          <div className="lg:col-span-2">
+            <div className="flex items-end gap-2">
+              <Field
+                label="Customer"
+                htmlFor="customerId"
+                required
+                error={fieldIssues.customerId}
+                className="min-w-0 flex-1"
+              >
+                <Combobox
+                  autoFocus
+                  id="customerId"
+                  options={customers}
+                  value={header.customerId}
+                  onChange={(value) => {
+                    const customer = customers.find((c) => c.value === value);
+                    setHeader((prev) => ({
+                      ...prev,
+                      customerId: value,
+                      currency: customer?.currency ?? prev.currency,
+                      rateToUsd: customer?.currency === 'USD' ? '1' : prev.rateToUsd,
+                    }));
                   }}
+                  placeholder="Choose a customer…"
+                  createLabel={canCreateCustomer ? '+ Add Customer' : undefined}
+                  onCreate={
+                    canCreateCustomer
+                      ? (query) => {
+                          setAddCustomerName(query ?? '');
+                          setAddCustomerOpen(true);
+                        }
+                      : undefined
+                  }
                 />
-              ) : undefined
-            }
-          >
-            <Combobox
-              autoFocus
-              id="customerId"
-              options={customers}
-              value={header.customerId}
-              onChange={(value) => {
-                const customer = customers.find((c) => c.value === value);
-                setHeader({
-                  ...header,
-                  customerId: value,
-                  currency: customer?.currency ?? header.currency,
-                  rateToUsd: customer?.currency === 'USD' ? '1' : header.rateToUsd,
-                });
-              }}
-              placeholder="Choose a customer…"
-            />
-          </Field>
+              </Field>
+              {canCreateCustomer ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mb-0.5 shrink-0"
+                  onClick={() => {
+                    setAddCustomerName('');
+                    setAddCustomerOpen(true);
+                  }}
+                >
+                  Add Customer
+                </Button>
+              ) : null}
+            </div>
+            {canCreateCustomer ? (
+              <AddCustomer
+                defaultCurrency={header.currency}
+                initialName={addCustomerName}
+                open={addCustomerOpen}
+                onOpenChange={(next) => {
+                  setAddCustomerOpen(next);
+                  if (!next) setAddCustomerName('');
+                }}
+                onCreated={(customer) => {
+                  setCustomers((prev) => {
+                    if (prev.some((row) => row.value === customer.id)) return prev;
+                    return [
+                      ...prev,
+                      {
+                        value: customer.id,
+                        label: customer.name,
+                        hint: customer.currency,
+                        currency: customer.currency,
+                      },
+                    ].sort((a, b) => a.label.localeCompare(b.label));
+                  });
+                  setHeader((prev) => ({
+                    ...prev,
+                    customerId: customer.id,
+                    currency: customer.currency,
+                    rateToUsd:
+                      customer.currency === 'USD'
+                        ? '1'
+                        : (ratesByCurrency?.[customer.currency] ?? prev.rateToUsd),
+                  }));
+                }}
+              />
+            ) : null}
+          </div>
 
           <Field
             label="Invoice number"

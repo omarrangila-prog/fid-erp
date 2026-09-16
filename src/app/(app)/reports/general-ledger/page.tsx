@@ -19,9 +19,9 @@ export const dynamic = 'force-dynamic';
 export default async function GeneralLedgerPage({
   searchParams,
 }: {
-  searchParams: Promise<{ account?: string; from?: string; to?: string }>;
+  searchParams: Promise<{ account?: string; from?: string; to?: string; currency?: string }>;
 }) {
-  const { account, from, to } = await searchParams;
+  const { account, from, to, currency } = await searchParams;
   const user = await requirePageAccess(PERMISSIONS.ACCOUNTING_VIEW);
   const companyId = user.activeCompany.id;
 
@@ -31,6 +31,8 @@ export default async function GeneralLedgerPage({
     select: { id: true, code: true, name: true, type: true },
   });
 
+  const selectedCurrency = currency === 'MAD' || currency === 'AED' || currency === 'USD' ? currency : 'USD';
+
   const selectedId = account && accounts.some((a) => a.id === account) ? account : accounts[0]?.id;
 
   const ledger = selectedId
@@ -39,6 +41,7 @@ export default async function GeneralLedgerPage({
         accountId: selectedId,
         from: from ? new Date(`${from}T00:00:00.000Z`) : undefined,
         to: to ? new Date(`${to}T00:00:00.000Z`) : undefined,
+        currency: selectedCurrency,
       })
     : null;
 
@@ -46,11 +49,11 @@ export default async function GeneralLedgerPage({
     <div className="space-y-6">
       <PageHeader
         title="General Ledger"
-        description="Every movement through a chosen account, with a running balance in USD."
+        description="Every movement through a chosen account. Pick USD or MAD to see that currency only — the two are never mixed into one total."
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'General Ledger' }]}
         actions={
           <>
-            <ExcelLink href={exportHref('general-ledger', { account: selectedId, from, to })} />
+            <ExcelLink href={exportHref('general-ledger', { account: selectedId, from, to, currency: selectedCurrency })} />
             <PrintButton />
           </>
         }
@@ -61,7 +64,13 @@ export default async function GeneralLedgerPage({
         country={user.activeCompany.country}
       />
 
-      <AccountPicker accounts={accounts} selectedId={selectedId ?? ''} from={from ?? ''} to={to ?? ''} />
+      <AccountPicker
+        accounts={accounts}
+        selectedId={selectedId ?? ''}
+        from={from ?? ''}
+        to={to ?? ''}
+        currency={selectedCurrency}
+      />
 
       {!ledger ? (
         <EmptyState title="No accounts yet" description="The chart of accounts is created when a company is set up." />
@@ -71,7 +80,9 @@ export default async function GeneralLedgerPage({
             <CardTitle>
               {ledger.account.code} · {ledger.account.name}
             </CardTitle>
-            <CardDescription>{titleCase(ledger.account.type)} account</CardDescription>
+              <CardDescription>
+                {titleCase(ledger.account.type)} account · {ledger.viewCurrency} only
+              </CardDescription>
           </CardHeader>
           <CardContent className="px-0 pb-0">
             <TableWrap className="rounded-none border-0 border-t">
@@ -93,7 +104,7 @@ export default async function GeneralLedgerPage({
                       Opening balance
                     </TD>
                     <TD numeric className="font-semibold">
-                      {formatMoney(ledger.openingBalanceUsd, 'USD')}
+                      {formatMoney(ledger.openingBalance, ledger.viewCurrency)}
                     </TD>
                   </TR>
                   {ledger.rows.length === 0 ? (
@@ -114,9 +125,15 @@ export default async function GeneralLedgerPage({
                           ) : null}
                         </TD>
                         <TD className="text-xs">{titleCase(row.sourceType)}</TD>
-                        <TD numeric>{row.debitUsd.greaterThan(0) ? formatMoney(row.debitUsd, 'USD') : '—'}</TD>
-                        <TD numeric>{row.creditUsd.greaterThan(0) ? formatMoney(row.creditUsd, 'USD') : '—'}</TD>
-                        <TD numeric className="font-medium">{formatMoney(row.balanceUsd, 'USD')}</TD>
+                        <TD numeric>
+                          {row.debit.greaterThan(0) ? formatMoney(row.debit, row.currency) : '—'}
+                        </TD>
+                        <TD numeric>
+                          {row.credit.greaterThan(0) ? formatMoney(row.credit, row.currency) : '—'}
+                        </TD>
+                        <TD numeric className="font-medium">
+                          {formatMoney(row.balance, ledger.viewCurrency)}
+                        </TD>
                       </TR>
                     ))
                   )}
@@ -124,7 +141,7 @@ export default async function GeneralLedgerPage({
                 <TFoot>
                   <tr>
                     <TD colSpan={6}>Closing balance</TD>
-                    <TD numeric>{formatMoney(ledger.closingBalanceUsd, 'USD')}</TD>
+                    <TD numeric>{formatMoney(ledger.closingBalance, ledger.viewCurrency)}</TD>
                   </tr>
                 </TFoot>
               </Table>

@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
-import { getCustomerLedger, ledgerKindToSourceType, type LedgerView as LedgerViewMode } from '@/lib/services/ledger';
+import { getCustomerLedger, ledgerKindToSourceType, resolvePartyLedgerQuery } from '@/lib/services/ledger';
 import { formatMoney, formatDate, companyFlag, titleCase } from '@/lib/format';
 import { PrintButton } from '@/components/shared/print-button';
 import { AutoPrint } from '@/app/(app)/sales/[id]/print/auto-print';
@@ -23,7 +23,7 @@ export default async function CustomerLedgerPrintPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ view?: string; from?: string; to?: string; kind?: string }>;
+  searchParams: Promise<{ view?: string; from?: string; to?: string; kind?: string; currency?: string }>;
 }) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const user = await requirePageAccess(PERMISSIONS.LEDGERS_VIEW);
@@ -35,15 +35,20 @@ export default async function CustomerLedgerPrintPage({
   ]);
   if (!customer) notFound();
 
-  const mode: LedgerViewMode =
-    query.view === 'USD' || query.view === 'LOCAL' || query.view === 'TRANSACTION' ? query.view : 'TRANSACTION';
+  const resolved = resolvePartyLedgerQuery({
+    view: query.view,
+    currency: query.currency,
+    localCurrency: user.activeCompany.localCurrency,
+    partyCurrency: customer.primaryCurrency,
+  });
   const from = query.from ? new Date(`${query.from}T00:00:00.000Z`) : undefined;
   const to = query.to ? new Date(`${query.to}T00:00:00.000Z`) : undefined;
 
   const ledger = await getCustomerLedger({
     companyId,
     customerId: id,
-    view: mode,
+    view: resolved.view,
+    currency: resolved.currency,
     localCurrency: user.activeCompany.localCurrency,
     partyCurrency: customer.primaryCurrency,
     from,
@@ -136,10 +141,9 @@ export default async function CustomerLedgerPrintPage({
               </td>
             </tr>
             {ledger.rows.map((row, index) => {
-              const debit = ledger.view === 'USD' ? row.debitUsd : ledger.view === 'LOCAL' ? row.debitLocal : row.debit;
-              const credit =
-                ledger.view === 'USD' ? row.creditUsd : ledger.view === 'LOCAL' ? row.creditLocal : row.credit;
-              const amountCurrency = ledger.view === 'TRANSACTION' ? row.currency : currency;
+              const debit = row.debit;
+              const credit = row.credit;
+              const amountCurrency = row.currency;
               return (
                 <tr key={`${row.journalEntryId}-${index}`}>
                   <td className="border border-line px-2 py-1.5 whitespace-nowrap">{formatDate(row.entryDate)}</td>

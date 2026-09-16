@@ -32,9 +32,11 @@ export default async function NewSalePage() {
     }),
   ]);
 
+  const canCreateCustomer = can(user, PERMISSIONS.CUSTOMERS_CREATE);
+
   const prerequisites: Prerequisite[] = [
     {
-      met: customers.length > 0,
+      met: customers.length > 0 || canCreateCustomer,
       label: 'At least one customer',
       description: 'An invoice has to be addressed to somebody, and their currency comes from their record.',
       href: '/customers?new=1',
@@ -120,7 +122,7 @@ export default async function NewSalePage() {
         taxLabel={taxSettings.label}
         taxEnabled={taxSettings.enabled}
         canApprove={can(user, PERMISSIONS.SALES_APPROVE)}
-        canCreateCustomer={can(user, PERMISSIONS.CUSTOMERS_CREATE)}
+        canCreateCustomer={canCreateCustomer}
         defaults={{ invoiceNumber }}
       />
     </div>

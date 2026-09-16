@@ -1,5 +1,5 @@
 import type { Tx } from '@/lib/db';
-import { transaction } from '@/lib/db';
+import { prisma, transaction } from '@/lib/db';
 import {
   Decimal,
   dec,
@@ -923,10 +923,15 @@ export async function reverseSalesInvoice(params: {
 
     // Put the stock back at the cost it left at.
     for (const line of invoice.lines) {
+      if (!line.warehouseId) {
+        throw new BusinessRuleError(
+          'This invoice has a line without a warehouse and cannot be cancelled without corrupting stock.',
+        );
+      }
       await returnStock(tx, {
         companyId: params.companyId,
         batchId: line.batchId,
-        warehouseId: line.warehouseId ?? '',
+        warehouseId: line.warehouseId,
         quantityKg: line.quantityKg,
         bags: line.bags,
         unitCostUsd: line.unitCostUsd,
@@ -1003,4 +1008,38 @@ export async function deleteDraftSalesInvoice(params: { id: string; companyId: s
     // key), so they survive as an audit trail of the released reservation.
     await tx.salesInvoice.delete({ where: { id: params.id } });
   });
+}
+
+/**
+ * Delete Invoice — one action for every status.
+ *
+ * A draft is removed and its stock reservation released. A posted invoice is
+ * reversed: stock returns to the warehouse it left, the receivable is contra'd,
+ * and a reversing journal is written so the ledger stays in balance. Already
+ * cancelled invoices are left alone.
+ */
+export async function cancelSalesInvoice(params: {
+  id: string;
+  companyId: string;
+  userId: string;
+  reason?: string;
+}): Promise<{ status: 'DELETED' | 'REVERSED' }> {
+  const invoice = await prisma.salesInvoice.findFirst({
+    where: { id: params.id, companyId: params.companyId },
+    select: { id: true, status: true },
+  });
+  if (!invoice) throw new NotFoundError('Sales invoice');
+
+  if (invoice.status === 'DRAFT') {
+    await deleteDraftSalesInvoice(params);
+    return { status: 'DELETED' };
+  }
+
+  if (invoice.status === 'POSTED') {
+    const reason = params.reason?.trim() || 'Invoice deleted';
+    await reverseSalesInvoice({ ...params, reason });
+    return { status: 'REVERSED' };
+  }
+
+  throw new BusinessRuleError('This invoice has already been cancelled.');
 }

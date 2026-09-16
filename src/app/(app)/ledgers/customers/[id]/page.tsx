@@ -5,7 +5,7 @@ import { Banknote } from 'lucide-react';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
-import { getCustomerLedger, ledgerKindToSourceType, type LedgerView as LedgerViewMode } from '@/lib/services/ledger';
+import { getCustomerLedger, ledgerKindToSourceType, resolvePartyLedgerQuery } from '@/lib/services/ledger';
 import { getReceivables } from '@/lib/services/receivables';
 import { formatMoney } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
@@ -29,7 +29,7 @@ export default async function CustomerLedgerPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ view?: string; from?: string; to?: string; kind?: string }>;
+  searchParams: Promise<{ view?: string; from?: string; to?: string; kind?: string; currency?: string }>;
 }) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const user = await requirePageAccess(PERMISSIONS.LEDGERS_VIEW);
@@ -38,8 +38,12 @@ export default async function CustomerLedgerPage({
   const customer = await prisma.customer.findFirst({ where: { id, companyId } });
   if (!customer) notFound();
 
-  const mode: LedgerViewMode =
-    query.view === 'USD' || query.view === 'LOCAL' || query.view === 'TRANSACTION' ? query.view : 'TRANSACTION';
+  const resolved = resolvePartyLedgerQuery({
+    view: query.view,
+    currency: query.currency,
+    localCurrency: user.activeCompany.localCurrency,
+    partyCurrency: customer.primaryCurrency,
+  });
   const from = query.from ? new Date(`${query.from}T00:00:00.000Z`) : undefined;
   const to = query.to ? new Date(`${query.to}T00:00:00.000Z`) : undefined;
 
@@ -47,7 +51,8 @@ export default async function CustomerLedgerPage({
     getCustomerLedger({
       companyId,
       customerId: id,
-      view: mode,
+      view: resolved.view,
+      currency: resolved.currency,
       localCurrency: user.activeCompany.localCurrency,
       partyCurrency: customer.primaryCurrency,
       from,
@@ -74,7 +79,7 @@ export default async function CustomerLedgerPage({
         ]}
         meta={
           <>
-            <Badge tone="neutral">Ledger in {customer.primaryCurrency}</Badge>
+            <Badge tone="neutral">Viewing {ledger.viewCurrency}</Badge>
             <Badge tone={customer.status === 'ACTIVE' ? 'success' : 'neutral'}>
               {customer.status === 'ACTIVE' ? 'Active' : 'Inactive'}
             </Badge>
@@ -113,21 +118,22 @@ export default async function CustomerLedgerPage({
         printPath={`/ledgers/customers/${id}/print`}
         exportReport="customer-ledger"
         customerId={id}
-        view={mode}
+        view={resolved.view}
+        currency={resolved.currency ?? ''}
         from={query.from ?? ''}
         to={query.to ?? ''}
         kind={query.kind ?? 'ALL'}
       />
 
       <Callout tone="info">
-        Export always includes every ledger entry in the date range, not only the rows currently on screen. Choose
-        dates, then PDF, Excel, CSV or Print.
+        The USD and MAD tabs each show only that currency’s vouchers and balance. They are never added together.
+        Export follows the currency currently selected.
       </Callout>
 
       <LedgerView
         ledger={ledger}
         basePath={`/ledgers/customers/${id}`}
-        extraQuery={{ from: query.from, to: query.to, kind: query.kind }}
+        extraQuery={{ from: query.from, to: query.to, kind: query.kind, currency: resolved.currency }}
         partyCurrency={customer.primaryCurrency}
         localCurrency={user.activeCompany.localCurrency}
         emptyDescription="Post a sales invoice or a receipt to open this customer's ledger."

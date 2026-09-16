@@ -2,7 +2,9 @@
 
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { requirePermission, assertPermission } from '@/lib/auth/guards';
+import { requirePermission, assertPermission, canAny } from '@/lib/auth/guards';
+import { requireUser } from '@/lib/auth/session';
+import { prisma } from '@/lib/db';
 import { PERMISSIONS } from '@/lib/constants';
 import { fieldErrors } from '@/lib/validation/common';
 import {
@@ -34,7 +36,7 @@ import {
   updateSalesInvoice,
   postSalesInvoice,
   reverseSalesInvoice,
-  deleteDraftSalesInvoice,
+  cancelSalesInvoice,
 } from '@/lib/services/sales';
 import {
   createStockTransfer,
@@ -278,13 +280,42 @@ export async function reverseSalesInvoiceAction(id: string, reason: string): Pro
   }
 }
 
-export async function deleteSalesInvoiceAction(id: string): Promise<ActionResult<undefined>> {
+export async function deleteSalesInvoiceAction(
+  id: string,
+  reason?: string,
+): Promise<ActionResult<{ status: 'DELETED' | 'REVERSED' }>> {
   try {
-    const user = await requirePermission(PERMISSIONS.SALES_DELETE);
-    await deleteDraftSalesInvoice({ id, companyId: user.activeCompany.id, userId: user.id });
+    const user = await requireUser();
+    const companyId = user.activeCompany.id;
+    const invoice = await prisma.salesInvoice.findFirst({
+      where: { id, companyId },
+      select: { status: true },
+    });
+    if (!invoice) {
+      assertPermission(user, PERMISSIONS.SALES_DELETE);
+    } else if (invoice.status === 'DRAFT') {
+      assertPermission(user, PERMISSIONS.SALES_DELETE);
+    } else if (invoice.status === 'POSTED') {
+      if (!canAny(user, [PERMISSIONS.SALES_DELETE, PERMISSIONS.SALES_REVERSE])) {
+        assertPermission(user, PERMISSIONS.SALES_REVERSE);
+      }
+    } else {
+      assertPermission(user, PERMISSIONS.SALES_DELETE);
+    }
+
+    const result = await cancelSalesInvoice({
+      id,
+      companyId,
+      userId: user.id,
+      reason,
+    });
     revalidatePath('/sales');
+    revalidatePath(`/sales/${id}`);
     revalidatePath('/inventory');
-    return { ok: true, data: undefined };
+    revalidatePath('/finance/receivables');
+    revalidatePath('/ledgers/customers');
+    revalidatePath('/dashboard');
+    return { ok: true, data: result };
   } catch (error) {
     return fail(error);
   }

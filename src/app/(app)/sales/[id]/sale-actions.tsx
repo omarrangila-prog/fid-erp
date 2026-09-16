@@ -4,14 +4,10 @@ import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { CheckCircle2, Undo2, Trash2, Pencil, Banknote } from 'lucide-react';
+import { CheckCircle2, Trash2, Pencil, Banknote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm';
-import {
-  postSalesInvoiceAction,
-  reverseSalesInvoiceAction,
-  deleteSalesInvoiceAction,
-} from '@/server/actions/trading-actions';
+import { postSalesInvoiceAction, deleteSalesInvoiceAction } from '@/server/actions/trading-actions';
 
 export function SaleActions({
   id,
@@ -33,7 +29,7 @@ export function SaleActions({
   canReceipt: boolean;
 }) {
   const router = useRouter();
-  const [confirm, setConfirm] = React.useState<'post' | 'reverse' | 'delete' | null>(null);
+  const [confirm, setConfirm] = React.useState<'post' | null>(null);
   const [busy, setBusy] = React.useState(false);
 
   async function run(fn: () => Promise<{ ok: boolean; error?: string }>, success: string) {
@@ -51,6 +47,8 @@ export function SaleActions({
     }
   }
 
+  const canCancel = status === 'DRAFT' ? canDelete : status === 'POSTED' ? canDelete || canReverse : false;
+
   return (
     <>
       {status === 'DRAFT' || status === 'POSTED' ? (
@@ -64,40 +62,33 @@ export function SaleActions({
         ) : null
       ) : null}
 
-      {status === 'DRAFT' ? (
-        <>
-          {canDelete ? (
-            <Button variant="ghost" onClick={() => setConfirm('delete')} disabled={busy}>
-              <Trash2 />
-              Delete
-            </Button>
-          ) : null}
-          {canApprove ? (
-            <Button variant="accent" onClick={() => setConfirm('post')} loading={busy}>
-              <CheckCircle2 />
-              Post invoice
-            </Button>
-          ) : null}
-        </>
+      {status === 'DRAFT' && canApprove ? (
+        <Button variant="accent" onClick={() => setConfirm('post')} loading={busy}>
+          <CheckCircle2 />
+          Post invoice
+        </Button>
       ) : null}
 
-      {status === 'POSTED' ? (
-        <>
-          {canReverse ? (
-            <Button variant="outline" onClick={() => setConfirm('reverse')} disabled={busy}>
-              <Undo2 />
-              Reverse
-            </Button>
-          ) : null}
-          {canReceipt && outstanding ? (
-            <Button asChild>
-              <Link href={`/finance/receipts/new?invoice=${id}`}>
-                <Banknote />
-                Record payment
-              </Link>
-            </Button>
-          ) : null}
-        </>
+      {canCancel ? (
+        <InvoiceDeleteButton
+          id={id}
+          status={status}
+          disabled={busy}
+          onDeleted={(result) => {
+            toast.success(result.status === 'DELETED' ? 'Invoice deleted.' : 'Invoice cancelled. Stock, customer balance and the ledger have been reversed.');
+            if (result.status === 'DELETED') router.push('/sales');
+            else router.refresh();
+          }}
+        />
+      ) : null}
+
+      {status === 'POSTED' && canReceipt && outstanding ? (
+        <Button asChild>
+          <Link href={`/finance/receipts/new?invoice=${id}`}>
+            <Banknote />
+            Record payment
+          </Link>
+        </Button>
       ) : null}
 
       <ConfirmDialog
@@ -109,29 +100,77 @@ export function SaleActions({
         variant="accent"
         onConfirm={() => run(() => postSalesInvoiceAction(id), 'Invoice posted.')}
       />
+    </>
+  );
+}
+
+/**
+ * Delete on every invoice. Drafts are removed. Posted invoices are reversed so
+ * stock, the customer balance and the ledger all move back together.
+ */
+export function InvoiceDeleteButton({
+  id,
+  status,
+  disabled,
+  onDeleted,
+}: {
+  id: string;
+  status: string;
+  disabled?: boolean;
+  onDeleted?: (result: { status: 'DELETED' | 'REVERSED' }) => void;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const posted = status === 'POSTED';
+
+  if (status === 'REVERSED') return null;
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant={posted ? 'outline' : 'ghost'}
+        size="sm"
+        disabled={disabled || busy}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setOpen(true);
+        }}
+      >
+        <Trash2 />
+        Delete invoice
+      </Button>
 
       <ConfirmDialog
-        open={confirm === 'reverse'}
-        onOpenChange={(open) => !open && setConfirm(null)}
-        title="Reverse this invoice?"
-        description="The stock goes back to the warehouse it came from and a contra journal entry is written. This is refused if a receipt has been allocated to the invoice."
-        confirmLabel="Reverse invoice"
+        open={open}
+        onOpenChange={setOpen}
+        title={posted ? 'Delete this posted invoice?' : 'Delete this draft?'}
+        description={
+          posted
+            ? 'Stock returns to the warehouse it left, the customer balance is reversed, and a contra journal is written so the ledger stays in balance. Refused if a receipt is still allocated to this invoice.'
+            : 'The stock this draft was holding is released back to the warehouse.'
+        }
+        confirmLabel={posted ? 'Delete invoice' : 'Delete draft'}
         variant="danger"
-        requireReason
-        reasonLabel="Why is this being reversed?"
-        onConfirm={(reason) => run(() => reverseSalesInvoiceAction(id, reason), 'Invoice reversed.')}
-      />
-
-      <ConfirmDialog
-        open={confirm === 'delete'}
-        onOpenChange={(open) => !open && setConfirm(null)}
-        title="Delete this draft?"
-        description="The stock this draft was holding is released back to the warehouse."
-        confirmLabel="Delete draft"
-        variant="danger"
-        onConfirm={async () => {
-          await run(() => deleteSalesInvoiceAction(id), 'Draft deleted.');
-          router.push('/sales');
+        requireReason={posted}
+        reasonLabel="Why is this invoice being deleted?"
+        onConfirm={async (reason) => {
+          setBusy(true);
+          try {
+            const result = await deleteSalesInvoiceAction(id, posted ? reason : undefined);
+            if (!result.ok) {
+              throw new Error(result.error ?? 'The invoice could not be deleted.');
+            }
+            if (onDeleted) onDeleted(result.data);
+            else {
+              toast.success(result.data.status === 'DELETED' ? 'Invoice deleted.' : 'Invoice cancelled.');
+              router.refresh();
+            }
+          } finally {
+            setBusy(false);
+          }
         }}
       />
     </>

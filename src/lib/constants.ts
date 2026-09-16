@@ -175,7 +175,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionCode, { module: string; d
   [PERMISSIONS.SALES_VIEW]: { module: 'Sales', description: 'View sales invoices' },
   [PERMISSIONS.SALES_CREATE]: { module: 'Sales', description: 'Create draft sales invoices' },
   [PERMISSIONS.SALES_EDIT]: { module: 'Sales', description: 'Edit saved sales invoices' },
-  [PERMISSIONS.SALES_DELETE]: { module: 'Sales', description: 'Delete draft sales invoices' },
+  [PERMISSIONS.SALES_DELETE]: { module: 'Sales', description: 'Delete sales invoices' },
   [PERMISSIONS.SALES_APPROVE]: { module: 'Sales', description: 'Approve and post sales invoices' },
   [PERMISSIONS.SALES_REVERSE]: { module: 'Sales', description: 'Reverse posted sales invoices' },
 

@@ -17,6 +17,50 @@ import { Decimal, dec, toMoney } from '@/lib/money';
 
 export type LedgerView = 'TRANSACTION' | 'USD' | 'LOCAL';
 
+export const BOOK_CURRENCIES = ['USD', 'AED', 'MAD'] as const;
+export type BookCurrency = (typeof BOOK_CURRENCIES)[number];
+
+export function isBookCurrency(value: string | null | undefined): value is BookCurrency {
+  return value === 'USD' || value === 'AED' || value === 'MAD';
+}
+
+/** Tabs on a person/account ledger: always USD and MAD, plus AED when that book is in play. */
+export function ledgerCurrencyTabs(localCurrency: string, partyCurrency?: string): BookCurrency[] {
+  const tabs: BookCurrency[] = ['USD', 'MAD'];
+  if (localCurrency === 'AED' || partyCurrency === 'AED') tabs.splice(1, 0, 'AED');
+  return tabs;
+}
+
+/**
+ * USD and MAD mean "show only that currency's original amounts" — not a
+ * converted mix. Legacy `view=LOCAL` maps to the company's local currency.
+ */
+export function resolvePartyLedgerQuery(params: {
+  view?: string;
+  currency?: string;
+  localCurrency: string;
+  partyCurrency: string;
+}): { view: LedgerView; currency?: BookCurrency } {
+  if (isBookCurrency(params.currency)) {
+    return { view: 'TRANSACTION', currency: params.currency };
+  }
+  if (isBookCurrency(params.view)) {
+    return { view: 'TRANSACTION', currency: params.view };
+  }
+  if (params.view === 'LOCAL' && isBookCurrency(params.localCurrency)) {
+    return { view: 'TRANSACTION', currency: params.localCurrency };
+  }
+  if (params.view === 'TRANSACTION') {
+    return { view: 'TRANSACTION' };
+  }
+  const fallback = isBookCurrency(params.partyCurrency)
+    ? params.partyCurrency
+    : isBookCurrency(params.localCurrency)
+      ? params.localCurrency
+      : 'USD';
+  return { view: 'TRANSACTION', currency: fallback };
+}
+
 export type LedgerRow = {
   journalEntryId: string;
   entryNumber: string;
@@ -45,6 +89,8 @@ export type LedgerResult = {
   rows: LedgerRow[];
   view: LedgerView;
   viewCurrency: string;
+  /** When set, only vouchers in this currency are included — totals are not mixed. */
+  currencyFilter?: BookCurrency;
 };
 
 type RawLedgerRow = {
@@ -80,7 +126,12 @@ const REFERENCE_SQL = `
   END
 `;
 
-function pickAmounts(row: RawLedgerRow, view: LedgerView): { debit: Decimal; credit: Decimal } {
+function pickAmounts(
+  row: RawLedgerRow,
+  view: LedgerView,
+  currencyFilter?: BookCurrency,
+): { debit: Decimal; credit: Decimal } {
+  if (currencyFilter) return { debit: dec(row.debit), credit: dec(row.credit) };
   if (view === 'USD') return { debit: dec(row.debitUsd), credit: dec(row.creditUsd) };
   if (view === 'LOCAL') return { debit: dec(row.debitLocal), credit: dec(row.creditLocal) };
   return { debit: dec(row.debit), credit: dec(row.credit) };
@@ -97,18 +148,20 @@ async function buildLedger(params: {
   to?: Date;
   view: LedgerView;
   viewCurrency: string;
+  currencyFilter?: BookCurrency;
   sourceType?: string;
   shipmentId?: string;
 }): Promise<LedgerResult> {
-  const { companyId, partyId, from, to, view } = params;
+  const { companyId, partyId, from, to, view, currencyFilter } = params;
 
   const partyFilter = params.partyColumn === 'customerId' ? 'jl."customerId"' : 'jl."vendorId"';
+  const amountSuffix = currencyFilter ? '' : view === 'USD' ? 'Usd' : view === 'LOCAL' ? 'Local' : '';
 
   // Opening balance: everything strictly before the window starts.
   const openingRows = await prisma.$queryRawUnsafe<Array<{ debit: string | null; credit: string | null }>>(
     `
-    SELECT SUM(jl."debit${view === 'USD' ? 'Usd' : view === 'LOCAL' ? 'Local' : ''}")::text  AS debit,
-           SUM(jl."credit${view === 'USD' ? 'Usd' : view === 'LOCAL' ? 'Local' : ''}")::text AS credit
+    SELECT SUM(jl."debit${amountSuffix}")::text  AS debit,
+           SUM(jl."credit${amountSuffix}")::text AS credit
     FROM journal_lines jl
     JOIN journal_entries je ON je."id" = jl."journalEntryId"
     JOIN accounts a ON a."id" = jl."accountId"
@@ -119,10 +172,12 @@ async function buildLedger(params: {
       -- No start date means no opening balance: every row belongs in the body
       -- of the ledger, so this deliberately matches nothing when $3 is null.
       AND $3::date IS NOT NULL AND je."entryDate" < $3::date
+      AND ($4::text IS NULL OR jl."currency" = $4)
     `,
     companyId,
     partyId,
     from ?? null,
+    currencyFilter ?? null,
   );
 
   const openingRaw = toMoney(dec(openingRows[0]?.debit ?? 0).minus(dec(openingRows[0]?.credit ?? 0)));
@@ -150,6 +205,7 @@ async function buildLedger(params: {
       AND ($4::date IS NULL OR je."entryDate" <= $4::date)
       AND ($5::text  IS NULL OR je."sourceType"::text = $5)
       AND ($6::text  IS NULL OR jl."shipmentId" = $6)
+      AND ($7::text  IS NULL OR jl."currency" = $7)
     ORDER BY je."entryDate" ASC, je."entryNumber" ASC, jl."lineNumber" ASC
     `,
     companyId,
@@ -158,6 +214,7 @@ async function buildLedger(params: {
     to ?? null,
     params.sourceType ?? null,
     params.shipmentId ?? null,
+    currencyFilter ?? null,
   );
 
   let running = openingBalance;
@@ -165,7 +222,7 @@ async function buildLedger(params: {
   let totalCredit = new Decimal(0);
 
   const shaped: LedgerRow[] = rows.map((row) => {
-    const { debit, credit } = pickAmounts(row, view);
+    const { debit, credit } = pickAmounts(row, view, currencyFilter);
     const movement = params.invert ? credit.minus(debit) : debit.minus(credit);
     running = toMoney(running.plus(movement));
     totalDebit = totalDebit.plus(debit);
@@ -179,8 +236,8 @@ async function buildLedger(params: {
       reference: row.reference,
       description: row.description,
       currency: row.currency,
-      debit: dec(row.debit),
-      credit: dec(row.credit),
+      debit: currencyFilter ? debit : dec(row.debit),
+      credit: currencyFilter ? credit : dec(row.credit),
       rateToUsd: dec(row.rateToUsd),
       debitUsd: dec(row.debitUsd),
       creditUsd: dec(row.creditUsd),
@@ -192,8 +249,11 @@ async function buildLedger(params: {
   });
 
   const txnCurrencies = new Set(shaped.map((row) => row.currency));
-  const viewCurrency =
-    view === 'TRANSACTION' && txnCurrencies.size === 1 ? [...txnCurrencies][0]! : params.viewCurrency;
+  const viewCurrency = currencyFilter
+    ? currencyFilter
+    : view === 'TRANSACTION' && txnCurrencies.size === 1
+      ? [...txnCurrencies][0]!
+      : params.viewCurrency;
 
   return {
     openingBalance,
@@ -201,8 +261,9 @@ async function buildLedger(params: {
     totalDebit: toMoney(totalDebit),
     totalCredit: toMoney(totalCredit),
     rows: shaped,
-    view,
+    view: currencyFilter ? 'TRANSACTION' : view,
     viewCurrency,
+    currencyFilter,
   };
 }
 
@@ -226,6 +287,7 @@ export async function getCustomerLedger(params: {
   to?: Date;
   sourceType?: string;
   shipmentId?: string;
+  currency?: BookCurrency;
 }): Promise<LedgerResult> {
   return buildLedger({
     companyId: params.companyId,
@@ -238,8 +300,14 @@ export async function getCustomerLedger(params: {
     view: params.view,
     sourceType: params.sourceType,
     shipmentId: params.shipmentId,
-    viewCurrency:
-      params.view === 'USD' ? 'USD' : params.view === 'LOCAL' ? params.localCurrency : params.partyCurrency,
+    currencyFilter: params.currency,
+    viewCurrency: params.currency
+      ? params.currency
+      : params.view === 'USD'
+        ? 'USD'
+        : params.view === 'LOCAL'
+          ? params.localCurrency
+          : params.partyCurrency,
   });
 }
 
@@ -253,6 +321,7 @@ export async function getVendorLedger(params: {
   to?: Date;
   sourceType?: string;
   shipmentId?: string;
+  currency?: BookCurrency;
 }): Promise<LedgerResult> {
   return buildLedger({
     companyId: params.companyId,
@@ -265,7 +334,13 @@ export async function getVendorLedger(params: {
     view: params.view,
     sourceType: params.sourceType,
     shipmentId: params.shipmentId,
-    viewCurrency:
-      params.view === 'USD' ? 'USD' : params.view === 'LOCAL' ? params.localCurrency : params.partyCurrency,
+    currencyFilter: params.currency,
+    viewCurrency: params.currency
+      ? params.currency
+      : params.view === 'USD'
+        ? 'USD'
+        : params.view === 'LOCAL'
+          ? params.localCurrency
+          : params.partyCurrency,
   });
 }
