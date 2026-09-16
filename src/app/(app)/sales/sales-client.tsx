@@ -7,7 +7,9 @@ import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { StatusBadge, Badge } from '@/components/ui/badge';
 import { TRANSACTION_STATUS_META, SETTLEMENT_STATUS_META } from '@/lib/constants';
-import { InvoiceActionsMenu } from '@/app/(app)/sales/[id]/sale-actions';
+import { HandCoins, BookOpen, Printer } from 'lucide-react';
+import { RowActions, viewAction, editAction } from '@/components/shared/row-actions';
+import { deleteSalesInvoiceAction } from '@/server/actions/trading-actions';
 
 export type SaleRow = {
   id: string;
@@ -29,6 +31,10 @@ export type SaleRow = {
   settlement: string;
   daysOverdue: number;
   status: string;
+  paymentType: string;
+  createdBy: string;
+  items: string;
+  itemCount: number;
   jobNumber: string | null;
   shipmentId: string | null;
   warehouseNames: string;
@@ -81,6 +87,20 @@ export function SalesClient({
       mobile: 'meta',
       sortValue: (r) => r.warehouseNames,
       cell: (r) => r.warehouseNames || '—',
+    },
+    {
+      id: 'items',
+      header: 'Items',
+      mobile: 'meta',
+      hideable: true,
+      sortValue: (r) => r.items,
+      exportValue: (r) => r.items,
+      cell: (r) => (
+        <span className="block max-w-56 truncate" title={r.items}>
+          {r.items || '—'}
+          {r.itemCount > 1 ? <span className="ml-1 text-xs text-ink-subtle">({r.itemCount})</span> : null}
+        </span>
+      ),
     },
     {
       id: 'quantity',
@@ -152,28 +172,60 @@ export function SalesClient({
         ),
     },
     {
+      id: 'currency',
+      header: 'Currency',
+      hideable: true,
+      sortValue: (r) => r.currency,
+      exportValue: (r) => r.currency,
+      cell: (r) => r.currency,
+    },
+    {
       id: 'status',
       header: 'Status',
       mobile: 'badge',
       sortValue: (r) => r.status,
       cell: (r) => <StatusBadge status={r.status} meta={TRANSACTION_STATUS_META} />,
     },
+    {
+      id: 'createdBy',
+      header: 'Created by',
+      hideable: true,
+      defaultHidden: true,
+      sortValue: (r) => r.createdBy,
+      exportValue: (r) => r.createdBy,
+      cell: (r) => <span className="text-xs text-ink-muted">{r.createdBy}</span>,
+    },
     ...(canEdit || canDelete || canReverse || canApprove
       ? [
           {
             id: 'actions',
-            header: '',
+            header: 'Actions',
             printHidden: true,
             mobile: 'action' as const,
-            className: 'sticky right-0 z-10 bg-surface shadow-[-8px_0_12px_-8px_rgba(15,23,42,0.18)]',
+            pin: 'right' as const,
             cell: (r: SaleRow) => (
-              <InvoiceActionsMenu
-                id={r.id}
-                status={r.status}
-                canEdit={canEdit}
-                canDelete={canDelete}
-                canReverse={canReverse}
-                canApprove={canApprove}
+              <RowActions
+                actions={[
+                  viewAction(`/sales/${r.id}`),
+                  editAction(`/sales/${r.id}/edit`, canEdit && r.status !== 'REVERSED'),
+                  {
+                    label: 'Record payment',
+                    href: `/finance/receipts/new?invoice=${r.id}`,
+                    icon: HandCoins,
+                    show: r.status === 'POSTED' && r.settlement !== 'PAID',
+                  },
+                  { label: 'Customer ledger', href: `/ledgers/customers?customer=${r.customerId}`, icon: BookOpen },
+                  { label: 'Print', href: `/sales/${r.id}/print`, icon: Printer },
+                ]}
+                destructive={{
+                  status: r.status,
+                  noun: 'invoice',
+                  show: r.status === 'DRAFT' ? canDelete : canReverse,
+                  cancelLabel: 'Cancel invoice',
+                  description:
+                    'Stock returns to the warehouse it left, the customer balance is reversed, and a contra journal keeps the ledger in balance. The invoice stays in the books marked cancelled — nothing is deleted.',
+                  run: (reason) => deleteSalesInvoiceAction(r.id, reason).then((res) => ({ ok: res.ok, error: res.ok ? undefined : res.error })),
+                }}
               />
             ),
           } satisfies DataColumn<SaleRow>,

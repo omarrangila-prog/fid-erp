@@ -3,7 +3,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getReceivables } from '@/lib/services/receivables';
-import { formatMoney } from '@/lib/format';
+import { formatMoney, formatDate } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { CustomersClient, type CustomerRow } from '@/app/(app)/customers/customers-client';
 
@@ -20,14 +20,33 @@ export default async function CustomersPage({
   const user = await requirePageAccess(PERMISSIONS.CUSTOMERS_VIEW);
   const companyId = user.activeCompany.id;
 
-  const [customers, receivables] = await Promise.all([
+  const [customers, receivables, traded] = await Promise.all([
     prisma.customer.findMany({
       where: { companyId },
       orderBy: { customerName: 'asc' },
       include: { _count: { select: { salesInvoices: true } } },
     }),
     getReceivables({ companyId, onlyOutstanding: true }),
+    // What each customer has actually bought and paid, and when they last
+    // did anything — the three figures the client wants without opening a
+    // ledger, read from the posted invoices and the receipts against them.
+    prisma.$queryRaw<
+      Array<{ customerId: string; currency: string; sold: string; received: string; lastAt: Date | null }>
+    >`
+      SELECT si."customerId", si."currency",
+             COALESCE(SUM(si."totalAmount"), 0)::text AS sold,
+             COALESCE(SUM((
+               SELECT COALESCE(SUM(ra."amount"), 0) FROM receipt_allocations ra
+               JOIN receipts r ON r."id" = ra."receiptId"
+               WHERE ra."salesInvoiceId" = si."id" AND r."status" = 'POSTED'
+             )), 0)::text AS received,
+             MAX(si."invoiceDate") AS "lastAt"
+      FROM sales_invoices si
+      WHERE si."companyId" = ${companyId} AND si."status" = 'POSTED'
+      GROUP BY si."customerId", si."currency"`,
   ]);
+
+  const tradedByCustomer = new Map(traded.map((row) => [row.customerId, row]));
 
   const outstandingByCustomer = new Map<string, { amount: number; currency: string; usd: number }>();
   for (const row of receivables) {
@@ -75,6 +94,20 @@ export default async function CustomersPage({
       outstandingUsd,
       outstandingLabel,
       invoiceCount: c._count.salesInvoices,
+      soldLabel: (() => {
+        const row = tradedByCustomer.get(c.id);
+        return row ? formatMoney(row.sold, row.currency) : '—';
+      })(),
+      soldSort: Number(tradedByCustomer.get(c.id)?.sold ?? 0),
+      receivedLabel: (() => {
+        const row = tradedByCustomer.get(c.id);
+        return row ? formatMoney(row.received, row.currency) : '—';
+      })(),
+      lastTradedLabel: (() => {
+        const at = tradedByCustomer.get(c.id)?.lastAt;
+        return at ? formatDate(at) : '—';
+      })(),
+      lastTradedSort: tradedByCustomer.get(c.id)?.lastAt?.getTime() ?? 0,
       status: c.status,
     };
   });

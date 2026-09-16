@@ -25,6 +25,11 @@ export type DataColumn<T> = {
   /** Column can be hidden from the column picker. */
   hideable?: boolean;
   defaultHidden?: boolean;
+  /**
+   * Hold this column still while the rest of a wide table scrolls under it.
+   * `left` for the column that says which row this is; `right` for actions.
+   */
+  pin?: 'left' | 'right';
   /** Where this column appears in the mobile card layout. */
   mobile?: 'title' | 'badge' | 'meta' | 'hidden' | 'action';
   className?: string;
@@ -302,7 +307,11 @@ export function DataTable<T>({
                     <TH
                       key={column.id}
                       numeric={column.numeric}
-                      className={column.className}
+                      className={cn(
+                        column.pin === 'left' && 'pin-left',
+                        column.pin === 'right' && 'pin-right',
+                        column.className,
+                      )}
                       data-print={column.printHidden ? 'hide' : undefined}
                     >
                       {column.sortValue ? (
@@ -341,7 +350,11 @@ export function DataTable<T>({
                         <TD
                           key={column.id}
                           numeric={column.numeric}
-                          className={column.className}
+                          className={cn(
+                            column.pin === 'left' && 'pin-left',
+                            column.pin === 'right' && 'pin-right',
+                            column.className,
+                          )}
                           data-print={column.printHidden ? 'hide' : undefined}
                         >
                           {href && column.mobile !== 'action' && !column.printHidden ? (

@@ -24,7 +24,7 @@ export default async function PurchasesPage() {
       include: {
         vendor: { select: { vendorName: true } },
         lines: { select: { quantityKg: true, bags: true, item: { select: { itemName: true } } } },
-        shipments: { select: { jobNumber: true } },
+        shipments: { select: { id: true, jobNumber: true, status: true, etaDate: true } },
         batches: { select: { orderedQuantityKg: true, receivedQuantityKg: true } },
       },
     }),
@@ -64,6 +64,8 @@ export default async function PurchasesPage() {
       containers: c.containers,
       status: c.status,
       jobNumber: c.shipments[0]?.jobNumber ?? null,
+      shipmentId: c.shipments[0]?.id ?? null,
+      shipmentStatus: c.shipments[0]?.status ?? null,
       receivedPct,
       receivedLabel: c.status === 'POSTED' ? `${receivedPct}%` : '—',
       outstandingUsd,

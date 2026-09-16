@@ -121,10 +121,10 @@ export function ExpensesClient({
     },
     {
       id: 'actions',
-      header: '',
+      header: 'Actions',
       printHidden: true,
       mobile: 'action',
-      className: 'sticky right-0 z-10 bg-surface shadow-[-8px_0_12px_-8px_rgba(15,23,42,0.18)]',
+      pin: 'right',
       cell: (r) => (
         <VoucherRowActions
           kind="expense"

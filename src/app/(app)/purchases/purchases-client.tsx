@@ -4,6 +4,9 @@ import * as React from 'react';
 import Link from 'next/link';
 import { Plus } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
+import { SHIPMENT_STATUS_META } from '@/lib/constants';
+import { Ship, PackageCheck, BookOpen } from 'lucide-react';
+import { RowActions, viewAction, editAction } from '@/components/shared/row-actions';
 import { Button } from '@/components/ui/button';
 import { Badge, StatusBadge } from '@/components/ui/badge';
 import { TRANSACTION_STATUS_META } from '@/lib/constants';
@@ -27,6 +30,8 @@ export type PurchaseRow = {
   containers: number;
   status: string;
   jobNumber: string | null;
+  shipmentId: string | null;
+  shipmentStatus: string | null;
   receivedPct: number;
   receivedLabel: string;
   outstandingLabel: string;
@@ -173,22 +178,57 @@ export function PurchasesClient({
       },
     },
     {
+      id: 'containers',
+      header: 'Containers',
+      numeric: true,
+      hideable: true,
+      sortValue: (r) => r.containers,
+      exportValue: (r) => r.containers,
+      cell: (r) => (r.containers > 0 ? r.containers : <span className="text-ink-subtle">—</span>),
+    },
+    {
+      id: 'currency',
+      header: 'Currency',
+      hideable: true,
+      sortValue: (r) => r.currency,
+      exportValue: (r) => r.currency,
+      cell: (r) => r.currency,
+    },
+    {
+      // Where the consignment is, without opening the order to find out.
+      id: 'loading',
+      header: 'Loading',
+      mobile: 'badge',
+      sortValue: (r) => r.shipmentStatus ?? '',
+      exportValue: (r) => (r.shipmentStatus ? (SHIPMENT_STATUS_META[r.shipmentStatus]?.label ?? r.shipmentStatus) : ''),
+      cell: (r) => {
+        if (!r.shipmentStatus) return <span className="text-ink-subtle">—</span>;
+        const meta = SHIPMENT_STATUS_META[r.shipmentStatus];
+        return <Badge tone={meta?.tone ?? 'neutral'}>{meta?.label ?? r.shipmentStatus}</Badge>;
+      },
+    },
+    {
       id: 'actions',
-      header: '',
+      header: 'Actions',
       printHidden: true,
       mobile: 'action',
-      className: 'sticky right-0 z-10 bg-surface shadow-[-8px_0_12px_-8px_rgba(15,23,42,0.18)]',
+      pin: 'right',
       cell: (r) => (
-        <div className="flex flex-wrap justify-end gap-1" onClick={(event) => event.stopPropagation()}>
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/purchases/${r.id}`}>View</Link>
-          </Button>
-          {canEdit && r.status === 'DRAFT' ? (
-            <Button asChild variant="ghost" size="sm">
-              <Link href={`/purchases/${r.id}/edit`}>Edit</Link>
-            </Button>
-          ) : null}
-        </div>
+        <RowActions
+          actions={[
+            viewAction(`/purchases/${r.id}`),
+            editAction(`/purchases/${r.id}/edit`, canEdit && r.status === 'DRAFT'),
+            { label: 'Loading sheet', href: '/loading', icon: Ship },
+            { label: 'Shipment', href: r.shipmentId ? `/shipments/${r.shipmentId}` : '/shipments', icon: Ship, show: Boolean(r.shipmentId) },
+            {
+              label: 'Receive',
+              href: `/purchases/${r.id}`,
+              icon: PackageCheck,
+              show: r.status === 'POSTED' && r.receivedPct < 100,
+            },
+            { label: 'Supplier ledger', href: '/ledgers/vendors', icon: BookOpen },
+          ]}
+        />
       ),
     },
   ];

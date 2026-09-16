@@ -3,10 +3,11 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { CheckCircle2, Undo2, Trash2, Pencil } from 'lucide-react';
+import { CheckCircle2, Undo2, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import Link from 'next/link';
 import { ConfirmDialog } from '@/components/ui/confirm';
+import { HandCoins } from 'lucide-react';
+import { RowActions, viewAction, editAction } from '@/components/shared/row-actions';
 import {
   postReceiptAction, reverseReceiptAction, deleteReceiptAction,
   postPaymentAction, reversePaymentAction, deletePaymentAction,
@@ -181,72 +182,33 @@ export function VoucherRowActions({
   canPost: boolean;
   canDelete: boolean;
 }) {
-  const router = useRouter();
   const config = ACTIONS[kind];
-  const [confirm, setConfirm] = React.useState<'reverse' | 'delete' | null>(null);
-  const [busy, setBusy] = React.useState(false);
   const viewPath = `${config.listPath}/${id}`;
   const editPath = kind === 'expense' && status === 'DRAFT' ? `${viewPath}/edit` : null;
 
-  async function run(fn: () => Promise<{ ok: boolean; error?: string }>, success: string) {
-    setBusy(true);
-    try {
-      const result = await fn();
-      if (result.ok) {
-        toast.success(success);
-        router.refresh();
-      } else {
-        toast.error(result.error ?? 'The action could not be completed.');
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
+  /*
+   * Rendered through the shared row-action pattern, so a voucher row looks
+   * and behaves like every other row in the application: the same actions in
+   * the same place, the rest behind one menu, and Cancel asking the same
+   * question in the same words.
+   */
   return (
-    <div className="flex flex-wrap justify-end gap-1" onClick={(event) => event.stopPropagation()}>
-      <Button asChild variant="outline" size="sm">
-        <Link href={viewPath}>View</Link>
-      </Button>
-      {editPath ? (
-        <Button asChild variant="ghost" size="sm">
-          <Link href={editPath}>
-            <Pencil />
-            Edit
-          </Link>
-        </Button>
-      ) : null}
-      {status === 'DRAFT' && canDelete ? (
-        <Button variant="ghost" size="sm" onClick={() => setConfirm('delete')} disabled={busy}>
-          Delete
-        </Button>
-      ) : null}
-      {status === 'POSTED' && canPost ? (
-        <Button variant="ghost" size="sm" onClick={() => setConfirm('reverse')} disabled={busy}>
-          Cancel
-        </Button>
-      ) : null}
-
-      <ConfirmDialog
-        open={confirm === 'reverse'}
-        onOpenChange={(open) => !open && setConfirm(null)}
-        title="Are you sure you want to reverse/cancel this transaction?"
-        description={config.reverseDescription}
-        confirmLabel="Yes, Continue"
-        variant="danger"
-        requireReason
-        reasonLabel="Why is this being reversed?"
-        onConfirm={(reason) => run(() => config.reverse(id, reason), 'Reversed.')}
-      />
-      <ConfirmDialog
-        open={confirm === 'delete'}
-        onOpenChange={(open) => !open && setConfirm(null)}
-        title="Delete this draft?"
-        description="Drafts have no ledger impact, so this removes it entirely."
-        confirmLabel="Yes, Continue"
-        variant="danger"
-        onConfirm={() => run(() => config.remove(id), 'Draft deleted.')}
-      />
-    </div>
+    <RowActions
+      actions={[
+        viewAction(viewPath),
+        ...(editPath ? [editAction(editPath)] : []),
+        ...(kind === 'expense' && status === 'POSTED'
+          ? [{ label: 'Pay this cost', href: `/finance/payments/new?expense=${id}`, icon: HandCoins }]
+          : []),
+      ]}
+      destructive={{
+        status,
+        noun: config.label,
+        show: status === 'DRAFT' ? canDelete : status === 'POSTED' && canPost,
+        description: config.reverseDescription,
+        run: (reason) =>
+          status === 'DRAFT' ? config.remove(id) : config.reverse(id, reason ?? ''),
+      }}
+    />
   );
 }

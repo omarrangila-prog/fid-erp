@@ -6,7 +6,9 @@ import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { MasterFormSheet, STATUS_OPTIONS, CURRENCY_OPTIONS, type FieldSpec } from '@/components/shared/master-form';
-import { saveVendorAction, type MasterFormState } from '@/server/actions/master-actions';
+import { saveVendorAction, toggleMasterStatusAction, type MasterFormState } from '@/server/actions/master-actions';
+import { BookOpen, FileText, HandCoins } from 'lucide-react';
+import { RowActions, viewAction } from '@/components/shared/row-actions';
 
 export type VendorRow = {
   id: string;
@@ -24,6 +26,11 @@ export type VendorRow = {
   outstandingUsd: number;
   outstandingLabel: string;
   contractCount: number;
+  purchasedLabel: string;
+  purchasedSort: number;
+  paidLabel: string;
+  lastTradedLabel: string;
+  lastTradedSort: number;
   status: string;
 };
 
@@ -121,6 +128,23 @@ export function VendorsClient({
       cell: (r) => r.contractCount,
     },
     {
+      id: 'purchased',
+      header: 'Total purchased',
+      numeric: true,
+      mobile: 'meta',
+      sortValue: (r) => r.purchasedSort,
+      exportValue: (r) => r.purchasedLabel,
+      cell: (r) => r.purchasedLabel,
+    },
+    {
+      id: 'paid',
+      header: 'Paid',
+      numeric: true,
+      hideable: true,
+      exportValue: (r) => r.paidLabel,
+      cell: (r) => r.paidLabel,
+    },
+    {
       id: 'outstanding',
       header: 'We owe',
       numeric: true,
@@ -141,28 +165,51 @@ export function VendorsClient({
         </Badge>
       ),
     },
-    ...(canEdit
-      ? [
-          {
-            id: 'actions',
-            header: '',
-            cell: (r: VendorRow) => (
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={`Edit ${r.vendorName}`}
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setEditing(r);
-                }}
-              >
-                <Pencil />
-              </Button>
-            ),
-          } satisfies DataColumn<VendorRow>,
-        ]
-      : []),
+    {
+      id: 'lastTraded',
+      header: 'Last purchase',
+      hideable: true,
+      sortValue: (r) => r.lastTradedSort,
+      exportValue: (r) => r.lastTradedLabel,
+      cell: (r) => <span className="whitespace-nowrap">{r.lastTradedLabel}</span>,
+    },
+    {
+      id: 'actions',
+      header: 'Actions',
+      mobile: 'action',
+      pin: 'right',
+      printHidden: true,
+      cell: (r: VendorRow) => (
+        <RowActions
+          actions={[
+            viewAction(`/vendors/${r.id}`),
+            { label: 'Edit', icon: Pencil, show: canEdit, onSelect: () => setEditing(r) },
+            { label: 'Ledger', href: `/ledgers/vendors?vendor=${r.id}`, icon: BookOpen },
+            { label: 'New contract', href: `/purchases/new?vendor=${r.id}`, icon: FileText },
+            { label: 'Record payment', href: `/finance/payments/new?vendor=${r.id}`, icon: HandCoins },
+          ]}
+          destructive={{
+            status: r.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE',
+            noun: 'supplier',
+            show: canEdit,
+            cancelLabel: r.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate',
+            description:
+              r.status === 'ACTIVE'
+                ? 'The supplier stops appearing on new contracts and payments. Their history, ledger and open balances are untouched, and they can be reactivated at any time.'
+                : 'The supplier becomes selectable again on new documents.',
+            run: async (reason) => {
+              void reason;
+              const result = await toggleMasterStatusAction(
+                'vendor',
+                r.id,
+                r.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE',
+              );
+              return { ok: result.ok, error: result.ok ? undefined : result.error };
+            },
+          }}
+        />
+      ),
+    } satisfies DataColumn<VendorRow>,
   ];
 
   return (

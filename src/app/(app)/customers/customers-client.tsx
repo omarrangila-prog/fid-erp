@@ -6,7 +6,9 @@ import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { MasterFormSheet, STATUS_OPTIONS, CURRENCY_OPTIONS, type FieldSpec } from '@/components/shared/master-form';
-import { saveCustomerAction, type MasterFormState } from '@/server/actions/master-actions';
+import { saveCustomerAction, toggleMasterStatusAction, type MasterFormState } from '@/server/actions/master-actions';
+import { BookOpen, FileText, HandCoins } from 'lucide-react';
+import { RowActions, viewAction } from '@/components/shared/row-actions';
 
 export type CustomerRow = {
   id: string;
@@ -22,6 +24,11 @@ export type CustomerRow = {
   outstandingLabel: string;
   outstandingUsd: number;
   invoiceCount: number;
+  soldLabel: string;
+  soldSort: number;
+  receivedLabel: string;
+  lastTradedLabel: string;
+  lastTradedSort: number;
   status: string;
   address: string | null;
   whatsapp: string | null;
@@ -119,6 +126,23 @@ export function CustomersClient({
       cell: (r) => r.creditLimitLabel,
     },
     {
+      id: 'sold',
+      header: 'Total sales',
+      numeric: true,
+      mobile: 'meta',
+      sortValue: (r) => r.soldSort,
+      exportValue: (r) => r.soldLabel,
+      cell: (r) => r.soldLabel,
+    },
+    {
+      id: 'received',
+      header: 'Received',
+      numeric: true,
+      hideable: true,
+      exportValue: (r) => r.receivedLabel,
+      cell: (r) => r.receivedLabel,
+    },
+    {
       id: 'outstanding',
       header: 'Outstanding',
       numeric: true,
@@ -131,6 +155,14 @@ export function CustomersClient({
       ),
     },
     {
+      id: 'lastTraded',
+      header: 'Last invoice',
+      hideable: true,
+      sortValue: (r) => r.lastTradedSort,
+      exportValue: (r) => r.lastTradedLabel,
+      cell: (r) => <span className="whitespace-nowrap">{r.lastTradedLabel}</span>,
+    },
+    {
       id: 'status',
       header: 'Status',
       mobile: 'badge',
@@ -141,28 +173,43 @@ export function CustomersClient({
         </Badge>
       ),
     },
-    ...(canEdit
-      ? [
-          {
-            id: 'actions',
-            header: '',
-            cell: (r: CustomerRow) => (
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={`Edit ${r.customerName}`}
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setEditing(r);
-                }}
-              >
-                <Pencil />
-              </Button>
-            ),
-          } satisfies DataColumn<CustomerRow>,
-        ]
-      : []),
+    {
+      id: 'actions',
+      header: 'Actions',
+      mobile: 'action',
+      pin: 'right',
+      printHidden: true,
+      cell: (r: CustomerRow) => (
+        <RowActions
+          actions={[
+            viewAction(`/customers/${r.id}`),
+            { label: 'Edit', icon: Pencil, show: canEdit, onSelect: () => setEditing(r) },
+            { label: 'Ledger', href: `/ledgers/customers?customer=${r.id}`, icon: BookOpen },
+            { label: 'New invoice', href: `/sales/new?customer=${r.id}`, icon: FileText },
+            { label: 'Record payment', href: `/finance/receipts/new?customer=${r.id}`, icon: HandCoins },
+          ]}
+          destructive={{
+            status: r.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE',
+            noun: 'customer',
+            show: canEdit,
+            cancelLabel: r.status === 'ACTIVE' ? 'Deactivate' : 'Reactivate',
+            description:
+              r.status === 'ACTIVE'
+                ? 'The customer stops appearing on new invoices and receipts. Their history, ledger and open balances are untouched, and they can be reactivated at any time.'
+                : 'The customer becomes selectable again on new documents.',
+            run: async (reason) => {
+              void reason;
+              const result = await toggleMasterStatusAction(
+                'customer',
+                r.id,
+                r.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE',
+              );
+              return { ok: result.ok, error: result.ok ? undefined : result.error };
+            },
+          }}
+        />
+      ),
+    } satisfies DataColumn<CustomerRow>,
   ];
 
   return (

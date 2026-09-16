@@ -166,6 +166,37 @@
     z-index: 15;
   }
 
+  /*
+   * The actions column, pinned to the right while a wide table scrolls under
+   * it. A sheet with twenty columns is the point — the client reads it like a
+   * spreadsheet — but Edit and Cancel must not be somewhere off to the right
+   * that has to be scrolled to before anything can be done to a row.
+   */
+  .pin-right {
+    position: sticky;
+    right: 0;
+    z-index: 5;
+    background: var(--color-surface);
+    box-shadow: inset 1px 0 0 var(--color-line);
+  }
+  .sticky-head th.pin-right {
+    z-index: 15;
+  }
+  /* The row's own hover colour has to reach the pinned cells too, or they
+     stay white while the rest of the row lights up. */
+  tr:hover > .pin-left,
+  tr:hover > .pin-right {
+    background: var(--color-surface-sunken);
+  }
+
+  @media print {
+    .pin-left,
+    .pin-right {
+      position: static;
+      box-shadow: none;
+    }
+  }
+
   /* Touch targets: 44px is the smallest a finger reliably hits. */
   @media (pointer: coarse) {
     .tap-target {
