@@ -486,24 +486,29 @@ export async function getGeneralLedger(params: {
     },
   });
 
-  // If the GL head lost its currency flag, copy it from the cash/bank drawer so
-  // Cash in Hand (MAD) cannot open as "USD only" and hide every MAD line.
-  if (!account.currency && account.cashBankAccounts.length === 1) {
-    const drawerCurrency = account.cashBankAccounts[0].currency;
-    await prisma.account.update({
-      where: { id: account.id },
-      data: { currency: drawerCurrency },
-    });
-    account.currency = drawerCurrency;
-  }
-
+  // A report reads; it never writes. The drawer's currency is preferred in
+  // memory below, which is all the "Cash in Hand opened as USD" case needed.
   const viewCurrency = resolveLedgerViewCurrency({
     requested: params.currency,
     accountCurrency: account.currency,
     cashBankCurrency: pickCashBankCurrency(account.cashBankAccounts, account.currency ?? params.currency),
   });
+  // Three ways to read an account:
+  //
+  //   REPORTING — every line, in its USD value, with a running USD balance.
+  //          The default for a control account that carries several
+  //          currencies (receivables, payables, sales): every line has a USD
+  //          value, so every line is shown. The old default was a filter on
+  //          lines whose own currency was USD, which for a Moroccan
+  //          receivables account — all MAD — opened as no rows and a closing
+  //          balance of zero.
+  //   USD, MAD, AED — only lines in that currency, in that currency, with a
+  //          native running balance. The natural view of a MAD cash drawer,
+  //          and what keeps a personal account's dollars and dirhams apart.
+  //   ALL  — every line in its own currency, listed without a running
+  //          balance, because dirhams and dollars are never added together.
   const allCurrencies = viewCurrency === 'ALL';
-  const currencyFilter = allCurrencies ? null : viewCurrency;
+  const currencyFilter = allCurrencies || viewCurrency === 'REPORTING' ? null : viewCurrency;
   const useOriginal = Boolean(currencyFilter) || allCurrencies;
 
   const openingRows = currencyFilter

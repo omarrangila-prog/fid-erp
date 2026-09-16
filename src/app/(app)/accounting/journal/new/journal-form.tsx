@@ -72,6 +72,17 @@ export function JournalForm({
   const [lines, setLines] = React.useState<Line[]>(() => [emptyLine(0), emptyLine(1)]);
   const [error, setError] = React.useState<string | null>(null);
   const nextKey = React.useRef(2);
+  // One key per opened form: see journalVoucherSchema.clientKey. Issued in an
+  // effect rather than during render, which must stay pure.
+  const clientKey = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!clientKey.current) {
+      clientKey.current =
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+  }, []);
 
   const totals = React.useMemo(() => {
     let debit = new Decimal(0);
@@ -162,6 +173,7 @@ export function JournalForm({
     start(async () => {
       const result = await postJournalVoucherAction(
         JSON.stringify({
+          clientKey: clientKey.current ?? undefined,
           entryDate,
           description: description.trim(),
           rateLocalPerUsd: localRate,

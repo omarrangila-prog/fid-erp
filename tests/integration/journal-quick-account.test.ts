@@ -40,7 +40,8 @@ describe('quickCreateJournalAccount', () => {
     expect(created.name).toBe('Ahmed');
     expect(created.type).toBe('ASSET');
     expect(created.reportGroup).toBe(REPORT_GROUPS.CURRENT_ASSET);
-    expect(created.currency).toBe('MAD');
+    // Ahmed's account holds whatever currency he hands over; none is fixed.
+    expect(created.currency).toBeNull();
     expect(created.isSystem).toBe(false);
     expect(created.code).toMatch(/^14/);
   });

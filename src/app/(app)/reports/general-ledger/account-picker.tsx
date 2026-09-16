@@ -58,10 +58,11 @@ export function AccountPicker({
       </Field>
       <Field label="Currency" className="w-40">
         <Select value={ccy} onChange={(e) => setCcy(e.target.value)}>
+          <option value="REPORTING">Every line at USD value</option>
           <option value="ALL">All — listed separately</option>
-          <option value="USD">USD</option>
-          <option value="MAD">MAD</option>
-          <option value="AED">AED</option>
+          <option value="USD">USD lines only</option>
+          <option value="MAD">MAD lines only</option>
+          <option value="AED">AED lines only</option>
         </Select>
       </Field>
       <Field label="From" className="w-40">

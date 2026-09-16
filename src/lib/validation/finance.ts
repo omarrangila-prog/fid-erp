@@ -133,6 +133,12 @@ export const chequeStatusSchema = z.object({
 });
 
 export const journalVoucherSchema = z.object({
+  /**
+   * Issued once by the form when it opens. A second submit of the same form
+   * — a double click, a retry after a slow network — carries the same key
+   * and returns the entry already posted rather than posting it again.
+   */
+  clientKey: z.string().regex(/^[A-Za-z0-9-]{8,64}$/).optional(),
   entryDate: dateString('Entry date'),
   description: requiredText('Description', 300),
   rateLocalPerUsd: decimalString('Local exchange rate'),

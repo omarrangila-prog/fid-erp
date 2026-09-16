@@ -20,7 +20,7 @@ export default async function ReconciliationPage() {
   const user = await requirePageAccess(PERMISSIONS.ACCOUNTING_VIEW);
   const result = await reconcile(user.activeCompany.id);
 
-  const groups = ['Accounting', 'Sub-ledgers', 'Inventory'] as const;
+  const groups = ['Accounting', 'Sub-ledgers', 'Cash & bank', 'Inventory'] as const;
 
   return (
     <div className="space-y-6">
@@ -75,7 +75,9 @@ export default async function ReconciliationPage() {
                   ? 'The double entry itself.'
                   : group === 'Sub-ledgers'
                     ? 'Control accounts against the detail behind them.'
-                    : 'Stock records against the movement ledger.'}
+                    : group === 'Cash & bank'
+                      ? 'Each cash and bank book against its own ledger account, in its own currency.'
+                      : 'Stock records against the movement ledger.'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">

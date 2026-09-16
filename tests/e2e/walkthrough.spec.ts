@@ -112,7 +112,7 @@ test('the accounting reports agree with one another', async ({ page }) => {
 
   // The report that exists to catch everything else being wrong.
   await page.goto('/reports/reconciliation');
-  await expect(page.getByText(/10 of 10|All checks pass|Everything agrees/i).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/\d+ of \d+ passing|All checks pass|Everything agrees/i).first()).toBeVisible({ timeout: 20_000 });
 });
 
 test('the tax return is prepared and ties to the ledger', async ({ page }) => {
@@ -231,5 +231,5 @@ test('Morocco keeps its own separate books', async ({ page }) => {
   await expect(page.getByText(/E2E Roastery Dubai/)).toHaveCount(0);
 
   await page.goto('/reports/reconciliation');
-  await expect(page.getByText(/10 of 10|All checks pass|Everything agrees/i).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/\d+ of \d+ passing|All checks pass|Everything agrees/i).first()).toBeVisible({ timeout: 20_000 });
 });

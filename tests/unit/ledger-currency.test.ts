@@ -35,8 +35,10 @@ describe('resolveLedgerViewCurrency', () => {
     ).toBe('MAD');
   });
 
-  it('falls back to USD for heads with no native currency', () => {
-    expect(resolveLedgerViewCurrency({})).toBe('USD');
+  it('opens a head with no native currency on every line at USD value, not on USD lines only', () => {
+    // Receivables in Morocco are all MAD. Filtering to USD-denominated lines
+    // showed nothing and a closing balance of zero.
+    expect(resolveLedgerViewCurrency({})).toBe('REPORTING');
   });
 });
 
@@ -58,7 +60,8 @@ describe('ledgerHref', () => {
 
 describe('ledgerCurrencyLabel', () => {
   it('never labels a MAD cash head as USD only', () => {
-    expect(ledgerCurrencyLabel('MAD', false)).toBe('MAD only');
-    expect(ledgerCurrencyLabel('USD', false)).toBe('USD only');
+    expect(ledgerCurrencyLabel('MAD', false)).toBe('MAD lines only, in MAD');
+    expect(ledgerCurrencyLabel('USD', false)).toBe('USD lines only, in USD');
+    expect(ledgerCurrencyLabel('REPORTING', false)).toBe('every line at its USD value');
   });
 });

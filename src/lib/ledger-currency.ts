@@ -14,11 +14,23 @@
  * Pass ALL to list currencies separately without adding them together.
  */
 
-export const LEDGER_VIEW_CURRENCIES = ['ALL', 'USD', 'MAD', 'AED'] as const;
+/**
+ * REPORTING — every line at its USD value, with a running USD balance. The
+ *             default for a control account that carries several currencies
+ *             (receivables, payables, sales): every line has a USD value, so
+ *             every line is shown.
+ * USD, MAD, AED — only the lines in that currency, in that currency, with a
+ *             native running balance. For a MAD cash drawer this is the only
+ *             sensible view; for a personal account it keeps the dirhams and
+ *             the dollars apart, as the client asked.
+ * ALL      — every line in its own currency, no running balance, because
+ *             dirhams and dollars are never added together.
+ */
+export const LEDGER_VIEW_CURRENCIES = ['REPORTING', 'ALL', 'USD', 'MAD', 'AED'] as const;
 export type LedgerViewCurrency = (typeof LEDGER_VIEW_CURRENCIES)[number];
 
 export function parseLedgerViewCurrency(value: string | null | undefined): LedgerViewCurrency | null {
-  if (value === 'ALL' || value === 'USD' || value === 'MAD' || value === 'AED') return value;
+  if (value === 'REPORTING' || value === 'ALL' || value === 'USD' || value === 'MAD' || value === 'AED') return value;
   return null;
 }
 
@@ -52,7 +64,7 @@ export function resolveLedgerViewCurrency(params: {
     parseLedgerViewCurrency(params.requested) ??
     parseLedgerViewCurrency(params.cashBankCurrency) ??
     parseLedgerViewCurrency(params.accountCurrency) ??
-    'USD'
+    'REPORTING'
   );
 }
 
@@ -66,5 +78,6 @@ export function ledgerHref(accountId: string, currency?: string | null): string 
 /** Human label for the GL header — never say "USD only" for a MAD cash head. */
 export function ledgerCurrencyLabel(viewCurrency: string, mixed: boolean): string {
   if (mixed) return 'all currencies listed separately — USD and MAD are never added together';
-  return `${viewCurrency} only`;
+  if (viewCurrency === 'REPORTING') return 'every line at its USD value';
+  return `${viewCurrency} lines only, in ${viewCurrency}`;
 }

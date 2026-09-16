@@ -290,14 +290,24 @@ export async function postJournalVoucherAction(payload: string): Promise<DocForm
     const user = await requirePermission(PERMISSIONS.ACCOUNTING_POST);
     const input = journalVoucherSchema.parse(parseJson(payload));
 
+    // The voucher's identity is the key the form was opened with, so posting
+    // is idempotent: the same form submitted twice posts once.
+    const sourceId = input.clientKey ? `JV-${input.clientKey}` : `JV-${Date.now()}`;
+
     const entry = await transaction(async (tx) => {
+      const already = await tx.journalEntry.findFirst({
+        where: { companyId: user.activeCompany.id, sourceType: 'MANUAL', sourceId },
+        select: { id: true, entryNumber: true },
+      });
+      if (already) return already;
+
       const company = await getCompanyContext(tx, user.activeCompany.id);
       return postJournalEntry(tx, {
         companyId: user.activeCompany.id,
         entryDate: input.entryDate,
         description: input.description,
         sourceType: 'MANUAL',
-        sourceId: `JV-${Date.now()}`,
+        sourceId,
         createdById: user.id,
         localCurrency: company.localCurrency,
         rateLocalPerUsd: input.rateLocalPerUsd,

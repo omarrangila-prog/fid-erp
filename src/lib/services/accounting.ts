@@ -104,30 +104,70 @@ const LOCAL_DRIFT_TOLERANCE = new Decimal('0.05');
  */
 const USD_TRANSLATION_TOLERANCE = new Decimal('0.005');
 
-async function resolveAccountId(tx: Tx, companyId: string, line: JournalLineInput): Promise<string> {
-  if (line.accountId) {
-    const account = await tx.account.findFirst({
-      where: { id: line.accountId, companyId },
-      select: { id: true },
-    });
-    if (!account) throw new NotFoundError('Account');
-    return account.id;
-  }
-
+/**
+ * Which ledger account a line lands on, and — when that account is the head
+ * of a cash or bank drawer — which drawer.
+ *
+ * The cash book and the general ledger read the same lines; the cash book by
+ * drawer, the ledger by account. A line that reaches a drawer's account
+ * without naming the drawer is real to the ledger and invisible to the cash
+ * book, and the two screens then disagree. So a line posted to such an
+ * account by id — a manual journal, typically — is given its drawer here,
+ * and a line in a currency the drawer cannot hold is refused.
+ */
+async function resolveAccount(
+  tx: Tx,
+  companyId: string,
+  line: JournalLineInput,
+  currency: string,
+  translationOnly: boolean,
+): Promise<{ accountId: string; cashBankAccountId: string | null }> {
   if (line.cashBankAccountId) {
-    const account = await tx.cashBankAccount.findUnique({
+    const drawer = await tx.cashBankAccount.findUnique({
       where: { id: line.cashBankAccountId },
-      select: { glAccountId: true, companyId: true },
+      select: { id: true, name: true, glAccountId: true, companyId: true, currency: true },
     });
-    if (!account || account.companyId !== companyId) throw new NotFoundError('Cash/bank account');
-    return account.glAccountId;
+    if (!drawer || drawer.companyId !== companyId) throw new NotFoundError('Cash/bank account');
+    if (line.accountId && line.accountId !== drawer.glAccountId) {
+      throw new BusinessRuleError(`${drawer.name} is not held on the account this line names.`);
+    }
+    if (!translationOnly && drawer.currency !== currency) {
+      throw new BusinessRuleError(
+        `${drawer.name} is held in ${drawer.currency}; a ${currency} amount cannot be recorded through it.`,
+      );
+    }
+    return { accountId: drawer.glAccountId, cashBankAccountId: drawer.id };
   }
 
-  if (line.accountKey) {
-    return (await getSystemAccount(tx, companyId, line.accountKey)).id;
+  let accountId: string;
+  if (line.accountId) {
+    const account = await tx.account.findFirst({ where: { id: line.accountId, companyId }, select: { id: true } });
+    if (!account) throw new NotFoundError('Account');
+    accountId = account.id;
+  } else if (line.accountKey) {
+    accountId = (await getSystemAccount(tx, companyId, line.accountKey)).id;
+  } else {
+    throw new Error('Journal line must specify an account key, account id, or cash/bank account.');
   }
 
-  throw new Error('Journal line must specify an account key, account id, or cash/bank account.');
+  const drawers = await tx.cashBankAccount.findMany({
+    where: { glAccountId: accountId, companyId },
+    select: { id: true, name: true, currency: true },
+  });
+  if (drawers.length === 0) return { accountId, cashBankAccountId: null };
+
+  if (translationOnly) return { accountId, cashBankAccountId: drawers.length === 1 ? drawers[0].id : null };
+
+  const matching = drawers.filter((d) => d.currency === currency);
+  if (matching.length === 1) return { accountId, cashBankAccountId: matching[0].id };
+  if (matching.length === 0) {
+    throw new BusinessRuleError(
+      `${drawers[0].name} is held in ${drawers[0].currency}; a ${currency} amount cannot be recorded through it.`,
+    );
+  }
+  throw new BusinessRuleError(
+    `Several ${currency} cash or bank accounts share this ledger account — say which one the money moved through.`,
+  );
 }
 
 export async function getSystemAccount(
@@ -192,6 +232,7 @@ export async function postJournalEntry(tx: Tx, params: PostJournalParams) {
 
   type Prepared = {
     accountId: string;
+    cashBankAccountId: string | null;
     lineNumber: number;
     input: JournalLineInput;
     currency: string;
@@ -239,8 +280,11 @@ export async function postJournalEntry(tx: Tx, params: PostJournalParams) {
 
     await assertJournalDimensions(tx, companyId, line);
 
+    const resolved = await resolveAccount(tx, companyId, line, currency, Boolean(line.localOnly));
+
     prepared.push({
-      accountId: await resolveAccountId(tx, companyId, line),
+      accountId: resolved.accountId,
+      cashBankAccountId: resolved.cashBankAccountId,
       lineNumber: i + 1,
       input: line,
       currency,
@@ -390,7 +434,7 @@ export async function postJournalEntry(tx: Tx, params: PostJournalParams) {
             customerId: l.input.customerId ?? null,
             vendorId: l.input.vendorId ?? null,
             agentId: l.input.agentId ?? null,
-            cashBankAccountId: l.input.cashBankAccountId ?? null,
+            cashBankAccountId: l.cashBankAccountId,
             shipmentId: l.input.shipmentId ?? null,
             purchaseContractId: l.input.purchaseContractId ?? null,
             salesInvoiceId: l.input.salesInvoiceId ?? null,

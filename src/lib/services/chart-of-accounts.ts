@@ -324,45 +324,69 @@ export async function createCashBankAccount(
   },
   userId: string,
 ) {
-  return transaction(async (tx) => {
-    const duplicate = await tx.cashBankAccount.findFirst({
-      where: { companyId: input.companyId, code: input.code },
-    });
-    if (duplicate) throw new ConflictError(`A cash/bank account with code "${input.code}" already exists.`);
+  return transaction((tx) => createCashBankAccountIn(tx, input, userId));
+}
 
-    const glCount = await tx.account.count({ where: { companyId: input.companyId, code: { startsWith: '10' } } });
-    const glCode = `10${String(glCount + 1).padStart(2, '0')}`;
-
-    const glAccount = await tx.account.create({
-      data: {
-        companyId: input.companyId,
-        code: glCode,
-        name: `${input.name} (${input.currency.toUpperCase()})`,
-        type: 'ASSET',
-        reportGroup: REPORT_GROUPS.CURRENT_ASSET,
-        subledgerType: 'CASH_BANK',
-        currency: input.currency.toUpperCase(),
-        isSystem: true,
-      },
-    });
-
-    const account = await tx.cashBankAccount.create({
-      data: {
-        companyId: input.companyId,
-        code: input.code,
-        name: input.name,
-        accountType: input.accountType,
-        currency: input.currency.toUpperCase(),
-        openingBalance: toMoney(input.openingBalance ?? 0),
-        bankName: input.bankName ?? null,
-        accountNumber: input.accountNumber ?? null,
-        glAccountId: glAccount.id,
-      },
-    });
-
-    void userId;
-    return account;
+/** The body of createCashBankAccount, for a caller already inside a transaction. */
+export async function createCashBankAccountIn(
+  tx: Tx,
+  input: {
+    companyId: string;
+    code: string;
+    name: string;
+    accountType: CashBankAccountType;
+    currency: string;
+    openingBalance?: string | number;
+    bankName?: string | null;
+    accountNumber?: string | null;
+  },
+  userId: string,
+) {
+  const duplicate = await tx.cashBankAccount.findFirst({
+    where: { companyId: input.companyId, code: input.code },
   });
+  if (duplicate) throw new ConflictError(`A cash/bank account with code "${input.code}" already exists.`);
+
+  // The next free code in the 10xx series, not count + 1: a deactivated or
+  // removed account would otherwise make the next one collide.
+  const taken = await tx.account.findMany({
+    where: { companyId: input.companyId, code: { startsWith: '10' } },
+    select: { code: true },
+  });
+  const used = new Set(taken.map((a) => a.code));
+  let n = 1;
+  while (used.has(`10${String(n).padStart(2, '0')}`)) n += 1;
+  const glCode = `10${String(n).padStart(2, '0')}`;
+
+  const glAccount = await tx.account.create({
+    data: {
+      companyId: input.companyId,
+      code: glCode,
+      name: `${input.name} (${input.currency.toUpperCase()})`,
+      type: 'ASSET',
+      reportGroup: REPORT_GROUPS.CURRENT_ASSET,
+      subledgerType: 'CASH_BANK',
+      currency: input.currency.toUpperCase(),
+      isSystem: true,
+    },
+  });
+
+  const account = await tx.cashBankAccount.create({
+    data: {
+      companyId: input.companyId,
+      code: input.code,
+      name: input.name,
+      accountType: input.accountType,
+      currency: input.currency.toUpperCase(),
+      openingBalance: toMoney(input.openingBalance ?? 0),
+      bankName: input.bankName ?? null,
+      accountNumber: input.accountNumber ?? null,
+      glAccountId: glAccount.id,
+    },
+  });
+
+  void userId;
+  return account;
 }
 
 /**
@@ -702,10 +726,17 @@ export async function quickCreateJournalAccount(params: {
   const name = params.name.trim();
   if (!name) throw new BusinessRuleError('Enter the account name.');
 
-  const currency = params.currency.trim().toUpperCase();
-  if (!/^[A-Z]{3}$/.test(currency)) {
+  const requested = params.currency.trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(requested)) {
     throw new BusinessRuleError('Use a three-letter currency code such as USD or MAD.');
   }
+
+  // A personal or loan account is a running account with one person — Ahmed
+  // can hand over dollars one week and dirhams the next — so it holds every
+  // currency, each shown on its own in the ledger. It has no fixed currency.
+  // A cash or bank head is the opposite: one drawer, one currency, and it
+  // needs a real cash/bank record behind it or the cash book cannot see it.
+  const fixedCurrency = kind.value === 'PERSONAL' || kind.value === 'LOAN' ? null : requested;
 
   return transaction(async (tx) => {
     const nameClash = await tx.account.findFirst({
@@ -714,6 +745,31 @@ export async function quickCreateJournalAccount(params: {
     });
     if (nameClash) {
       throw new ConflictError(`${nameClash.name} (${nameClash.code}) is already on the chart.`);
+    }
+
+    if (kind.value === 'CASH_BANK') {
+      const drawerCount = await tx.cashBankAccount.count({ where: { companyId: params.companyId } });
+      const drawer = await createCashBankAccountIn(
+        tx,
+        {
+          companyId: params.companyId,
+          code: `CB-${String(drawerCount + 1).padStart(3, '0')}`,
+          name,
+          accountType: /bank/i.test(name) ? 'BANK' : 'CASH',
+          currency: requested,
+        },
+        params.userId,
+      );
+      const head = await tx.account.findUniqueOrThrow({ where: { id: drawer.glAccountId } });
+      await writeAudit(tx, {
+        companyId: params.companyId,
+        userId: params.userId,
+        action: 'LEDGER_ACCOUNT_CREATED',
+        entityType: 'Account',
+        entityId: head.id,
+        after: { code: head.code, name, kind: kind.value, currency: requested, cashBankAccountId: drawer.id },
+      });
+      return head;
     }
 
     const code = await nextCodeInSeries(tx, params.companyId, kind.series);
@@ -725,7 +781,7 @@ export async function quickCreateJournalAccount(params: {
         name,
         type: kind.type,
         reportGroup: kind.reportGroup,
-        currency,
+        currency: fixedCurrency,
         isSystem: false,
         subledgerType: 'NONE',
       },
@@ -737,7 +793,7 @@ export async function quickCreateJournalAccount(params: {
       action: 'LEDGER_ACCOUNT_CREATED',
       entityType: 'Account',
       entityId: created.id,
-      after: { code, name, kind: kind.value, currency, reportGroup: kind.reportGroup },
+      after: { code, name, kind: kind.value, currency: fixedCurrency, reportGroup: kind.reportGroup },
     });
 
     return created;

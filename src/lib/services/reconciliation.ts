@@ -19,7 +19,7 @@ import { getReceivables, getPayables, getUnappliedCredits } from '@/lib/services
 
 export type ReconciliationCheck = {
   id: string;
-  group: 'Accounting' | 'Sub-ledgers' | 'Inventory';
+  group: 'Accounting' | 'Sub-ledgers' | 'Cash & bank' | 'Inventory';
   label: string;
   /** What the two figures mean, for someone who has to fix a failure. */
   explanation: string;
@@ -196,6 +196,81 @@ export async function reconcile(companyId: string): Promise<ReconciliationResult
       dec(profit.cogsUsd),
     ),
   );
+
+  // --- Cash and bank -----------------------------------------------------
+  // Invariants D and E: the cash book and the bank book must equal their
+  // general-ledger heads, drawer by drawer, in the drawer's own currency.
+  //
+  // Both are read from the same journal lines, so they can only disagree
+  // when a line reaches the GL head without naming the drawer (a manual
+  // journal posted straight to 1001, say) or names the drawer on some other
+  // account, or carries a currency the drawer cannot hold. Each of those is
+  // a mapping fault that makes one screen show a number another screen
+  // cannot, so each is checked on its own, and the balances are compared in
+  // the drawer's currency — USD and MAD are never added together.
+  const drawers = await prisma.cashBankAccount.findMany({
+    where: { companyId, status: 'ACTIVE' },
+    select: { id: true, code: true, name: true, currency: true, openingBalance: true, glAccountId: true },
+    orderBy: { code: 'asc' },
+  });
+
+  for (const drawer of drawers) {
+    const [book] = await prisma.$queryRaw<Array<{ net: string }>>`
+      SELECT COALESCE(SUM(jl."debit" - jl."credit"), 0)::text AS net
+      FROM journal_lines jl
+      JOIN journal_entries je ON je."id" = jl."journalEntryId"
+      WHERE je."companyId" = ${companyId} AND je."status" = 'POSTED'
+        AND jl."cashBankAccountId" = ${drawer.id} AND jl."currency" = ${drawer.currency}`;
+    const [head] = await prisma.$queryRaw<Array<{ net: string }>>`
+      SELECT COALESCE(SUM(jl."debit" - jl."credit"), 0)::text AS net
+      FROM journal_lines jl
+      JOIN journal_entries je ON je."id" = jl."journalEntryId"
+      WHERE je."companyId" = ${companyId} AND je."status" = 'POSTED'
+        AND jl."accountId" = ${drawer.glAccountId} AND jl."currency" = ${drawer.currency}`;
+    const bookBalance = toMoney(dec(drawer.openingBalance).plus(book?.net ?? 0));
+    const headBalance = toMoney(dec(drawer.openingBalance).plus(head?.net ?? 0));
+    checks.push(
+      build(
+        `cash-book-${drawer.code}`,
+        'Cash & bank',
+        `${drawer.name} (${drawer.currency}) book agrees with its ledger account`,
+        `Opening balance plus every movement recorded through ${drawer.name} must equal the balance of its general-ledger account, in ${drawer.currency}.`,
+        `${drawer.currency} cash/bank book`,
+        bookBalance,
+        `${drawer.currency} ledger account`,
+        headBalance,
+      ),
+    );
+  }
+
+  const [mapping] = await prisma.$queryRaw<Array<{ undimensioned: string; misfiled: string; foreign: string }>>`
+    SELECT
+      (SELECT count(*) FROM journal_lines jl
+         JOIN journal_entries je ON je."id" = jl."journalEntryId"
+         JOIN cash_bank_accounts cba ON cba."glAccountId" = jl."accountId"
+        WHERE je."companyId" = ${companyId} AND jl."cashBankAccountId" IS NULL
+          AND (jl."debitUsd" <> 0 OR jl."creditUsd" <> 0))::text AS undimensioned,
+      (SELECT count(*) FROM journal_lines jl
+         JOIN journal_entries je ON je."id" = jl."journalEntryId"
+         JOIN cash_bank_accounts cba ON cba."id" = jl."cashBankAccountId"
+        WHERE je."companyId" = ${companyId} AND jl."accountId" <> cba."glAccountId")::text AS misfiled,
+      (SELECT count(*) FROM journal_lines jl
+         JOIN journal_entries je ON je."id" = jl."journalEntryId"
+         JOIN cash_bank_accounts cba ON cba."id" = jl."cashBankAccountId"
+        WHERE je."companyId" = ${companyId} AND jl."currency" <> cba."currency"
+          AND (jl."debitUsd" <> 0 OR jl."creditUsd" <> 0))::text AS foreign`;
+  const mappingFaults = Number(mapping?.undimensioned ?? 0) + Number(mapping?.misfiled ?? 0) + Number(mapping?.foreign ?? 0);
+  checks.push({
+    id: 'cash-mapping',
+    group: 'Cash & bank',
+    label: 'Every cash and bank line names its drawer, on its own account, in its own currency',
+    explanation:
+      `A line on a cash or bank ledger account that does not name the drawer is invisible to the cash book; one that names a drawer but sits on another account is invisible to the ledger; one in a currency the drawer cannot hold is a posting fault. ${mapping?.undimensioned ?? 0} without a drawer, ${mapping?.misfiled ?? 0} on the wrong account, ${mapping?.foreign ?? 0} in a foreign currency.`,
+    left: { label: 'Faulty lines', value: String(mappingFaults) },
+    right: { label: 'Expected', value: '0' },
+    differenceUsd: String(mappingFaults),
+    passed: mappingFaults === 0,
+  });
 
   // --- Inventory ----------------------------------------------------------
   // Reservations are excluded, exactly as computeWarehouseBalance excludes
