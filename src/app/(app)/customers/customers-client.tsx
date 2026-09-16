@@ -31,6 +31,12 @@ export type CustomerRow = {
 const FIELDS = (defaultCurrency: string): FieldSpec[] => [
   { kind: 'section', title: 'Identity' },
   { kind: 'text', name: 'customerName', label: 'Customer name', required: true },
+  {
+    kind: 'text',
+    name: 'customerCode',
+    label: 'Customer code',
+    hint: 'Leave blank to issue the next CUS number. On edit this stays as it is.',
+  },
   { kind: 'text', name: 'country', label: 'Country' },
   {
     kind: 'select',
@@ -220,6 +226,47 @@ export function CustomersClient({
           }
         />
       ) : null}
+    </>
+  );
+}
+
+/** Edit from the customer detail page — same sheet as the list, same save path. */
+export function CustomerEditButton({
+  customer,
+  defaultCurrency,
+}: {
+  customer: {
+    id: string;
+    customerCode: string;
+    customerName: string;
+    country: string | null;
+    contactPerson: string | null;
+    phone: string | null;
+    whatsapp: string | null;
+    email: string | null;
+    address: string | null;
+    primaryCurrency: string;
+    creditLimit: string;
+    notes: string | null;
+    status: string;
+  };
+  defaultCurrency: string;
+}) {
+  const [open, setOpen] = React.useState(false);
+  return (
+    <>
+      <Button variant="outline" onClick={() => setOpen(true)}>
+        <Pencil />
+        Edit
+      </Button>
+      <MasterFormSheet
+        open={open}
+        onOpenChange={setOpen}
+        title={`Edit ${customer.customerName}`}
+        fields={FIELDS(defaultCurrency)}
+        defaults={customer}
+        action={saveCustomerAction.bind(null, customer.id) as (p: MasterFormState, f: FormData) => Promise<MasterFormState>}
+      />
     </>
   );
 }

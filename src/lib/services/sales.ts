@@ -890,91 +890,118 @@ export async function postSalesInvoice(params: { id: string; companyId: string; 
   });
 }
 
+/**
+ * Reverse a posted invoice. This is the only writer of SalesInvoice.status =
+ * REVERSED. Refresh, edit, failed post and payment do not call it.
+ */
 export async function reverseSalesInvoice(params: {
   id: string;
   companyId: string;
   userId: string;
   reason: string;
 }) {
-  return transaction(async (tx) => {
-    const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>`
-      SELECT "id", "status"::text FROM sales_invoices
-      WHERE "id" = ${params.id} AND "companyId" = ${params.companyId}
-      FOR UPDATE
-    `;
-    if (locked.length === 0) throw new NotFoundError('Sales invoice');
-    if (locked[0].status !== 'POSTED') {
-      throw new BusinessRuleError('Only a posted invoice can be reversed.');
-    }
+  return transaction((tx) => reverseSalesInvoiceIn(tx, params));
+}
 
-    const invoice = await tx.salesInvoice.findUniqueOrThrow({
-      where: { id: params.id },
-      include: { lines: true, allocations: { include: { receipt: true } } },
-    });
+async function reverseSalesInvoiceIn(
+  tx: Tx,
+  params: { id: string; companyId: string; userId: string; reason: string },
+) {
+  const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>`
+    SELECT "id", "status"::text FROM sales_invoices
+    WHERE "id" = ${params.id} AND "companyId" = ${params.companyId}
+    FOR UPDATE
+  `;
+  if (locked.length === 0) throw new NotFoundError('Sales invoice');
+  if (locked[0].status !== 'POSTED') {
+    throw new BusinessRuleError('Only a posted invoice can be reversed.');
+  }
 
-    const liveAllocations = invoice.allocations.filter((a) => a.receipt.status === 'POSTED');
-    if (liveAllocations.length > 0) {
+  const invoice = await tx.salesInvoice.findUniqueOrThrow({
+    where: { id: params.id },
+    include: {
+      lines: true,
+      allocations: { include: { receipt: true } },
+      creditNotes: { select: { id: true, status: true, creditNoteNumber: true } },
+    },
+  });
+
+  const liveAllocations = invoice.allocations.filter((a) => a.receipt.status === 'POSTED');
+  if (liveAllocations.length > 0) {
+    throw new BusinessRuleError(
+      'Receipts are allocated to this invoice. Reverse those receipts before reversing the invoice.',
+    );
+  }
+
+  const draftAllocations = invoice.allocations.filter((a) => a.receipt.status === 'DRAFT');
+  if (draftAllocations.length > 0) {
+    throw new BusinessRuleError(
+      `Draft receipt ${draftAllocations[0].receipt.receiptNumber} is still allocated. Delete that draft before cancelling the invoice.`,
+    );
+  }
+
+  const liveCredits = invoice.creditNotes.filter((note) => note.status === 'POSTED');
+  if (liveCredits.length > 0) {
+    throw new BusinessRuleError(
+      `Credit note ${liveCredits[0].creditNoteNumber} is still posted against this invoice.`,
+    );
+  }
+
+  const reversalDate = new Date();
+
+  // Put the stock back at the cost it left at.
+  for (const line of invoice.lines) {
+    if (!line.warehouseId) {
       throw new BusinessRuleError(
-        'Receipts are allocated to this invoice. Reverse those receipts before reversing the invoice.',
+        'This invoice has a line without a warehouse and cannot be cancelled without corrupting stock.',
       );
     }
-
-    const reversalDate = new Date();
-
-    // Put the stock back at the cost it left at.
-    for (const line of invoice.lines) {
-      if (!line.warehouseId) {
-        throw new BusinessRuleError(
-          'This invoice has a line without a warehouse and cannot be cancelled without corrupting stock.',
-        );
-      }
-      await returnStock(tx, {
-        companyId: params.companyId,
-        batchId: line.batchId,
-        warehouseId: line.warehouseId,
-        quantityKg: line.quantityKg,
-        bags: line.bags,
-        unitCostUsd: line.unitCostUsd,
-        referenceType: 'SALES_INVOICE_REVERSAL',
-        referenceId: invoice.id,
-        transactionDate: reversalDate,
-        createdById: params.userId,
-        notes: `Reversal of ${invoice.invoiceNumber}: ${params.reason}`,
-      });
-    }
-
-    await reverseJournalEntry(tx, {
+    await returnStock(tx, {
       companyId: params.companyId,
-      sourceType: 'SALES_INVOICE',
-      sourceId: invoice.id,
+      batchId: line.batchId,
+      warehouseId: line.warehouseId,
+      quantityKg: line.quantityKg,
+      bags: line.bags,
+      unitCostUsd: line.unitCostUsd,
+      referenceType: 'SALES_INVOICE_REVERSAL',
+      referenceId: invoice.id,
+      transactionDate: reversalDate,
       createdById: params.userId,
-      entryDate: reversalDate,
-      reason: params.reason,
+      notes: `Reversal of ${invoice.invoiceNumber}: ${params.reason}`,
     });
+  }
 
-    const reversed = await tx.salesInvoice.update({
-      where: { id: invoice.id },
-      data: { status: 'REVERSED', reversedAt: reversalDate, reversalReason: params.reason },
-    });
-
-    const retiredNumber = await retireSalesInvoiceNumber(tx, {
-      id: invoice.id,
-      companyId: params.companyId,
-      invoiceNumber: invoice.invoiceNumber,
-    });
-
-    await writeAudit(tx, {
-      companyId: params.companyId,
-      userId: params.userId,
-      action: 'SALES_INVOICE_REVERSED',
-      entityType: 'SalesInvoice',
-      entityId: invoice.id,
-      before: { status: 'POSTED', invoiceNumber: invoice.invoiceNumber },
-      after: { status: 'REVERSED', reason: params.reason, invoiceNumber: retiredNumber },
-    });
-
-    return { ...reversed, invoiceNumber: retiredNumber };
+  await reverseJournalEntry(tx, {
+    companyId: params.companyId,
+    sourceType: 'SALES_INVOICE',
+    sourceId: invoice.id,
+    createdById: params.userId,
+    entryDate: reversalDate,
+    reason: params.reason,
   });
+
+  const reversed = await tx.salesInvoice.update({
+    where: { id: invoice.id },
+    data: { status: 'REVERSED', reversedAt: reversalDate, reversalReason: params.reason },
+  });
+
+  const retiredNumber = await retireSalesInvoiceNumber(tx, {
+    id: invoice.id,
+    companyId: params.companyId,
+    invoiceNumber: invoice.invoiceNumber,
+  });
+
+  await writeAudit(tx, {
+    companyId: params.companyId,
+    userId: params.userId,
+    action: 'SALES_INVOICE_REVERSED',
+    entityType: 'SalesInvoice',
+    entityId: invoice.id,
+    before: { status: 'POSTED', invoiceNumber: invoice.invoiceNumber },
+    after: { status: 'REVERSED', reason: params.reason, invoiceNumber: retiredNumber },
+  });
+
+  return { ...reversed, invoiceNumber: retiredNumber };
 }
 
 export async function deleteDraftSalesInvoice(params: { id: string; companyId: string; userId: string }) {
@@ -1022,84 +1049,89 @@ export async function deleteReversedSalesInvoice(params: {
   companyId: string;
   userId: string;
 }) {
-  return transaction(async (tx) => {
-    const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>`
-      SELECT "id", "status"::text FROM sales_invoices
-      WHERE "id" = ${params.id} AND "companyId" = ${params.companyId}
-      FOR UPDATE
-    `;
-    if (locked.length === 0) throw new NotFoundError('Sales invoice');
-    if (locked[0].status !== 'REVERSED') {
-      throw new BusinessRuleError(
-        'Only a cancelled invoice can be removed from the list. Posted invoices must be cancelled first.',
-      );
-    }
+  return transaction((tx) => deleteReversedSalesInvoiceIn(tx, params));
+}
 
-    const invoice = await tx.salesInvoice.findUniqueOrThrow({
-      where: { id: params.id },
-      include: {
-        allocations: { include: { receipt: { select: { status: true, receiptNumber: true } } } },
-        creditNotes: { select: { id: true, status: true, creditNoteNumber: true } },
-      },
-    });
+async function deleteReversedSalesInvoiceIn(
+  tx: Tx,
+  params: { id: string; companyId: string; userId: string },
+) {
+  const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>`
+    SELECT "id", "status"::text FROM sales_invoices
+    WHERE "id" = ${params.id} AND "companyId" = ${params.companyId}
+    FOR UPDATE
+  `;
+  if (locked.length === 0) throw new NotFoundError('Sales invoice');
+  if (locked[0].status !== 'REVERSED') {
+    throw new BusinessRuleError(
+      'Only a cancelled invoice can be removed from the list. Posted invoices must be cancelled first.',
+    );
+  }
 
-    const liveReceipts = invoice.allocations.filter((a) => a.receipt.status === 'POSTED');
-    if (liveReceipts.length > 0) {
-      throw new BusinessRuleError(
-        'Receipts are still allocated to this invoice. Reverse those receipts before removing it.',
-      );
-    }
-
-    const liveCredits = invoice.creditNotes.filter((n) => n.status === 'POSTED');
-    if (liveCredits.length > 0) {
-      throw new BusinessRuleError(
-        `Credit note ${liveCredits[0].creditNoteNumber} is still posted against this invoice.`,
-      );
-    }
-
-    const journals = await tx.journalEntry.findMany({
-      where: { sourceType: 'SALES_INVOICE', sourceId: invoice.id },
-      select: { id: true, description: true },
-    });
-    for (const journal of journals) {
-      const marker = `[${invoice.invoiceNumber}]`;
-      if (!journal.description.includes(invoice.invoiceNumber)) {
-        await tx.journalEntry.update({
-          where: { id: journal.id },
-          data: { description: `${marker} ${journal.description}` },
-        });
-      }
-    }
-
-    await tx.journalLine.updateMany({
-      where: { salesInvoiceId: invoice.id },
-      data: { salesInvoiceId: null },
-    });
-    await tx.receiptAllocation.deleteMany({ where: { salesInvoiceId: invoice.id } });
-    await tx.creditNote.updateMany({
-      where: { salesInvoiceId: invoice.id },
-      data: { salesInvoiceId: null },
-    });
-    await tx.attachment.deleteMany({
-      where: { companyId: params.companyId, entityType: 'SalesInvoice', entityId: invoice.id },
-    });
-
-    await writeAudit(tx, {
-      companyId: params.companyId,
-      userId: params.userId,
-      action: 'SALES_INVOICE_REMOVED',
-      entityType: 'SalesInvoice',
-      entityId: invoice.id,
-      before: {
-        invoiceNumber: invoice.invoiceNumber,
-        status: invoice.status,
-        totalAmount: invoice.totalAmount,
-        reversalReason: invoice.reversalReason,
-      },
-    });
-
-    await tx.salesInvoice.delete({ where: { id: invoice.id } });
+  const invoice = await tx.salesInvoice.findUniqueOrThrow({
+    where: { id: params.id },
+    include: {
+      allocations: { include: { receipt: { select: { status: true, receiptNumber: true } } } },
+      creditNotes: { select: { id: true, status: true, creditNoteNumber: true } },
+    },
   });
+
+  const liveReceipts = invoice.allocations.filter((a) => a.receipt.status === 'POSTED');
+  if (liveReceipts.length > 0) {
+    throw new BusinessRuleError(
+      'Receipts are still allocated to this invoice. Reverse those receipts before removing it.',
+    );
+  }
+
+  const liveCredits = invoice.creditNotes.filter((n) => n.status === 'POSTED');
+  if (liveCredits.length > 0) {
+    throw new BusinessRuleError(
+      `Credit note ${liveCredits[0].creditNoteNumber} is still posted against this invoice.`,
+    );
+  }
+
+  const journals = await tx.journalEntry.findMany({
+    where: { sourceType: 'SALES_INVOICE', sourceId: invoice.id },
+    select: { id: true, description: true },
+  });
+  for (const journal of journals) {
+    const marker = `[${invoice.invoiceNumber}]`;
+    if (!journal.description.includes(invoice.invoiceNumber)) {
+      await tx.journalEntry.update({
+        where: { id: journal.id },
+        data: { description: `${marker} ${journal.description}` },
+      });
+    }
+  }
+
+  await tx.journalLine.updateMany({
+    where: { salesInvoiceId: invoice.id },
+    data: { salesInvoiceId: null },
+  });
+  await tx.receiptAllocation.deleteMany({ where: { salesInvoiceId: invoice.id } });
+  await tx.creditNote.updateMany({
+    where: { salesInvoiceId: invoice.id },
+    data: { salesInvoiceId: null },
+  });
+  await tx.attachment.deleteMany({
+    where: { companyId: params.companyId, entityType: 'SalesInvoice', entityId: invoice.id },
+  });
+
+  await writeAudit(tx, {
+    companyId: params.companyId,
+    userId: params.userId,
+    action: 'SALES_INVOICE_REMOVED',
+    entityType: 'SalesInvoice',
+    entityId: invoice.id,
+    before: {
+      invoiceNumber: invoice.invoiceNumber,
+      status: invoice.status,
+      totalAmount: invoice.totalAmount,
+      reversalReason: invoice.reversalReason,
+    },
+  });
+
+  await tx.salesInvoice.delete({ where: { id: invoice.id } });
 }
 
 /**
@@ -1129,8 +1161,12 @@ export async function cancelSalesInvoice(params: {
 
   if (invoice.status === 'POSTED') {
     const reason = params.reason?.trim() || 'Invoice deleted';
-    await reverseSalesInvoice({ ...params, reason });
-    await deleteReversedSalesInvoice(params);
+    // Reverse and remove in one commit so a failed cleanup cannot leave a
+    // stranded REVERSED invoice on the sales list.
+    await transaction(async (tx) => {
+      await reverseSalesInvoiceIn(tx, { ...params, reason });
+      await deleteReversedSalesInvoiceIn(tx, params);
+    }, 40_000);
     return { status: 'DELETED' };
   }
 

@@ -233,17 +233,9 @@ export async function saveSalesInvoiceAction(id: string | null, payload: string)
 }
 
 /**
- * Post an invoice, and settle it if it was a cash sale.
- *
- * A cash sale is one event to the person doing it: the customer pays and
- * leaves. Making them post the invoice and then key a separate receipt is two
- * entries for one event, and the second is the one that gets forgotten.
- *
- * The two are separate documents — an invoice and a receipt, which is what
- * they genuinely are — so they are two postings, not one. If the receipt fails
- * the invoice still stands, and the message says exactly that rather than
- * pretending nothing happened: the sale is real and only the settlement is
- * missing, which is recoverable from the invoice in one click.
+ * Post an invoice. A cash sale's receipt is raised in the same database
+ * transaction as the invoice, so a failure leaves neither a posted sale
+ * without settlement nor a receipt without an invoice.
  */
 export async function postSalesInvoiceAction(id: string): Promise<ActionResult<undefined>> {
   try {

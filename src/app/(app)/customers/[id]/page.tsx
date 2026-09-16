@@ -9,6 +9,7 @@ import { dec } from '@/lib/money';
 import { getReceivables } from '@/lib/services/receivables';
 import { formatDate, formatMoney, formatQuantityKg } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
+import { CustomerEditButton } from '@/app/(app)/customers/customers-client';
 import { Button } from '@/components/ui/button';
 import { Badge, StatusBadge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -88,6 +89,26 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
         }
         actions={
           <>
+            {can(user, PERMISSIONS.CUSTOMERS_EDIT) ? (
+              <CustomerEditButton
+                customer={{
+                  id: customer.id,
+                  customerCode: customer.customerCode,
+                  customerName: customer.customerName,
+                  country: customer.country,
+                  contactPerson: customer.contactPerson,
+                  phone: customer.phone,
+                  whatsapp: customer.whatsapp,
+                  email: customer.email,
+                  address: customer.address,
+                  primaryCurrency: customer.primaryCurrency,
+                  creditLimit: customer.creditLimit.toString(),
+                  notes: customer.notes,
+                  status: customer.status,
+                }}
+                defaultCurrency={customer.primaryCurrency}
+              />
+            ) : null}
             {can(user, PERMISSIONS.LEDGERS_VIEW) ? (
               <Button variant="outline" asChild>
                 <Link href={`/ledgers/customers/${customer.id}`}>

@@ -21,6 +21,7 @@ import { getCustomerLedger } from '@/lib/services/ledger';
 import { customerSchema } from '@/lib/validation/masters';
 import { ACCOUNT_KEYS } from '@/lib/constants';
 import { dec } from '@/lib/money';
+import { resolveMasterCode } from '@/lib/services/master-code';
 
 /**
  * The operational path that has to work before anyone can enter pending
@@ -97,6 +98,55 @@ describe('master save validation', () => {
     });
     expect(parsed.success).toBe(true);
     if (parsed.success) expect(parsed.data.email).toBeNull();
+  });
+
+  it('creates a customer from the fields the Save form posts, and keeps the code on edit', async () => {
+    const parsed = customerSchema.parse({
+      customerName: 'Tangier Roasters',
+      primaryCurrency: 'MAD',
+      status: 'ACTIVE',
+      creditLimit: '0',
+    });
+    expect('generate' in resolveMasterCode({ submitted: parsed.customerCode, isCreate: true })).toBe(true);
+
+    const created = await prisma.customer.create({
+      data: {
+        companyId: ctx.morocco.id,
+        customerCode: 'CUS-AUDIT-1',
+        customerName: parsed.customerName,
+        primaryCurrency: parsed.primaryCurrency,
+        creditLimit: parsed.creditLimit,
+        status: parsed.status,
+        country: parsed.country,
+        email: parsed.email,
+      },
+    });
+    expect(created.customerName).toBe('Tangier Roasters');
+
+    const listed = await prisma.customer.findFirst({
+      where: { companyId: ctx.morocco.id, customerName: 'Tangier Roasters' },
+    });
+    expect(listed?.id).toBe(created.id);
+
+    const edited = customerSchema.parse({
+      customerName: 'Tangier Roasters SAS',
+      primaryCurrency: 'MAD',
+      status: 'ACTIVE',
+      creditLimit: '0',
+    });
+    const kept = resolveMasterCode({
+      submitted: edited.customerCode,
+      existing: created.customerCode,
+      isCreate: false,
+    });
+    expect(kept).toEqual({ code: 'CUS-AUDIT-1' });
+
+    const updated = await prisma.customer.update({
+      where: { id: created.id },
+      data: { customerName: edited.customerName, customerCode: 'code' in kept ? kept.code : created.customerCode },
+    });
+    expect(updated.customerCode).toBe('CUS-AUDIT-1');
+    expect(updated.customerName).toBe('Tangier Roasters SAS');
   });
 });
 

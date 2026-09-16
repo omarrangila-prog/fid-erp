@@ -38,6 +38,7 @@ import {
   cashBankAccountSchema,
 } from '@/lib/validation/masters';
 import { fail, run, type ActionResult } from '@/server/actions/action-utils';
+import { resolveMasterCode } from '@/lib/services/master-code';
 
 /**
  * Master data actions.
@@ -118,20 +119,6 @@ async function saveMaster<S extends z.ZodTypeAny>(
 
     const data = config.schema.parse(formDataToObject(formData)) as Record<string, unknown>;
 
-    /*
-     * The code is issued here when the user has not given one.
-     *
-     * Inventing a unique code is not a decision anybody wants to make while
-     * adding a supplier, and a code invented under pressure is the one that
-     * collides next month. Left blank it becomes CUS-0001, SUP-0001 and so on,
-     * counting past anything already taken.
-     */
-    if (!String(data[config.uniqueField] ?? '').trim() || data[config.uniqueField] == null) {
-      data[config.uniqueField] = await nextMasterCode(delegate, config, companyId);
-    }
-
-    const uniqueValue = data[config.uniqueField] as string;
-
     // Prisma's delegates are structurally identical for these operations, but
     // TypeScript cannot prove it across a union, so this is narrowed once here.
     const model = prisma[delegate] as unknown as {
@@ -140,6 +127,25 @@ async function saveMaster<S extends z.ZodTypeAny>(
       create: (args: unknown) => Promise<{ id: string }>;
       update: (args: unknown) => Promise<{ id: string }>;
     };
+
+    const before = id ? await model.findUnique({ where: { id } }) : null;
+    if (id && (!before || before.companyId !== companyId)) throw new NotFoundError(config.label);
+
+    /*
+     * The code is issued here when the user has not given one — on create.
+     * Edit forms often omit the code field. Treating that as a blank code
+     * used to mint CUS-0002 on top of CUS-0001, which either collided or
+     * silently renamed a live customer.
+     */
+    const resolved = resolveMasterCode({
+      submitted: data[config.uniqueField],
+      existing: before?.[config.uniqueField],
+      isCreate: !id,
+    });
+    data[config.uniqueField] =
+      'generate' in resolved ? await nextMasterCode(delegate, config, companyId) : resolved.code;
+
+    const uniqueValue = data[config.uniqueField] as string;
 
     const duplicate = await model.findFirst({
       where: { companyId, [config.uniqueField]: uniqueValue, ...(id ? { NOT: { id } } : {}) },
@@ -168,9 +174,6 @@ async function saveMaster<S extends z.ZodTypeAny>(
       }
     }
 
-    const before = id ? await model.findUnique({ where: { id } }) : null;
-    if (id && (!before || before.companyId !== companyId)) throw new NotFoundError(config.label);
-
     const saved = id
       ? await model.update({ where: { id }, data })
       : await model.create({ data: { ...data, companyId } });
@@ -189,6 +192,23 @@ async function saveMaster<S extends z.ZodTypeAny>(
 
     revalidatePath(config.path);
     revalidatePath(`${config.path}/${saved.id}`);
+    if (delegate === 'customer') {
+      revalidatePath('/sales');
+      revalidatePath('/sales/new');
+      revalidatePath('/ledgers/customers');
+    }
+    if (delegate === 'vendor') {
+      revalidatePath('/purchases');
+      revalidatePath('/purchases/new');
+      revalidatePath('/ledgers/vendors');
+    }
+    if (delegate === 'agent') {
+      revalidatePath('/finance/receipts/new');
+      revalidatePath('/finance/expenses/new');
+    }
+    if (delegate === 'expenseCategory') {
+      revalidatePath('/finance/expenses/new');
+    }
 
     return { ok: true, id: saved.id, message: `${config.label} saved.` };
   } catch (error) {
@@ -268,6 +288,21 @@ export async function quickCreateCustomerAction(
       },
       select: { id: true, customerName: true, primaryCurrency: true, paymentTermDays: true },
     });
+
+    await transaction((tx) =>
+      writeAudit(tx, {
+        companyId,
+        userId: user.id,
+        action: 'CUSTOMER_CREATED',
+        entityType: 'Customer',
+        entityId: customer.id,
+        after: {
+          customerCode,
+          customerName: customer.customerName,
+          primaryCurrency: customer.primaryCurrency,
+        },
+      }),
+    );
 
     revalidatePath('/customers');
     revalidatePath('/sales');

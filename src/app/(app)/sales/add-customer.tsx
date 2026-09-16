@@ -94,6 +94,7 @@ function AddCustomerSheet({
 
   function submit(event?: React.FormEvent) {
     event?.preventDefault();
+    if (pending) return;
     setError(null);
     if (!form.customerName.trim()) {
       setError('Enter the customer’s name.');
@@ -133,7 +134,7 @@ function AddCustomerSheet({
         </div>
       }
     >
-      <form id={formId} onSubmit={submit} className="space-y-4">
+      <form id={formId} noValidate onSubmit={submit} className="space-y-4">
         {error ? (
           <div
             role="alert"
