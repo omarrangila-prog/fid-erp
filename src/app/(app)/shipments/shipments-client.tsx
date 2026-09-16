@@ -1,10 +1,10 @@
 'use client';
 
 import * as React from 'react';
-import Link from 'next/link';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
+import { Calculator, Receipt, Ship } from 'lucide-react';
+import { RowActions, viewAction } from '@/components/shared/row-actions';
 import { StatusBadge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { SHIPMENT_STATUS_META, DOCUMENT_STATUS_META, SETTLEMENT_STATUS_META } from '@/lib/constants';
 
 export type ShipmentRow = {
@@ -226,21 +226,19 @@ export function ShipmentsClient({
     },
     {
       id: 'actions',
-      header: '',
+      header: 'Actions',
       printHidden: true,
       mobile: 'action',
-      className: 'sticky right-0 z-10 bg-surface shadow-[-8px_0_12px_-8px_rgba(15,23,42,0.18)]',
+      pin: 'right',
       cell: (r) => (
-        <div className="flex flex-wrap justify-end gap-1" onClick={(event) => event.stopPropagation()}>
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/shipments/${r.id}#costing`}>View costing</Link>
-          </Button>
-          {canAddExpense ? (
-            <Button asChild variant="ghost" size="sm">
-              <Link href={`/finance/expenses/new?job=${r.id}`}>Add expense</Link>
-            </Button>
-          ) : null}
-        </div>
+        <RowActions
+          actions={[
+            viewAction(`/shipments/${r.id}`),
+            { label: 'Costing', href: `/shipments/${r.id}#costing`, icon: Calculator },
+            { label: 'Add expense', href: `/finance/expenses/new?job=${r.id}`, icon: Receipt, show: canAddExpense },
+            { label: 'Loading sheet', href: '/loading', icon: Ship },
+          ]}
+        />
       ),
     },
   ];
