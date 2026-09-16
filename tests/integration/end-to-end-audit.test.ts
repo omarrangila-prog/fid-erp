@@ -55,7 +55,7 @@ async function checkpoint(step: string) {
   const trial = await getTrialBalanceReport({ companyId });
   expect(trial.isBalanced, `trial balance after ${step}`).toBe(true);
 
-  const sheet = await getBalanceSheet({ companyId });
+  const sheet = await getBalanceSheet({ companyId, asOf: new Date() });
   expect(dec(sheet.differenceUsd).abs().lessThanOrEqualTo('0.05'), `balance sheet after ${step}`).toBe(true);
 }
 
