@@ -17,7 +17,7 @@ import { changeChequeStatus } from '@/lib/services/cheque';
 import { getCustomerBalance, getVendorBalance, getCashBankBalance, getTrialBalance } from '@/lib/services/accounting';
 import { getCustomerLedger, getVendorLedger } from '@/lib/services/ledger';
 import { setSetting } from '@/lib/services/settings';
-import { previewRevaluation, postRevaluation } from '@/lib/services/revaluation';
+import { previewRevaluation } from '@/lib/services/revaluation';
 import { dec } from '@/lib/money';
 
 /**
@@ -286,7 +286,7 @@ describe('the dual-view ledger', () => {
     expect(ledger.closingBalance.toString()).toBe('0');
   });
 
-  it('shows the original AED amounts in the local-currency view', async () => {
+  it('relieves the customer in AED at the rate the invoice was booked at', async () => {
     const ledger = await getCustomerLedger({
       companyId: ctx.dubai.id,
       customerId: masters.customer.id,
@@ -296,11 +296,16 @@ describe('the dual-view ledger', () => {
     });
 
     expect(ledger.viewCurrency).toBe('AED');
-    // The receipts show the AED that actually arrived.
-    expect(ledger.rows[1].creditLocal.toString()).toBe('100000');
-    expect(ledger.rows[2].creditLocal.toString()).toBe('10200');
     // The USD 30,000 invoice at its own captured rate: 30,000 x 3.6725.
     expect(ledger.rows[0].debitLocal.toString()).toBe('110175');
+    // Each receipt clears its USD share at that same rate, so the customer
+    // is square in AED as well as in USD. The AED that actually arrived is
+    // on the bank line; the difference is exchange gain or loss, realised
+    // on the day, not a residue left on the customer for a revaluation to
+    // find later.
+    expect(ledger.rows[1].creditLocal.toString()).toBe('100038.9');
+    expect(ledger.rows[2].creditLocal.toString()).toBe('10136.1');
+    expect(ledger.closingBalance.toString()).toBe('0');
   });
 });
 
@@ -600,9 +605,21 @@ describe('Morocco — MAD sales against a USD supplier', () => {
     expect(bankBalance.toString()).toBe('-80000');
   });
 
-  it('recognises the exchange difference through revaluation', async () => {
-    // The USD supplier account is square in USD but carries a MAD difference
-    // because the goods were booked at 9.85 and settled at 10.00.
+  it('realised the exchange difference on settlement, leaving nothing for revaluation to find', async () => {
+    // Booked at 9.85 (MAD 78,800) and paid with MAD 80,000: the MAD 1,200 is
+    // an exchange loss on the day it was paid. The supplier is square in
+    // both currencies, so a period-end revaluation has nothing to restate
+    // on the payable — revaluation is for balances still open.
+    const fx = await prisma.$queryRaw<Array<{ local: string; usd: string }>>`
+      SELECT COALESCE(SUM(jl."debitLocal" - jl."creditLocal"), 0)::text AS local,
+             COALESCE(SUM(jl."debitUsd" - jl."creditUsd"), 0)::text AS usd
+      FROM journal_lines jl
+      JOIN journal_entries je ON je."id" = jl."journalEntryId"
+      JOIN accounts a ON a."id" = jl."accountId"
+      WHERE je."companyId" = ${ctx.morocco.id} AND je."status" = 'POSTED' AND a."systemKey" = 'FX_GAIN_LOSS'`;
+    expect(dec(fx[0].local).toFixed(2)).toBe('1200.00');
+    expect(dec(fx[0].usd).toFixed(2)).toBe('0.00');
+
     const preview = await transaction((tx) =>
       previewRevaluation(tx, {
         companyId: ctx.morocco.id,
@@ -610,41 +627,7 @@ describe('Morocco — MAD sales against a USD supplier', () => {
         rates: { USD: '1', MAD: '10.00' },
       }),
     );
-
-    const payableLine = preview.lines.find((l) => l.accountCode === '2000');
-    expect(payableLine).toBeDefined();
-    expect(payableLine!.balanceUsd.toString()).toBe('0');
-    // Booked at 9.85 (MAD 78,800) and cleared at 10.00 (MAD 80,000).
-    expect(payableLine!.carriedLocal.toString()).toBe('1200');
-    expect(payableLine!.differenceLocal.toString()).toBe('-1200');
-
-    const { entry } = await postRevaluation({
-      companyId: ctx.morocco.id,
-      asOf: utcDate('2026-02-28'),
-      rates: { USD: '1', MAD: '10.00' },
-      userId: ctx.admin.id,
-    });
-
-    // The revaluation is local-only: it does not move the USD position at all.
-    const debitsUsd = entry.lines.reduce((a, l) => a.plus(dec(l.debitUsd)), dec(0));
-    const creditsUsd = entry.lines.reduce((a, l) => a.plus(dec(l.creditUsd)), dec(0));
-    expect(debitsUsd.toString()).toBe('0');
-    expect(creditsUsd.toString()).toBe('0');
-
-    // …but it does balance, and it clears, in MAD.
-    const debitsLocal = entry.lines.reduce((a, l) => a.plus(dec(l.debitLocal)), dec(0));
-    const creditsLocal = entry.lines.reduce((a, l) => a.plus(dec(l.creditLocal)), dec(0));
-    expect(debitsLocal.toString()).toBe(creditsLocal.toString());
-    expect(debitsLocal.greaterThan(0)).toBe(true);
-
-    const after = await transaction((tx) =>
-      previewRevaluation(tx, {
-        companyId: ctx.morocco.id,
-        asOf: utcDate('2026-02-28'),
-        rates: { USD: '1', MAD: '10.00' },
-      }),
-    );
-    expect(after.lines.find((l) => l.accountCode === '2000')).toBeUndefined();
+    expect(preview.lines.find((l) => l.accountCode === '2000')).toBeUndefined();
   });
 
   it('shows the supplier ledger in both USD and MAD', async () => {
@@ -746,6 +729,6 @@ describe('allocation limits', () => {
         },
         ctx.admin.id,
       ),
-    ).rejects.toThrow(/only worth USD 100/);
+    ).rejects.toThrow(/only USD 100/);
   });
 });

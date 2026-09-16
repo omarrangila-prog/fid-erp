@@ -45,6 +45,19 @@ export type JournalLineInput = {
    * not moved but the local carrying value has.
    */
   localOnly?: boolean;
+  /**
+   * Settling a document: the line's USD and local values are the ones the
+   * document was booked at, not a fresh conversion at today's rate.
+   *
+   * A receivable raised at 9.85 is cleared at 9.85, whatever the money that
+   * clears it was worth on the day. Otherwise a MAD customer paying a MAD
+   * invoice in full would leave a phantom "advance" (or a phantom balance)
+   * every time the rate moved, which is what happened. The difference between
+   * the booked value and the money's value is a realised exchange gain or
+   * loss, which the engine books itself.
+   */
+  bookedUsd?: Decimal | string | number;
+  bookedLocal?: Decimal | string | number;
 
   customerId?: string | null;
   vendorId?: string | null;
@@ -209,13 +222,20 @@ export async function postJournalEntry(tx: Tx, params: PostJournalParams) {
     }
 
     // A local-only line carries its amount straight into the local columns and
-    // contributes nothing to the USD position.
-    const amountUsd = line.localOnly ? new Decimal(0) : convertToUsd(amount, rateToUsd, currency);
+    // contributes nothing to the USD position. A booked line carries the
+    // values its document was posted at.
+    const amountUsd = line.localOnly
+      ? new Decimal(0)
+      : line.bookedUsd !== undefined
+        ? toMoney(line.bookedUsd)
+        : convertToUsd(amount, rateToUsd, currency);
     const amountLocal = line.localOnly
       ? amount
-      : currency === localCurrency.toUpperCase()
-        ? amount
-        : convertFromUsd(amountUsd, rateLocalPerUsd, localCurrency);
+      : line.bookedLocal !== undefined
+        ? toMoney(line.bookedLocal)
+        : currency === localCurrency.toUpperCase()
+          ? amount
+          : convertFromUsd(amountUsd, rateLocalPerUsd, localCurrency);
 
     await assertJournalDimensions(tx, companyId, line);
 
@@ -237,7 +257,26 @@ export async function postJournalEntry(tx: Tx, params: PostJournalParams) {
 
   const usdDrift = debitUsd.minus(creditUsd);
 
-  if (!usdDrift.isZero()) {
+  // A settlement entry — one that clears a document at its booked value —
+  // may legitimately not balance in USD: the money was worth something else
+  // on the day. That difference is a realised exchange gain or loss and is
+  // posted as such, in USD only, because in the company's own currency the
+  // MAD that arrived is the MAD that was owed. Any other entry that fails to
+  // balance is a bug and is refused.
+  const settles = prepared.some((l) => l.input.bookedUsd !== undefined);
+  let usdFxLine: { accountId: string; lineNumber: number; direction: JournalDirection; amountUsd: Decimal } | null =
+    null;
+
+  if (!usdDrift.isZero() && settles && usdDrift.abs().greaterThan(USD_TRANSLATION_TOLERANCE)) {
+    const fxAccount = await getSystemAccount(tx, companyId, ACCOUNT_KEYS.FX_GAIN_LOSS);
+    usdFxLine = {
+      accountId: fxAccount.id,
+      lineNumber: prepared.length + 1,
+      // Debits exceed credits, so the balancing entry is a credit: a gain.
+      direction: usdDrift.greaterThan(0) ? 'CREDIT' : 'DEBIT',
+      amountUsd: toMoney(usdDrift.abs()),
+    };
+  } else if (!usdDrift.isZero()) {
     // Only lines stated in another currency may be nudged: a line already in
     // USD is exact by definition, and moving it would misstate a real amount.
     const translated = prepared.filter((l) => l.currency !== BASE_CURRENCY && !l.input.localOnly);
@@ -308,7 +347,7 @@ export async function postJournalEntry(tx: Tx, params: PostJournalParams) {
       const fxAccount = await getSystemAccount(tx, companyId, ACCOUNT_KEYS.FX_GAIN_LOSS);
       fxLine = {
         accountId: fxAccount.id,
-        lineNumber: prepared.length + 1,
+        lineNumber: prepared.length + (usdFxLine ? 2 : 1),
         // Debits exceed credits locally, so the balancing entry is a credit
         // (an exchange gain); the reverse is a loss.
         direction: localDrift.greaterThan(0) ? 'CREDIT' : 'DEBIT',
@@ -358,6 +397,27 @@ export async function postJournalEntry(tx: Tx, params: PostJournalParams) {
             itemId: l.input.itemId ?? null,
             batchId: l.input.batchId ?? null,
           })),
+          ...(usdFxLine
+            ? [
+                {
+                  lineNumber: usdFxLine.lineNumber,
+                  accountId: usdFxLine.accountId,
+                  description: 'Exchange difference on settlement',
+                  currency: BASE_CURRENCY,
+                  debit: usdFxLine.direction === 'DEBIT' ? usdFxLine.amountUsd : new Decimal(0),
+                  credit: usdFxLine.direction === 'CREDIT' ? usdFxLine.amountUsd : new Decimal(0),
+                  rateToUsd: new Decimal(1),
+                  debitUsd: usdFxLine.direction === 'DEBIT' ? usdFxLine.amountUsd : new Decimal(0),
+                  creditUsd: usdFxLine.direction === 'CREDIT' ? usdFxLine.amountUsd : new Decimal(0),
+                  rateLocalPerUsd,
+                  // Nothing in the company's own currency: the MAD that moved
+                  // is the MAD that was owed. This is a reporting-currency
+                  // difference only.
+                  debitLocal: new Decimal(0),
+                  creditLocal: new Decimal(0),
+                },
+              ]
+            : []),
           ...(fxLine
             ? [
                 {

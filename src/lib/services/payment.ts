@@ -166,13 +166,21 @@ export async function getExpenseOutstanding(
 
 async function buildAllocations(
   tx: Tx,
-  params: { companyId: string; vendorId: string; paymentAmountUsd: Decimal; allocations: PaymentAllocationInput[] },
+  params: {
+    companyId: string;
+    vendorId: string;
+    paymentAmount: Decimal;
+    paymentCurrency: string;
+    paymentRateToUsd: Decimal;
+    allocations: PaymentAllocationInput[];
+  },
 ) {
   const rows: Array<{
     purchaseContractId: string | null;
     expenseId: string | null;
     amount: Decimal;
     amountUsd: Decimal;
+    currency: string;
   }> = [];
 
   for (const alloc of params.allocations) {
@@ -259,17 +267,33 @@ async function buildAllocations(
       expenseId: document.isContract ? null : document.id,
       amount,
       amountUsd: convertToUsd(amount, document.rateToUsd, document.currency),
+      currency: document.currency,
     });
   }
 
-  const totalAllocatedUsd = toMoney(sum(rows.map((r) => r.amountUsd)));
-  if (totalAllocatedUsd.greaterThan(params.paymentAmountUsd)) {
+  // Can the money cover what it is put against? Asked in the payment's own
+  // currency, as for receipts: a rate that moved between the bill and the
+  // day it was paid must not make a full payment look short.
+  const settledInVoucher = toMoney(
+    sum(
+      rows.map((r) =>
+        r.currency === params.paymentCurrency
+          ? r.amount
+          : convertFromUsd(r.amountUsd, params.paymentRateToUsd, params.paymentCurrency),
+      ),
+    ),
+  );
+  if (settledInVoucher.greaterThan(params.paymentAmount.plus('0.005'))) {
     throw new BusinessRuleError(
-      `Allocations total USD ${totalAllocatedUsd.toFixed(2)} but the payment is only worth USD ${params.paymentAmountUsd.toFixed(2)}.`,
+      `Allocations total ${params.paymentCurrency} ${settledInVoucher.toFixed(2)} but the payment is only ${params.paymentCurrency} ${params.paymentAmount.toFixed(2)}.`,
     );
   }
 
-  return rows;
+  return rows.map((row) => {
+    const { currency, ...rest } = row;
+    void currency;
+    return rest;
+  });
 }
 
 function computePaymentAmounts(input: {
@@ -457,7 +481,9 @@ export async function createPayment(input: PaymentInput, userId: string) {
     const allocations = await buildAllocations(tx, {
       companyId: input.companyId,
       vendorId: input.vendorId,
-      paymentAmountUsd: amounts.amountUsd,
+      paymentAmount: amounts.amount,
+      paymentCurrency: amounts.currency,
+      paymentRateToUsd: amounts.rateToUsd,
       allocations: input.allocations ?? [],
     });
 
@@ -542,7 +568,9 @@ export async function updatePayment(id: string, input: PaymentInput, userId: str
     const allocations = await buildAllocations(tx, {
       companyId: input.companyId,
       vendorId: input.vendorId,
-      paymentAmountUsd: amounts.amountUsd,
+      paymentAmount: amounts.amount,
+      paymentCurrency: amounts.currency,
+      paymentRateToUsd: amounts.rateToUsd,
       allocations: input.allocations ?? [],
     });
 
@@ -637,71 +665,82 @@ export async function postPayment(params: { id: string; companyId: string; userI
       }
     }
 
-    const ap = resolveSubledgerLeg({
-      partyCurrency: payment.vendor.primaryCurrency,
-      voucherCurrency: payment.currency,
-      voucherAmount: payment.amount,
-      voucherRateToUsd: payment.rateToUsd,
-      voucherAmountUsd: payment.amountUsd,
-      localCurrency: company.localCurrency,
-      rateLocalPerUsd: payment.rateLocalPerUsd,
-      partyLabel: payment.vendor.vendorName,
+    // Each document is cleared at the value it was booked at — in USD and in
+    // the company's own currency — so paying a bill in full always clears it
+    // exactly, whatever today's rate says the money is worth. The difference
+    // between that and the money line is a realised exchange gain or loss,
+    // which the posting engine books on its own.
+    const localCode = company.localCurrency.toUpperCase();
+    const settlementLines = payment.allocations.map((allocation) => {
+      const document = allocation.purchaseContract ?? allocation.expense;
+      if (!document) throw new BusinessRuleError('An allocation names neither a contract nor a cost.');
+      const bookedUsd = toMoney(allocation.amountUsd);
+      const bookedLocal =
+        document.currency === localCode
+          ? toMoney(allocation.amount)
+          : convertFromUsd(bookedUsd, document.rateLocalPerUsd, localCode);
+      const label = allocation.purchaseContract
+        ? allocation.purchaseContract.contractNumber
+        : allocation.expense!.expenseNumber;
+      return {
+        accountKey: ACCOUNT_KEYS.ACCOUNTS_PAYABLE,
+        direction: 'DEBIT' as const,
+        currency: document.currency,
+        amount: toMoney(allocation.amount),
+        rateToUsd: document.rateToUsd,
+        bookedUsd,
+        bookedLocal,
+        description: `Settles ${label}`,
+        vendorId: payment.vendorId,
+        shipmentId: payment.shipmentId,
+        purchaseContractId: allocation.purchaseContractId ?? null,
+      };
     });
 
-    const allocatedInLedger = payment.allocations.reduce(
-      (total, allocation) => total.plus(allocation.amountUsd),
-      new Decimal(0),
+    // Anything not put against a document is an advance the supplier owes
+    // back in goods — an asset, not a reduction of payables. Measured in the
+    // payment's own currency.
+    const settledInVoucher = toMoney(
+      sum(
+        payment.allocations.map((allocation) => {
+          const document = allocation.purchaseContract ?? allocation.expense!;
+          return document.currency === payment.currency
+            ? dec(allocation.amount)
+            : convertFromUsd(allocation.amountUsd, payment.rateToUsd, payment.currency);
+        }),
+      ),
     );
-    const paymentUsd = dec(payment.amountUsd);
-    const unallocatedUsd = toMoney(paymentUsd.minus(allocatedInLedger));
-    const hasAdvance = unallocatedUsd.greaterThan('0.005');
+    const unallocated = toMoney(dec(payment.amount).minus(settledInVoucher));
+    const hasAdvance = unallocated.greaterThan('0.005');
 
-    const settledPortion = paymentUsd.isZero()
-      ? new Decimal(0)
-      : dec(ap.amount).times(allocatedInLedger).dividedBy(paymentUsd);
-    const advancePortion = dec(ap.amount).minus(settledPortion);
+    const advanceLines = hasAdvance
+      ? (() => {
+          const advance = resolveSubledgerLeg({
+            partyCurrency: payment.vendor.primaryCurrency,
+            voucherCurrency: payment.currency,
+            voucherAmount: unallocated,
+            voucherRateToUsd: payment.rateToUsd,
+            voucherAmountUsd: convertToUsd(unallocated, payment.rateToUsd, payment.currency),
+            localCurrency: company.localCurrency,
+            rateLocalPerUsd: payment.rateLocalPerUsd,
+            partyLabel: payment.vendor.vendorName,
+          });
+          return [
+            {
+              accountKey: ACCOUNT_KEYS.SUPPLIER_ADVANCES,
+              direction: 'DEBIT' as const,
+              currency: advance.currency,
+              amount: advance.amount,
+              rateToUsd: advance.rateToUsd,
+              description: `Advance to ${payment.vendor.vendorName}, not yet applied to a contract`,
+              vendorId: payment.vendorId,
+              shipmentId: payment.shipmentId,
+            },
+          ];
+        })()
+      : [];
 
-    const debitLines = hasAdvance
-      ? [
-          ...(settledPortion.greaterThan('0.005')
-            ? [
-                {
-                  accountKey: ACCOUNT_KEYS.ACCOUNTS_PAYABLE,
-                  direction: 'DEBIT' as const,
-                  currency: ap.currency,
-                  amount: toMoney(settledPortion),
-                  rateToUsd: ap.rateToUsd,
-                  description: `Settlement to ${payment.vendor.vendorName}`,
-                  vendorId: payment.vendorId,
-                  shipmentId: payment.shipmentId,
-                  purchaseContractId: payment.allocations[0]?.purchaseContractId ?? null,
-                },
-              ]
-            : []),
-          {
-            accountKey: ACCOUNT_KEYS.SUPPLIER_ADVANCES,
-            direction: 'DEBIT' as const,
-            currency: ap.currency,
-            amount: toMoney(advancePortion),
-            rateToUsd: ap.rateToUsd,
-            description: `Advance to ${payment.vendor.vendorName}, not yet applied to a contract`,
-            vendorId: payment.vendorId,
-            shipmentId: payment.shipmentId,
-          },
-        ]
-      : [
-          {
-            accountKey: ACCOUNT_KEYS.ACCOUNTS_PAYABLE,
-            direction: 'DEBIT' as const,
-            currency: ap.currency,
-            amount: ap.amount,
-            rateToUsd: ap.rateToUsd,
-            description: `Settlement to ${payment.vendor.vendorName}`,
-            vendorId: payment.vendorId,
-            shipmentId: payment.shipmentId,
-            purchaseContractId: payment.allocations[0]?.purchaseContractId ?? null,
-          },
-        ];
+    const debitLines = [...settlementLines, ...advanceLines];
 
     await postJournalEntry(tx, {
       companyId: params.companyId,

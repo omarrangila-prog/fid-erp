@@ -111,11 +111,13 @@ async function buildAllocations(
   params: {
     companyId: string;
     customerId: string;
-    receiptAmountUsd: Decimal;
+    receiptAmount: Decimal;
+    receiptCurrency: string;
+    receiptRateToUsd: Decimal;
     allocations: ReceiptAllocationInput[];
   },
 ) {
-  const rows: Array<{ salesInvoiceId: string; amount: Decimal; amountUsd: Decimal }> = [];
+  const rows: Array<{ salesInvoiceId: string; amount: Decimal; amountUsd: Decimal; currency: string }> = [];
 
   for (const alloc of params.allocations) {
     const invoice = await tx.salesInvoice.findFirst({
@@ -146,17 +148,33 @@ async function buildAllocations(
     // an invoice in full always clears exactly its USD value, leaving no
     // phantom residue caused by a different rate on the receipt.
     const amountUsd = convertToUsd(amount, invoice.rateToUsd, invoice.currency);
-    rows.push({ salesInvoiceId: invoice.id, amount, amountUsd });
+    rows.push({ salesInvoiceId: invoice.id, amount, amountUsd, currency: invoice.currency });
   }
 
-  const totalAllocatedUsd = toMoney(sum(rows.map((r) => r.amountUsd)));
-  if (totalAllocatedUsd.greaterThan(params.receiptAmountUsd)) {
+  // Can the money cover what it is put against? Asked in the receipt's own
+  // currency. It used to be asked in USD, so a MAD invoice booked at 9.60 and
+  // paid in full in MAD on a day the rate was 9.85 was refused — the same
+  // dirhams were "worth less" — and the customer could not be marked paid.
+  const settledInVoucher = toMoney(
+    sum(
+      rows.map((r) =>
+        r.currency === params.receiptCurrency
+          ? r.amount
+          : convertFromUsd(r.amountUsd, params.receiptRateToUsd, params.receiptCurrency),
+      ),
+    ),
+  );
+  if (settledInVoucher.greaterThan(params.receiptAmount.plus('0.005'))) {
     throw new BusinessRuleError(
-      `Allocations total USD ${totalAllocatedUsd.toFixed(2)} but the receipt is only worth USD ${params.receiptAmountUsd.toFixed(2)}.`,
+      `Allocations total ${params.receiptCurrency} ${settledInVoucher.toFixed(2)} but the receipt is only ${params.receiptCurrency} ${params.receiptAmount.toFixed(2)}.`,
     );
   }
 
-  return rows;
+  return rows.map((row) => {
+    const { currency, ...rest } = row;
+    void currency;
+    return rest;
+  });
 }
 
 export function computeReceiptAmounts(input: {
@@ -402,7 +420,9 @@ export async function createReceiptIn(tx: Tx, input: ReceiptInput, userId: strin
   const allocations = await buildAllocations(tx, {
     companyId: input.companyId,
     customerId: input.customerId,
-    receiptAmountUsd: amounts.amountUsd,
+    receiptAmount: amounts.amount,
+    receiptCurrency: amounts.currency,
+    receiptRateToUsd: amounts.rateToUsd,
     allocations: input.allocations ?? [],
   });
 
@@ -482,7 +502,9 @@ export async function updateReceipt(id: string, input: ReceiptInput, userId: str
     const allocations = await buildAllocations(tx, {
       companyId: input.companyId,
       customerId: input.customerId,
-      receiptAmountUsd: amounts.amountUsd,
+      receiptAmount: amounts.amount,
+      receiptCurrency: amounts.currency,
+      receiptRateToUsd: amounts.rateToUsd,
       allocations: input.allocations ?? [],
     });
 
@@ -586,78 +608,83 @@ export async function postReceiptIn(tx: Tx, params: { id: string; companyId: str
     }
   }
 
-  // The customer's receivable is relieved in the customer's own ledger
-  // currency, which is what makes the dual-view ledger work: the AED that
-  // arrived is recorded on the cash line, while the customer's USD exposure
-  // falls by the USD equivalent computed at the receipt's stored rate.
-  const ar = resolveSubledgerLeg({
-    partyCurrency: receipt.customer.primaryCurrency,
-    voucherCurrency: receipt.currency,
-    voucherAmount: receipt.amount,
-    voucherRateToUsd: receipt.rateToUsd,
-    voucherAmountUsd: receipt.amountUsd,
-    localCurrency: company.localCurrency,
-    rateLocalPerUsd: receipt.rateLocalPerUsd,
-    partyLabel: receipt.customer.customerName,
+  // Each invoice is cleared at the value it was booked at — in USD and in the
+  // company's own currency — so settling an invoice in full always clears it
+  // exactly, whatever today's rate says the money is worth. The difference
+  // between that and the money line is a realised exchange gain or loss,
+  // which the posting engine books on its own.
+  //
+  // This replaces a split done in USD, which for a MAD customer paying a MAD
+  // invoice on a day the rate had moved credited part of the dirhams to
+  // "Customer Advances" and left the rest of the invoice showing as owed.
+  const localCode = company.localCurrency.toUpperCase();
+  const settlementLines = receipt.allocations.map((allocation) => {
+    const invoice = allocation.salesInvoice;
+    const bookedUsd = toMoney(allocation.amountUsd);
+    const bookedLocal =
+      invoice.currency === localCode
+        ? toMoney(allocation.amount)
+        : convertFromUsd(bookedUsd, invoice.rateLocalPerUsd, localCode);
+    return {
+      accountKey: ACCOUNT_KEYS.ACCOUNTS_RECEIVABLE,
+      direction: 'CREDIT' as const,
+      currency: invoice.currency,
+      amount: toMoney(allocation.amount),
+      rateToUsd: invoice.rateToUsd,
+      bookedUsd,
+      bookedLocal,
+      description: `Settles ${invoice.invoiceNumber}`,
+      customerId: receipt.customerId,
+      salesInvoiceId: invoice.id,
+      shipmentId: receipt.shipmentId,
+    };
   });
 
   // Money that has not been put against an invoice is not a settlement — it
   // is an advance the company owes the customer until it is allocated. Left
   // on Accounts Receivable it would show as a negative debtor, which is both
-  // wrong on the balance sheet and invisible as a liability.
-  const allocatedInLedger = receipt.allocations.reduce(
-    (total, allocation) => total.plus(allocation.amountUsd),
-    new Decimal(0),
+  // wrong on the balance sheet and invisible as a liability. Measured in the
+  // receipt's own currency: dirhams received less dirhams applied.
+  const settledInVoucher = toMoney(
+    sum(
+      receipt.allocations.map((allocation) =>
+        allocation.salesInvoice.currency === receipt.currency
+          ? dec(allocation.amount)
+          : convertFromUsd(allocation.amountUsd, receipt.rateToUsd, receipt.currency),
+      ),
+    ),
   );
-  const receiptUsd = dec(receipt.amountUsd);
-  const unallocatedUsd = toMoney(receiptUsd.minus(allocatedInLedger));
-  const hasAdvance = unallocatedUsd.greaterThan('0.005');
+  const unallocated = toMoney(dec(receipt.amount).minus(settledInVoucher));
+  const hasAdvance = unallocated.greaterThan('0.005');
 
-  // Split the credit in the customer's own currency, in the same proportion.
-  const settledPortion = receiptUsd.isZero()
-    ? new Decimal(0)
-    : dec(ar.amount).times(allocatedInLedger).dividedBy(receiptUsd);
-  const advancePortion = dec(ar.amount).minus(settledPortion);
+  const advanceLines = hasAdvance
+    ? (() => {
+        const advance = resolveSubledgerLeg({
+          partyCurrency: receipt.customer.primaryCurrency,
+          voucherCurrency: receipt.currency,
+          voucherAmount: unallocated,
+          voucherRateToUsd: receipt.rateToUsd,
+          voucherAmountUsd: convertToUsd(unallocated, receipt.rateToUsd, receipt.currency),
+          localCurrency: company.localCurrency,
+          rateLocalPerUsd: receipt.rateLocalPerUsd,
+          partyLabel: receipt.customer.customerName,
+        });
+        return [
+          {
+            accountKey: ACCOUNT_KEYS.CUSTOMER_ADVANCES,
+            direction: 'CREDIT' as const,
+            currency: advance.currency,
+            amount: advance.amount,
+            rateToUsd: advance.rateToUsd,
+            description: `Advance from ${receipt.customer.customerName}, not yet applied to an invoice`,
+            customerId: receipt.customerId,
+            shipmentId: receipt.shipmentId,
+          },
+        ];
+      })()
+    : [];
 
-  const creditLines = hasAdvance
-    ? [
-        ...(settledPortion.greaterThan('0.005')
-          ? [
-              {
-                accountKey: ACCOUNT_KEYS.ACCOUNTS_RECEIVABLE,
-                direction: 'CREDIT' as const,
-                currency: ar.currency,
-                amount: toMoney(settledPortion),
-                rateToUsd: ar.rateToUsd,
-                description: `Settlement from ${receipt.customer.customerName}`,
-                customerId: receipt.customerId,
-                shipmentId: receipt.shipmentId,
-              },
-            ]
-          : []),
-        {
-          accountKey: ACCOUNT_KEYS.CUSTOMER_ADVANCES,
-          direction: 'CREDIT' as const,
-          currency: ar.currency,
-          amount: toMoney(advancePortion),
-          rateToUsd: ar.rateToUsd,
-          description: `Advance from ${receipt.customer.customerName}, not yet applied to an invoice`,
-          customerId: receipt.customerId,
-          shipmentId: receipt.shipmentId,
-        },
-      ]
-    : [
-        {
-          accountKey: ACCOUNT_KEYS.ACCOUNTS_RECEIVABLE,
-          direction: 'CREDIT' as const,
-          currency: ar.currency,
-          amount: ar.amount,
-          rateToUsd: ar.rateToUsd,
-          description: `Settlement from ${receipt.customer.customerName}`,
-          customerId: receipt.customerId,
-          shipmentId: receipt.shipmentId,
-        },
-      ];
+  const creditLines = [...settlementLines, ...advanceLines];
 
   await postJournalEntry(tx, {
     companyId: params.companyId,
