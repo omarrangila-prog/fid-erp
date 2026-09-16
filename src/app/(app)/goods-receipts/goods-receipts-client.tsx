@@ -2,6 +2,8 @@
 
 import * as React from 'react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
+import { Layers, History } from 'lucide-react';
+import { RowActions, viewAction } from '@/components/shared/row-actions';
 import { StatusBadge, Badge } from '@/components/ui/badge';
 import { TRANSACTION_STATUS_META } from '@/lib/constants';
 
@@ -89,6 +91,24 @@ export function GoodsReceiptsClient({
       sortValue: (r) => r.status,
       cell: (r) => <StatusBadge status={r.status} meta={TRANSACTION_STATUS_META} />,
     },
+    {
+      id: 'actions',
+      header: 'Actions',
+      mobile: 'action',
+      pin: 'right',
+      printHidden: true,
+      // A receipt is not edited on its own: it belongs to the purchase
+      // order, which is where the ordered quantities and batches live.
+      cell: (r) => (
+        <RowActions
+          actions={[
+            viewAction(`/purchases/${r.contractId}`),
+            { label: 'Batches', href: `/inventory/batches?q=${encodeURIComponent(r.grnNumber)}`, icon: Layers },
+            { label: 'Stock movements', href: '/inventory/movements', icon: History, overflowOnly: true },
+          ]}
+        />
+      ),
+    },
   ];
 
   return (
@@ -97,6 +117,11 @@ export function GoodsReceiptsClient({
       columns={columns}
       getRowId={(r) => r.id}
       rowHref={(r) => `/purchases/${r.contractId}`}
+      filters={[
+        { id: 'status', label: 'Status', value: (r) => r.status },
+        { id: 'warehouse', label: 'Warehouse', value: (r) => r.warehouseName },
+        { id: 'supplier', label: 'Supplier', value: (r) => r.vendorName },
+      ]}
       searchValue={(r) =>
         `${r.grnNumber} ${r.contractNumber} ${r.contractReference} ${r.vendorName} ${r.warehouseName} ${r.itemNames}`
       }
