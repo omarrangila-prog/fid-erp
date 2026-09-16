@@ -2,6 +2,8 @@
 
 import * as React from 'react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
+import { History, Ship, ArrowLeftRight } from 'lucide-react';
+import { RowActions, viewAction } from '@/components/shared/row-actions';
 import { Badge } from '@/components/ui/badge';
 
 export type BatchRow = {
@@ -130,6 +132,25 @@ export function BatchesClient({
         </Badge>
       ),
     },
+    {
+      id: 'actions',
+      header: 'Actions',
+      mobile: 'action',
+      pin: 'right',
+      printHidden: true,
+      // Visibility only: a batch's quantities come from the stock ledger and
+      // are not edited here. These are the places a person goes next.
+      cell: (r) => (
+        <RowActions
+          actions={[
+            viewAction(`/inventory/batches/${r.id}`),
+            { label: 'Movements', href: `/inventory/movements?q=${encodeURIComponent(r.batchNumber)}`, icon: History },
+            { label: 'Shipment', href: `/shipments/${r.shipmentId}`, icon: Ship },
+            { label: 'Transfer', href: '/inventory/transfers/new', icon: ArrowLeftRight, overflowOnly: true },
+          ]}
+        />
+      ),
+    },
   ];
 
   return (
@@ -139,6 +160,11 @@ export function BatchesClient({
       getRowId={(r) => r.id}
       rowHref={(r) => `/inventory/batches/${r.id}`}
       pageSize={50}
+      filters={[
+        { id: 'item', label: 'Coffee', value: (r) => r.itemName },
+        { id: 'warehouse', label: 'Warehouse', value: (r) => r.warehouses || null },
+        { id: 'origin', label: 'Origin', value: (r) => r.origin },
+      ]}
       searchValue={(r) =>
         `${r.batchNumber} ${r.lotNumber} ${r.itemName} ${r.origin} ${r.containerNumber ?? ''} ${r.shipmentNumber} ${r.contractNumber} ${r.warehouses}`
       }

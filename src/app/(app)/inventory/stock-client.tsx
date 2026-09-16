@@ -2,6 +2,8 @@
 
 import * as React from 'react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
+import { Layers, History, ShoppingCart, ArrowLeftRight } from 'lucide-react';
+import { RowActions } from '@/components/shared/row-actions';
 import { Select } from '@/components/ui/input';
 
 export type StockRow = {
@@ -97,6 +99,25 @@ export function StockClient({
           } satisfies DataColumn<StockRow>,
         ]
       : []),
+    {
+      id: 'actions',
+      header: 'Actions',
+      mobile: 'action',
+      pin: 'right',
+      printHidden: true,
+      // Visibility only: the figures come from the stock ledger and are not
+      // edited here. These are where a person goes from a stock line.
+      cell: (r: StockRow) => (
+        <RowActions
+          actions={[
+            { label: 'Batches', href: `/inventory/batches?q=${encodeURIComponent(r.itemName)}`, icon: Layers },
+            { label: 'Movements', href: `/inventory/movements?q=${encodeURIComponent(r.itemName)}`, icon: History },
+            { label: 'Sell', href: '/sales/new', icon: ShoppingCart, show: r.availableSort > 0 },
+            { label: 'Transfer', href: '/inventory/transfers/new', icon: ArrowLeftRight, show: r.availableSort > 0 },
+          ]}
+        />
+      ),
+    } satisfies DataColumn<StockRow>,
   ];
 
   return (
@@ -105,6 +126,11 @@ export function StockClient({
       columns={columns}
       getRowId={(r) => r.id}
       pageSize={50}
+      filters={[
+        { id: 'warehouse', label: 'Warehouse', value: (r) => r.warehouse },
+        { id: 'item', label: 'Coffee', value: (r) => r.itemName },
+        { id: 'origin', label: 'Origin', value: (r) => r.origin },
+      ]}
       searchValue={(r) => `${r.itemName} ${r.itemCode} ${r.origin} ${r.warehouse}`}
       searchPlaceholder="Search coffee or warehouse…"
       exportHref={canExport ? '/api/export/stock-on-hand' : undefined}
