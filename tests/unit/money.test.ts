@@ -13,6 +13,7 @@ import {
   sum,
   tryDec,
 } from '@/lib/money';
+import { formatMoney } from '@/lib/format';
 
 describe('unit conversion', () => {
   it('converts metric tons to the canonical kilogram', () => {
@@ -33,6 +34,15 @@ describe('unit conversion', () => {
 });
 
 describe('currency conversion', () => {
+  it('converts the observed MAD 7,400 at 9.6000 to USD 770.83', () => {
+    const usd = convertToUsd('7400', '9.6', 'MAD');
+    expect(usd.toString()).toBe('770.8333');
+    expect(formatMoney(usd, 'USD')).toBe('USD 770.83');
+    // Original MAD is stored separately and must never be overwritten by a
+    // USD→MAD round-trip (4dp USD scale leaves a sub-cent residual).
+    expect(Number(convertFromUsd(usd, '9.6', 'MAD'))).toBeCloseTo(7400, 2);
+  });
+
   it('converts AED to USD using the "units per 1 USD" convention', () => {
     // The worked example from the specification: AED 100,000 at 3.678.
     expect(convertToUsd('100000', '3.678', 'AED').toString()).toBe('27188.6895');

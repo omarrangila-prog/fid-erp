@@ -750,7 +750,7 @@ const REPORTS: Record<string, Report> = {
         accountId: account.id,
         from: dateParam(query, 'from'),
         to: dateParam(query, 'to'),
-        currency: query.get('currency') || 'USD',
+        currency: query.get('currency') || undefined,
       });
 
       return buildWorkbook({

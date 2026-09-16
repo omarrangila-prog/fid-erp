@@ -79,7 +79,12 @@ export default async function PurchasesPage() {
         description="Approving a contract creates the supplier payable and opens a job. Coffee reaches a warehouse only through a goods receipt."
         breadcrumbs={[{ label: 'Trading' }, { label: 'Purchase Contracts' }]}
       />
-      <PurchasesClient rows={rows} canCreate={can(user, PERMISSIONS.PURCHASES_CREATE)} showCost={showCost} />
+      <PurchasesClient
+        rows={rows}
+        canCreate={can(user, PERMISSIONS.PURCHASES_CREATE)}
+        canEdit={can(user, PERMISSIONS.PURCHASES_EDIT)}
+        showCost={showCost}
+      />
     </div>
   );
 }

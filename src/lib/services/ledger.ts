@@ -66,6 +66,7 @@ export type LedgerRow = {
   entryNumber: string;
   entryDate: Date;
   sourceType: string;
+  sourceId: string;
   reference: string | null;
   description: string;
   currency: string;
@@ -98,6 +99,7 @@ type RawLedgerRow = {
   entryNumber: string;
   entryDate: Date;
   sourceType: string;
+  sourceId: string;
   description: string;
   currency: string;
   debit: string;
@@ -193,7 +195,7 @@ async function buildLedger(params: {
   const rows = await prisma.$queryRawUnsafe<RawLedgerRow[]>(
     `
     SELECT je."id" AS "journalEntryId", je."entryNumber", je."entryDate",
-           je."sourceType"::text AS "sourceType", je."description",
+           je."sourceType"::text AS "sourceType", je."sourceId" AS "sourceId", je."description",
            jl."currency",
            jl."debit"::text AS debit, jl."credit"::text AS credit,
            jl."rateToUsd"::text AS "rateToUsd",
@@ -240,6 +242,7 @@ async function buildLedger(params: {
       entryNumber: row.entryNumber,
       entryDate: row.entryDate,
       sourceType: row.sourceType,
+      sourceId: row.sourceId,
       reference: row.reference,
       description: row.description,
       currency: row.currency,

@@ -13,6 +13,8 @@ import {
 } from '@/server/actions/master-actions';
 import { STATEMENT_GROUP_OPTIONS } from '@/app/(app)/accounting/chart/add-account-button';
 import { todayInputValue } from '@/lib/format';
+import { ledgerHref } from '@/lib/ledger-currency';
+import Link from 'next/link';
 
 export type ChartRowAccount = {
   id: string;
@@ -23,7 +25,8 @@ export type ChartRowAccount = {
   isSystem: boolean;
   status: string;
   subledgerType: string;
-  cashBank: { id: string } | null;
+  cashBank: { id: string; currency?: string } | null;
+  currency?: string | null;
 };
 
 const EDIT_FIELDS: FieldSpec[] = [
@@ -115,6 +118,9 @@ export function AccountRowActions({
 
   return (
     <div className="flex flex-wrap justify-end gap-1" data-print="hide">
+      <Button asChild variant="ghost" size="sm">
+        <Link href={ledgerHref(account.id, account.cashBank?.currency ?? account.currency)}>View ledger</Link>
+      </Button>
       <Button variant="ghost" size="sm" onClick={() => setEditOpen(true)}>
         Edit
       </Button>

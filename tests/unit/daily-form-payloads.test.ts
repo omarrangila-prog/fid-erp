@@ -237,6 +237,7 @@ describe('an unpaid expense does not ask for cash', () => {
       description: 'Agent commission',
     });
     expect(parsed.cashBankAccountId).toBeNull();
+    expect(parsed.taxCodeId).toBeNull();
     expect(parsed.kind).toBe('SHIPMENT');
   });
 });

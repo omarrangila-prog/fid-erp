@@ -13,8 +13,10 @@ import { StatusBadge, Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/feedback';
 import { VoucherActions } from '@/components/shared/voucher-actions';
+import { StripExpenseTaxButton } from '@/app/(app)/finance/expenses/strip-expense-tax';
 import { getWarehouseLabels } from '@/lib/services/stock';
 import { EXPENSE_TRACE_OMIT, expensesHaveTraceColumns } from '@/lib/services/expense-columns';
+import { looksLikeSilentDefaultTax } from '@/lib/services/expense';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,6 +58,10 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
   const recordPayment = unpaid && !expense.payableToAgent && can(user, PERMISSIONS.PAYMENTS_CREATE);
   const payAgentCommission =
     unpaid && expense.payableToAgent && can(user, PERMISSIONS.AGENTS_VIEW);
+  const silentTax =
+    expense.status === 'POSTED' &&
+    looksLikeSilentDefaultTax(expense) &&
+    can(user, PERMISSIONS.EXPENSES_POST);
 
   return (
     <div className="space-y-6">
@@ -82,6 +88,11 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
         }
         actions={
           <>
+            {expense.status === 'DRAFT' && can(user, PERMISSIONS.EXPENSES_CREATE) ? (
+              <Button asChild variant="outline">
+                <Link href={`/finance/expenses/${expense.id}/edit`}>Edit</Link>
+              </Button>
+            ) : null}
             {recordPayment ? (
               <Button asChild>
                 <Link href={`/finance/payments/new?expense=${expense.id}`}>
@@ -97,6 +108,14 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
                   Pay commission
                 </Link>
               </Button>
+            ) : null}
+            {silentTax ? (
+              <StripExpenseTaxButton
+                id={expense.id}
+                originalAmount={formatMoney(expense.amount, expense.currency, { showCode: false })}
+                currency={expense.currency}
+                grossAmount={formatMoney(expense.amount.plus(expense.taxAmount), expense.currency, { showCode: false })}
+              />
             ) : null}
             <VoucherActions
               kind="expense"
@@ -116,6 +135,15 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
         </Callout>
       ) : null}
 
+      {silentTax ? (
+        <Callout tone="danger" title="Cash moved 20% more than the amount entered">
+          A default 20% TVA was posted onto cash even though this voucher did not name a tax code. Cash currently
+          shows {formatMoney(expense.amount.plus(expense.taxAmount), expense.currency)} instead of{' '}
+          {formatMoney(expense.amount, expense.currency)}. Landed cost already uses the net amount. Restate cash to
+          the amount entered so the cash book, general ledger and shipment cost all agree.
+        </Callout>
+      ) : null}
+
       {expense.status === 'POSTED' && expense.capitaliseToLandedCost ? (
         <Callout tone="info" title="Capitalised into landed cost">
           This cost was spread across the job&rsquo;s batches. Coffee still in stock is carried at the higher value,
@@ -125,7 +153,20 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
       ) : null}
 
       <MetricGrid>
-        <Metric label="Amount" value={formatMoney(expense.amount, expense.currency)} />
+        <Metric label="Amount entered" value={formatMoney(expense.amount, expense.currency)} />
+        {Number(expense.taxAmount) > 0 ? (
+          <Metric
+            label="Tax"
+            value={formatMoney(expense.taxAmount, expense.currency)}
+            hint={`${Number(expense.taxRatePct)}%`}
+          />
+        ) : null}
+        {Number(expense.taxAmount) > 0 ? (
+          <Metric
+            label={expense.cashBankAccountId ? 'Cash / bank moved' : 'Gross payable'}
+            value={formatMoney(expense.amount.plus(expense.taxAmount), expense.currency)}
+          />
+        ) : null}
         <Metric label="USD equivalent" value={formatMoney(expense.amountUsd, 'USD')} />
         <Metric
           label={`In ${user.activeCompany.localCurrency}`}

@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import { Decimal, dec, toMoney, toQuantity } from '@/lib/money';
 import { REPORT_GROUPS, ACCOUNT_KEYS } from '@/lib/constants';
 import { getCompanyContext } from '@/lib/services/company';
+import { resolveLedgerViewCurrency, pickCashBankCurrency } from '@/lib/ledger-currency';
 import type { Tx } from '@/lib/db';
 
 /**
@@ -455,6 +456,7 @@ export type GeneralLedgerRow = {
   entryDate: Date;
   description: string;
   sourceType: string;
+  sourceId: string;
   reference: string | null;
   currency: string;
   debit: Decimal;
@@ -474,11 +476,34 @@ export async function getGeneralLedger(params: {
 }) {
   const account = await prisma.account.findFirstOrThrow({
     where: { id: params.accountId, companyId: params.companyId },
-    select: { id: true, code: true, name: true, type: true },
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      type: true,
+      currency: true,
+      cashBankAccounts: { select: { currency: true }, orderBy: { currency: 'asc' } },
+    },
   });
 
-  const allCurrencies = params.currency === 'ALL';
-  const currencyFilter = params.currency && params.currency !== 'ALL' ? params.currency : null;
+  // If the GL head lost its currency flag, copy it from the cash/bank drawer so
+  // Cash in Hand (MAD) cannot open as "USD only" and hide every MAD line.
+  if (!account.currency && account.cashBankAccounts.length === 1) {
+    const drawerCurrency = account.cashBankAccounts[0].currency;
+    await prisma.account.update({
+      where: { id: account.id },
+      data: { currency: drawerCurrency },
+    });
+    account.currency = drawerCurrency;
+  }
+
+  const viewCurrency = resolveLedgerViewCurrency({
+    requested: params.currency,
+    accountCurrency: account.currency,
+    cashBankCurrency: pickCashBankCurrency(account.cashBankAccounts, account.currency ?? params.currency),
+  });
+  const allCurrencies = viewCurrency === 'ALL';
+  const currencyFilter = allCurrencies ? null : viewCurrency;
   const useOriginal = Boolean(currencyFilter) || allCurrencies;
 
   const openingRows = currencyFilter
@@ -508,6 +533,7 @@ export async function getGeneralLedger(params: {
           entryDate: Date;
           description: string;
           sourceType: string;
+          sourceId: string;
           currency: string;
           debit: string;
           credit: string;
@@ -517,7 +543,7 @@ export async function getGeneralLedger(params: {
         }>
       >`
         SELECT je."id" AS "entryId", je."entryNumber", je."entryDate", je."description",
-               je."sourceType"::text AS "sourceType", jl."currency",
+               je."sourceType"::text AS "sourceType", je."sourceId" AS "sourceId", jl."currency",
                jl."debit"::text AS debit, jl."credit"::text AS credit,
                jl."debitUsd"::text AS "debitUsd", jl."creditUsd"::text AS "creditUsd",
                jl."description" AS reference
@@ -537,6 +563,7 @@ export async function getGeneralLedger(params: {
           entryDate: Date;
           description: string;
           sourceType: string;
+          sourceId: string;
           currency: string;
           debit: string;
           credit: string;
@@ -546,7 +573,7 @@ export async function getGeneralLedger(params: {
         }>
       >`
         SELECT je."id" AS "entryId", je."entryNumber", je."entryDate", je."description",
-               je."sourceType"::text AS "sourceType", jl."currency",
+               je."sourceType"::text AS "sourceType", je."sourceId" AS "sourceId", jl."currency",
                jl."debit"::text AS debit, jl."credit"::text AS credit,
                jl."debitUsd"::text AS "debitUsd", jl."creditUsd"::text AS "creditUsd",
                jl."description" AS reference
@@ -572,6 +599,7 @@ export async function getGeneralLedger(params: {
       entryDate: row.entryDate,
       description: row.description,
       sourceType: row.sourceType,
+      sourceId: row.sourceId,
       reference: row.reference,
       currency: row.currency,
       debit: dec(row.debit),
@@ -583,9 +611,14 @@ export async function getGeneralLedger(params: {
     };
   });
 
-  const viewCurrency = allCurrencies ? 'ALL' : (currencyFilter ?? 'USD');
   return {
-    account,
+    account: {
+      id: account.id,
+      code: account.code,
+      name: account.name,
+      type: account.type,
+      currency: account.currency,
+    },
     openingBalanceUsd: opening,
     closingBalanceUsd: running,
     openingBalance: opening,
@@ -615,13 +648,14 @@ export async function getCashBook(params: {
       entryDate: Date;
       description: string;
       sourceType: string;
+      sourceId: string;
       debit: string;
       credit: string;
       counterparty: string | null;
     }>
   >`
     SELECT je."id" AS "entryId", je."entryNumber", je."entryDate", je."description",
-           je."sourceType"::text AS "sourceType",
+           je."sourceType"::text AS "sourceType", je."sourceId" AS "sourceId",
            jl."debit"::text AS debit, jl."credit"::text AS credit,
            COALESCE(c."customerName", v."vendorName") AS counterparty
     FROM journal_lines jl
@@ -646,6 +680,7 @@ export async function getCashBook(params: {
       entryDate: row.entryDate,
       description: row.description,
       sourceType: row.sourceType,
+      sourceId: row.sourceId,
       counterparty: row.counterparty,
       moneyIn: dec(row.debit),
       moneyOut: dec(row.credit),

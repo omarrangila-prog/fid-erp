@@ -3,6 +3,7 @@ import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getGeneralLedger } from '@/lib/services/reports';
+import { resolveLedgerViewCurrency, pickCashBankCurrency, ledgerCurrencyLabel } from '@/lib/ledger-currency';
 import { formatMoney, formatDate, titleCase } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -12,6 +13,7 @@ import { PrintButton } from '@/components/shared/print-button';
 import { ExcelLink, exportHref } from '@/components/shared/excel-link';
 import { PrintHeader } from '@/components/shared/print-header';
 import { AccountPicker } from '@/app/(app)/reports/general-ledger/account-picker';
+import { JournalSourceActions } from '@/components/shared/journal-source-actions';
 
 export const metadata: Metadata = { title: 'General Ledger' };
 export const dynamic = 'force-dynamic';
@@ -28,13 +30,34 @@ export default async function GeneralLedgerPage({
   const accounts = await prisma.account.findMany({
     where: { companyId },
     orderBy: { code: 'asc' },
-    select: { id: true, code: true, name: true, type: true },
+    select: {
+      id: true,
+      code: true,
+      name: true,
+      type: true,
+      currency: true,
+      cashBankAccounts: { select: { currency: true }, orderBy: { currency: 'asc' } },
+    },
   });
 
-  const selectedCurrency =
-    currency === 'ALL' || currency === 'MAD' || currency === 'AED' || currency === 'USD' ? currency : 'USD';
+  const pickerAccounts = accounts.map((row) => ({
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    type: row.type,
+    nativeCurrency: resolveLedgerViewCurrency({
+      accountCurrency: row.currency,
+      cashBankCurrency: pickCashBankCurrency(row.cashBankAccounts, row.currency),
+    }),
+  }));
 
   const selectedId = account && accounts.some((a) => a.id === account) ? account : accounts[0]?.id;
+  const selected = accounts.find((row) => row.id === selectedId);
+  const selectedCurrency = resolveLedgerViewCurrency({
+    requested: currency,
+    accountCurrency: selected?.currency,
+    cashBankCurrency: pickCashBankCurrency(selected?.cashBankAccounts, selected?.currency ?? currency),
+  });
 
   const ledger = selectedId
     ? await getGeneralLedger({
@@ -66,7 +89,7 @@ export default async function GeneralLedgerPage({
       />
 
       <AccountPicker
-        accounts={accounts}
+        accounts={pickerAccounts}
         selectedId={selectedId ?? ''}
         from={from ?? ''}
         to={to ?? ''}
@@ -82,10 +105,10 @@ export default async function GeneralLedgerPage({
               {ledger.account.code} · {ledger.account.name}
             </CardTitle>
               <CardDescription>
-                {titleCase(ledger.account.type)} account
-                {ledger.mixedCurrencies
-                  ? ' · all currencies listed separately — USD and MAD are never added together'
-                  : ` · ${ledger.viewCurrency} only`}
+                {titleCase(ledger.account.type)} account · {ledgerCurrencyLabel(ledger.viewCurrency, ledger.mixedCurrencies)}
+                {ledger.account.currency && ledger.account.currency !== ledger.viewCurrency && !ledger.mixedCurrencies
+                  ? ` · native ${ledger.account.currency}`
+                  : ''}
               </CardDescription>
           </CardHeader>
           <CardContent className="px-0 pb-0">
@@ -101,6 +124,7 @@ export default async function GeneralLedgerPage({
                     <TH numeric>Debit</TH>
                     <TH numeric>Credit</TH>
                     {ledger.mixedCurrencies ? null : <TH numeric>Balance</TH>}
+                    <TH className="text-right">Actions</TH>
                   </TR>
                 </THead>
                 <TBody>
@@ -112,11 +136,12 @@ export default async function GeneralLedgerPage({
                       <TD numeric className="font-semibold">
                         {formatMoney(ledger.openingBalance, ledger.viewCurrency)}
                       </TD>
+                      <TD />
                     </TR>
                   )}
                   {ledger.rows.length === 0 ? (
                     <TR>
-                      <TD colSpan={ledger.mixedCurrencies ? 7 : 7} className="py-8 text-center text-xs text-ink-subtle">
+                      <TD colSpan={ledger.mixedCurrencies ? 8 : 8} className="py-8 text-center text-xs text-ink-subtle">
                         No movements on this account in the selected period.
                       </TD>
                     </TR>
@@ -144,6 +169,13 @@ export default async function GeneralLedgerPage({
                             {formatMoney(row.balance, ledger.viewCurrency)}
                           </TD>
                         )}
+                        <TD>
+                          <JournalSourceActions
+                            sourceType={row.sourceType}
+                            sourceId={row.sourceId}
+                            entryNumber={row.entryNumber}
+                          />
+                        </TD>
                       </TR>
                     ))
                   )}
@@ -153,6 +185,7 @@ export default async function GeneralLedgerPage({
                     <tr>
                       <TD colSpan={6}>Closing balance</TD>
                       <TD numeric>{formatMoney(ledger.closingBalance, ledger.viewCurrency)}</TD>
+                      <TD />
                     </tr>
                   </TFoot>
                 )}

@@ -109,7 +109,7 @@ test('the general ledger export names the account being read', async ({ page }) 
   const href = await page.getByRole('link', { name: 'Excel' }).getAttribute('href');
   // The page falls back to the first account when none is chosen; the export
   // must be pointed at that same account, not left to guess.
-  expect(href).toMatch(/^\/api\/export\/general-ledger\?account=[\w-]+$/);
+  expect(href).toMatch(/^\/api\/export\/general-ledger\?account=[\w-]+&currency=(ALL|USD|MAD|AED)$/);
 
   const response = await page.request.get(href ?? '');
   expect(response.status()).toBe(200);

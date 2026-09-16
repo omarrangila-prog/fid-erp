@@ -222,3 +222,98 @@ test('an item shows stock by warehouse', async ({ page }) => {
   await page.waitForURL(/\/items\/[\w-]+/, { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /stock by warehouse/i })).toBeVisible();
 });
+
+test('a plain MAD 7,400 shipment expense does not become 8,880', async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.goto('/finance/expenses/new', { waitUntil: 'domcontentloaded' });
+  const form = page.getByRole('main');
+
+  await form.getByRole('combobox', { name: /contract \/ shipment/i }).click();
+  await page.getByRole('listbox').getByRole('option').first().click();
+
+  await form.getByRole('combobox', { name: /expense category/i }).click();
+  await page.getByRole('listbox').getByRole('option').first().click();
+
+  await form.getByLabel(/expense date/i).fill('2026-07-28');
+  await form.locator('label').filter({ hasText: /already paid from cash/i }).click();
+  await form.getByLabel(/^Amount/).fill('7400');
+  const rate = form.getByLabel(/Rate \(MAD per 1 USD\)/);
+  if (await rate.count()) {
+    await rate.fill('9.6');
+  }
+  await form.getByLabel(/^Description/).fill('Transport 7400 integrity');
+
+  const tax = form.locator('#expenseTax');
+  if (await tax.count()) {
+    await expect(tax).toHaveValue('');
+  }
+
+  await expect(form).toContainText(/USD 770\.83/);
+
+  await form.getByRole('button', { name: /save and post/i }).click();
+  await page.waitForURL(/\/finance\/expenses\/(?!new)[\w-]+/, { waitUntil: 'domcontentloaded', timeout: 40_000 });
+
+  const expenseUrl = page.url();
+  const main = page.getByRole('main');
+  await expect(main).toContainText(/MAD 7,400/);
+  await expect(main).toContainText(/USD 770\.83/);
+  await expect(main).toContainText(/9\.6/);
+  await expect(main).not.toContainText(/8,880/);
+  await expect(main).not.toContainText(/Cash moved 20% more/);
+
+  await page.goto('/shipments', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('link', { name: /view costing/i }).first().click();
+  const costing = page.locator('#costing');
+  await expect(costing).toContainText(/7,400/);
+  await expect(costing).not.toContainText(/8,880/);
+  await expect(costing.getByRole('columnheader', { name: /Expense Category/i })).toBeVisible();
+  await expect(costing.getByRole('columnheader', { name: /FX Rate/i })).toBeVisible();
+  await expect(costing.getByRole('columnheader', { name: /USD Equivalent/i })).toBeVisible();
+  await expect(costing.getByTestId('shipment-expense-row').filter({ hasText: '7,400' })).toHaveCount(1);
+
+  await page.goto('/finance/cash-bank', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('link', { name: /Cash in Hand(?! \(USD\))/ }).first().click();
+  await expect(page.getByRole('heading', { name: /Cash in Hand/ })).toBeVisible();
+  const cashBook = page.getByRole('main');
+  await expect(cashBook).toContainText(/7,400/);
+  await expect(cashBook).not.toContainText(/8,880/);
+  await expect(cashBook).toContainText(/MAD/);
+
+  await page.getByRole('link', { name: /view general ledger/i }).click();
+  await page.waitForURL(/\/reports\/general-ledger/, { waitUntil: 'domcontentloaded' });
+  const ledger = page.getByRole('main');
+  await expect(ledger).toContainText(/MAD only/);
+  await expect(ledger).not.toContainText(/USD only/);
+  await expect(ledger).toContainText(/7,400/);
+  await expect(ledger).not.toContainText(/8,880/);
+
+  await page.goto('/accounting/chart', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('link', { name: /Cash in Hand \(MAD\)/ }).first().click();
+  await page.waitForURL(/\/reports\/general-ledger/, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('main')).toContainText(/MAD only/);
+  await expect(page.getByRole('main')).not.toContainText(/USD only/);
+  await expect(page.getByRole('main')).toContainText(/7,400/);
+
+  await page.goto('/finance/expenses/new', { waitUntil: 'domcontentloaded' });
+  const next = page.getByRole('main');
+  await next.getByRole('combobox', { name: /contract \/ shipment/i }).click();
+  await page.getByRole('listbox').getByRole('option').first().click();
+  await next.getByRole('combobox', { name: /expense category/i }).click();
+  await page.getByRole('listbox').getByRole('option').first().click();
+  await next.getByLabel(/expense date/i).fill('2026-07-29');
+  await next.locator('label').filter({ hasText: /already paid from cash/i }).click();
+  await next.getByLabel(/^Amount/).fill('1000');
+  await next.getByLabel(/^Description/).fill('Second expense after 7400');
+  await next.getByRole('button', { name: /save and post/i }).click();
+  await page.waitForURL(/\/finance\/expenses\/(?!new)[\w-]+/, { waitUntil: 'domcontentloaded', timeout: 40_000 });
+  await expect(page.getByRole('main')).toContainText(/MAD 1,000/);
+  await expect(page.getByRole('main')).not.toContainText(/1,200/);
+
+  await page.goto('/finance/cash-bank', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('link', { name: /Cash in Hand(?! \(USD\))/ }).first().click();
+  await expect(page.getByRole('main')).toContainText(/1,000/);
+  await expect(page.getByRole('main')).not.toContainText(/1,200/);
+
+  await page.goto(expenseUrl, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('main')).toContainText(/MAD 7,400/);
+});

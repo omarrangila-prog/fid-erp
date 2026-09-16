@@ -3,8 +3,9 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { CheckCircle2, Undo2, Trash2 } from 'lucide-react';
+import { CheckCircle2, Undo2, Trash2, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import Link from 'next/link';
 import { ConfirmDialog } from '@/components/ui/confirm';
 import {
   postReceiptAction, reverseReceiptAction, deleteReceiptAction,
@@ -141,9 +142,9 @@ export function VoucherActions({
       <ConfirmDialog
         open={confirm === 'reverse'}
         onOpenChange={(open) => !open && setConfirm(null)}
-        title={`Reverse this ${config.label}?`}
+        title="Are you sure you want to reverse/cancel this transaction?"
         description={config.reverseDescription}
-        confirmLabel={`Reverse ${config.label}`}
+        confirmLabel="Yes, Continue"
         variant="danger"
         requireReason
         reasonLabel="Why is this being reversed?"
@@ -163,5 +164,89 @@ export function VoucherActions({
         }}
       />
     </>
+  );
+}
+
+/** Compact View / Edit / Delete-or-Reverse on a list row. */
+export function VoucherRowActions({
+  kind,
+  id,
+  status,
+  canPost,
+  canDelete,
+}: {
+  kind: Kind;
+  id: string;
+  status: string;
+  canPost: boolean;
+  canDelete: boolean;
+}) {
+  const router = useRouter();
+  const config = ACTIONS[kind];
+  const [confirm, setConfirm] = React.useState<'reverse' | 'delete' | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  const viewPath = `${config.listPath}/${id}`;
+  const editPath = kind === 'expense' && status === 'DRAFT' ? `${viewPath}/edit` : null;
+
+  async function run(fn: () => Promise<{ ok: boolean; error?: string }>, success: string) {
+    setBusy(true);
+    try {
+      const result = await fn();
+      if (result.ok) {
+        toast.success(success);
+        router.refresh();
+      } else {
+        toast.error(result.error ?? 'The action could not be completed.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap justify-end gap-1" onClick={(event) => event.stopPropagation()}>
+      <Button asChild variant="outline" size="sm">
+        <Link href={viewPath}>View</Link>
+      </Button>
+      {editPath ? (
+        <Button asChild variant="ghost" size="sm">
+          <Link href={editPath}>
+            <Pencil />
+            Edit
+          </Link>
+        </Button>
+      ) : null}
+      {status === 'DRAFT' && canDelete ? (
+        <Button variant="ghost" size="sm" onClick={() => setConfirm('delete')} disabled={busy}>
+          Delete
+        </Button>
+      ) : null}
+      {status === 'POSTED' && canPost ? (
+        <Button variant="ghost" size="sm" onClick={() => setConfirm('reverse')} disabled={busy}>
+          Cancel
+        </Button>
+      ) : null}
+
+      <ConfirmDialog
+        open={confirm === 'reverse'}
+        onOpenChange={(open) => !open && setConfirm(null)}
+        title="Are you sure you want to reverse/cancel this transaction?"
+        description={config.reverseDescription}
+        confirmLabel="Yes, Continue"
+        variant="danger"
+        requireReason
+        reasonLabel="Why is this being reversed?"
+        onConfirm={(reason) => run(() => config.reverse(id, reason), 'Reversed.')}
+      />
+      <ConfirmDialog
+        open={confirm === 'delete'}
+        onOpenChange={(open) => !open && setConfirm(null)}
+        title="Delete this draft?"
+        description="Drafts have no ledger impact, so this removes it entirely."
+        confirmLabel="Yes, Continue"
+        variant="danger"
+        onConfirm={() => run(() => config.remove(id), 'Draft deleted.')}
+      />
+    </div>
   );
 }

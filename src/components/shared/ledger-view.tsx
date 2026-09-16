@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/feedback';
 import { ledgerCurrencyTabs, type LedgerResult } from '@/lib/services/ledger';
+import { JournalSourceActions } from '@/components/shared/journal-source-actions';
 
 /**
  * Party ledger filtered by the currency the voucher was actually raised in.
@@ -86,6 +87,7 @@ export function LedgerView({
                   <TH numeric>Debit</TH>
                   <TH numeric>Credit</TH>
                   <TH numeric>Balance</TH>
+                  <TH className="text-right">Actions</TH>
                 </TR>
               </THead>
               <TBody>
@@ -96,6 +98,7 @@ export function LedgerView({
                   <TD numeric className="font-semibold">
                     {formatMoney(ledger.openingBalance, currency)}
                   </TD>
+                  <TD />
                 </TR>
 
                 {ledger.rows.map((row, index) => (
@@ -112,6 +115,13 @@ export function LedgerView({
                     <TD numeric className="font-medium">
                       {formatMoney(row.balance, currency)}
                     </TD>
+                    <TD>
+                      <JournalSourceActions
+                        sourceType={row.sourceType}
+                        sourceId={row.sourceId}
+                        entryNumber={row.entryNumber}
+                      />
+                    </TD>
                   </TR>
                 ))}
               </TBody>
@@ -121,6 +131,7 @@ export function LedgerView({
                   <TD numeric>{formatMoney(ledger.totalDebit, currency)}</TD>
                   <TD numeric>{formatMoney(ledger.totalCredit, currency)}</TD>
                   <TD numeric>{formatMoney(ledger.closingBalance, currency)}</TD>
+                  <TD />
                 </tr>
               </TFoot>
             </Table>

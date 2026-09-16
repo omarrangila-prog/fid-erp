@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
+import { ledgerHref } from '@/lib/ledger-currency';
+import { prisma } from '@/lib/db';
 import { getTrialBalanceReport } from '@/lib/services/reports';
 import { formatMoney, formatDate, titleCase } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
@@ -23,7 +25,23 @@ export default async function TrialBalancePage({ searchParams }: { searchParams:
   const local = user.activeCompany.localCurrency;
 
   const asOfDate = asOf ? new Date(`${asOf}T00:00:00.000Z`) : new Date();
-  const trial = await getTrialBalanceReport({ companyId: user.activeCompany.id, to: asOfDate });
+  const [trial, accountCurrencies] = await Promise.all([
+    getTrialBalanceReport({ companyId: user.activeCompany.id, to: asOfDate }),
+    prisma.account.findMany({
+      where: { companyId: user.activeCompany.id },
+      select: {
+        id: true,
+        currency: true,
+        cashBankAccounts: { select: { currency: true }, orderBy: { currency: 'asc' } },
+      },
+    }),
+  ]);
+  const currencyByAccount = new Map(
+    accountCurrencies.map((row) => {
+      const cash = row.cashBankAccounts.find((d) => d.currency !== 'USD') ?? row.cashBankAccounts[0];
+      return [row.id, cash?.currency ?? row.currency ?? null] as const;
+    }),
+  );
 
   return (
     <div className="space-y-6">
@@ -81,7 +99,7 @@ export default async function TrialBalancePage({ searchParams }: { searchParams:
                   <TR key={row.accountId}>
                     <TD>
                       <Link
-                        href={`/reports/general-ledger?account=${row.accountId}`}
+                        href={ledgerHref(row.accountId, currencyByAccount.get(row.accountId))}
                         className="font-medium text-forest-800 hover:text-gold-700"
                       >
                         <span className="text-ink-subtle">{row.code}</span> {row.name}

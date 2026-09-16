@@ -38,10 +38,12 @@ export function PurchasesClient({
   rows,
   canCreate,
   showCost,
+  canEdit = false,
 }: {
   rows: PurchaseRow[];
   canCreate: boolean;
   showCost: boolean;
+  canEdit?: boolean;
 }) {
   const columns: DataColumn<PurchaseRow>[] = [
     {
@@ -169,6 +171,25 @@ export function PurchasesClient({
         const state = goodsState(r);
         return <Badge tone={state.tone}>{state.label}</Badge>;
       },
+    },
+    {
+      id: 'actions',
+      header: '',
+      printHidden: true,
+      mobile: 'action',
+      className: 'sticky right-0 z-10 bg-surface shadow-[-8px_0_12px_-8px_rgba(15,23,42,0.18)]',
+      cell: (r) => (
+        <div className="flex flex-wrap justify-end gap-1" onClick={(event) => event.stopPropagation()}>
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/purchases/${r.id}`}>View</Link>
+          </Button>
+          {canEdit && r.status === 'DRAFT' ? (
+            <Button asChild variant="ghost" size="sm">
+              <Link href={`/purchases/${r.id}/edit`}>Edit</Link>
+            </Button>
+          ) : null}
+        </div>
+      ),
     },
   ];
 

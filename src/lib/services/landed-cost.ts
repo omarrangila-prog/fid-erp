@@ -1,7 +1,7 @@
 import type { Tx } from '@/lib/db';
 import { prisma } from '@/lib/db';
 import { getCommissionPaidByExpense } from '@/lib/services/agent-commission';
-import { Decimal, dec, toMoney, toUnitCost, allocateProportionally, sum, toQuantity } from '@/lib/money';
+import { Decimal, dec, toMoney, toUnitCost, allocateProportionally, sum, toQuantity, convertFromUsd, KG_PER_MT } from '@/lib/money';
 import { BusinessRuleError } from '@/lib/errors';
 import { lockBatch } from '@/lib/services/inventory';
 import { EXPENSE_TRACE_OMIT, expensesHaveTraceColumns } from '@/lib/services/expense-columns';
@@ -362,36 +362,81 @@ export async function getJobCostSummary(tx: Tx, companyId: string, shipmentId: s
 export type ShipmentCostLine = {
   expenseId: string;
   expenseNumber: string;
+  expenseDate: Date;
   category: string;
+  description: string | null;
+  reference: string | null;
   amountUsd: Decimal;
   amount: Decimal;
+  amountLocal: Decimal;
   currency: string;
+  rateToUsd: Decimal;
+  taxAmount: Decimal;
   capitalised: boolean;
   paid: boolean;
+  paidFrom: string | null;
   containerNumber: string | null;
   batchNumber: string | null;
+};
+
+export type ShipmentPurchaseLine = {
+  batchId: string;
+  batchNumber: string;
+  purchaseCostUsd: Decimal;
+  quantityKg: Decimal;
 };
 
 /** The costing / profitability sheet for one consignment. */
 export async function getShipmentCostSheet(companyId: string, shipmentId: string) {
   const job = await getJobCostSummary(prisma as Tx, companyId, shipmentId);
 
+  const [company, shipment] = await Promise.all([
+    prisma.company.findUniqueOrThrow({
+      where: { id: companyId },
+      select: { localCurrency: true },
+    }),
+    prisma.shipment.findFirstOrThrow({
+      where: { id: shipmentId, companyId },
+      select: {
+        purchaseContract: { select: { rateLocalPerUsd: true, currency: true, contractReference: true } },
+      },
+    }),
+  ]);
+
+  const rateLocalPerUsd = dec(shipment.purchaseContract.rateLocalPerUsd);
+  const localCurrency = company.localCurrency;
+  const goodsLocal = convertFromUsd(job.goodsUsd, rateLocalPerUsd, localCurrency);
+
   const hasTrace = await expensesHaveTraceColumns();
-  const expenses = await prisma.expense.findMany({
-    where: { companyId, shipmentId, status: 'POSTED', kind: 'SHIPMENT' },
-    ...(hasTrace ? {} : { omit: EXPENSE_TRACE_OMIT }),
-    include: {
-      expenseCategory: { select: { name: true } },
-      ...(hasTrace
-        ? {
-            container: { select: { containerNumber: true } },
-            batch: { select: { batchNumber: true } },
-          }
-        : {}),
-      allocations: { select: { payment: { select: { status: true } } } },
-    },
-    orderBy: [{ expenseDate: 'asc' }, { expenseNumber: 'asc' }],
-  });
+  const [expenses, purchaseBatches] = await Promise.all([
+    prisma.expense.findMany({
+      where: { companyId, shipmentId, status: 'POSTED', kind: 'SHIPMENT' },
+      ...(hasTrace ? {} : { omit: EXPENSE_TRACE_OMIT }),
+      include: {
+        expenseCategory: { select: { name: true } },
+        cashBankAccount: { select: { name: true } },
+        ...(hasTrace
+          ? {
+              container: { select: { containerNumber: true } },
+              batch: { select: { batchNumber: true } },
+            }
+          : {}),
+        allocations: { select: { payment: { select: { status: true } } } },
+      },
+      orderBy: [{ expenseDate: 'asc' }, { expenseNumber: 'asc' }],
+    }),
+    prisma.batch.findMany({
+      where: { companyId, shipmentId, status: 'ACTIVE' },
+      select: {
+        id: true,
+        batchNumber: true,
+        purchaseCostUsd: true,
+        receivedQuantityKg: true,
+        orderedQuantityKg: true,
+      },
+      orderBy: { batchNumber: 'asc' },
+    }),
+  ]);
 
   const commissionPaid = expenses.some((expense) => expense.payableToAgentId)
     ? await getCommissionPaidByExpense(companyId)
@@ -405,21 +450,46 @@ export async function getShipmentCostSheet(companyId: string, shipmentId: string
     return {
       expenseId: expense.id,
       expenseNumber: expense.expenseNumber,
+      expenseDate: expense.expenseDate,
       category: expense.expenseCategory.name,
+      description: expense.description,
+      reference: expense.reference,
       amountUsd: toMoney(expense.amountUsd),
       amount: toMoney(expense.amount),
+      amountLocal: toMoney(expense.amountLocal),
       currency: expense.currency,
+      rateToUsd: dec(expense.rateToUsd),
+      taxAmount: toMoney(expense.taxAmount),
       capitalised: expense.capitaliseToLandedCost,
       paid: Boolean(expense.cashBankAccountId) || settledByAllocation || settledByCommission,
+      paidFrom: expense.cashBankAccount?.name ?? null,
       containerNumber: 'container' in expense ? (expense.container?.containerNumber ?? null) : null,
       batchNumber: 'batch' in expense ? (expense.batch?.batchNumber ?? null) : null,
     };
   });
 
   const expenseUsd = toMoney(sum(lines.map((line) => line.amountUsd)));
+  const expenseLocal = toMoney(sum(lines.map((line) => line.amountLocal)));
   const totalShipmentCostUsd = toMoney(job.goodsUsd.plus(expenseUsd));
+  const totalShipmentCostLocal = toMoney(goodsLocal.plus(expenseLocal));
   const receivedKg = toQuantity(job.receivedKg);
-  const basisKg = receivedKg.greaterThan(0) ? receivedKg : toQuantity(job.orderedKg);
+  const orderedKg = toQuantity(job.orderedKg);
+  const basisKg = receivedKg.greaterThan(0) ? receivedKg : orderedKg;
+  const receivedMt = toQuantity(receivedKg.dividedBy(KG_PER_MT));
+  const orderedMt = toQuantity(orderedKg.dividedBy(KG_PER_MT));
+  const costPerKgUsd = basisKg.greaterThan(0) ? toUnitCost(totalShipmentCostUsd.dividedBy(basisKg)) : new Decimal(0);
+  const costPerKgLocal = basisKg.greaterThan(0) ? toUnitCost(totalShipmentCostLocal.dividedBy(basisKg)) : new Decimal(0);
+  const costPerMtUsd = toUnitCost(costPerKgUsd.times(KG_PER_MT));
+  const costPerMtLocal = toUnitCost(costPerKgLocal.times(KG_PER_MT));
+
+  const purchaseLines: ShipmentPurchaseLine[] = purchaseBatches.map((batch) => ({
+    batchId: batch.id,
+    batchNumber: batch.batchNumber,
+    purchaseCostUsd: toMoney(batch.purchaseCostUsd),
+    quantityKg: toQuantity(
+      dec(batch.receivedQuantityKg).greaterThan(0) ? batch.receivedQuantityKg : batch.orderedQuantityKg,
+    ),
+  }));
 
   const invoices = await prisma.salesInvoice.findMany({
     where: { companyId, shipmentId, status: 'POSTED' },
@@ -431,19 +501,126 @@ export async function getShipmentCostSheet(companyId: string, shipmentId: string
   const soldKg = toQuantity(job.soldKg);
 
   return {
+    localCurrency,
+    rateLocalPerUsd,
+    contractReference: shipment.purchaseContract.contractReference,
     goodsUsd: job.goodsUsd,
+    goodsLocal,
     capitalisedUsd: job.capitalisedUsd,
     expenseUsd,
+    expenseLocal,
     totalShipmentCostUsd,
-    orderedKg: toQuantity(job.orderedKg),
+    totalShipmentCostLocal,
+    orderedKg,
     receivedKg,
+    orderedMt,
+    receivedMt,
     soldKg,
-    costPerKgUsd: basisKg.greaterThan(0) ? toUnitCost(totalShipmentCostUsd.dividedBy(basisKg)) : new Decimal(0),
+    remainingKg: toQuantity(job.receivedKg.minus(job.soldKg)),
+    costPerKgUsd,
+    costPerKgLocal,
+    costPerMtUsd,
+    costPerMtLocal,
     revenueUsd,
     cogsUsd,
     grossProfitUsd,
     profitPerKgUsd: soldKg.greaterThan(0) ? toUnitCost(grossProfitUsd.dividedBy(soldKg)) : new Decimal(0),
     profitPct: revenueUsd.greaterThan(0) ? grossProfitUsd.dividedBy(revenueUsd).times(100) : new Decimal(0),
+    purchaseLines,
     lines,
   };
+}
+
+export type ShipmentListCosting = {
+  shipmentId: string;
+  goodsUsd: Decimal;
+  goodsLocal: Decimal;
+  expenseUsd: Decimal;
+  expenseLocal: Decimal;
+  totalLandedUsd: Decimal;
+  totalLandedLocal: Decimal;
+  receivedKg: Decimal;
+  soldKg: Decimal;
+  remainingKg: Decimal;
+  costPerKgUsd: Decimal;
+  costPerKgLocal: Decimal;
+  costPerMtUsd: Decimal;
+  costPerMtLocal: Decimal;
+  receivedMt: Decimal;
+  localCurrency: string;
+};
+
+/** One costing row per shipment for the list — original currencies preserved. */
+export async function getShipmentCostingIndex(companyId: string): Promise<Map<string, ShipmentListCosting>> {
+  const company = await prisma.company.findUniqueOrThrow({
+    where: { id: companyId },
+    select: { localCurrency: true },
+  });
+
+  const rows = await prisma.$queryRaw<
+    Array<{
+      shipmentId: string;
+      goodsUsd: string;
+      receivedKg: string;
+      orderedKg: string;
+      soldKg: string;
+      expenseUsd: string;
+      expenseLocal: string;
+      rateLocalPerUsd: string;
+    }>
+  >`
+    SELECT s."id" AS "shipmentId",
+           COALESCE((SELECT SUM(b."purchaseCostUsd") FROM batches b
+                     WHERE b."shipmentId" = s."id" AND b."status" = 'ACTIVE'), 0)::text AS "goodsUsd",
+           COALESCE((SELECT SUM(b."receivedQuantityKg") FROM batches b
+                     WHERE b."shipmentId" = s."id" AND b."status" = 'ACTIVE'), 0)::text AS "receivedKg",
+           COALESCE((SELECT SUM(b."orderedQuantityKg") FROM batches b
+                     WHERE b."shipmentId" = s."id" AND b."status" = 'ACTIVE'), 0)::text AS "orderedKg",
+           COALESCE((SELECT SUM(b."soldQuantityKg") FROM batches b
+                     WHERE b."shipmentId" = s."id" AND b."status" = 'ACTIVE'), 0)::text AS "soldKg",
+           COALESCE((SELECT SUM(e."amountUsd") FROM expenses e
+                     WHERE e."shipmentId" = s."id" AND e."status" = 'POSTED' AND e."kind" = 'SHIPMENT'), 0)::text AS "expenseUsd",
+           COALESCE((SELECT SUM(e."amountLocal") FROM expenses e
+                     WHERE e."shipmentId" = s."id" AND e."status" = 'POSTED' AND e."kind" = 'SHIPMENT'), 0)::text AS "expenseLocal",
+           pc."rateLocalPerUsd"::text AS "rateLocalPerUsd"
+    FROM shipments s
+    JOIN purchase_contracts pc ON pc."id" = s."purchaseContractId"
+    WHERE s."companyId" = ${companyId}
+  `;
+
+  const index = new Map<string, ShipmentListCosting>();
+  for (const row of rows) {
+    const goodsUsd = toMoney(row.goodsUsd);
+    const expenseUsd = toMoney(row.expenseUsd);
+    const expenseLocal = toMoney(row.expenseLocal);
+    const rateLocalPerUsd = dec(row.rateLocalPerUsd);
+    const goodsLocal = convertFromUsd(goodsUsd, rateLocalPerUsd, company.localCurrency);
+    const receivedKg = toQuantity(row.receivedKg);
+    const orderedKg = toQuantity(row.orderedKg);
+    const soldKg = toQuantity(row.soldKg);
+    const totalLandedUsd = toMoney(goodsUsd.plus(expenseUsd));
+    const totalLandedLocal = toMoney(goodsLocal.plus(expenseLocal));
+    const basisKg = receivedKg.greaterThan(0) ? receivedKg : orderedKg;
+    const costPerKgUsd = basisKg.greaterThan(0) ? toUnitCost(totalLandedUsd.dividedBy(basisKg)) : new Decimal(0);
+    const costPerKgLocal = basisKg.greaterThan(0) ? toUnitCost(totalLandedLocal.dividedBy(basisKg)) : new Decimal(0);
+    index.set(row.shipmentId, {
+      shipmentId: row.shipmentId,
+      goodsUsd,
+      goodsLocal,
+      expenseUsd,
+      expenseLocal,
+      totalLandedUsd,
+      totalLandedLocal,
+      receivedKg,
+      soldKg,
+      remainingKg: toQuantity(receivedKg.minus(soldKg)),
+      costPerKgUsd,
+      costPerKgLocal,
+      costPerMtUsd: toUnitCost(costPerKgUsd.times(KG_PER_MT)),
+      costPerMtLocal: toUnitCost(costPerKgLocal.times(KG_PER_MT)),
+      receivedMt: toQuantity(receivedKg.dividedBy(KG_PER_MT)),
+      localCurrency: company.localCurrency,
+    });
+  }
+  return index;
 }

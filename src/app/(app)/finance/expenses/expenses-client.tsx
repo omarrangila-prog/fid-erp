@@ -4,6 +4,7 @@ import * as React from 'react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { StatusBadge, Badge } from '@/components/ui/badge';
 import { TRANSACTION_STATUS_META } from '@/lib/constants';
+import { VoucherRowActions } from '@/components/shared/voucher-actions';
 
 export type ExpenseRow = {
   id: string;
@@ -31,11 +32,15 @@ export function ExpensesClient({
   rows,
   canExport,
   emptyAction,
+  canPost = false,
+  canDelete = false,
 }: {
   rows: ExpenseRow[];
   canExport: boolean;
   /** Rendered inside the empty state; built on the server so permissions are checked there. */
   emptyAction?: React.ReactNode;
+  canPost?: boolean;
+  canDelete?: boolean;
 }) {
   const columns: DataColumn<ExpenseRow>[] = [
     { id: 'number', header: 'Voucher', mobile: 'title', sortValue: (r) => r.number, exportValue: (r) => r.number, cell: (r) => <span className="font-medium">{r.number}</span> },
@@ -66,12 +71,10 @@ export function ExpensesClient({
     { id: 'enteredBy', header: 'Entered by', hideable: true, defaultHidden: true, exportValue: (r) => r.enteredBy, cell: (r) => r.enteredBy },
     {
       id: 'amount',
-      header: 'Amount USD',
+      header: 'Amount',
       numeric: true,
       mobile: 'meta',
       sortValue: (r) => r.amountSort,
-      // The voucher currency and its face value are their own column, so the
-      // sheet can be totalled without adding dirhams to dollars.
       exportValue: (r) => r.amountSort,
       exportType: 'money',
       cell: (r) => (
@@ -99,6 +102,14 @@ export function ExpensesClient({
       ),
     },
     { id: 'account', header: 'Paid from', hideable: true, exportValue: (r) => r.account, cell: (r) => r.account },
+    {
+      id: 'costImpact',
+      header: 'Shipment cost',
+      hideable: true,
+      exportValue: (r) => (r.kind === 'SHIPMENT' ? (r.capitalise ? 'In landed cost' : 'On shipment P&L') : 'Not on shipment'),
+      cell: (r) =>
+        r.kind === 'SHIPMENT' ? (r.capitalise ? 'In landed cost' : 'On shipment P&L') : '—',
+    },
     { id: 'reference', header: 'Reference', hideable: true, defaultHidden: true, exportValue: (r) => r.reference ?? '', cell: (r) => r.reference ?? '—' },
     {
       id: 'status',
@@ -107,6 +118,22 @@ export function ExpensesClient({
       sortValue: (r) => r.status,
       exportValue: (r) => r.status,
       cell: (r) => <StatusBadge status={r.status} meta={TRANSACTION_STATUS_META} />,
+    },
+    {
+      id: 'actions',
+      header: '',
+      printHidden: true,
+      mobile: 'action',
+      className: 'sticky right-0 z-10 bg-surface shadow-[-8px_0_12px_-8px_rgba(15,23,42,0.18)]',
+      cell: (r) => (
+        <VoucherRowActions
+          kind="expense"
+          id={r.id}
+          status={r.status}
+          canPost={canPost}
+          canDelete={canDelete}
+        />
+      ),
     },
   ];
 

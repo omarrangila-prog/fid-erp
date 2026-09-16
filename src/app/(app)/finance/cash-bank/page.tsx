@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { CashBankAccountButton } from '@/app/(app)/finance/cash-bank/account-button';
+import { TransferFundsButton } from '@/app/(app)/finance/cash-bank/transfer-button';
 
 export const metadata: Metadata = { title: 'Cash & Bank' };
 export const dynamic = 'force-dynamic';
@@ -26,7 +27,21 @@ export default async function CashBankPage() {
         title="Cash & Bank"
         description="Every account in its own currency. Balances come from posted transactions, never from a stored total."
         breadcrumbs={[{ label: 'Finance' }, { label: 'Cash & Bank' }]}
-        actions={can(user, PERMISSIONS.CASHBANK_MANAGE) ? <CashBankAccountButton /> : undefined}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            {can(user, PERMISSIONS.ACCOUNTING_POST) ? (
+              <TransferFundsButton
+                accounts={position.accounts.map((account) => ({
+                  accountId: account.accountId,
+                  name: account.name,
+                  currency: account.currency,
+                  accountType: account.accountType,
+                }))}
+              />
+            ) : null}
+            {can(user, PERMISSIONS.CASHBANK_MANAGE) ? <CashBankAccountButton /> : null}
+          </div>
+        }
       />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

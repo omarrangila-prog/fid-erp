@@ -158,6 +158,20 @@ export const revaluationSchema = z.object({
   rates: z.record(z.string(), z.string()),
 });
 
+export const cashBankTransferSchema = z
+  .object({
+    transferDate: dateString('Transfer date'),
+    fromAccountId: cuid,
+    toAccountId: cuid,
+    amount: decimalString('Amount'),
+    reference: optionalText(60),
+    description: optionalText(300),
+  })
+  .refine((value) => value.fromAccountId !== value.toAccountId, {
+    message: 'Choose two different accounts.',
+    path: ['toAccountId'],
+  });
+
 export type ReceiptFormInput = z.infer<typeof receiptSchema>;
 export type PaymentFormInput = z.infer<typeof paymentSchema>;
 export type ExpenseFormInput = z.infer<typeof expenseSchema>;

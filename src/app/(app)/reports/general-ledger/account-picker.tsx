@@ -14,7 +14,7 @@ export function AccountPicker({
   to,
   currency,
 }: {
-  accounts: Array<{ id: string; code: string; name: string; type: string }>;
+  accounts: Array<{ id: string; code: string; name: string; type: string; nativeCurrency: string }>;
   selectedId: string;
   from: string;
   to: string;
@@ -25,6 +25,12 @@ export function AccountPicker({
   const [fromDate, setFrom] = React.useState(from);
   const [toDate, setTo] = React.useState(to);
   const [ccy, setCcy] = React.useState(currency || 'USD');
+
+  function chooseAccount(id: string | null) {
+    setAccount(id);
+    const found = accounts.find((row) => row.id === id);
+    if (found) setCcy(found.nativeCurrency);
+  }
 
   function apply() {
     const params = new URLSearchParams();
@@ -46,7 +52,7 @@ export function AccountPicker({
             keywords: a.code,
           }))}
           value={account}
-          onChange={setAccount}
+          onChange={chooseAccount}
           placeholder="Choose an account…"
         />
       </Field>

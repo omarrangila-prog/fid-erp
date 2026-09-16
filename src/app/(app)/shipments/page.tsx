@@ -3,8 +3,9 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { dec } from '@/lib/money';
-import { formatQuantityKg, formatDate, daysUntil } from '@/lib/format';
+import { formatQuantityKg, formatDate, daysUntil, formatMoney } from '@/lib/format';
 import { getShipmentSettlement } from '@/lib/services/shipment';
+import { getShipmentCostingIndex } from '@/lib/services/landed-cost';
 import { getWarehouseLabels } from '@/lib/services/stock';
 import { PageHeader } from '@/components/shared/page-header';
 import { EmptyAction } from '@/components/shared/empty-action';
@@ -17,7 +18,8 @@ export default async function ShipmentsPage() {
   const user = await requirePageAccess(PERMISSIONS.SHIPMENTS_VIEW);
   const companyId = user.activeCompany.id;
 
-  const [shipments, warehouses] = await Promise.all([
+  const showCost = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
+  const [shipments, warehouses, costing] = await Promise.all([
     prisma.shipment.findMany({
       where: { companyId, purchaseContract: { status: 'POSTED' } },
       orderBy: [{ etaDate: 'asc' }, { shipmentNumber: 'desc' }],
@@ -31,6 +33,7 @@ export default async function ShipmentsPage() {
       },
     }),
     getWarehouseLabels(companyId),
+    showCost ? getShipmentCostingIndex(companyId) : Promise.resolve(new Map()),
   ]);
 
   const rows: ShipmentRow[] = await Promise.all(
@@ -40,6 +43,7 @@ export default async function ShipmentsPage() {
       const soldPct = ordered.greaterThan(0) ? Number(sold.dividedBy(ordered).times(100)) : 0;
       const settlement = await getShipmentSettlement(prisma as never, companyId, s.id);
 
+      const cost = costing.get(s.id);
       return {
         id: s.id,
         shipmentNumber: s.shipmentNumber,
@@ -66,6 +70,15 @@ export default async function ShipmentsPage() {
         soldPct,
         soldLabel: sold.greaterThan(0) ? `${soldPct.toFixed(0)}%` : 'Unsold',
         warehouseNames: warehouses.byShipment.get(s.id) ?? '',
+        purchaseUsd: cost ? formatMoney(cost.goodsUsd, 'USD') : null,
+        expensesLocal: cost ? formatMoney(cost.expenseLocal, cost.localCurrency) : null,
+        expensesUsd: cost ? formatMoney(cost.expenseUsd, 'USD') : null,
+        landedUsd: cost ? formatMoney(cost.totalLandedUsd, 'USD') : null,
+        landedLocal: cost ? formatMoney(cost.totalLandedLocal, cost.localCurrency) : null,
+        costPerKg: cost ? formatMoney(cost.costPerKgUsd, 'USD') : null,
+        costPerMt: cost ? formatMoney(cost.costPerMtUsd, 'USD') : null,
+        remainingKg: cost ? formatQuantityKg(cost.remainingKg) : null,
+        localCurrency: cost?.localCurrency ?? null,
       };
     }),
   );
@@ -79,6 +92,8 @@ export default async function ShipmentsPage() {
       />
       <ShipmentsClient
         rows={rows}
+        showCost={showCost}
+        canAddExpense={can(user, PERMISSIONS.EXPENSES_CREATE)}
         emptyAction={
           can(user, PERMISSIONS.PURCHASES_VIEW) ? (
             <EmptyAction href="/purchases" label="Open purchase contracts" tone="go" />

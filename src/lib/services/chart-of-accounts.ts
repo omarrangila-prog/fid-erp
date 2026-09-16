@@ -490,10 +490,21 @@ export async function getChartOfAccounts(companyId: string, localCurrency: strin
     where: { companyId },
     orderBy: { code: 'asc' },
     include: {
-      cashBankAccounts: { select: { id: true, accountType: true, currency: true }, take: 1 },
+      cashBankAccounts: { select: { id: true, accountType: true, currency: true }, orderBy: { currency: 'asc' } },
       expenseCategories: { select: { id: true, code: true }, take: 1 },
     },
   });
+
+  // Repair GL heads that lost their currency flag — Cash in Hand (MAD) must
+  // keep MAD as its native currency so the ledger never opens as "USD only".
+  const repairs = accounts.filter(
+    (account) => !account.currency && account.cashBankAccounts.length === 1,
+  );
+  for (const account of repairs) {
+    const currency = account.cashBankAccounts[0].currency;
+    await prisma.account.update({ where: { id: account.id }, data: { currency } });
+    account.currency = currency;
+  }
 
   const totals = await prisma.journalLine.groupBy({
     by: ['accountId'],
@@ -524,13 +535,15 @@ export async function getChartOfAccounts(companyId: string, localCurrency: strin
       isSystem: account.isSystem,
       status: account.status,
       currency: account.currency,
-      cashBank: account.cashBankAccounts[0]
-        ? {
-            id: account.cashBankAccounts[0].id,
-            accountType: account.cashBankAccounts[0].accountType,
-            currency: account.cashBankAccounts[0].currency,
-          }
-        : null,
+      cashBank: (() => {
+        const drawer =
+          account.cashBankAccounts.find((row) => row.currency === account.currency) ??
+          account.cashBankAccounts.find((row) => row.currency !== 'USD') ??
+          account.cashBankAccounts[0];
+        return drawer
+          ? { id: drawer.id, accountType: drawer.accountType, currency: drawer.currency }
+          : null;
+      })(),
       expenseCategory: account.expenseCategories[0]
         ? { id: account.expenseCategories[0].id, code: account.expenseCategories[0].code }
         : null,

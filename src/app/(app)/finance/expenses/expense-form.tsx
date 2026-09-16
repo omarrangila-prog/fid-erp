@@ -27,6 +27,27 @@ export type ShipmentTrace = {
   batches: Array<ComboOption & { containerId: string | null }>;
 };
 
+export type ExpenseFormInitial = {
+  id: string;
+  expenseDate: string;
+  kind: 'SHIPMENT' | 'GENERAL';
+  expenseCategoryId: string;
+  shipmentId: string | null;
+  containerId: string | null;
+  batchId: string | null;
+  agentId: string | null;
+  currency: string;
+  amount: string;
+  rateToUsd: string;
+  rateLocalPerUsd: string;
+  paymentMethod: 'CASH' | 'BANK_TRANSFER' | 'CHEQUE';
+  cashBankAccountId: string | null;
+  taxCodeId: string | null;
+  reference: string;
+  description: string;
+  capitaliseToLandedCost: boolean;
+};
+
 /**
  * Expense entry.
  *
@@ -46,6 +67,10 @@ export function ExpenseForm({
   defaultShipmentId,
   canPost = true,
   traceByShipment,
+  taxEnabled = false,
+  taxLabel = 'VAT',
+  taxCodes = [],
+  initial,
 }: {
   categories: CategoryOption[];
   shipments: ComboOption[];
@@ -57,6 +82,10 @@ export function ExpenseForm({
   defaultShipmentId?: string;
   canPost?: boolean;
   traceByShipment?: Record<string, ShipmentTrace>;
+  taxEnabled?: boolean;
+  taxLabel?: string;
+  taxCodes?: Array<{ value: string; label: string; ratePct: string }>;
+  initial?: ExpenseFormInitial;
 }) {
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
@@ -70,25 +99,28 @@ export function ExpenseForm({
 
   // The first question, and the one that decides the rest of the form: is this
   // money spent on one consignment, or on running the business?
-  const [kind, setKind] = React.useState<'SHIPMENT' | 'GENERAL'>('SHIPMENT');
-  const [settlement, setSettlement] = React.useState<'PAID' | 'UNPAID'>('UNPAID');
+  const [kind, setKind] = React.useState<'SHIPMENT' | 'GENERAL'>(initial?.kind ?? 'SHIPMENT');
+  const [settlement, setSettlement] = React.useState<'PAID' | 'UNPAID'>(
+    initial ? (initial.cashBankAccountId ? 'PAID' : 'UNPAID') : 'UNPAID',
+  );
 
   const [form, setForm] = React.useState({
-    expenseDate: todayInputValue(),
-    expenseCategoryId: null as string | null,
-    shipmentId: defaultShipmentId ?? (null as string | null),
-    containerId: null as string | null,
-    batchId: null as string | null,
+    expenseDate: initial?.expenseDate ?? todayInputValue(),
+    expenseCategoryId: initial?.expenseCategoryId ?? (null as string | null),
+    shipmentId: initial?.shipmentId ?? defaultShipmentId ?? (null as string | null),
+    containerId: initial?.containerId ?? (null as string | null),
+    batchId: initial?.batchId ?? (null as string | null),
     vendorId: null as string | null,
-    agentId: null as string | null,
-    currency: localCurrency,
-    amount: '',
-    rateToUsd: localCurrency === 'USD' ? '1' : defaultLocalRate,
-    rateLocalPerUsd: defaultLocalRate,
-    paymentMethod: 'CASH',
-    cashBankAccountId: null as string | null,
-    reference: '',
-    description: '',
+    agentId: initial?.agentId ?? (null as string | null),
+    currency: initial?.currency ?? localCurrency,
+    amount: initial?.amount ?? '',
+    rateToUsd: initial?.rateToUsd ?? (localCurrency === 'USD' ? '1' : defaultLocalRate),
+    rateLocalPerUsd: initial?.rateLocalPerUsd ?? defaultLocalRate,
+    paymentMethod: (initial?.paymentMethod ?? 'CASH') as 'CASH' | 'BANK_TRANSFER' | 'CHEQUE',
+    cashBankAccountId: initial?.cashBankAccountId ?? (null as string | null),
+    reference: initial?.reference ?? '',
+    description: initial?.description ?? '',
+    taxCodeId: initial?.taxCodeId ?? (null as string | null),
   });
 
   // Cash goes into the drawer without asking; a bank transfer still needs to
@@ -103,7 +135,9 @@ export function ExpenseForm({
   // never one careless click away from a shipment's landed cost.
   const availableCategories = categories.filter((option) => option.kind === kind);
   const category = availableCategories.find((c) => c.value === form.expenseCategoryId);
-  const [capitaliseOverride, setCapitaliseOverride] = React.useState<boolean | null>(null);
+  const [capitaliseOverride, setCapitaliseOverride] = React.useState<boolean | null>(
+    initial ? initial.capitaliseToLandedCost : null,
+  );
   const capitalise = kind === 'SHIPMENT' && (capitaliseOverride ?? category?.capitaliseByDefault ?? false);
 
   function isCommissionCategory(option: CategoryOption | undefined) {
@@ -175,12 +209,13 @@ export function ExpenseForm({
       cashBankAccountId: paidFrom,
       capitaliseToLandedCost: capitalise,
       kind,
+      taxCodeId: form.taxCodeId ?? '',
       reference: form.reference,
       description: form.description,
     };
 
     start(async () => {
-      const result = await saveExpenseAction(null, JSON.stringify(payload));
+      const result = await saveExpenseAction(initial?.id ?? null, JSON.stringify(payload));
       if (!result?.ok) {
         setError(result?.error ?? 'The expense could not be saved.');
         setFieldIssues(result && !result.ok ? (result.errors ?? {}) : {});
@@ -282,11 +317,13 @@ export function ExpenseForm({
           {kind === 'SHIPMENT' ? (
             <Field
               label="Contract / shipment"
+              htmlFor="expenseShipment"
               required
               error={fieldIssues.shipmentId}
               hint="This amount is added to that shipment’s cost."
             >
               <Combobox
+                id="expenseShipment"
                 options={shipments}
                 value={form.shipmentId}
                 onChange={(value) =>
@@ -537,9 +574,30 @@ export function ExpenseForm({
             </Select>
           </Field>
 
-          <Field label="Amount" required error={fieldIssues.amount}>
+          <Field label="Amount" required error={fieldIssues.amount} hint="The amount on the bill. This is what cash, the journal and shipment cost use.">
             <MoneyInput currency={form.currency} value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
           </Field>
+
+          {taxEnabled ? (
+            <Field
+              label={taxLabel}
+              htmlFor="expenseTax"
+              hint="Leave as No tax unless this bill names tax separately. The amount above is never rewritten."
+            >
+              <Select
+                id="expenseTax"
+                value={form.taxCodeId ?? ''}
+                onChange={(e) => setForm({ ...form, taxCodeId: e.target.value || null })}
+              >
+                <option value="">No tax</option>
+                {taxCodes.map((code) => (
+                  <option key={code.value} value={code.value}>
+                    {code.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : null}
 
           {isForeign ? (
             <Field label={`Rate (${form.currency} per 1 USD)`} required error={fieldIssues.rateToUsd}>
@@ -634,6 +692,27 @@ export function ExpenseForm({
           {amountUsd.greaterThan(0) ? (
             <p className="mt-3 text-right text-xs text-ink-muted">
               USD equivalent: <span className="tnum font-semibold text-ink">{formatMoney(amountUsd, 'USD')}</span>
+            </p>
+          ) : null}
+          {taxEnabled && form.taxCodeId && form.amount ? (
+            <p className="mt-1 text-right text-xs text-ink-muted">
+              {taxLabel}{' '}
+              {formatMoney(
+                tryDec(form.amount)
+                  .times(tryDec(taxCodes.find((code) => code.value === form.taxCodeId)?.ratePct ?? 0))
+                  .dividedBy(100),
+                form.currency,
+              )}
+              {' · cash/bank moves '}
+              {formatMoney(
+                tryDec(form.amount).plus(
+                  tryDec(form.amount)
+                    .times(tryDec(taxCodes.find((code) => code.value === form.taxCodeId)?.ratePct ?? 0))
+                    .dividedBy(100),
+                ),
+                form.currency,
+              )}
+              . The original amount stays {formatMoney(tryDec(form.amount), form.currency)}.
             </p>
           ) : null}
         </CardContent>

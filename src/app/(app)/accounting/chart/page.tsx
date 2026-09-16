@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getChartOfAccounts } from '@/lib/services/chart-of-accounts';
+import { ledgerHref, resolveLedgerViewCurrency } from '@/lib/ledger-currency';
 import { getRateDefaults } from '@/lib/services/exchange-rate';
 import { formatMoney } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
@@ -90,7 +91,13 @@ export default async function ChartOfAccountsPage() {
                       <TD className="font-mono text-xs">{account.code}</TD>
                       <TD>
                         <Link
-                          href={`/reports/general-ledger?account=${account.id}`}
+                          href={ledgerHref(
+                            account.id,
+                            resolveLedgerViewCurrency({
+                              accountCurrency: account.currency,
+                              cashBankCurrency: account.cashBank?.currency,
+                            }),
+                          )}
                           className="font-medium text-forest-800 hover:text-gold-700"
                         >
                           {account.name}
@@ -123,7 +130,10 @@ export default async function ChartOfAccountsPage() {
                               isSystem: account.isSystem,
                               status: account.status,
                               subledgerType: account.subledgerType,
-                              cashBank: account.cashBank ? { id: account.cashBank.id } : null,
+                              currency: account.currency,
+                              cashBank: account.cashBank
+                                ? { id: account.cashBank.id, currency: account.cashBank.currency }
+                                : null,
                             }}
                             localCurrency={localCurrency}
                             defaultLocalRate={rates.local}

@@ -13,14 +13,16 @@ import {
   chequeStatusSchema,
   journalVoucherSchema,
   revaluationSchema,
+  cashBankTransferSchema,
 } from '@/lib/validation/finance';
 import { createReceipt, updateReceipt, postReceipt, reverseReceipt, deleteDraftReceipt } from '@/lib/services/receipt';
 import { createPayment, updatePayment, postPayment, reversePayment, deleteDraftPayment } from '@/lib/services/payment';
-import { createExpense, updateExpense, postExpense, reverseExpense, deleteDraftExpense } from '@/lib/services/expense';
+import { createExpense, updateExpense, postExpense, reverseExpense, deleteDraftExpense, stripUnselectedExpenseTax } from '@/lib/services/expense';
 import { changeChequeStatus } from '@/lib/services/cheque';
 import { createAgentSettlement, postAgentSettlement } from '@/lib/services/agent-ledger';
 import { postRevaluation } from '@/lib/services/revaluation';
 import { postJournalEntry } from '@/lib/services/accounting';
+import { postCashBankTransfer } from '@/lib/services/cash-transfer';
 import { getCompanyContext } from '@/lib/services/company';
 import { transaction } from '@/lib/db';
 import { fail, type ActionResult } from '@/server/actions/action-utils';
@@ -253,6 +255,27 @@ export async function deleteExpenseAction(id: string): Promise<ActionResult<unde
   }
 }
 
+export async function stripUnselectedExpenseTaxAction(
+  id: string,
+  reason: string,
+): Promise<ActionResult<undefined>> {
+  try {
+    const user = await requirePermission(PERMISSIONS.EXPENSES_POST);
+    await stripUnselectedExpenseTax({ id, companyId: user.activeCompany.id, userId: user.id, reason });
+    revalidateAll([
+      ...paths.expenses,
+      `/finance/expenses/${id}`,
+      '/shipments',
+      '/finance/cash-bank',
+      '/reports/general-ledger',
+      '/accounting/chart',
+    ]);
+    return { ok: true, data: undefined };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Cheques
 // ---------------------------------------------------------------------------
@@ -324,6 +347,27 @@ export async function postJournalVoucherAction(payload: string): Promise<DocForm
 // ---------------------------------------------------------------------------
 // Foreign currency revaluation
 // ---------------------------------------------------------------------------
+
+export async function postCashBankTransferAction(payload: string): Promise<DocFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.ACCOUNTING_POST);
+    const input = cashBankTransferSchema.parse(parseJson(payload));
+    const entry = await postCashBankTransfer({
+      companyId: user.activeCompany.id,
+      userId: user.id,
+      transferDate: input.transferDate,
+      fromAccountId: input.fromAccountId,
+      toAccountId: input.toAccountId,
+      amount: input.amount,
+      reference: input.reference,
+      description: input.description,
+    });
+    revalidateAll([...paths.expenses, '/finance/cash-bank', '/accounting/journal', '/reports', '/dashboard']);
+    return { ok: true, id: entry.id, message: `Transfer posted as ${entry.entryNumber}.` };
+  } catch (error) {
+    return toState(error);
+  }
+}
 
 export async function postRevaluationAction(payload: string): Promise<DocFormState> {
   try {

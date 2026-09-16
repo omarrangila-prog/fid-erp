@@ -14,12 +14,12 @@ import { getShipmentSettlement } from '@/lib/services/shipment';
 import { getShipmentProfitabilityById } from '@/lib/services/profitability';
 import { getJobCostSummary, getShipmentCostSheet } from '@/lib/services/landed-cost';
 import { getBatchStock } from '@/lib/services/stock';
-import { formatMoney, formatQuantityKg, formatDate, formatDateTime, formatPercent, toDateInputValue } from '@/lib/format';
+import { formatMoney, formatQuantityKg, formatQuantityMt, formatDate, formatDateTime, formatPercent, formatRate, toDateInputValue } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Metric, MetricGrid, DetailRow } from '@/components/shared/stat-card';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { StatusBadge, Badge } from '@/components/ui/badge';
-import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
+import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { ShipmentWorkflow } from '@/app/(app)/shipments/[id]/shipment-workflow';
 import { Plus } from 'lucide-react';
@@ -164,24 +164,51 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
       </MetricGrid>
 
       {showCost && costSheet ? (
-        <Card>
+        <Card id="costing">
           <CardHeader>
             <CardTitle>Shipment costing</CardTitle>
             <CardDescription>
-              Purchase plus every posted shipment expense on this consignment. General company expenses do not appear here.
+              Purchase cost USD + local expenses USD equivalent = total landed cost USD. Local expenses keep their
+              original MAD amount. Rate is {costSheet.localCurrency} per 1 USD ({Number(costSheet.rateLocalPerUsd).toFixed(4)}).
+              Cost per KG = total landed ÷ received KG (ordered KG if nothing has landed). Cost per MT = cost per KG × 1,000.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <MetricGrid className="lg:grid-cols-5">
-              <Metric label="Purchase" value={formatMoney(costSheet.goodsUsd, 'USD')} hint="Goods and contract freight" />
-              <Metric label="Shipment expenses" value={formatMoney(costSheet.expenseUsd, 'USD')} />
-              <Metric label="Total shipment cost" value={formatMoney(costSheet.totalShipmentCostUsd, 'USD')} />
+              <Metric
+                label="Purchase cost USD"
+                value={formatMoney(costSheet.goodsUsd, 'USD')}
+                hint={`${formatMoney(costSheet.goodsLocal, costSheet.localCurrency)} at the contract rate`}
+              />
+              <Metric
+                label={`Local shipment expenses ${costSheet.localCurrency}`}
+                value={formatMoney(costSheet.expenseLocal, costSheet.localCurrency)}
+                hint={`${formatMoney(costSheet.expenseUsd, 'USD')} USD equivalent`}
+              />
+              <Metric
+                label="Total landed cost USD"
+                value={formatMoney(costSheet.totalShipmentCostUsd, 'USD')}
+                hint={formatMoney(costSheet.totalShipmentCostLocal, costSheet.localCurrency)}
+              />
               <Metric
                 label="Received"
                 value={formatQuantityKg(costSheet.receivedKg)}
-                hint={costSheet.receivedKg.greaterThan(0) ? undefined : `Ordered ${formatQuantityKg(costSheet.orderedKg)}`}
+                hint={
+                  costSheet.receivedKg.greaterThan(0)
+                    ? formatQuantityMt(costSheet.receivedKg)
+                    : `Ordered ${formatQuantityKg(costSheet.orderedKg)} · ${formatQuantityMt(costSheet.orderedKg)}`
+                }
               />
-              <Metric label="Cost / KG" value={formatMoney(costSheet.costPerKgUsd, 'USD')} />
+              <Metric
+                label="Cost / MT"
+                value={formatMoney(costSheet.costPerMtUsd, 'USD')}
+                hint={formatMoney(costSheet.costPerMtLocal, costSheet.localCurrency)}
+              />
+              <Metric
+                label="Cost / KG"
+                value={formatMoney(costSheet.costPerKgUsd, 'USD')}
+                hint={formatMoney(costSheet.costPerKgLocal, costSheet.localCurrency)}
+              />
               <Metric label="Revenue" value={formatMoney(costSheet.revenueUsd, 'USD')} />
               <Metric label="COGS" value={formatMoney(costSheet.cogsUsd, 'USD')} tone="muted" />
               <Metric
@@ -190,45 +217,98 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                 tone={costSheet.grossProfitUsd.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
                 hint={formatPercent(costSheet.profitPct)}
               />
-              <Metric label="Profit / KG" value={formatMoney(costSheet.profitPerKgUsd, 'USD')} />
+              <Metric label="Remaining" value={formatQuantityKg(costSheet.remainingKg)} tone="muted" />
             </MetricGrid>
+
+            {costSheet.purchaseLines.length > 0 ? (
+              <TableWrap>
+                <Table>
+                  <THead>
+                    <TR className="hover:bg-transparent">
+                      <TH>Coffee purchase</TH>
+                      <TH numeric>Quantity</TH>
+                      <TH numeric>Purchase USD</TH>
+                    </TR>
+                  </THead>
+                  <TBody>
+                    {costSheet.purchaseLines.map((line) => (
+                      <TR key={line.batchId}>
+                        <TD className="font-medium">{line.batchNumber}</TD>
+                        <TD numeric>{formatQuantityKg(line.quantityKg)}</TD>
+                        <TD numeric>{formatMoney(line.purchaseCostUsd, 'USD')}</TD>
+                      </TR>
+                    ))}
+                  </TBody>
+                  <TFoot>
+                    <tr>
+                      <TD>Total purchase cost</TD>
+                      <TD />
+                      <TD numeric>{formatMoney(costSheet.goodsUsd, 'USD')}</TD>
+                    </tr>
+                  </TFoot>
+                </Table>
+              </TableWrap>
+            ) : null}
 
             {costSheet.lines.length > 0 ? (
               <TableWrap>
                 <Table>
                   <THead>
                     <TR className="hover:bg-transparent">
-                      <TH>Category</TH>
-                      <TH>Voucher</TH>
+                      <TH>Date</TH>
+                      <TH>Expense Category</TH>
+                      <TH>Description</TH>
+                      <TH>Original Currency</TH>
+                      <TH numeric>Original Amount</TH>
+                      <TH numeric>FX Rate</TH>
+                      <TH numeric>{costSheet.localCurrency} Amount</TH>
+                      <TH numeric>USD Equivalent</TH>
+                      <TH>Paid / Unpaid</TH>
+                      <TH>Paid From</TH>
                       <TH>Container</TH>
                       <TH>Batch</TH>
-                      <TH>Treatment</TH>
-                      <TH numeric>Amount</TH>
-                      <TH numeric>USD</TH>
+                      <TH>Reference</TH>
+                      <TH className="text-right">Actions</TH>
                     </TR>
                   </THead>
                   <TBody>
                     {costSheet.lines.map((line) => (
-                      <TR key={line.expenseId}>
+                      <TR key={line.expenseId} data-testid="shipment-expense-row">
+                        <TD className="text-xs">{formatDate(line.expenseDate)}</TD>
                         <TD className="font-medium">{line.category}</TD>
-                        <TD>
-                          <Link href={`/finance/expenses/${line.expenseId}`} className="text-forest-800 hover:text-gold-700">
-                            {line.expenseNumber}
-                          </Link>
+                        <TD className="text-xs text-ink-muted">{line.description ?? '—'}</TD>
+                        <TD className="text-xs">{line.currency}</TD>
+                        <TD numeric>{formatMoney(line.amount, line.currency)}</TD>
+                        <TD numeric className="text-xs">{formatRate(line.rateToUsd)}</TD>
+                        <TD numeric>
+                          {costSheet.localCurrency === 'MAD'
+                            ? formatMoney(line.amountLocal, 'MAD')
+                            : formatMoney(line.amountLocal, costSheet.localCurrency)}
                         </TD>
+                        <TD numeric>{formatMoney(line.amountUsd, 'USD')}</TD>
+                        <TD>
+                          <Badge tone={line.paid ? 'success' : 'warning'}>{line.paid ? 'Paid' : 'Unpaid'}</Badge>
+                        </TD>
+                        <TD className="text-xs">{line.paidFrom ?? '—'}</TD>
                         <TD className="text-xs text-ink-muted">{line.containerNumber ?? 'Whole job'}</TD>
                         <TD className="text-xs text-ink-muted">{line.batchNumber ?? 'Every batch'}</TD>
-                        <TD>
-                          <Badge tone={line.capitalised ? 'info' : 'neutral'}>
-                            {line.capitalised ? 'In stock cost' : 'P&L'}
-                          </Badge>
-                          <span className="ml-2 text-xs text-ink-subtle">{line.paid ? 'Paid' : 'Unpaid'}</span>
+                        <TD className="text-xs">{line.reference ?? line.expenseNumber}</TD>
+                        <TD className="text-right">
+                          <Link href={`/finance/expenses/${line.expenseId}`} className="text-xs font-medium text-forest-800 hover:text-gold-700">
+                            Open
+                          </Link>
                         </TD>
-                        <TD numeric>{formatMoney(line.amount, line.currency)}</TD>
-                        <TD numeric>{formatMoney(line.amountUsd, 'USD')}</TD>
                       </TR>
                     ))}
                   </TBody>
+                  <TFoot>
+                    <tr>
+                      <TD colSpan={6}>Totals</TD>
+                      <TD numeric>{formatMoney(costSheet.expenseLocal, costSheet.localCurrency)}</TD>
+                      <TD numeric>{formatMoney(costSheet.expenseUsd, 'USD')}</TD>
+                      <TD colSpan={6} />
+                    </tr>
+                  </TFoot>
                 </Table>
               </TableWrap>
             ) : (

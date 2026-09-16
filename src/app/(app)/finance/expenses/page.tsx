@@ -84,6 +84,8 @@ export default async function ExpensesPage() {
         }
         rows={rows}
         canExport={can(user, PERMISSIONS.REPORTS_EXPORT)}
+        canPost={can(user, PERMISSIONS.EXPENSES_POST)}
+        canDelete={can(user, PERMISSIONS.EXPENSES_DELETE)}
       />
     </div>
   );

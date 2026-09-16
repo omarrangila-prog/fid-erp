@@ -9,9 +9,13 @@ import { PageHeader } from '@/components/shared/page-header';
 import { Metric, MetricGrid } from '@/components/shared/stat-card';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/feedback';
+import { JournalSourceActions } from '@/components/shared/journal-source-actions';
 import { EditCashBankAccountButton } from '@/app/(app)/finance/cash-bank/account-button';
+import { ledgerHref } from '@/lib/ledger-currency';
+import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,21 +60,26 @@ export default async function CashBookPage({ params }: { params: Promise<{ id: s
           </>
         }
         actions={
-          canManage ? (
-            <EditCashBankAccountButton
-              account={{
-                id: exists.id,
-                code: exists.code,
-                name: exists.name,
-                accountType: exists.accountType,
-                currency: exists.currency,
-                openingBalance: exists.openingBalance.toString(),
-                bankName: exists.bankName,
-                accountNumber: exists.accountNumber,
-                status: exists.status,
-              }}
-            />
-          ) : undefined
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <Link href={ledgerHref(exists.glAccountId, currency)}>View general ledger</Link>
+            </Button>
+            {canManage ? (
+              <EditCashBankAccountButton
+                account={{
+                  id: exists.id,
+                  code: exists.code,
+                  name: exists.name,
+                  accountType: exists.accountType,
+                  currency: exists.currency,
+                  openingBalance: exists.openingBalance.toString(),
+                  bankName: exists.bankName,
+                  accountNumber: exists.accountNumber,
+                  status: exists.status,
+                }}
+              />
+            ) : null}
+          </div>
         }
       />
 
@@ -84,7 +93,10 @@ export default async function CashBookPage({ params }: { params: Promise<{ id: s
       <Card>
         <CardHeader>
           <CardTitle>{book.account.accountType === 'BANK' ? 'Bank book' : 'Cash book'}</CardTitle>
-          <CardDescription>Every movement through this account, in its own currency.</CardDescription>
+          <CardDescription>
+            Opening + receipts − payments = closing, all in {currency}. This cash book and the{' '}
+            {currency} general ledger for this account must agree.
+          </CardDescription>
         </CardHeader>
         <CardContent className="px-0 pb-0">
           {book.rows.length === 0 ? (
@@ -103,11 +115,12 @@ export default async function CashBookPage({ params }: { params: Promise<{ id: s
                     <TH numeric>In</TH>
                     <TH numeric>Out</TH>
                     <TH numeric>Balance</TH>
+                    <TH className="text-right">Actions</TH>
                   </TR>
                 </THead>
                 <TBody>
                   <TR className="bg-forest-50/40 hover:bg-forest-50/40">
-                    <TD colSpan={6} className="text-xs font-medium text-ink-muted">
+                    <TD colSpan={7} className="text-xs font-medium text-ink-muted">
                       Opening balance
                     </TD>
                     <TD numeric className="font-semibold">
@@ -130,6 +143,13 @@ export default async function CashBookPage({ params }: { params: Promise<{ id: s
                         {row.moneyOut.greaterThan(0) ? formatMoney(row.moneyOut, currency) : '—'}
                       </TD>
                       <TD numeric className="font-medium">{formatMoney(row.balance, currency)}</TD>
+                      <TD>
+                        <JournalSourceActions
+                          sourceType={row.sourceType}
+                          sourceId={row.sourceId}
+                          entryNumber={row.entryNumber}
+                        />
+                      </TD>
                     </TR>
                   ))}
                 </TBody>
@@ -139,6 +159,7 @@ export default async function CashBookPage({ params }: { params: Promise<{ id: s
                     <TD numeric>{formatMoney(totalIn, currency)}</TD>
                     <TD numeric>{formatMoney(totalOut, currency)}</TD>
                     <TD numeric>{formatMoney(book.closingBalance, currency)}</TD>
+                    <TD />
                   </tr>
                 </TFoot>
               </Table>

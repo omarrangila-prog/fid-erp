@@ -1,16 +1,16 @@
 import { transaction } from '@/lib/db';
 import type { Tx } from '@/lib/db';
 import type { PaymentMethod } from '@prisma/client';
-import { dec, toMoney, convertToUsd, convertFromUsd } from '@/lib/money';
+import { dec, toMoney, convertToUsd, convertFromUsd, sum } from '@/lib/money';
 import { ACCOUNT_KEYS, DOC_TYPES } from '@/lib/constants';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
 import { nextReference } from '@/lib/services/numbering';
-import { postJournalEntry, reverseJournalEntry, type JournalLineInput } from '@/lib/services/accounting';
+import { postJournalEntry, reverseJournalEntry, getSystemAccount, type JournalLineInput } from '@/lib/services/accounting';
 import { applyLandedCost } from '@/lib/services/landed-cost';
 import { getCompanyContext } from '@/lib/services/company';
 import { resolveSubledgerLeg } from '@/lib/services/subledger';
 import { writeAudit } from '@/lib/services/audit';
-import { resolveTaxCode, computeLineTax, NO_TAX, supplierInvoiceIncludesInputTax, supplierGrossPayable } from '@/lib/services/tax';
+import { resolveTaxCode, computeLineTax, supplierInvoiceIncludesInputTax, supplierGrossPayable } from '@/lib/services/tax';
 import { EXPENSE_TRACE_OMIT, expenseTraceIds, expenseTraceWrite, expensesHaveTraceColumns } from '@/lib/services/expense-columns';
 
 /**
@@ -49,7 +49,7 @@ export type ExpenseInput = {
   capitaliseToLandedCost?: boolean;
   /** Shipment cost or company overhead. Defaults to the category's own kind. */
   kind?: 'SHIPMENT' | 'GENERAL';
-  /** `amount` stays net of this. Omitted means the company default. */
+  /** Named tax code only. Omitted or empty means no tax — never the company default. */
   taxCodeId?: string | null;
   reference?: string | null;
   description?: string | null;
@@ -218,17 +218,28 @@ async function validateReferences(tx: Tx, input: ExpenseInput) {
 /**
  * Recoverable tax on a bill.
  *
- * `amount` is deliberately the net cost, not the gross the supplier billed. A
- * capitalised expense flows into the landed cost of a batch, and reclaimable
- * tax is not a cost of that coffee: including it would inflate every margin the
- * batch ever earns and the money would then be reclaimed a second time from the
- * authority.
+ * The amount typed is what left cash unless the user named a tax code. The
+ * company's default 20% TVA used to be applied whenever taxCodeId was omitted,
+ * so a MAD 7,400 transport bill became MAD 8,880 in the cash book and journal
+ * while the expense register still showed 7,400.
+ *
+ * `amount` stays net of any named tax. A capitalised expense flows into the
+ * landed cost of a batch, and reclaimable tax is not a cost of that coffee.
  */
 async function resolveExpenseTax(
   tx: Tx,
   input: ExpenseInput,
   amounts: { amount: ReturnType<typeof toMoney>; currency: string; rateToUsd: ReturnType<typeof dec> },
 ) {
+  const none = {
+    taxCodeId: null as string | null,
+    taxRatePct: dec(0),
+    taxAmount: toMoney(0),
+    taxAmountUsd: toMoney(0),
+  };
+
+  if (!input.taxCodeId) return none;
+
   const company = await tx.company.findUniqueOrThrow({
     where: { id: input.companyId },
     select: { taxEnabled: true, country: true },
@@ -241,17 +252,16 @@ async function resolveExpenseTax(
     });
     vendorCountry = vendor?.country ?? null;
   }
-  // A bill paid from cash with no supplier is a local invoice — tax still applies.
   // A named foreign supplier does not charge the company's VAT/TVA.
   const taxOnInvoice = !input.vendorId || supplierInvoiceIncludesInputTax(vendorCountry, company.country);
-  const code = taxOnInvoice
-    ? await resolveTaxCode(tx, {
-        companyId: input.companyId,
-        taxEnabled: company.taxEnabled,
-        taxCodeId: input.taxCodeId,
-        appliesTo: 'PURCHASE',
-      })
-    : NO_TAX;
+  if (!taxOnInvoice) return none;
+
+  const code = await resolveTaxCode(tx, {
+    companyId: input.companyId,
+    taxEnabled: company.taxEnabled,
+    taxCodeId: input.taxCodeId,
+    appliesTo: 'PURCHASE',
+  });
   const computed = computeLineTax({
     netAmount: amounts.amount,
     ratePct: code.ratePct,
@@ -614,6 +624,164 @@ export async function postExpense(params: { id: string; companyId: string; userI
     });
 
     return posted;
+  });
+}
+
+/**
+ * True when stored tax is exactly the statutory 20% of the amount entered.
+ * That is the silent-TVA pattern: MAD 7,400 became cash 8,880 (7,400 × 1.20)
+ * even though the voucher screen never named a tax code.
+ */
+export function looksLikeSilentDefaultTax(expense: {
+  amount: Parameters<typeof dec>[0];
+  taxAmount: Parameters<typeof dec>[0];
+  taxRatePct: Parameters<typeof dec>[0];
+}): boolean {
+  const tax = toMoney(dec(expense.taxAmount));
+  if (tax.isZero()) return false;
+  const rate = dec(expense.taxRatePct);
+  if (!rate.equals(20)) return false;
+  const expected = toMoney(dec(expense.amount).times(rate).dividedBy(100));
+  return expected.minus(tax).abs().lessThanOrEqualTo('0.01');
+}
+
+/**
+ * Restates a posted expense that had silent 20% TVA applied: cash/AP credit
+ * shrinks by the tax, the VAT_INPUT debit is removed, tax fields are cleared.
+ * The original journal identity is kept. Landed cost is already net of tax and
+ * is not touched. Does not delete the journal entry.
+ */
+export async function stripUnselectedExpenseTax(params: {
+  id: string;
+  companyId: string;
+  userId: string;
+  reason: string;
+}) {
+  if (!params.reason.trim()) {
+    throw new BusinessRuleError('Give a reason for restating the cash line. It is kept on the audit log.');
+  }
+
+  return transaction(async (tx) => {
+    const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>`
+      SELECT "id", "status"::text FROM expenses
+      WHERE "id" = ${params.id} AND "companyId" = ${params.companyId}
+      FOR UPDATE
+    `;
+    if (locked.length === 0) throw new NotFoundError('Expense');
+    if (locked[0].status !== 'POSTED') {
+      throw new BusinessRuleError('Only a posted expense can have unselected tax stripped.');
+    }
+
+    const hasTrace = await expensesHaveTraceColumns(tx);
+    const expense = await tx.expense.findUniqueOrThrow({
+      where: { id: params.id },
+      ...(hasTrace ? {} : { omit: EXPENSE_TRACE_OMIT }),
+    });
+
+    if (!looksLikeSilentDefaultTax(expense)) {
+      throw new BusinessRuleError(
+        'This voucher does not match the silent 20% TVA pattern (amount × 1.20). Reverse it instead if the tax was entered on purpose.',
+      );
+    }
+
+    const vatAccount = await getSystemAccount(tx, params.companyId, ACCOUNT_KEYS.VAT_INPUT);
+    const entry = await tx.journalEntry.findFirst({
+      where: {
+        companyId: params.companyId,
+        sourceType: 'EXPENSE',
+        sourceId: expense.id,
+        isReversal: false,
+        status: 'POSTED',
+      },
+      include: { lines: true },
+      orderBy: { sourceSeq: 'asc' },
+    });
+    if (!entry) throw new BusinessRuleError('No posted journal was found for this expense.');
+
+    const vatLine = entry.lines.find(
+      (line) => line.accountId === vatAccount.id && dec(line.debit).greaterThan(0),
+    );
+    const creditLine = expense.cashBankAccountId
+      ? entry.lines.find((line) => line.cashBankAccountId === expense.cashBankAccountId && dec(line.credit).greaterThan(0))
+      : entry.lines.find((line) => line.accountId !== vatAccount.id && dec(line.credit).greaterThan(0));
+
+    if (!vatLine || !creditLine) {
+      throw new BusinessRuleError('This expense has tax stored but the original cash and VAT journal lines were not found.');
+    }
+
+    const expectedGross = toMoney(dec(expense.amount).plus(expense.taxAmount));
+    if (toMoney(creditLine.credit).minus(expectedGross).abs().greaterThan('0.05')) {
+      throw new BusinessRuleError(
+        `The cash/payable line is ${creditLine.credit.toString()}, not the gross ${expectedGross.toString()}, so tax cannot be stripped in place.`,
+      );
+    }
+
+    const nextCredit = toMoney(dec(creditLine.credit).minus(vatLine.debit));
+    const nextCreditUsd = toMoney(dec(creditLine.creditUsd).minus(vatLine.debitUsd));
+    const nextCreditLocal = toMoney(dec(creditLine.creditLocal).minus(vatLine.debitLocal));
+
+    await tx.journalLine.update({
+      where: { id: creditLine.id },
+      data: {
+        credit: nextCredit,
+        creditUsd: nextCreditUsd,
+        creditLocal: nextCreditLocal,
+      },
+    });
+    await tx.journalLine.delete({ where: { id: vatLine.id } });
+
+    const remaining = await tx.journalLine.findMany({ where: { journalEntryId: entry.id } });
+    if (remaining.length < 2) {
+      throw new BusinessRuleError('Stripping tax would leave the journal with fewer than two lines.');
+    }
+    const debitUsd = sum(remaining.map((line) => line.debitUsd));
+    const creditUsd = sum(remaining.map((line) => line.creditUsd));
+    const debitLocal = sum(remaining.map((line) => line.debitLocal));
+    const creditLocal = sum(remaining.map((line) => line.creditLocal));
+    if (debitUsd.minus(creditUsd).abs().greaterThan('0.005')) {
+      throw new BusinessRuleError(
+        `Restated journal does not balance in USD: ${debitUsd.toFixed(4)} vs ${creditUsd.toFixed(4)}.`,
+      );
+    }
+    if (debitLocal.minus(creditLocal).abs().greaterThan('0.05')) {
+      throw new BusinessRuleError(
+        `Restated journal does not balance in local currency: ${debitLocal.toFixed(4)} vs ${creditLocal.toFixed(4)}.`,
+      );
+    }
+
+    await tx.expense.update({
+      where: { id: expense.id },
+      data: {
+        taxCodeId: null,
+        taxRatePct: 0,
+        taxAmount: 0,
+        taxAmountUsd: 0,
+      },
+    });
+
+    await writeAudit(tx, {
+      companyId: params.companyId,
+      userId: params.userId,
+      action: 'EXPENSE_SILENT_TAX_STRIPPED',
+      entityType: 'Expense',
+      entityId: expense.id,
+      before: {
+        taxAmount: expense.taxAmount,
+        taxRatePct: expense.taxRatePct,
+        cashCredit: creditLine.credit,
+      },
+      after: {
+        taxAmount: 0,
+        cashCredit: nextCredit,
+        reason: params.reason,
+        journalEntryId: entry.id,
+      },
+    });
+
+    return tx.expense.findUniqueOrThrow({
+      where: { id: expense.id },
+      omit: EXPENSE_TRACE_OMIT,
+    });
   });
 }
 

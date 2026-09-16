@@ -1,8 +1,10 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { StatusBadge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { SHIPMENT_STATUS_META, DOCUMENT_STATUS_META, SETTLEMENT_STATUS_META } from '@/lib/constants';
 
 export type ShipmentRow = {
@@ -31,15 +33,27 @@ export type ShipmentRow = {
   soldPct: number;
   soldLabel: string;
   warehouseNames: string;
+  purchaseUsd: string | null;
+  expensesLocal: string | null;
+  expensesUsd: string | null;
+  landedUsd: string | null;
+  landedLocal: string | null;
+  costPerKg: string | null;
+  costPerMt: string | null;
+  remainingKg: string | null;
+  localCurrency: string | null;
 };
 
 export function ShipmentsClient({
   rows,
   emptyAction,
+  showCost = false,
+  canAddExpense = false,
 }: {
   rows: ShipmentRow[];
-  /** Rendered inside the empty state; built on the server so permissions are checked there. */
   emptyAction?: React.ReactNode;
+  showCost?: boolean;
+  canAddExpense?: boolean;
 }) {
   const columns: DataColumn<ShipmentRow>[] = [
     {
@@ -54,6 +68,7 @@ export function ShipmentsClient({
         </span>
       ),
     },
+    { id: 'contract', header: 'Contract', hideable: true, sortValue: (r) => r.contractNumber, cell: (r) => r.contractNumber },
     { id: 'coffee', header: 'Coffee', mobile: 'meta', sortValue: (r) => r.itemName, cell: (r) => r.itemName },
     {
       id: 'warehouse',
@@ -78,6 +93,60 @@ export function ShipmentsClient({
         </span>
       ),
     },
+    ...(showCost
+      ? [
+          {
+            id: 'purchase',
+            header: 'Purchase USD',
+            hideable: true,
+            numeric: true,
+            cell: (r: ShipmentRow) => r.purchaseUsd ?? '—',
+          } satisfies DataColumn<ShipmentRow>,
+          {
+            id: 'expensesLocal',
+            header: 'Local expenses',
+            hideable: true,
+            numeric: true,
+            cell: (r: ShipmentRow) => (
+              <span>
+                <span className="block">{r.expensesLocal ?? '—'}</span>
+                {r.expensesUsd ? <span className="block text-xs text-ink-subtle">{r.expensesUsd}</span> : null}
+              </span>
+            ),
+          } satisfies DataColumn<ShipmentRow>,
+          {
+            id: 'landed',
+            header: 'Landed USD',
+            hideable: true,
+            numeric: true,
+            cell: (r: ShipmentRow) => (
+              <span>
+                <span className="block font-medium">{r.landedUsd ?? '—'}</span>
+                {r.landedLocal ? <span className="block text-xs text-ink-subtle">{r.landedLocal}</span> : null}
+              </span>
+            ),
+          } satisfies DataColumn<ShipmentRow>,
+          {
+            id: 'costKg',
+            header: 'Cost / KG',
+            hideable: true,
+            numeric: true,
+            cell: (r: ShipmentRow) => (
+              <span>
+                <span className="block">{r.costPerKg ?? '—'}</span>
+                {r.costPerMt ? <span className="block text-xs text-ink-subtle">{r.costPerMt} / MT</span> : null}
+              </span>
+            ),
+          } satisfies DataColumn<ShipmentRow>,
+          {
+            id: 'remaining',
+            header: 'Remaining KG',
+            hideable: true,
+            numeric: true,
+            cell: (r: ShipmentRow) => r.remainingKg ?? '—',
+          } satisfies DataColumn<ShipmentRow>,
+        ]
+      : []),
     {
       id: 'sold',
       header: 'Sold',
@@ -154,6 +223,25 @@ export function ShipmentsClient({
       mobile: 'badge',
       sortValue: (r) => r.status,
       cell: (r) => <StatusBadge status={r.status} meta={SHIPMENT_STATUS_META} />,
+    },
+    {
+      id: 'actions',
+      header: '',
+      printHidden: true,
+      mobile: 'action',
+      className: 'sticky right-0 z-10 bg-surface shadow-[-8px_0_12px_-8px_rgba(15,23,42,0.18)]',
+      cell: (r) => (
+        <div className="flex flex-wrap justify-end gap-1" onClick={(event) => event.stopPropagation()}>
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/shipments/${r.id}#costing`}>View costing</Link>
+          </Button>
+          {canAddExpense ? (
+            <Button asChild variant="ghost" size="sm">
+              <Link href={`/finance/expenses/new?job=${r.id}`}>Add expense</Link>
+            </Button>
+          ) : null}
+        </div>
+      ),
     },
   ];
 
