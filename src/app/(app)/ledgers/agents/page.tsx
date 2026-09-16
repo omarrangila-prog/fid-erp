@@ -4,6 +4,7 @@ import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getAgentPositions } from '@/lib/services/agent-ledger';
 import { formatMoney } from '@/lib/format';
+import { RowActions } from '@/components/shared/row-actions';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrintButton } from '@/components/shared/print-button';
 import { PrintHeader } from '@/components/shared/print-header';
@@ -75,6 +76,7 @@ export default async function AgentLedgersPage() {
                   <TH numeric>Holding ({local})</TH>
                   <TH numeric>Commission owed (USD)</TH>
                   <TH numeric>Net (USD)</TH>
+                  <TH className="text-right">Actions</TH>
                 </TR>
               </THead>
               <TBody>
@@ -95,6 +97,18 @@ export default async function AgentLedgersPage() {
                     <TD numeric>{formatMoney(position.holdingLocal, local)}</TD>
                     <TD numeric>{formatMoney(position.commissionPayableUsd, 'USD')}</TD>
                     <TD numeric>{formatMoney(position.netUsd, 'USD')}</TD>
+                    <TD className="text-right">
+                      <RowActions
+                        actions={[
+                          { label: 'Agent', href: `/agents/${position.agentId}`, icon: 'view' },
+                          {
+                            label: 'Receive from agent',
+                            href: `/finance/agent-commission?agent=${position.agentId}`,
+                            icon: 'moneyIn',
+                          },
+                        ]}
+                      />
+                    </TD>
                   </TR>
                 ))}
               </TBody>

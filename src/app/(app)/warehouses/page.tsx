@@ -74,6 +74,10 @@ export default async function WarehousesPage() {
         value: showValue && s ? formatMoney(s.valueUsd, 'USD') : '—',
         status: w.status === 'ACTIVE' ? (w.isDefault ? 'Default' : 'Active') : 'Inactive',
       },
+      actions: [
+        { label: 'Stock on hand', href: `/inventory?warehouse=${w.id}`, icon: 'layers' as const },
+        { label: 'Transfers', href: '/inventory/transfers', icon: 'transfer' as const },
+      ],
       formValues: {
         code: w.code,
         name: w.name,

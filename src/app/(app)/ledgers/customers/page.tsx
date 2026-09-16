@@ -8,6 +8,7 @@ import { formatMoney } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { RowActions } from '@/components/shared/row-actions';
 import { EmptyState } from '@/components/ui/feedback';
 
 export const metadata: Metadata = { title: 'Customer Ledgers' };
@@ -50,6 +51,7 @@ export default async function CustomerLedgersPage() {
                 <TH>Country</TH>
                 <TH>Ledger currency</TH>
                 <TH numeric>Balance</TH>
+                <TH className="text-right">Actions</TH>
               </TR>
             </THead>
             <TBody>
@@ -70,6 +72,15 @@ export default async function CustomerLedgersPage() {
                   </TD>
                   <TD numeric className="font-semibold">
                     {formatMoney(balances[customer.id] ?? 0, customer.primaryCurrency)}
+                  </TD>
+                  <TD className="text-right">
+                    <RowActions
+                      actions={[
+                        { label: 'Open ledger', href: `/ledgers/customers/${customer.id}`, icon: 'ledger' },
+                          { label: 'New invoice', href: `/sales/new?customer=${customer.id}`, icon: 'document' },
+                          { label: 'Record payment', href: `/finance/receipts/new?customer=${customer.id}`, icon: 'moneyIn' },
+                      ]}
+                    />
                   </TD>
                 </TR>
               ))}

@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
+import { RowActions, viewAction } from '@/components/shared/row-actions';
 import { Select } from '@/components/ui/input';
 import { StatusBadge, Badge } from '@/components/ui/badge';
 import { SETTLEMENT_STATUS_META, AGEING_LABELS_CLIENT } from '@/app/(app)/finance/receivables/labels';
@@ -35,6 +36,7 @@ export function AgeingClient({
   rows,
   partyLabel,
   documentLabel,
+  settlePath = '/finance/receipts/new',
   canExport,
   exportHref,
   showEta,
@@ -42,6 +44,8 @@ export function AgeingClient({
   rows: AgeingRow[];
   partyLabel: string;
   documentLabel: string;
+  /** Where "Record payment" goes: a receipt for a debtor, a payment for a creditor. */
+  settlePath?: string;
   canExport: boolean;
   /** The server route that builds the .xlsx for this list. */
   exportHref?: string;
@@ -57,6 +61,9 @@ export function AgeingClient({
       rows.filter((r) => (bucket === 'ALL' || r.bucket === bucket) && (party === 'ALL' || r.party === party)),
     [rows, bucket, party],
   );
+
+  const settleLabel = settlePath.includes('payments') ? 'Pay' : 'Record payment';
+  const settleHref = (row: AgeingRow) => `${settlePath}?document=${row.id}`;
 
   const columns: DataColumn<AgeingRow>[] = [
     {
@@ -127,6 +134,24 @@ export function AgeingClient({
       header: 'Status',
       hideable: true,
       cell: (r) => <StatusBadge status={r.status} meta={SETTLEMENT_STATUS_META} />,
+    },
+    {
+      id: 'actions',
+      header: 'Actions',
+      mobile: 'action',
+      pin: 'right',
+      printHidden: true,
+      // An ageing line exists to be acted on: open the document, take the
+      // money, or look at the party's account. All three from the row.
+      cell: (r) => (
+        <RowActions
+          actions={[
+            viewAction(r.documentHref),
+            { label: settleLabel, href: settleHref(r), icon: 'money' },
+            { label: `${partyLabel} ledger`, href: r.partyHref, icon: 'ledger' },
+          ]}
+        />
+      ),
     },
   ];
 

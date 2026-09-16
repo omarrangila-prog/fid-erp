@@ -142,7 +142,15 @@ test('audits what every sidebar screen shows without opening a row', async ({ pa
         }
       }
 
-      const labels = [...main.querySelectorAll('label')].map((l) => text(l).toLowerCase());
+      // A filter is a <label> or a labelled control. The dropdowns added to
+      // the sheets carry an aria-label and no visible <label>, and counting
+      // only the latter made every one of those screens report "no filters".
+      const labels = [
+        ...[...main.querySelectorAll('label')].map((l) => text(l).toLowerCase()),
+        ...[...main.querySelectorAll('select[aria-label], input[aria-label]')].map((el) =>
+          (el.getAttribute('aria-label') ?? '').toLowerCase(),
+        ),
+      ];
       const controls = [...main.querySelectorAll('select, input[type="date"]')].length;
 
       const topButtons = [...main.querySelectorAll('button, a')]

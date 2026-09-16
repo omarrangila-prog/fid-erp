@@ -193,6 +193,11 @@ export function JournalClient({
           .join(' ')}`
       }
       searchPlaceholder="Search by voucher, description, account or who posted it…"
+      filters={[
+        { id: 'source', label: 'Source', value: (r) => r.sourceTypeLabel },
+        { id: 'currency', label: 'Currency', value: (r) => r.currency },
+        { id: 'postedBy', label: 'Posted by', value: (r) => r.createdBy },
+      ]}
       emptyTitle="No entries in this period"
       emptyDescription="Post a document and its journal appears here."
       expandedContent={(r) => (

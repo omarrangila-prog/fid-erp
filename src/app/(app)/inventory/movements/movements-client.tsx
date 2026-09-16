@@ -3,6 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
+import { RowActions } from '@/components/shared/row-actions';
 import { Select } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import type { BadgeTone } from '@/lib/constants';
@@ -124,6 +125,23 @@ export function MovementsClient({
     },
     { id: 'notes', header: 'Notes', hideable: true, defaultHidden: true, exportValue: (r) => r.notes ?? '', cell: (r) => r.notes ?? '—' },
     { id: 'user', header: 'By', hideable: true, exportValue: (r) => r.createdBy, cell: (r) => r.createdBy },
+    {
+      id: 'actions',
+      header: 'Actions',
+      mobile: 'action',
+      pin: 'right',
+      printHidden: true,
+      // The movement ledger is append-only: nothing here is edited. These are
+      // the two places a line leads.
+      cell: (r) => (
+        <RowActions
+          actions={[
+            { label: 'Batch', href: `/inventory/batches/${r.batchId}`, icon: 'layers' },
+            { label: 'Stock on hand', href: '/inventory', icon: 'history', overflowOnly: true },
+          ]}
+        />
+      ),
+    },
   ];
 
   return (

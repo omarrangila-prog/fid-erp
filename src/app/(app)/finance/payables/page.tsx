@@ -72,6 +72,7 @@ export default async function PayablesPage() {
         exportHref="/api/export/payables"
         rows={rows}
         partyLabel="Supplier"
+        settlePath="/finance/payments/new"
         documentLabel="Contract"
         canExport={can(user, PERMISSIONS.REPORTS_EXPORT)}
       />
