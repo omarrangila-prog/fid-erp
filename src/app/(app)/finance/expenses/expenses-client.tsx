@@ -140,6 +140,11 @@ export function ExpensesClient({
   return (
     <DataTable
       data={rows}
+      filters={[
+      { id: 'status', label: 'Status', value: (r) => r.status },
+      { id: 'category', label: 'Category', value: (r) => r.category },
+      { id: 'currency', label: 'Currency', value: (r) => r.currency },
+      ]}
       columns={columns}
       getRowId={(r) => r.id}
       rowHref={(r) => `/finance/expenses/${r.id}`}

@@ -216,6 +216,11 @@ export function CustomersClient({
     <>
       <DataTable
         data={rows}
+          filters={[
+            { id: 'status', label: 'Status', value: (r) => r.status },
+            { id: 'currency', label: 'Currency', value: (r) => r.primaryCurrency },
+            { id: 'country', label: 'Country', value: (r) => r.country },
+          ]}
         columns={columns}
         getRowId={(r) => r.id}
         rowHref={(r) => `/customers/${r.id}`}

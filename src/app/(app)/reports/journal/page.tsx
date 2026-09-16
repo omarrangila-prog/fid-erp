@@ -5,11 +5,8 @@ import { getJournalReport } from '@/lib/services/reports';
 import { dec } from '@/lib/money';
 import { formatMoney, formatDate, formatDateTime, titleCase } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
+import { JournalClient } from '@/app/(app)/reports/journal/journal-client';
 import { DateRangePicker } from '@/components/shared/date-range';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
-import { EmptyState } from '@/components/ui/feedback';
 import Link from 'next/link';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -69,93 +66,52 @@ export default async function JournalPage({
 
       <DateRangePicker defaultFrom={fromDate.toISOString().slice(0, 10)} defaultTo={toDate.toISOString().slice(0, 10)} />
 
-      {entries.length === 0 ? (
-        <EmptyState
-          title={q?.trim() ? 'No matching entries' : 'No entries in this period'}
-          description={
-            q?.trim()
-              ? `Nothing in this period matches “${q}”.`
-              : 'Post a document to create journal entries.'
-          }
-        />
-      ) : (
-        <div className="space-y-4">
-          {entries.map((entry) => {
-            const debits = entry.lines.reduce((a, l) => a.plus(dec(l.debitUsd)), dec(0));
-            return (
-              <Card key={entry.id}>
-                <CardHeader className="gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <CardTitle>
-                      {entry.entryNumber}
-                      {entry.isReversal ? (
-                        <Badge tone="danger" className="ml-2">
-                          Reversal
-                        </Badge>
-                      ) : null}
-                    </CardTitle>
-                    <CardDescription>{entry.description}</CardDescription>
-                  </div>
-                  <div className="shrink-0 text-right text-xs text-ink-muted">
-                    <p>{formatDate(entry.entryDate)}</p>
-                    <p>
-                      {titleCase(entry.sourceType)} · {entry.createdBy.name}
-                    </p>
-                    <p className="tnum font-semibold text-ink">{formatMoney(debits, 'USD')}</p>
-                  </div>
-                </CardHeader>
-                <CardContent className="px-0 pb-0">
-                  <TableWrap className="rounded-none border-0 border-t">
-                    <Table>
-                      <THead>
-                        <TR className="hover:bg-transparent">
-                          <TH>Account</TH>
-                          <TH>Description</TH>
-                          <TH numeric>Debit</TH>
-                          <TH numeric>Credit</TH>
-                          <TH numeric>USD</TH>
-                          <TH numeric>{local}</TH>
-                        </TR>
-                      </THead>
-                      <TBody>
-                        {entry.lines.map((line) => (
-                          <TR key={line.id}>
-                            <TD>
-                              <span className="text-ink-subtle">{line.account.code}</span> {line.account.name}
-                            </TD>
-                            <TD className="text-xs text-ink-muted">{line.description ?? '—'}</TD>
-                            <TD numeric>
-                              {dec(line.debit).greaterThan(0) ? formatMoney(line.debit, line.currency) : '—'}
-                            </TD>
-                            <TD numeric>
-                              {dec(line.credit).greaterThan(0) ? formatMoney(line.credit, line.currency) : '—'}
-                            </TD>
-                            <TD numeric className="text-ink-muted">
-                              {dec(line.debitUsd).greaterThan(0)
-                                ? formatMoney(line.debitUsd, 'USD')
-                                : dec(line.creditUsd).greaterThan(0)
-                                  ? `(${formatMoney(line.creditUsd, 'USD')})`
-                                  : '—'}
-                            </TD>
-                            <TD numeric className="text-ink-muted">
-                              {dec(line.debitLocal).greaterThan(0)
-                                ? formatMoney(line.debitLocal, local)
-                                : dec(line.creditLocal).greaterThan(0)
-                                  ? `(${formatMoney(line.creditLocal, local)})`
-                                  : '—'}
-                            </TD>
-                          </TR>
-                        ))}
-                      </TBody>
-                    </Table>
-                  </TableWrap>
-                  <p className="px-5 py-2 text-xs text-ink-subtle">Posted {formatDateTime(entry.postedAt)}</p>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+      <JournalClient
+        rows={entries.map((entry) => {
+          const debits = entry.lines.reduce((a, l) => a.plus(dec(l.debitUsd)), dec(0));
+          const credits = entry.lines.reduce((a, l) => a.plus(dec(l.creditUsd)), dec(0));
+          // A voucher is normally in one currency; say so when it is, and
+          // "mixed" when a settlement genuinely spans two.
+          const currencies = [...new Set(entry.lines.map((l) => l.currency))];
+          return {
+            id: entry.id,
+            entryNumber: entry.entryNumber,
+            entryDate: formatDate(entry.entryDate),
+            entryDateSort: entry.entryDate.getTime(),
+            description: entry.description,
+            sourceType: entry.sourceType,
+            sourceTypeLabel: titleCase(entry.sourceType),
+            sourceId: entry.sourceId,
+            currency: currencies.length === 1 ? currencies[0] : 'mixed',
+            totalDebit: formatMoney(debits, 'USD'),
+            totalCredit: formatMoney(credits, 'USD'),
+            totalSort: Number(debits),
+            isReversal: entry.isReversal,
+            createdBy: entry.createdBy.name,
+            postedAt: formatDateTime(entry.createdAt),
+            lines: entry.lines.map((line) => ({
+              id: line.id,
+              accountCode: line.account.code,
+              accountName: line.account.name,
+              description: line.description,
+              currency: line.currency,
+              debit: dec(line.debit).greaterThan(0) ? formatMoney(line.debit, line.currency) : '—',
+              credit: dec(line.credit).greaterThan(0) ? formatMoney(line.credit, line.currency) : '—',
+              usd: dec(line.debitUsd).greaterThan(0)
+                ? formatMoney(line.debitUsd, 'USD')
+                : dec(line.creditUsd).greaterThan(0)
+                  ? `(${formatMoney(line.creditUsd, 'USD')})`
+                  : '—',
+              local: dec(line.debitLocal).greaterThan(0)
+                ? formatMoney(line.debitLocal, local)
+                : dec(line.creditLocal).greaterThan(0)
+                  ? `(${formatMoney(line.creditLocal, local)})`
+                  : '—',
+            })),
+          };
+        })}
+        localCurrency={local}
+      />
     </div>
   );
 }

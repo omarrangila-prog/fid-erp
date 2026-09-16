@@ -236,6 +236,12 @@ export function PurchasesClient({
   return (
     <DataTable
       data={rows}
+      filters={[
+      { id: 'status', label: 'Status', value: (r) => r.status },
+      { id: 'supplier', label: 'Supplier', value: (r) => r.vendorName },
+      { id: 'currency', label: 'Currency', value: (r) => r.currency },
+      { id: 'loading', label: 'Loading', value: (r) => r.shipmentStatus },
+      ]}
       columns={columns}
       getRowId={(r) => r.id}
       rowHref={(r) => `/purchases/${r.id}`}

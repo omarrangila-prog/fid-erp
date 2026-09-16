@@ -236,6 +236,13 @@ export function SalesClient({
   return (
     <DataTable
       data={visible}
+      filters={[
+      { id: 'status', label: 'Status', value: (r) => r.status },
+      { id: 'settlement', label: 'Payment', value: (r) => r.settlement },
+      { id: 'customer', label: 'Customer', value: (r) => r.customerName },
+      { id: 'currency', label: 'Currency', value: (r) => r.currency },
+      { id: 'warehouse', label: 'Warehouse', value: (r) => r.warehouseNames || null },
+      ]}
       columns={columns}
       getRowId={(r) => r.id}
       rowHref={(r) => `/sales/${r.id}`}

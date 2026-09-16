@@ -74,6 +74,8 @@ export function DataTable<T>({
   toolbar,
   showFooter = false,
   dense = false,
+  expandedContent,
+  filters,
   exportFileName,
   exportTitle,
   exportHref,
@@ -92,6 +94,26 @@ export function DataTable<T>({
   toolbar?: React.ReactNode;
   showFooter?: boolean;
   dense?: boolean;
+  /**
+   * Detail shown beneath a row when its chevron is pressed, instead of
+   * sending the user to another page and back. Give it only when there is
+   * genuinely more to say — a voucher's lines, a consignment's containers.
+   */
+  expandedContent?: (row: T) => React.ReactNode;
+  /**
+   * Dropdown filters shown above the sheet, alongside the search box.
+   *
+   * Values are read off the rows themselves, so a screen declares what to
+   * filter by and not what the options are — a status list that goes stale
+   * the moment a new status exists is worse than none.
+   */
+  filters?: Array<{
+    id: string;
+    label: string;
+    value: (row: T) => string | null | undefined;
+    /** Overrides the value as shown in the dropdown. */
+    format?: (value: string) => string;
+  }>;
   /**
    * Turns on Excel export, named after this. Omitted means no export button —
    * a list nobody would ever take to a spreadsheet should not offer to.
@@ -117,13 +139,30 @@ export function DataTable<T>({
   // follow-up sheet somebody scans all day.
   const [compact, setCompact] = React.useState(dense);
 
+  const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set());
+  const [filterValues, setFilterValues] = React.useState<Record<string, string>>({});
+
+  // The options a filter offers are whatever the rows actually contain.
+  const filterOptions = React.useMemo(
+    () =>
+      (filters ?? []).map((filter) => ({
+        ...filter,
+        options: [...new Set(data.map((row) => filter.value(row)).filter((v): v is string => Boolean(v)))].sort(),
+      })),
+    [data, filters],
+  );
   const visibleColumns = columns.filter((c) => !hidden.has(c.id));
 
   const filtered = React.useMemo(() => {
-    if (!searchValue || !query.trim()) return data;
+    let rows = data;
+    for (const filter of filters ?? []) {
+      const chosen = filterValues[filter.id];
+      if (chosen) rows = rows.filter((row) => filter.value(row) === chosen);
+    }
+    if (!searchValue || !query.trim()) return rows;
     const q = query.trim().toLowerCase();
-    return data.filter((row) => searchValue(row).toLowerCase().includes(q));
-  }, [data, query, searchValue]);
+    return rows.filter((row) => searchValue(row).toLowerCase().includes(q));
+  }, [data, query, searchValue, filters, filterValues]);
 
   const sorted = React.useMemo(() => {
     if (!sort) return filtered;
@@ -214,6 +253,30 @@ export function DataTable<T>({
             <div className="flex-1" />
           )}
 
+          {/* Filters sit beside the search box, never behind a disclosure:
+              a filter nobody can see is a filter nobody uses. */}
+          {filterOptions
+            .filter((filter) => filter.options.length > 1)
+            .map((filter) => (
+              <select
+                key={filter.id}
+                aria-label={filter.label}
+                value={filterValues[filter.id] ?? ''}
+                onChange={(event) => {
+                  setFilterValues((current) => ({ ...current, [filter.id]: event.target.value }));
+                  setPage(0);
+                }}
+                className="h-9 rounded-lg border border-line bg-surface px-2 text-sm text-ink"
+              >
+                <option value="">{filter.label}: all</option>
+                {filter.options.map((option) => (
+                  <option key={option} value={option}>
+                    {filter.format ? filter.format(option) : option}
+                  </option>
+                ))}
+              </select>
+            ))}
+
           <div className="flex items-center gap-2">
             {toolbar}
 
@@ -303,6 +366,7 @@ export function DataTable<T>({
             <Table>
               <THead className="sticky-head">
                 <TR className="hover:bg-transparent">
+                  {expandedContent ? <TH className="w-8 print:hidden" /> : null}
                   {visibleColumns.map((column) => (
                     <TH
                       key={column.id}
@@ -344,8 +408,33 @@ export function DataTable<T>({
               <TBody>
                 {pageRows.map((row) => {
                   const href = rowHref?.(row);
+                  const rowId = getRowId(row);
+                  const isOpen = expanded.has(rowId);
                   return (
-                    <TR key={getRowId(row)} className={cn(href && 'cursor-pointer', compact && '[&>td]:py-1.5')}>
+                    <React.Fragment key={rowId}>
+                    <TR className={cn(href && 'cursor-pointer', compact && '[&>td]:py-1.5')}>
+                      {expandedContent ? (
+                        <TD className="w-8 print:hidden">
+                          <button
+                            type="button"
+                            aria-label={isOpen ? 'Hide detail' : 'Show detail'}
+                            aria-expanded={isOpen}
+                            className="tap-target inline-flex size-6 items-center justify-center rounded text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setExpanded((current) => {
+                                const next = new Set(current);
+                                if (next.has(rowId)) next.delete(rowId);
+                                else next.add(rowId);
+                                return next;
+                              });
+                            }}
+                          >
+                            <ChevronRight className={cn('size-4 transition-transform', isOpen && 'rotate-90')} />
+                          </button>
+                        </TD>
+                      ) : null}
                       {visibleColumns.map((column, index) => (
                         <TD
                           key={column.id}
@@ -373,12 +462,21 @@ export function DataTable<T>({
                         </TD>
                       ))}
                     </TR>
+                    {expandedContent && isOpen ? (
+                      <TR className="hover:bg-transparent">
+                        <TD colSpan={visibleColumns.length + 1} className="bg-surface-sunken/50 p-0">
+                          {expandedContent(row)}
+                        </TD>
+                      </TR>
+                    ) : null}
+                    </React.Fragment>
                   );
                 })}
               </TBody>
               {showFooter ? (
                 <TFoot>
                   <tr>
+                    {expandedContent ? <TD className="w-8 print:hidden" /> : null}
                     {visibleColumns.map((column) => (
                       <TD key={column.id} numeric={column.numeric} data-print={column.printHidden ? 'hide' : undefined}>
                         {column.footer ?? null}
@@ -398,6 +496,12 @@ export function DataTable<T>({
               const badge = columns.find((c) => c.mobile === 'badge');
               const metas = columns.filter((c) => c.mobile === 'meta' && !hidden.has(c.id));
               const actions = columns.filter((c) => c.mobile === 'action');
+              // Visible columns the card has not already placed: shown behind
+              // a disclosure rather than dropped.
+              const placed = new Set(
+                [title, badge, ...metas, ...actions].filter(Boolean).map((c) => (c as DataColumn<T>).id),
+              );
+              const rest = visibleColumns.filter((c) => !placed.has(c.id) && c.mobile !== 'hidden');
               const body = (
                 <>
                   <div className="flex items-start justify-between gap-3">
@@ -430,6 +534,35 @@ export function DataTable<T>({
                   ) : (
                     body
                   )}
+                  {/*
+                    Everything the card did not have room for, one tap away.
+                    A phone cannot show twenty columns legibly, but it must
+                    not be the version of the application where the figure
+                    you need is simply absent.
+                  */}
+                  {rest.length > 0 ? (
+                    <details className="mt-3 border-t border-line pt-3">
+                      <summary className="cursor-pointer text-xs font-medium text-forest-700">
+                        All {rest.length + metas.length + 1} fields
+                      </summary>
+                      <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2">
+                        {rest.map((column) => (
+                          <div key={column.id} className="min-w-0">
+                            <dt className="text-[11px] text-ink-subtle">{column.header}</dt>
+                            <dd className={cn('truncate text-sm text-ink', column.numeric && 'tnum')}>
+                              {column.cell(row)}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </details>
+                  ) : null}
+                  {expandedContent ? (
+                    <details className="mt-3 border-t border-line pt-3">
+                      <summary className="cursor-pointer text-xs font-medium text-forest-700">Detail</summary>
+                      <div className="mt-2 -mx-4 overflow-x-auto">{expandedContent(row)}</div>
+                    </details>
+                  ) : null}
                   {actions.length > 0 ? (
                     <div className="mt-3 flex flex-wrap justify-end gap-1 border-t border-line pt-3">
                       {actions.map((column) => (

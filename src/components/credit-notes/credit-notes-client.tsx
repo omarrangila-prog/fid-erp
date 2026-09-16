@@ -4,8 +4,9 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Plus, CheckCircle2, Undo2 } from 'lucide-react';
+import { Plus, CheckCircle2 } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
+import { RowActions, viewAction, editAction } from '@/components/shared/row-actions';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm';
@@ -148,30 +149,56 @@ export function CreditNotesClient({
       sortValue: (r) => r.status,
       cell: (r) => <Badge tone={STATUS_TONES[r.status] ?? 'neutral'}>{r.status.toLowerCase()}</Badge>,
     },
-    ...(canPost
-      ? [
-          {
-            id: 'actions',
-            header: '',
-            cell: (r: CreditNoteRow) => (
-              <span className="flex items-center justify-end gap-1">
-                {r.status === 'DRAFT' ? (
-                  <Button size="sm" variant="accent" loading={busy === r.id} onClick={() => post(r)}>
-                    <CheckCircle2 />
-                    Post
-                  </Button>
-                ) : null}
-                {r.status === 'POSTED' ? (
-                  <Button size="sm" variant="outline" onClick={() => setReversing(r)}>
-                    <Undo2 />
-                    Reverse
-                  </Button>
-                ) : null}
-              </span>
-            ),
-          } satisfies DataColumn<CreditNoteRow>,
-        ]
-      : []),
+    {
+      id: 'linked',
+      header: 'Against',
+      hideable: true,
+      sortValue: (r) => r.againstDocument ?? '',
+      exportValue: (r) => r.againstDocument ?? '',
+      cell: (r) => r.againstDocument ?? <span className="text-ink-subtle">—</span>,
+    },
+    {
+      id: 'currency',
+      header: 'Currency',
+      hideable: true,
+      sortValue: (r) => r.currency,
+      exportValue: (r) => r.currency,
+      cell: (r) => r.currency,
+    },
+    {
+      id: 'actions',
+      header: 'Actions',
+      mobile: 'action',
+      pin: 'right',
+      printHidden: true,
+      cell: (r: CreditNoteRow) => (
+        <RowActions
+          actions={[
+            viewAction(`${basePath}/${r.id}`),
+            editAction(`${basePath}/${r.id}/edit`, r.status === 'DRAFT'),
+            {
+              label: 'Post',
+              icon: CheckCircle2,
+              show: canPost && r.status === 'DRAFT',
+              disabled: busy === r.id,
+              onSelect: () => post(r),
+            },
+          ]}
+          destructive={{
+            status: r.status,
+            noun,
+            show: canPost && r.status === 'POSTED',
+            description: `Reverses the ${noun}: a contra entry is written, ${
+              r.returnsStock ? 'the coffee it returned goes back out of the warehouse, ' : ''
+            }and both entries stay in the books. Nothing is deleted.`,
+            run: async (reason) => {
+              const result = await reverseCreditNoteAction(r.id, reason ?? '');
+              return { ok: result.ok, error: result.ok ? undefined : result.error };
+            },
+          }}
+        />
+      ),
+    } satisfies DataColumn<CreditNoteRow>,
   ];
 
   return (
