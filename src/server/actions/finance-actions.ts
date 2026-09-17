@@ -526,6 +526,8 @@ export async function postIntercompanyLoanAction(payload: string): Promise<DocFo
       amount: input.amount,
       exchangeRate: input.exchangeRate,
       receivedAmount: input.receivedAmount,
+      fromLoanAccountId: input.fromLoanAccountId,
+      toLoanAccountId: input.toLoanAccountId,
       reference: input.reference,
       description: input.description,
     });

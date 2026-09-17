@@ -186,6 +186,9 @@ export const intercompanyLoanSchema = z
     amount: decimalString('Amount'),
     exchangeRate: decimalString('Exchange rate'),
     receivedAmount: optionalDecimalString('Converted amount'),
+    /** Where each side carries the debt; blank means the built-in loan account. */
+    fromLoanAccountId: optionalCuid,
+    toLoanAccountId: optionalCuid,
     reference: optionalText(60),
     description: optionalText(300),
   })

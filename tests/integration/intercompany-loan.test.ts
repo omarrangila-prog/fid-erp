@@ -322,3 +322,109 @@ describe('the bank reference survives a memo', () => {
     expect(loan.borrowerEntry.description).toContain('Loan from');
   }, 180_000);
 });
+
+describe('carrying the debt in an account the client made', () => {
+  it('posts the borrower side into a named account instead of the built-in one', async () => {
+    // The client keeps "F I D TRADING LLC DUBAI" in Morocco's chart for the
+    // Dubai relationship. The form used to post to the built-in loan account
+    // regardless, so their own account stayed empty and the loan looked lost.
+    const named = await prisma.account.create({
+      data: {
+        companyId: ctx.morocco.id,
+        code: '1600',
+        name: 'F I D TRADING LLC DUBAI',
+        type: 'ASSET',
+        currency: 'USD',
+      },
+    });
+
+    const loan = await postIntercompanyLoan({
+      fromCompanyId: ctx.dubai.id,
+      toCompanyId: ctx.morocco.id,
+      userId: ctx.admin.id,
+      transferDate: utcDate('2026-06-01'),
+      fromAccountId: dubaiBank,
+      toAccountId: moroccoBank,
+      amount: '1000',
+      exchangeRate: '9.22',
+      toLoanAccountId: named.id,
+    });
+
+    const lines = await prisma.journalLine.findMany({
+      where: { journalEntryId: loan.borrowerEntry.id, accountId: named.id },
+    });
+    expect(lines).toHaveLength(1);
+
+    // The account is held in USD, so the debt is stated in USD — a dollar
+    // loan, recorded as dollars owed — even though dirhams hit the bank. The
+    // ledger refuses a MAD line in a USD account outright, so restating it is
+    // what makes such an account usable at all.
+    expect(lines[0].currency).toBe('USD');
+    expect(lines[0].credit.toString()).toBe('1000');
+    expect(lines[0].creditUsd.toString()).toBe('1000');
+
+    // And the bank still moved by what really moved.
+    const bank = await prisma.journalLine.findFirstOrThrow({
+      where: { journalEntryId: loan.borrowerEntry.id, cashBankAccountId: moroccoBank },
+    });
+    expect(bank.currency).toBe('MAD');
+    expect(bank.debit.toString()).toBe('9220');
+    expect(bank.debitUsd.toString()).toBe('1000');
+
+    // The built-in payable is untouched for this loan.
+    const builtIn = await prisma.journalLine.count({
+      where: {
+        journalEntryId: loan.borrowerEntry.id,
+        account: { systemKey: 'INTERCOMPANY_LOAN_PAYABLE' },
+      },
+    });
+    expect(builtIn).toBe(0);
+  }, 180_000);
+
+  it('still balances and reconciles when a named account is used', async () => {
+    for (const company of [ctx.dubai, ctx.morocco]) {
+      const health = await reconcile(company.id);
+      expect(health.healthy).toBe(true);
+    }
+  }, 180_000);
+
+  it('refuses an account belonging to the other company', async () => {
+    const dubaiOwn = await prisma.account.findFirstOrThrow({
+      where: { companyId: ctx.dubai.id, systemKey: 'INTERCOMPANY_LOAN_RECEIVABLE' },
+    });
+
+    await expect(
+      postIntercompanyLoan({
+        fromCompanyId: ctx.dubai.id,
+        toCompanyId: ctx.morocco.id,
+        userId: ctx.admin.id,
+        transferDate: utcDate('2026-06-02'),
+        fromAccountId: dubaiBank,
+        toAccountId: moroccoBank,
+        amount: '1000',
+        exchangeRate: '9.22',
+        toLoanAccountId: dubaiOwn.id,
+      }),
+    ).rejects.toThrow(/loan account/i);
+  }, 180_000);
+
+  it('refuses an account a loan balance cannot sit in', async () => {
+    const income = await prisma.account.findFirstOrThrow({
+      where: { companyId: ctx.morocco.id, type: 'INCOME' },
+    });
+
+    await expect(
+      postIntercompanyLoan({
+        fromCompanyId: ctx.dubai.id,
+        toCompanyId: ctx.morocco.id,
+        userId: ctx.admin.id,
+        transferDate: utcDate('2026-06-03'),
+        fromAccountId: dubaiBank,
+        toAccountId: moroccoBank,
+        amount: '1000',
+        exchangeRate: '9.22',
+        toLoanAccountId: income.id,
+      }),
+    ).rejects.toThrow(/asset or liability/i);
+  }, 180_000);
+});

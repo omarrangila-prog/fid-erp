@@ -15,11 +15,28 @@ import { formatMoney, todayInputValue } from '@/lib/format';
 import { postIntercompanyLoanAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 
+export type LoanAccountOption = {
+  id: string;
+  label: string;
+  type: 'ASSET' | 'LIABILITY';
+  isDefaultReceivable: boolean;
+  isDefaultPayable: boolean;
+};
+
 export type LoanCompany = {
   id: string;
   name: string;
   accounts: Array<{ id: string; name: string; currency: string }>;
+  loanAccounts: LoanAccountOption[];
 };
+
+/** The built-in account for this side first, then everything the client made. */
+function orderFor(company: LoanCompany | undefined, side: 'LENDER' | 'BORROWER'): LoanAccountOption[] {
+  const options = company?.loanAccounts ?? [];
+  const isBuiltIn = (o: LoanAccountOption) =>
+    side === 'LENDER' ? o.isDefaultReceivable : o.isDefaultPayable;
+  return [...options.filter(isBuiltIn), ...options.filter((o) => !isBuiltIn(o))];
+}
 
 /**
  * One FID company lending to the other.
@@ -32,6 +49,10 @@ export type LoanCompany = {
  *
  * The rate is typed in rather than looked up — it is the rate the bank used
  * on the day, which is a fact about that transaction and not about today.
+ *
+ * Each side also says which account carries the debt, because a company that
+ * keeps a named account for the other one needs the balance to land there
+ * rather than in an account nobody opens.
  */
 export function IntercompanyLoanForm({ companies }: { companies: LoanCompany[] }) {
   const router = useRouter();
@@ -59,6 +80,27 @@ export function IntercompanyLoanForm({ companies }: { companies: LoanCompany[] }
   const [receivedOverride, setReceivedOverride] = React.useState('');
   const [reference, setReference] = React.useState('');
   const [memo, setMemo] = React.useState('');
+  const [fromLoanAccountId, setFromLoanAccount] = React.useState('');
+  const [toLoanAccountId, setToLoanAccount] = React.useState('');
+
+  /*
+   * The account each side carries the debt in, chosen when the two companies
+   * are. The lender's own account is what it is owed, the borrower's what it
+   * owes, so each list leads with the built-in account for that side and the
+   * client's own accounts follow.
+   */
+  const lenderLoanOptions = React.useMemo(() => orderFor(from, 'LENDER'), [from]);
+  const borrowerLoanOptions = React.useMemo(() => orderFor(to, 'BORROWER'), [to]);
+
+  // Worked out while rendering rather than corrected afterwards: changing
+  // company changes the list, and a choice that is no longer on it falls back
+  // to the built-in account at the top.
+  const lenderLoanChoice = lenderLoanOptions.some((o) => o.id === fromLoanAccountId)
+    ? fromLoanAccountId
+    : lenderLoanOptions[0]?.id ?? '';
+  const borrowerLoanChoice = borrowerLoanOptions.some((o) => o.id === toLoanAccountId)
+    ? toLoanAccountId
+    : borrowerLoanOptions[0]?.id ?? '';
 
   const fromAccount = from?.accounts.find((a) => a.id === fromAccountId);
   const toAccount = to?.accounts.find((a) => a.id === toAccountId);
@@ -110,6 +152,8 @@ export function IntercompanyLoanForm({ companies }: { companies: LoanCompany[] }
           amount,
           exchangeRate: sameCurrency ? '1' : exchangeRate,
           receivedAmount: receivedOverride,
+          fromLoanAccountId: lenderLoanChoice,
+          toLoanAccountId: borrowerLoanChoice,
           reference,
           description: memo,
         }),
@@ -209,6 +253,19 @@ export function IntercompanyLoanForm({ companies }: { companies: LoanCompany[] }
                   ))}
                 </Select>
               </Field>
+              <Field
+                label="Record what they are owed in"
+                required
+                hint={`The account in ${from?.name ?? 'the lender'}’s books that will hold the debt.`}
+              >
+                <Select value={lenderLoanChoice} onChange={(e) => setFromLoanAccount(e.target.value)}>
+                  {lenderLoanOptions.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
             </div>
 
             <div className="hidden pb-6 text-ink-subtle lg:block">
@@ -232,6 +289,19 @@ export function IntercompanyLoanForm({ companies }: { companies: LoanCompany[] }
                   {(to?.accounts ?? []).map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name} · {a.currency}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field
+                label="Record what they owe in"
+                required
+                hint={`The account in ${to?.name ?? 'the borrower'}’s books that will hold the debt.`}
+              >
+                <Select value={borrowerLoanChoice} onChange={(e) => setToLoanAccount(e.target.value)}>
+                  {borrowerLoanOptions.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.label}
                     </option>
                   ))}
                 </Select>
@@ -287,13 +357,7 @@ export function IntercompanyLoanForm({ companies }: { companies: LoanCompany[] }
             label="Memo"
             hint="Optional — what this loan was for. It appears on both companies’ journal entries."
           >
-            <Input
-              value={memo}
-              onChange={(e) => setMemo(e.target.value)}
-              placeholder={
-                from && to ? `Loan from ${from.name} to ${to.name}` : 'Working capital for the Morocco operation'
-              }
-            />
+            <Input value={memo} onChange={(e) => setMemo(e.target.value)} />
           </Field>
         </CardContent>
 

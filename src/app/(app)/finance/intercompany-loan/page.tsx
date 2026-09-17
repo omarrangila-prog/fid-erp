@@ -31,12 +31,35 @@ export default async function IntercompanyLoanPage() {
     select: { id: true, name: true, currency: true, companyId: true },
   });
 
+  /*
+   * Where each company may carry the debt.
+   *
+   * The built-in loan accounts are the default, but a company that keeps a
+   * named account for the other one — "F I D TRADING LLC DUBAI" in Morocco's
+   * chart, say — needs to be able to point the loan at it, or the balance
+   * lands somewhere they never open.
+   */
+  const loanAccounts = await prisma.account.findMany({
+    where: { companyId: { in: reachable }, status: 'ACTIVE', type: { in: ['ASSET', 'LIABILITY'] } },
+    orderBy: [{ code: 'asc' }],
+    select: { id: true, code: true, name: true, type: true, systemKey: true, companyId: true },
+  });
+
   const companies: LoanCompany[] = user.companies.map((company) => ({
     id: company.id,
     name: company.name,
     accounts: accounts
       .filter((a) => a.companyId === company.id)
       .map((a) => ({ id: a.id, name: a.name, currency: a.currency })),
+    loanAccounts: loanAccounts
+      .filter((a) => a.companyId === company.id)
+      .map((a) => ({
+        id: a.id,
+        label: `${a.code} · ${a.name}`,
+        type: a.type as 'ASSET' | 'LIABILITY',
+        isDefaultReceivable: a.systemKey === 'INTERCOMPANY_LOAN_RECEIVABLE',
+        isDefaultPayable: a.systemKey === 'INTERCOMPANY_LOAN_PAYABLE',
+      })),
   }));
 
   const usable = companies.filter((c) => c.accounts.length > 0);

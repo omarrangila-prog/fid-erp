@@ -1,4 +1,5 @@
 import { transaction } from '@/lib/db';
+import type { Decimal } from '@/lib/money';
 import { convertToUsd, dec, toMoney } from '@/lib/money';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
 import { ACCOUNT_KEYS } from '@/lib/constants';
@@ -200,6 +201,17 @@ export async function postIntercompanyLoan(input: {
   exchangeRate: string | number;
   /** What actually landed. Defaults to amount × rate. */
   receivedAmount?: string | number | null;
+  /**
+   * Which account each side carries the debt in.
+   *
+   * The built-in "Loan Receivable / Payable — Group Company" pair is the
+   * default, but a company that keeps a named account for the other company —
+   * the usual way of running a current account with a sister business — should
+   * be able to say so, rather than have the loan land somewhere they never
+   * look.
+   */
+  fromLoanAccountId?: string | null;
+  toLoanAccountId?: string | null;
   reference?: string | null;
   description?: string | null;
 }) {
@@ -296,6 +308,70 @@ export async function postIntercompanyLoan(input: {
     const note = input.reference?.trim() ? ` · ${input.reference.trim()}` : '';
     const memo = input.description?.trim();
 
+    /*
+     * A chosen account must belong to the company that will carry it, and
+     * must be one a balance can sit in. Without the first check a Moroccan
+     * account could be named on Dubai's entry, which is the cross-company
+     * leak the whole application is built to prevent.
+     */
+    async function loanAccount(companyId: string, accountId: string | null | undefined, side: string) {
+      if (!accountId) return null;
+      const account = await tx.account.findFirst({
+        where: { id: accountId, companyId, status: 'ACTIVE' },
+        select: { id: true, name: true, type: true, currency: true },
+      });
+      if (!account) throw new NotFoundError(`${side} loan account`);
+      if (account.type !== 'ASSET' && account.type !== 'LIABILITY') {
+        throw new BusinessRuleError(
+          `${account.name} is not an asset or liability account, so a loan balance cannot sit in it.`,
+        );
+      }
+      return account;
+    }
+
+    const [lenderLoanAccount, borrowerLoanAccount] = await Promise.all([
+      loanAccount(input.fromCompanyId, input.fromLoanAccountId, `${lender.name}'s`),
+      loanAccount(input.toCompanyId, input.toLoanAccountId, `${borrower.name}'s`),
+    ]);
+
+    /*
+     * The debt is stated in whatever currency the account is held in.
+     *
+     * A company that keeps its account with the other one in dollars is
+     * recording a dollar debt, even though the money arrived as dirhams — and
+     * the ledger refuses a MAD line in a USD account outright, so a loan
+     * pointed at such an account could not be posted at all. The bank line
+     * still moves by what really moved; only the debt is restated, at the same
+     * rate, so both lines are worth the same in USD and the entry balances.
+     */
+    async function loanSide(
+      companyId: string,
+      account: { id: string; currency: string | null } | null,
+      bank: { currency: string; amount: Decimal; rateToUsd: Decimal },
+    ) {
+      const target = account?.currency ?? bank.currency;
+      const where = account ? { accountId: account.id } : null;
+      if (target === bank.currency) {
+        return { where, currency: bank.currency, amount: bank.amount, rateToUsd: bank.rateToUsd };
+      }
+      const usd = convertToUsd(bank.amount, bank.rateToUsd, bank.currency);
+      const rateToUsd = await usdRate(companyId, target);
+      return { where, currency: target, amount: toMoney(usd.times(rateToUsd)), rateToUsd };
+    }
+
+    const [lenderSide, borrowerSide] = await Promise.all([
+      loanSide(input.fromCompanyId, lenderLoanAccount, {
+        currency: from.currency,
+        amount: sent,
+        rateToUsd: sentRate,
+      }),
+      loanSide(input.toCompanyId, borrowerLoanAccount, {
+        currency: to.currency,
+        amount: received,
+        rateToUsd: receivedRateToUsd,
+      }),
+    ]);
+
     const lenderEntry = await postJournalEntry(tx, {
       companyId: input.fromCompanyId,
       entryDate: input.transferDate,
@@ -307,11 +383,11 @@ export async function postIntercompanyLoan(input: {
       rateLocalPerUsd: lenderLocalRate,
       lines: [
         {
-          accountKey: ACCOUNT_KEYS.INTERCOMPANY_LOAN_RECEIVABLE,
+          ...(lenderSide.where ?? { accountKey: ACCOUNT_KEYS.INTERCOMPANY_LOAN_RECEIVABLE }),
           direction: 'DEBIT',
-          currency: from.currency,
-          amount: sent,
-          rateToUsd: sentRate,
+          currency: lenderSide.currency,
+          amount: lenderSide.amount,
+          rateToUsd: lenderSide.rateToUsd,
           description: `Lent to ${borrower.name}`,
         },
         {
@@ -344,11 +420,11 @@ export async function postIntercompanyLoan(input: {
           description: `Loan from ${lender.name}`,
         },
         {
-          accountKey: ACCOUNT_KEYS.INTERCOMPANY_LOAN_PAYABLE,
+          ...(borrowerSide.where ?? { accountKey: ACCOUNT_KEYS.INTERCOMPANY_LOAN_PAYABLE }),
           direction: 'CREDIT',
-          currency: to.currency,
-          amount: received,
-          rateToUsd: receivedRateToUsd,
+          currency: borrowerSide.currency,
+          amount: borrowerSide.amount,
+          rateToUsd: borrowerSide.rateToUsd,
           description: `Owed to ${lender.name}`,
         },
       ],
