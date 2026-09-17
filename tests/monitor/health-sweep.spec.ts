@@ -47,6 +47,7 @@ const SCREENS: Array<{ path: string; expect?: RegExp }> = [
   { path: '/finance/expenses/split' },
   { path: '/finance/expenses/recurring' },
   { path: '/finance/cash-bank' },
+  { path: '/finance/intercompany-loan' },
   { path: '/finance/cheques' },
   { path: '/finance/receivables' },
   { path: '/finance/payables' },
@@ -113,14 +114,20 @@ async function signIn(page: Page) {
    * meets if they click the instant the page appears.
    */
   const tile = page.getByRole('button', { name: new RegExp(ADMIN_NAME, 'i') }).first();
-  await expect(tile).toBeVisible({ timeout: 60_000 });
-  await tile.click();
-
   const keypad = page.getByRole('button', { name: '1', exact: true });
-  if (!(await keypad.isVisible().catch(() => false))) {
-    // Hydration had not finished; the first click was swallowed. Try once more.
-    await page.waitForTimeout(2_000);
-    await tile.click();
+  await expect(tile).toBeVisible({ timeout: 60_000 });
+
+  /*
+   * Click, then give the keypad time to arrive. Only try again if the tile is
+   * still on screen, which is the tell that the click was swallowed before
+   * hydration finished — once the user is chosen the tile is replaced, and
+   * clicking blindly a second time would undo the first.
+   */
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await tile.click().catch(() => undefined);
+    const arrived = await keypad.waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false);
+    if (arrived) break;
+    if (!(await tile.isVisible().catch(() => false))) break;
   }
   await expect(keypad).toBeVisible({ timeout: 30_000 });
 
