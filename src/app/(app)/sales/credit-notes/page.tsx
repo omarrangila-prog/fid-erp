@@ -21,8 +21,8 @@ export default async function CreditNotesPage() {
         breadcrumbs={[{ label: 'Sales', href: '/sales' }, { label: 'Credit Notes' }]}
       />
 
-      <Callout tone="info" title="A credit note is not a reversal">
-        Reversing an invoice unwinds it as though it had never existed. A credit note is its own document: both papers
+      <Callout tone="info" title="A credit note is not a deletion">
+        Deleting an invoice unwinds it as though it had never existed. A credit note is its own document: both papers
         stay in the history, which is what an auditor — and a customer holding the original — needs. Credits show
         separately in <strong>Sales Returns &amp; Credits</strong> rather than being netted into revenue, so the top
         line never quietly flatters itself.

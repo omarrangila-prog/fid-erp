@@ -94,7 +94,7 @@ export default async function AuditPage({
     <div className="space-y-6">
       <PageHeader
         title="Audit Log"
-        description="Who did what, and when. Postings, reversals, stock adjustments, status changes and access changes are all recorded."
+        description="Who did what, and when. Postings, deletions, stock adjustments, status changes and access changes are all recorded."
         breadcrumbs={[{ label: 'Administration' }, { label: 'Audit Log' }]}
         meta={<span className="text-xs text-ink-subtle">{total.toLocaleString()} {view === 'all' ? 'entries' : 'matching entries'} for {user.activeCompany.name}.</span>}
       />

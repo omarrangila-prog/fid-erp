@@ -89,9 +89,9 @@ export function SaleActions({
           onDeleted={() => {
             toast.success(
               status === 'POSTED'
-                ? 'Invoice cancelled and removed. Stock, customer balance and the ledger have been reversed.'
+                ? 'Invoice deleted. Stock, the customer balance and the ledger are back as they were.'
                 : status === 'REVERSED'
-                  ? 'Cancelled invoice removed from the list. Journals and stock history are unchanged.'
+                  ? 'Already deleted. Nothing further to do.'
                   : 'Invoice deleted.',
             );
             router.push('/sales');
@@ -199,8 +199,8 @@ export function InvoiceActionsMenu({
 }
 
 /**
- * Delete on every invoice. Drafts are removed. Posted invoices are reversed
- * and then taken off the sales list. Already-cancelled invoices are removed
+ * Delete on every invoice. Drafts are removed. Posted invoices are taken back
+ * out of the books and off every list. Already-deleted invoices are removed
  * from the list; journals and stock history stay.
  */
 export function InvoiceDeleteButton({
@@ -232,18 +232,18 @@ export function InvoiceDeleteButton({
     <ConfirmDialog
       open={open}
       onOpenChange={setOpen}
-      title={posted ? 'Cancel this posted invoice?' : reversed ? 'This invoice is already cancelled' : 'Delete this draft?'}
+      title={posted ? 'Delete this invoice?' : reversed ? 'This invoice is already deleted' : 'Delete this draft?'}
       description={
         posted
-          ? 'Stock returns to the warehouse it left, the customer balance is reversed, and a contra journal is written so the ledger stays in balance. The invoice stays in the books marked as cancelled — nothing is deleted, and you can find it under "Show cancelled" on the Sales list.'
+          ? 'Stock returns to the warehouse it left and the customer balance and ledger are put back as they were. The invoice disappears from every list and total. The audit log keeps a record of who deleted it and why.'
           : reversed
-            ? 'Its journals, stock movements and reversing entries are in the books and stay there. There is nothing further to do.'
+            ? 'It is already gone from the lists and totals. There is nothing further to do.'
             : 'The stock this draft was holding is released back to the warehouse.'
       }
-      confirmLabel={reversed ? 'Close' : posted ? 'Cancel invoice' : 'Delete draft'}
+      confirmLabel={reversed ? 'Close' : posted ? 'Delete invoice' : 'Delete draft'}
       variant="danger"
       requireReason={posted}
-      reasonLabel="Why is this invoice being cancelled?"
+      reasonLabel="Why is this invoice being deleted?"
       onConfirm={async (reason) => {
         setBusy(true);
         try {
@@ -253,7 +253,7 @@ export function InvoiceDeleteButton({
           }
           if (onDeleted) onDeleted(result.data);
           else {
-            toast.success(result.data.status === 'DELETED' ? 'Draft deleted.' : 'Invoice cancelled.');
+            toast.success(result.data.status === 'DELETED' ? 'Draft deleted.' : 'Invoice deleted.');
             router.push('/sales');
             router.refresh();
           }
@@ -276,7 +276,7 @@ export function InvoiceDeleteButton({
           }}
         >
           <Trash2 className="size-4" />
-          {posted ? 'Cancel invoice' : reversed ? 'Cancelled' : 'Delete draft'}
+          {posted ? 'Delete invoice' : reversed ? 'Deleted' : 'Delete draft'}
         </DropdownMenu.Item>
         {dialog}
       </>
@@ -293,7 +293,7 @@ export function InvoiceDeleteButton({
         onClick={openConfirm}
       >
         <Trash2 />
-        {posted ? 'Cancel invoice' : reversed ? 'Cancelled' : 'Delete draft'}
+        {posted ? 'Delete invoice' : reversed ? 'Deleted' : 'Delete draft'}
       </Button>
       {dialog}
     </>

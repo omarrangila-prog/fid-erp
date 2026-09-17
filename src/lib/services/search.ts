@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db';
-import { PERMISSIONS, type PermissionCode } from '@/lib/constants';
+import { PERMISSIONS, VISIBLE_DOCUMENT_STATUSES, type PermissionCode } from '@/lib/constants';
 
 /**
  * Global search.
@@ -70,6 +70,7 @@ export async function globalSearch(params: {
     const rows = await prisma.purchaseContract.findMany({
       where: {
         companyId: params.companyId,
+        status: { in: [...VISIBLE_DOCUMENT_STATUSES] },
         OR: [{ contractNumber: contains }, { contractReference: contains }],
       },
       take: limit,
@@ -123,7 +124,11 @@ export async function globalSearch(params: {
 
   if (can(PERMISSIONS.SALES_VIEW)) {
     const rows = await prisma.salesInvoice.findMany({
-      where: { companyId: params.companyId, OR: [{ invoiceNumber: contains }, { reference: contains }] },
+      where: {
+        companyId: params.companyId,
+        status: { in: [...VISIBLE_DOCUMENT_STATUSES] },
+        OR: [{ invoiceNumber: contains }, { reference: contains }],
+      },
       take: limit,
       select: { id: true, invoiceNumber: true, customer: { select: { customerName: true } }, currency: true },
     });
@@ -242,7 +247,11 @@ export async function globalSearch(params: {
 
   if (can(PERMISSIONS.RECEIPTS_VIEW)) {
     const rows = await prisma.receipt.findMany({
-      where: { companyId: params.companyId, OR: [{ receiptNumber: contains }, { reference: contains }] },
+      where: {
+        companyId: params.companyId,
+        status: { in: [...VISIBLE_DOCUMENT_STATUSES] },
+        OR: [{ receiptNumber: contains }, { reference: contains }],
+      },
       take: limit,
       select: { id: true, receiptNumber: true, customer: { select: { customerName: true } }, currency: true },
     });

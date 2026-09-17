@@ -133,8 +133,8 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
       />
 
       {invoice.status === 'REVERSED' ? (
-        <Callout tone="danger" title="This invoice has been reversed">
-          {invoice.reversalReason} — reversed {formatDateTime(invoice.reversedAt)}. The stock was returned to the
+        <Callout tone="danger" title="This invoice was deleted">
+          {invoice.reversalReason} — deleted {formatDateTime(invoice.reversedAt)}. The stock was returned to the
           warehouse it came from.
         </Callout>
       ) : null}

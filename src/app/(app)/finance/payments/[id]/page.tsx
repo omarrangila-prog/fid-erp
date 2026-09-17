@@ -78,8 +78,8 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
       />
 
       {payment.status === 'REVERSED' ? (
-        <Callout tone="danger" title="This payment has been reversed">
-          {payment.reversalReason} — reversed {formatDateTime(payment.reversedAt)}.
+        <Callout tone="danger" title="This payment was deleted">
+          {payment.reversalReason} — deleted {formatDateTime(payment.reversedAt)}.
         </Callout>
       ) : null}
 

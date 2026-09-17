@@ -35,10 +35,30 @@ export default async function MovementsPage({
   const requested = Number((await searchParams).page ?? '1');
   const page = Number.isFinite(requested) && requested > 0 ? Math.floor(requested) - 1 : 0;
 
-  const total = await prisma.inventoryTransaction.count({ where: { companyId } });
 
+  // A deleted invoice leaves two movements: the coffee going out, and the
+  // coffee coming back. They cancel, and to the person reading the warehouse
+  // book the sale never happened, so neither is listed. The rows stay in the
+  // table; the audit log records who deleted the invoice and why.
+  const deletedInvoiceIds = (
+    await prisma.salesInvoice.findMany({
+      where: { companyId, status: { notIn: ['DRAFT', 'POSTED'] } },
+      select: { id: true },
+    })
+  ).map((i) => i.id);
+  const visibleMovements = {
+    companyId,
+    transactionType: { not: 'REVERSAL' as const },
+    // Neither the coffee going out on a deleted invoice, nor its coming back.
+    NOT: [
+      { referenceType: 'SALES_INVOICE', referenceId: { in: deletedInvoiceIds } },
+      { referenceType: { endsWith: '_REVERSAL' } },
+    ],
+  };
+
+  const total = await prisma.inventoryTransaction.count({ where: visibleMovements });
   const movements = await prisma.inventoryTransaction.findMany({
-    where: { companyId },
+    where: visibleMovements,
     orderBy: { createdAt: 'desc' },
     skip: page * PAGE_SIZE,
     take: PAGE_SIZE,
@@ -58,7 +78,7 @@ export default async function MovementsPage({
       date: formatDate(m.transactionDate),
       dateSort: m.createdAt.getTime(),
       type: m.transactionType,
-      typeLabel: titleCase(m.transactionType),
+      typeLabel: m.transactionType === 'REVERSAL' ? 'Deletion' : titleCase(m.transactionType),
       batchNumber: m.batch.batchNumber,
       batchId: m.batchId,
       itemName: m.item.itemName,
@@ -66,7 +86,7 @@ export default async function MovementsPage({
       quantityLabel: formatQuantityKg(quantity),
       quantitySort: Number(quantity),
       isInflow: quantity.greaterThan(0),
-      reference: titleCase(m.referenceType),
+      reference: titleCase(m.referenceType.replace(/_REVERSAL$/, '_DELETION')),
       referenceHref: linkBuilder ? linkBuilder(m.referenceId) : null,
       notes: m.notes,
       createdBy: m.createdBy.name,

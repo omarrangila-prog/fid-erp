@@ -73,7 +73,7 @@ function ConfirmDialogBody({
             <Textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Explain why this is being reversed. This is recorded in the audit log."
+              placeholder="Explain why. This is recorded in the audit log."
             />
           </Field>
         ) : error ? (

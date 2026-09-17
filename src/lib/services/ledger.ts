@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import { LIVE_ENTRY_TEXT } from '@/lib/services/journal-visibility';
 import { Decimal, dec, toMoney } from '@/lib/money';
 
 /**
@@ -175,7 +176,7 @@ async function buildLedger(params: {
     JOIN journal_entries je ON je."id" = jl."journalEntryId"
     JOIN accounts a ON a."id" = jl."accountId"
     WHERE je."companyId" = $1
-      AND je."status" = 'POSTED'
+      AND ${LIVE_ENTRY_TEXT}
       AND ${partyFilter} = $2
       AND a."subledgerType" = '${params.subledgerType}'
       -- No start date means no opening balance: every row belongs in the body
@@ -207,7 +208,7 @@ async function buildLedger(params: {
     JOIN journal_entries je ON je."id" = jl."journalEntryId"
     JOIN accounts a ON a."id" = jl."accountId"
     WHERE je."companyId" = $1
-      AND je."status" = 'POSTED'
+      AND ${LIVE_ENTRY_TEXT}
       AND ${partyFilter} = $2
       AND a."subledgerType" = '${params.subledgerType}'
       AND ($3::date IS NULL OR je."entryDate" >= $3::date)

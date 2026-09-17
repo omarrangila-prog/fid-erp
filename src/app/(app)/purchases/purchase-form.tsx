@@ -775,7 +775,7 @@ export function PurchaseForm({
         open={confirmApprove}
         onOpenChange={setConfirmApprove}
         title="Save this purchase order?"
-        description="It appears on the Loading Sheet straight away, the supplier payable is raised and the batches are created. Correcting it afterwards means reversing it, so check the quantities and the price."
+        description="It appears on the Loading Sheet straight away, the supplier payable is raised and the batches are created. Correcting it afterwards means deleting it and entering it again, so check the quantities and the price."
         confirmLabel="Save purchase order"
         variant="accent"
         onConfirm={() => save(true)}

@@ -222,7 +222,7 @@ describe('observed FX 9.6000 MAD per USD', () => {
 });
 
 describe('silent 20% TVA already posted as 8,880', () => {
-  it('is corrected by reversal and re-entry, and the ledger keeps both', async () => {
+  it('is corrected by deletion and re-entry, and the raw books keep both', async () => {
     // What was posted stays posted. A journal line is never edited or removed
     // from a posted entry — the cash book has to be able to show that 8,880
     // went out and 8,880 came back, or nobody can trust what it shows for
@@ -277,7 +277,7 @@ describe('silent 20% TVA already posted as 8,880', () => {
     );
     await postExpense({ id: corrected.id, companyId: ctx.morocco.id, userId: ctx.admin.id });
 
-    // The original is untouched and reversed; the ledger shows all three.
+    // The original is untouched and marked deleted; the raw journal holds all three.
     const original = await prisma.expense.findUniqueOrThrow({ where: { id: expense.id } });
     expect(original.status).toBe('REVERSED');
     expect(Number(original.taxAmount)).toBe(1480);
@@ -292,8 +292,11 @@ describe('silent 20% TVA already posted as 8,880', () => {
     const cashAfter = await cashMovement(cashId);
     expect(Number(dec(cashAfter).minus(cashBefore))).toBeCloseTo(-7400 + 8880, 2);
 
+    // The cash book a person reads shows only what stands: the deleted voucher
+    // and the mirror that undid it cancel each other and are not listed. The
+    // raw journal above still holds both, which is what the reconciliation checks.
     const bookAfter = await getCashBook({ companyId: ctx.morocco.id, cashBankAccountId: cashId });
-    expect(Number(bookAfter.rows.find((row) => row.sourceId === expense.id)?.moneyOut)).toBeCloseTo(8880, 2);
+    expect(bookAfter.rows.find((row) => row.sourceId === expense.id)).toBeUndefined();
     expect(Number(bookAfter.rows.find((row) => row.sourceId === corrected.id)?.moneyOut)).toBeCloseTo(7400, 2);
 
     // The shipment carries the cost once.

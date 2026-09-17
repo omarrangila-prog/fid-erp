@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Plus, Repeat, SplitSquareHorizontal } from 'lucide-react';
 import { requirePageAccess, can } from '@/lib/auth/guards';
-import { PERMISSIONS } from '@/lib/constants';
+import { PERMISSIONS, VISIBLE_DOCUMENT_STATUSES } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { formatMoney, formatDate } from '@/lib/format';
 import { getWarehouseLabels } from '@/lib/services/stock';
@@ -25,7 +25,7 @@ export default async function ExpensesPage() {
 
   const [expenses, warehouses, dueRecurring] = await Promise.all([
     prisma.expense.findMany({
-      where: { companyId },
+      where: { companyId, status: { in: [...VISIBLE_DOCUMENT_STATUSES] } },
       orderBy: [{ expenseDate: 'desc' }, { expenseNumber: 'desc' }],
       include: {
         expenseCategory: { select: { name: true } },

@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Plus } from 'lucide-react';
 import { requirePageAccess, can } from '@/lib/auth/guards';
-import { PERMISSIONS, TRANSACTION_STATUS_META, PAYMENT_METHOD_LABELS } from '@/lib/constants';
+import { PERMISSIONS, TRANSACTION_STATUS_META, PAYMENT_METHOD_LABELS, VISIBLE_DOCUMENT_STATUSES } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { formatMoney, formatDate, formatRate } from '@/lib/format';
 import { getWarehouseLabels } from '@/lib/services/stock';
@@ -20,7 +20,7 @@ export default async function ReceiptsPage() {
 
   const [receipts, warehouses] = await Promise.all([
     prisma.receipt.findMany({
-      where: { companyId },
+      where: { companyId, status: { in: [...VISIBLE_DOCUMENT_STATUSES] } },
       orderBy: [{ receiptDate: 'desc' }, { receiptNumber: 'desc' }],
       include: {
         customer: { select: { customerName: true } },

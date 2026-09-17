@@ -55,15 +55,10 @@ export function SalesClient({
   canReverse: boolean;
   canApprove: boolean;
 }) {
-  // A cancelled invoice stays in the books and on this list, out of the way
-  // by default. It is never deleted: its journals and the receipts that
-  // settled it still point at it.
-  const [showCancelled, setShowCancelled] = React.useState(false);
-  const visible = React.useMemo(
-    () => (showCancelled ? rows : rows.filter((r) => r.status !== 'REVERSED')),
-    [rows, showCancelled],
-  );
-  const cancelledCount = rows.length - visible.length;
+  // A deleted invoice is not on this list at all: the page only loads live
+  // documents. Its journal and the trail of who deleted it stay in the books
+  // and the audit log, where an accountant can find them.
+  const visible = rows;
 
   const columns: DataColumn<SaleRow>[] = [
     {
@@ -221,9 +216,9 @@ export function SalesClient({
                   status: r.status,
                   noun: 'invoice',
                   show: r.status === 'DRAFT' ? canDelete : canReverse,
-                  cancelLabel: 'Cancel invoice',
+                  cancelLabel: 'Delete invoice',
                   description:
-                    'Stock returns to the warehouse it left, the customer balance is reversed, and a contra journal keeps the ledger in balance. The invoice stays in the books marked cancelled — nothing is deleted.',
+                    'Stock returns to the warehouse it left and the customer balance and ledger are put back as they were. The invoice disappears from every list and total. The audit log keeps a record of who deleted it and why.',
                   run: (reason) => deleteSalesInvoiceAction(r.id, reason).then((res) => ({ ok: res.ok, error: res.ok ? undefined : res.error })),
                 }}
               />
@@ -262,17 +257,6 @@ export function SalesClient({
       }
       toolbar={
         <>
-          {rows.some((r) => r.status === 'REVERSED') ? (
-            <label className="flex items-center gap-2 text-sm text-ink-muted">
-              <input
-                type="checkbox"
-                checked={showCancelled}
-                onChange={(e) => setShowCancelled(e.target.checked)}
-                className="size-4 rounded border-line"
-              />
-              Show cancelled{showCancelled ? '' : ` (${cancelledCount})`}
-            </label>
-          ) : null}
           {canCreate ? (
             <Button asChild>
               <Link href="/sales/new">

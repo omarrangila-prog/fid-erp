@@ -209,7 +209,7 @@ export function ChequesClient({
               ? 'The amount goes back onto the customer’s account — a bounced cheque is not cash.'
               : active?.to === 'DEPOSITED'
                 ? 'Depositing records that the cheque is with the bank. No money moves until it clears.'
-                : 'Cancelling reverses the cheque and restores the original balance.'
+                : 'Cancelling undoes the cheque and restores the original balance.'
         }
         footer={
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

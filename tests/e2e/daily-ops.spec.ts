@@ -93,7 +93,7 @@ test('the sales list keeps Cancel / Delete on an Actions menu', async ({ page })
   await expect(page.getByRole('menuitem', { name: /cancel|delete/i }).first()).toBeVisible();
 });
 
-test('a posted credit invoice can be cancelled from the invoice page, and stays in the books', async ({ page }) => {
+test('a posted credit invoice can be deleted from the invoice page, and leaves every list', async ({ page }) => {
   test.setTimeout(180_000);
   const name = unique('Delete-me Roasters');
 
@@ -130,17 +130,25 @@ test('a posted credit invoice can be cancelled from the invoice page, and stays 
   await expect(page.getByRole('main')).not.toContainText(/does not balance|does not match/i);
 
   const invoiceUrl = page.url();
-  await page.getByRole('button', { name: /^Cancel invoice$/ }).click();
+  const invoiceNumber = (await page.getByRole('heading', { name: /FID-MA-SI-/ }).first().textContent()) ?? '';
+  await page.getByRole('button', { name: /^Delete invoice$/ }).click();
   const confirm = page.getByRole('dialog');
-  await confirm.getByLabel(/why is this invoice being cancelled/i).fill('Entered in error during daily test');
-  await confirm.getByRole('button', { name: /^Cancel invoice$/ }).click();
+  await confirm.getByLabel(/why is this invoice being deleted/i).fill('Entered in error during daily test');
+  await confirm.getByRole('button', { name: /^Delete invoice$/ }).click();
   await page.waitForURL(/\/sales\/?$/, { waitUntil: 'domcontentloaded', timeout: 40_000 });
   await expect(page.getByRole('heading', { name: /Sales/i }).first()).toBeVisible();
 
-  // Cancelled, not gone: the document is still there, marked reversed.
+  // Gone from the list, and the word "reversed" appears nowhere.
+  const list = page.getByRole('main');
+  await expect(list.getByRole('table').or(list.getByText(/no invoices/i)).first()).toBeVisible({ timeout: 30_000 });
+  if (invoiceNumber) await expect(list).not.toContainText(invoiceNumber);
+  await expect(list).not.toContainText(/reversed/i);
+
+  // Opened by its old link it still resolves, and says deleted — never reversed.
   await page.goto(invoiceUrl, { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /this page could|something went wrong|not found/i })).toHaveCount(0);
-  await expect(page.getByText(/reversed|cancelled/i).first()).toBeVisible();
+  await expect(page.getByRole('main')).toContainText(/deleted/i);
+  await expect(page.getByRole('main')).not.toContainText(/reversed/i);
 });
 
 test('Record Payment opens from an outstanding invoice', async ({ page }) => {

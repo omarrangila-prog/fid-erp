@@ -24,7 +24,7 @@ import { ConfirmDialog } from '@/components/ui/confirm';
  *
  * Destroying a posted financial document is never on offer. `destructive`
  * carries the document's status: a draft is deleted, anything posted is
- * cancelled — which reverses it and keeps both entries — and either way the
+ * deleted — which takes it back out of the books and keeps the trail — and either way the
  * user is asked first and the reason goes on the audit trail.
  */
 
@@ -72,7 +72,7 @@ export type RowAction = {
 };
 
 export type DestructiveAction = {
-  /** What the row is now. DRAFT is deleted; anything else is cancelled. */
+  /** What the row is now. A draft is removed; a posted row is taken back out of the books. */
   status: string;
   /** The noun, for the dialog: "invoice", "payment", "supplier". */
   noun: string;
@@ -81,7 +81,7 @@ export type DestructiveAction = {
   /** Overrides for records that are not financial documents. */
   deleteLabel?: string;
   cancelLabel?: string;
-  /** Extra sentence explaining what cancelling this particular thing does. */
+  /** Extra sentence explaining what deleting this particular thing does. */
   description?: string;
 };
 
@@ -111,7 +111,7 @@ export function RowActions({
   const destructiveLabel = destructive
     ? isDraft
       ? (destructive.deleteLabel ?? 'Delete')
-      : (destructive.cancelLabel ?? 'Cancel')
+      : (destructive.cancelLabel ?? 'Delete')
     : null;
   const showDestructive = destructive && destructive.show !== false;
 
@@ -120,8 +120,8 @@ export function RowActions({
     setBusy(true);
     try {
       const result = await destructive.run(reason);
-      if (!result.ok) throw new Error(result.error ?? `The ${destructive.noun} could not be ${isDraft ? 'deleted' : 'cancelled'}.`);
-      toast.success(isDraft ? `Draft ${destructive.noun} deleted.` : `${destructive.noun[0].toUpperCase()}${destructive.noun.slice(1)} cancelled.`);
+      if (!result.ok) throw new Error(result.error ?? `The ${destructive.noun} could not be deleted.`);
+      toast.success(isDraft ? `Draft ${destructive.noun} deleted.` : `${destructive.noun[0].toUpperCase()}${destructive.noun.slice(1)} deleted.`);
       router.refresh();
     } finally {
       setBusy(false);
@@ -185,21 +185,17 @@ export function RowActions({
         <ConfirmDialog
           open={confirming}
           onOpenChange={setConfirming}
-          title={
-            isDraft
-              ? `Delete this draft ${destructive.noun}?`
-              : `Cancel this ${destructive.noun}?`
-          }
+          title={isDraft ? `Delete this draft ${destructive.noun}?` : `Delete this ${destructive.noun}?`}
           description={
             isDraft
-              ? `A draft has not reached the books, so it can be removed. Nothing is reversed.`
+              ? `A draft has not reached the books, so it can simply be removed.`
               : (destructive.description ??
-                `This ${destructive.noun} is posted. Cancelling reverses it: a contra entry is written so the ledger stays in balance, and both entries stay in the books. Nothing is deleted.`)
+                `This ${destructive.noun} is posted, so deleting it also takes it back out of the books: stock, balances and the ledger are put back as they were. It disappears from every list and total. The audit log keeps a record of who deleted it and why.`)
           }
-          confirmLabel={isDraft ? `Yes, delete` : `Yes, cancel it`}
+          confirmLabel="Yes, delete"
           variant="danger"
           requireReason={!isDraft}
-          reasonLabel={`Why is this ${destructive.noun} being cancelled?`}
+          reasonLabel={`Why is this ${destructive.noun} being deleted?`}
           onConfirm={runDestructive}
         />
       ) : null}

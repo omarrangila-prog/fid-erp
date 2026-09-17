@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { CheckCircle2, Undo2 } from 'lucide-react';
+import { CheckCircle2, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm';
 import { postCreditNoteAction, reverseCreditNoteAction } from '@/server/actions/compliance-actions';
@@ -36,8 +36,8 @@ export function CreditNoteActions({
       ) : null}
       {status === 'POSTED' ? (
         <Button size="sm" variant="outline" onClick={() => setConfirmReverse(true)}>
-          <Undo2 />
-          Reverse
+          <Trash2 />
+          Delete
         </Button>
       ) : null}
 
@@ -70,20 +70,20 @@ export function CreditNoteActions({
       <ConfirmDialog
         open={confirmReverse}
         onOpenChange={setConfirmReverse}
-        title={`Reverse ${number}?`}
+        title={`Delete ${number}?`}
         description={
           returnsStock
-            ? 'A contra entry is written and the coffee this note brought back is taken out of the warehouse again. If it has since been sold on, the reversal will be refused.'
-            : 'A contra entry is written. Nothing is deleted — both documents stay in the history.'
+            ? 'The note is taken back out of the books and the coffee it brought back is taken out of the warehouse again. If it has since been sold on, the deletion will be refused.'
+            : 'The note is taken back out of the books and disappears from every list and total.'
         }
-        confirmLabel="Reverse"
+        confirmLabel="Delete"
         variant="danger"
         requireReason
-        reasonLabel="Why is this being reversed?"
+        reasonLabel="Why is this being deleted?"
         onConfirm={async (reason) => {
           const result = await reverseCreditNoteAction(id, reason ?? '');
           if (result.ok) {
-            toast.success(`${number} reversed.`);
+            toast.success(`${number} deleted.`);
             router.push(basePath);
             router.refresh();
           } else {

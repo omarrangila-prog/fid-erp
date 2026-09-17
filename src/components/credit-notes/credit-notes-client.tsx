@@ -188,9 +188,9 @@ export function CreditNotesClient({
             status: r.status,
             noun,
             show: canPost && r.status === 'POSTED',
-            description: `Reverses the ${noun}: a contra entry is written, ${
-              r.returnsStock ? 'the coffee it returned goes back out of the warehouse, ' : ''
-            }and both entries stay in the books. Nothing is deleted.`,
+            description: `Deletes the ${noun}: it is taken back out of the books${
+              r.returnsStock ? ', the coffee it returned goes back out of the warehouse,' : ''
+            } and it disappears from every list and total.`,
             run: async (reason) => {
               const result = await reverseCreditNoteAction(r.id, reason ?? '');
               return { ok: result.ok, error: result.ok ? undefined : result.error };
@@ -241,16 +241,16 @@ export function CreditNotesClient({
       <ConfirmDialog
         open={Boolean(reversing)}
         onOpenChange={(open) => !open && setReversing(null)}
-        title={`Reverse ${reversing?.number ?? ''}?`}
+        title={`Delete ${reversing?.number ?? ''}?`}
         description={
           reversing?.returnsStock
-            ? 'A contra entry is written and the coffee this note brought back is taken out of the warehouse again. If it has since been sold, the reversal will be refused.'
-            : 'A contra entry is written. Nothing is deleted — both documents stay in the history.'
+            ? 'The note is taken back out of the books and the coffee it brought back is taken out of the warehouse again. If it has since been sold, the deletion will be refused.'
+            : 'The note is taken back out of the books and disappears from every list and total.'
         }
-        confirmLabel="Reverse"
+        confirmLabel="Delete"
         variant="danger"
         requireReason
-        reasonLabel="Why is this being reversed?"
+        reasonLabel="Why is this being deleted?"
         onConfirm={async (reason) => {
           if (!reversing) return;
           const result = await reverseCreditNoteAction(reversing.id, reason ?? '');

@@ -124,9 +124,9 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
       />
 
       {expense.status === 'REVERSED' ? (
-        <Callout tone="danger" title="This expense has been reversed">
-          {expense.reversalReason} — reversed {formatDateTime(expense.reversedAt)}.
-          {expense.capitaliseToLandedCost ? ' The landed cost it added was unwound from the batches.' : ''}
+        <Callout tone="danger" title="This expense was deleted">
+          {expense.reversalReason} — deleted {formatDateTime(expense.reversedAt)}.
+          {expense.capitaliseToLandedCost ? ' The landed cost it added was taken back off the batches.' : ''}
         </Callout>
       ) : null}
 
@@ -134,7 +134,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
         <Callout tone="info" title="This voucher carries tax">
           {formatMoney(expense.amount, expense.currency)} net plus {formatMoney(expense.taxAmount, expense.currency)}{' '}
           tax left the account — {formatMoney(expense.amount.plus(expense.taxAmount), expense.currency)} in all. If no
-          tax was meant, reverse this voucher and enter it again without a tax code; the ledger keeps both.
+          tax was meant, delete this voucher and enter it again without a tax code.
         </Callout>
       ) : null}
 

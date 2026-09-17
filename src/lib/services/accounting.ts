@@ -539,7 +539,7 @@ export async function reverseJournalEntry(
       companyId: params.companyId,
       entryNumber,
       entryDate: params.entryDate,
-      description: `Reversal of ${original.entryNumber} — ${params.reason}`,
+      description: `Deletion of ${original.entryNumber} — ${params.reason}`,
       sourceType: params.sourceType,
       sourceId: params.sourceId,
       sourceSeq: existingCount + 1,

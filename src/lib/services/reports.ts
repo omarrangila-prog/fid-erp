@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import { LIVE_ENTRY_SQL, LIVE_ENTRY_WHERE } from '@/lib/services/journal-visibility';
 import { Decimal, dec, toMoney, toQuantity } from '@/lib/money';
 import { REPORT_GROUPS, ACCOUNT_KEYS } from '@/lib/constants';
 import { getCompanyContext } from '@/lib/services/company';
@@ -42,7 +43,7 @@ async function accountBalances(params: {
            COALESCE(SUM(jl."creditLocal"), 0)::text AS "creditLocal"
     FROM accounts a
     LEFT JOIN journal_lines jl ON jl."accountId" = a."id"
-    LEFT JOIN journal_entries je ON je."id" = jl."journalEntryId" AND je."status" = 'POSTED'
+    LEFT JOIN journal_entries je ON je."id" = jl."journalEntryId" AND ${LIVE_ENTRY_SQL}
       AND (${params.from ?? null}::date IS NULL OR je."entryDate" >= ${params.from ?? null}::date)
       AND (${params.to ?? null}::date IS NULL OR je."entryDate" <= ${params.to ?? null}::date)
     WHERE a."companyId" = ${params.companyId}
@@ -332,11 +333,11 @@ export async function getFinancialPosition(params: { companyId: string; asOf?: D
            cba."openingBalance"::text AS opening,
            COALESCE((SELECT SUM(jl."debit" - jl."credit") FROM journal_lines jl
                        JOIN journal_entries je ON je."id" = jl."journalEntryId"
-                      WHERE jl."cashBankAccountId" = cba."id" AND je."status" = 'POSTED'
+                      WHERE jl."cashBankAccountId" = cba."id" AND ${LIVE_ENTRY_SQL}
                         AND (${asOf}::date IS NULL OR je."entryDate" <= ${asOf}::date)), 0)::text AS movement,
            COALESCE((SELECT SUM(jl."debitUsd" - jl."creditUsd") FROM journal_lines jl
                        JOIN journal_entries je ON je."id" = jl."journalEntryId"
-                      WHERE jl."cashBankAccountId" = cba."id" AND je."status" = 'POSTED'
+                      WHERE jl."cashBankAccountId" = cba."id" AND ${LIVE_ENTRY_SQL}
                         AND (${asOf}::date IS NULL OR je."entryDate" <= ${asOf}::date)), 0)::text AS "movementUsd"
     FROM cash_bank_accounts cba
     WHERE cba."companyId" = ${params.companyId} AND cba."status" = 'ACTIVE'
@@ -520,7 +521,7 @@ export async function getGeneralLedger(params: {
         SELECT SUM(jl."debit" - jl."credit")::text AS net
         FROM journal_lines jl
         JOIN journal_entries je ON je."id" = jl."journalEntryId"
-        WHERE je."companyId" = ${params.companyId} AND je."status" = 'POSTED'
+        WHERE je."companyId" = ${params.companyId} AND ${LIVE_ENTRY_SQL}
           AND jl."accountId" = ${params.accountId}
           AND jl."currency" = ${currencyFilter}
           AND ${params.from ?? null}::date IS NOT NULL AND je."entryDate" < ${params.from ?? null}::date
@@ -529,7 +530,7 @@ export async function getGeneralLedger(params: {
         SELECT SUM(jl."debitUsd" - jl."creditUsd")::text AS net
         FROM journal_lines jl
         JOIN journal_entries je ON je."id" = jl."journalEntryId"
-        WHERE je."companyId" = ${params.companyId} AND je."status" = 'POSTED'
+        WHERE je."companyId" = ${params.companyId} AND ${LIVE_ENTRY_SQL}
           AND jl."accountId" = ${params.accountId}
           AND ${params.from ?? null}::date IS NOT NULL AND je."entryDate" < ${params.from ?? null}::date
       `;
@@ -558,7 +559,7 @@ export async function getGeneralLedger(params: {
                jl."description" AS reference
         FROM journal_lines jl
         JOIN journal_entries je ON je."id" = jl."journalEntryId"
-        WHERE je."companyId" = ${params.companyId} AND je."status" = 'POSTED'
+        WHERE je."companyId" = ${params.companyId} AND ${LIVE_ENTRY_SQL}
           AND jl."accountId" = ${params.accountId}
           AND jl."currency" = ${currencyFilter}
           AND (${params.from ?? null}::date IS NULL OR je."entryDate" >= ${params.from ?? null}::date)
@@ -588,7 +589,7 @@ export async function getGeneralLedger(params: {
                jl."description" AS reference
         FROM journal_lines jl
         JOIN journal_entries je ON je."id" = jl."journalEntryId"
-        WHERE je."companyId" = ${params.companyId} AND je."status" = 'POSTED'
+        WHERE je."companyId" = ${params.companyId} AND ${LIVE_ENTRY_SQL}
           AND jl."accountId" = ${params.accountId}
           AND (${params.from ?? null}::date IS NULL OR je."entryDate" >= ${params.from ?? null}::date)
           AND (${params.to ?? null}::date IS NULL OR je."entryDate" <= ${params.to ?? null}::date)
@@ -671,7 +672,7 @@ export async function getCashBook(params: {
     JOIN journal_entries je ON je."id" = jl."journalEntryId"
     LEFT JOIN customers c ON c."id" = jl."customerId"
     LEFT JOIN vendors v ON v."id" = jl."vendorId"
-    WHERE je."companyId" = ${params.companyId} AND je."status" = 'POSTED'
+    WHERE je."companyId" = ${params.companyId} AND ${LIVE_ENTRY_SQL}
       AND jl."cashBankAccountId" = ${params.cashBankAccountId}
       AND (${params.from ?? null}::date IS NULL OR je."entryDate" >= ${params.from ?? null}::date)
       AND (${params.to ?? null}::date IS NULL OR je."entryDate" <= ${params.to ?? null}::date)
@@ -743,7 +744,7 @@ export async function getJournalReport(params: {
   return prisma.journalEntry.findMany({
     where: {
       companyId: params.companyId,
-      status: 'POSTED',
+      ...LIVE_ENTRY_WHERE,
       ...(params.sourceType ? { sourceType: params.sourceType as never } : {}),
       ...(params.from || params.to
         ? { entryDate: { ...(params.from ? { gte: params.from } : {}), ...(params.to ? { lte: params.to } : {}) } }
@@ -778,7 +779,7 @@ export async function getCashFlow(params: { companyId: string; from: Date; to: D
            COALESCE(SUM(jl."creditUsd"), 0)::text AS "outUsd"
     FROM journal_lines jl
     JOIN journal_entries je ON je."id" = jl."journalEntryId"
-    WHERE je."companyId" = ${params.companyId} AND je."status" = 'POSTED'
+    WHERE je."companyId" = ${params.companyId} AND ${LIVE_ENTRY_SQL}
       AND jl."cashBankAccountId" IS NOT NULL
       AND je."entryDate" >= ${params.from}::date
       AND je."entryDate" <= ${params.to}::date
@@ -973,7 +974,7 @@ export async function getForexGainLoss(params: { companyId: string; from?: Date;
            jl."debitLocal"::text AS "debitLocal", jl."creditLocal"::text AS "creditLocal"
       FROM journal_lines jl
       JOIN journal_entries je ON je."id" = jl."journalEntryId"
-     WHERE je."companyId" = ${params.companyId} AND je."status" = 'POSTED'
+     WHERE je."companyId" = ${params.companyId} AND ${LIVE_ENTRY_SQL}
        AND jl."accountId" = ${account.id}
        AND (${params.from ?? null}::date IS NULL OR je."entryDate" >= ${params.from ?? null}::date)
        AND (${params.to ?? null}::date IS NULL OR je."entryDate" <= ${params.to ?? null}::date)

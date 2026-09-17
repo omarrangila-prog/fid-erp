@@ -70,7 +70,7 @@ export function JournalClient({
           {r.entryNumber}
           {r.isReversal ? (
             <Badge tone="danger" className="ml-2">
-              Reversal
+              Deletion
             </Badge>
           ) : null}
         </span>

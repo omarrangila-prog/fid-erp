@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
-import { PERMISSIONS } from '@/lib/constants';
+import { PERMISSIONS, VISIBLE_DOCUMENT_STATUSES } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { dec, toQuantity } from '@/lib/money';
 import { getPayables } from '@/lib/services/receivables';
@@ -19,7 +19,7 @@ export default async function PurchasesPage() {
 
   const [contracts, payables, warehouses] = await Promise.all([
     prisma.purchaseContract.findMany({
-      where: { companyId },
+      where: { companyId, status: { in: [...VISIBLE_DOCUMENT_STATUSES] } },
       orderBy: [{ contractDate: 'desc' }, { contractNumber: 'desc' }],
       include: {
         vendor: { select: { vendorName: true } },

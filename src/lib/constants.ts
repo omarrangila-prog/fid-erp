@@ -604,9 +604,22 @@ export const DOCUMENT_STATUS_META: Record<string, { label: string; tone: BadgeTo
 export const TRANSACTION_STATUS_META: Record<string, { label: string; tone: BadgeTone }> = {
   DRAFT: { label: 'Draft', tone: 'neutral' },
   POSTED: { label: 'Posted', tone: 'success' },
-  REVERSED: { label: 'Reversed', tone: 'danger' },
-  CANCELLED: { label: 'Cancelled', tone: 'danger' },
+  // A posted document that was taken back. The ledger keeps the original
+  // entry and its mirror so the books stay whole; to the person using the
+  // application the document is simply gone, and that is the word for it.
+  REVERSED: { label: 'Deleted', tone: 'danger' },
+  CANCELLED: { label: 'Deleted', tone: 'danger' },
 };
+
+/**
+ * The statuses a document list shows.
+ *
+ * A reversed or cancelled document stays in the database — its journal and
+ * the mirror that undid it are what keep the books balanced, and the audit
+ * log records who did it and why — but it is not part of the day's work and
+ * does not belong on any operational screen, total or ledger.
+ */
+export const VISIBLE_DOCUMENT_STATUSES = ['DRAFT', 'POSTED'] as const;
 
 export const SETTLEMENT_STATUS_META: Record<string, { label: string; tone: BadgeTone }> = {
   UNPAID: { label: 'Unpaid', tone: 'danger' },

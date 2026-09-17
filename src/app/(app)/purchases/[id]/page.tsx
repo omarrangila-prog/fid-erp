@@ -140,8 +140,8 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
       />
 
       {contract.status === 'REVERSED' ? (
-        <Callout tone="danger" title="This contract has been reversed">
-          {contract.reversalReason} — reversed {formatDateTime(contract.reversedAt)}.
+        <Callout tone="danger" title="This contract was deleted">
+          {contract.reversalReason} — deleted {formatDateTime(contract.reversedAt)}.
         </Callout>
       ) : null}
 

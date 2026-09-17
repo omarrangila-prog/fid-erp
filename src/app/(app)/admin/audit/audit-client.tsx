@@ -58,7 +58,7 @@ export function AuditClient({ rows }: { rows: AuditRow[] }) {
         searchValue={(r) => `${r.user} ${r.actionLabel} ${r.entityType} ${r.action}`}
         searchPlaceholder="Search by user, action or record…"
         emptyTitle="Nothing recorded yet"
-        emptyDescription="Postings, reversals, status changes and permission changes appear here."
+        emptyDescription="Postings, deletions, status changes and permission changes appear here."
         pageSize={50}
       />
 

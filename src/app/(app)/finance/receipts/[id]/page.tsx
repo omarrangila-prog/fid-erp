@@ -74,8 +74,8 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
       />
 
       {receipt.status === 'REVERSED' ? (
-        <Callout tone="danger" title="This receipt has been reversed">
-          {receipt.reversalReason} — reversed {formatDateTime(receipt.reversedAt)}. Any invoices it settled are
+        <Callout tone="danger" title="This receipt was deleted">
+          {receipt.reversalReason} — deleted {formatDateTime(receipt.reversedAt)}. Any invoices it settled are
           outstanding again.
         </Callout>
       ) : null}

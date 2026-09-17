@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import { VISIBLE_DOCUMENT_STATUSES } from '@/lib/constants';
 import { Decimal, dec, toMoney, toQuantity } from '@/lib/money';
 import { getFinancialPosition } from '@/lib/services/reports';
 import { getCompanyProfitSummary, getMonthlyProfitability } from '@/lib/services/profitability';
@@ -32,22 +33,22 @@ export async function getRecentActivity(companyId: string, limit = 6) {
            c."customerName" AS party, si."totalAmount"::text AS amount, si."currency",
            si."status"::text AS status, '/sales/' || si."id" AS href
       FROM sales_invoices si JOIN customers c ON c."id" = si."customerId"
-     WHERE si."companyId" = ${companyId}
+     WHERE si."companyId" = ${companyId} AND si."status" IN ('DRAFT', 'POSTED')
     UNION ALL
     SELECT r."receiptDate", 'Receipt', r."receiptNumber", c."customerName",
            r."amount"::text, r."currency", r."status"::text, '/finance/receipts/' || r."id"
       FROM receipts r JOIN customers c ON c."id" = r."customerId"
-     WHERE r."companyId" = ${companyId}
+     WHERE r."companyId" = ${companyId} AND r."status" IN ('DRAFT', 'POSTED')
     UNION ALL
-    SELECT p."paymentDate", 'Payment', p."paymentNumber", v."vendorName",
+    SELECT p."paymentDate", 'Payment', p."paymentNumber", COALESCE(v."vendorName", 'Accrued costs'),
            p."amount"::text, p."currency", p."status"::text, '/finance/payments/' || p."id"
-      FROM payments p JOIN vendors v ON v."id" = p."vendorId"
-     WHERE p."companyId" = ${companyId}
+      FROM payments p LEFT JOIN vendors v ON v."id" = p."vendorId"
+     WHERE p."companyId" = ${companyId} AND p."status" IN ('DRAFT', 'POSTED')
     UNION ALL
     SELECT e."expenseDate", 'Expense', e."expenseNumber", ec."name",
            e."amount"::text, e."currency", e."status"::text, '/finance/expenses/' || e."id"
       FROM expenses e JOIN expense_categories ec ON ec."id" = e."expenseCategoryId"
-     WHERE e."companyId" = ${companyId}
+     WHERE e."companyId" = ${companyId} AND e."status" IN ('DRAFT', 'POSTED')
     UNION ALL
     SELECT gr."receiptDate", 'Goods Receipt', gr."grnNumber", w."name",
            COALESCE((SELECT SUM(grl."quantityKg") FROM goods_receipt_lines grl
@@ -319,25 +320,25 @@ export { dec };
 export async function getMyRecentEntries(companyId: string, userId: string, limit = 12) {
   const [purchases, sales, receipts, expenses] = await Promise.all([
     prisma.purchaseContract.findMany({
-      where: { companyId, createdById: userId },
+      where: { companyId, createdById: userId, status: { in: [...VISIBLE_DOCUMENT_STATUSES] } },
       orderBy: { createdAt: 'desc' },
       take: limit,
       select: { id: true, contractNumber: true, contractReference: true, status: true, createdAt: true, vendor: { select: { vendorName: true } } },
     }),
     prisma.salesInvoice.findMany({
-      where: { companyId, createdById: userId },
+      where: { companyId, createdById: userId, status: { in: [...VISIBLE_DOCUMENT_STATUSES] } },
       orderBy: { createdAt: 'desc' },
       take: limit,
       select: { id: true, invoiceNumber: true, status: true, createdAt: true, customer: { select: { customerName: true } } },
     }),
     prisma.receipt.findMany({
-      where: { companyId, createdById: userId },
+      where: { companyId, createdById: userId, status: { in: [...VISIBLE_DOCUMENT_STATUSES] } },
       orderBy: { createdAt: 'desc' },
       take: limit,
       select: { id: true, receiptNumber: true, status: true, createdAt: true, customer: { select: { customerName: true } } },
     }),
     prisma.expense.findMany({
-      where: { companyId, createdById: userId },
+      where: { companyId, createdById: userId, status: { in: [...VISIBLE_DOCUMENT_STATUSES] } },
       orderBy: { createdAt: 'desc' },
       take: limit,
       select: { id: true, expenseNumber: true, status: true, createdAt: true, description: true },

@@ -1,5 +1,6 @@
 import 'server-only';
 import { prisma } from '@/lib/db';
+import { VISIBLE_DOCUMENT_STATUSES } from '@/lib/constants';
 import { dec, toMoney } from '@/lib/money';
 import { formatMoney, formatDate, formatQuantityKg } from '@/lib/format';
 import { getTaxSettings, listTaxCodes, supplierGrossPayable } from '@/lib/services/tax';
@@ -26,7 +27,7 @@ export async function loadCreditNoteRows(
   type: 'CUSTOMER' | 'VENDOR',
 ): Promise<CreditNoteRow[]> {
   const notes = await prisma.creditNote.findMany({
-    where: { companyId, type },
+    where: { companyId, type, status: { in: [...VISIBLE_DOCUMENT_STATUSES] } },
     orderBy: [{ creditDate: 'desc' }, { creditNoteNumber: 'desc' }],
     include: {
       customer: { select: { customerName: true } },

@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { CheckCircle2, Undo2, Trash2, Pencil, PackagePlus } from 'lucide-react';
+import { CheckCircle2, Trash2, Pencil, PackagePlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm';
 import {
@@ -84,8 +84,8 @@ export function PurchaseActions({
         <>
           {canReverse ? (
             <Button variant="outline" onClick={() => setConfirm('reverse')} disabled={busy}>
-              <Undo2 />
-              Reverse
+              <Trash2 />
+              Delete
             </Button>
           ) : null}
           {canReceive && !fullyReceived ? (
@@ -110,13 +110,13 @@ export function PurchaseActions({
       <ConfirmDialog
         open={confirm === 'reverse'}
         onOpenChange={(open) => !open && setConfirm(null)}
-        title="Reverse this contract?"
-        description="A contra journal entry is written and the batches are retired. Nothing is deleted. This is refused if goods have been received, sold, or paid for."
-        confirmLabel="Reverse contract"
+        title="Delete this contract?"
+        description="The supplier payable is taken back and the batches are retired; the contract disappears from every list and total. This is refused if goods have been received, sold, or paid for."
+        confirmLabel="Delete contract"
         variant="danger"
         requireReason
-        reasonLabel="Why is this being reversed?"
-        onConfirm={(reason) => run(() => reversePurchaseContractAction(id, reason), 'Contract reversed.')}
+        reasonLabel="Why is this being deleted?"
+        onConfirm={(reason) => run(() => reversePurchaseContractAction(id, reason), 'Contract deleted.')}
       />
 
       <ConfirmDialog

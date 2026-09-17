@@ -88,8 +88,8 @@ export function CreditNoteDetail({
       ) : null}
 
       {note.status === 'REVERSED' ? (
-        <Callout tone="warning" title="This note has been reversed">
-          {note.reversalReason} — reversed {formatDateTime(note.reversedAt)}.
+        <Callout tone="warning" title="This note was deleted">
+          {note.reversalReason} — deleted {formatDateTime(note.reversedAt)}.
         </Callout>
       ) : null}
 

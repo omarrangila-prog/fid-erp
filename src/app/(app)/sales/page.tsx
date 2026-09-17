@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
-import { PERMISSIONS } from '@/lib/constants';
+import { PERMISSIONS, VISIBLE_DOCUMENT_STATUSES } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { dec } from '@/lib/money';
 import { formatMoney, formatQuantityKg, formatDate, daysUntil } from '@/lib/format';
@@ -18,7 +18,7 @@ export default async function SalesPage() {
 
   const [invoices, receivables, warehouses] = await Promise.all([
     prisma.salesInvoice.findMany({
-      where: { companyId },
+      where: { companyId, status: { in: [...VISIBLE_DOCUMENT_STATUSES] } },
       orderBy: [{ invoiceDate: 'desc' }, { invoiceNumber: 'desc' }],
       include: {
         customer: { select: { id: true, customerName: true } },

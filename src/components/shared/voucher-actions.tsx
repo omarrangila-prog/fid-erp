@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { CheckCircle2, Undo2, Trash2, Copy } from 'lucide-react';
+import { CheckCircle2, Trash2, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm';
 import { HandCoins } from 'lucide-react';
@@ -15,7 +15,7 @@ import {
 } from '@/server/actions/finance-actions';
 
 /**
- * Post / reverse / delete for the three cash-cycle vouchers.
+ * Post / delete for the three cash-cycle vouchers.
  *
  * They share one component because they share one lifecycle: a draft has no
  * ledger impact and can be deleted; a posted voucher is corrected by reversal,
@@ -45,7 +45,7 @@ const ACTIONS: Record<
     postDescription:
       "The customer's ledger is credited in their own currency, the account the money landed in is increased by exactly what arrived, and the rate used is recorded on the voucher.",
     reverseDescription:
-      'A contra journal entry is written and any invoices this receipt settled become outstanding again. Nothing is deleted.',
+      'The money is taken back out of the account it landed in, and any invoices this receipt settled become outstanding again. The receipt disappears from every list and total.',
   },
   payment: {
     post: postPaymentAction,
@@ -56,7 +56,7 @@ const ACTIONS: Record<
     postDescription:
       "The supplier's payable is reduced in their own currency and the account the money left is decreased by exactly what was paid.",
     reverseDescription:
-      'A contra journal entry is written and any contracts this payment settled become outstanding again.',
+      'The money is put back in the account it left, and anything this payment settled becomes outstanding again. The payment disappears from every list and total.',
   },
   expense: {
     post: postExpenseAction,
@@ -67,7 +67,7 @@ const ACTIONS: Record<
     postDescription:
       'A direct shipment cost is capitalised into the landed cost of the coffee — raising the value of stock still on hand and truing up the share already sold into cost of goods sold. A period cost goes straight to the profit and loss.',
     reverseDescription:
-      'Any landed cost this expense added is unwound from the batches, and a contra journal entry is written.',
+      'Any landed cost this expense added is taken back off the batches, and the cost is removed from the books. The expense disappears from every list and total.',
   },
 };
 
@@ -125,8 +125,8 @@ export function VoucherActions({
 
       {status === 'POSTED' && canPost ? (
         <Button variant="outline" onClick={() => setConfirm('reverse')} disabled={busy}>
-          <Undo2 />
-          Reverse
+          <Trash2 />
+          Delete
         </Button>
       ) : null}
 
@@ -143,13 +143,13 @@ export function VoucherActions({
       <ConfirmDialog
         open={confirm === 'reverse'}
         onOpenChange={(open) => !open && setConfirm(null)}
-        title="Are you sure you want to reverse/cancel this transaction?"
+        title={`Delete this ${config.label}?`}
         description={config.reverseDescription}
-        confirmLabel="Yes, Continue"
+        confirmLabel="Yes, delete"
         variant="danger"
         requireReason
-        reasonLabel="Why is this being reversed?"
-        onConfirm={(reason) => run(() => config.reverse(id, reason), 'Reversed.')}
+        reasonLabel="Why is this being deleted?"
+        onConfirm={(reason) => run(() => config.reverse(id, reason), 'Deleted.')}
       />
 
       <ConfirmDialog

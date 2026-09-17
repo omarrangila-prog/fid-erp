@@ -69,8 +69,8 @@ export async function DocumentJournal({
                 </Link>
                 <span className="text-xs text-ink-muted">{formatDate(entry.entryDate)}</span>
                 {entry.status !== 'POSTED' ? <Badge tone="neutral">{entry.status}</Badge> : null}
-                {entry.isReversal ? <Badge tone="warning">Reversal</Badge> : null}
-                <span className="text-xs text-ink-muted">{entry.description}</span>
+                {entry.isReversal ? <Badge tone="warning">Deletion</Badge> : null}
+                <span className="text-xs text-ink-muted">{entry.description.replace(/^Reversal of/, 'Deletion of')}</span>
               </div>
 
               <div className="overflow-x-auto">

@@ -37,7 +37,6 @@ const TYPE_TONES: Record<string, BadgeTone> = {
   TRANSFER_OUT: 'info',
   RESERVATION: 'neutral',
   RESERVATION_RELEASE: 'neutral',
-  REVERSAL: 'danger',
 };
 
 /**
