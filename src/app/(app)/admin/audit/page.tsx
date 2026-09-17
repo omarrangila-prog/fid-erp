@@ -81,7 +81,10 @@ export default async function AuditPage({
     whenSort: log.createdAt.getTime(),
     user: log.user?.name ?? 'System',
     action: log.action,
-    actionLabel: titleCase(log.action),
+    // The stored action is never rewritten — it is the record. What is shown
+    // uses the word the rest of the application uses, so an administrator
+    // reading the log sees the same event they performed.
+    actionLabel: titleCase(log.action.replace(/_REVERSED$/, '_DELETED').replace(/^REVERSAL_/, 'DELETION_')),
     tone: toneFor(log.action),
     entityType: log.entityType,
     entityId: log.entityId,
