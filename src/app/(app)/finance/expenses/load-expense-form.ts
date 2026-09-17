@@ -7,7 +7,7 @@ import type { CategoryOption, ShipmentTrace } from '@/app/(app)/finance/expenses
 export async function loadExpenseFormOptions(companyId: string) {
   await transaction((tx) => ensureExpenseCategories(tx, companyId));
 
-  const [categories, shipments, agents, accounts, containers, batches, taxSettings, taxCodeRows, rates] =
+  const [categories, shipments, agents, vendors, accounts, containers, batches, taxSettings, taxCodeRows, rates] =
     await Promise.all([
       prisma.expenseCategory.findMany({
         where: { companyId, status: 'ACTIVE' },
@@ -30,6 +30,11 @@ export async function loadExpenseFormOptions(companyId: string) {
         where: { companyId, status: 'ACTIVE' },
         orderBy: { agentName: 'asc' },
         select: { id: true, agentName: true },
+      }),
+      prisma.vendor.findMany({
+        where: { companyId, status: 'ACTIVE' },
+        orderBy: { vendorName: 'asc' },
+        select: { id: true, vendorName: true, vendorCode: true, primaryCurrency: true },
       }),
       prisma.cashBankAccount.findMany({
         where: { companyId, status: 'ACTIVE' },
@@ -86,6 +91,13 @@ export async function loadExpenseFormOptions(companyId: string) {
     categories: categoryOptions,
     shipments: shipmentOptions,
     agents: agents.map((a) => ({ value: a.id, label: a.agentName })),
+    vendors: vendors.map((v) => ({
+      value: v.id,
+      label: v.vendorName,
+      hint: `${v.vendorCode} · ${v.primaryCurrency}`,
+      keywords: v.vendorCode,
+      currency: v.primaryCurrency,
+    })),
     accounts: accounts.map((a) => ({
       value: a.id,
       label: a.name,

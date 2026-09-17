@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { currencyCode, optionalDecimalString, optionalText, requiredText } from '@/lib/validation/common';
+import { currencyCode, optionalCuid, optionalDecimalString, optionalText, requiredText } from '@/lib/validation/common';
 
 /** Blank, omitted, or a real address — never a Zod puzzle. */
 const optionalEmail = z
@@ -114,6 +114,12 @@ export const expenseCategorySchema = z.object({
   name: requiredText('Category name'),
   description: optionalText(400),
   kind: z.enum(['SHIPMENT', 'GENERAL']).default('SHIPMENT'),
+  /**
+   * The profit-and-loss account this category's costs land in. Left blank, the
+   * posting engine falls back to a single catch-all expense account, which
+   * makes every user-created category indistinguishable on the P&L.
+   */
+  glAccountId: optionalCuid,
   capitaliseByDefault: z.coerce.boolean().default(false),
   status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),
 });

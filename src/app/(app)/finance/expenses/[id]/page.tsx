@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { DocumentJournal } from '@/components/shared/document-journal';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Banknote, HandCoins } from 'lucide-react';
@@ -227,6 +228,12 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
           ) : null}
         </CardContent>
       </Card>
+
+      <DocumentJournal
+        companyId={user.activeCompany.id}
+        sourceType="EXPENSE"
+        sourceId={expense.id}
+      />
     </div>
   );
 }

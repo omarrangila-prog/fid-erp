@@ -76,6 +76,7 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
         localCurrency={user.activeCompany.localCurrency}
         defaultLocalRate={contract.rateLocalPerUsd.toString()}
         canApprove={can(user, PERMISSIONS.PURCHASES_APPROVE)}
+        canCreateItem={can(user, PERMISSIONS.ITEMS_CREATE)}
         defaults={{
           id: contract.id,
           contractReference: contract.contractReference,

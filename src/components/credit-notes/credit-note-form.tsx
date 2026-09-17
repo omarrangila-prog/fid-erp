@@ -1,6 +1,8 @@
 'use client';
 
 import * as React from 'react';
+import { MasterSelect } from '@/components/shared/master-select';
+import { customerCreateSpec, vendorCreateSpec } from '@/components/shared/master-specs';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Plus, Trash2, Info, PackageOpen } from 'lucide-react';
@@ -85,6 +87,7 @@ export function CreditNoteForm({
   localCurrency,
   defaultRateLocalPerUsd,
   basePath,
+  canCreateParty = false,
 }: {
   type: 'CUSTOMER' | 'VENDOR';
   parties: CreditParty[];
@@ -97,12 +100,14 @@ export function CreditNoteForm({
   localCurrency: string;
   defaultRateLocalPerUsd: string;
   basePath: string;
+  canCreateParty?: boolean;
 }) {
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
 
   const defaultTaxCode = taxCodes[0]?.id ?? '';
+  const [partyOptions, setPartyOptions] = React.useState(parties);
   const [partyId, setPartyId] = React.useState<string | null>(parties[0]?.id ?? null);
   const [documentId, setDocumentId] = React.useState<string | null>(null);
   const [creditDate, setCreditDate] = React.useState(todayInputValue());
@@ -194,10 +199,25 @@ export function CreditNoteForm({
     setReturnTarget(null);
   }
 
+  const partyChoices = partyOptions.map((p) => ({ value: p.id, label: p.name, hint: p.currency }));
+
+  /**
+   * A party added from inside the note. Both quick creates hand back the same
+   * three things the note needs — who they are and the currency their account
+   * is kept in — so one handler serves the customer and the supplier side.
+   */
+  function acceptNewParty(created: { id: string; name: string; currency: string }) {
+    setPartyOptions((prev) => [...prev, { id: created.id, name: created.name, currency: created.currency }]);
+    setPartyId(created.id);
+    setDocumentId(null);
+    setCurrency(created.currency);
+    if (created.currency === 'USD') setRateToUsd('1');
+  }
+
   function choosePartyId(next: string | null) {
     setPartyId(next);
     setDocumentId(null);
-    const chosen = parties.find((p) => p.id === next);
+    const chosen = partyOptions.find((p) => p.id === next);
     if (chosen) {
       setCurrency(chosen.currency);
       if (chosen.currency === 'USD') setRateToUsd('1');
@@ -314,13 +334,27 @@ export function CreditNoteForm({
         <CardContent className="space-y-4">
           <FieldGroup>
             <Field label={partyLabel} required>
-              <Combobox
-                autoFocus
-                options={parties.map((p) => ({ value: p.id, label: p.name, hint: p.currency }))}
-                value={partyId}
-                onChange={choosePartyId}
-                placeholder={`Choose a ${partyLabel.toLowerCase()}…`}
-              />
+              {type === 'CUSTOMER' ? (
+                <MasterSelect
+                  autoFocus
+                  options={partyChoices}
+                  value={partyId}
+                  onChange={choosePartyId}
+                  placeholder={`Choose a ${partyLabel.toLowerCase()}…`}
+                  create={canCreateParty ? customerCreateSpec(currency) : undefined}
+                  onCreated={acceptNewParty}
+                />
+              ) : (
+                <MasterSelect
+                  autoFocus
+                  options={partyChoices}
+                  value={partyId}
+                  onChange={choosePartyId}
+                  placeholder={`Choose a ${partyLabel.toLowerCase()}…`}
+                  create={canCreateParty ? vendorCreateSpec(currency) : undefined}
+                  onCreated={acceptNewParty}
+                />
+              )}
             </Field>
             <Field label="Credit date" required>
               <Input type="date" value={creditDate} onChange={(e) => setCreditDate(e.target.value)} />

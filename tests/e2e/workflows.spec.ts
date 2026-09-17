@@ -83,9 +83,11 @@ test('the journal voucher refuses to post until debits equal credits', async ({ 
   await page.getByLabel(/description/i).fill('E2E balance check');
 
   // Scoped to the open listbox: a bare option role also matches the native
-  // <option> elements inside the currency select.
+  // <option> elements inside the currency select. Named rather than "first",
+  // because the list opens on the cash and bank drawers and a drawer holds one
+  // currency only — the ones that cannot take a USD amount are not selectable.
   await page.getByRole('combobox', { name: /line 1 account/i }).click();
-  await page.getByRole('listbox').getByRole('option').first().click();
+  await page.getByRole('listbox').getByRole('option', { name: /Freight and Logistics/i }).first().click();
   await page.getByLabel(/line 1 amount/i).fill('250');
 
   // One side only: refused, and it says what is missing.
@@ -94,7 +96,7 @@ test('the journal voucher refuses to post until debits equal credits', async ({ 
 
   // Two sides that disagree: refused, and it says by how much.
   await page.getByRole('combobox', { name: /line 2 account/i }).click();
-  await page.getByRole('listbox').getByRole('option').nth(1).click();
+  await page.getByRole('listbox').getByRole('option', { name: /Ocean Freight/i }).first().click();
   await page.getByLabel(/line 2 amount/i).fill('100');
   await post.click();
   await expect(page.getByText(/differ by 150\.00/i)).toBeVisible();

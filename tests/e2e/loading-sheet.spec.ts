@@ -76,7 +76,7 @@ test.describe('the loading sheet', () => {
     await page.goto('/loading');
     await page.getByRole('button', { name: /View sales/ }).first().click();
     await expect(page.getByRole('dialog')).toBeVisible();
-    await expect(page.getByText(/purchased on/)).toBeVisible();
+    await expect(page.getByRole('dialog')).toContainText(/purchased\..*sold,.*still available/i);
     await expect(page.getByRole('columnheader', { name: 'Customer' })).toBeVisible();
     await expect(page.getByRole('columnheader', { name: 'Outstanding' })).toBeVisible();
   });

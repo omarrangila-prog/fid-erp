@@ -98,6 +98,16 @@ const FIELDS: FieldSpec[] = [
   { kind: 'select', name: 'process', label: 'Process', required: true, options: asOptions(COFFEE_PROCESS_LABELS) },
   { kind: 'text', name: 'cropYear', label: 'Crop year', placeholder: '2025/26' },
   { kind: 'text', name: 'region', label: 'Region' },
+  { kind: 'text', name: 'farmEstate', label: 'Farm / estate', placeholder: 'Optional' },
+  { kind: 'text', name: 'variety', label: 'Variety', placeholder: 'SL28, Bourbon…' },
+  {
+    kind: 'number',
+    name: 'moisturePct',
+    label: 'Moisture %',
+    placeholder: '11.5',
+    hint: 'What the certificate says. Buyers ask, and it settles disputes.',
+  },
+  { kind: 'number', name: 'densityGPerL', label: 'Density (g/L)', placeholder: '720' },
 
   {
     kind: 'section',
@@ -107,6 +117,7 @@ const FIELDS: FieldSpec[] = [
   { kind: 'select', name: 'packagingType', label: 'Packaging', required: true, options: asOptions(PACKAGING_LABELS) },
   { kind: 'number', name: 'bagWeightKg', label: 'Bag weight (KG)', placeholder: '60' },
   { kind: 'textarea', name: 'description', label: 'Description', full: true },
+  { kind: 'textarea', name: 'notes', label: 'Internal notes', full: true, hint: 'Not printed on documents.' },
 ];
 
 const EDIT_FIELDS: FieldSpec[] = [

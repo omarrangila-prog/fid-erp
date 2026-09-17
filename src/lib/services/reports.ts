@@ -701,6 +701,36 @@ export async function getCashBook(params: {
 }
 
 /** The journal: every posted entry, newest first. */
+/**
+ * Every journal entry one document produced.
+ *
+ * A posted document is not finished business until you can see what it did to
+ * the ledger, and a document can produce more than one entry: an invoice books
+ * the sale and the cost of goods, a correction adds a reversal, a late
+ * shipment cost trues up what was already sold. All of them belong here, in
+ * the order they were written, so the document tells its whole story.
+ */
+export async function getJournalForSource(params: {
+  companyId: string;
+  sourceType: string;
+  sourceId: string;
+}) {
+  return prisma.journalEntry.findMany({
+    where: {
+      companyId: params.companyId,
+      sourceId: params.sourceId,
+      sourceType: params.sourceType as never,
+    },
+    include: {
+      lines: {
+        include: { account: { select: { code: true, name: true } } },
+        orderBy: { lineNumber: 'asc' },
+      },
+    },
+    orderBy: [{ entryDate: 'asc' }, { sourceSeq: 'asc' }, { entryNumber: 'asc' }],
+  });
+}
+
 export async function getJournalReport(params: {
   companyId: string;
   from?: Date;

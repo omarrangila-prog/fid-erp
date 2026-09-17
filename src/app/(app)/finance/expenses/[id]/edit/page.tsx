@@ -43,11 +43,13 @@ export default async function EditExpensePage({ params }: { params: Promise<{ id
         categories={options.categories}
         shipments={options.shipments}
         agents={options.agents}
+        vendors={options.vendors}
         accounts={options.accounts}
         localCurrency={user.activeCompany.localCurrency}
         defaultLocalRate={options.rates.local}
         ratesByCurrency={options.rates.byCurrency}
         canPost={can(user, PERMISSIONS.EXPENSES_POST)}
+        canCreateCashBank={can(user, PERMISSIONS.CASHBANK_MANAGE)}
         traceByShipment={options.traceByShipment}
         taxEnabled={options.taxEnabled}
         taxLabel={options.taxLabel}
@@ -61,6 +63,8 @@ export default async function EditExpensePage({ params }: { params: Promise<{ id
           containerId: expense.containerId,
           batchId: expense.batchId,
           agentId: expense.agentId,
+          vendorId: expense.vendorId,
+          payableToAgentId: expense.payableToAgentId,
           currency: expense.currency,
           amount: expense.amount.toString(),
           rateToUsd: expense.rateToUsd.toString(),

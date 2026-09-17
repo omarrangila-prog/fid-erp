@@ -81,10 +81,16 @@ test('Add Customer from the invoice is selected immediately', async ({ page }) =
 
 test('the sales list keeps Cancel / Delete on an Actions menu', async ({ page }) => {
   await page.goto('/sales', { waitUntil: 'domcontentloaded' });
-  const actions = page.getByRole('button', { name: /invoice actions|^Actions$/i }).first();
+  const row = page.getByRole('row').filter({ hasText: /FID-MA-SI-/ }).first();
+
+  // View and Edit are on the row itself; anything destructive is one deliberate
+  // click further in, behind the shared row-actions menu.
+  await expect(row.getByRole('link', { name: /^View$/ })).toBeVisible();
+
+  const actions = row.getByRole('button', { name: /more actions/i });
   await expect(actions).toBeVisible();
   await actions.click();
-  await expect(page.getByRole('menuitem', { name: /cancel invoice|delete draft|cancelled/i })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: /cancel|delete/i }).first()).toBeVisible();
 });
 
 test('a posted credit invoice can be cancelled from the invoice page, and stays in the books', async ({ page }) => {
@@ -175,11 +181,15 @@ test('the journal offers USD and MAD and posts a balanced USD voucher', async ({
   await currency.selectOption('USD');
 
   await page.getByLabel(/description/i).fill('Daily ops USD opening');
+
+  // Named accounts, not "whatever is first in the list": the first entries are
+  // cash and bank drawers, and a drawer holds one currency only — a USD amount
+  // cannot be recorded through the MAD till, so the form will not offer it.
   await page.getByRole('combobox', { name: /line 1 account/i }).click();
-  await page.getByRole('listbox').getByRole('option').first().click();
+  await page.getByRole('listbox').getByRole('option', { name: /Freight and Logistics/i }).first().click();
   await page.getByLabel(/line 1 amount/i).fill('25');
   await page.getByRole('combobox', { name: /line 2 account/i }).click();
-  await page.getByRole('listbox').getByRole('option').nth(1).click();
+  await page.getByRole('listbox').getByRole('option', { name: /Ocean Freight/i }).first().click();
   await page.getByLabel(/line 2 amount/i).fill('25');
   await expect(page.getByText(/^balanced$/i)).toBeVisible();
 
@@ -268,7 +278,9 @@ test('a plain MAD 7,400 shipment expense does not become 8,880', async ({ page }
   await expect(main).not.toContainText(/Cash moved 20% more/);
 
   await page.goto('/shipments', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('link', { name: /view costing/i }).first().click();
+  // Costing is one of the actions the shared row pattern keeps in plain sight,
+  // next to View, rather than hiding behind the overflow menu.
+  await page.getByRole('link', { name: /^Costing$/i }).first().click();
   const costing = page.locator('#costing');
   await expect(costing).toContainText(/7,400/);
   await expect(costing).not.toContainText(/8,880/);
@@ -288,16 +300,16 @@ test('a plain MAD 7,400 shipment expense does not become 8,880', async ({ page }
   await page.getByRole('link', { name: /view general ledger/i }).click();
   await page.waitForURL(/\/reports\/general-ledger/, { waitUntil: 'domcontentloaded' });
   const ledger = page.getByRole('main');
-  await expect(ledger).toContainText(/MAD only/);
-  await expect(ledger).not.toContainText(/USD only/);
+  await expect(ledger).toContainText(/MAD lines only, in MAD/);
+  await expect(ledger).not.toContainText(/USD lines only, in USD/);
   await expect(ledger).toContainText(/7,400/);
   await expect(ledger).not.toContainText(/8,880/);
 
   await page.goto('/accounting/chart', { waitUntil: 'domcontentloaded' });
   await page.getByRole('link', { name: /Cash in Hand \(MAD\)/ }).first().click();
   await page.waitForURL(/\/reports\/general-ledger/, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('main')).toContainText(/MAD only/);
-  await expect(page.getByRole('main')).not.toContainText(/USD only/);
+  await expect(page.getByRole('main')).toContainText(/MAD lines only, in MAD/);
+  await expect(page.getByRole('main')).not.toContainText(/USD lines only, in USD/);
   await expect(page.getByRole('main')).toContainText(/7,400/);
 
   await page.goto('/finance/expenses/new', { waitUntil: 'domcontentloaded' });

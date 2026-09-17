@@ -345,17 +345,27 @@ test('§11 the sale asks for the warehouse before the stock', async ({ page }) =
   const batch = form.getByLabel(/Batch on item 1/);
 
   await expect(warehouse).toBeVisible();
-  await expect(coffee).toBeDisabled();
-  await expect(batch).toBeDisabled();
 
-  const options = await warehouse.locator('option').count();
-  if (options <= 1) {
+  // "Choose…" plus one entry per warehouse that actually holds stock.
+  const warehouses = (await warehouse.locator('option').count()) - 1;
+  if (warehouses === 0) {
     test.skip(true, 'No warehouse holds sellable stock in this company.');
     return;
   }
 
-  await warehouse.selectOption({ index: 1 });
+  if (warehouses > 1) {
+    // With a real choice to make, the stock pickers wait for it.
+    await expect(coffee).toBeDisabled();
+    await expect(batch).toBeDisabled();
+    await warehouse.selectOption({ index: 1 });
+  } else {
+    // Only one warehouse can be meant, so it is already chosen rather than
+    // making the user pick from a list of one.
+    await expect(warehouse).not.toHaveValue('');
+  }
+
   await expect(coffee).toBeEnabled();
+  // Batch still waits: it is the coffee that decides which batches exist.
   await expect(batch).toBeDisabled();
 });
 

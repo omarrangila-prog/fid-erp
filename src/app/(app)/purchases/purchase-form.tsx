@@ -1,6 +1,8 @@
 'use client';
 
 import * as React from 'react';
+import { MasterSelect } from '@/components/shared/master-select';
+import { vendorCreateSpec, coffeeItemCreateSpec } from '@/components/shared/master-specs';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Plus, Trash2, AlertCircle, Copy } from 'lucide-react';
@@ -9,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input, Textarea, Select, MoneyInput, QuantityInput } from '@/components/ui/input';
 import { Field, FormSection } from '@/components/ui/field';
 import { Card, CardContent } from '@/components/ui/card';
-import { Combobox, type ComboOption } from '@/components/ui/combobox';
+import { type ComboOption } from '@/components/ui/combobox';
 import { Callout } from '@/components/ui/feedback';
 import { ConfirmDialog } from '@/components/ui/confirm';
 import { INCOTERM_LABELS } from '@/lib/constants';
@@ -76,6 +78,7 @@ export function PurchaseForm({
   defaultLocalRate,
   defaults,
   canApprove = true,
+  canCreateItem = false,
 }: {
   vendors: ComboOption[];
   items: ItemOption[];
@@ -84,12 +87,17 @@ export function PurchaseForm({
   defaults?: PurchaseFormDefaults;
   /** Hidden for users who may raise a contract but not approve it. */
   canApprove?: boolean;
+  canCreateItem?: boolean;
 }) {
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
   const [errors, setErrors] = React.useState<Record<string, string>>({});
   const [confirmApprove, setConfirmApprove] = React.useState(false);
+
+  // A coffee added from inside the contract joins the list straight away, so
+  // the line that needed it can be finished without a detour through Items.
+  const [itemOptions, setItemOptions] = React.useState(items);
 
   const [header, setHeader] = React.useState({
     contractReference: defaults?.contractReference ?? '',
@@ -129,7 +137,7 @@ export function PurchaseForm({
   }
 
   function chooseItem(key: string, itemId: string | null) {
-    const item = items.find((i) => i.value === itemId);
+    const item = itemOptions.find((i) => i.value === itemId);
     updateLine(key, {
       itemId: itemId ?? '',
       bagWeightKg: item?.bagWeightKg ?? '60',
@@ -274,12 +282,14 @@ export function PurchaseForm({
               </Field>
 
               <Field label="Supplier" htmlFor="vendorId" required error={errors.vendorId}>
-                <Combobox
+                <MasterSelect
                   id="vendorId"
                   options={vendors}
                   value={header.vendorId || null}
                   onChange={(v) => setField('vendorId', v ?? '')}
                   placeholder="Choose a supplier…"
+                  invalid={Boolean(errors.vendorId)}
+                  create={vendorCreateSpec(header.currency)}
                 />
               </Field>
 
@@ -484,11 +494,21 @@ export function PurchaseForm({
 
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                     <Field label="Coffee" required error={lineError(index, 'itemId')} className="lg:col-span-2">
-                      <Combobox
-                        options={items}
+                      <MasterSelect
+                        options={itemOptions}
                         value={line.itemId || null}
                         onChange={(v) => chooseItem(line.key, v)}
                         placeholder="Choose a coffee…"
+                        invalid={Boolean(lineError(index, 'itemId'))}
+                        create={canCreateItem ? coffeeItemCreateSpec() : undefined}
+                        onCreated={(created, option) => {
+                          // A new coffee carries the record's own defaults.
+                          setItemOptions((prev) => [
+                            ...prev,
+                            { ...option, bagWeightKg: '60', defaultUnit: 'KG' },
+                          ]);
+                          chooseItem(line.key, created.id);
+                        }}
                       />
                     </Field>
 

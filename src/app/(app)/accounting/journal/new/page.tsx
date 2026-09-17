@@ -17,7 +17,16 @@ export default async function NewJournalEntryPage() {
     prisma.account.findMany({
       where: { companyId: user.activeCompany.id, status: 'ACTIVE' },
       orderBy: { code: 'asc' },
-      select: { id: true, code: true, name: true, type: true },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        type: true,
+        // A cash or bank drawer holds one currency and one only, so a voucher
+        // in another currency cannot be recorded through it. The form needs to
+        // know that while the account is being chosen, not after Post.
+        cashBankAccounts: { where: { status: 'ACTIVE' }, select: { currency: true } },
+      },
     }),
     prisma.customer.findMany({
       where: { companyId: user.activeCompany.id, status: 'ACTIVE' },
@@ -32,6 +41,7 @@ export default async function NewJournalEntryPage() {
     hint: account.type.replaceAll('_', ' ').toLowerCase(),
     keywords: `${account.code} ${account.name} ${account.type}`,
     accountType: account.type,
+    drawerCurrencies: [...new Set(account.cashBankAccounts.map((d) => d.currency))],
   }));
 
   const rates = await getRateDefaults(user.activeCompany.id);

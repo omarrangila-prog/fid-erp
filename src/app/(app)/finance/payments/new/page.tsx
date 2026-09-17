@@ -108,6 +108,7 @@ export default async function NewPaymentPage({
         defaultLocalRate={rates.local}
         preselectedExpenseId={expense}
         canPost={can(user, PERMISSIONS.PAYMENTS_POST)}
+        canCreateCashBank={can(user, PERMISSIONS.CASHBANK_MANAGE)}
       />
     </div>
   );

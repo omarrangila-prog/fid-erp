@@ -16,7 +16,11 @@ import { postJournalVoucherAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { AddJournalAccountDialog, type CreatedJournalAccount } from '@/app/(app)/accounting/journal/new/add-account';
 
-export type AccountOption = ComboOption & { accountType: string };
+export type AccountOption = ComboOption & {
+  accountType: string;
+  /** Currencies of the cash/bank drawers sitting on this account, if any. */
+  drawerCurrencies?: string[];
+};
 
 type Line = {
   key: string;
@@ -72,6 +76,26 @@ export function JournalForm({
   const [lines, setLines] = React.useState<Line[]>(() => [emptyLine(0), emptyLine(1)]);
   const [error, setError] = React.useState<string | null>(null);
   const nextKey = React.useRef(2);
+
+  /*
+   * A cash or bank drawer holds exactly one currency. Posting a USD amount
+   * through a MAD till is not a mistake the ledger can absorb, so it is
+   * refused — and it used to be refused only after Post, with the voucher
+   * already typed out. Here the account simply cannot be chosen, and says why.
+   */
+  const selectableAccounts = React.useMemo(
+    () =>
+      accountOptions.map((account) => {
+        const drawers = account.drawerCurrencies ?? [];
+        if (drawers.length === 0 || drawers.includes(currency)) return account;
+        return {
+          ...account,
+          disabled: true,
+          hint: `held in ${drawers.join(' / ')} — not available for a ${currency} voucher`,
+        };
+      }),
+    [accountOptions, currency],
+  );
   // One key per opened form: see journalVoucherSchema.clientKey. Issued in an
   // effect rather than during render, which must stay pure.
   const clientKey = React.useRef<string | null>(null);
@@ -301,7 +325,7 @@ export function JournalForm({
                       <Combobox
                         id={`acct-${line.key}`}
                         aria-label={`Line ${index + 1} account`}
-                        options={accountOptions}
+                        options={selectableAccounts}
                         value={line.accountId || null}
                         onChange={(value) => updateLine(line.key, { accountId: value ?? '' })}
                         placeholder="Choose an account…"

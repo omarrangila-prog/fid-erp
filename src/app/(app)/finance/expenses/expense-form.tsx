@@ -19,6 +19,8 @@ import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { accountsFor } from '@/lib/cash-account-choice';
 import { AddExpenseCategoryDialog } from '@/app/(app)/finance/expenses/add-expense-category';
 import { AddAgentDialog } from '@/app/(app)/finance/receipts/add-agent';
+import { MasterSelect } from '@/components/shared/master-select';
+import { vendorCreateSpec, cashBankCreateSpec } from '@/components/shared/master-specs';
 
 export type CategoryOption = ComboOption & { capitaliseByDefault: boolean; kind: 'SHIPMENT' | 'GENERAL' };
 
@@ -36,6 +38,8 @@ export type ExpenseFormInitial = {
   containerId: string | null;
   batchId: string | null;
   agentId: string | null;
+  vendorId: string | null;
+  payableToAgentId: string | null;
   currency: string;
   amount: string;
   rateToUsd: string;
@@ -60,6 +64,7 @@ export function ExpenseForm({
   categories: initialCategories,
   shipments,
   agents,
+  vendors,
   accounts,
   localCurrency,
   defaultLocalRate,
@@ -71,10 +76,12 @@ export function ExpenseForm({
   taxLabel = 'VAT',
   taxCodes = [],
   initial,
+  canCreateCashBank = false,
 }: {
   categories: CategoryOption[];
   shipments: ComboOption[];
   agents: ComboOption[];
+  vendors: ComboOption[];
   accounts: Array<ComboOption & { currency: string; accountType: 'CASH' | 'PETTY_CASH' | 'BANK' }>;
   localCurrency: string;
   defaultLocalRate: string;
@@ -86,6 +93,8 @@ export function ExpenseForm({
   taxLabel?: string;
   taxCodes?: Array<{ value: string; label: string; ratePct: string }>;
   initial?: ExpenseFormInitial;
+  /** Opening a drawer creates a ledger account, so it is its own permission. */
+  canCreateCashBank?: boolean;
 }) {
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
@@ -96,6 +105,14 @@ export function ExpenseForm({
   const [newCategoryName, setNewCategoryName] = React.useState('');
   const [agentOptions, setAgentOptions] = React.useState(agents);
   const [addAgentOpen, setAddAgentOpen] = React.useState(false);
+
+  // A cost that is not paid yet is owed to somebody, and the ledger needs to
+  // know who: a payable against no party cannot be aged, stated on a supplier
+  // account, or settled by a payment. Suppliers cover the ordinary bill;
+  // an agent covers commission earned on a shipment but not yet drawn.
+  const [owedTo, setOwedTo] = React.useState<'VENDOR' | 'AGENT'>(
+    initial?.payableToAgentId ? 'AGENT' : 'VENDOR',
+  );
 
   // The first question, and the one that decides the rest of the form: is this
   // money spent on one consignment, or on running the business?
@@ -110,7 +127,8 @@ export function ExpenseForm({
     shipmentId: initial?.shipmentId ?? defaultShipmentId ?? (null as string | null),
     containerId: initial?.containerId ?? (null as string | null),
     batchId: initial?.batchId ?? (null as string | null),
-    vendorId: null as string | null,
+    vendorId: initial?.vendorId ?? (null as string | null),
+    payableToAgentId: initial?.payableToAgentId ?? (null as string | null),
     agentId: initial?.agentId ?? (null as string | null),
     currency: initial?.currency ?? localCurrency,
     amount: initial?.amount ?? '',
@@ -185,6 +203,20 @@ export function ExpenseForm({
       return;
     }
 
+    const owedToVendor = settlement === 'UNPAID' && owedTo === 'VENDOR';
+    const owedToAgent = settlement === 'UNPAID' && owedTo === 'AGENT';
+
+    if (owedToVendor && !form.vendorId) {
+      setFieldIssues({ vendorId: 'Name the supplier this is owed to.' });
+      setError('An unpaid cost has to say who is owed, so it can be aged and settled later.');
+      return;
+    }
+    if (owedToAgent && !form.payableToAgentId) {
+      setFieldIssues({ payableToAgentId: 'Name the agent this is owed to.' });
+      setError('An unpaid cost has to say who is owed, so it can be aged and settled later.');
+      return;
+    }
+
     const paidFrom = settlement === 'PAID' ? (cashBankAccountId ?? '') : '';
     const agentId = kind === 'SHIPMENT' && settlement === 'PAID' ? (form.agentId ?? '') : '';
 
@@ -195,9 +227,9 @@ export function ExpenseForm({
       purchaseContractId: '',
       containerId: kind === 'SHIPMENT' ? (form.containerId ?? '') : '',
       batchId: kind === 'SHIPMENT' ? (form.batchId ?? '') : '',
-      vendorId: '',
+      vendorId: owedToVendor ? (form.vendorId ?? '') : '',
       agentId,
-      payableToAgentId: '',
+      payableToAgentId: owedToAgent ? (form.payableToAgentId ?? '') : '',
       currency: form.currency,
       amount: form.amount,
       rateToUsd: isForeign ? form.rateToUsd : '1',
@@ -462,21 +494,79 @@ export function ExpenseForm({
                 }
                 error={fieldIssues.cashBankAccountId}
               >
-                <Combobox
+                <MasterSelect
                   options={accountChoice.options}
                   value={cashBankAccountId}
                   onChange={(value) => setForm({ ...form, cashBankAccountId: value })}
                   placeholder="Choose an account…"
                   emptyText={`No ${form.currency} account exists`}
+                  create={
+                    canCreateCashBank
+                      ? cashBankCreateSpec(form.currency, form.paymentMethod === 'CASH' ? 'CASH' : 'BANK')
+                      : undefined
+                  }
                 />
               </Field>
             </div>
           ) : (
-            <Callout tone="info" title="Pay later">
-              Saving this records the cost now
-              {kind === 'SHIPMENT' ? ' and adds it to the shipment' : ''}. Cash and bank are not touched until you
-              record the payment.
-            </Callout>
+            <div className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                {kind === 'SHIPMENT' ? (
+                  <Field label="Owed to" required hint="Who this cost is payable to.">
+                    <Select
+                      value={owedTo}
+                      onChange={(e) => setOwedTo(e.target.value === 'AGENT' ? 'AGENT' : 'VENDOR')}
+                    >
+                      <option value="VENDOR">A supplier</option>
+                      <option value="AGENT">An agent</option>
+                    </Select>
+                  </Field>
+                ) : null}
+
+                {owedTo === 'VENDOR' ? (
+                  <Field
+                    label="Supplier"
+                    required
+                    hint="Open the list and choose + Add New Supplier if they are not on file."
+                    error={fieldIssues.vendorId}
+                    className={kind === 'GENERAL' ? 'sm:col-span-2' : undefined}
+                  >
+                    <MasterSelect
+                      options={vendors}
+                      value={form.vendorId}
+                      onChange={(value) => setForm({ ...form, vendorId: value })}
+                      placeholder="Choose a supplier…"
+                      emptyText="No supplier on file yet"
+                      invalid={Boolean(fieldIssues.vendorId)}
+                      create={vendorCreateSpec(form.currency)}
+                    />
+                  </Field>
+                ) : (
+                  <Field
+                    label="Agent"
+                    required
+                    hint="Commission earned now, drawn later."
+                    error={fieldIssues.payableToAgentId}
+                  >
+                    <Combobox
+                      options={agentOptions}
+                      value={form.payableToAgentId}
+                      onChange={(value) => setForm({ ...form, payableToAgentId: value })}
+                      placeholder="Choose an agent…"
+                      invalid={Boolean(fieldIssues.payableToAgentId)}
+                      createLabel="+ Add New Agent"
+                      onCreate={() => setAddAgentOpen(true)}
+                    />
+                  </Field>
+                )}
+              </div>
+
+              <Callout tone="info" title="Pay later">
+                Saving this records the cost now
+                {kind === 'SHIPMENT' ? ' and adds it to the shipment' : ''}, and shows it as owed. Cash and bank are
+                not touched until you record the payment.
+              </Callout>
+            </div>
           )}
 
           {kind === 'SHIPMENT' && settlement === 'PAID' ? (

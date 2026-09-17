@@ -337,6 +337,91 @@ const VENDOR: MasterConfig<typeof vendorSchema> = {
   path: '/vendors',
 };
 
+/**
+ * Add a supplier from inside a voucher.
+ *
+ * A cost owed to somebody has to name them, or the payable sits against nobody
+ * and can never be aged, stated or settled. When the bill in hand is from a
+ * supplier who is not yet on the list, the name and the currency their ledger
+ * is kept in are enough; the rest of the record can be filled in later.
+ */
+export async function quickCreateVendorAction(
+  payload: string,
+): Promise<ActionResult<{ id: string; name: string; code: string; currency: string }>> {
+  return run(async () => {
+    const user = await requirePermission(PERMISSIONS.VENDORS_CREATE);
+    const companyId = user.activeCompany.id;
+
+    const input = z
+      .object({
+        vendorName: requiredText('Supplier name'),
+        primaryCurrency: currencyCode,
+        country: optionalText(100),
+        phone: optionalText(40),
+      })
+      .parse(JSON.parse(payload) as unknown);
+
+    const existing = await prisma.vendor.findFirst({
+      where: { companyId, vendorName: { equals: input.vendorName, mode: 'insensitive' } },
+      select: { id: true, vendorName: true },
+    });
+    if (existing) {
+      throw new ConflictError(`${existing.vendorName} is already on the supplier list.`);
+    }
+
+    const count = await prisma.vendor.count({ where: { companyId } });
+    let vendorCode = `SUP-${String(count + 1).padStart(4, '0')}`;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const clash = await prisma.vendor.findFirst({
+        where: { companyId, vendorCode },
+        select: { id: true },
+      });
+      if (!clash) break;
+      vendorCode = `SUP-${String(count + 2 + attempt).padStart(4, '0')}`;
+    }
+
+    const vendor = await prisma.vendor.create({
+      data: {
+        companyId,
+        vendorCode,
+        vendorName: input.vendorName,
+        primaryCurrency: input.primaryCurrency.toUpperCase(),
+        country: input.country ?? null,
+        phone: input.phone ?? null,
+      },
+      select: { id: true, vendorName: true, vendorCode: true, primaryCurrency: true },
+    });
+
+    await transaction((tx) =>
+      writeAudit(tx, {
+        companyId,
+        userId: user.id,
+        action: 'VENDOR_CREATED',
+        entityType: 'Vendor',
+        entityId: vendor.id,
+        after: {
+          vendorCode,
+          vendorName: vendor.vendorName,
+          primaryCurrency: vendor.primaryCurrency,
+        },
+      }),
+    );
+
+    revalidatePath('/vendors');
+    revalidatePath('/finance/expenses');
+    revalidatePath('/finance/expenses/new');
+    revalidatePath('/finance/payments');
+    revalidatePath('/ledgers/vendors');
+
+    return {
+      id: vendor.id,
+      name: vendor.vendorName,
+      code: vendor.vendorCode,
+      currency: vendor.primaryCurrency,
+    };
+  });
+}
+
 export async function saveVendorAction(id: string | null, _prev: MasterFormState, formData: FormData) {
   return saveMaster(VENDOR, 'vendor', id, formData);
 }
@@ -499,7 +584,230 @@ const EXPENSE_CATEGORY: MasterConfig<typeof expenseCategorySchema> = {
   path: '/expense-categories',
 };
 
+
+// ---------------------------------------------------------------------------
+// Quick creates for the remaining masters a voucher can need
+//
+// Each one asks for the least that makes the record correct, checks the
+// permission that governs the full master screen, and hands back exactly what
+// the caller needs to put the new row into its dropdown and select it.
+// ---------------------------------------------------------------------------
+
+/**
+ * Add a warehouse from inside a sale or a stock transfer.
+ *
+ * Stock is held per warehouse, so a movement to a place that is not on the
+ * list cannot be recorded at all. The name is enough; location and port are
+ * description, not accounting.
+ */
+export async function quickCreateWarehouseAction(
+  payload: string,
+): Promise<ActionResult<{ id: string; name: string; code: string }>> {
+  return run(async () => {
+    const user = await requirePermission(PERMISSIONS.WAREHOUSES_MANAGE);
+    const companyId = user.activeCompany.id;
+
+    const input = z
+      .object({ name: requiredText('Warehouse name'), location: optionalText(200), country: optionalText(100) })
+      .parse(JSON.parse(payload) as unknown);
+
+    const existing = await prisma.warehouse.findFirst({
+      where: { companyId, name: { equals: input.name, mode: 'insensitive' } },
+      select: { id: true, name: true },
+    });
+    if (existing) throw new ConflictError(`${existing.name} is already on the warehouse list.`);
+
+    const count = await prisma.warehouse.count({ where: { companyId } });
+    let code = `WH-${String(count + 1).padStart(4, '0')}`;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const clash = await prisma.warehouse.findFirst({ where: { companyId, code }, select: { id: true } });
+      if (!clash) break;
+      code = `WH-${String(count + 2 + attempt).padStart(4, '0')}`;
+    }
+
+    const warehouse = await prisma.warehouse.create({
+      data: { companyId, code, name: input.name, location: input.location ?? null, country: input.country ?? null },
+      select: { id: true, name: true, code: true },
+    });
+
+    await transaction((tx) =>
+      writeAudit(tx, {
+        companyId,
+        userId: user.id,
+        action: 'WAREHOUSE_CREATED',
+        entityType: 'Warehouse',
+        entityId: warehouse.id,
+        after: { code, name: warehouse.name },
+      }),
+    );
+
+    revalidatePath('/warehouses');
+    revalidatePath('/inventory');
+    return warehouse;
+  });
+}
+
+/**
+ * Add a coffee from inside a purchase contract.
+ *
+ * Origin and type are asked for because they are what distinguishes one
+ * coffee from another on a contract; everything else on the item record —
+ * screen size, moisture, density — can be filled in later without changing
+ * what the contract means.
+ */
+export async function quickCreateCoffeeItemAction(
+  payload: string,
+): Promise<ActionResult<{ id: string; name: string; code: string; originCountry: string }>> {
+  return run(async () => {
+    const user = await requirePermission(PERMISSIONS.ITEMS_CREATE);
+    const companyId = user.activeCompany.id;
+
+    const input = z
+      .object({
+        itemName: requiredText('Item name'),
+        coffeeType: z.enum(['ARABICA', 'ROBUSTA', 'BLEND']).default('ROBUSTA'),
+        originCountry: requiredText('Origin country', 100),
+        screenSize: optionalText(60),
+      })
+      .parse(JSON.parse(payload) as unknown);
+
+    const existing = await prisma.coffeeItem.findFirst({
+      where: { companyId, itemName: { equals: input.itemName, mode: 'insensitive' } },
+      select: { id: true, itemName: true },
+    });
+    if (existing) throw new ConflictError(`${existing.itemName} is already on the item list.`);
+
+    const count = await prisma.coffeeItem.count({ where: { companyId } });
+    let itemCode = `ITM-${String(count + 1).padStart(4, '0')}`;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const clash = await prisma.coffeeItem.findFirst({ where: { companyId, itemCode }, select: { id: true } });
+      if (!clash) break;
+      itemCode = `ITM-${String(count + 2 + attempt).padStart(4, '0')}`;
+    }
+
+    const item = await prisma.coffeeItem.create({
+      data: {
+        companyId,
+        itemCode,
+        itemName: input.itemName,
+        coffeeType: input.coffeeType,
+        originCountry: input.originCountry,
+        screenSize: input.screenSize ?? null,
+      },
+      select: { id: true, itemName: true, itemCode: true, originCountry: true },
+    });
+
+    await transaction((tx) =>
+      writeAudit(tx, {
+        companyId,
+        userId: user.id,
+        action: 'ITEM_CREATED',
+        entityType: 'CoffeeItem',
+        entityId: item.id,
+        after: { itemCode, itemName: item.itemName, originCountry: item.originCountry },
+      }),
+    );
+
+    revalidatePath('/items');
+    revalidatePath('/purchases/new');
+    return { id: item.id, name: item.itemName, code: item.itemCode, originCountry: item.originCountry };
+  });
+}
+
+/**
+ * Add a cash drawer or bank account from inside a voucher.
+ *
+ * This one is guarded harder than the rest. A cash or bank account is not a
+ * label: creating it opens a general ledger account in the 10xx series and a
+ * drawer that money will be counted through, so only someone trusted with the
+ * cash and bank master may do it — a salesperson recording a receipt may not.
+ *
+ * The currency is fixed at creation because a drawer holds one currency, and
+ * the opening balance is deliberately not asked for here: an opening balance
+ * is a journal entry, not a field, and belongs on the master screen where the
+ * date it applies from can be stated.
+ */
+export async function quickCreateCashBankAccountAction(
+  payload: string,
+): Promise<ActionResult<{ id: string; name: string; code: string; currency: string; accountType: string }>> {
+  return run(async () => {
+    const user = await requirePermission(PERMISSIONS.CASHBANK_MANAGE);
+    const companyId = user.activeCompany.id;
+
+    const input = z
+      .object({
+        name: requiredText('Account name'),
+        accountType: z.enum(['CASH', 'PETTY_CASH', 'BANK']).default('BANK'),
+        currency: currencyCode,
+        bankName: optionalText(120),
+        accountNumber: optionalText(60),
+      })
+      .parse(JSON.parse(payload) as unknown);
+
+    const existing = await prisma.cashBankAccount.findFirst({
+      where: { companyId, name: { equals: input.name, mode: 'insensitive' } },
+      select: { id: true, name: true },
+    });
+    if (existing) throw new ConflictError(`${existing.name} is already on the cash and bank list.`);
+
+    const count = await prisma.cashBankAccount.count({ where: { companyId } });
+    let code = `CBA-${String(count + 1).padStart(4, '0')}`;
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const clash = await prisma.cashBankAccount.findFirst({ where: { companyId, code }, select: { id: true } });
+      if (!clash) break;
+      code = `CBA-${String(count + 2 + attempt).padStart(4, '0')}`;
+    }
+
+    const created = await createCashBankAccount(
+      {
+        companyId,
+        code,
+        name: input.name,
+        accountType: input.accountType,
+        currency: input.currency.toUpperCase(),
+        bankName: input.bankName ?? null,
+        accountNumber: input.accountNumber ?? null,
+      },
+      user.id,
+    );
+
+    revalidatePath('/finance/cash-bank');
+    revalidatePath('/accounting/chart');
+
+    return {
+      id: created.id,
+      name: created.name,
+      code: created.code,
+      currency: created.currency,
+      accountType: created.accountType,
+    };
+  });
+}
+
 export async function saveExpenseCategoryAction(id: string | null, _prev: MasterFormState, formData: FormData) {
+  /*
+   * The chosen account decides where every cost in this category lands on the
+   * profit and loss, so it has to be an expense account of this company and
+   * nothing else. Without this check a category could be pointed at Accounts
+   * Receivable, and each expense posted under it would quietly overstate what
+   * customers owe.
+   */
+  const glAccountId = (formData.get('glAccountId') ?? '').toString().trim();
+  if (glAccountId) {
+    const user = await requirePermission(EXPENSE_CATEGORY.viewPermission);
+    const account = await prisma.account.findFirst({
+      where: { id: glAccountId, companyId: user.activeCompany.id, type: 'EXPENSE' },
+      select: { id: true },
+    });
+    if (!account) {
+      return {
+        ok: false as const,
+        error: 'Choose an expense account from the chart of accounts.',
+        errors: { glAccountId: 'Choose an expense account from the chart of accounts.' },
+      };
+    }
+  }
+
   return saveMaster(EXPENSE_CATEGORY, 'expenseCategory', id, formData);
 }
 

@@ -97,6 +97,7 @@ export default async function NewPurchasePage() {
         localCurrency={user.activeCompany.localCurrency}
         defaultLocalRate={rates.local}
         canApprove={can(user, PERMISSIONS.PURCHASES_APPROVE)}
+        canCreateItem={can(user, PERMISSIONS.ITEMS_CREATE)}
       />
     </div>
   );

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { DocumentJournal } from '@/components/shared/document-journal';
 import { Printer } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -314,6 +315,12 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
               )}
             </CardContent>
           </Card>
+
+          <DocumentJournal
+            companyId={user.activeCompany.id}
+            sourceType="SALES_INVOICE"
+            sourceId={invoice.id}
+          />
 
           <AttachmentPanel
             entityType="SalesInvoice"

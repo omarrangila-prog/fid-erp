@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { DocumentJournal } from '@/components/shared/document-journal';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requirePageAccess, can } from '@/lib/auth/guards';
@@ -242,6 +243,12 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
           ) : null}
         </div>
       </div>
+
+      <DocumentJournal
+        companyId={user.activeCompany.id}
+        sourceType="RECEIPT"
+        sourceId={receipt.id}
+      />
     </div>
   );
 }

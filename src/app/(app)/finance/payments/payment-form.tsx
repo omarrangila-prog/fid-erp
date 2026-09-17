@@ -1,6 +1,8 @@
 'use client';
 
 import * as React from 'react';
+import { MasterSelect } from '@/components/shared/master-select';
+import { vendorCreateSpec, cashBankCreateSpec } from '@/components/shared/master-specs';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { HandCoins } from 'lucide-react';
@@ -40,6 +42,7 @@ export function PaymentForm({
   localCurrency,
   defaultLocalRate,
   preselectedExpenseId,
+  canCreateCashBank = false,
   canPost = true,
 }: {
   vendors: Array<ComboOption & { currency: string }>;
@@ -49,6 +52,8 @@ export function PaymentForm({
   defaultLocalRate: string;
   preselectedExpenseId?: string;
   canPost?: boolean;
+  /** Opening a drawer creates a ledger account, so it is its own permission. */
+  canCreateCashBank?: boolean;
 }) {
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
@@ -185,7 +190,7 @@ export function PaymentForm({
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Supplier" required error={fieldIssues.vendorId}>
-            <Combobox
+            <MasterSelect
               autoFocus
               options={vendors}
               value={form.vendorId}
@@ -198,6 +203,8 @@ export function PaymentForm({
                 );
               }}
               placeholder="Choose a supplier…"
+              invalid={Boolean(fieldIssues.vendorId)}
+              create={vendorCreateSpec(form.currency)}
             />
           </Field>
 
@@ -240,12 +247,17 @@ export function PaymentForm({
               hint={accountChoice.automatic ? 'Cash comes out of Cash in Hand.' : `Only ${form.currency} accounts are shown.`}
               error={fieldIssues.cashBankAccountId}
             >
-              <Combobox
+              <MasterSelect
                 options={accountChoice.options}
                 value={cashBankAccountId}
                 onChange={(value) => setForm({ ...form, cashBankAccountId: value })}
                 placeholder="Choose an account…"
                 emptyText={`No ${form.currency} account exists`}
+                create={
+                  canCreateCashBank
+                    ? cashBankCreateSpec(form.currency, form.paymentMethod === 'CASH' ? 'CASH' : 'BANK')
+                    : undefined
+                }
               />
             </Field>
           ) : null}

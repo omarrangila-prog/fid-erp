@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { DocumentJournal } from '@/components/shared/document-journal';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requirePageAccess, can } from '@/lib/auth/guards';
@@ -403,6 +404,12 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
       ) : null}
 
       <div className="max-w-md">
+        <DocumentJournal
+          companyId={user.activeCompany.id}
+          sourceType="PURCHASE_CONTRACT"
+          sourceId={contract.id}
+        />
+
         <AttachmentPanel
           entityType="PurchaseContract"
           entityId={contract.id}

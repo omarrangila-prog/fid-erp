@@ -117,6 +117,7 @@ export default async function NewReceiptPage({
         agents={agents.map((a) => ({ id: a.id, name: a.agentName }))}
         preselectedInvoiceId={invoice}
         canPost={can(user, PERMISSIONS.RECEIPTS_POST)}
+        canCreateCashBank={can(user, PERMISSIONS.CASHBANK_MANAGE)}
       />
     </div>
   );

@@ -1,6 +1,8 @@
 'use client';
 
 import * as React from 'react';
+import { MasterSelect } from '@/components/shared/master-select';
+import { customerCreateSpec, cashBankCreateSpec } from '@/components/shared/master-specs';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Wallet } from 'lucide-react';
@@ -48,6 +50,7 @@ export function ReceiptForm({
   ratesByCurrency,
   preselectedInvoiceId,
   agents,
+  canCreateCashBank = false,
   canPost = true,
 }: {
   customers: Array<ComboOption & { currency: string }>;
@@ -60,6 +63,8 @@ export function ReceiptForm({
   /** Collection agents from the master list. Names are never hardcoded. */
   agents: Array<{ id: string; name: string }>;
   canPost?: boolean;
+  /** Opening a drawer creates a ledger account, so it is its own permission. */
+  canCreateCashBank?: boolean;
 }) {
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
@@ -234,7 +239,7 @@ export function ReceiptForm({
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Customer" required error={fieldIssues.customerId}>
-            <Combobox
+            <MasterSelect
               autoFocus
               options={customers}
               value={form.customerId}
@@ -250,6 +255,19 @@ export function ReceiptForm({
                 setAllocations({});
               }}
               placeholder="Choose a customer…"
+              invalid={Boolean(fieldIssues.customerId)}
+              create={customerCreateSpec(form.currency)}
+              onCreated={(created) => {
+                // A receipt is stated in the customer's own currency, so the
+                // new account's currency has to reach the voucher too.
+                setForm((prev) => ({
+                  ...prev,
+                  customerId: created.id,
+                  currency: created.currency,
+                  rateToUsd: rateFor(created.currency),
+                }));
+                setAllocations({});
+              }}
             />
           </Field>
 
@@ -310,12 +328,17 @@ export function ReceiptForm({
               }
               error={fieldIssues.cashBankAccountId}
             >
-              <Combobox
+              <MasterSelect
                 options={accountChoice.options}
                 value={cashBankAccountId}
                 onChange={(value) => setForm({ ...form, cashBankAccountId: value })}
                 placeholder="Choose an account…"
                 emptyText={`No ${form.currency} account exists`}
+                create={
+                  canCreateCashBank
+                    ? cashBankCreateSpec(form.currency, form.paymentMethod === 'CASH' ? 'CASH' : 'BANK')
+                    : undefined
+                }
               />
             </Field>
           ) : null}

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { requirePageAccess } from '@/lib/auth/guards';
+import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrerequisiteGate, anyMissing, type Prerequisite } from '@/components/shared/prerequisite-gate';
@@ -50,7 +50,12 @@ export default async function NewCreditNotePage() {
         description="Correct an invoice without deleting it. Both documents stay in the history."
         breadcrumbs={CRUMBS}
       />
-      <CreditNoteForm type="CUSTOMER" basePath={BASE_PATH} {...data} />
+      <CreditNoteForm
+        type="CUSTOMER"
+        basePath={BASE_PATH}
+        canCreateParty={can(user, PERMISSIONS.CUSTOMERS_CREATE)}
+        {...data}
+      />
     </div>
   );
 }

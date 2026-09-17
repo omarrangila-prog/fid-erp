@@ -6,6 +6,7 @@ import { CreditNoteDetail } from '@/components/credit-notes/credit-note-detail';
 import { loadCreditNoteDetail } from '@/components/credit-notes/data';
 import { loadAttachments } from '@/components/attachments/load';
 import { getTaxSettings } from '@/lib/services/tax';
+import { DocumentJournal } from '@/components/shared/document-journal';
 
 export const metadata: Metadata = { title: 'Debit Note' };
 export const dynamic = 'force-dynamic';
@@ -27,7 +28,8 @@ export default async function DebitNotePage({ params }: { params: Promise<{ id: 
   if (!detail) notFound();
 
   return (
-    <CreditNoteDetail
+    <div className="space-y-6">
+      <CreditNoteDetail
       detail={detail}
       basePath="/purchases/debit-notes"
       kind="supplier"
@@ -35,6 +37,12 @@ export default async function DebitNotePage({ params }: { params: Promise<{ id: 
       canPost={can(user, PERMISSIONS.CREDIT_NOTES_POST)}
       canManageAttachments={can(user, PERMISSIONS.ATTACHMENTS_MANAGE)}
       attachments={attachments}
-    />
+      />
+      <DocumentJournal
+        companyId={user.activeCompany.id}
+        sourceType="CREDIT_NOTE"
+        sourceId={detail.note.id}
+      />
+    </div>
   );
 }

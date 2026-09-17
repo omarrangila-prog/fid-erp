@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { requirePageAccess } from '@/lib/auth/guards';
+import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrerequisiteGate, anyMissing, type Prerequisite } from '@/components/shared/prerequisite-gate';
@@ -50,7 +50,12 @@ export default async function NewDebitNotePage() {
         description="Claim an allowance from a supplier without touching the original contract."
         breadcrumbs={CRUMBS}
       />
-      <CreditNoteForm type="VENDOR" basePath={BASE_PATH} {...data} />
+      <CreditNoteForm
+        type="VENDOR"
+        basePath={BASE_PATH}
+        canCreateParty={can(user, PERMISSIONS.VENDORS_CREATE)}
+        {...data}
+      />
     </div>
   );
 }

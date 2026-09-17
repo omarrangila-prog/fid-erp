@@ -11,7 +11,7 @@ import { saveExpenseCategoryAction } from '@/server/actions/master-actions';
 export const metadata: Metadata = { title: 'Expense Categories' };
 export const dynamic = 'force-dynamic';
 
-const FIELDS: FieldSpec[] = [
+const FIELDS = (accounts: Array<{ value: string; label: string }>): FieldSpec[] => [
   { kind: 'text', name: 'code', label: 'Code', placeholder: 'CLEARING', hint: 'Issued automatically if left blank.' },
   { kind: 'text', name: 'name', label: 'Category name', required: true, placeholder: 'Clearing Charges' },
   {
@@ -23,6 +23,14 @@ const FIELDS: FieldSpec[] = [
       { value: 'SHIPMENT', label: 'Shipment expense' },
       { value: 'GENERAL', label: 'General company expense' },
     ],
+  },
+  {
+    kind: 'select',
+    name: 'glAccountId',
+    label: 'Posts to',
+    options: [{ value: '', label: 'Default expense account' }, ...accounts],
+    hint: 'The profit-and-loss account costs in this category land in. Leave on the default to group them with everything else.',
+    full: true,
   },
   { kind: 'select', name: 'status', label: 'Status', options: STATUS_OPTIONS },
   { kind: 'textarea', name: 'description', label: 'Description', full: true },
@@ -59,11 +67,20 @@ const COLUMNS: SimpleColumnSpec[] = [
 
 export default async function ExpenseCategoriesPage() {
   const user = await requirePageAccess(PERMISSIONS.EXPENSE_CATEGORIES_VIEW);
-  const categories = await prisma.expenseCategory.findMany({
-    where: { companyId: user.activeCompany.id },
-    orderBy: [{ capitaliseByDefault: 'desc' }, { name: 'asc' }],
-    include: { glAccount: { select: { code: true, name: true } }, _count: { select: { expenses: true } } },
-  });
+  const [categories, expenseAccounts] = await Promise.all([
+    prisma.expenseCategory.findMany({
+      where: { companyId: user.activeCompany.id },
+      orderBy: [{ capitaliseByDefault: 'desc' }, { name: 'asc' }],
+      include: { glAccount: { select: { code: true, name: true } }, _count: { select: { expenses: true } } },
+    }),
+    prisma.account.findMany({
+      where: { companyId: user.activeCompany.id, type: 'EXPENSE', status: 'ACTIVE' },
+      orderBy: { code: 'asc' },
+      select: { id: true, code: true, name: true },
+    }),
+  ]);
+
+  const accountOptions = expenseAccounts.map((a) => ({ value: a.id, label: `${a.code} · ${a.name}` }));
 
   const rows: SimpleRow[] = categories.map((c) => ({
     id: c.id,
@@ -82,6 +99,7 @@ export default async function ExpenseCategoriesPage() {
       name: c.name,
       description: c.description,
       kind: c.kind,
+      glAccountId: c.glAccountId ?? '',
       capitaliseByDefault: c.capitaliseByDefault,
       status: c.status,
     },
@@ -106,7 +124,7 @@ export default async function ExpenseCategoriesPage() {
       <SimpleMasterTable
         rows={rows}
         columns={COLUMNS}
-        fields={FIELDS}
+        fields={FIELDS(accountOptions)}
         createDefaults={{ status: 'ACTIVE', kind: 'SHIPMENT', capitaliseByDefault: true }}
         action={saveExpenseCategoryAction}
         entityLabel="Expense category"
