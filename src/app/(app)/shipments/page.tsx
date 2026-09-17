@@ -77,6 +77,11 @@ export default async function ShipmentsPage() {
         landedLocal: cost ? formatMoney(cost.totalLandedLocal, cost.localCurrency) : null,
         costPerKg: cost ? formatMoney(cost.costPerKgUsd, 'USD') : null,
         costPerMt: cost ? formatMoney(cost.costPerMtUsd, 'USD') : null,
+        // The same figure in the company's own money, as the landed column
+        // already does — a cost per kilo is only useful in the currency the
+        // person buying and selling actually thinks in.
+        costPerKgLocal: cost ? formatMoney(cost.costPerKgLocal, cost.localCurrency) : null,
+        costPerMtLocal: cost ? formatMoney(cost.costPerMtLocal, cost.localCurrency) : null,
         remainingKg: cost ? formatQuantityKg(cost.remainingKg) : null,
         localCurrency: cost?.localCurrency ?? null,
       };

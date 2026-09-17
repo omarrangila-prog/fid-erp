@@ -40,6 +40,8 @@ export type ShipmentRow = {
   landedLocal: string | null;
   costPerKg: string | null;
   costPerMt: string | null;
+  costPerKgLocal: string | null;
+  costPerMtLocal: string | null;
   remainingKg: string | null;
   localCurrency: string | null;
 };
@@ -131,10 +133,19 @@ export function ShipmentsClient({
             header: 'Cost / KG',
             hideable: true,
             numeric: true,
+            exportValue: (r: ShipmentRow) => r.costPerKg ?? '',
             cell: (r: ShipmentRow) => (
               <span>
-                <span className="block">{r.costPerKg ?? '—'}</span>
-                {r.costPerMt ? <span className="block text-xs text-ink-subtle">{r.costPerMt} / MT</span> : null}
+                <span className="block font-medium">{r.costPerKg ?? '—'}</span>
+                {r.costPerKgLocal ? (
+                  <span className="block text-xs text-ink-subtle">{r.costPerKgLocal}</span>
+                ) : null}
+                {r.costPerMt ? (
+                  <span className="block text-xs text-ink-subtle">
+                    {r.costPerMt} / MT
+                    {r.costPerMtLocal ? ` · ${r.costPerMtLocal} / MT` : ''}
+                  </span>
+                ) : null}
               </span>
             ),
           } satisfies DataColumn<ShipmentRow>,
