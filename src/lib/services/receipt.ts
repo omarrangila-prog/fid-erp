@@ -332,6 +332,8 @@ async function syncDraftCheque(
     customerId: string;
     userId: string;
     method: PaymentMethod;
+    /** The agent on the receipt, when he is the one who collected. */
+    agentId: string | null;
     cheque: ChequeDetailsInput | null | undefined;
     amounts: {
       amount: Decimal;
@@ -347,14 +349,32 @@ async function syncDraftCheque(
 ) {
   const existing = await tx.cheque.findFirst({ where: { receiptId: params.receiptId } });
 
-  if (params.method !== 'CHEQUE') {
+  /*
+   * A cheque the agent is holding is still a cheque.
+   *
+   * The customer hands the agent a cheque in the agent's name; it has a
+   * number, a date, a bank and a life of its own, and it can bounce. Recording
+   * the collection without recording the instrument lost all of that — there
+   * was nothing to mark pending, cleared or bounced, and no way to answer
+   * "which cheque was that?". The money still sits in agent clearing rather
+   * than in cheques on hand, because it is the agent who is holding it.
+   */
+  const carriesCheque = params.method === 'CHEQUE' || params.method === 'AGENT_COLLECTION';
+
+  if (!carriesCheque) {
     if (existing && existing.status === 'RECEIVED') {
       await tx.cheque.delete({ where: { id: existing.id } });
     }
     return;
   }
 
-  if (!params.cheque) return;
+  // An agent collection need not be by cheque — he may have taken cash.
+  if (!params.cheque) {
+    if (existing && existing.status === 'RECEIVED') {
+      await tx.cheque.delete({ where: { id: existing.id } });
+    }
+    return;
+  }
 
   const data = {
     chequeNumber: params.cheque.chequeNumber.trim(),
@@ -368,8 +388,12 @@ async function syncDraftCheque(
     amountLocal: params.amounts.amountLocal,
     beneficiary: params.cheque.beneficiary ?? null,
     customerId: params.customerId,
-    agentId: params.cheque.agentId ?? null,
-    cashBankAccountId: params.cashBankAccountId,
+    // Who is holding the paper. On an agent collection it is the agent on
+    // the receipt, which is the one the accounting already debits.
+    agentId: params.agentId ?? params.cheque.agentId ?? null,
+    // An agent's cheque has no bank of ours behind it yet: the money reaches
+    // us when he settles, not when the cheque clears.
+    cashBankAccountId: params.method === 'AGENT_COLLECTION' ? null : params.cashBankAccountId,
     receivedDate: params.cheque.receivedDate ?? params.receiptDate,
     notes: params.cheque.notes ?? null,
   };
@@ -462,6 +486,7 @@ export async function createReceiptIn(tx: Tx, input: ReceiptInput, userId: strin
     customerId: input.customerId,
     userId,
     method,
+    agentId: input.agentId ?? null,
     cheque: input.cheque,
     amounts,
     cashBankAccountId: input.cashBankAccountId ?? null,
@@ -538,6 +563,7 @@ export async function updateReceipt(id: string, input: ReceiptInput, userId: str
       customerId: input.customerId,
       userId,
       method,
+      agentId: input.agentId ?? null,
       cheque: input.cheque,
       amounts,
       cashBankAccountId: input.cashBankAccountId ?? null,
