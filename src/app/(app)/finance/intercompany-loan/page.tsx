@@ -40,7 +40,18 @@ export default async function IntercompanyLoanPage() {
    * lands somewhere they never open.
    */
   const loanAccounts = await prisma.account.findMany({
-    where: { companyId: { in: reachable }, status: 'ACTIVE', type: { in: ['ASSET', 'LIABILITY'] } },
+    where: {
+      companyId: { in: reachable },
+      status: 'ACTIVE',
+      type: { in: ['ASSET', 'LIABILITY'] },
+      // Not a cash drawer or a bank account: those are where the money is,
+      // not where the debt is, and a loan balance posted into one would put a
+      // figure in the cash book that no bank statement shows.
+      cashBankAccounts: { none: {} },
+      // Not a customer, vendor or agent control account: every line on one of
+      // those has to name whose balance it is, and a company is none of them.
+      subledgerType: 'NONE',
+    },
     orderBy: [{ code: 'asc' }],
     select: { id: true, code: true, name: true, type: true, systemKey: true, companyId: true },
   });

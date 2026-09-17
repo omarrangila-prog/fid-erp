@@ -333,12 +333,29 @@ export async function postIntercompanyLoan(input: {
       if (!accountId) return null;
       const account = await tx.account.findFirst({
         where: { id: accountId, companyId, status: 'ACTIVE' },
-        select: { id: true, name: true, type: true, currency: true },
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          currency: true,
+          subledgerType: true,
+          _count: { select: { cashBankAccounts: true } },
+        },
       });
       if (!account) throw new NotFoundError(`${side} loan account`);
       if (account.type !== 'ASSET' && account.type !== 'LIABILITY') {
         throw new BusinessRuleError(
           `${account.name} is not an asset or liability account, so a loan balance cannot sit in it.`,
+        );
+      }
+      if (account._count.cashBankAccounts > 0) {
+        throw new BusinessRuleError(
+          `${account.name} is a cash or bank account. That is where the money is, not where the debt is.`,
+        );
+      }
+      if (account.subledgerType !== 'NONE') {
+        throw new BusinessRuleError(
+          `${account.name} is a control account, so every balance in it has to belong to a named customer, supplier or agent.`,
         );
       }
       return account;

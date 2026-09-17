@@ -480,3 +480,43 @@ describe('a USD account in a dirham company', () => {
     }
   }, 180_000);
 });
+
+describe('accounts a loan balance must not be carried in', () => {
+  it('refuses the GL account behind a bank account', async () => {
+    const bank = await prisma.cashBankAccount.findFirstOrThrow({ where: { id: moroccoBank } });
+
+    await expect(
+      postIntercompanyLoan({
+        fromCompanyId: ctx.dubai.id,
+        toCompanyId: ctx.morocco.id,
+        userId: ctx.admin.id,
+        transferDate: utcDate('2026-07-01'),
+        fromAccountId: dubaiBank,
+        toAccountId: moroccoBank,
+        amount: '1000',
+        exchangeRate: '9.22',
+        toLoanAccountId: bank.glAccountId,
+      }),
+    ).rejects.toThrow(/cash or bank account/i);
+  }, 180_000);
+
+  it('refuses a customer or supplier control account', async () => {
+    const receivable = await prisma.account.findFirstOrThrow({
+      where: { companyId: ctx.morocco.id, subledgerType: { not: 'NONE' } },
+    });
+
+    await expect(
+      postIntercompanyLoan({
+        fromCompanyId: ctx.dubai.id,
+        toCompanyId: ctx.morocco.id,
+        userId: ctx.admin.id,
+        transferDate: utcDate('2026-07-02'),
+        fromAccountId: dubaiBank,
+        toAccountId: moroccoBank,
+        amount: '1000',
+        exchangeRate: '9.22',
+        toLoanAccountId: receivable.id,
+      }),
+    ).rejects.toThrow(/control account/i);
+  }, 180_000);
+});

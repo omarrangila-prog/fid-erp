@@ -89,11 +89,23 @@ test('the loan screen offers no AED account and asks for a memo', async ({ page 
   await page.goto('/finance/intercompany-loan', { waitUntil: 'domcontentloaded' });
   await expect(page.getByText(/This is a loan, not a transfer/i)).toBeVisible({ timeout: 45_000 });
 
-  const options = await page.locator('select option').allTextContents();
-  const aed = options.filter((o) => /\bAED\b/.test(o));
-  console.log('  account options:', options.join(' | '));
-  console.log('  AED options offered:', aed.length);
-  expect(aed).toHaveLength(0);
+  // The two bank dropdowns specifically — the "which account carries the
+  // debt" lists next to them are ledger accounts, not banks, and are checked
+  // on their own terms elsewhere.
+  for (const label of ['From account', 'To account']) {
+    const options = await page.getByLabel(label).locator('option').allTextContents();
+    const aed = options.filter((o) => /\bAED\b/.test(o));
+    console.log(`  ${label}: ${options.join(' | ')}`);
+    expect(aed, `${label} offers AED`).toHaveLength(0);
+  }
+
+  // And no cash or bank account is offered as a place to carry the debt.
+  for (const label of ['Record what they are owed in', 'Record what they owe in']) {
+    const options = await page.getByLabel(label).locator('option').allTextContents();
+    const cash = options.filter((o) => /cash in hand|bank account/i.test(o));
+    console.log(`  ${label}: ${options.join(' | ')}`);
+    expect(cash, `${label} offers a cash or bank account`).toHaveLength(0);
+  }
 
   await expect(page.getByText('Memo', { exact: true })).toBeVisible({ timeout: 20_000 });
 });
