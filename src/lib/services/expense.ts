@@ -358,8 +358,38 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
       where: { id, companyId: input.companyId },
     });
     if (!existing) throw new NotFoundError('Expense');
-    if (existing.status !== 'DRAFT') {
-      throw new BusinessRuleError('Only draft expenses can be edited. Reverse the expense to correct a posted one.');
+    if (existing.status !== 'DRAFT' && existing.status !== 'POSTED') {
+      throw new BusinessRuleError('This expense has been deleted, so it can no longer be edited.');
+    }
+
+    /*
+     * A posted cost can be corrected in place.
+     *
+     * The old posting is taken back out of the books first — the landed cost
+     * off the batches, the journal mirrored — and the new values are then
+     * posted under the same number. The voucher keeps its identity, which is
+     * what somebody holding the paper expects, and the ledger keeps both
+     * entries so the correction is visible to an auditor. The alternative,
+     * which is what this used to force, was to delete the cost and type it
+     * again as a new number, and the client has been doing exactly that.
+     */
+    const wasPosted = existing.status === 'POSTED';
+    if (wasPosted) {
+      const settled = await tx.paymentAllocation.count({
+        where: { expenseId: id, payment: { status: 'POSTED' } },
+      });
+      if (settled > 0) {
+        throw new BusinessRuleError(
+          'A payment has been made against this cost. Delete that payment before changing the cost it settled.',
+        );
+      }
+      await unwindPostedExpense(tx, {
+        companyId: input.companyId,
+        expenseId: id,
+        userId,
+        reason: `Correction of ${existing.expenseNumber}`,
+        asOf: new Date(),
+      });
     }
 
     const company = await getCompanyContext(tx, input.companyId);
@@ -395,8 +425,16 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
         taxAmountUsd: tax.taxAmountUsd,
         reference: input.reference ?? null,
         description: input.description ?? null,
+        // Its posting has just been taken back out, so it is a draft again
+        // for as long as it takes to write the new one.
+        ...(wasPosted ? { status: 'DRAFT' as const, reversedAt: null, reversalReason: null } : {}),
       },
     });
+
+    // Back onto the books at the new figures, under the same number.
+    const result = wasPosted
+      ? await postExpenseIn(tx, { id, companyId: input.companyId, userId })
+      : expense;
 
     await writeAudit(tx, {
       companyId: input.companyId,
@@ -404,11 +442,11 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
       action: 'EXPENSE_UPDATED',
       entityType: 'Expense',
       entityId: id,
-      before: { amount: existing.amount, currency: existing.currency },
-      after: { amount: expense.amount, currency: expense.currency },
+      before: { amount: existing.amount, currency: existing.currency, status: existing.status },
+      after: { amount: expense.amount, currency: expense.currency, status: result.status },
     });
 
-    return expense;
+    return result;
   });
 }
 
@@ -642,6 +680,43 @@ export async function postExpenseIn(tx: Tx, params: { id: string; companyId: str
   }
 }
 
+/**
+ * Take a posted expense back out of the books.
+ *
+ * The capitalisation is unwound before the journal is mirrored, so the batch
+ * landed costs and the ledger move back together rather than one at a time.
+ * Used both when a cost is deleted and when a posted one is edited — the
+ * difference is what happens next, not what is undone.
+ */
+async function unwindPostedExpense(
+  tx: Tx,
+  params: { companyId: string; expenseId: string; userId: string; reason: string; asOf: Date },
+) {
+  const expense = await tx.expense.findUniqueOrThrow({ where: { id: params.expenseId } });
+
+  if (expense.capitaliseToLandedCost && expense.shipmentId) {
+    await applyLandedCost(tx, {
+      companyId: params.companyId,
+      shipmentId: expense.shipmentId,
+      amountUsd: dec(expense.amountUsd).negated(),
+      reference: `${expense.expenseNumber} ${params.reason}`,
+      containerId: expense.containerId,
+      batchId: expense.batchId,
+    });
+  }
+
+  await reverseJournalEntry(tx, {
+    companyId: params.companyId,
+    sourceType: 'EXPENSE',
+    sourceId: params.expenseId,
+    createdById: params.userId,
+    entryDate: params.asOf,
+    reason: params.reason,
+  });
+
+  return expense;
+}
+
 export async function reverseExpense(params: { id: string; companyId: string; userId: string; reason: string }) {
   return transaction(async (tx) => {
     const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>`
@@ -652,31 +727,13 @@ export async function reverseExpense(params: { id: string; companyId: string; us
     if (locked.length === 0) throw new NotFoundError('Expense');
     if (locked[0].status !== 'POSTED') throw new BusinessRuleError('Only a posted expense can be reversed.');
 
-    const expense = await tx.expense.findUniqueOrThrow({
-      where: { id: params.id },
-    });
     const reversalDate = new Date();
-
-    // Unwind the capitalisation before reversing the journal so the batch
-    // landed costs and the ledger move back together.
-    if (expense.capitaliseToLandedCost && expense.shipmentId) {
-      await applyLandedCost(tx, {
-        companyId: params.companyId,
-        shipmentId: expense.shipmentId,
-        amountUsd: dec(expense.amountUsd).negated(),
-        reference: `${expense.expenseNumber} reversal`,
-        containerId: expense.containerId,
-        batchId: expense.batchId,
-      });
-    }
-
-    await reverseJournalEntry(tx, {
+    await unwindPostedExpense(tx, {
       companyId: params.companyId,
-      sourceType: 'EXPENSE',
-      sourceId: params.id,
-      createdById: params.userId,
-      entryDate: reversalDate,
+      expenseId: params.id,
+      userId: params.userId,
       reason: params.reason,
+      asOf: reversalDate,
     });
 
     const reversed = await tx.expense.update({

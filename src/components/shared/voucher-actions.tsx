@@ -184,7 +184,9 @@ export function VoucherRowActions({
 }) {
   const config = ACTIONS[kind];
   const viewPath = `${config.listPath}/${id}`;
-  const editPath = kind === 'expense' && status === 'DRAFT' ? `${viewPath}/edit` : null;
+  // A cost can be corrected whether or not it has been posted: posting is
+  // undone and rewritten under the same number. Only a deleted one is closed.
+  const editPath = kind === 'expense' && status !== 'CANCELLED' && status !== 'REVERSED' ? `${viewPath}/edit` : null;
 
   /*
    * Rendered through the shared row-action pattern, so a voucher row looks

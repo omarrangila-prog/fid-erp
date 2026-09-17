@@ -77,7 +77,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
         }
         actions={
           <>
-            {expense.status === 'DRAFT' && can(user, PERMISSIONS.EXPENSES_CREATE) ? (
+            {expense.status !== 'REVERSED' && expense.status !== 'CANCELLED' && can(user, PERMISSIONS.EXPENSES_CREATE) ? (
               <Button asChild variant="outline">
                 <Link href={`/finance/expenses/${expense.id}/edit`}>Edit</Link>
               </Button>

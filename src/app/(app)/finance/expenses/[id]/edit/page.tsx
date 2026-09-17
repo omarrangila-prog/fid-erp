@@ -23,7 +23,8 @@ export default async function EditExpensePage({ params }: { params: Promise<{ id
     where: { id, companyId: user.activeCompany.id },
   });
   if (!expense) notFound();
-  if (expense.status !== 'DRAFT') redirect(`/finance/expenses/${expense.id}`);
+  // A posted cost can be corrected in place; a deleted one cannot.
+  if (expense.status !== 'DRAFT' && expense.status !== 'POSTED') redirect(`/finance/expenses/${expense.id}`);
 
   const options = await loadExpenseFormOptions(user.activeCompany.id);
 
@@ -31,7 +32,11 @@ export default async function EditExpensePage({ params }: { params: Promise<{ id
     <div className="space-y-6">
       <PageHeader
         title={`Edit ${expense.expenseNumber}`}
-        description="Drafts have no ledger impact. Saving replaces the voucher; posting writes the journal once."
+        description={
+          expense.status === 'POSTED'
+            ? 'This cost is posted. Saving takes the old posting back out of the books and writes the new one under the same number — the ledger keeps both, so the correction can be traced.'
+            : 'Drafts have no ledger impact. Saving replaces the voucher; posting writes the journal once.'
+        }
         breadcrumbs={[
           { label: 'Finance' },
           { label: 'Expenses', href: '/finance/expenses' },

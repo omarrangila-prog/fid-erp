@@ -168,14 +168,21 @@ test('Record Payment opens from an outstanding invoice', async ({ page }) => {
 
 test('the journal can add an account without leaving the voucher', async ({ page }) => {
   await page.goto('/accounting/journal/new', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: /^Add Account$/ }).first().click();
-  const dialog = page.getByRole('dialog');
+  // "+ Add New Account" is the first row of the account list, which is the one
+  // way in now that the duplicate button beside each line is gone.
+  await page.getByRole('combobox', { name: /line 1 account/i }).click();
+  await page
+    .getByRole('dialog')
+    .filter({ has: page.getByPlaceholder('Search…') })
+    .getByRole('button', { name: /Add New Account/i })
+    .click();
+  const dialog = page.getByRole('dialog').filter({ hasNot: page.getByPlaceholder('Search…') });
   await expect(dialog.getByRole('heading', { name: /Add New Account/i })).toBeVisible();
   await expect(dialog.getByLabel(/account name/i)).toBeEditable();
   await dialog.getByLabel(/account name/i).fill(`Daily Ahmed ${Date.now().toString(36)}`);
   await expect(dialog.getByLabel(/account type/i)).toHaveValue('PERSONAL');
   await dialog.getByRole('button', { name: /^Save$/ }).click();
-  await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 20_000 });
+  await expect(dialog).toHaveCount(0, { timeout: 20_000 });
   await expect(page.getByRole('main')).toContainText(/Ahmed/i);
 });
 

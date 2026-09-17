@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { prisma, resetDatabase, getContext, utcDate } from '../helpers';
-import { createExpense, postExpense } from '@/lib/services/expense';
+import { createExpense, postExpense, updateExpense } from '@/lib/services/expense';
 import { getPayables } from '@/lib/services/receivables';
 import { expenseSchema } from '@/lib/validation/finance';
 import { createPayment, postPayment } from '@/lib/services/payment';
@@ -227,4 +227,122 @@ describe('the account a category posts to', () => {
     const debit = entry.lines.find((l) => l.debit.greaterThan(0));
     expect(debit?.accountId, `expected the cost in ${account.code} ${account.name}`).toBe(account.id);
   }, 120_000);
+});
+
+describe('correcting a posted cost in place', () => {
+  it('rewrites the posting under the same number and leaves the books right', async () => {
+    const cash = await getCashAccount(ctx.morocco.id, 'MAD');
+    const category = await prisma.expenseCategory.findFirstOrThrow({
+      where: { companyId: ctx.morocco.id, kind: 'GENERAL', status: 'ACTIVE' },
+    });
+    const base = {
+      companyId: ctx.morocco.id,
+      expenseDate: utcDate('2026-05-01'),
+      expenseCategoryId: category.id,
+      currency: 'MAD',
+      rateToUsd: '9.85',
+      rateLocalPerUsd: '9.85',
+      paymentMethod: 'CASH' as const,
+      cashBankAccountId: cash.id,
+      kind: 'GENERAL' as const,
+    };
+
+    const draft = await createExpense({ ...base, amount: '5000', description: 'Typed wrong' }, ctx.admin.id);
+    const posted = await postExpense({ id: draft.id, companyId: ctx.morocco.id, userId: ctx.admin.id });
+    const number = posted.expenseNumber;
+
+    const cashAfterFirst = await prisma.$queryRaw<Array<{ bal: string }>>`
+      SELECT COALESCE(SUM(jl."debit" - jl."credit"), 0)::text AS bal
+      FROM journal_lines jl JOIN journal_entries je ON je."id" = jl."journalEntryId"
+      WHERE jl."cashBankAccountId" = ${cash.id} AND je."status" = 'POSTED'`;
+
+    // The real figure was 4,200.
+    const corrected = await updateExpense(draft.id, { ...base, amount: '4200', description: 'Corrected' }, ctx.admin.id);
+
+    // Same document, same number, still posted.
+    expect(corrected.id).toBe(draft.id);
+    expect(corrected.expenseNumber).toBe(number);
+    expect(corrected.status).toBe('POSTED');
+    expect(corrected.amount.toString()).toBe('4200');
+
+    // Cash now reflects 4,200, not 5,000 and not 9,200.
+    const after = await prisma.$queryRaw<Array<{ bal: string }>>`
+      SELECT COALESCE(SUM(jl."debit" - jl."credit"), 0)::text AS bal
+      FROM journal_lines jl JOIN journal_entries je ON je."id" = jl."journalEntryId"
+      WHERE jl."cashBankAccountId" = ${cash.id} AND je."status" = 'POSTED'`;
+    const movedBack = dec(after[0].bal).minus(cashAfterFirst[0].bal);
+    expect(dec(movedBack).toFixed(2)).toBe('800.00');
+
+    // The ledger keeps the original, its mirror and the rewrite, so the
+    // correction can be traced; only the live one counts.
+    const entries = await prisma.journalEntry.findMany({
+      where: { companyId: ctx.morocco.id, sourceType: 'EXPENSE', sourceId: draft.id },
+      select: { isReversal: true, reversalOfId: true },
+    });
+    expect(entries.length).toBe(3);
+    expect(entries.filter((e) => e.isReversal)).toHaveLength(1);
+
+    const health = await reconcile(ctx.morocco.id);
+    expect(health.healthy, health.checks.filter((c) => !c.passed).map((c) => c.label).join('; ')).toBe(true);
+  }, 240_000);
+
+  it('refuses to change a cost a payment has already settled', async () => {
+    const category = await prisma.expenseCategory.findFirstOrThrow({
+      where: { companyId: ctx.morocco.id, kind: 'GENERAL', status: 'ACTIVE' },
+    });
+    const bill = await createExpense(
+      {
+        companyId: ctx.morocco.id,
+        expenseDate: utcDate('2026-05-10'),
+        expenseCategoryId: category.id,
+        vendorId,
+        currency: 'MAD',
+        amount: '3000',
+        rateToUsd: '9.85',
+        rateLocalPerUsd: '9.85',
+        paymentMethod: 'BANK_TRANSFER',
+        kind: 'GENERAL',
+        description: 'Owed then paid',
+      },
+      ctx.admin.id,
+    );
+    const postedBill = await postExpense({ id: bill.id, companyId: ctx.morocco.id, userId: ctx.admin.id });
+    const cash = await getCashAccount(ctx.morocco.id, 'MAD');
+    const payment = await createPayment(
+      {
+        companyId: ctx.morocco.id,
+        paymentDate: utcDate('2026-05-11'),
+        vendorId,
+        currency: 'MAD',
+        amount: '3000',
+        rateToUsd: '9.85',
+        rateLocalPerUsd: '9.85',
+        paymentMethod: 'CASH',
+        cashBankAccountId: cash.id,
+        allocations: [{ expenseId: postedBill.id, amount: '3000' }],
+      },
+      ctx.admin.id,
+    );
+    await postPayment({ id: payment.id, companyId: ctx.morocco.id, userId: ctx.admin.id });
+
+    await expect(
+      updateExpense(
+        bill.id,
+        {
+          companyId: ctx.morocco.id,
+          expenseDate: utcDate('2026-05-10'),
+          expenseCategoryId: category.id,
+          vendorId,
+          currency: 'MAD',
+          amount: '2500',
+          rateToUsd: '9.85',
+          rateLocalPerUsd: '9.85',
+          paymentMethod: 'BANK_TRANSFER',
+          kind: 'GENERAL',
+          description: 'Too late',
+        },
+        ctx.admin.id,
+      ),
+    ).rejects.toThrow(/payment has been made/i);
+  }, 240_000);
 });
