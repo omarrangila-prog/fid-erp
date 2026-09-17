@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getRateDefaults } from '@/lib/services/exchange-rate';
-import { prisma } from '@/lib/db';
+import { prisma, transaction } from '@/lib/db';
+import { getExpenseOutstanding } from '@/lib/services/payment';
 import { getPayables } from '@/lib/services/receivables';
 import { toDateInputValue } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
@@ -21,7 +22,7 @@ export default async function NewPaymentPage({
   const user = await requirePageAccess(PERMISSIONS.PAYMENTS_CREATE);
   const companyId = user.activeCompany.id;
 
-  const [vendors, accounts, payables] = await Promise.all([
+  const [vendors, accounts, payables, accrued] = await Promise.all([
     prisma.vendor.findMany({
       where: { companyId, status: 'ACTIVE' },
       orderBy: { vendorName: 'asc' },
@@ -33,11 +34,27 @@ export default async function NewPaymentPage({
       select: { id: true, name: true, code: true, currency: true, accountType: true },
     }),
     getPayables({ companyId, onlyOutstanding: true }),
+    // A cost booked to nobody sits in Accrued Expenses rather than on any
+    // supplier's account, so it is not in the payables list. When the page
+    // is opened to pay one, it is loaded on its own.
+    expense
+      ? prisma.expense.findFirst({
+          where: {
+            id: expense,
+            companyId,
+            status: 'POSTED',
+            cashBankAccountId: null,
+            vendorId: null,
+            payableToAgentId: null,
+          },
+          select: { id: true, expenseNumber: true, expenseDate: true, currency: true },
+        })
+      : Promise.resolve(null),
   ]);
 
   const prerequisites: Prerequisite[] = [
     {
-      met: vendors.length > 0,
+      met: vendors.length > 0 || Boolean(accrued),
       label: 'At least one supplier',
       description: 'Money paid is always paid to somebody.',
       href: '/vendors?new=1',
@@ -77,16 +94,31 @@ export default async function NewPaymentPage({
   const contracts: OpenContract[] = payables
     .filter((p): p is typeof p & { kind: 'CONTRACT' | 'EXPENSE' } => p.kind !== 'OPENING')
     .map((p) => ({
-    kind: p.kind,
-    id: p.contractId,
-    contractNumber: p.contractNumber,
-    contractDate: toDateInputValue(p.contractDate),
-    currency: p.currency,
-    outstanding: p.outstandingAmount.toString(),
-    vendorId: p.vendorId,
-  }));
+      kind: p.kind,
+      id: p.contractId,
+      contractNumber: p.contractNumber,
+      contractDate: toDateInputValue(p.contractDate),
+      currency: p.currency,
+      outstanding: p.outstandingAmount.toString(),
+      vendorId: p.vendorId,
+    }));
 
-  const rates = await getRateDefaults(user.activeCompany.id);
+  const [rates, accruedOutstanding] = await Promise.all([
+    getRateDefaults(user.activeCompany.id),
+    accrued ? transaction((tx) => getExpenseOutstanding(tx, accrued.id)) : Promise.resolve(null),
+  ]);
+
+  if (accrued && accruedOutstanding && accruedOutstanding.amount.greaterThan(0)) {
+    contracts.unshift({
+      kind: 'EXPENSE',
+      id: accrued.id,
+      contractNumber: accrued.expenseNumber,
+      contractDate: toDateInputValue(accrued.expenseDate),
+      currency: accrued.currency,
+      outstanding: accruedOutstanding.amount.toString(),
+      vendorId: null,
+    });
+  }
 
   return (
     <div className="space-y-6">

@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input, MoneyInput, Select, Textarea } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Combobox, type ComboOption } from '@/components/ui/combobox';
+import { type ComboOption } from '@/components/ui/combobox';
 import { Callout, EmptyState } from '@/components/ui/feedback';
 import { dec, tryDec, sum, convertToUsd } from '@/lib/money';
 import { formatMoney, formatDate, todayInputValue } from '@/lib/format';
@@ -28,7 +28,8 @@ export type OpenContract = {
   contractDate: string;
   currency: string;
   outstanding: string;
-  vendorId: string;
+  /** Null for a cost booked without a supplier — it is settled from the cost itself. */
+  vendorId: string | null;
 };
 
 /**
@@ -61,6 +62,9 @@ export function PaymentForm({
   const [fieldIssues, setFieldIssues] = React.useState<Record<string, string>>({});
 
   const preselected = contracts.find((c) => c.kind === 'EXPENSE' && c.id === preselectedExpenseId);
+  // A cost booked to nobody is paid from the cost itself: no supplier is asked
+  // for, and the payment goes against that cost and nothing else.
+  const accruedCost = preselected && !preselected.vendorId ? preselected : null;
 
   const [form, setForm] = React.useState({
     paymentDate: todayInputValue(),
@@ -83,11 +87,8 @@ export function PaymentForm({
   );
 
   const vendorContracts = React.useMemo(
-    () =>
-      contracts.filter(
-        (c) => c.vendorId === form.vendorId || (c.kind === 'EXPENSE' && !c.vendorId && Boolean(form.vendorId)),
-      ),
-    [contracts, form.vendorId],
+    () => (accruedCost ? [accruedCost] : contracts.filter((c) => Boolean(c.vendorId) && c.vendorId === form.vendorId)),
+    [contracts, form.vendorId, accruedCost],
   );
 
   const isForeign = form.currency !== 'USD';
@@ -117,7 +118,7 @@ export function PaymentForm({
 
     const payload = {
       paymentDate: form.paymentDate,
-      vendorId: form.vendorId,
+      vendorId: accruedCost ? '' : (form.vendorId ?? ''),
       currency: form.currency,
       amount: form.amount,
       rateToUsd: isForeign ? form.rateToUsd : '1',
@@ -189,24 +190,26 @@ export function PaymentForm({
           <CardDescription>Who was paid, how much, and from which account.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Field label="Supplier" required error={fieldIssues.vendorId}>
-            <MasterSelect
-              autoFocus
-              options={vendors}
-              value={form.vendorId}
-              onChange={(value) => {
-                setForm({ ...form, vendorId: value });
-                setAllocations(
-                  preselected && !preselected.vendorId
-                    ? { [preselected.id]: preselected.outstanding }
-                    : {},
-                );
-              }}
-              placeholder="Choose a supplier…"
-              invalid={Boolean(fieldIssues.vendorId)}
-              create={vendorCreateSpec(form.currency)}
-            />
-          </Field>
+          {accruedCost ? (
+            <Field label="Settles" hint="Booked without a supplier, so none is asked for here.">
+              <Input value={`Cost ${accruedCost.contractNumber}`} readOnly />
+            </Field>
+          ) : (
+            <Field label="Supplier" required error={fieldIssues.vendorId}>
+              <MasterSelect
+                autoFocus
+                options={vendors}
+                value={form.vendorId}
+                onChange={(value) => {
+                  setForm({ ...form, vendorId: value });
+                  setAllocations({});
+                }}
+                placeholder="Choose a supplier…"
+                invalid={Boolean(fieldIssues.vendorId)}
+                create={vendorCreateSpec(form.currency)}
+              />
+            </Field>
+          )}
 
           <Field label="Payment date" error={fieldIssues.paymentDate}>
             <Input type="date" value={form.paymentDate} onChange={(e) => setForm({ ...form, paymentDate: e.target.value })} />
@@ -317,7 +320,7 @@ export function PaymentForm({
         </Card>
       ) : null}
 
-      {form.vendorId ? (
+      {form.vendorId || accruedCost ? (
         <Card>
           <CardHeader>
             <CardTitle>Apply to what is owed</CardTitle>

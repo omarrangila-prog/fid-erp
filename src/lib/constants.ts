@@ -811,6 +811,13 @@ export const EXPENSE_CATEGORY_SEEDS: Array<{
 export const ACCOUNT_KEYS = {
   ACCOUNTS_RECEIVABLE: 'ACCOUNTS_RECEIVABLE',
   ACCOUNTS_PAYABLE: 'ACCOUNTS_PAYABLE',
+  /**
+   * A cost booked before it is paid, owed to nobody in particular yet.
+   * No supplier sub-ledger: the bill has not been matched to a name, and
+   * asking for one at the moment of booking is what stopped costs being
+   * recorded at all.
+   */
+  ACCRUED_EXPENSES: 'ACCRUED_EXPENSES',
   INVENTORY: 'INVENTORY',
   INVENTORY_IN_TRANSIT: 'INVENTORY_IN_TRANSIT',
   CHEQUES_ON_HAND: 'CHEQUES_ON_HAND',

@@ -67,7 +67,8 @@ export const receiptSchema = z
 export const paymentSchema = z
   .object({
     paymentDate: dateString('Payment date'),
-    vendorId: cuid,
+    /** Blank when the payment settles costs that were booked without a supplier. */
+    vendorId: optionalCuid,
     currency: currencyCode,
     amount: decimalString('Amount'),
     rateToUsd: decimalString('Exchange rate'),
@@ -98,6 +99,12 @@ export const paymentSchema = z
   .refine((v) => v.paymentMethod === 'CHEQUE' || Boolean(v.cashBankAccountId), {
     message: 'Choose the cash or bank account the money was paid from.',
     path: ['cashBankAccountId'],
+  })
+  // Without a supplier there is nothing for money to sit against, so every
+  // dirham has to be put against a cost.
+  .refine((v) => Boolean(v.vendorId) || v.allocations.length > 0, {
+    message: 'Choose a supplier, or put the payment against the cost it settles.',
+    path: ['vendorId'],
   });
 
 export const expenseSchema = z.object({

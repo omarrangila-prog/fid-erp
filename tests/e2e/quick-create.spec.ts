@@ -77,16 +77,17 @@ test.beforeEach(async ({ page }) => {
   await signInToMorocco(page);
 });
 
-test('an expense keeps everything typed while a category and a supplier are added', async ({ page }) => {
+test('an expense keeps everything typed while a category and a bank account are added', async ({ page }) => {
   test.setTimeout(180_000);
   const category = unique('Laboratory Testing');
-  const supplier = unique('Analytica');
+  const bank = unique('Attijari');
 
   await page.goto('/finance/expenses/new', { waitUntil: 'domcontentloaded' });
   const form = page.getByRole('main');
 
   await form.locator('label').filter({ hasText: /running the business/i }).click();
-  await form.locator('label').filter({ hasText: /Book the cost now/i }).click();
+  // Paid from a bank, so both the category and the bank account can be added inline.
+  await form.getByRole('combobox', { name: /^paid from/i }).selectOption('BANK');
 
   // Type the voucher FIRST, so the quick creates have something to lose.
   await form.getByLabel(/expense date/i).fill('2026-08-03');
@@ -104,19 +105,19 @@ test('an expense keeps everything typed while a category and a supplier are adde
 
   await quickCreate(
     page,
-    form.getByRole('combobox', { name: /supplier/i }),
-    /Add New Supplier/i,
-    /supplier name/i,
-    supplier,
+    form.getByRole('combobox', { name: /bank account/i }),
+    /Add New Bank Account/i,
+    /account name/i,
+    bank,
   );
-  await expect(form.getByRole('combobox', { name: /supplier/i })).toContainText(supplier);
+  await expect(form.getByRole('combobox', { name: /bank account/i })).toContainText(bank);
 
   // Nothing typed before the two dialogs may have been lost.
   await expect(form.getByLabel(/^Amount/)).toHaveValue('3175.50');
   await expect(form.getByLabel(/^Description/)).toHaveValue('Moisture and density certificate');
   await expect(form.getByLabel(/expense date/i)).toHaveValue('2026-08-03');
 
-  // And the voucher still posts, against the supplier just created.
+  // And the voucher still posts, from the account just opened.
   await form.getByRole('button', { name: /save and post/i }).click();
   await page.waitForURL(/\/finance\/expenses\/(?!new)[\w-]+/, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await expect(page.getByRole('main')).toContainText(/POSTED/i);

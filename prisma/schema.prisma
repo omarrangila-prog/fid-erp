@@ -1531,7 +1531,7 @@ model Payment {
   companyId         String
   paymentNumber     String
   paymentDate       DateTime          @db.Date
-  vendorId          String
+  vendorId          String?
   currency          String            @db.VarChar(3)
   amount            Decimal           @db.Decimal(18, 4)
   rateToUsd         Decimal           @db.Decimal(18, 8)
@@ -1552,7 +1552,7 @@ model Payment {
   updatedAt         DateTime          @updatedAt
 
   company         Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  vendor          Vendor              @relation(fields: [vendorId], references: [id])
+  vendor          Vendor?              @relation(fields: [vendorId], references: [id])
   cashBankAccount CashBankAccount?    @relation(fields: [cashBankAccountId], references: [id])
   cheque          Cheque?
   shipment        Shipment?           @relation(fields: [shipmentId], references: [id])

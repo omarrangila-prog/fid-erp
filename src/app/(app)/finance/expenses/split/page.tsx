@@ -27,8 +27,6 @@ export default async function SplitExpensePage({ searchParams }: { searchParams:
       <SplitExpenseForm
         categories={options.categories}
         shipments={options.shipments}
-        agents={options.agents}
-        vendors={options.vendors}
         accounts={options.accounts}
         localCurrency={user.activeCompany.localCurrency}
         defaultLocalRate={options.rates.local}

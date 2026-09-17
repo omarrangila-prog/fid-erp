@@ -526,24 +526,27 @@ describe('rules 11 and 12 — paid expenses hit cash, unpaid ones hit payables',
     expect(dec(after).toString()).toBe(dec(before).toString());
     expect(Number(await control('ACCOUNTS_PAYABLE'))).toBeLessThan(payableBefore);
 
-    // A cost with nobody to pay is refused: it would sit on the supplier
-    // control account with no supplier's statement showing it.
-    await expect(
-      createExpense(
-        {
-          companyId,
-          expenseDate: utcDate('2026-04-12'),
-          expenseCategoryId: category.id,
-          shipmentId,
-          currency: 'MAD',
-          amount: '100',
-          rateToUsd: '9.85',
-          rateLocalPerUsd: '9.85',
-          description: 'Owed to nobody',
-        },
-        ctx.admin.id,
-      ),
-    ).rejects.toThrow(/say how this cost is settled/i);
+    // A cost with nobody named yet is accrued, not put on any supplier's
+    // account: the payables control must not move, and no supplier's
+    // statement shows it.
+    const payableBeforeAccrual = Number(await control('ACCOUNTS_PAYABLE'));
+    const accrued = await createExpense(
+      {
+        companyId,
+        expenseDate: utcDate('2026-04-12'),
+        expenseCategoryId: category.id,
+        shipmentId,
+        currency: 'MAD',
+        amount: '100',
+        rateToUsd: '9.85',
+        rateLocalPerUsd: '9.85',
+        description: 'Owed to nobody yet',
+      },
+      ctx.admin.id,
+    );
+    await postExpense({ id: accrued.id, companyId, userId: ctx.admin.id });
+    expect(Number(await control('ACCOUNTS_PAYABLE'))).toBe(payableBeforeAccrual);
+    expect(Number(await control('ACCRUED_EXPENSES'))).toBeLessThan(0);
   });
 });
 

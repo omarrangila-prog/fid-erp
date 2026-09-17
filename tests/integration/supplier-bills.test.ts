@@ -3,6 +3,10 @@ import { prisma, resetDatabase, getContext, utcDate } from '../helpers';
 import { createExpense, postExpense } from '@/lib/services/expense';
 import { getPayables } from '@/lib/services/receivables';
 import { expenseSchema } from '@/lib/validation/finance';
+import { createPayment, postPayment } from '@/lib/services/payment';
+import { reconcile } from '@/lib/services/reconciliation';
+import { getCashAccount } from '../helpers';
+import { dec } from '@/lib/money';
 
 /**
  * A cost incurred but not yet paid.
@@ -64,8 +68,76 @@ describe('an unpaid general expense', () => {
     expect(row?.vendorId).toBe(vendorId);
   }, 120_000);
 
-  it('will not be recorded at all when nobody is named as owed', async () => {
-    await expect(createExpense(bill(), ctx.admin.id)).rejects.toThrow(/owed to a supplier/i);
+  it('books to Accrued Expenses when nobody is named, and is paid later from cash', async () => {
+    // Nobody named: the charge is known before anyone decided whose bill it is.
+    const draft = await createExpense(bill({ amount: '2500', description: 'Port handling, invoice to follow' }), ctx.admin.id);
+    const posted = await postExpense({ id: draft.id, companyId: ctx.morocco.id, userId: ctx.admin.id });
+    expect(posted.status).toBe('POSTED');
+
+    const entry = await prisma.journalEntry.findFirstOrThrow({
+      where: { sourceType: 'EXPENSE', sourceId: posted.id, status: 'POSTED' },
+      include: { lines: { include: { account: { select: { systemKey: true } } } } },
+    });
+    const credit = entry.lines.find((l) => dec(l.credit).greaterThan(0));
+    expect(credit?.account.systemKey).toBe('ACCRUED_EXPENSES');
+    expect(credit?.vendorId).toBeNull();
+
+    // Not on any supplier's account, so not in supplier payables.
+    const payables = await getPayables({ companyId: ctx.morocco.id });
+    expect(payables.some((r) => r.contractNumber === posted.expenseNumber)).toBe(false);
+
+    // Paid later from cash, naming no supplier. Accrued Expenses is cleared.
+    const cash = await getCashAccount(ctx.morocco.id, 'MAD');
+    const payment = await createPayment(
+      {
+        companyId: ctx.morocco.id,
+        paymentDate: utcDate('2026-03-10'),
+        vendorId: null,
+        currency: 'MAD',
+        amount: '2500',
+        rateToUsd: '9.85',
+        rateLocalPerUsd: '9.85',
+        paymentMethod: 'CASH',
+        cashBankAccountId: cash.id,
+        allocations: [{ expenseId: posted.id, amount: '2500' }],
+      },
+      ctx.admin.id,
+    );
+    await postPayment({ id: payment.id, companyId: ctx.morocco.id, userId: ctx.admin.id });
+
+    const accrued = await prisma.$queryRaw<Array<{ bal: string }>>`
+      SELECT COALESCE(SUM(jl."credit" - jl."debit"), 0)::text AS bal
+      FROM journal_lines jl
+      JOIN journal_entries je ON je."id" = jl."journalEntryId"
+      JOIN accounts a ON a."id" = jl."accountId"
+      WHERE je."companyId" = ${ctx.morocco.id} AND je."status" = 'POSTED' AND a."systemKey" = 'ACCRUED_EXPENSES'`;
+    expect(dec(accrued[0]?.bal ?? 0).toFixed(2)).toBe('0.00');
+
+    const health = await reconcile(ctx.morocco.id);
+    expect(health.healthy, health.checks.filter((c) => !c.passed).map((c) => c.label).join('; ')).toBe(true);
+  }, 180_000);
+
+  it('will not let a payment to nobody settle a bill that is on a supplier account', async () => {
+    const owed = await createExpense(bill({ vendorId, amount: '700' }), ctx.admin.id);
+    await postExpense({ id: owed.id, companyId: ctx.morocco.id, userId: ctx.admin.id });
+    const cash = await getCashAccount(ctx.morocco.id, 'MAD');
+    await expect(
+      createPayment(
+        {
+          companyId: ctx.morocco.id,
+          paymentDate: utcDate('2026-03-11'),
+          vendorId: null,
+          currency: 'MAD',
+          amount: '700',
+          rateToUsd: '9.85',
+          rateLocalPerUsd: '9.85',
+          paymentMethod: 'CASH',
+          cashBankAccountId: cash.id,
+          allocations: [{ expenseId: owed.id, amount: '700' }],
+        },
+        ctx.admin.id,
+      ),
+    ).rejects.toThrow(/name that supplier/i);
   }, 120_000);
 });
 
@@ -111,14 +183,15 @@ describe('the expense form as the user fills it in', () => {
     expect(payables.some((r) => r.contractNumber === posted.expenseNumber)).toBe(true);
   }, 120_000);
 
-  it('still refuses the old payload that named nobody', async () => {
+  it('accepts the payload that names nobody, as the simplified form sends it', async () => {
     const parsed = expenseSchema.parse(formPayload({ vendorId: '' }));
-    await expect(
-      createExpense(
-        { ...parsed, companyId: ctx.morocco.id, expenseDate: parsed.expenseDate },
-        ctx.admin.id,
-      ),
-    ).rejects.toThrow(/owed to a supplier/i);
+    const draft = await createExpense(
+      { ...parsed, companyId: ctx.morocco.id, expenseDate: parsed.expenseDate },
+      ctx.admin.id,
+    );
+    const posted = await postExpense({ id: draft.id, companyId: ctx.morocco.id, userId: ctx.admin.id });
+    expect(posted.status).toBe('POSTED');
+    expect(posted.vendorId).toBeNull();
   }, 120_000);
 });
 

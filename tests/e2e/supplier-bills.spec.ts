@@ -50,37 +50,26 @@ test.beforeEach(async ({ page }) => {
   await signInToMorocco(page);
 });
 
-test('an unpaid company cost is recorded as owed to a supplier and posts', async ({ page }) => {
+test('an unpaid cost is booked with nobody named, and paid later from cash', async ({ page }) => {
   test.setTimeout(180_000);
-  const supplier = `Landlord ${Date.now().toString(36).toUpperCase()}`;
 
   await page.goto('/finance/expenses/new', { waitUntil: 'domcontentloaded' });
   const form = page.getByRole('main');
 
-  // A cost of running the business, not of one consignment.
+  // A cost of running the business, not paid yet.
   await form.locator('label').filter({ hasText: /running the business/i }).click();
-
   await form.getByRole('combobox', { name: /expense category/i }).click();
   await page.getByRole('listbox').getByRole('option').first().click();
-
-  // A general cost defaults to paid, because until now an unpaid one could not
-  // be recorded at all. Choosing Unpaid must now ask who is owed.
   await form.locator('label').filter({ hasText: /Book the cost now/i }).click();
-  const supplierPicker = form.getByRole('combobox', { name: /supplier/i });
-  await expect(supplierPicker).toBeVisible();
 
-  // The supplier is not on file, so add them without leaving the voucher.
-  await supplierPicker.click();
-  await page.getByRole('button', { name: /Add New Supplier/i }).click();
-  const dialog = page.getByRole('dialog');
-  await dialog.getByLabel(/supplier name/i).fill(supplier);
-  await dialog.getByRole('button', { name: /^Save$/ }).click();
-  await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 20_000 });
-  await expect(supplierPicker).toContainText(supplier);
+  // Unpaid asks for nothing about who is owed or how it will be paid.
+  await expect(form.getByRole('combobox', { name: /supplier/i })).toHaveCount(0);
+  await expect(form.getByLabel(/^owed to/i)).toHaveCount(0);
+  await expect(form.getByRole('combobox', { name: /^(cash|bank) account/i })).toHaveCount(0);
 
   await form.getByLabel(/expense date/i).fill('2026-07-29');
   await form.getByLabel(/^Amount/).fill('4000');
-  await form.getByLabel(/^Description/).fill('Office rent, unpaid');
+  await form.getByLabel(/^Description/).fill('Office rent, invoice to follow');
 
   await form.getByRole('button', { name: /save and post/i }).click();
   await page.waitForURL(/\/finance\/expenses\/(?!new)[\w-]+/, { waitUntil: 'domcontentloaded', timeout: 60_000 });
@@ -88,10 +77,22 @@ test('an unpaid company cost is recorded as owed to a supplier and posts', async
   const main = page.getByRole('main');
   await expect(main).toContainText(/POSTED/i);
   await expect(main).toContainText(/4,000/);
+  // The entry it wrote goes to Accrued Expenses, not to any supplier.
+  await expect(main).toContainText(/Accrued Expenses/i);
 
-  // The whole point of naming the supplier: it can now be aged and settled.
-  await page.goto('/finance/payables', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('main')).toContainText(supplier, { timeout: 30_000 });
+  // Later: pay it from the cost itself. No supplier is asked for.
+  await main.getByRole('link', { name: /record payment/i }).click();
+  await page.waitForURL(/\/finance\/payments\/new/, { waitUntil: 'domcontentloaded' });
+  const pay = page.getByRole('main');
+  await expect(pay.getByRole('combobox', { name: /supplier/i })).toHaveCount(0);
+  await expect(pay.getByLabel(/settles/i)).toHaveValue(/FID-MA-EV-/);
+  await expect(pay.getByLabel(/^Amount/).first()).toHaveValue('4000');
+
+  await pay.getByLabel(/payment method/i).selectOption('CASH');
+  await pay.getByRole('button', { name: /save and post/i }).click();
+  await page.waitForURL(/\/finance\/payments\/(?!new)[\w-]+/, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  await expect(page.getByRole('main')).toContainText(/POSTED/i);
+  await expect(page.getByRole('main')).toContainText(/Accrued Expenses/i);
 });
 
 test('a posted document shows the journal entry it wrote', async ({ page }) => {

@@ -11,7 +11,7 @@ import { Field } from '@/components/ui/field';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Combobox, type ComboOption } from '@/components/ui/combobox';
 import { MasterSelect } from '@/components/shared/master-select';
-import { vendorCreateSpec, cashBankCreateSpec, agentCreateSpec } from '@/components/shared/master-specs';
+import { cashBankCreateSpec } from '@/components/shared/master-specs';
 import { dec, tryDec } from '@/lib/money';
 import { formatMoney, todayInputValue } from '@/lib/format';
 import { accountsFor } from '@/lib/cash-account-choice';
@@ -22,8 +22,8 @@ import type { CategoryOption, ShipmentTrace } from '@/app/(app)/finance/expenses
 /**
  * One payment, several cost categories.
  *
- * The header says everything about the money — when, from where or owed to
- * whom, in what currency. The lines say what it bought. Each line becomes an
+ * The header says everything about the money — when, from where, in what
+ * currency. The lines say what it bought. Each line becomes an
  * expense in its own right, because in this business two categories on one
  * payment can be treated differently: port charges are capitalised into the
  * coffee, a staff dinner is not, and one record could not be both.
@@ -55,8 +55,6 @@ const newLine = (): Line => ({
 export function SplitExpenseForm({
   categories,
   shipments,
-  agents,
-  vendors,
   accounts,
   localCurrency,
   defaultLocalRate,
@@ -67,8 +65,6 @@ export function SplitExpenseForm({
 }: {
   categories: CategoryOption[];
   shipments: ComboOption[];
-  agents: ComboOption[];
-  vendors: ComboOption[];
   accounts: Array<ComboOption & { currency: string; accountType: 'CASH' | 'PETTY_CASH' | 'BANK' }>;
   localCurrency: string;
   defaultLocalRate: string;
@@ -83,13 +79,10 @@ export function SplitExpenseForm({
 
   const [kind, setKind] = React.useState<'SHIPMENT' | 'GENERAL'>(defaultShipmentId ? 'SHIPMENT' : 'SHIPMENT');
   const [settlement, setSettlement] = React.useState<'PAID' | 'UNPAID'>('PAID');
-  const [owedTo, setOwedTo] = React.useState<'VENDOR' | 'AGENT'>('VENDOR');
 
   const [header, setHeader] = React.useState({
     expenseDate: todayInputValue(),
     shipmentId: defaultShipmentId ?? (null as string | null),
-    vendorId: null as string | null,
-    payableToAgentId: null as string | null,
     currency: localCurrency,
     rateToUsd: localCurrency === 'USD' ? '1' : defaultLocalRate,
     rateLocalPerUsd: defaultLocalRate,
@@ -155,14 +148,6 @@ export function SplitExpenseForm({
       setError('Choose the cash or bank this was paid from.');
       return;
     }
-    if (settlement === 'UNPAID' && owedTo === 'VENDOR' && !header.vendorId) {
-      setError('An unpaid cost has to say who is owed, so it can be aged and settled later.');
-      return;
-    }
-    if (settlement === 'UNPAID' && owedTo === 'AGENT' && !header.payableToAgentId) {
-      setError('An unpaid cost has to say who is owed, so it can be aged and settled later.');
-      return;
-    }
 
     start(async () => {
       const result = await saveSplitExpenseAction(
@@ -170,9 +155,9 @@ export function SplitExpenseForm({
           expenseDate: header.expenseDate,
           kind,
           shipmentId: kind === 'SHIPMENT' ? (header.shipmentId ?? '') : '',
-          vendorId: settlement === 'UNPAID' && owedTo === 'VENDOR' ? (header.vendorId ?? '') : '',
+          vendorId: '',
           agentId: '',
-          payableToAgentId: settlement === 'UNPAID' && owedTo === 'AGENT' ? (header.payableToAgentId ?? '') : '',
+          payableToAgentId: '',
           currency: header.currency,
           rateToUsd: isForeign ? header.rateToUsd : '1',
           rateLocalPerUsd: header.currency === localCurrency ? header.rateToUsd || '1' : header.rateLocalPerUsd,
@@ -318,37 +303,9 @@ export function SplitExpenseForm({
               </Field>
             </div>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2">
-              {kind === 'SHIPMENT' ? (
-                <Field label="Owed to" required>
-                  <Select value={owedTo} onChange={(e) => setOwedTo(e.target.value === 'AGENT' ? 'AGENT' : 'VENDOR')}>
-                    <option value="VENDOR">A supplier</option>
-                    <option value="AGENT">An agent</option>
-                  </Select>
-                </Field>
-              ) : null}
-              {owedTo === 'VENDOR' ? (
-                <Field label="Supplier" required className={kind === 'GENERAL' ? 'sm:col-span-2' : undefined}>
-                  <MasterSelect
-                    options={vendors}
-                    value={header.vendorId}
-                    onChange={(value) => setHeader((prev) => ({ ...prev, vendorId: value }))}
-                    placeholder="Choose a supplier…"
-                    create={vendorCreateSpec(header.currency)}
-                  />
-                </Field>
-              ) : (
-                <Field label="Agent" required>
-                  <MasterSelect
-                    options={agents}
-                    value={header.payableToAgentId}
-                    onChange={(value) => setHeader((prev) => ({ ...prev, payableToAgentId: value }))}
-                    placeholder="Choose an agent…"
-                    create={agentCreateSpec()}
-                  />
-                </Field>
-              )}
-            </div>
+            <p className="text-xs text-ink-muted">
+              Booked now, paid later. Each line is settled from the cost itself when the money leaves.
+            </p>
           )}
         </CardContent>
       </Card>

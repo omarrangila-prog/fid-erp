@@ -81,6 +81,13 @@ const STANDARD_ACCOUNTS: AccountSeed[] = [
     subledgerType: 'VENDOR',
   },
   {
+    code: '2010',
+    name: 'Accrued Expenses',
+    type: 'LIABILITY',
+    reportGroup: REPORT_GROUPS.CURRENT_LIABILITY,
+    systemKey: ACCOUNT_KEYS.ACCRUED_EXPENSES,
+  },
+  {
     /*
      * Money a collection agent is holding on the company's behalf.
      *

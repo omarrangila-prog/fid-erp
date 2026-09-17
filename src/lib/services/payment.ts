@@ -32,7 +32,8 @@ export type PaymentAllocationInput = {
 export type PaymentInput = {
   companyId: string;
   paymentDate: Date;
-  vendorId: string;
+  /** Null when the payment settles accrued costs that were never put on a supplier's account. */
+  vendorId: string | null;
   currency: string;
   amount: string | number;
   rateToUsd: string | number;
@@ -168,7 +169,7 @@ async function buildAllocations(
   tx: Tx,
   params: {
     companyId: string;
-    vendorId: string;
+    vendorId: string | null;
     paymentAmount: Decimal;
     paymentCurrency: string;
     paymentRateToUsd: Decimal;
@@ -245,7 +246,19 @@ async function buildAllocations(
         })();
 
     if (document.vendorId && document.vendorId !== params.vendorId) {
-      throw new BusinessRuleError(`${document.label} belongs to a different vendor.`);
+      throw new BusinessRuleError(
+        params.vendorId
+          ? `${document.label} belongs to a different vendor.`
+          : `${document.label} is on a supplier's account, so the payment has to name that supplier.`,
+      );
+    }
+    // The other way round: a cost booked to nobody sits in Accrued Expenses,
+    // and paying it through a supplier would relieve that supplier's account
+    // for a bill that was never on it.
+    if (!document.vendorId && params.vendorId && !document.isContract) {
+      throw new BusinessRuleError(
+        `${document.label} was booked without a supplier. Pay it from the cost itself, not through a supplier payment.`,
+      );
     }
     if (document.status !== 'POSTED') {
       throw new BusinessRuleError(`${document.label} is not posted and cannot be settled.`);
@@ -399,8 +412,8 @@ async function syncDraftPaymentCheque(
   params: {
     companyId: string;
     paymentId: string;
-    vendorId: string;
-    vendorName: string;
+    vendorId: string | null;
+    vendorName: string | null;
     userId: string;
     method: PaymentMethod;
     cheque: PaymentInput['cheque'];
@@ -425,6 +438,12 @@ async function syncDraftPaymentCheque(
   }
   if (!params.cheque) return;
 
+  // With no supplier there is no name to fall back on for the payee.
+  const beneficiary = params.cheque.beneficiary?.trim() || params.vendorName;
+  if (!beneficiary) {
+    throw new BusinessRuleError('Say who the cheque is made out to.');
+  }
+
   const data = {
     chequeNumber: params.cheque.chequeNumber.trim(),
     chequeDate: params.cheque.chequeDate,
@@ -435,7 +454,7 @@ async function syncDraftPaymentCheque(
     amountUsd: params.amounts.amountUsd,
     rateLocalPerUsd: params.amounts.rateLocalPerUsd,
     amountLocal: params.amounts.amountLocal,
-    beneficiary: params.cheque.beneficiary ?? params.vendorName,
+    beneficiary,
     vendorId: params.vendorId,
     cashBankAccountId: params.cashBankAccountId,
     notes: params.cheque.notes ?? null,
@@ -466,14 +485,28 @@ async function syncDraftPaymentCheque(
   });
 }
 
+/**
+ * The supplier a payment names, when it names one.
+ *
+ * A payment that settles accrued costs — expenses booked before anyone
+ * decided whose bill they were — has no supplier at all, and that is a valid
+ * shape, not a missing field. A payment that does name one must name one of
+ * this company's.
+ */
+async function requireVendorIfNamed(tx: Tx, input: { companyId: string; vendorId: string | null }) {
+  if (!input.vendorId) return null;
+  const vendor = await tx.vendor.findFirst({
+    where: { id: input.vendorId, companyId: input.companyId },
+    select: { id: true, vendorName: true },
+  });
+  if (!vendor) throw new NotFoundError('Vendor');
+  return vendor;
+}
+
 export async function createPayment(input: PaymentInput, userId: string) {
   return transaction(async (tx) => {
     const company = await getCompanyContext(tx, input.companyId);
-    const vendor = await tx.vendor.findFirst({
-      where: { id: input.vendorId, companyId: input.companyId },
-      select: { id: true, vendorName: true },
-    });
-    if (!vendor) throw new NotFoundError('Vendor');
+    const vendor = await requireVendorIfNamed(tx, input);
 
     const method = await validateSettlement(tx, input);
 
@@ -520,7 +553,7 @@ export async function createPayment(input: PaymentInput, userId: string) {
       companyId: input.companyId,
       paymentId: payment.id,
       vendorId: input.vendorId,
-      vendorName: vendor.vendorName,
+      vendorName: vendor?.vendorName ?? null,
       userId,
       method,
       cheque: input.cheque,
@@ -536,7 +569,7 @@ export async function createPayment(input: PaymentInput, userId: string) {
       entityId: payment.id,
       after: {
         paymentNumber,
-        vendor: vendor.vendorName,
+        vendor: vendor?.vendorName ?? null,
         amount: amounts.amount,
         currency: amounts.currency,
         amountUsd: amounts.amountUsd,
@@ -555,11 +588,7 @@ export async function updatePayment(id: string, input: PaymentInput, userId: str
       throw new BusinessRuleError('Only draft payments can be edited. Reverse the payment to correct a posted one.');
     }
 
-    const vendor = await tx.vendor.findFirst({
-      where: { id: input.vendorId, companyId: input.companyId },
-      select: { vendorName: true },
-    });
-    if (!vendor) throw new NotFoundError('Vendor');
+    const vendor = await requireVendorIfNamed(tx, input);
 
     const company = await getCompanyContext(tx, input.companyId);
     const method = await validateSettlement(tx, input);
@@ -601,7 +630,7 @@ export async function updatePayment(id: string, input: PaymentInput, userId: str
       companyId: input.companyId,
       paymentId: id,
       vendorId: input.vendorId,
-      vendorName: vendor.vendorName,
+      vendorName: vendor?.vendorName ?? null,
       userId,
       method,
       cheque: input.cheque,
@@ -682,6 +711,25 @@ export async function postPayment(params: { id: string; companyId: string; userI
       const label = allocation.purchaseContract
         ? allocation.purchaseContract.contractNumber
         : allocation.expense!.expenseNumber;
+
+      // A cost booked to nobody in particular was accrued, not put on a
+      // supplier's account. Paying it clears Accrued Expenses at the value it
+      // was booked — no sub-ledger, no party currency to translate into.
+      if (!payment.vendor) {
+        return {
+          accountKey: ACCOUNT_KEYS.ACCRUED_EXPENSES,
+          direction: 'DEBIT' as const,
+          currency: document.currency,
+          amount: toMoney(allocation.amount),
+          rateToUsd: document.rateToUsd,
+          bookedUsd,
+          bookedLocal,
+          description: `Settles ${label}`,
+          shipmentId: payment.shipmentId,
+          purchaseContractId: allocation.purchaseContractId ?? null,
+        };
+      }
+
       // In the supplier's ledger currency, at the document's own rate — the
       // same statement the accrual made when the bill was booked.
       const leg = resolveSubledgerLeg({
@@ -725,17 +773,26 @@ export async function postPayment(params: { id: string; companyId: string; userI
     const unallocated = toMoney(dec(payment.amount).minus(settledInVoucher));
     const hasAdvance = unallocated.greaterThan('0.005');
 
-    const advanceLines = hasAdvance
+    // An advance is money a supplier owes back in goods. With no supplier
+    // there is nobody to owe it, so a payment to nobody must be fully allocated.
+    if (hasAdvance && !payment.vendor) {
+      throw new BusinessRuleError(
+        `${payment.currency} ${unallocated.toFixed(2)} of this payment is not put against a cost. A payment with no supplier has to be allocated in full.`,
+      );
+    }
+
+    const advanceLines = hasAdvance && payment.vendor
       ? (() => {
+          const vendor = payment.vendor;
           const advance = resolveSubledgerLeg({
-            partyCurrency: payment.vendor.primaryCurrency,
+            partyCurrency: vendor.primaryCurrency,
             voucherCurrency: payment.currency,
             voucherAmount: unallocated,
             voucherRateToUsd: payment.rateToUsd,
             voucherAmountUsd: convertToUsd(unallocated, payment.rateToUsd, payment.currency),
             localCurrency: company.localCurrency,
             rateLocalPerUsd: payment.rateLocalPerUsd,
-            partyLabel: payment.vendor.vendorName,
+            partyLabel: vendor.vendorName,
           });
           return [
             {
@@ -744,7 +801,7 @@ export async function postPayment(params: { id: string; companyId: string; userI
               currency: advance.currency,
               amount: advance.amount,
               rateToUsd: advance.rateToUsd,
-              description: `Advance to ${payment.vendor.vendorName}, not yet applied to a contract`,
+              description: `Advance to ${vendor.vendorName}, not yet applied to a contract`,
               vendorId: payment.vendorId,
               shipmentId: payment.shipmentId,
             },
@@ -757,7 +814,7 @@ export async function postPayment(params: { id: string; companyId: string; userI
     await postJournalEntry(tx, {
       companyId: params.companyId,
       entryDate: payment.paymentDate,
-      description: `Payment ${payment.paymentNumber} — ${payment.vendor.vendorName}`,
+      description: `Payment ${payment.paymentNumber} — ${payment.vendor?.vendorName ?? 'accrued cost'}`,
       sourceType: 'PAYMENT',
       sourceId: payment.id,
       createdById: params.userId,

@@ -53,7 +53,7 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
     <div className="space-y-6">
       <PageHeader
         title={payment.paymentNumber}
-        description={`${payment.vendor.vendorName}${payment.reference ? ` · ${payment.reference}` : ''}`}
+        description={`${payment.vendor?.vendorName ?? 'Accrued costs'}${payment.reference ? ` · ${payment.reference}` : ''}`}
         breadcrumbs={[
           { label: 'Finance' },
           { label: 'Payments', href: '/finance/payments' },
@@ -168,9 +168,13 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
           <CardContent>
             <dl>
               <DetailRow label="Supplier">
-                <Link href={`/ledgers/vendors/${payment.vendorId}`} className="text-gold-700 hover:underline">
-                  {payment.vendor.vendorName}
-                </Link>
+                {payment.vendor ? (
+                  <Link href={`/ledgers/vendors/${payment.vendorId}`} className="text-gold-700 hover:underline">
+                    {payment.vendor.vendorName}
+                  </Link>
+                ) : (
+                  <span className="text-ink-muted">None — settles costs booked without a supplier</span>
+                )}
               </DetailRow>
               <DetailRow label="Date">{formatDate(payment.paymentDate)}</DetailRow>
               <DetailRow label="Method">{PAYMENT_METHOD_LABELS[payment.paymentMethod]}</DetailRow>
