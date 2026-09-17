@@ -205,7 +205,7 @@ export function cashBankCreateSpec(
     toOption: (created) => ({
       value: created.id,
       label: created.name,
-      hint: `${created.code} · ${created.currency}`,
+      hint: created.currency,
       keywords: `${created.code} ${created.currency}`,
     }),
   };

@@ -138,7 +138,7 @@ export default async function NewPaymentPage({
         accounts={accounts.map((a) => ({
           value: a.id,
           label: a.name,
-          hint: `${a.code} · ${a.currency}`,
+          hint: a.currency,
           keywords: `${a.code} ${a.currency}`,
           currency: a.currency,
           accountType: a.accountType,

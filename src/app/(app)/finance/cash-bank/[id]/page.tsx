@@ -45,7 +45,7 @@ export default async function CashBookPage({ params }: { params: Promise<{ id: s
     <div className="space-y-6">
       <PageHeader
         title={book.account.name}
-        description={`${book.account.code} · ${book.account.accountType.replaceAll('_', ' ').toLowerCase()}`}
+        description={`${book.account.currency} · ${book.account.accountType.replaceAll('_', ' ').toLowerCase()}`}
         breadcrumbs={[
           { label: 'Finance' },
           { label: 'Cash & Bank', href: '/finance/cash-bank' },

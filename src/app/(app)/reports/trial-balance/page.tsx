@@ -102,7 +102,7 @@ export default async function TrialBalancePage({ searchParams }: { searchParams:
                         href={ledgerHref(row.accountId, currencyByAccount.get(row.accountId))}
                         className="font-medium text-forest-800 hover:text-gold-700"
                       >
-                        <span className="text-ink-subtle">{row.code}</span> {row.name}
+                        {row.name}
                       </Link>
                     </TD>
                     <TD className="text-xs">{titleCase(row.type)}</TD>

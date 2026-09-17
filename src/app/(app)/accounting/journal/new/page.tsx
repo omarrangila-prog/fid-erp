@@ -37,7 +37,7 @@ export default async function NewJournalEntryPage() {
 
   const options: AccountOption[] = accounts.map((account) => ({
     value: account.id,
-    label: `${account.code} — ${account.name}`,
+    label: account.name,
     hint: account.type.replaceAll('_', ' ').toLowerCase(),
     keywords: `${account.code} ${account.name} ${account.type}`,
     accountType: account.type,

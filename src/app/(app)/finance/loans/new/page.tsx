@@ -59,7 +59,7 @@ export default async function NewLoanPage({
           accounts={accounts}
           loanAccounts={loanAccounts.map((a) => ({
             id: a.id,
-            label: `${a.code} · ${a.name}`,
+            label: a.name,
             currency: a.currency,
           }))}
           localCurrency={user.activeCompany.localCurrency}

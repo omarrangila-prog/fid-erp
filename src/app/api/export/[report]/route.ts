@@ -582,7 +582,6 @@ const REPORTS: Record<string, Report> = {
         rows: trial.rows,
         totals: [`Debit USD`, `Credit USD`, `Debit ${local}`, `Credit ${local}`],
         columns: [
-          { header: 'Code', value: (r) => r.code, width: 10 },
           { header: 'Account', value: (r) => r.name, width: 36 },
           { header: 'Type', value: (r) => r.type },
           { header: 'Debit USD', value: (r) => Number(r.debitUsd), type: 'money' },
@@ -634,7 +633,6 @@ const REPORTS: Record<string, Report> = {
         title: 'Profit and Loss',
         subtitle: period(from, to),
         labelHeader: 'Account',
-        showCodes: true,
         columns: [
           { header: 'USD', type: 'money' },
           { header: local, type: 'money' },
@@ -683,7 +681,6 @@ const REPORTS: Record<string, Report> = {
         title: 'Balance Sheet',
         subtitle: asAt(asOf),
         labelHeader: 'Account',
-        showCodes: true,
         columns: [
           { header: 'USD', type: 'money' },
           { header: local, type: 'money' },
@@ -757,7 +754,7 @@ const REPORTS: Record<string, Report> = {
         companyName: user.activeCompany.name,
         title: 'General Ledger',
         subtitle:
-          `${ledger.account.code} ${ledger.account.name} · opening USD ${Number(ledger.openingBalanceUsd).toFixed(2)}` +
+          `${ledger.account.name} · opening USD ${Number(ledger.openingBalanceUsd).toFixed(2)}` +
           ` · closing USD ${Number(ledger.closingBalanceUsd).toFixed(2)}`,
         rows: ledger.rows,
         totals: ['Debit USD', 'Credit USD'],
@@ -826,7 +823,6 @@ const REPORTS: Record<string, Report> = {
           { header: 'Entry', value: (r) => r.entryNumber },
           { header: 'Source', value: (r) => r.sourceType.replace(/_/g, ' ') },
           { header: 'Narration', value: (r) => r.narration, width: 38 },
-          { header: 'Code', value: (r) => r.accountCode, width: 10 },
           { header: 'Account', value: (r) => r.accountName, width: 32 },
           { header: 'Line detail', value: (r) => r.lineDescription, width: 32 },
           { header: 'Debit USD', value: (r) => r.debitUsd, type: 'money' },
@@ -969,7 +965,7 @@ const REPORTS: Record<string, Report> = {
           { kind: 'section', label: 'Cash and bank' },
           ...position.accounts.map((account): StatementRow => ({
             kind: 'line',
-            label: `${account.code} ${account.name}`,
+            label: account.name,
             values: [Number(account.balance), account.currency, Number(account.balanceUsd)],
           })),
           {

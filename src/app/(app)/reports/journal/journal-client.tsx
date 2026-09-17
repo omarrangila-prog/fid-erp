@@ -218,7 +218,7 @@ export function JournalClient({
               {r.lines.map((line) => (
                 <TR key={line.id}>
                   <TD>
-                    <span className="text-ink-subtle">{line.accountCode}</span> {line.accountName}
+                    {line.accountName}
                   </TD>
                   <TD className="text-xs text-ink-muted">{line.description ?? '—'}</TD>
                   <TD className="text-xs">{line.currency}</TD>

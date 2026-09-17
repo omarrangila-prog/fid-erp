@@ -100,7 +100,7 @@ export default async function CashBankPage() {
                           <Icon className="size-4 text-forest-400" />
                           <span>
                             <span className="block">{account.name}</span>
-                            <span className="block text-xs font-normal text-ink-subtle">{account.code}</span>
+                            
                           </span>
                         </Link>
                       </TD>

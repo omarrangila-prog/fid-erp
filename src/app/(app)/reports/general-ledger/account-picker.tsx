@@ -47,7 +47,7 @@ export function AccountPicker({
         <Combobox
           options={accounts.map((a) => ({
             value: a.id,
-            label: `${a.code} · ${a.name}`,
+            label: a.name,
             hint: a.type.toLowerCase(),
             keywords: a.code,
           }))}

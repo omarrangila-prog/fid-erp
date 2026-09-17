@@ -87,7 +87,7 @@ export default async function ForexGainLossPage({
         <Card>
           <CardHeader>
             <CardTitle>
-              {report.account.code} · {report.account.name}
+              {report.account.name}
             </CardTitle>
             <CardDescription>Debit is a loss, credit is a gain.</CardDescription>
           </CardHeader>

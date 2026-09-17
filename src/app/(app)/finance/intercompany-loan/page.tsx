@@ -66,7 +66,7 @@ export default async function IntercompanyLoanPage() {
       .filter((a) => a.companyId === company.id)
       .map((a) => ({
         id: a.id,
-        label: `${a.code} · ${a.name}`,
+        label: a.name,
         type: a.type as 'ASSET' | 'LIABILITY',
         isDefaultReceivable: a.systemKey === 'INTERCOMPANY_LOAN_RECEIVABLE',
         isDefaultPayable: a.systemKey === 'INTERCOMPANY_LOAN_PAYABLE',

@@ -160,7 +160,7 @@ export default async function GeneralLedgerPage({
         <Card>
           <CardHeader>
             <CardTitle>
-              {ledger.account.code} · {ledger.account.name}
+              {ledger.account.name}
             </CardTitle>
               <CardDescription>
                 {titleCase(ledger.account.type)} account · {ledgerCurrencyLabel(ledger.viewCurrency, ledger.mixedCurrencies)}

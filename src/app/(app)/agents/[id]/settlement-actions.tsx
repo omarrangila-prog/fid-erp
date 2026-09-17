@@ -213,7 +213,7 @@ function SettlementSheet({
               <option value="">Choose an account…</option>
               {options.map((account) => (
                 <option key={account.id} value={account.id}>
-                  {account.name} ({account.code})
+                  {account.name}
                 </option>
               ))}
             </Select>

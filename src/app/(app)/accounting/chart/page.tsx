@@ -77,7 +77,6 @@ export default async function ChartOfAccountsPage() {
               <Table>
                 <THead>
                   <TR className="hover:bg-transparent">
-                    <TH>Code</TH>
                     <TH>Account</TH>
                     <TH>Type</TH>
                     <TH>Currency</TH>
@@ -90,7 +89,6 @@ export default async function ChartOfAccountsPage() {
                 <TBody>
                   {section.accounts.map((account) => (
                     <TR key={account.id} className={account.status === 'INACTIVE' ? 'opacity-60' : undefined}>
-                      <TD className="font-mono text-xs">{account.code}</TD>
                       <TD>
                         <Link
                           href={ledgerHref(
@@ -111,9 +109,6 @@ export default async function ChartOfAccountsPage() {
                             </Badge>
                           ) : null}
                           {account.systemKey ? <Badge tone="neutral">System</Badge> : null}
-                          {account.expenseCategory ? (
-                            <Badge tone="neutral">{account.expenseCategory.code}</Badge>
-                          ) : null}
                           {account.status === 'INACTIVE' ? <Badge tone="neutral">Inactive</Badge> : null}
                         </span>
                       </TD>

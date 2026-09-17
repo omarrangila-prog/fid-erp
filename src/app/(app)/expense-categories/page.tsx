@@ -80,7 +80,7 @@ export default async function ExpenseCategoriesPage() {
     }),
   ]);
 
-  const accountOptions = expenseAccounts.map((a) => ({ value: a.id, label: `${a.code} · ${a.name}` }));
+  const accountOptions = expenseAccounts.map((a) => ({ value: a.id, label: a.name }));
 
   const rows: SimpleRow[] = categories.map((c) => ({
     id: c.id,
@@ -89,7 +89,7 @@ export default async function ExpenseCategoriesPage() {
     data: {
       name: c.name,
       code: c.code,
-      account: c.glAccount ? `${c.glAccount.code} · ${c.glAccount.name}` : null,
+      account: c.glAccount ? c.glAccount.name : null,
       treatment: c.capitaliseByDefault ? 'Landed cost' : 'Period cost',
       used: c._count.expenses,
       status: c.status === 'ACTIVE' ? 'Active' : 'Inactive',

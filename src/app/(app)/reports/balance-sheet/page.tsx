@@ -49,12 +49,10 @@ export default async function BalanceSheetPage({ searchParams }: { searchParams:
                   href={`/reports/general-ledger?account=${line.accountId}`}
                   className="text-forest-800 hover:text-gold-700 hover:underline"
                 >
-                  <span className="text-ink-subtle">{line.code}</span> {line.name}
+                  {line.name}
                 </Link>
               ) : (
-                <>
-                  <span className="text-ink-subtle">{line.code}</span> {line.name}
-                </>
+                line.name
               )}
             </TD>
             <TD numeric>{formatMoney(line.amountUsd, 'USD')}</TD>

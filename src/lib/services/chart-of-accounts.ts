@@ -765,7 +765,7 @@ export async function quickCreateJournalAccount(params: {
       select: { id: true, name: true, code: true },
     });
     if (nameClash) {
-      throw new ConflictError(`${nameClash.name} (${nameClash.code}) is already on the chart.`);
+      throw new ConflictError(`${nameClash.name} is already on the chart.`);
     }
 
     if (kind.value === 'CASH_BANK') {

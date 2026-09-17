@@ -31,7 +31,6 @@ export type ChartRowAccount = {
 };
 
 const EDIT_FIELDS: FieldSpec[] = [
-  { kind: 'text', name: 'code', label: 'Account code', required: true },
   { kind: 'text', name: 'name', label: 'Account name', required: true },
   {
     kind: 'select',
@@ -157,7 +156,7 @@ export function AccountRowActions({
         title={account.isSystem ? 'Rename account' : 'Edit account'}
         description={
           account.isSystem
-            ? 'System accounts keep their code. The name and statement group can still be corrected.'
+            ? 'A built-in account can be renamed and moved on the statements.'
             : undefined
         }
         fields={account.isSystem ? SYSTEM_EDIT_FIELDS : EDIT_FIELDS}
@@ -173,7 +172,7 @@ export function AccountRowActions({
       <MasterFormSheet
         open={openingOpen}
         onOpenChange={setOpeningOpen}
-        title={`Opening — ${account.code}`}
+        title={`Opening balance — ${account.name}`}
         description={
           account.cashBank
             ? 'This updates the cash or bank opening. It is not a journal.'

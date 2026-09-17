@@ -87,7 +87,7 @@ export async function DocumentJournal({
                     {entry.lines.map((line) => (
                       <tr key={line.id} className="border-b border-line/60 last:border-0">
                         <td className="py-1.5 pr-3 align-top">
-                          <span className="font-mono text-xs text-ink-muted">{line.account.code}</span>{' '}
+                          
                           <span className="text-ink">{line.account.name}</span>
                         </td>
                         <td className="py-1.5 pr-3 align-top text-xs text-ink-muted">{line.description ?? '—'}</td>

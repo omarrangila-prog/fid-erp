@@ -212,7 +212,7 @@ export function JournalForm({
   function onAccountCreated(created: CreatedJournalAccount) {
     const option: AccountOption = {
       value: created.id,
-      label: `${created.code} — ${created.name}`,
+      label: created.name,
       hint: created.type.replaceAll('_', ' ').toLowerCase(),
       keywords: `${created.code} ${created.name} ${created.type}`,
       accountType: created.type,

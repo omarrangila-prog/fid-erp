@@ -60,7 +60,7 @@ export default async function ProfitLossPage({
                   .slice(0, 10)}&to=${toDate.toISOString().slice(0, 10)}`}
                 className="text-forest-800 hover:text-gold-700 hover:underline"
               >
-                <span className="text-ink-subtle">{line.code}</span> {line.name}
+{line.name}
               </Link>
             </TD>
             <TD numeric>{formatMoney(line.amountUsd, 'USD')}</TD>

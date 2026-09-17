@@ -140,7 +140,6 @@ export function RevaluationClient({
                     <TR key={`${line.accountId}-${line.currency}`}>
                       <TD className="pin-left">
                         <span className="block font-medium text-forest-800">{line.accountName}</span>
-                        <span className="block text-xs text-ink-subtle">{line.accountCode}</span>
                       </TD>
                       <TD>{line.currency}</TD>
                       <TD numeric>{line.balanceUsd}</TD>

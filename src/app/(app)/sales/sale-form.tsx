@@ -827,7 +827,7 @@ export function SaleForm({
                   .filter((account) => account.currency === header.currency)
                   .map((account) => (
                     <option key={account.id} value={account.id}>
-                      {account.name} ({account.code})
+                      {account.name}
                     </option>
                   ))}
               </Select>

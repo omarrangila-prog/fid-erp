@@ -86,7 +86,7 @@ export default async function NewReceiptPage({
   const bankOptions: BankOption[] = accounts.map((a) => ({
     value: a.id,
     label: a.name,
-    hint: `${a.code} · ${a.currency} · ${a.accountType.replaceAll('_', ' ').toLowerCase()}`,
+    hint: `${a.currency} · ${a.accountType.replaceAll('_', ' ').toLowerCase()}`,
     keywords: `${a.code} ${a.currency}`,
     currency: a.currency,
     accountType: a.accountType,
