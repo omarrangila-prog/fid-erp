@@ -28,14 +28,30 @@ type Line = {
   direction: 'DEBIT' | 'CREDIT';
   amount: string;
   description: string;
+  /**
+   * A line stands in its own currency.
+   *
+   * A voucher that moves money out of a USD account and into a MAD one is an
+   * ordinary thing to write, and forcing one currency on the whole entry made
+   * it impossible: every MAD account was unavailable the moment the voucher
+   * was USD. Each line now carries what it is really in, and the two sides
+   * meet in USD, which is what the totals have always been measured in.
+   */
+  currency: string;
+  rateToUsd: string;
 };
 
-const emptyLine = (index: number): Line => ({
+/** The currencies these books are kept in. */
+const CURRENCIES = ['USD', 'MAD', 'AED'] as const;
+
+const emptyLine = (index: number, currency = 'USD', rateToUsd = '1'): Line => ({
   key: `line-${index}`,
   accountId: '',
   direction: index === 0 ? 'DEBIT' : 'CREDIT',
   amount: '',
   description: '',
+  currency,
+  rateToUsd,
 });
 
 /**
@@ -78,23 +94,24 @@ export function JournalForm({
   const nextKey = React.useRef(2);
 
   /*
-   * A cash or bank drawer holds exactly one currency. Posting a USD amount
-   * through a MAD till is not a mistake the ledger can absorb, so it is
-   * refused — and it used to be refused only after Post, with the voucher
-   * already typed out. Here the account simply cannot be chosen, and says why.
+   * A cash or bank drawer holds exactly one currency, so a MAD till cannot
+   * take a USD amount and the other way round. That is judged against the
+   * currency of the line being written, not of the voucher: a voucher may
+   * move USD out of one account and MAD into another, and both accounts have
+   * to be reachable from their own line.
    */
-  const selectableAccounts = React.useMemo(
-    () =>
+  const accountsFor = React.useCallback(
+    (lineCurrency: string) =>
       accountOptions.map((account) => {
         const drawers = account.drawerCurrencies ?? [];
-        if (drawers.length === 0 || drawers.includes(currency)) return account;
+        if (drawers.length === 0 || drawers.includes(lineCurrency)) return account;
         return {
           ...account,
           disabled: true,
-          hint: `held in ${drawers.join(' / ')} — not available for a ${currency} voucher`,
+          hint: `held in ${drawers.join(' / ')} — choose ${drawers[0]} on this line to use it`,
         };
       }),
-    [accountOptions, currency],
+    [accountOptions],
   );
   // One key per opened form: see journalVoucherSchema.clientKey. Issued in an
   // effect rather than during render, which must stay pure.
@@ -108,26 +125,39 @@ export function JournalForm({
     }
   }, []);
 
+  /*
+   * Measured in USD, because that is the one currency every line can be
+   * compared in. A line already in USD counts as it stands; anything else is
+   * divided by its own rate, which is stated as units per one dollar.
+   */
   const totals = React.useMemo(() => {
     let debit = new Decimal(0);
     let credit = new Decimal(0);
     for (const line of lines) {
       const value = tryDec(line.amount);
-      if (line.direction === 'DEBIT') debit = debit.plus(value);
-      else credit = credit.plus(value);
+      const rate = tryDec(line.rateToUsd);
+      const usd = line.currency === 'USD' || rate.lessThanOrEqualTo(0) ? value : value.dividedBy(rate);
+      if (line.direction === 'DEBIT') debit = debit.plus(usd);
+      else credit = credit.plus(usd);
     }
     return { debit, credit, difference: debit.minus(credit) };
   }, [lines]);
 
   const balanced = totals.difference.isZero() && totals.debit.greaterThan(0);
-  const complete = lines.every((line) => line.accountId && tryDec(line.amount).greaterThan(0));
+  const complete = lines.every(
+    (line) =>
+      line.accountId &&
+      tryDec(line.amount).greaterThan(0) &&
+      (line.currency === 'USD' || tryDec(line.rateToUsd).greaterThan(0)),
+  );
 
   function updateLine(key: string, patch: Partial<Line>) {
     setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
   }
 
   function addLine() {
-    setLines((current) => [...current, emptyLine(nextKey.current++)]);
+    // A new line starts in the voucher's currency, which is the common case.
+    setLines((current) => [...current, emptyLine(nextKey.current++, currency, rateToUsd)]);
   }
 
   function removeLine(key: string) {
@@ -160,13 +190,24 @@ export function JournalForm({
    * the second line of a three-line voucher became 250 the moment they tabbed
    * away, and a split entry could not be typed in at all.
    */
+  /**
+   * Offer the amount that would square the voucher.
+   *
+   * The difference is measured in USD, so on a line written in another
+   * currency it is converted back at that line's own rate before being
+   * suggested — otherwise the figure offered would be dollars wearing a
+   * dirham label.
+   */
   function balanceRemainder(key: string) {
     const difference = totals.difference;
     if (difference.isZero()) return;
     const line = lines.find((l) => l.key === key);
     if (!line || line.amount.trim() !== '') return;
-    const adjustment = line.direction === 'DEBIT' ? difference.negated() : difference;
-    if (adjustment.greaterThan(0)) updateLine(key, { amount: adjustment.toFixed(2) });
+    const inUsd = line.direction === 'DEBIT' ? difference.negated() : difference;
+    if (!inUsd.greaterThan(0)) return;
+    const rate = tryDec(line.rateToUsd);
+    const adjustment = line.currency === 'USD' || rate.lessThanOrEqualTo(0) ? inUsd : inUsd.times(rate);
+    updateLine(key, { amount: adjustment.toFixed(2) });
   }
 
   function submit() {
@@ -204,9 +245,10 @@ export function JournalForm({
           lines: lines.map((line) => ({
             accountId: line.accountId,
             direction: line.direction,
-            currency,
+            // Each line in the currency it was actually written in.
+            currency: line.currency,
             amount: line.amount,
-            rateToUsd,
+            rateToUsd: line.currency === 'USD' ? '1' : line.rateToUsd,
             description: line.description.trim() || undefined,
             customerId: customerId || undefined,
           })),
@@ -240,19 +282,34 @@ export function JournalForm({
           <Field label="Entry date" htmlFor="jv-date" required>
             <Input id="jv-date" autoFocus type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} />
           </Field>
-          <Field label="Currency" htmlFor="jv-currency" required hint="The amount you type is kept in this currency.">
+          <Field
+            label="Currency"
+            htmlFor="jv-currency"
+            required
+            hint="The currency lines start in. Any line can be changed to another."
+          >
             <Select
               id="jv-currency"
               value={currency}
               onChange={(e) => {
                 const next = e.target.value;
+                const nextRate = next === 'USD' ? '1' : (ratesByCurrency[next] ?? defaultLocalRate);
                 setCurrency(next);
-                setRateToUsd(next === 'USD' ? '1' : (ratesByCurrency[next] ?? defaultLocalRate));
+                setRateToUsd(nextRate);
+                // Lines nobody has filled in yet follow the voucher; a line
+                // already written keeps whatever it was deliberately set to.
+                setLines((current) =>
+                  current.map((line) =>
+                    line.accountId || line.amount ? line : { ...line, currency: next, rateToUsd: nextRate },
+                  ),
+                );
               }}
             >
-              <option value="USD">USD — US Dollar</option>
-              <option value="MAD">MAD — Moroccan Dirham</option>
-              <option value="AED">AED — UAE Dirham</option>
+              {CURRENCIES.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
             </Select>
           </Field>
           <Field
@@ -320,29 +377,25 @@ export function JournalForm({
             >
               <div className="sm:col-span-5">
                 <Field label={index === 0 ? 'Account' : ''} htmlFor={`acct-${line.key}`} required={index === 0}>
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-                    <div className="min-w-0 flex-1">
-                      <Combobox
-                        id={`acct-${line.key}`}
-                        aria-label={`Line ${index + 1} account`}
-                        options={selectableAccounts}
-                        value={line.accountId || null}
-                        onChange={(value) => updateLine(line.key, { accountId: value ?? '' })}
-                        placeholder="Choose an account…"
-                        createLabel="+ Add New Account"
-                        onCreate={(query) => openAddAccount(line.key, query)}
-                      />
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="shrink-0"
-                      onClick={() => openAddAccount(line.key)}
-                    >
-                      <Plus />
-                      Add Account
-                    </Button>
-                  </div>
+                  {/*
+                    The full account name, wrapped rather than cut off. A code
+                    and a name like "1600 — F I D TRADING LLC DUBAI" does not
+                    fit on one line, and an account you cannot read the end of
+                    is one you cannot be sure you picked. "+ Add New Account"
+                    is the first row of the list, so no separate button is
+                    needed beside it taking the width the name wants.
+                  */}
+                  <Combobox
+                    id={`acct-${line.key}`}
+                    aria-label={`Line ${index + 1} account`}
+                    options={accountsFor(line.currency)}
+                    value={line.accountId || null}
+                    onChange={(value) => updateLine(line.key, { accountId: value ?? '' })}
+                    placeholder="Choose an account…"
+                    wrap
+                    createLabel="+ Add New Account"
+                    onCreate={(query) => openAddAccount(line.key, query)}
+                  />
                 </Field>
               </div>
 
@@ -362,15 +415,50 @@ export function JournalForm({
 
               <div className="sm:col-span-3">
                 <Field label={index === 0 ? 'Amount' : ''} htmlFor={`amt-${line.key}`}>
-                  <MoneyInput
-                    id={`amt-${line.key}`}
-                    aria-label={`Line ${index + 1} amount`}
-                    currency={currency}
-                    value={line.amount}
-                    onChange={(e) => updateLine(line.key, { amount: e.target.value })}
-                    onBlur={() => balanceRemainder(line.key)}
-                    placeholder="0.00"
-                  />
+                  <div className="flex gap-2">
+                    <Select
+                      aria-label={`Line ${index + 1} currency`}
+                      className="w-24 shrink-0"
+                      value={line.currency}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        updateLine(line.key, {
+                          currency: next,
+                          rateToUsd: next === 'USD' ? '1' : (ratesByCurrency[next] ?? localRate),
+                          // An account that cannot hold the new currency is no
+                          // longer a valid choice on this line.
+                          accountId: accountsFor(next).some((a) => a.value === line.accountId && !a.disabled)
+                            ? line.accountId
+                            : '',
+                        });
+                      }}
+                    >
+                      {CURRENCIES.map((code) => (
+                        <option key={code} value={code}>
+                          {code}
+                        </option>
+                      ))}
+                    </Select>
+                    <MoneyInput
+                      id={`amt-${line.key}`}
+                      aria-label={`Line ${index + 1} amount`}
+                      currency={line.currency}
+                      value={line.amount}
+                      onChange={(e) => updateLine(line.key, { amount: e.target.value })}
+                      onBlur={() => balanceRemainder(line.key)}
+                      placeholder="0.00"
+                    />
+                  </div>
+                  {line.currency !== 'USD' ? (
+                    <Input
+                      aria-label={`Line ${index + 1} rate`}
+                      className="mt-2"
+                      inputMode="decimal"
+                      value={line.rateToUsd}
+                      onChange={(e) => updateLine(line.key, { rateToUsd: e.target.value })}
+                      placeholder={`${line.currency} per 1 USD`}
+                    />
+                  ) : null}
                 </Field>
               </div>
 
@@ -401,11 +489,11 @@ export function JournalForm({
         <CardContent className="flex flex-col gap-4 pt-4 sm:flex-row sm:items-center sm:justify-between">
           <dl className="grid grid-cols-3 gap-3 text-sm sm:gap-4">
             <div>
-              <dt className="text-xs text-ink-muted">Total debits ({currency})</dt>
+              <dt className="text-xs text-ink-muted">Total debits (USD)</dt>
               <dd className="tnum font-semibold text-ink">{totals.debit.toFixed(2)}</dd>
             </div>
             <div>
-              <dt className="text-xs text-ink-muted">Total credits ({currency})</dt>
+              <dt className="text-xs text-ink-muted">Total credits (USD)</dt>
               <dd className="tnum font-semibold text-ink">{totals.credit.toFixed(2)}</dd>
             </div>
             <div>

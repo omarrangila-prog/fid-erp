@@ -3,7 +3,7 @@ import { prisma, resetDatabase, getContext, getCashAccount, utcDate } from '../h
 import { transaction } from '@/lib/db';
 import { postCashBankTransfer } from '@/lib/services/cash-transfer';
 import { postAccountOpeningBalance } from '@/lib/services/chart-of-accounts';
-import { getCashBankBalance } from '@/lib/services/accounting';
+import { getCashBankBalance, postJournalEntry } from '@/lib/services/accounting';
 import { reconcile } from '@/lib/services/reconciliation';
 import { dec, toMoney } from '@/lib/money';
 
@@ -144,5 +144,100 @@ describe('a transfer that converts USD into MAD', () => {
         amount: '100',
       }),
     ).rejects.toThrow(/two different accounts/i);
+  }, 120_000);
+});
+
+describe('a journal voucher that mixes currencies', () => {
+  it('posts a line in MAD against a line in USD, balancing in USD', async () => {
+    const madBank = await getCashAccount(companyId, 'MAD');
+    // A plain ledger account, the kind a user makes for a loan from the other
+    // company: no drawer, so no currency of its own.
+    const loanAccount = await prisma.account.create({
+      data: {
+        companyId,
+        code: '1600',
+        name: 'F I D TRADING LLC DUBAI',
+        type: 'ASSET',
+        reportGroup: 'CURRENT_ASSET',
+      },
+    });
+
+    const madBefore = await transaction((tx) => getCashBankBalance(tx, companyId, madBank.id));
+
+    const entry = await transaction((tx) =>
+      postJournalEntry(tx, {
+        companyId,
+        entryDate: utcDate('2026-04-01'),
+        description: 'Loan received from FID Trading LLC Dubai',
+        sourceType: 'MANUAL',
+        sourceId: `JV-MIXED-${Date.now()}`,
+        createdById: ctx.admin.id,
+        localCurrency: 'MAD',
+        rateLocalPerUsd: '9.85',
+        lines: [
+          // MAD 98,500 into the Moroccan bank …
+          {
+            cashBankAccountId: madBank.id,
+            direction: 'DEBIT',
+            currency: 'MAD',
+            amount: '98500',
+            rateToUsd: '9.85',
+            description: 'Received from Dubai',
+          },
+          // … against USD 10,000 owed, on a line in dollars.
+          {
+            accountId: loanAccount.id,
+            direction: 'CREDIT',
+            currency: 'USD',
+            amount: '10000',
+            rateToUsd: '1',
+            description: 'Owed to Dubai',
+          },
+        ],
+      }),
+    );
+
+    expect(entry.status).toBe('POSTED');
+
+    // Each line kept its own currency; the entry balances in USD.
+    const lines = await prisma.journalLine.findMany({
+      where: { journalEntryId: entry.id },
+      select: { currency: true, debit: true, credit: true, debitUsd: true, creditUsd: true },
+      orderBy: { lineNumber: 'asc' },
+    });
+    expect(lines.map((l) => l.currency).sort()).toEqual(['MAD', 'USD']);
+    const dr = lines.reduce((t, l) => t.plus(dec(l.debitUsd)), dec(0));
+    const cr = lines.reduce((t, l) => t.plus(dec(l.creditUsd)), dec(0));
+    expect(toMoney(dr.minus(cr)).abs().lessThanOrEqualTo('0.005')).toBe(true);
+
+    // The MAD bank moved in MAD, by the MAD amount.
+    const madAfter = await transaction((tx) => getCashBankBalance(tx, companyId, madBank.id));
+    expect(toMoney(dec(madAfter).minus(madBefore)).toString()).toBe('98500');
+
+    const health = await reconcile(companyId);
+    expect(health.healthy, health.checks.filter((c) => !c.passed).map((c) => c.label).join('; ')).toBe(true);
+  }, 240_000);
+
+  it('still refuses a MAD drawer asked to hold USD', async () => {
+    const madBank = await getCashAccount(companyId, 'MAD');
+    const usdBank = await getCashAccount(companyId, 'USD');
+    await expect(
+      transaction((tx) =>
+        postJournalEntry(tx, {
+          companyId,
+          entryDate: utcDate('2026-04-02'),
+          description: 'USD through the MAD till',
+          sourceType: 'MANUAL',
+          sourceId: `JV-BAD-${Date.now()}`,
+          createdById: ctx.admin.id,
+          localCurrency: 'MAD',
+          rateLocalPerUsd: '9.85',
+          lines: [
+            { cashBankAccountId: madBank.id, direction: 'DEBIT', currency: 'USD', amount: '100', rateToUsd: '1' },
+            { cashBankAccountId: usdBank.id, direction: 'CREDIT', currency: 'USD', amount: '100', rateToUsd: '1' },
+          ],
+        }),
+      ),
+    ).rejects.toThrow(/held in MAD|cannot be recorded through it/i);
   }, 120_000);
 });
