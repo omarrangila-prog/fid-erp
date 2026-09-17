@@ -62,6 +62,41 @@ function resolveConnection(rawUrl: string): PoolConfig {
   };
 }
 
+/**
+ * How many connections one instance of this process may hold.
+ *
+ * A connection pooler is a shared, and small, resource: Supabase's session
+ * pooler allows fifteen clients in total across everything that connects. A
+ * serverless deployment runs many instances of this process at once, so ten
+ * connections each meant two instances could take every slot and the third
+ * user to arrive was met with "max clients reached" — a 500 on the sign-in
+ * page, which is the one page nobody can work around.
+ *
+ * Behind a pooler, one is the right number: each request is served by one
+ * instance doing one thing, and the pooler is what does the pooling. A direct
+ * connection to Postgres — a local database, a migration, a script — keeps a
+ * real pool, because there the connections are ours to spend.
+ */
+function defaultPoolSize(rawUrl: string): number {
+  const configured = process.env.DATABASE_POOL_MAX;
+  if (configured) return Math.max(1, Number(configured));
+
+  let host = '';
+  let query = '';
+  try {
+    const url = new URL(rawUrl);
+    host = url.hostname;
+    query = url.search;
+  } catch {
+    // An unparseable URL will fail later, and loudly. Assume the safe number.
+    return 1;
+  }
+
+  const pooled = /pooler\.|pgbouncer|-pooler/.test(host) || /pgbouncer=true/.test(query);
+  const serverless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+  return pooled || serverless ? 1 : 10;
+}
+
 function createPrismaClient(): PrismaClient {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
@@ -70,7 +105,10 @@ function createPrismaClient(): PrismaClient {
 
   const adapter = new PrismaPg({
     ...resolveConnection(connectionString),
-    max: Number(process.env.DATABASE_POOL_MAX ?? 10),
+    max: defaultPoolSize(connectionString),
+    // Hand a connection back rather than sitting on it between requests: a
+    // slot held idle is a slot the next person cannot have.
+    idleTimeoutMillis: Number(process.env.DATABASE_POOL_IDLE_MS ?? 10_000),
   });
 
   return new PrismaClient({
@@ -101,6 +139,8 @@ function client(): PrismaClient {
  * The instance is cached on globalThis so a development hot reload reuses one
  * pool instead of exhausting Postgres with a new one per module evaluation.
  */
+export { defaultPoolSize };
+
 export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
   get(_target, property, receiver) {
     return Reflect.get(client(), property, receiver);
