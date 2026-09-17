@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { CheckCircle2, Undo2, Trash2 } from 'lucide-react';
+import { CheckCircle2, Undo2, Trash2, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm';
 import { HandCoins } from 'lucide-react';
@@ -199,6 +199,11 @@ export function VoucherRowActions({
         ...(editPath ? [editAction(editPath)] : []),
         ...(kind === 'expense' && status === 'POSTED'
           ? [{ label: 'Pay this cost', href: `/finance/payments/new?expense=${id}`, icon: HandCoins }]
+          : []),
+        // A new voucher pre-filled from this one, for the charge that comes
+        // round every month. The original is never touched.
+        ...(kind === 'expense' && status !== 'CANCELLED'
+          ? [{ label: 'Clone', href: `${viewPath}/clone`, icon: Copy }]
           : []),
       ]}
       destructive={{

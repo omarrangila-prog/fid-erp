@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { DocumentJournal } from '@/components/shared/document-journal';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { Banknote, HandCoins } from 'lucide-react';
+import { Banknote, HandCoins, Copy } from 'lucide-react';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, TRANSACTION_STATUS_META, PAYMENT_METHOD_LABELS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
@@ -79,6 +79,14 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
             {expense.status === 'DRAFT' && can(user, PERMISSIONS.EXPENSES_CREATE) ? (
               <Button asChild variant="outline">
                 <Link href={`/finance/expenses/${expense.id}/edit`}>Edit</Link>
+              </Button>
+            ) : null}
+            {can(user, PERMISSIONS.EXPENSES_CREATE) ? (
+              <Button asChild variant="outline">
+                <Link href={`/finance/expenses/${expense.id}/clone`}>
+                  <Copy />
+                  Clone
+                </Link>
               </Button>
             ) : null}
             {recordPayment ? (

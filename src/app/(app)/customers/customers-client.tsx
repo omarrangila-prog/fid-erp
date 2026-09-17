@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Plus, Pencil } from 'lucide-react';
+import { Pencil, Plus, Scale } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +9,7 @@ import { MasterFormSheet, STATUS_OPTIONS, CURRENCY_OPTIONS, type FieldSpec } fro
 import { saveCustomerAction, toggleMasterStatusAction, type MasterFormState } from '@/server/actions/master-actions';
 import { BookOpen, FileText, HandCoins } from 'lucide-react';
 import { RowActions, viewAction } from '@/components/shared/row-actions';
+import { PartyOpeningSheet } from '@/components/shared/party-opening';
 
 export type CustomerRow = {
   id: string;
@@ -72,15 +73,22 @@ export function CustomersClient({
   canCreate,
   openCreate = false,
   canEdit,
+  canPostOpening,
+  localCurrency,
+  defaultLocalRate,
   defaultCurrency,
 }: {
   rows: CustomerRow[];
   canCreate: boolean;
   openCreate?: boolean;
   canEdit: boolean;
+  canPostOpening: boolean;
+  localCurrency: string;
+  defaultLocalRate: string;
   defaultCurrency: string;
 }) {
   const [editing, setEditing] = React.useState<CustomerRow | null>(null);
+  const [opening, setOpening] = React.useState<CustomerRow | null>(null);
   const [creating, setCreating] = React.useState(openCreate && canCreate);
 
   const columns: DataColumn<CustomerRow>[] = [
@@ -185,6 +193,12 @@ export function CustomersClient({
             viewAction(`/customers/${r.id}`),
             { label: 'Edit', icon: Pencil, show: canEdit, onSelect: () => setEditing(r) },
             { label: 'Ledger', href: `/ledgers/customers?customer=${r.id}`, icon: BookOpen },
+            {
+              label: 'Opening balance',
+              icon: Scale,
+              show: canPostOpening,
+              onSelect: () => setOpening(r),
+            },
             { label: 'New invoice', href: `/sales/new?customer=${r.id}`, icon: FileText },
             { label: 'Record payment', href: `/finance/receipts/new?customer=${r.id}`, icon: HandCoins },
           ]}
@@ -276,6 +290,19 @@ export function CustomersClient({
           action={
             saveCustomerAction.bind(null, editing.id) as (p: MasterFormState, f: FormData) => Promise<MasterFormState>
           }
+        />
+      ) : null}
+
+      {opening ? (
+        <PartyOpeningSheet
+          party="CUSTOMER"
+          id={opening.id}
+          name={opening.customerName}
+          currency={opening.primaryCurrency}
+          localCurrency={localCurrency}
+          defaultLocalRate={defaultLocalRate}
+          open
+          onOpenChange={(next) => !next && setOpening(null)}
         />
       ) : null}
     </>

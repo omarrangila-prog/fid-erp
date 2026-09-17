@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Plus } from 'lucide-react';
+import { Plus, SplitSquareHorizontal } from 'lucide-react';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
@@ -64,13 +64,24 @@ export default async function ExpensesPage() {
         breadcrumbs={[{ label: 'Finance' }, { label: 'Expenses' }]}
         actions={
           can(user, PERMISSIONS.EXPENSES_CREATE) ? (
-            <Button asChild>
-              <Link href="/finance/expenses/new">
-                <Plus />
-                <span className="hidden sm:inline">New expense</span>
-                <span className="sm:hidden">New</span>
-              </Link>
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {can(user, PERMISSIONS.EXPENSES_POST) ? (
+                <Button asChild variant="outline">
+                  <Link href="/finance/expenses/split">
+                    <SplitSquareHorizontal />
+                    <span className="hidden sm:inline">Split one payment</span>
+                    <span className="sm:hidden">Split</span>
+                  </Link>
+                </Button>
+              ) : null}
+              <Button asChild>
+                <Link href="/finance/expenses/new">
+                  <Plus />
+                  <span className="hidden sm:inline">New expense</span>
+                  <span className="sm:hidden">New</span>
+                </Link>
+              </Button>
+            </div>
           ) : undefined
         }
       />

@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 import { getPayables } from '@/lib/services/receivables';
 import { formatMoney, formatDate } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
+import { getRateDefaults } from '@/lib/services/exchange-rate';
 import { VendorsClient, type VendorRow } from '@/app/(app)/vendors/vendors-client';
 
 export const metadata: Metadata = { title: 'Suppliers' };
@@ -20,7 +21,7 @@ export default async function VendorsPage({
   const user = await requirePageAccess(PERMISSIONS.VENDORS_VIEW);
   const companyId = user.activeCompany.id;
 
-  const [vendors, payables, traded] = await Promise.all([
+  const [vendors, payables, traded, rates] = await Promise.all([
     prisma.vendor.findMany({
       where: { companyId },
       orderBy: { vendorName: 'asc' },
@@ -43,6 +44,7 @@ export default async function VendorsPage({
       FROM purchase_contracts pc
       WHERE pc."companyId" = ${companyId} AND pc."status" = 'POSTED'
       GROUP BY pc."vendorId", pc."currency"`,
+    getRateDefaults(companyId),
   ]);
 
   const tradedByVendor = new Map(traded.map((row) => [row.vendorId, row]));
@@ -103,6 +105,9 @@ export default async function VendorsPage({
         canCreate={can(user, PERMISSIONS.VENDORS_CREATE)}
         openCreate={openCreate}
         canEdit={can(user, PERMISSIONS.VENDORS_EDIT)}
+        canPostOpening={can(user, PERMISSIONS.ACCOUNTING_POST)}
+        localCurrency={user.activeCompany.localCurrency}
+        defaultLocalRate={rates.local}
       />
     </div>
   );

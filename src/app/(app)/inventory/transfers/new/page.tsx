@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { requirePageAccess } from '@/lib/auth/guards';
+import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getSellableStock } from '@/lib/services/stock';
@@ -80,7 +80,11 @@ export default async function NewTransferPage() {
           { label: 'New' },
         ]}
       />
-      <TransferForm warehouses={warehouses} stock={transferStock} />
+      <TransferForm
+        warehouses={warehouses}
+        stock={transferStock}
+        canCreateWarehouse={can(user, PERMISSIONS.WAREHOUSES_MANAGE)}
+      />
     </div>
   );
 }

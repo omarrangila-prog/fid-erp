@@ -280,7 +280,19 @@ async function resolveExpenseTax(
 }
 
 export async function createExpense(input: ExpenseInput, userId: string) {
-  return transaction(async (tx) => {
+  return transaction((tx) => createExpenseIn(tx, input, userId));
+}
+
+/**
+ * The body of `createExpense`, for a caller already inside a transaction.
+ *
+ * Splitting one payment across several categories writes several expenses that
+ * must all land or none of them; nesting `transaction()` would open a second
+ * connection rather than joining the first, so the caller passes its own `tx`
+ * in here instead.
+ */
+export async function createExpenseIn(tx: Tx, input: ExpenseInput, userId: string) {
+  {
     const company = await getCompanyContext(tx, input.companyId);
     const { category, capitalise, kind } = await validateReferences(tx, input);
     const amounts = computeExpenseAmounts({ ...input, localCurrency: company.localCurrency });
@@ -341,7 +353,7 @@ export async function createExpense(input: ExpenseInput, userId: string) {
     });
 
     return expense;
-  });
+  }
 }
 
 export async function updateExpense(id: string, input: ExpenseInput, userId: string) {
@@ -405,7 +417,12 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
 }
 
 export async function postExpense(params: { id: string; companyId: string; userId: string }) {
-  return transaction(async (tx) => {
+  return transaction((tx) => postExpenseIn(tx, params));
+}
+
+/** The body of `postExpense`, for a caller already inside a transaction. */
+export async function postExpenseIn(tx: Tx, params: { id: string; companyId: string; userId: string }) {
+  {
     const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>`
       SELECT "id", "status"::text FROM expenses
       WHERE "id" = ${params.id} AND "companyId" = ${params.companyId}
@@ -618,7 +635,7 @@ export async function postExpense(params: { id: string; companyId: string; userI
     });
 
     return posted;
-  });
+  }
 }
 
 export async function reverseExpense(params: { id: string; companyId: string; userId: string; reason: string }) {

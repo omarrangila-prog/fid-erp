@@ -10,6 +10,7 @@ import {
   receiptSchema,
   paymentSchema,
   expenseSchema,
+  splitExpenseSchema,
   chequeStatusSchema,
   journalVoucherSchema,
   revaluationSchema,
@@ -17,7 +18,15 @@ import {
 } from '@/lib/validation/finance';
 import { createReceipt, updateReceipt, postReceipt, reverseReceipt, deleteDraftReceipt } from '@/lib/services/receipt';
 import { createPayment, updatePayment, postPayment, reversePayment, deleteDraftPayment } from '@/lib/services/payment';
-import { createExpense, updateExpense, postExpense, reverseExpense, deleteDraftExpense } from '@/lib/services/expense';
+import {
+  createExpense,
+  createExpenseIn,
+  updateExpense,
+  postExpense,
+  postExpenseIn,
+  reverseExpense,
+  deleteDraftExpense,
+} from '@/lib/services/expense';
 import { changeChequeStatus } from '@/lib/services/cheque';
 import { createAgentSettlement, postAgentSettlement } from '@/lib/services/agent-ledger';
 import { postRevaluation } from '@/lib/services/revaluation';
@@ -219,6 +228,75 @@ export async function saveExpenseAction(id: string | null, payload: string): Pro
     return { ok: true, id: result.id, message: id ? 'Expense updated.' : 'Expense created.' };
   } catch (error) {
     return toState(error);
+  }
+}
+
+
+/**
+ * One payment, several cost categories, entered once.
+ *
+ * MAD 20,000 handed over at the port is rarely one thing: it is port charges,
+ * labour and documentation, and typing three vouchers with the same date, the
+ * same cash account and the same reference is where the third one ends up
+ * slightly wrong.
+ *
+ * Each line becomes an expense of its own rather than one record with a
+ * breakdown, because the categories genuinely behave differently — port
+ * charges are capitalised into the coffee's landed cost, documentation may not
+ * be — and one record cannot be capitalised and expensed at the same time.
+ * They share a reference so the payment reads as one event, and they are
+ * written and posted inside a single transaction, so either the whole split
+ * lands or none of it does.
+ */
+export async function saveSplitExpenseAction(payload: string): Promise<ActionResult<{ ids: string[] }>> {
+  try {
+    const user = await requirePermission(PERMISSIONS.EXPENSES_CREATE);
+    const post = await requirePermission(PERMISSIONS.EXPENSES_POST);
+    const companyId = user.activeCompany.id;
+    const input = splitExpenseSchema.parse(parseJson(payload));
+
+    // One transaction for the whole split: nesting `transaction()` would open a
+    // second connection rather than joining this one, so the services are
+    // called through their tx-body variants and share this `tx`.
+    const ids = await transaction(async (tx) => {
+      const created: string[] = [];
+      for (const line of input.lines) {
+        const expense = await createExpenseIn(
+          tx,
+          {
+            companyId,
+            expenseDate: input.expenseDate,
+            expenseCategoryId: line.expenseCategoryId,
+            shipmentId: input.kind === 'SHIPMENT' ? input.shipmentId : null,
+            purchaseContractId: null,
+            containerId: input.kind === 'SHIPMENT' ? line.containerId : null,
+            batchId: input.kind === 'SHIPMENT' ? line.batchId : null,
+            vendorId: input.vendorId,
+            agentId: input.agentId,
+            payableToAgentId: input.payableToAgentId,
+            currency: input.currency,
+            amount: line.amount,
+            rateToUsd: input.rateToUsd,
+            rateLocalPerUsd: input.rateLocalPerUsd,
+            paymentMethod: input.paymentMethod,
+            cashBankAccountId: input.cashBankAccountId,
+            kind: input.kind,
+            taxCodeId: line.taxCodeId,
+            reference: input.reference,
+            description: line.description,
+          },
+          user.id,
+        );
+        await postExpenseIn(tx, { id: expense.id, companyId, userId: post.id });
+        created.push(expense.id);
+      }
+      return created;
+    }, 120_000);
+
+    revalidateAll([...paths.expenses, '/shipments', '/finance/cash-bank']);
+    return { ok: true, data: { ids } };
+  } catch (error) {
+    return fail(error);
   }
 }
 

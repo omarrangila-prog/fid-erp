@@ -124,6 +124,44 @@ export const expenseSchema = z.object({
   description: optionalText(600),
 });
 
+/**
+ * One payment spread across several cost categories.
+ *
+ * Everything that describes the payment — the date, who was paid or is owed,
+ * the currency and the rate — is stated once in the header; the lines say what
+ * the money was for. Each line becomes an expense in its own right, because in
+ * this business two categories on one payment can be treated differently: port
+ * charges are capitalised into the coffee, a staff dinner is not, and a single
+ * record could not be both.
+ */
+export const splitExpenseSchema = z.object({
+  expenseDate: dateString('Expense date'),
+  kind: z.enum(['SHIPMENT', 'GENERAL']),
+  shipmentId: optionalCuid,
+  vendorId: optionalCuid,
+  agentId: optionalCuid,
+  payableToAgentId: optionalCuid,
+  currency: currencyCode,
+  rateToUsd: decimalString('Exchange rate'),
+  rateLocalPerUsd: decimalString('Local exchange rate'),
+  paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'CHEQUE']),
+  cashBankAccountId: optionalCuid,
+  reference: optionalText(60),
+  lines: z
+    .array(
+      z.object({
+        expenseCategoryId: cuid,
+        description: optionalText(600),
+        amount: decimalString('Amount'),
+        containerId: optionalCuid,
+        batchId: optionalCuid,
+        taxCodeId: optionalCuid,
+      }),
+    )
+    .min(2, 'A split needs at least two lines. Use the ordinary expense form for a single category.')
+    .max(20, 'Twenty lines is the most one payment can be split across.'),
+});
+
 export const chequeStatusSchema = z.object({
   toStatus: z.enum(['RECEIVED', 'DEPOSITED', 'CLEARED', 'BOUNCED', 'CANCELLED']),
   cashBankAccountId: optionalCuid,

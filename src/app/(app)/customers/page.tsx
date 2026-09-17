@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 import { getReceivables } from '@/lib/services/receivables';
 import { formatMoney, formatDate } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
+import { getRateDefaults } from '@/lib/services/exchange-rate';
 import { CustomersClient, type CustomerRow } from '@/app/(app)/customers/customers-client';
 
 export const metadata: Metadata = { title: 'Customers' };
@@ -20,7 +21,7 @@ export default async function CustomersPage({
   const user = await requirePageAccess(PERMISSIONS.CUSTOMERS_VIEW);
   const companyId = user.activeCompany.id;
 
-  const [customers, receivables, traded] = await Promise.all([
+  const [customers, receivables, traded, rates] = await Promise.all([
     prisma.customer.findMany({
       where: { companyId },
       orderBy: { customerName: 'asc' },
@@ -44,6 +45,7 @@ export default async function CustomersPage({
       FROM sales_invoices si
       WHERE si."companyId" = ${companyId} AND si."status" = 'POSTED'
       GROUP BY si."customerId", si."currency"`,
+    getRateDefaults(companyId),
   ]);
 
   const tradedByCustomer = new Map(traded.map((row) => [row.customerId, row]));
@@ -124,6 +126,9 @@ export default async function CustomersPage({
         canCreate={can(user, PERMISSIONS.CUSTOMERS_CREATE)}
         openCreate={openCreate}
         canEdit={can(user, PERMISSIONS.CUSTOMERS_EDIT)}
+        canPostOpening={can(user, PERMISSIONS.ACCOUNTING_POST)}
+        localCurrency={user.activeCompany.localCurrency}
+        defaultLocalRate={rates.local}
         defaultCurrency={user.activeCompany.code === 'FID-MA' ? 'MAD' : 'USD'}
       />
     </div>

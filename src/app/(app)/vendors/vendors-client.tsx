@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Plus, Pencil } from 'lucide-react';
+import { Pencil, Plus, Scale } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -9,6 +9,7 @@ import { MasterFormSheet, STATUS_OPTIONS, CURRENCY_OPTIONS, type FieldSpec } fro
 import { saveVendorAction, toggleMasterStatusAction, type MasterFormState } from '@/server/actions/master-actions';
 import { BookOpen, FileText, HandCoins } from 'lucide-react';
 import { RowActions, viewAction } from '@/components/shared/row-actions';
+import { PartyOpeningSheet } from '@/components/shared/party-opening';
 
 export type VendorRow = {
   id: string;
@@ -77,13 +78,20 @@ export function VendorsClient({
   canCreate,
   openCreate = false,
   canEdit,
+  canPostOpening,
+  localCurrency,
+  defaultLocalRate,
 }: {
   rows: VendorRow[];
   canCreate: boolean;
   openCreate?: boolean;
   canEdit: boolean;
+  canPostOpening: boolean;
+  localCurrency: string;
+  defaultLocalRate: string;
 }) {
   const [editing, setEditing] = React.useState<VendorRow | null>(null);
+  const [opening, setOpening] = React.useState<VendorRow | null>(null);
   const [creating, setCreating] = React.useState(openCreate && canCreate);
 
   const columns: DataColumn<VendorRow>[] = [
@@ -185,6 +193,12 @@ export function VendorsClient({
             viewAction(`/vendors/${r.id}`),
             { label: 'Edit', icon: Pencil, show: canEdit, onSelect: () => setEditing(r) },
             { label: 'Ledger', href: `/ledgers/vendors?vendor=${r.id}`, icon: BookOpen },
+            {
+              label: 'Opening balance',
+              icon: Scale,
+              show: canPostOpening,
+              onSelect: () => setOpening(r),
+            },
             { label: 'New contract', href: `/purchases/new?vendor=${r.id}`, icon: FileText },
             { label: 'Record payment', href: `/finance/payments/new?vendor=${r.id}`, icon: HandCoins },
           ]}
@@ -263,6 +277,19 @@ export function VendorsClient({
           action={
             saveVendorAction.bind(null, editing.id) as (p: MasterFormState, f: FormData) => Promise<MasterFormState>
           }
+        />
+      ) : null}
+
+      {opening ? (
+        <PartyOpeningSheet
+          party="VENDOR"
+          id={opening.id}
+          name={opening.vendorName}
+          currency={opening.primaryCurrency}
+          localCurrency={localCurrency}
+          defaultLocalRate={defaultLocalRate}
+          open
+          onOpenChange={(next) => !next && setOpening(null)}
         />
       ) : null}
     </>

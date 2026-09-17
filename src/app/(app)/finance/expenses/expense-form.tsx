@@ -30,7 +30,8 @@ export type ShipmentTrace = {
 };
 
 export type ExpenseFormInitial = {
-  id: string;
+  /** Absent when the values come from a voucher being cloned: save creates. */
+  id?: string;
   expenseDate: string;
   kind: 'SHIPMENT' | 'GENERAL';
   expenseCategoryId: string;
@@ -189,7 +190,16 @@ export function ExpenseForm({
     }
   }, [form.amount, form.rateToUsd, form.currency, isForeign]);
 
-  function submit(andPost: boolean) {
+  /**
+   * `thenWhat` decides where the user lands.
+   *
+   * "open" shows the voucher just saved. "new" clears the form and stays put,
+   * for the common case of entering a stack of receipts in one sitting: the
+   * date, the currency and the shipment are kept, because the next receipt in
+   * the pile is nearly always from the same day and the same consignment, and
+   * retyping them is where mistakes come from.
+   */
+  function submit(andPost: boolean, thenWhat: 'open' | 'new' = 'open') {
     setError(null);
     setFieldIssues({});
 
@@ -266,6 +276,22 @@ export function ExpenseForm({
         toast.success('Expense posted.');
       } else {
         toast.success('Expense saved as a draft.');
+      }
+
+      if (thenWhat === 'new') {
+        setForm((current) => ({
+          ...current,
+          expenseCategoryId: null,
+          containerId: null,
+          batchId: null,
+          amount: '',
+          reference: '',
+          description: '',
+        }));
+        setFieldIssues({});
+        setError(null);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
       }
 
       opening();
@@ -849,9 +875,18 @@ export function ExpenseForm({
           Save draft
         </Button>
         {canPost ? (
-          <Button variant="accent" onClick={() => submit(true)} loading={busy}>
-            Save and post
-          </Button>
+          <>
+            {/* Only when writing a new voucher: on an edit this would save the
+                one on screen and then clear it, which reads as losing it. */}
+            {initial?.id ? null : (
+              <Button variant="outline" onClick={() => submit(true, 'new')} loading={busy}>
+                Save &amp; New
+              </Button>
+            )}
+            <Button variant="accent" onClick={() => submit(true)} loading={busy}>
+              Save and post
+            </Button>
+          </>
         ) : null}
       </div>
     </div>

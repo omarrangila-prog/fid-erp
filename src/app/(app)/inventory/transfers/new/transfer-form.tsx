@@ -1,6 +1,8 @@
 'use client';
 
 import * as React from 'react';
+import { MasterSelect } from '@/components/shared/master-select';
+import { warehouseCreateSpec } from '@/components/shared/master-specs';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Plus, Trash2, AlertCircle, ArrowRight } from 'lucide-react';
@@ -31,9 +33,11 @@ const newLine = (): LineState => ({ key: Math.random().toString(36).slice(2), ba
 export function TransferForm({
   warehouses,
   stock,
+  canCreateWarehouse = false,
 }: {
   warehouses: Array<{ id: string; name: string }>;
   stock: TransferStock[];
+  canCreateWarehouse?: boolean;
 }) {
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
@@ -41,6 +45,9 @@ export function TransferForm({
 
   const [fromWarehouseId, setFrom] = React.useState(warehouses[0]?.id ?? '');
   const [toWarehouseId, setTo] = React.useState(warehouses[1]?.id ?? '');
+  // A warehouse opened here joins the list at once, so the transfer can be
+  // finished without a detour through Warehouses.
+  const [extraWarehouses, setExtraWarehouses] = React.useState<Array<{ id: string; name: string }>>([]);
   const [transferDate, setDate] = React.useState(todayInputValue());
   const [notes, setNotes] = React.useState('');
   const [lines, setLines] = React.useState<LineState[]>([newLine()]);
@@ -81,6 +88,8 @@ export function TransferForm({
 
   const totalKg = sum(rows.map((r) => r.quantity));
   const hasOverdraw = rows.some((r) => r.over);
+  const destinations = [...warehouses, ...extraWarehouses].map((w) => ({ value: w.id, label: w.name }));
+
   const sameWarehouse = fromWarehouseId === toWarehouseId;
 
   function submit() {
@@ -161,13 +170,25 @@ export function TransferForm({
             required
             error={sameWarehouse ? 'Choose a different destination.' : undefined}
           >
-            <Select id="to" value={toWarehouseId} onChange={(e) => setTo(e.target.value)}>
-              {warehouses.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </Select>
+            {/*
+              The destination is the one warehouse in the system that may not
+              exist yet: moving coffee somewhere new is exactly when a new
+              store gets opened. The source cannot be new, because a warehouse
+              holding nothing has nothing to send.
+            */}
+            <MasterSelect
+              id="to"
+              options={destinations}
+              value={toWarehouseId || null}
+              onChange={(value) => setTo(value ?? '')}
+              placeholder="Choose a warehouse…"
+              invalid={sameWarehouse}
+              create={canCreateWarehouse ? warehouseCreateSpec() : undefined}
+              onCreated={(created) => {
+                setExtraWarehouses((prev) => [...prev, { id: created.id, name: created.name }]);
+                setTo(created.id);
+              }}
+            />
           </Field>
 
           <Field label="Transfer date" htmlFor="transferDate" required>

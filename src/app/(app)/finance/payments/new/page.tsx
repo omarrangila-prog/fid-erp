@@ -68,7 +68,15 @@ export default async function NewPaymentPage({
     );
   }
 
-  const contracts: OpenContract[] = payables.map((p) => ({
+  /*
+   * Allocations point at a document, and an opening balance has none — the
+   * invoice behind it belongs to whatever kept the books before. A payment to
+   * a supplier carrying one is left unapplied, which the reconciliation nets
+   * off the sub-ledger, so the two sides still agree.
+   */
+  const contracts: OpenContract[] = payables
+    .filter((p): p is typeof p & { kind: 'CONTRACT' | 'EXPENSE' } => p.kind !== 'OPENING')
+    .map((p) => ({
     kind: p.kind,
     id: p.contractId,
     contractNumber: p.contractNumber,

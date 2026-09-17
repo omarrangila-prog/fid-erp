@@ -57,6 +57,66 @@ export type ReceivableRow = {
   status: 'UNPAID' | 'PARTIAL' | 'PAID';
 };
 
+
+/**
+ * Balances brought forward when the books started here.
+ *
+ * An opening balance is posted straight to the control account as a journal
+ * entry — there is no invoice behind it, because the invoice belongs to
+ * whatever system kept the books before. It still has to appear in the
+ * ageing, or the control account and the sub-ledger disagree from day one and
+ * the reconciliation reports a break that is not really a break.
+ *
+ * Nothing can be allocated against it, since allocations point at documents.
+ * A receipt from a customer carrying one is simply left unapplied, and the
+ * reconciliation already nets unapplied credits off the sub-ledger, so both
+ * sides move together.
+ */
+async function openingBalanceRows(params: {
+  companyId: string;
+  party: 'CUSTOMER' | 'VENDOR';
+  partyId?: string;
+}) {
+  const column = params.party === 'CUSTOMER' ? 'customerId' : 'vendorId';
+  return prisma.$queryRawUnsafe<
+    Array<{
+      entryId: string;
+      entryNumber: string;
+      entryDate: Date;
+      partyId: string;
+      partyName: string;
+      partyCurrency: string;
+      currency: string;
+      rateLocalPerUsd: string;
+      amount: string;
+      amountUsd: string;
+    }>
+  >(
+    `
+    SELECT je."id" AS "entryId", je."entryNumber", je."entryDate",
+           jl."${column}" AS "partyId",
+           ${params.party === 'CUSTOMER' ? 'c."customerName"' : 'v."vendorName"'} AS "partyName",
+           ${params.party === 'CUSTOMER' ? 'c."primaryCurrency"' : 'v."primaryCurrency"'} AS "partyCurrency",
+           jl."currency",
+           jl."rateLocalPerUsd"::text AS "rateLocalPerUsd",
+           (jl."debit" + jl."credit")::text AS "amount",
+           (jl."debitUsd" + jl."creditUsd")::text AS "amountUsd"
+    FROM journal_lines jl
+    JOIN journal_entries je ON je."id" = jl."journalEntryId"
+    ${params.party === 'CUSTOMER'
+        ? 'JOIN customers c ON c."id" = jl."customerId"'
+        : 'JOIN vendors v ON v."id" = jl."vendorId"'}
+    WHERE je."companyId" = $1
+      AND je."sourceType" = 'OPENING_BALANCE'
+      AND je."status" = 'POSTED'
+      AND jl."${column}" IS NOT NULL
+      AND ($2::text IS NULL OR jl."${column}" = $2)
+    ORDER BY je."entryDate" ASC`,
+    params.companyId,
+    params.partyId ?? null,
+  );
+}
+
 export async function getReceivables(params: {
   companyId: string;
   customerId?: string;
@@ -156,11 +216,47 @@ export async function getReceivables(params: {
     };
   });
 
+  const openings = params.shipmentId
+    ? []
+    : (await openingBalanceRows({
+        companyId: params.companyId,
+        party: 'CUSTOMER',
+        partyId: params.customerId,
+      })).map((row): ReceivableRow => {
+        const amount = toMoney(row.amount);
+        const amountUsd = toMoney(row.amountUsd);
+        return {
+          invoiceId: row.entryId,
+          invoiceNumber: row.entryNumber,
+          invoiceDate: row.entryDate,
+          // Already due: it was outstanding before the books opened.
+          dueDate: row.entryDate,
+          customerId: row.partyId,
+          customerName: row.partyName,
+          shipmentId: null,
+          shipmentNumber: null,
+          etaDate: null,
+          currency: row.currency,
+          partyCurrency: row.partyCurrency,
+          rateLocalPerUsd: dec(row.rateLocalPerUsd),
+          originalAmount: amount,
+          paidAmount: toMoney(0),
+          outstandingAmount: amount,
+          originalAmountUsd: amountUsd,
+          paidAmountUsd: toMoney(0),
+          outstandingAmountUsd: amountUsd,
+          bucket: bucketFor(row.entryDate),
+          status: 'UNPAID',
+        };
+      });
+
+  const all = [...openings, ...shaped];
+
   // Non-zero, not positive. A customer who has been credited more than they
   // still owe carries a credit balance — money the business owes them — and
   // dropping it here hid a real balance from the report while the control
   // account kept it, which the reconciliation then reported as a break.
-  return params.onlyOutstanding ? shaped.filter((r) => !r.outstandingAmount.isZero()) : shaped;
+  return params.onlyOutstanding ? all.filter((r) => !r.outstandingAmount.isZero()) : all;
 }
 
 export type PayableRow = {
@@ -171,10 +267,12 @@ export type PayableRow = {
   /**
    * What the supplier is owed for. A purchase contract is the coffee itself; an
    * expense is a cost booked against the supplier rather than paid on the spot
-   * — freight, clearing, inspection. Both credit Accounts Payable, so both have
-   * to appear here or the control account stops agreeing with the statement.
+   * — freight, clearing, inspection. An opening balance is what they were
+   * already owed when the books started here. All three credit Accounts
+   * Payable, so all three have to appear or the control account stops
+   * agreeing with the statement.
    */
-  kind: 'CONTRACT' | 'EXPENSE';
+  kind: 'CONTRACT' | 'EXPENSE' | 'OPENING';
   /** The payable document: a contract id, or an expense id when kind is EXPENSE. */
   contractId: string;
   contractNumber: string;
@@ -346,7 +444,37 @@ export async function getPayables(params: {
 
   // Non-zero, for the same reason as receivables: a supplier over-credited
   // is a debit balance the business is owed, and it belongs on the report.
-  return params.onlyOutstanding ? shaped.filter((r) => !r.outstandingAmount.isZero()) : shaped;
+  const openings = (
+    await openingBalanceRows({ companyId: params.companyId, party: 'VENDOR', partyId: params.vendorId })
+  ).map((row): PayableRow => {
+    const amount = toMoney(row.amount);
+    const amountUsd = toMoney(row.amountUsd);
+    return {
+      kind: 'OPENING',
+      contractId: row.entryId,
+      contractNumber: row.entryNumber,
+      contractReference: 'Opening balance',
+      contractDate: row.entryDate,
+      // Already due: it was outstanding before the books opened.
+      dueDate: row.entryDate,
+      vendorId: row.partyId,
+      vendorName: row.partyName,
+      shipmentNumbers: [],
+      currency: row.currency,
+      partyCurrency: row.partyCurrency,
+      rateLocalPerUsd: dec(row.rateLocalPerUsd),
+      purchaseValue: amount,
+      paidAmount: toMoney(0),
+      outstandingAmount: amount,
+      purchaseValueUsd: amountUsd,
+      outstandingAmountUsd: amountUsd,
+      bucket: bucketFor(row.entryDate),
+      status: 'UNPAID',
+    };
+  });
+
+  const all = [...openings, ...shaped];
+  return params.onlyOutstanding ? all.filter((r) => !r.outstandingAmount.isZero()) : all;
 }
 
 /** Totals by ageing bucket, in USD — used by the dashboard charts. */

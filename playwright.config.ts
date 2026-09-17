@@ -29,7 +29,10 @@ export default defineConfig({
   timeout: 90_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
-  workers: 3,
+  // One browser at a time. Three in parallel against a database in another
+  // region occasionally lost the sign-in race and reported a failure that was
+  // nothing to do with the code; serial costs under a minute and is reliable.
+  workers: 1,
   reporter: [['list']],
   use: {
     baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:3000',

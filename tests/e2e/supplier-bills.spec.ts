@@ -112,3 +112,51 @@ test('a posted document shows the journal entry it wrote', async ({ page }) => {
   // And it names the accounts, so the document explains itself.
   await expect(main).toContainText(/Accounts Receivable|Sales/i);
 });
+
+test('one payment split across three categories posts three expenses', async ({ page }) => {
+  test.setTimeout(180_000);
+  const reference = `PORT-${Date.now().toString(36).toUpperCase()}`;
+
+  const before = await countExpenses(page);
+
+  await page.goto('/finance/expenses/split', { waitUntil: 'domcontentloaded' });
+  const form = page.getByRole('main');
+
+  await form.getByRole('combobox', { name: /contract \/ shipment/i }).click();
+  await page.getByRole('listbox').getByRole('option').first().click();
+  await form.getByLabel(/^Reference/).fill(reference);
+
+  // Three lines: the second is there by default, the third is added.
+  await form.getByRole('button', { name: /add line/i }).click();
+
+  const amounts = ['10000', '5000', '5000'];
+  for (let i = 0; i < 3; i += 1) {
+    await form.getByRole('combobox', { name: `Category on line ${i + 1}` }).click();
+    await page.getByRole('listbox').getByRole('option').nth(i).click();
+    await form.getByLabel(`Amount on line ${i + 1}`).fill(amounts[i]);
+  }
+  await expect(form).toContainText(/20,000/);
+
+  await form.getByRole('button', { name: /post all lines/i }).click();
+  await expect(page.getByText(/3 expenses posted from one payment/i)).toBeVisible({ timeout: 60_000 });
+  await page.waitForURL(/\/finance\/expenses$/, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+
+  // Three more vouchers on the list, every one of them posted.
+  await expect
+    .poll(async () => countExpenses(page), { timeout: 30_000 })
+    .toBe(before + 3);
+  const newest = page.getByRole('main').getByRole('row').filter({ hasText: /FID-MA-EV-/ });
+  for (let i = 0; i < 3; i += 1) {
+    await expect(newest.nth(i)).toContainText(/Posted/);
+  }
+});
+
+/** How many expense vouchers the list shows, once it has actually rendered. */
+async function countExpenses(page: Page) {
+  await page.goto('/finance/expenses', { waitUntil: 'domcontentloaded' });
+  const main = page.getByRole('main');
+  // The table or the empty state, whichever this company has — not the
+  // moment before either has painted.
+  await expect(main.getByRole('table').or(main.getByText(/no expenses/i)).first()).toBeVisible({ timeout: 30_000 });
+  return main.getByRole('row').filter({ hasText: /FID-MA-EV-/ }).count();
+}

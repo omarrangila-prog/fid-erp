@@ -14,6 +14,7 @@ import {
   deactivateLedgerAccount,
   reactivateLedgerAccount,
   postAccountOpeningBalance,
+  postOpeningBalance,
   quickCreateJournalAccount,
 } from '@/lib/services/chart-of-accounts';
 import { quickCreateExpenseCategory } from '@/lib/services/expense-category';
@@ -1100,6 +1101,87 @@ export async function reactivateLedgerAccountAction(id: string): Promise<MasterF
     );
     revalidatePath('/accounting/chart');
     return { ok: true, id: updated.id, message: 'Account reactivated.' };
+  } catch (error) {
+    return invalid(error);
+  }
+}
+
+
+/**
+ * The balance a customer or supplier was already carrying when the books
+ * started here.
+ *
+ * Posted as a real journal entry against receivables or payables and Opening
+ * Balance Equity, never written onto the party record as a number. A figure
+ * stored on the master would move the sub-ledger and leave the general ledger
+ * behind, and the two would disagree from the first day — which is exactly the
+ * kind of drift the reconciliation checks exist to catch.
+ *
+ * It is allowed once. A second opening balance is a correction, and a
+ * correction belongs in a journal voucher where its reason can be read.
+ */
+export async function postPartyOpeningAction(
+  party: 'CUSTOMER' | 'VENDOR',
+  id: string,
+  _prev: MasterFormState,
+  formData: FormData,
+): Promise<MasterFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.ACCOUNTING_POST);
+    const companyId = user.activeCompany.id;
+    const data = ledgerOpeningSchema.parse(formDataToObject(formData));
+
+    const record =
+      party === 'CUSTOMER'
+        ? await prisma.customer.findFirst({
+            where: { id, companyId },
+            select: { id: true, customerName: true, primaryCurrency: true },
+          })
+        : await prisma.vendor.findFirst({
+            where: { id, companyId },
+            select: { id: true, vendorName: true, primaryCurrency: true },
+          });
+    if (!record) throw new NotFoundError(party === 'CUSTOMER' ? 'Customer' : 'Supplier');
+    const name = 'customerName' in record ? record.customerName : record.vendorName;
+
+    const already = await prisma.journalEntry.findFirst({
+      where: { companyId, sourceType: 'OPENING_BALANCE', sourceId: id, status: 'POSTED' },
+      select: { entryNumber: true },
+    });
+    if (already) {
+      return {
+        ok: false,
+        error: `${name} already has an opening balance on ${already.entryNumber}. Post a journal voucher to correct it.`,
+      };
+    }
+
+    await transaction(async (tx) => {
+      await postOpeningBalance(tx, {
+        companyId,
+        party: { type: party, id, name },
+        currency: data.currency,
+        amount: data.amount,
+        rateToUsd: data.rateToUsd,
+        rateLocalPerUsd: data.rateLocalPerUsd,
+        asOf: data.asOf,
+        userId: user.id,
+      });
+      await writeAudit(tx, {
+        companyId,
+        userId: user.id,
+        action: 'PARTY_OPENING_POSTED',
+        entityType: party === 'CUSTOMER' ? 'Customer' : 'Vendor',
+        entityId: id,
+        after: { name, amount: data.amount, currency: data.currency, asOf: data.asOf.toISOString() },
+      });
+    }, 30_000);
+
+    revalidatePath(party === 'CUSTOMER' ? '/customers' : '/vendors');
+    revalidatePath(party === 'CUSTOMER' ? '/ledgers/customers' : '/ledgers/vendors');
+    revalidatePath('/reports/trial-balance');
+    revalidatePath(party === 'CUSTOMER' ? '/finance/receivables' : '/finance/payables');
+
+    return { ok: true, id, message: `Opening balance posted for ${name}.` };
   } catch (error) {
     return invalid(error);
   }
