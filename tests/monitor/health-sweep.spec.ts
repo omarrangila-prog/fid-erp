@@ -187,6 +187,18 @@ test('every screen opens cleanly, with no failed request and no console error', 
 
   for (const screen of SCREENS) {
     current = screen.path;
+
+    /*
+     * Walk, do not sprint.
+     *
+     * Opening seventy pages as fast as the browser allows spins up more
+     * serverless instances than the database pooler has slots, and the sweep
+     * then reports 500s it caused itself — while real users meet the same
+     * error. A monitor that takes the thing down to check whether it is up is
+     * worse than no monitor. MONITOR_PACE_MS tightens or loosens it.
+     */
+    await page.waitForTimeout(Number(process.env.MONITOR_PACE_MS ?? 1200));
+
     const response = await page.goto(screen.path, { waitUntil: 'domcontentloaded' }).catch((e) => {
       note(`${current}  NAVIGATION FAILED  ${String(e).slice(0, 160)}`);
       return null;
