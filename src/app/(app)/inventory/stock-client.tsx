@@ -23,6 +23,17 @@ export type StockRow = {
   bags: number;
   valueLabel: string;
   valueSort: number;
+  /** Every batch making up this row, with where it came from. */
+  lots: Array<{
+    batchNumber: string;
+    reference: string;
+    contractNumber: string;
+    jobNumber: string;
+    container: string;
+    onHandLabel: string;
+    availableLabel: string;
+    bags: number;
+  }>;
 };
 
 /**
@@ -67,6 +78,28 @@ export function StockClient({
           </span>
         </span>
       ),
+    },
+    {
+      id: 'reference',
+      header: 'Reference',
+      mobile: 'meta',
+      sortValue: (r) => r.lots[0]?.reference ?? '',
+      exportValue: (r) => [...new Set(r.lots.map((l) => l.reference))].join(', '),
+      // Where this coffee came from. Usually one contract; when a row holds
+      // stock from more than one, the rest are counted rather than listed so
+      // the column stays readable, and the breakdown below names them all.
+      cell: (r) => {
+        const refs = [...new Set(r.lots.map((l) => l.reference).filter((v) => v !== '—'))];
+        if (refs.length === 0) return <span className="text-ink-subtle">—</span>;
+        return (
+          <span className="block min-w-40">
+            <span className="block font-mono text-xs">{refs[0]}</span>
+            {refs.length > 1 ? (
+              <span className="block text-[11px] text-ink-subtle">+{refs.length - 1} more</span>
+            ) : null}
+          </span>
+        );
+      },
     },
     { id: 'warehouse', header: 'Warehouse', mobile: 'meta', sortValue: (r) => r.warehouse, cell: (r) => r.warehouse },
     {
@@ -131,8 +164,45 @@ export function StockClient({
         { id: 'item', label: 'Coffee', value: (r) => r.itemName },
         { id: 'origin', label: 'Origin', value: (r) => r.origin },
       ]}
-      searchValue={(r) => `${r.itemName} ${r.itemCode} ${r.origin} ${r.warehouse}`}
-      searchPlaceholder="Search coffee or warehouse…"
+      expandedContent={(r) => (
+        <div className="overflow-x-auto">
+          <p className="mb-2 text-xs text-ink-muted">
+            {r.lots.length === 1 ? 'The batch behind this stock' : `The ${r.lots.length} batches behind this stock`}
+          </p>
+          <table className="w-full min-w-[46rem] text-sm">
+            <thead>
+              <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
+                <th className="py-1.5 pr-3 font-medium">Reference</th>
+                <th className="py-1.5 pr-3 font-medium">Batch</th>
+                <th className="py-1.5 pr-3 font-medium">Container</th>
+                <th className="py-1.5 pr-3 font-medium">Job</th>
+                <th className="py-1.5 pr-3 text-right font-medium">On hand</th>
+                <th className="py-1.5 pr-3 text-right font-medium">Available</th>
+                <th className="py-1.5 text-right font-medium">Bags</th>
+              </tr>
+            </thead>
+            <tbody>
+              {r.lots.map((lot, i) => (
+                <tr key={`${lot.batchNumber}-${i}`} className="border-b border-line/60 last:border-0">
+                  <td className="py-1.5 pr-3 font-mono text-xs">{lot.reference}</td>
+                  <td className="py-1.5 pr-3">{lot.batchNumber}</td>
+                  <td className="py-1.5 pr-3 font-mono text-xs">{lot.container}</td>
+                  <td className="py-1.5 pr-3 text-xs text-ink-muted">{lot.jobNumber}</td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums">{lot.onHandLabel}</td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums">{lot.availableLabel}</td>
+                  <td className="py-1.5 text-right tabular-nums">{lot.bags.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      searchValue={(r) =>
+        `${r.itemName} ${r.itemCode} ${r.origin} ${r.warehouse} ${r.lots
+          .map((l) => `${l.reference} ${l.batchNumber} ${l.container}`)
+          .join(' ')}`
+      }
+      searchPlaceholder="Search coffee, warehouse, reference, batch or container…"
       exportHref={canExport ? '/api/export/stock-on-hand' : undefined}
       emptyAction={emptyAction}
       emptyTitle="No stock on hand"

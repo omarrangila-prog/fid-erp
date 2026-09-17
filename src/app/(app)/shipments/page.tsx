@@ -24,7 +24,7 @@ export default async function ShipmentsPage() {
       where: { companyId, purchaseContract: { status: 'POSTED' } },
       orderBy: [{ etaDate: 'asc' }, { shipmentNumber: 'desc' }],
       include: {
-        purchaseContract: { select: { contractNumber: true } },
+        purchaseContract: { select: { contractNumber: true, contractReference: true } },
         vendor: { select: { vendorName: true } },
         customer: { select: { customerName: true } },
         item: { select: { itemName: true } },
@@ -49,6 +49,7 @@ export default async function ShipmentsPage() {
         shipmentNumber: s.shipmentNumber,
         jobNumber: s.jobNumber,
         contractNumber: s.purchaseContract.contractNumber,
+        contractReference: s.purchaseContract.contractReference,
         vendorName: s.vendor.vendorName,
         customerName: s.customer?.customerName ?? null,
         itemName: s.item.itemName,

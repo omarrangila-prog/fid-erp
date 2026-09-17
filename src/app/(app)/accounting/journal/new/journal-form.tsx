@@ -229,16 +229,31 @@ export function JournalForm({
    * suggested — otherwise the figure offered would be dollars wearing a
    * dirham label.
    */
-  function balanceRemainder(key: string) {
+  /**
+   * What this line would have to be, in its own currency, to square the
+   * voucher.
+   *
+   * The difference is carried in USD, so on a dirham line it is multiplied
+   * back by that line's rate: fifty thousand dollars owed at 9.90 is four
+   * hundred and ninety-five thousand dirhams. Returns null when there is
+   * nothing to settle or not enough typed in yet to work it out.
+   */
+  function balancingAmount(line: Line) {
     const difference = totals.difference;
-    if (difference.isZero()) return;
+    if (difference.isZero()) return null;
+    const inUsd = line.direction === 'DEBIT' ? difference.negated() : difference;
+    if (!inUsd.greaterThan(0)) return null;
+    const rate = tryDec(line.rateToUsd);
+    if (line.currency !== 'USD' && rate.lessThanOrEqualTo(0)) return null;
+    const own = line.currency === 'USD' ? inUsd : inUsd.times(rate);
+    return { own: own.toFixed(2), usd: inUsd.toFixed(2) };
+  }
+
+  function balanceRemainder(key: string) {
     const line = lines.find((l) => l.key === key);
     if (!line || line.amount.trim() !== '') return;
-    const inUsd = line.direction === 'DEBIT' ? difference.negated() : difference;
-    if (!inUsd.greaterThan(0)) return;
-    const rate = tryDec(line.rateToUsd);
-    const adjustment = line.currency === 'USD' || rate.lessThanOrEqualTo(0) ? inUsd : inUsd.times(rate);
-    updateLine(key, { amount: adjustment.toFixed(2) });
+    const suggestion = balancingAmount(line);
+    if (suggestion) updateLine(key, { amount: suggestion.own });
   }
 
   function submit() {
@@ -412,7 +427,7 @@ export function JournalForm({
               key={line.key}
               className="grid gap-3 rounded-lg border border-line bg-paper p-3 sm:grid-cols-12 sm:items-end"
             >
-              <div className="sm:col-span-5">
+              <div className="sm:col-span-4">
                 <Field label={index === 0 ? 'Account' : ''} htmlFor={`acct-${line.key}`} required={index === 0}>
                   {/*
                     The full account name, wrapped rather than cut off. A code
@@ -450,7 +465,7 @@ export function JournalForm({
                 </Field>
               </div>
 
-              <div className="sm:col-span-3">
+              <div className="sm:col-span-4">
                 <Field label={index === 0 ? 'Amount' : ''} htmlFor={`amt-${line.key}`}>
                   <div className="flex gap-2">
                     <Select
@@ -511,6 +526,27 @@ export function JournalForm({
                       = USD {lineUsd(line)} {line.direction === 'DEBIT' ? 'debit' : 'credit'}
                     </p>
                   ) : null}
+                  {/*
+                    The conversion, offered rather than hidden. Fifty thousand
+                    dollars on the other side at 9.90 is four hundred and
+                    ninety-five thousand dirhams, and the figure is shown
+                    before it is used so it can be checked against the advice
+                    from the bank.
+                  */}
+                  {(() => {
+                    const fill = line.amount.trim() === '' ? balancingAmount(line) : null;
+                    if (!fill) return null;
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => updateLine(line.key, { amount: fill.own })}
+                        className="mt-1 text-left text-[11px] font-medium text-forest-700 underline underline-offset-2 hover:text-forest-800"
+                      >
+                        Use {line.currency} {Number(fill.own).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        {line.currency !== 'USD' ? ` — USD ${fill.usd} at ${line.rateToUsd}` : ''}
+                      </button>
+                    );
+                  })()}
                 </Field>
               </div>
 

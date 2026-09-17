@@ -12,6 +12,7 @@ export type ShipmentRow = {
   shipmentNumber: string;
   jobNumber: string;
   contractNumber: string;
+  contractReference: string;
   vendorName: string;
   customerName: string | null;
   itemName: string;
@@ -70,7 +71,20 @@ export function ShipmentsClient({
         </span>
       ),
     },
-    { id: 'contract', header: 'Contract', hideable: true, sortValue: (r) => r.contractNumber, cell: (r) => r.contractNumber },
+    {
+      id: 'contract',
+      header: 'Reference',
+      sortValue: (r) => r.contractReference,
+      exportValue: (r) => r.contractReference,
+      // The supplier's own reference is what everyone in the trade quotes;
+      // the internal contract number is shown under it rather than instead.
+      cell: (r) => (
+        <span className="block min-w-44">
+          <span className="block font-mono text-xs font-medium">{r.contractReference}</span>
+          <span className="block text-[11px] text-ink-subtle">{r.contractNumber}</span>
+        </span>
+      ),
+    },
     { id: 'coffee', header: 'Coffee', mobile: 'meta', sortValue: (r) => r.itemName, cell: (r) => r.itemName },
     {
       id: 'warehouse',
@@ -261,9 +275,9 @@ export function ShipmentsClient({
       getRowId={(r) => r.id}
       rowHref={(r) => `/shipments/${r.id}`}
       searchValue={(r) =>
-        `${r.shipmentNumber} ${r.jobNumber} ${r.contractNumber} ${r.vendorName} ${r.itemName} ${r.bookingNumber ?? ''} ${r.billOfLading ?? ''} ${r.vesselName ?? ''} ${r.warehouseNames}`
+        `${r.shipmentNumber} ${r.jobNumber} ${r.contractNumber} ${r.contractReference} ${r.vendorName} ${r.itemName} ${r.bookingNumber ?? ''} ${r.billOfLading ?? ''} ${r.vesselName ?? ''} ${r.warehouseNames}`
       }
-      searchPlaceholder="Search by shipment, job, booking, B/L or vessel…"
+      searchPlaceholder="Search by reference, shipment, job, booking, B/L or vessel…"
       emptyAction={emptyAction}
       emptyTitle="No shipments yet"
       emptyDescription="A job is opened automatically when a purchase contract is approved."

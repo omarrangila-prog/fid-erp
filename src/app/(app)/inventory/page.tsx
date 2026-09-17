@@ -28,7 +28,18 @@ export default async function InventoryPage() {
       include: {
         item: { select: { itemName: true, itemCode: true, originCountry: true, region: true } },
         warehouse: { select: { id: true, name: true } },
-        batch: { select: { landedUnitCostUsd: true } },
+        // The batch is what carries the trail back to the shipment it came
+        // in on and the contract that bought it, so the stock row can say
+        // where the coffee came from without opening anything.
+        batch: {
+          select: {
+            landedUnitCostUsd: true,
+            batchNumber: true,
+            container: { select: { containerNumber: true } },
+            purchaseContract: { select: { contractReference: true, contractNumber: true } },
+            shipment: { select: { jobNumber: true } },
+          },
+        },
       },
     }),
     prisma.warehouse.findMany({
@@ -53,7 +64,20 @@ export default async function InventoryPage() {
     const available = dec(balance.availableKg);
     const value = toMoney(onHand.times(dec(balance.batch.landedUnitCostUsd)));
 
+    // Every batch behind the row, so the breakdown can be opened in place.
+    const lot = {
+      batchNumber: balance.batch.batchNumber,
+      reference: balance.batch.purchaseContract?.contractReference ?? '—',
+      contractNumber: balance.batch.purchaseContract?.contractNumber ?? '—',
+      jobNumber: balance.batch.shipment?.jobNumber ?? '—',
+      container: balance.batch.container?.containerNumber ?? '—',
+      onHandLabel: formatQuantityKg(onHand),
+      availableLabel: formatQuantityKg(available),
+      bags: balance.bags,
+    };
+
     if (existing) {
+      existing.lots.push(lot);
       existing.onHandSort += Number(onHand);
       existing.availableSort += Number(available);
       existing.bags += balance.bags;
@@ -82,6 +106,7 @@ export default async function InventoryPage() {
         bags: balance.bags,
         valueLabel: formatMoney(value, 'USD'),
         valueSort: Number(value),
+        lots: [lot],
       });
     }
   }
