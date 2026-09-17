@@ -25,6 +25,8 @@ export type ExpenseRow = {
   enteredBy: string;
   reference: string | null;
   status: string;
+  /** Still owed: show a way to pay it. Already paid: do not. */
+  needsPayment: boolean;
   warehouseNames: string;
 };
 
@@ -128,6 +130,7 @@ export function ExpensesClient({
       cell: (r) => (
         <VoucherRowActions
           kind="expense"
+          needsPayment={r.needsPayment}
           id={r.id}
           status={r.status}
           canPost={canPost}

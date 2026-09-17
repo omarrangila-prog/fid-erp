@@ -5,6 +5,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, VISIBLE_DOCUMENT_STATUSES } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { formatMoney, formatDate } from '@/lib/format';
+import { dec } from '@/lib/money';
 import { getWarehouseLabels } from '@/lib/services/stock';
 import { listDueRecurring } from '@/lib/services/recurring-expense';
 import { Callout } from '@/components/ui/feedback';
@@ -23,7 +24,7 @@ export default async function ExpensesPage() {
   const today = new Date();
   const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
 
-  const [expenses, warehouses, dueRecurring] = await Promise.all([
+  const [expenses, warehouses, dueRecurring, settled] = await Promise.all([
     prisma.expense.findMany({
       where: { companyId, status: { in: [...VISIBLE_DOCUMENT_STATUSES] } },
       orderBy: [{ expenseDate: 'desc' }, { expenseNumber: 'desc' }],
@@ -38,7 +39,22 @@ export default async function ExpensesPage() {
     }),
     getWarehouseLabels(companyId),
     listDueRecurring(companyId, todayUtc),
+    /*
+     * What has already been paid against each cost, in one query rather than
+     * one per row. A cost paid straight from cash or bank needs nothing more;
+     * a cost booked as owed is settled by a payment, and once that payment
+     * covers it there is nothing left to pay. Offering "Pay this cost" on
+     * either of those is how the same bill gets paid twice.
+     */
+    prisma.$queryRaw<Array<{ expenseId: string; paid: string }>>`
+      SELECT pa."expenseId", COALESCE(SUM(pa."amount"), 0)::text AS paid
+      FROM payment_allocations pa
+      JOIN payments p ON p."id" = pa."paymentId"
+      WHERE p."companyId" = ${companyId} AND p."status" = 'POSTED' AND pa."expenseId" IS NOT NULL
+      GROUP BY pa."expenseId"`,
   ]);
+
+  const paidByExpense = new Map(settled.map((row) => [row.expenseId, dec(row.paid)]));
 
   const rows: ExpenseRow[] = expenses.map((e) => ({
     id: e.id,
@@ -53,6 +69,13 @@ export default async function ExpensesPage() {
     amountSort: Number(e.amountUsd),
     amountUsd: formatMoney(e.amountUsd, 'USD'),
     account: e.cashBankAccount?.name ?? 'On credit',
+    // Paid on the spot, owed to an agent, or already settled by a payment —
+    // in none of those is there anything left to pay.
+    needsPayment:
+      e.status === 'POSTED' &&
+      !e.cashBankAccountId &&
+      !e.payableToAgentId &&
+      dec(e.amount).plus(e.taxAmount).greaterThan(paidByExpense.get(e.id) ?? 0),
     capitalise: e.capitaliseToLandedCost,
     kind: e.kind,
     payee: e.vendor?.vendorName ?? e.agent?.agentName ?? null,

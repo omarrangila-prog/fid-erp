@@ -169,6 +169,31 @@ export const splitExpenseSchema = z.object({
     .max(20, 'Twenty lines is the most one payment can be split across.'),
 });
 
+/**
+ * A loan from one FID company to the other.
+ *
+ * The rate is the one the person enters — the historical rate the bank used
+ * on the day — and the converted amount follows from it. `receivedAmount`
+ * says what really landed where the bank credited something else.
+ */
+export const intercompanyLoanSchema = z
+  .object({
+    transferDate: dateString('Loan date'),
+    fromCompanyId: cuid,
+    fromAccountId: cuid,
+    toCompanyId: cuid,
+    toAccountId: cuid,
+    amount: decimalString('Amount'),
+    exchangeRate: decimalString('Exchange rate'),
+    receivedAmount: optionalDecimalString('Converted amount'),
+    reference: optionalText(60),
+    description: optionalText(300),
+  })
+  .refine((v) => v.fromCompanyId !== v.toCompanyId, {
+    message: 'A company cannot lend to itself.',
+    path: ['toCompanyId'],
+  });
+
 export const chequeStatusSchema = z.object({
   toStatus: z.enum(['RECEIVED', 'DEPOSITED', 'CLEARED', 'BOUNCED', 'CANCELLED']),
   cashBankAccountId: optionalCuid,

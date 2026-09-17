@@ -859,6 +859,17 @@ export const ACCOUNT_KEYS = {
   /// holds. An asset of the company: the customer is settled, the cash is not
   /// yet in the bank, and somebody has to be able to say how much is with whom.
   AGENT_CLEARING: 'AGENT_CLEARING',
+  /**
+   * A loan between the two FID companies.
+   *
+   * Dubai and Morocco are separate legal entities, so money moving between
+   * them is not a transfer between accounts — it is a loan that stays on both
+   * balance sheets until it is repaid. The lender carries a receivable, the
+   * borrower a payable, and neither touches profit and loss: lending money is
+   * not an expense and receiving it is not income.
+   */
+  INTERCOMPANY_LOAN_RECEIVABLE: 'INTERCOMPANY_LOAN_RECEIVABLE',
+  INTERCOMPANY_LOAN_PAYABLE: 'INTERCOMPANY_LOAN_PAYABLE',
   /// Commission agreed with an agent but not yet paid. A real cost of the
   /// shipment from the day it is agreed.
   AGENT_COMMISSION_PAYABLE: 'AGENT_COMMISSION_PAYABLE',

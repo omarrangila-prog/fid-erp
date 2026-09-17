@@ -105,6 +105,20 @@ const STANDARD_ACCOUNTS: AccountSeed[] = [
     subledgerType: 'AGENT',
   },
   {
+    code: '1700',
+    name: 'Loan Receivable — Group Company',
+    type: 'ASSET',
+    reportGroup: REPORT_GROUPS.CURRENT_ASSET,
+    systemKey: ACCOUNT_KEYS.INTERCOMPANY_LOAN_RECEIVABLE,
+  },
+  {
+    code: '2200',
+    name: 'Loan Payable — Group Company',
+    type: 'LIABILITY',
+    reportGroup: REPORT_GROUPS.CURRENT_LIABILITY,
+    systemKey: ACCOUNT_KEYS.INTERCOMPANY_LOAN_PAYABLE,
+  },
+  {
     code: '2060',
     name: 'Agent Commission Payable',
     type: 'LIABILITY',

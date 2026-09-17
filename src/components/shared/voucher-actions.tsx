@@ -175,12 +175,15 @@ export function VoucherRowActions({
   status,
   canPost,
   canDelete,
+  needsPayment = false,
 }: {
   kind: Kind;
   id: string;
   status: string;
   canPost: boolean;
   canDelete: boolean;
+  /** Only a cost with something still owing offers a way to pay it. */
+  needsPayment?: boolean;
 }) {
   const config = ACTIONS[kind];
   const viewPath = `${config.listPath}/${id}`;
@@ -199,7 +202,7 @@ export function VoucherRowActions({
       actions={[
         viewAction(viewPath),
         ...(editPath ? [editAction(editPath)] : []),
-        ...(kind === 'expense' && status === 'POSTED'
+        ...(kind === 'expense' && status === 'POSTED' && needsPayment
           ? [{ label: 'Pay this cost', href: `/finance/payments/new?expense=${id}`, icon: HandCoins }]
           : []),
         // A new voucher pre-filled from this one, for the charge that comes

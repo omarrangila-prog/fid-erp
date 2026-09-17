@@ -1,6 +1,7 @@
 import { transaction } from '@/lib/db';
 import { convertToUsd, dec, toMoney } from '@/lib/money';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
+import { ACCOUNT_KEYS } from '@/lib/constants';
 import { postJournalEntry } from '@/lib/services/accounting';
 import { getCompanyContext } from '@/lib/services/company';
 import { getRate } from '@/lib/services/exchange-rate';
@@ -156,4 +157,204 @@ export async function postCashBankTransfer(input: {
 
     return entry;
   });
+}
+
+/**
+ * A loan from one FID company to the other.
+ *
+ * Dubai and Morocco are separate legal entities, so this is not a transfer
+ * between accounts and must not be recorded as one. Money leaves a Dubai bank
+ * in dollars and lands in a Moroccan bank in dirhams, and what remains is a
+ * debt: Dubai is owed, Morocco owes. It stays on both balance sheets until it
+ * is repaid.
+ *
+ * Two journal entries, one in each company's books, written inside a single
+ * database transaction so a half-recorded loan cannot exist:
+ *
+ *   lender    credit bank (USD)    debit  Loan Receivable — Group Company
+ *   borrower  debit  bank (MAD)    credit Loan Payable — Group Company
+ *
+ * The principal touches no income or expense account on either side, because
+ * lending money is not a cost and receiving it is not revenue.
+ *
+ * The rate is the one the person enters — the historical rate the bank
+ * actually used — and the amount that lands is worked out from it. Where the
+ * bank credited something slightly different, `receivedAmount` states what
+ * really arrived and the two sides still each balance in their own books.
+ *
+ * Company isolation holds: each company's ledgers, reports and reconciliation
+ * see only their own entry. What they share is a balance that must agree.
+ */
+export async function postIntercompanyLoan(input: {
+  fromCompanyId: string;
+  toCompanyId: string;
+  userId: string;
+  transferDate: Date;
+  fromAccountId: string;
+  toAccountId: string;
+  /** What leaves the lender's account, in that account's currency. */
+  amount: string | number;
+  /** Units of the receiving currency per one unit of the sending currency. */
+  exchangeRate: string | number;
+  /** What actually landed. Defaults to amount × rate. */
+  receivedAmount?: string | number | null;
+  reference?: string | null;
+  description?: string | null;
+}) {
+  const sent = toMoney(input.amount);
+  const rate = dec(input.exchangeRate);
+  if (sent.lessThanOrEqualTo(0)) {
+    throw new BusinessRuleError('The loan amount must be greater than zero.');
+  }
+  if (rate.lessThanOrEqualTo(0)) {
+    throw new BusinessRuleError('Enter the exchange rate used for this loan.');
+  }
+  if (input.fromCompanyId === input.toCompanyId) {
+    throw new BusinessRuleError('A company cannot lend to itself. Use a transfer between its own accounts.');
+  }
+
+  return transaction(async (tx) => {
+    const [lender, borrower] = await Promise.all([
+      getCompanyContext(tx, input.fromCompanyId),
+      getCompanyContext(tx, input.toCompanyId),
+    ]);
+
+    // Each account must belong to the company it is claimed for. This is what
+    // stops money appearing to leave a Dubai account and land in a Moroccan
+    // one that Dubai does not own.
+    const [from, to] = await Promise.all([
+      tx.cashBankAccount.findFirst({
+        where: { id: input.fromAccountId, companyId: input.fromCompanyId },
+        select: { id: true, name: true, currency: true, status: true },
+      }),
+      tx.cashBankAccount.findFirst({
+        where: { id: input.toAccountId, companyId: input.toCompanyId },
+        select: { id: true, name: true, currency: true, status: true },
+      }),
+    ]);
+    if (!from) throw new NotFoundError(`Lending account in ${lender.name}`);
+    if (!to) throw new NotFoundError(`Receiving account in ${borrower.name}`);
+    if (from.status !== 'ACTIVE') throw new BusinessRuleError(`${from.name} is inactive.`);
+    if (to.status !== 'ACTIVE') throw new BusinessRuleError(`${to.name} is inactive.`);
+
+    const received =
+      input.receivedAmount !== undefined && input.receivedAmount !== null && `${input.receivedAmount}` !== ''
+        ? toMoney(input.receivedAmount)
+        : toMoney(sent.times(rate));
+    if (received.lessThanOrEqualTo(0)) {
+      throw new BusinessRuleError('The converted amount must be greater than zero.');
+    }
+
+    /** Units of a currency per 1 USD, on the day, in one company's books. */
+    async function usdRate(companyId: string, currency: string) {
+      if (currency === 'USD') return dec(1);
+      const found =
+        (await getRate({ companyId, quoteCurrency: currency, asOf: input.transferDate })) ??
+        (await getRate({ companyId, quoteCurrency: currency }));
+      if (!found || found.lessThanOrEqualTo(0)) {
+        throw new BusinessRuleError(`An exchange rate is required for ${currency}.`);
+      }
+      return found;
+    }
+
+    // The lender's side is measured at the rate the loan was struck at, so
+    // both companies record the same debt: dirhams received, divided by the
+    // rate entered, is the dollars lent.
+    const sentRate = await usdRate(input.fromCompanyId, from.currency);
+    const receivedRateToUsd =
+      to.currency === 'USD'
+        ? dec(1)
+        : from.currency === 'USD'
+          ? rate
+          : await usdRate(input.toCompanyId, to.currency);
+
+    const [lenderLocalRate, borrowerLocalRate] = await Promise.all([
+      usdRate(input.fromCompanyId, lender.localCurrency),
+      usdRate(input.toCompanyId, borrower.localCurrency),
+    ]);
+
+    const sourceId = `LOAN-${Date.now()}`;
+    const note = input.reference ? ` · ${input.reference}` : '';
+
+    const lenderEntry = await postJournalEntry(tx, {
+      companyId: input.fromCompanyId,
+      entryDate: input.transferDate,
+      description: input.description?.trim() || `Loan to ${borrower.name}${note}`,
+      sourceType: 'MANUAL',
+      sourceId,
+      createdById: input.userId,
+      localCurrency: lender.localCurrency,
+      rateLocalPerUsd: lenderLocalRate,
+      lines: [
+        {
+          accountKey: ACCOUNT_KEYS.INTERCOMPANY_LOAN_RECEIVABLE,
+          direction: 'DEBIT',
+          currency: from.currency,
+          amount: sent,
+          rateToUsd: sentRate,
+          description: `Lent to ${borrower.name}`,
+        },
+        {
+          cashBankAccountId: from.id,
+          direction: 'CREDIT',
+          currency: from.currency,
+          amount: sent,
+          rateToUsd: sentRate,
+          description: `Loan to ${borrower.name}`,
+        },
+      ],
+    });
+
+    const borrowerEntry = await postJournalEntry(tx, {
+      companyId: input.toCompanyId,
+      entryDate: input.transferDate,
+      description: input.description?.trim() || `Loan from ${lender.name}${note}`,
+      sourceType: 'MANUAL',
+      sourceId,
+      createdById: input.userId,
+      localCurrency: borrower.localCurrency,
+      rateLocalPerUsd: borrowerLocalRate,
+      lines: [
+        {
+          cashBankAccountId: to.id,
+          direction: 'DEBIT',
+          currency: to.currency,
+          amount: received,
+          rateToUsd: receivedRateToUsd,
+          description: `Loan from ${lender.name}`,
+        },
+        {
+          accountKey: ACCOUNT_KEYS.INTERCOMPANY_LOAN_PAYABLE,
+          direction: 'CREDIT',
+          currency: to.currency,
+          amount: received,
+          rateToUsd: receivedRateToUsd,
+          description: `Owed to ${lender.name}`,
+        },
+      ],
+    });
+
+    for (const [companyId, entryId] of [
+      [input.fromCompanyId, lenderEntry.id],
+      [input.toCompanyId, borrowerEntry.id],
+    ] as const) {
+      await writeAudit(tx, {
+        companyId,
+        userId: input.userId,
+        action: 'INTERCOMPANY_LOAN',
+        entityType: 'JournalEntry',
+        entityId: entryId,
+        after: {
+          lender: `${lender.name} · ${from.name}`,
+          borrower: `${borrower.name} · ${to.name}`,
+          lent: `${from.currency} ${sent.toFixed(2)}`,
+          received: `${to.currency} ${received.toFixed(2)}`,
+          rate: rate.toString(),
+          reference: input.reference ?? null,
+        },
+      });
+    }
+
+    return { lenderEntry, borrowerEntry, sent, received, rate };
+  }, 60_000);
 }

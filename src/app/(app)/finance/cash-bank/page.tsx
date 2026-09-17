@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 import { Wallet, Landmark, Coins } from 'lucide-react';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
@@ -39,6 +40,15 @@ export default async function CashBankPage() {
                   accountType: account.accountType,
                 }))}
               />
+            ) : null}
+            {can(user, PERMISSIONS.ACCOUNTING_POST) ? (
+              <Button asChild variant="outline">
+                <Link href="/finance/intercompany-loan">
+                  <Landmark />
+                  <span className="hidden sm:inline">Intercompany loan</span>
+                  <span className="sm:hidden">Loan</span>
+                </Link>
+              </Button>
             ) : null}
             {can(user, PERMISSIONS.CASHBANK_MANAGE) ? <CashBankAccountButton /> : null}
           </div>

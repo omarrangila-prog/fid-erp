@@ -7,6 +7,7 @@ import { Banknote, HandCoins, Copy } from 'lucide-react';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, TRANSACTION_STATUS_META, PAYMENT_METHOD_LABELS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
+import { dec } from '@/lib/money';
 import { formatMoney, formatDate, formatDateTime, formatRate } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Metric, MetricGrid, DetailRow } from '@/components/shared/stat-card';
@@ -47,7 +48,18 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
   if (!expense) notFound();
 
   const warehouses = await getWarehouseLabels(user.activeCompany.id);
-  const unpaid = expense.status === 'POSTED' && !expense.cashBankAccountId;
+  /*
+   * Still owed, rather than merely booked as owed. A cost paid from cash or
+   * bank needs nothing more; one booked on credit is settled by a payment,
+   * and once payments cover it there is nothing left to pay. Offering to pay
+   * it again is how the same bill gets paid twice.
+   */
+  const paidAgainst = await prisma.paymentAllocation.aggregate({
+    where: { expenseId: expense.id, payment: { status: 'POSTED' } },
+    _sum: { amount: true },
+  });
+  const owed = dec(expense.amount).plus(expense.taxAmount).minus(paidAgainst._sum.amount ?? 0);
+  const unpaid = expense.status === 'POSTED' && !expense.cashBankAccountId && owed.greaterThan(0);
   const recordPayment = unpaid && !expense.payableToAgent && can(user, PERMISSIONS.PAYMENTS_CREATE);
   const payAgentCommission =
     unpaid && expense.payableToAgent && can(user, PERMISSIONS.AGENTS_VIEW);

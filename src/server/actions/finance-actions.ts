@@ -15,6 +15,7 @@ import {
   journalVoucherSchema,
   revaluationSchema,
   cashBankTransferSchema,
+  intercompanyLoanSchema,
 } from '@/lib/validation/finance';
 import { createReceipt, updateReceipt, postReceipt, reverseReceipt, deleteDraftReceipt } from '@/lib/services/receipt';
 import { createPayment, updatePayment, postPayment, reversePayment, deleteDraftPayment } from '@/lib/services/payment';
@@ -31,7 +32,7 @@ import { changeChequeStatus } from '@/lib/services/cheque';
 import { createAgentSettlement, postAgentSettlement } from '@/lib/services/agent-ledger';
 import { postRevaluation } from '@/lib/services/revaluation';
 import { postJournalEntry } from '@/lib/services/accounting';
-import { postCashBankTransfer } from '@/lib/services/cash-transfer';
+import { postCashBankTransfer, postIntercompanyLoan } from '@/lib/services/cash-transfer';
 import {
   createRecurringFromExpense,
   generateFromRecurring,
@@ -493,6 +494,48 @@ export async function postCashBankTransferAction(payload: string): Promise<DocFo
     });
     revalidateAll([...paths.expenses, '/finance/cash-bank', '/accounting/journal', '/reports', '/dashboard']);
     return { ok: true, id: entry.id, message: `Transfer posted as ${entry.entryNumber}.` };
+  } catch (error) {
+    return toState(error);
+  }
+}
+
+
+/**
+ * Lend money from one FID company to the other.
+ *
+ * Needs the right to post in both sets of books, because it writes to both.
+ * A user who can only reach one company cannot move money between them.
+ */
+export async function postIntercompanyLoanAction(payload: string): Promise<DocFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.ACCOUNTING_POST);
+    const input = intercompanyLoanSchema.parse(parseJson(payload));
+
+    const reachable = new Set(user.companies.map((c) => c.id));
+    if (!reachable.has(input.fromCompanyId) || !reachable.has(input.toCompanyId)) {
+      return { ok: false, error: 'You can only record a loan between companies you have access to.' };
+    }
+
+    const result = await postIntercompanyLoan({
+      fromCompanyId: input.fromCompanyId,
+      toCompanyId: input.toCompanyId,
+      userId: user.id,
+      transferDate: input.transferDate,
+      fromAccountId: input.fromAccountId,
+      toAccountId: input.toAccountId,
+      amount: input.amount,
+      exchangeRate: input.exchangeRate,
+      receivedAmount: input.receivedAmount,
+      reference: input.reference,
+      description: input.description,
+    });
+
+    revalidateAll(['/finance/cash-bank', '/accounting/journal', '/reports', '/dashboard', '/finance/expenses']);
+    return {
+      ok: true,
+      id: result.lenderEntry.id,
+      message: `Loan posted: ${result.lenderEntry.entryNumber} and ${result.borrowerEntry.entryNumber}.`,
+    };
   } catch (error) {
     return toState(error);
   }
