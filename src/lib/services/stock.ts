@@ -33,6 +33,8 @@ export type BatchStockRow = {
   etaDate: Date | null;
   contractId: string;
   contractNumber: string;
+  /** The supplier's own reference, e.g. ICUL/FID/002/SCR15-12/6. */
+  contractReference: string;
   vendorName: string;
   receivedKg: Decimal;
   allocatedKg: Decimal;
@@ -63,7 +65,7 @@ export async function getBatchStock(filters: StockFilters): Promise<BatchStockRo
            b."unitCostUsd"::text         AS "unitCostUsd",
            i."id" AS "itemId", i."itemCode", i."itemName",
            s."id" AS "shipmentId", s."shipmentNumber", s."status"::text AS "shipmentStatus", s."etaDate",
-           pc."id" AS "contractId", pc."contractNumber",
+           pc."id" AS "contractId", pc."contractNumber", pc."contractReference",
            v."vendorName"
     FROM batches b
     JOIN coffee_items i ON i."id" = b."itemId"
@@ -102,6 +104,7 @@ export async function getBatchStock(filters: StockFilters): Promise<BatchStockRo
       etaDate: (row.etaDate as Date | null) ?? null,
       contractId: String(row.contractId),
       contractNumber: String(row.contractNumber),
+      contractReference: String(row.contractReference ?? ''),
       vendorName: String(row.vendorName),
       receivedKg: toQuantity(String(row.receivedKg)),
       allocatedKg: toQuantity(String(row.allocatedKg)),

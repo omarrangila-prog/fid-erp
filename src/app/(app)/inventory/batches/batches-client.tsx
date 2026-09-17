@@ -16,6 +16,7 @@ export type BatchRow = {
   shipmentNumber: string;
   shipmentId: string;
   contractNumber: string;
+  contractReference: string;
   warehouses: string;
   orderedLabel: string;
   orderedSort: number;
@@ -81,7 +82,19 @@ export function BatchesClient({
     // Shown by default, not hidden behind the column picker: the client tracks
     // stock back to the contract it came in on, and a reference you have to go
     // looking for is one you stop using.
-    { id: 'contract', header: 'Contract', hideable: true, exportValue: (r) => r.contractNumber, cell: (r) => r.contractNumber },
+    {
+      id: 'contract',
+      header: 'Reference',
+      exportValue: (r) => r.contractReference || r.contractNumber,
+      // The supplier's reference is the one quoted in the trade; the internal
+      // contract number sits under it rather than in place of it.
+      cell: (r) => (
+        <span className="block min-w-44">
+          <span className="block font-mono text-xs font-medium">{r.contractReference || '—'}</span>
+          <span className="block text-[11px] text-ink-subtle">{r.contractNumber}</span>
+        </span>
+      ),
+    },
     { id: 'warehouses', header: 'Warehouse', mobile: 'meta', exportValue: (r) => r.warehouses, cell: (r) => r.warehouses || '—' },
     { id: 'ordered', header: 'Ordered KG', numeric: true, hideable: true, sortValue: (r) => r.orderedSort, exportValue: (r) => r.orderedSort, exportType: 'quantity', cell: (r) => r.orderedLabel },
     { id: 'received', header: 'Received KG', numeric: true, hideable: true, exportValue: (r) => r.receivedSort, exportType: 'quantity', cell: (r) => r.receivedLabel },
@@ -166,7 +179,7 @@ export function BatchesClient({
         { id: 'origin', label: 'Origin', value: (r) => r.origin },
       ]}
       searchValue={(r) =>
-        `${r.batchNumber} ${r.lotNumber} ${r.itemName} ${r.origin} ${r.containerNumber ?? ''} ${r.shipmentNumber} ${r.contractNumber} ${r.warehouses}`
+        `${r.batchNumber} ${r.lotNumber} ${r.itemName} ${r.origin} ${r.containerNumber ?? ''} ${r.shipmentNumber} ${r.contractNumber} ${r.contractReference} ${r.warehouses}`
       }
       searchPlaceholder="Search batch, lot, container or shipment…"
       emptyAction={emptyAction}

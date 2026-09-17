@@ -26,6 +26,7 @@ export default async function BatchesPage() {
     shipmentNumber: b.shipmentNumber,
     shipmentId: b.shipmentId,
     contractNumber: b.contractNumber,
+    contractReference: b.contractReference,
     warehouses: b.warehouseNames,
     orderedLabel: formatQuantityKg(b.orderedKg),
     orderedSort: Number(b.orderedKg),

@@ -20,7 +20,7 @@ export default async function ItemsPage({
   const user = await requirePageAccess(PERMISSIONS.ITEMS_VIEW);
   const companyId = user.activeCompany.id;
 
-  const [items, stock, warehouseStock, traffic] = await Promise.all([
+  const [items, stock, warehouseStock, traffic, balances] = await Promise.all([
     prisma.coffeeItem.findMany({ where: { companyId }, orderBy: { itemName: 'asc' } }),
     getItemStock(companyId),
     getWarehouseStockByItem(companyId),
@@ -35,7 +35,47 @@ export default async function ItemsPage({
       LEFT JOIN inventory_transactions t ON t."batchId" = b."id"
       WHERE b."companyId" = ${companyId} AND b."status" = 'ACTIVE'
       GROUP BY b."itemId"`,
+    /*
+     * Where each coffee physically is, batch by batch: the container it came
+     * in, the contract that bought it, the warehouse holding it. The client
+     * should not have to open an item to learn that its stock is split across
+     * two containers from one shipment.
+     */
+    prisma.inventoryBalance.findMany({
+      where: { companyId, onHandKg: { not: 0 } },
+      select: {
+        itemId: true,
+        onHandKg: true,
+        availableKg: true,
+        bags: true,
+        warehouse: { select: { name: true } },
+        batch: {
+          select: {
+            batchNumber: true,
+            container: { select: { containerNumber: true } },
+            purchaseContract: { select: { contractReference: true } },
+            shipment: { select: { jobNumber: true } },
+          },
+        },
+      },
+    }),
   ]);
+
+  const lotsByItem = new Map<string, ItemRow['lots']>();
+  for (const balance of balances) {
+    const list = lotsByItem.get(balance.itemId) ?? [];
+    list.push({
+      reference: balance.batch.purchaseContract?.contractReference ?? '—',
+      batchNumber: balance.batch.batchNumber,
+      container: balance.batch.container?.containerNumber ?? '—',
+      jobNumber: balance.batch.shipment?.jobNumber ?? '—',
+      warehouseName: balance.warehouse.name,
+      onHandLabel: formatQuantityKg(balance.onHandKg),
+      availableLabel: formatQuantityKg(balance.availableKg),
+      bags: balance.bags,
+    });
+    lotsByItem.set(balance.itemId, list);
+  }
 
   const activityByItem = new Map(traffic.map((row) => [row.itemId, row]));
 
@@ -81,6 +121,7 @@ export default async function ItemsPage({
         availableLabel: formatQuantityKg(warehouse.availableKg),
         availableKg: Number(warehouse.availableKg),
       })),
+      lots: lotsByItem.get(i.id) ?? [],
     };
   });
 

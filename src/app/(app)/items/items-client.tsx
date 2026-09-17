@@ -47,6 +47,17 @@ export type ItemRow = {
   lastMovedLabel: string;
   lastMovedSort: number;
   warehouses: Array<{ warehouseName: string; availableLabel: string; availableKg: number }>;
+  /** Every batch of this coffee in stock, and where it came from. */
+  lots: Array<{
+    reference: string;
+    batchNumber: string;
+    container: string;
+    jobNumber: string;
+    warehouseName: string;
+    onHandLabel: string;
+    availableLabel: string;
+    bags: number;
+  }>;
 };
 
 const asOptions = (map: Record<string, string>) =>
@@ -203,6 +214,78 @@ export function ItemsClient({
       cell: (r) => r.defaultUnit,
     },
     {
+      id: 'reference',
+      header: 'Reference',
+      mobile: 'meta',
+      hideable: true,
+      sortValue: (r) => r.lots[0]?.reference ?? '',
+      exportValue: (r) => [...new Set(r.lots.map((l) => l.reference))].join(', '),
+      cell: (r) => {
+        const refs = [...new Set(r.lots.map((l) => l.reference).filter((v) => v !== '—'))];
+        if (refs.length === 0) return <span className="text-ink-subtle">—</span>;
+        return (
+          <span className="block min-w-40">
+            {refs.slice(0, 2).map((ref) => (
+              <span key={ref} className="block font-mono text-xs">
+                {ref}
+              </span>
+            ))}
+            {refs.length > 2 ? (
+              <span className="block text-[11px] text-ink-subtle">+{refs.length - 2} more</span>
+            ) : null}
+          </span>
+        );
+      },
+    },
+    {
+      id: 'container',
+      header: 'Container',
+      mobile: 'meta',
+      hideable: true,
+      sortValue: (r) => r.lots[0]?.container ?? '',
+      exportValue: (r) => [...new Set(r.lots.map((l) => l.container))].join(', '),
+      cell: (r) => {
+        const boxes = [...new Set(r.lots.map((l) => l.container).filter((v) => v !== '—'))];
+        if (boxes.length === 0) return <span className="text-ink-subtle">—</span>;
+        return (
+          <span className="block min-w-32">
+            {boxes.slice(0, 2).map((box) => (
+              <span key={box} className="block font-mono text-xs">
+                {box}
+              </span>
+            ))}
+            {boxes.length > 2 ? (
+              <span className="block text-[11px] text-ink-subtle">+{boxes.length - 2} more</span>
+            ) : null}
+          </span>
+        );
+      },
+    },
+    {
+      id: 'batch',
+      header: 'Batch',
+      mobile: 'meta',
+      hideable: true,
+      sortValue: (r) => r.lots[0]?.batchNumber ?? '',
+      exportValue: (r) => [...new Set(r.lots.map((l) => l.batchNumber))].join(', '),
+      cell: (r) => {
+        const batches = [...new Set(r.lots.map((l) => l.batchNumber))];
+        if (batches.length === 0) return <span className="text-ink-subtle">—</span>;
+        return (
+          <span className="block min-w-28">
+            {batches.slice(0, 2).map((b) => (
+              <span key={b} className="block text-xs">
+                {b}
+              </span>
+            ))}
+            {batches.length > 2 ? (
+              <span className="block text-[11px] text-ink-subtle">+{batches.length - 2} more</span>
+            ) : null}
+          </span>
+        );
+      },
+    },
+    {
       id: 'warehouse',
       header: 'Warehouse',
       mobile: 'meta',
@@ -336,10 +419,49 @@ export function ItemsClient({
         columns={columns}
         getRowId={(r) => r.id}
         rowHref={(r) => `/items/${r.id}`}
-        searchValue={(r) =>
-          `${r.itemName} ${r.itemCode} ${r.originCountry} ${r.region ?? ''} ${r.grade ?? ''} ${r.variety ?? ''} ${r.cropYear ?? ''} ${r.screenSize ?? ''} ${r.warehouses.map((w) => w.warehouseName).join(' ')}`
+        expandedContent={(r) =>
+          r.lots.length === 0 ? (
+            <p className="text-xs text-ink-muted">None of this coffee is in a warehouse right now.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <p className="mb-2 text-xs text-ink-muted">
+                {r.lots.length === 1 ? 'The batch in stock' : `The ${r.lots.length} batches in stock`}
+              </p>
+              <table className="w-full min-w-[50rem] text-sm">
+                <thead>
+                  <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
+                    <th className="py-1.5 pr-3 font-medium">Reference</th>
+                    <th className="py-1.5 pr-3 font-medium">Batch</th>
+                    <th className="py-1.5 pr-3 font-medium">Container</th>
+                    <th className="py-1.5 pr-3 font-medium">Job</th>
+                    <th className="py-1.5 pr-3 font-medium">Warehouse</th>
+                    <th className="py-1.5 pr-3 text-right font-medium">On hand</th>
+                    <th className="py-1.5 pr-3 text-right font-medium">Available</th>
+                    <th className="py-1.5 text-right font-medium">Bags</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {r.lots.map((lot, i) => (
+                    <tr key={`${lot.batchNumber}-${i}`} className="border-b border-line/60 last:border-0">
+                      <td className="py-1.5 pr-3 font-mono text-xs">{lot.reference}</td>
+                      <td className="py-1.5 pr-3">{lot.batchNumber}</td>
+                      <td className="py-1.5 pr-3 font-mono text-xs">{lot.container}</td>
+                      <td className="py-1.5 pr-3 text-xs text-ink-muted">{lot.jobNumber}</td>
+                      <td className="py-1.5 pr-3">{lot.warehouseName}</td>
+                      <td className="py-1.5 pr-3 text-right tabular-nums">{lot.onHandLabel}</td>
+                      <td className="py-1.5 pr-3 text-right tabular-nums">{lot.availableLabel}</td>
+                      <td className="py-1.5 text-right tabular-nums">{lot.bags.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
         }
-        searchPlaceholder="Search by name, origin, grade or screen…"
+        searchValue={(r) =>
+          `${r.itemName} ${r.itemCode} ${r.originCountry} ${r.region ?? ''} ${r.grade ?? ''} ${r.variety ?? ''} ${r.cropYear ?? ''} ${r.screenSize ?? ''} ${r.warehouses.map((w) => w.warehouseName).join(' ')} ${r.lots.map((l) => `${l.reference} ${l.batchNumber} ${l.container} ${l.jobNumber}`).join(' ')}`
+        }
+        searchPlaceholder="Search by name, origin, grade, reference, batch or container…"
         emptyTitle="No items yet"
         emptyDescription="Create the coffees you trade. Every contract, batch and invoice references one."
         emptyAction={
