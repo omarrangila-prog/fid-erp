@@ -14,6 +14,8 @@ import { ExcelLink, exportHref } from '@/components/shared/excel-link';
 import { PrintHeader } from '@/components/shared/print-header';
 import { AccountPicker } from '@/app/(app)/reports/general-ledger/account-picker';
 import { JournalSourceActions } from '@/components/shared/journal-source-actions';
+import { describeLedgerBalance } from '@/lib/ledger-meaning';
+import { dec, sum } from '@/lib/money';
 
 export const metadata: Metadata = { title: 'General Ledger' };
 export const dynamic = 'force-dynamic';
@@ -99,6 +101,62 @@ export default async function GeneralLedgerPage({
       {!ledger ? (
         <EmptyState title="No accounts yet" description="The chart of accounts is created when a company is set up." />
       ) : (
+        <>
+        {/*
+          * What the balance means, before the rows that produce it.
+          *
+          * A ledger reports debits minus credits, so money the company owes
+          * reads as a negative number. The client opened the account they keep
+          * for Dubai, saw −50,000 and could not tell which way round it was.
+          * The figure is the same; it is now said in words.
+          */}
+        {ledger.mixedCurrencies ? null : (() => {
+          const meaning = describeLedgerBalance(
+            ledger.closingBalance,
+            ledger.account.type,
+            ledger.account.name,
+          );
+          const totalDebit = sum(ledger.rows.map((r) => dec(r.debit)));
+          const totalCredit = sum(ledger.rows.map((r) => dec(r.credit)));
+          return (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Card>
+                <CardContent className="pt-5">
+                  <p className="text-xs text-ink-muted">Opening balance</p>
+                  <p className="text-lg font-semibold tabular-nums text-ink">
+                    {formatMoney(ledger.openingBalance, ledger.viewCurrency)}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-5">
+                  <p className="text-xs text-ink-muted">Total debit</p>
+                  <p className="text-lg font-semibold tabular-nums text-ink">
+                    {formatMoney(totalDebit, ledger.viewCurrency)}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-5">
+                  <p className="text-xs text-ink-muted">Total credit</p>
+                  <p className="text-lg font-semibold tabular-nums text-ink">
+                    {formatMoney(totalCredit, ledger.viewCurrency)}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className={meaning.settled ? undefined : 'border-forest-300 bg-forest-50/40'}>
+                <CardContent className="pt-5">
+                  <p className="text-xs text-ink-muted">{meaning.label}</p>
+                  <p className="text-lg font-semibold tabular-nums text-forest-800">
+                    {formatMoney(meaning.amount, ledger.viewCurrency)}
+                  </p>
+                  <p className="mt-1 text-[11px] text-ink-subtle">{meaning.sentence}</p>
+                </CardContent>
+              </Card>
+            </div>
+          );
+        })()}
+
         <Card>
           <CardHeader>
             <CardTitle>
@@ -193,6 +251,7 @@ export default async function GeneralLedgerPage({
             </TableWrap>
           </CardContent>
         </Card>
+        </>
       )}
     </div>
   );

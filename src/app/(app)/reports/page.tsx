@@ -59,6 +59,19 @@ const CATALOGUE: Catalogued[] = [
     description: 'Posted cost of goods on every sold line, frozen at the batch landed cost when the invoice was posted.',
     keywords: 'cogs cost of sales landed cost invoice line', permission: PERMISSIONS.PROFITS_VIEW },
 
+  { href: '/reports/cash-book', title: 'Cash Book & Bank Book', category: 'Cash & Bank', pinned: true,
+    description: 'Every movement through one drawer or account: in, out, and what was left after each.',
+    keywords: 'cash book bank book statement reconcile movements in out running balance', permission: PERMISSIONS.CASHBANK_VIEW },
+  { href: '/ledgers/agents', title: 'Agent Ledger & Clearing', category: 'Agents', pinned: true,
+    description: 'What each agent is holding for the company, and what the company owes them.',
+    keywords: 'agent clearing collections held commission ridwan settlement', permission: PERMISSIONS.AGENTS_VIEW },
+  { href: '/finance/agent-commission', title: 'Agent Commission', category: 'Agents', pinned: false,
+    description: 'Commission agreed on each shipment, what has been paid and what is still owed.',
+    keywords: 'agent commission payable register', permission: PERMISSIONS.AGENTS_VIEW },
+  { href: '/finance/cheques', title: 'Cheque Register', category: 'Cash & Bank', pinned: false,
+    description: 'Every cheque in and out, pending, cleared or bounced, and who is holding it.',
+    keywords: 'cheque check pending cleared bounced agent register', permission: PERMISSIONS.CHEQUES_VIEW },
+
   // --- Accounting ------------------------------------------------------------
   { href: '/accounting/chart', title: 'Chart of Accounts', category: 'Accounting', pinned: false,
     description: 'Every ledger head: cash, banks, receivables, payables, inventory, sales, COGS and expenses.',

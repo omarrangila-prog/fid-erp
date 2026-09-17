@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { prisma, resetDatabase, getContext, getCashAccount, utcDate } from '../helpers';
 import { transaction } from '@/lib/db';
-import { postLoan, findOrCreateLoanAccount } from '@/lib/services/loan';
+import { postLoan } from '@/lib/services/loan';
 import { getCashBankBalance } from '@/lib/services/accounting';
 import { getGeneralLedger, getProfitAndLoss } from '@/lib/services/reports';
 import { reconcile } from '@/lib/services/reconciliation';

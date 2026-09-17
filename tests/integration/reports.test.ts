@@ -317,3 +317,41 @@ describe('named report screens', () => {
     expect(cogsUsd.toString()).toBe(dec(invoice.costOfGoodsUsd).toString());
   });
 });
+
+describe('the cash book agrees with the general ledger', () => {
+  it('closes at the same figure the cash/bank balance reports', async () => {
+    const { getCashBook } = await import('@/lib/services/reports');
+    const { getCashBankBalance } = await import('@/lib/services/accounting');
+    const { transaction } = await import('@/lib/db');
+
+    const accounts = await prisma.cashBankAccount.findMany({
+      where: { companyId: ctx.dubai.id, status: 'ACTIVE' },
+    });
+
+    for (const account of accounts) {
+      const book = await getCashBook({ companyId: ctx.dubai.id, cashBankAccountId: account.id });
+      const ledger = await transaction((tx) => getCashBankBalance(tx, ctx.dubai.id, account.id));
+      // §54: if the report says cash is X, the ledger must say X too.
+      expect(book.closingBalance.toString(), account.name).toBe(dec(ledger).toString());
+    }
+  }, 300_000);
+
+  it('moves by exactly what went in and out', async () => {
+    const { getCashBook } = await import('@/lib/services/reports');
+    const accounts = await prisma.cashBankAccount.findMany({
+      where: { companyId: ctx.dubai.id, status: 'ACTIVE' },
+    });
+
+    for (const account of accounts) {
+      const book = await getCashBook({ companyId: ctx.dubai.id, cashBankAccountId: account.id });
+      const movement = book.rows.reduce(
+        (total, row) => total.plus(dec(row.moneyIn)).minus(dec(row.moneyOut)),
+        dec(0),
+      );
+      expect(
+        dec(book.openingBalance).plus(movement).toString(),
+        account.name,
+      ).toBe(book.closingBalance.toString());
+    }
+  }, 300_000);
+});
