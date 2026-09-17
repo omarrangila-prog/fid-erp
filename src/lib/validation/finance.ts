@@ -215,6 +215,8 @@ export const cashBankTransferSchema = z
     fromAccountId: cuid,
     toAccountId: cuid,
     amount: decimalString('Amount'),
+    /** What landed, when the two accounts are in different currencies. */
+    receivedAmount: optionalDecimalString('Amount received'),
     reference: optionalText(60),
     description: optionalText(300),
   })

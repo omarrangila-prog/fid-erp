@@ -47,13 +47,15 @@ function TransferFundsBody({
     bank?.accountId ?? accounts.find((account) => account.accountId !== cash?.accountId)?.accountId ?? '',
   );
   const [amount, setAmount] = React.useState('');
+  const [receivedAmount, setReceived] = React.useState('');
   const [transferDate, setDate] = React.useState(todayInputValue());
   const [reference, setReference] = React.useState('');
 
   const from = accounts.find((account) => account.accountId === fromAccountId);
-  const destinations = accounts.filter(
-    (account) => account.accountId !== fromAccountId && (!from || account.currency === from.currency),
-  );
+  const destinations = accounts.filter((account) => account.accountId !== fromAccountId);
+  const to = accounts.find((account) => account.accountId === toAccountId);
+  // Two currencies means a conversion, and the bank decides what arrives.
+  const crossCurrency = Boolean(from && to && from.currency !== to.currency);
 
   async function submit() {
     setError(null);
@@ -65,6 +67,7 @@ function TransferFundsBody({
           fromAccountId,
           toAccountId,
           amount,
+          receivedAmount: crossCurrency ? receivedAmount : '',
           reference,
           description: '',
         }),
@@ -84,7 +87,7 @@ function TransferFundsBody({
   return (
     <DialogContent
       title="Transfer between cash and bank"
-      description="Debit the destination and credit the source. Same currency only. This does not hit the profit and loss."
+      description="Debit the destination and credit the source. Between two currencies, say what actually arrived — the difference against the book rate is a realised exchange gain or loss."
     >
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="From" required>
@@ -92,14 +95,8 @@ function TransferFundsBody({
             value={fromAccountId}
             onChange={(event) => {
               setFrom(event.target.value);
-              const nextFrom = accounts.find((account) => account.accountId === event.target.value);
-              const stillValid = destinations.find(
-                (account) => account.currency === nextFrom?.currency && account.accountId !== event.target.value,
-              );
-              if (!stillValid || toAccountId === event.target.value) {
-                const fallback = accounts.find(
-                  (account) => account.accountId !== event.target.value && account.currency === nextFrom?.currency,
-                );
+              if (toAccountId === event.target.value) {
+                const fallback = accounts.find((account) => account.accountId !== event.target.value);
                 setTo(fallback?.accountId ?? '');
               }
             }}
@@ -123,9 +120,22 @@ function TransferFundsBody({
         <Field label="Date" required>
           <Input type="date" value={transferDate} onChange={(event) => setDate(event.target.value)} />
         </Field>
-        <Field label="Amount" required>
+        <Field label={crossCurrency ? 'Amount sent' : 'Amount'} required>
           <MoneyInput currency={from?.currency ?? 'MAD'} value={amount} onChange={(event) => setAmount(event.target.value)} />
         </Field>
+        {crossCurrency ? (
+          <Field
+            label="Amount received"
+            required
+            hint={`What actually landed in ${to?.name ?? 'the destination'}, as the bank credited it.`}
+          >
+            <MoneyInput
+              currency={to?.currency ?? 'MAD'}
+              value={receivedAmount}
+              onChange={(event) => setReceived(event.target.value)}
+            />
+          </Field>
+        ) : null}
         <Field label="Reference" className="sm:col-span-2">
           <Input value={reference} onChange={(event) => setReference(event.target.value)} />
         </Field>
@@ -135,7 +145,11 @@ function TransferFundsBody({
         <Button variant="outline" onClick={onClose} disabled={busy}>
           Cancel
         </Button>
-        <Button onClick={submit} loading={busy} disabled={!fromAccountId || !toAccountId || !amount}>
+        <Button
+          onClick={submit}
+          loading={busy}
+          disabled={!fromAccountId || !toAccountId || !amount || (crossCurrency && !receivedAmount)}
+        >
           Post transfer
         </Button>
       </DialogFooter>

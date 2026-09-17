@@ -1246,6 +1246,77 @@ const STATUS_TARGETS = {
   cashBankAccount: { permission: PERMISSIONS.CASHBANK_MANAGE, path: '/finance/cash-bank', label: 'Account' },
 } as const;
 
+/**
+ * Remove a cash or bank account that was never used.
+ *
+ * A drawer with history cannot be deleted and should not be: its postings are
+ * what the cash book and the ledger are made of, and removing it would leave
+ * journal lines pointing at nothing. Those are deactivated instead, which
+ * takes them out of every picker while the history stays readable.
+ *
+ * An account opened by mistake — wrong currency, wrong name, a duplicate —
+ * has no history at all, and for that one deleting is the honest answer. Its
+ * general ledger account goes with it, since opening the drawer is what
+ * created it, unless something else has since posted to it.
+ */
+export async function deleteCashBankAccountAction(id: string): Promise<ActionResult<{ deleted: boolean }>> {
+  return run(async () => {
+    const user = await requirePermission(PERMISSIONS.CASHBANK_MANAGE);
+    const companyId = user.activeCompany.id;
+
+    const account = await prisma.cashBankAccount.findFirst({
+      where: { id, companyId },
+      select: { id: true, name: true, glAccountId: true, openingBalance: true },
+    });
+    if (!account) throw new NotFoundError('Cash/bank account');
+
+    // Everything that could point at this drawer. Any one of them means it has
+    // been used, and used accounts are deactivated rather than removed.
+    const [lines, expenses, payments, receipts, cheques, reconciliations] = await Promise.all([
+      prisma.journalLine.count({ where: { cashBankAccountId: id } }),
+      prisma.expense.count({ where: { cashBankAccountId: id } }),
+      prisma.payment.count({ where: { cashBankAccountId: id } }),
+      prisma.receipt.count({ where: { cashBankAccountId: id } }),
+      prisma.cheque.count({ where: { cashBankAccountId: id } }),
+      prisma.bankReconciliation.count({ where: { cashBankAccountId: id } }),
+    ]);
+    const used = lines + expenses + payments + receipts + cheques + reconciliations;
+
+    if (used > 0 || !dec(account.openingBalance).isZero()) {
+      throw new ConflictError(
+        `${account.name} has been used, so it cannot be deleted — money has moved through it and the ledger still refers to it. Set it to Inactive instead: it disappears from every list while the history stays readable.`,
+      );
+    }
+
+    await transaction(async (tx) => {
+      await tx.cashBankAccount.delete({ where: { id } });
+
+      // The ledger account exists because this drawer was opened. It goes too,
+      // unless something has posted to it or another drawer shares it.
+      const [glLines, siblings] = await Promise.all([
+        tx.journalLine.count({ where: { accountId: account.glAccountId } }),
+        tx.cashBankAccount.count({ where: { glAccountId: account.glAccountId } }),
+      ]);
+      if (glLines === 0 && siblings === 0) {
+        await tx.account.deleteMany({ where: { id: account.glAccountId, companyId } });
+      }
+
+      await writeAudit(tx, {
+        companyId,
+        userId: user.id,
+        action: 'CASH_BANK_ACCOUNT_DELETED',
+        entityType: 'CashBankAccount',
+        entityId: id,
+        before: { name: account.name },
+      });
+    });
+
+    revalidatePath('/finance/cash-bank');
+    revalidatePath('/accounting/chart');
+    return { deleted: true };
+  });
+}
+
 export async function toggleMasterStatusAction(
   target: keyof typeof STATUS_TARGETS,
   id: string,

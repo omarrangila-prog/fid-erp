@@ -1,5 +1,5 @@
 import { transaction } from '@/lib/db';
-import { dec, toMoney } from '@/lib/money';
+import { convertToUsd, dec, toMoney } from '@/lib/money';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
 import { postJournalEntry } from '@/lib/services/accounting';
 import { getCompanyContext } from '@/lib/services/company';
@@ -7,10 +7,17 @@ import { getRate } from '@/lib/services/exchange-rate';
 import { writeAudit } from '@/lib/services/audit';
 
 /**
- * Move money between two cash/bank accounts of the same currency.
+ * Move money between two cash or bank accounts of the same company.
  *
- * Debit destination, credit source. No P&L. The original amount is posted
- * unchanged onto both cash books and the GL.
+ * Same currency: debit destination, credit source, no profit or loss, the
+ * original amount posted unchanged onto both cash books and the GL.
+ *
+ * Different currencies: the bank decides what arrives, not the bookkeeping
+ * rate, so both sides are stated — what left and what landed. Each account
+ * moves by the amount it really moved, in its own currency, and whatever the
+ * conversion cost or gained against the book rate is a realised exchange
+ * difference. Inventing the far side from a stored rate would put a figure in
+ * the cash book that the bank statement does not show.
  */
 export async function postCashBankTransfer(input: {
   companyId: string;
@@ -19,6 +26,8 @@ export async function postCashBankTransfer(input: {
   fromAccountId: string;
   toAccountId: string;
   amount: string | number;
+  /** What actually landed, when the two accounts are in different currencies. */
+  receivedAmount?: string | number | null;
   reference?: string | null;
   description?: string | null;
 }) {
@@ -46,9 +55,11 @@ export async function postCashBankTransfer(input: {
     if (!to) throw new NotFoundError('Destination account');
     if (from.status !== 'ACTIVE') throw new BusinessRuleError(`${from.name} is inactive.`);
     if (to.status !== 'ACTIVE') throw new BusinessRuleError(`${to.name} is inactive.`);
-    if (from.currency !== to.currency) {
+    const crossCurrency = from.currency !== to.currency;
+    const received = crossCurrency ? toMoney(input.receivedAmount ?? 0) : amount;
+    if (crossCurrency && received.lessThanOrEqualTo(0)) {
       throw new BusinessRuleError(
-        `Both accounts must be in the same currency. ${from.name} is ${from.currency} and ${to.name} is ${to.currency}.`,
+        `${from.name} is ${from.currency} and ${to.name} is ${to.currency}. Say how much ${to.currency} actually arrived.`,
       );
     }
 
@@ -74,10 +85,23 @@ export async function postCashBankTransfer(input: {
             (await getRate({ companyId: input.companyId, quoteCurrency: company.localCurrency })) ??
             rateToUsd);
 
+    const toRateToUsd = !crossCurrency
+      ? rateToUsd
+      : to.currency === 'USD'
+        ? dec(1)
+        : ((await getRate({ companyId: input.companyId, quoteCurrency: to.currency, asOf: input.transferDate })) ??
+          (await getRate({ companyId: input.companyId, quoteCurrency: to.currency })) ??
+          dec(0));
+    if (toRateToUsd.lessThanOrEqualTo(0)) {
+      throw new BusinessRuleError(`An exchange rate is required for ${to.currency}.`);
+    }
+
     const sourceId = `XFER-${Date.now()}`;
     const description =
       input.description?.trim() ||
-      `Transfer ${from.currency} ${amount.toFixed(2)} from ${from.name} to ${to.name}${input.reference ? ` · ${input.reference}` : ''}`;
+      (crossCurrency
+        ? `Transfer ${from.currency} ${amount.toFixed(2)} from ${from.name} to ${to.name} as ${to.currency} ${received.toFixed(2)}${input.reference ? ` · ${input.reference}` : ''}`
+        : `Transfer ${from.currency} ${amount.toFixed(2)} from ${from.name} to ${to.name}${input.reference ? ` · ${input.reference}` : ''}`);
 
     const entry = await postJournalEntry(tx, {
       companyId: input.companyId,
@@ -92,9 +116,14 @@ export async function postCashBankTransfer(input: {
         {
           cashBankAccountId: to.id,
           direction: 'DEBIT',
-          currency: from.currency,
-          amount,
-          rateToUsd,
+          currency: to.currency,
+          amount: received,
+          rateToUsd: toRateToUsd,
+          // Stating the USD value each side was booked at tells the posting
+          // engine this is a settlement, so the difference between what left
+          // and what arrived lands in realised exchange gain or loss rather
+          // than being refused as an unbalanced entry.
+          ...(crossCurrency ? { bookedUsd: convertToUsd(received, toRateToUsd, to.currency) } : {}),
           description: `From ${from.name}`,
         },
         {
@@ -103,6 +132,7 @@ export async function postCashBankTransfer(input: {
           currency: from.currency,
           amount,
           rateToUsd,
+          ...(crossCurrency ? { bookedUsd: convertToUsd(amount, rateToUsd, from.currency) } : {}),
           description: `To ${to.name}`,
         },
       ],
@@ -119,6 +149,7 @@ export async function postCashBankTransfer(input: {
         to: to.name,
         amount,
         currency: from.currency,
+        ...(crossCurrency ? { received, receivedCurrency: to.currency } : {}),
         reference: input.reference ?? null,
       },
     });

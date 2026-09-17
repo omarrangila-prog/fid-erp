@@ -111,6 +111,8 @@ export default async function CashBankPage() {
                           accountId={account.accountId}
                           glAccountId={account.glAccountId}
                           currency={account.currency}
+                          name={account.name}
+                          canManage={can(user, PERMISSIONS.CASHBANK_MANAGE)}
                         />
                       </TD>
                     </TR>

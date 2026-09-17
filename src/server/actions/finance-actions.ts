@@ -487,6 +487,7 @@ export async function postCashBankTransferAction(payload: string): Promise<DocFo
       fromAccountId: input.fromAccountId,
       toAccountId: input.toAccountId,
       amount: input.amount,
+      receivedAmount: input.receivedAmount,
       reference: input.reference,
       description: input.description,
     });
