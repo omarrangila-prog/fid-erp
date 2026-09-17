@@ -25,7 +25,17 @@ export default async function GoodsReceiptsPage() {
       vendor: { select: { vendorName: true } },
       warehouse: { select: { name: true, code: true } },
       receivedBy: { select: { name: true } },
-      lines: { select: { quantityKg: true, bags: true, item: { select: { itemName: true } } } },
+      lines: {
+        select: {
+          quantityKg: true,
+          bags: true,
+          item: { select: { itemName: true } },
+          // What actually came off the container, batch by batch.
+          batch: {
+            select: { batchNumber: true, container: { select: { containerNumber: true } } },
+          },
+        },
+      },
     },
   });
 
@@ -47,6 +57,13 @@ export default async function GoodsReceiptsPage() {
       quantityKg: Number(quantityKg),
       bags: r.lines.reduce((a, l) => a + l.bags, 0),
       lineCount: r.lines.length,
+      lines: r.lines.map((l) => ({
+        itemName: l.item.itemName,
+        batchNumber: l.batch?.batchNumber ?? '—',
+        containerNumber: l.batch?.container?.containerNumber ?? '—',
+        quantityLabel: formatQuantityKg(l.quantityKg),
+        bags: l.bags,
+      })),
       receivedBy: r.receivedBy.name,
       status: r.status,
     };

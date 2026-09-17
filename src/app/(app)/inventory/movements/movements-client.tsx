@@ -15,6 +15,8 @@ export type MovementRow = {
   type: string;
   typeLabel: string;
   batchNumber: string;
+  containerNumber: string | null;
+  contractReference: string | null;
   batchId: string;
   itemName: string;
   warehouse: string;
@@ -89,7 +91,33 @@ export function MovementsClient({
         </span>
       ),
     },
-    { id: 'coffee', header: 'Coffee', hideable: true, defaultHidden: true, exportValue: (r) => r.itemName, cell: (r) => r.itemName },
+    { id: 'coffee', header: 'Coffee', mobile: 'meta', exportValue: (r) => r.itemName, cell: (r) => r.itemName },
+    {
+      id: 'sourceRef',
+      header: 'Reference',
+      hideable: true,
+      sortValue: (r) => r.contractReference ?? '',
+      exportValue: (r) => r.contractReference ?? '',
+      cell: (r) =>
+        r.contractReference ? (
+          <span className="block min-w-40 font-mono text-xs">{r.contractReference}</span>
+        ) : (
+          <span className="text-ink-subtle">—</span>
+        ),
+    },
+    {
+      id: 'container',
+      header: 'Container',
+      hideable: true,
+      sortValue: (r) => r.containerNumber ?? '',
+      exportValue: (r) => r.containerNumber ?? '',
+      cell: (r) =>
+        r.containerNumber ? (
+          <span className="block min-w-32 font-mono text-xs">{r.containerNumber}</span>
+        ) : (
+          <span className="text-ink-subtle">—</span>
+        ),
+    },
     { id: 'warehouse', header: 'Warehouse', mobile: 'meta', sortValue: (r) => r.warehouse, exportValue: (r) => r.warehouse, cell: (r) => r.warehouse },
     {
       id: 'quantity',
@@ -149,8 +177,10 @@ export function MovementsClient({
       columns={columns}
       getRowId={(r) => r.id}
       pageSize={100}
-      searchValue={(r) => `${r.batchNumber} ${r.itemName} ${r.warehouse} ${r.reference} ${r.notes ?? ''}`}
-      searchPlaceholder="Search batch, coffee, reference…"
+      searchValue={(r) =>
+        `${r.batchNumber} ${r.itemName} ${r.warehouse} ${r.reference} ${r.contractReference ?? ''} ${r.containerNumber ?? ''} ${r.notes ?? ''}`
+      }
+      searchPlaceholder="Search batch, coffee, container or reference…"
       emptyAction={emptyAction}
       emptyTitle="No stock movements"
       emptyDescription="Movements are written whenever coffee is received, sold, transferred or adjusted."

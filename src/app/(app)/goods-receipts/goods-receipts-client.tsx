@@ -23,6 +23,13 @@ export type GoodsReceiptRow = {
   quantityKg: number;
   bags: number;
   lineCount: number;
+  lines: Array<{
+    itemName: string;
+    batchNumber: string;
+    containerNumber: string;
+    quantityLabel: string;
+    bags: number;
+  }>;
   receivedBy: string;
   status: string;
 };
@@ -46,13 +53,14 @@ export function GoodsReceiptsClient({
     { id: 'date', header: 'Date', mobile: 'meta', sortValue: (r) => r.receiptDateSort, cell: (r) => r.receiptDate },
     {
       id: 'contract',
-      header: 'Contract',
+      header: 'Reference',
       mobile: 'meta',
-      sortValue: (r) => r.contractNumber,
+      sortValue: (r) => r.contractReference,
+      // The supplier's reference leads; the internal number sits beneath it.
       cell: (r) => (
-        <span>
-          <span className="block">{r.contractNumber}</span>
-          <span className="block text-xs text-ink-subtle">{r.contractReference}</span>
+        <span className="block min-w-44">
+          <span className="block font-mono text-xs font-medium">{r.contractReference}</span>
+          <span className="block text-[11px] text-ink-subtle">{r.contractNumber}</span>
         </span>
       ),
     },
@@ -122,10 +130,41 @@ export function GoodsReceiptsClient({
         { id: 'warehouse', label: 'Warehouse', value: (r) => r.warehouseName },
         { id: 'supplier', label: 'Supplier', value: (r) => r.vendorName },
       ]}
+      expandedContent={(r) => (
+        <div className="overflow-x-auto">
+          <p className="mb-2 text-xs text-ink-muted">
+            {r.lines.length === 1 ? 'What was received' : `The ${r.lines.length} lines received`}
+          </p>
+          <table className="w-full min-w-[36rem] text-sm">
+            <thead>
+              <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
+                <th className="py-1.5 pr-3 font-medium">Item</th>
+                <th className="py-1.5 pr-3 font-medium">Batch</th>
+                <th className="py-1.5 pr-3 font-medium">Container</th>
+                <th className="py-1.5 pr-3 text-right font-medium">Received</th>
+                <th className="py-1.5 text-right font-medium">Bags</th>
+              </tr>
+            </thead>
+            <tbody>
+              {r.lines.map((line, i) => (
+                <tr key={`${line.batchNumber}-${i}`} className="border-b border-line/60 last:border-0">
+                  <td className="py-1.5 pr-3 font-medium">{line.itemName}</td>
+                  <td className="py-1.5 pr-3">{line.batchNumber}</td>
+                  <td className="py-1.5 pr-3 font-mono text-xs">{line.containerNumber}</td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums">{line.quantityLabel}</td>
+                  <td className="py-1.5 text-right tabular-nums">{line.bags.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       searchValue={(r) =>
-        `${r.grnNumber} ${r.contractNumber} ${r.contractReference} ${r.vendorName} ${r.warehouseName} ${r.itemNames}`
+        `${r.grnNumber} ${r.contractNumber} ${r.contractReference} ${r.vendorName} ${r.warehouseName} ${r.itemNames} ${r.lines
+          .map((l) => `${l.batchNumber} ${l.containerNumber}`)
+          .join(' ')}`
       }
-      searchPlaceholder="Search by receipt, contract, supplier or warehouse…"
+      searchPlaceholder="Search by reference, receipt, supplier, batch or container…"
       emptyAction={emptyAction}
       emptyTitle="No goods receipts yet"
       emptyDescription="Approve a purchase contract, then record a receipt when the containers arrive."

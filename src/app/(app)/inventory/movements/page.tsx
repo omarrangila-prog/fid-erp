@@ -63,7 +63,16 @@ export default async function MovementsPage({
     skip: page * PAGE_SIZE,
     take: PAGE_SIZE,
     include: {
-      batch: { select: { batchNumber: true } },
+      // The batch carries the trail back to the container it arrived in and
+      // the contract that bought it, so a movement can say where the coffee
+      // came from without anything being opened.
+      batch: {
+        select: {
+          batchNumber: true,
+          container: { select: { containerNumber: true } },
+          purchaseContract: { select: { contractReference: true } },
+        },
+      },
       item: { select: { itemName: true } },
       warehouse: { select: { name: true } },
       createdBy: { select: { name: true } },
@@ -81,6 +90,8 @@ export default async function MovementsPage({
       typeLabel: m.transactionType === 'REVERSAL' ? 'Deletion' : titleCase(m.transactionType),
       batchNumber: m.batch.batchNumber,
       batchId: m.batchId,
+      containerNumber: m.batch.container?.containerNumber ?? null,
+      contractReference: m.batch.purchaseContract?.contractReference ?? null,
       itemName: m.item.itemName,
       warehouse: m.warehouse?.name ?? '—',
       quantityLabel: formatQuantityKg(quantity),

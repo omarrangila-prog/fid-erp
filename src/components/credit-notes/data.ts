@@ -249,7 +249,15 @@ export async function loadCreditNoteDetail(companyId: string, id: string) {
       lines: {
         orderBy: { lineNumber: 'asc' },
         include: {
-          batch: { select: { batchNumber: true } },
+          // Back to the consignment the returned coffee arrived on.
+          batch: {
+            select: {
+              batchNumber: true,
+              container: { select: { containerNumber: true } },
+              purchaseContract: { select: { contractReference: true } },
+              shipment: { select: { jobNumber: true } },
+            },
+          },
           warehouse: { select: { name: true } },
           taxCode: { select: { code: true, name: true } },
         },
@@ -265,6 +273,9 @@ export async function loadCreditNoteDetail(companyId: string, id: string) {
       lineNumber: line.lineNumber,
       description: line.description,
       batchNumber: line.batch?.batchNumber ?? null,
+      containerNumber: line.batch?.container?.containerNumber ?? null,
+      contractReference: line.batch?.purchaseContract?.contractReference ?? null,
+      jobNumber: line.batch?.shipment?.jobNumber ?? null,
       warehouseName: line.warehouse?.name ?? null,
       quantityLabel: dec(line.quantityKg).greaterThan(0) ? formatQuantityKg(line.quantityKg) : null,
       unitPriceLabel: dec(line.unitPrice).greaterThan(0) ? formatMoney(line.unitPrice, note.currency) : null,

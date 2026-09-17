@@ -121,8 +121,15 @@ export function CreditNoteDetail({
                           <span className="text-xs">
                             <span className="block">
                               {line.quantityLabel} · {line.batchNumber}
+                              {line.containerNumber ? ` · ${line.containerNumber}` : ''}
                             </span>
                             <span className="block text-ink-subtle">into {line.warehouseName}</span>
+                            {line.contractReference ? (
+                              <span className="block font-mono text-[11px] text-ink-subtle">
+                                {line.contractReference}
+                                {line.jobNumber ? ` · ${line.jobNumber}` : ''}
+                              </span>
+                            ) : null}
                           </span>
                         ) : (
                           <span className="text-xs text-ink-subtle">Value only</span>

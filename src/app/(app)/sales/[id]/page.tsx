@@ -45,7 +45,16 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
         orderBy: { lineNumber: 'asc' },
         include: {
           item: { select: { itemName: true, originCountry: true, grade: true } },
-          batch: { select: { batchNumber: true, lot: { select: { lotNumber: true } } } },
+          // Back to the consignment this coffee arrived on, so a sale can be
+          // traced to the contract that bought it without leaving the invoice.
+          batch: {
+            select: {
+              batchNumber: true,
+              lot: { select: { lotNumber: true } },
+              purchaseContract: { select: { contractReference: true, contractNumber: true } },
+              shipment: { select: { id: true, jobNumber: true } },
+            },
+          },
           warehouse: { select: { name: true } },
           container: { select: { containerNumber: true } },
         },
@@ -193,6 +202,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                     <TH>#</TH>
                     <TH>Coffee</TH>
                     <TH>Lot / Batch</TH>
+                    <TH>Source</TH>
                     <TH>Warehouse</TH>
                     <TH numeric>Quantity</TH>
                     <TH numeric>Price</TH>
@@ -217,6 +227,20 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                           {line.batch.batchNumber}
                           {line.container ? ` · ${line.container.containerNumber}` : ''}
                         </span>
+                      </TD>
+                      <TD>
+                        {line.batch.purchaseContract ? (
+                          <>
+                            <span className="block font-mono text-xs">
+                              {line.batch.purchaseContract.contractReference}
+                            </span>
+                            <span className="block text-xs text-ink-subtle">
+                              {line.batch.shipment?.jobNumber ?? line.batch.purchaseContract.contractNumber}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-xs text-ink-subtle">—</span>
+                        )}
                       </TD>
                       <TD className="text-xs">{line.warehouse?.name ?? '—'}</TD>
                       <TD numeric>

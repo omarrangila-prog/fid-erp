@@ -685,6 +685,7 @@ export function LoadingSheet({
         dense
         pageSize={50}
         exportHref={canExport ? '/api/export/loading-sheet' : undefined}
+        expandedContent={(r) => <ContainerBreakdown lines={r.lines} />}
         searchValue={(r) =>
           [
             r.contractReference,
@@ -842,5 +843,76 @@ export function LoadingSheet({
         ) : null}
       </Dialog>
     </>
+  );
+}
+
+/**
+ * What is inside each container, and how much of it.
+ *
+ * A shipment of two coffees across two containers is four facts, and reading
+ * them off the contract row means opening the shipment. Grouped by container
+ * here, with the items under each and a total per box, so the question "what
+ * is in container 2" is answered where it is asked.
+ *
+ * Lines that have not been assigned a container yet are grouped together and
+ * said to be unassigned rather than being quietly dropped.
+ */
+function ContainerBreakdown({ lines }: { lines: LoadingLine[] }) {
+  if (lines.length === 0) {
+    return <p className="text-xs text-ink-muted">Nothing has been loaded against this contract yet.</p>;
+  }
+
+  const groups = new Map<string, LoadingLine[]>();
+  for (const line of lines) {
+    const key = line.containerNumber ?? '';
+    groups.set(key, [...(groups.get(key) ?? []), line]);
+  }
+
+  return (
+    <div className="space-y-4">
+      {[...groups.entries()].map(([container, group]) => {
+        const totalKg = group.reduce((sum, line) => sum + line.quantityKg, 0);
+        const bags = group.reduce((sum, line) => sum + line.bags, 0);
+        return (
+          <div key={container || 'unassigned'}>
+            <div className="mb-1 flex flex-wrap items-baseline gap-2">
+              <span className="font-mono text-xs font-semibold text-ink">
+                {container || 'No container assigned yet'}
+              </span>
+              <span className="text-xs text-ink-muted">
+                {totalKg.toLocaleString(undefined, { maximumFractionDigits: 2 })} KG ·{' '}
+                {bags.toLocaleString()} bags
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[40rem] text-sm">
+                <thead>
+                  <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
+                    <th className="py-1.5 pr-3 font-medium">Item</th>
+                    <th className="py-1.5 pr-3 font-medium">Batch</th>
+                    <th className="py-1.5 pr-3 font-medium">Lot</th>
+                    <th className="py-1.5 pr-3 text-right font-medium">Loaded</th>
+                    <th className="py-1.5 pr-3 text-right font-medium">Received</th>
+                    <th className="py-1.5 text-right font-medium">Available</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.map((line) => (
+                    <tr key={line.batchId} className="border-b border-line/60 last:border-0">
+                      <td className="py-1.5 pr-3 font-medium">{line.itemName}</td>
+                      <td className="py-1.5 pr-3">{line.batchNumber}</td>
+                      <td className="py-1.5 pr-3 text-xs text-ink-muted">{line.lotNumber}</td>
+                      <td className="py-1.5 pr-3 text-right tabular-nums">{line.quantity}</td>
+                      <td className="py-1.5 pr-3 text-right tabular-nums">{line.received}</td>
+                      <td className="py-1.5 text-right tabular-nums">{line.available}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
