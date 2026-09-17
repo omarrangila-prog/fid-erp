@@ -24,7 +24,7 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
   // Posted contracts are corrected by reversal, never by silent edits.
   if (contract.status !== 'DRAFT') redirect(`/purchases/${id}`);
 
-  const [vendors, items] = await Promise.all([
+  const [vendors, items, ports] = await Promise.all([
     prisma.vendor.findMany({
       where: { companyId, status: 'ACTIVE' },
       orderBy: { vendorName: 'asc' },
@@ -42,6 +42,11 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
         bagWeightKg: true,
         defaultUnit: true,
       },
+    }),
+    prisma.port.findMany({
+      where: { companyId, status: 'ACTIVE' },
+      orderBy: { name: 'asc' },
+      select: { name: true },
     }),
   ]);
 
@@ -77,6 +82,7 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
         defaultLocalRate={contract.rateLocalPerUsd.toString()}
         canApprove={can(user, PERMISSIONS.PURCHASES_APPROVE)}
         canCreateItem={can(user, PERMISSIONS.ITEMS_CREATE)}
+        ports={ports.map((p) => p.name)}
         defaults={{
           id: contract.id,
           contractReference: contract.contractReference,

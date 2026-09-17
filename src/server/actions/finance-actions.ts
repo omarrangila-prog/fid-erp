@@ -32,6 +32,12 @@ import { createAgentSettlement, postAgentSettlement } from '@/lib/services/agent
 import { postRevaluation } from '@/lib/services/revaluation';
 import { postJournalEntry } from '@/lib/services/accounting';
 import { postCashBankTransfer } from '@/lib/services/cash-transfer';
+import {
+  createRecurringFromExpense,
+  generateFromRecurring,
+  setRecurringStatus,
+} from '@/lib/services/recurring-expense';
+import { dateString, optionalDateString, requiredText } from '@/lib/validation/common';
 import { getCompanyContext } from '@/lib/services/company';
 import { transaction } from '@/lib/db';
 import { fail, type ActionResult } from '@/server/actions/action-utils';
@@ -295,6 +301,62 @@ export async function saveSplitExpenseAction(payload: string): Promise<ActionRes
 
     revalidateAll([...paths.expenses, '/shipments', '/finance/cash-bank']);
     return { ok: true, data: { ids } };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// Recurring expenses
+// ---------------------------------------------------------------------------
+
+const recurringSchema = z.object({
+  name: requiredText('Name'),
+  frequency: z.enum(['WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY']),
+  nextDate: dateString('First due date'),
+  endDate: optionalDateString,
+});
+
+/** Turn the expense on screen into a template that comes round on a rhythm. */
+export async function makeRecurringAction(expenseId: string, payload: string): Promise<ActionResult<{ id: string }>> {
+  try {
+    const user = await requirePermission(PERMISSIONS.EXPENSES_CREATE);
+    const input = recurringSchema.parse(parseJson(payload));
+    const created = await createRecurringFromExpense({
+      companyId: user.activeCompany.id,
+      expenseId,
+      name: input.name,
+      frequency: input.frequency,
+      nextDate: input.nextDate,
+      endDate: input.endDate ?? null,
+      userId: user.id,
+    });
+    revalidateAll([...paths.expenses, '/finance/expenses/recurring']);
+    return { ok: true, data: { id: created.id }, message: `${input.name} will come round ${input.frequency.toLowerCase()}.` };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+/** Make the draft that is due. It is a draft; posting is a separate, read decision. */
+export async function generateRecurringAction(id: string): Promise<ActionResult<{ expenseId: string; number: string }>> {
+  try {
+    const user = await requirePermission(PERMISSIONS.EXPENSES_CREATE);
+    const expense = await generateFromRecurring({ id, companyId: user.activeCompany.id, userId: user.id });
+    revalidateAll([...paths.expenses, '/finance/expenses/recurring']);
+    return { ok: true, data: { expenseId: expense.id, number: expense.expenseNumber } };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function setRecurringStatusAction(id: string, status: 'ACTIVE' | 'INACTIVE'): Promise<ActionResult<undefined>> {
+  try {
+    const user = await requirePermission(PERMISSIONS.EXPENSES_CREATE);
+    await setRecurringStatus({ id, companyId: user.activeCompany.id, status, userId: user.id });
+    revalidateAll(['/finance/expenses/recurring']);
+    return { ok: true, data: undefined };
   } catch (error) {
     return fail(error);
   }

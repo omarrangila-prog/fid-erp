@@ -24,6 +24,14 @@ enum RecordStatus {
   INACTIVE
 }
 
+/// How often a recurring expense comes round.
+enum RecurringFrequency {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
 enum TransactionStatus {
   DRAFT
   POSTED
@@ -297,6 +305,7 @@ model Company {
   taxCodes            TaxCode[]
   taxReturns          TaxReturn[]
   ports               Port[]
+  recurringExpenses   RecurringExpense[]
   defaultForUsers     User[]                 @relation("UserDefaultCompany")
   agentSettlements    AgentSettlement[]
 
@@ -340,6 +349,7 @@ model User {
   createdReceipts         Receipt[]                       @relation("ReceiptCreatedBy")
   createdPayments         Payment[]                       @relation("PaymentCreatedBy")
   createdExpenses         Expense[]                       @relation("ExpenseCreatedBy")
+  recurringExpenses       RecurringExpense[]
   createdCheques          Cheque[]                        @relation("ChequeCreatedBy")
   chequeStatusLogs        ChequeStatusHistory[]
   receivedGrns            GoodsReceipt[]                  @relation("GrnReceivedBy")
@@ -1756,6 +1766,35 @@ model Attachment {
 // ---------------------------------------------------------------------------
 // Accounting
 // ---------------------------------------------------------------------------
+
+/// A voucher that comes round on a rhythm.
+///
+/// Rent, the monthly warehouse charge, the same service invoice each quarter.
+/// On its due date the template produces a DRAFT expense for somebody to
+/// check and post; nothing is posted by a clock, because a wrong amount that
+/// posts itself every month is worse than no template at all.
+model RecurringExpense {
+  id            String             @id @default(cuid())
+  companyId     String
+  name          String
+  frequency     RecurringFrequency
+  nextDate      DateTime           @db.Date
+  endDate       DateTime?          @db.Date
+  /// The expense input, minus company and date. Re-validated on every use.
+  template      Json
+  status        RecordStatus       @default(ACTIVE)
+  /// The most recent draft made from this template, for the trail.
+  lastCreatedId String?
+  createdById   String
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy User    @relation(fields: [createdById], references: [id])
+
+  @@index([companyId, status, nextDate])
+  @@map("recurring_expenses")
+}
 
 model JournalEntry {
   id           String            @id @default(cuid())

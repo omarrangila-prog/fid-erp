@@ -196,6 +196,7 @@ export function LoadingSheet({
   canUpdate,
   canReceive,
   shippingLines,
+  ports = [],
   warehouses,
   defaultWarehouseId,
 }: {
@@ -206,6 +207,7 @@ export function LoadingSheet({
   canUpdate: boolean;
   canReceive: boolean;
   shippingLines: Array<{ id: string; name: string }>;
+  ports?: string[];
   warehouses: Array<{ id: string; name: string; code: string }>;
   defaultWarehouseId: string | null;
 }) {
@@ -732,6 +734,7 @@ export function LoadingSheet({
           shipmentId={loadingRow.shipmentId}
           contractNumber={loadingRow.contractNumber}
           shippingLines={shippingLines}
+          ports={ports}
           defaults={{
             etaDate: loadingRow.etaIso,
             bookingNumber: loadingRow.bookingNumber,

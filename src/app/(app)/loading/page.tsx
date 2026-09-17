@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
 export default async function LoadingPage() {
   const user = await requirePageAccess(PERMISSIONS.SHIPMENTS_VIEW);
 
-  const [sheet, shippingLines, warehouses] = await Promise.all([
+  const [sheet, shippingLines, warehouses, ports] = await Promise.all([
     getLoadingSheet(user.activeCompany.id),
     prisma.shippingLine.findMany({
       where: { companyId: user.activeCompany.id, status: 'ACTIVE' },
@@ -27,6 +27,11 @@ export default async function LoadingPage() {
       where: { companyId: user.activeCompany.id, status: 'ACTIVE' },
       orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
       select: { id: true, name: true, code: true, isDefault: true },
+    }),
+    prisma.port.findMany({
+      where: { companyId: user.activeCompany.id, status: 'ACTIVE' },
+      orderBy: { name: 'asc' },
+      select: { name: true },
     }),
   ]);
 
@@ -150,6 +155,7 @@ export default async function LoadingPage() {
         canUpdate={can(user, PERMISSIONS.SHIPMENTS_UPDATE)}
         canReceive={can(user, PERMISSIONS.PURCHASES_APPROVE)}
         shippingLines={shippingLines}
+        ports={ports.map((p) => p.name)}
         warehouses={warehouses.map((w) => ({ id: w.id, name: w.name, code: w.code }))}
         defaultWarehouseId={warehouses.find((w) => w.isDefault)?.id ?? warehouses[0]?.id ?? null}
       />

@@ -14,7 +14,7 @@ export default async function NewPurchasePage() {
   const user = await requirePageAccess(PERMISSIONS.PURCHASES_CREATE);
   const companyId = user.activeCompany.id;
 
-  const [vendors, items] = await Promise.all([
+  const [vendors, items, ports] = await Promise.all([
     prisma.vendor.findMany({
       where: { companyId, status: 'ACTIVE' },
       orderBy: { vendorName: 'asc' },
@@ -32,6 +32,11 @@ export default async function NewPurchasePage() {
         bagWeightKg: true,
         defaultUnit: true,
       },
+    }),
+    prisma.port.findMany({
+      where: { companyId, status: 'ACTIVE' },
+      orderBy: { name: 'asc' },
+      select: { name: true },
     }),
   ]);
 
@@ -98,6 +103,7 @@ export default async function NewPurchasePage() {
         defaultLocalRate={rates.local}
         canApprove={can(user, PERMISSIONS.PURCHASES_APPROVE)}
         canCreateItem={can(user, PERMISSIONS.ITEMS_CREATE)}
+        ports={ports.map((p) => p.name)}
       />
     </div>
   );

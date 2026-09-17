@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { MakeRecurringButton } from '@/app/(app)/finance/expenses/[id]/make-recurring';
 import { DocumentJournal } from '@/components/shared/document-journal';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -88,6 +89,12 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
                   Clone
                 </Link>
               </Button>
+            ) : null}
+            {can(user, PERMISSIONS.EXPENSES_CREATE) && expense.status !== 'CANCELLED' ? (
+              <MakeRecurringButton
+                expenseId={expense.id}
+                suggestedName={expense.description ?? expense.expenseCategory.name}
+              />
             ) : null}
             {recordPayment ? (
               <Button asChild>

@@ -1,11 +1,13 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Plus, SplitSquareHorizontal } from 'lucide-react';
+import { Plus, Repeat, SplitSquareHorizontal } from 'lucide-react';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { formatMoney, formatDate } from '@/lib/format';
 import { getWarehouseLabels } from '@/lib/services/stock';
+import { listDueRecurring } from '@/lib/services/recurring-expense';
+import { Callout } from '@/components/ui/feedback';
 import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import { EmptyAction } from '@/components/shared/empty-action';
@@ -18,7 +20,10 @@ export default async function ExpensesPage() {
   const user = await requirePageAccess(PERMISSIONS.EXPENSES_VIEW);
   const companyId = user.activeCompany.id;
 
-  const [expenses, warehouses] = await Promise.all([
+  const today = new Date();
+  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+
+  const [expenses, warehouses, dueRecurring] = await Promise.all([
     prisma.expense.findMany({
       where: { companyId },
       orderBy: [{ expenseDate: 'desc' }, { expenseNumber: 'desc' }],
@@ -32,6 +37,7 @@ export default async function ExpensesPage() {
       },
     }),
     getWarehouseLabels(companyId),
+    listDueRecurring(companyId, todayUtc),
   ]);
 
   const rows: ExpenseRow[] = expenses.map((e) => ({
@@ -65,6 +71,12 @@ export default async function ExpensesPage() {
         actions={
           can(user, PERMISSIONS.EXPENSES_CREATE) ? (
             <div className="flex flex-wrap gap-2">
+              <Button asChild variant="outline">
+                <Link href="/finance/expenses/recurring">
+                  <Repeat />
+                  <span className="hidden sm:inline">Recurring</span>
+                </Link>
+              </Button>
               {can(user, PERMISSIONS.EXPENSES_POST) ? (
                 <Button asChild variant="outline">
                   <Link href="/finance/expenses/split">
@@ -85,6 +97,19 @@ export default async function ExpensesPage() {
           ) : undefined
         }
       />
+      {dueRecurring.length > 0 ? (
+        <Callout
+          tone="warning"
+          title={dueRecurring.length === 1 ? 'A recurring expense is due' : `${dueRecurring.length} recurring expenses are due`}
+        >
+          {dueRecurring.map((t) => t.name).join(', ')}.{' '}
+          <Link href="/finance/expenses/recurring" className="font-medium underline underline-offset-2">
+            Prepare the drafts
+          </Link>
+          , then check and post them.
+        </Callout>
+      ) : null}
+
       <ExpensesClient
         emptyAction={
           can(user, PERMISSIONS.EXPENSES_CREATE) ? (

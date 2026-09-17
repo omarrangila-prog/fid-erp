@@ -30,6 +30,7 @@ export function MarkLoadedDialog({
   shipmentId,
   contractNumber,
   shippingLines,
+  ports = [],
   defaults,
 }: {
   open: boolean;
@@ -37,6 +38,8 @@ export function MarkLoadedDialog({
   shipmentId: string;
   contractNumber: string;
   shippingLines: Array<{ id: string; name: string }>;
+  /** Names from the Ports master, offered as the user types. */
+  ports?: string[];
   defaults?: {
     shippingLineId?: string | null;
     etaDate?: string | null;
@@ -57,6 +60,7 @@ export function MarkLoadedDialog({
       shipmentId={shipmentId}
       contractNumber={contractNumber}
       shippingLines={shippingLines}
+      ports={ports}
       defaults={defaults}
     />
   );
@@ -68,6 +72,7 @@ function MarkLoadedBody({
   shipmentId,
   contractNumber,
   shippingLines,
+  ports = [],
   defaults,
 }: React.ComponentProps<typeof MarkLoadedDialog>) {
   const router = useRouter();
@@ -236,6 +241,7 @@ function MarkLoadedBody({
           <Field label="Port of loading" htmlFor="portOfLoading">
             <Input
               id="portOfLoading"
+              list="loading-ports-list"
               value={form.portOfLoading}
               onChange={(e) => set({ portOfLoading: e.target.value })}
             />
@@ -244,10 +250,17 @@ function MarkLoadedBody({
           <Field label="Port of discharge" htmlFor="portOfDischarge">
             <Input
               id="portOfDischarge"
+              list="loading-ports-list"
               value={form.portOfDischarge}
               onChange={(e) => set({ portOfDischarge: e.target.value })}
             />
           </Field>
+          {/* The Ports master, offered as suggestions so one place is always spelled one way. */}
+          <datalist id="loading-ports-list">
+            {ports.map((port) => (
+              <option key={port} value={port} />
+            ))}
+          </datalist>
 
           <Field label="Bill of lading" htmlFor="billOfLading" hint="Often issued after the booking.">
             <Input

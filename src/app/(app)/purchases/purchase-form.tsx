@@ -79,6 +79,7 @@ export function PurchaseForm({
   defaults,
   canApprove = true,
   canCreateItem = false,
+  ports = [],
 }: {
   vendors: ComboOption[];
   items: ItemOption[];
@@ -88,6 +89,8 @@ export function PurchaseForm({
   /** Hidden for users who may raise a contract but not approve it. */
   canApprove?: boolean;
   canCreateItem?: boolean;
+  /** Names from the Ports master, offered as the user types. */
+  ports?: string[];
 }) {
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
@@ -422,12 +425,36 @@ export function PurchaseForm({
                   ))}
                 </Select>
               </Field>
+              {/*
+                Free text with the Ports master offered as you type. The ports
+                list is kept in Masters so the same place is always spelled
+                the same way on the loading sheet; a plain text field with
+                suggestions gives it that purpose without turning a note on a
+                contract into a foreign key that old contracts would fail.
+              */}
               <Field label="Port of loading" htmlFor="portOfLoading">
-                <Input id="portOfLoading" value={header.portOfLoading} onChange={(e) => setField('portOfLoading', e.target.value)} placeholder="Santos" />
+                <Input
+                  id="portOfLoading"
+                  list="ports-list"
+                  value={header.portOfLoading}
+                  onChange={(e) => setField('portOfLoading', e.target.value)}
+                  placeholder="Santos"
+                />
               </Field>
               <Field label="Destination" htmlFor="destination">
-                <Input id="destination" value={header.destination} onChange={(e) => setField('destination', e.target.value)} placeholder="Jebel Ali" />
+                <Input
+                  id="destination"
+                  list="ports-list"
+                  value={header.destination}
+                  onChange={(e) => setField('destination', e.target.value)}
+                  placeholder="Jebel Ali"
+                />
               </Field>
+              <datalist id="ports-list">
+                {ports.map((port) => (
+                  <option key={port} value={port} />
+                ))}
+              </datalist>
             </div>
           </FormSection>
         </CardContent>
