@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Plus, Trash2, Scale } from 'lucide-react';
@@ -143,7 +144,37 @@ export function JournalForm({
     return { debit, credit, difference: debit.minus(credit) };
   }, [lines]);
 
+  /** One line's worth in USD, or null while it is still incomplete. */
+  function lineUsd(line: Line) {
+    const value = tryDec(line.amount);
+    const rate = tryDec(line.rateToUsd);
+    if (value.lessThanOrEqualTo(0)) return null;
+    if (line.currency !== 'USD' && rate.lessThanOrEqualTo(0)) return null;
+    const usd = line.currency === 'USD' ? value : value.dividedBy(rate);
+    return usd.toFixed(2);
+  }
+
   const balanced = totals.difference.isZero() && totals.debit.greaterThan(0);
+
+  /**
+   * Why it does not balance, in words.
+   *
+   * "Difference −50,001" is arithmetic; it does not tell somebody that every
+   * line is on the same side, which is the mistake that produced it. Double
+   * entry needs one of each, and saying so is more use than the number.
+   */
+  const imbalanceReason = React.useMemo(() => {
+    if (balanced) return null;
+    const filled = lines.filter((l) => tryDec(l.amount).greaterThan(0));
+    if (filled.length === 0) return null;
+    if (filled.every((l) => l.direction === 'CREDIT')) {
+      return 'Every line is a credit. One side has to be a debit — the account receiving the value.';
+    }
+    if (filled.every((l) => l.direction === 'DEBIT')) {
+      return 'Every line is a debit. One side has to be a credit — the account giving the value.';
+    }
+    return null;
+  }, [balanced, lines]);
   const complete = lines.every(
     (line) =>
       line.accountId &&
@@ -271,6 +302,12 @@ export function JournalForm({
         Use a journal voucher for corrections, opening balances and accruals — anything without a purchase, sale,
         receipt or payment behind it. Everything else should be entered on its own screen so stock and the
         sub-ledgers stay in step.
+        {' '}
+        Money lent between the two companies has its own screen:{' '}
+        <Link href="/finance/intercompany-loan" className="font-medium underline underline-offset-2">
+          Intercompany loan
+        </Link>{' '}
+        writes both sides at once, so neither set of books can be left holding half of it.
       </Callout>
 
       <Card>
@@ -450,14 +487,29 @@ export function JournalForm({
                     />
                   </div>
                   {line.currency !== 'USD' ? (
-                    <Input
-                      aria-label={`Line ${index + 1} rate`}
-                      className="mt-2"
-                      inputMode="decimal"
-                      value={line.rateToUsd}
-                      onChange={(e) => updateLine(line.key, { rateToUsd: e.target.value })}
-                      placeholder={`${line.currency} per 1 USD`}
-                    />
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="shrink-0 text-[11px] text-ink-subtle">Rate</span>
+                      <Input
+                        aria-label={`Line ${index + 1} rate`}
+                        inputMode="decimal"
+                        value={line.rateToUsd}
+                        onChange={(e) => updateLine(line.key, { rateToUsd: e.target.value })}
+                        placeholder="0.00"
+                      />
+                      <span className="shrink-0 text-[11px] text-ink-subtle">per 1 USD</span>
+                    </div>
+                  ) : null}
+                  {/*
+                    What this line is worth in the currency the voucher is
+                    balanced in. A dirham amount typed where the rate belongs
+                    shows here as a dollar or two instead of thousands, which
+                    is the difference being visible at the moment it is made
+                    rather than in the totals at the bottom of the page.
+                  */}
+                  {lineUsd(line) ? (
+                    <p className="mt-1 text-[11px] text-ink-subtle">
+                      = USD {lineUsd(line)} {line.direction === 'DEBIT' ? 'debit' : 'credit'}
+                    </p>
                   ) : null}
                 </Field>
               </div>
@@ -508,6 +560,11 @@ export function JournalForm({
               </dd>
             </div>
           </dl>
+
+          {imbalanceReason ? (
+            <p className="text-xs font-medium text-amber-700">{imbalanceReason}</p>
+          ) : null}
+
 
           <div className="flex items-center gap-3">
             <span
