@@ -58,6 +58,7 @@ export function IntercompanyLoanForm({ companies }: { companies: LoanCompany[] }
   const [exchangeRate, setRate] = React.useState('');
   const [receivedOverride, setReceivedOverride] = React.useState('');
   const [reference, setReference] = React.useState('');
+  const [memo, setMemo] = React.useState('');
 
   const fromAccount = from?.accounts.find((a) => a.id === fromAccountId);
   const toAccount = to?.accounts.find((a) => a.id === toAccountId);
@@ -110,7 +111,7 @@ export function IntercompanyLoanForm({ companies }: { companies: LoanCompany[] }
           exchangeRate: sameCurrency ? '1' : exchangeRate,
           receivedAmount: receivedOverride,
           reference,
-          description: '',
+          description: memo,
         }),
       );
       if (!result?.ok) {
@@ -275,6 +276,24 @@ export function IntercompanyLoanForm({ companies }: { companies: LoanCompany[] }
           ) : null}
           <Field label="Reference" hint="Optional — the bank’s reference for the transfer.">
             <Input value={reference} onChange={(e) => setReference(e.target.value)} />
+          </Field>
+        </CardContent>
+
+        {/* What this loan was for, in the client's own words. It becomes the
+            description on both companies' journal entries, so it is what they
+            will read months later when they ask what this was. */}
+        <CardContent className="border-t border-line pt-4">
+          <Field
+            label="Memo"
+            hint="Optional — what this loan was for. It appears on both companies’ journal entries."
+          >
+            <Input
+              value={memo}
+              onChange={(e) => setMemo(e.target.value)}
+              placeholder={
+                from && to ? `Loan from ${from.name} to ${to.name}` : 'Working capital for the Morocco operation'
+              }
+            />
           </Field>
         </CardContent>
 

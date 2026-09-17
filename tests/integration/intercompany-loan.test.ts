@@ -263,3 +263,62 @@ describe('the converted amount left to be calculated', () => {
     }
   }, 240_000);
 });
+
+describe('the bank reference survives a memo', () => {
+  it('keeps the reference on both entries when a memo is also written', async () => {
+    // The reference used to be appended only to the description the service
+    // made up for itself, so writing a memo threw it away silently — and the
+    // reference is the one thing that ties the entry to the bank statement.
+    const loan = await postIntercompanyLoan({
+      fromCompanyId: ctx.dubai.id,
+      toCompanyId: ctx.morocco.id,
+      userId: ctx.admin.id,
+      transferDate: utcDate('2026-05-01'),
+      fromAccountId: dubaiBank,
+      toAccountId: moroccoBank,
+      amount: '1000',
+      exchangeRate: '9.22',
+      reference: 'ICUL/FID/002/SCR15-12/6',
+      description: 'Working capital for the Morocco operation',
+    });
+
+    for (const entry of [loan.lenderEntry, loan.borrowerEntry]) {
+      expect(entry.description).toContain('Working capital for the Morocco operation');
+      expect(entry.description).toContain('ICUL/FID/002/SCR15-12/6');
+    }
+  }, 180_000);
+
+  it('still carries the reference when no memo is written', async () => {
+    const loan = await postIntercompanyLoan({
+      fromCompanyId: ctx.dubai.id,
+      toCompanyId: ctx.morocco.id,
+      userId: ctx.admin.id,
+      transferDate: utcDate('2026-05-02'),
+      fromAccountId: dubaiBank,
+      toAccountId: moroccoBank,
+      amount: '1000',
+      exchangeRate: '9.22',
+      reference: 'ICUL/FID/003',
+    });
+
+    expect(loan.lenderEntry.description).toContain('ICUL/FID/003');
+    expect(loan.borrowerEntry.description).toContain('ICUL/FID/003');
+  }, 180_000);
+
+  it('writes a plain description when neither is given', async () => {
+    const loan = await postIntercompanyLoan({
+      fromCompanyId: ctx.dubai.id,
+      toCompanyId: ctx.morocco.id,
+      userId: ctx.admin.id,
+      transferDate: utcDate('2026-05-03'),
+      fromAccountId: dubaiBank,
+      toAccountId: moroccoBank,
+      amount: '1000',
+      exchangeRate: '9.22',
+    });
+
+    expect(loan.lenderEntry.description).not.toContain('·');
+    expect(loan.lenderEntry.description).toContain('Loan to');
+    expect(loan.borrowerEntry.description).toContain('Loan from');
+  }, 180_000);
+});

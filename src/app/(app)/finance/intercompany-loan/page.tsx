@@ -18,8 +18,15 @@ export default async function IntercompanyLoanPage() {
    * money between them.
    */
   const reachable = user.companies.map((c) => c.id);
+  /*
+   * Lending happens in dollars or dirhams, never in AED.
+   *
+   * The group does not lend or receive between the companies in AED, so the
+   * AED accounts are left off this screen rather than offered and then
+   * regretted. They remain available everywhere else.
+   */
   const accounts = await prisma.cashBankAccount.findMany({
-    where: { companyId: { in: reachable }, status: 'ACTIVE' },
+    where: { companyId: { in: reachable }, status: 'ACTIVE', currency: { not: 'AED' } },
     orderBy: [{ accountType: 'asc' }, { name: 'asc' }],
     select: { id: true, name: true, currency: true, companyId: true },
   });

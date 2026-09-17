@@ -284,12 +284,22 @@ export async function postIntercompanyLoan(input: {
     ]);
 
     const sourceId = `LOAN-${Date.now()}`;
-    const note = input.reference ? ` · ${input.reference}` : '';
+
+    /*
+     * The bank's reference belongs on the entry whatever else was written.
+     *
+     * A journal entry has no reference column of its own, so the description
+     * carries it. Appending it only to the default description meant that
+     * anyone who typed a memo lost their reference silently — the one detail
+     * they need to tie the entry back to the bank statement.
+     */
+    const note = input.reference?.trim() ? ` · ${input.reference.trim()}` : '';
+    const memo = input.description?.trim();
 
     const lenderEntry = await postJournalEntry(tx, {
       companyId: input.fromCompanyId,
       entryDate: input.transferDate,
-      description: input.description?.trim() || `Loan to ${borrower.name}${note}`,
+      description: `${memo || `Loan to ${borrower.name}`}${note}`,
       sourceType: 'MANUAL',
       sourceId,
       createdById: input.userId,
@@ -318,7 +328,7 @@ export async function postIntercompanyLoan(input: {
     const borrowerEntry = await postJournalEntry(tx, {
       companyId: input.toCompanyId,
       entryDate: input.transferDate,
-      description: input.description?.trim() || `Loan from ${lender.name}${note}`,
+      description: `${memo || `Loan from ${lender.name}`}${note}`,
       sourceType: 'MANUAL',
       sourceId,
       createdById: input.userId,
