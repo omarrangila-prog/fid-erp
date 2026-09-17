@@ -19,7 +19,8 @@ export type ChequeRow = {
   chequeNumber: string;
   direction: string;
   party: string;
-  bankName: string;
+  /** Blank for a cheque an agent collected, where it is not always known. */
+  bankName: string | null;
   chequeDate: string;
   chequeDateSort: number;
   currency: string;
@@ -107,7 +108,7 @@ export function ChequesClient({
       cell: (r) => (
         <span>
           <span className="block font-medium">{r.chequeNumber}</span>
-          <span className="block text-xs text-ink-subtle">{r.bankName}</span>
+          {r.bankName ? <span className="block text-xs text-ink-subtle">{r.bankName}</span> : null}
         </span>
       ),
     },
@@ -191,7 +192,7 @@ export function ChequesClient({
         data={rows}
         columns={columns}
         getRowId={(r) => r.id}
-        searchValue={(r) => `${r.chequeNumber} ${r.party} ${r.bankName} ${r.warehouseNames}`}
+        searchValue={(r) => `${r.chequeNumber} ${r.party} ${r.bankName ?? ''} ${r.warehouseNames}`}
         searchPlaceholder="Search cheque number, party or bank…"
         emptyAction={emptyAction}
         emptyTitle="No cheques recorded"

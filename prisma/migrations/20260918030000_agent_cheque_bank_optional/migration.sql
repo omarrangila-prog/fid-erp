@@ -1,0 +1,11 @@
+-- A cheque an agent took away may reach us without its bank.
+--
+-- The customer hands the agent a cheque and we are told the number and the
+-- date; the drawee bank is often not known until it clears or bounces.
+-- Refusing to record the cheque for want of it meant recording no cheque at
+-- all, which left nothing to mark pending, cleared or bounced.
+--
+-- The column becomes nullable. Every existing cheque keeps its bank, and a
+-- cheque the company is holding is still required to name one — that rule now
+-- lives in the receipt rules, where it can tell the two cases apart.
+ALTER TABLE "cheques" ALTER COLUMN "bankName" DROP NOT NULL;

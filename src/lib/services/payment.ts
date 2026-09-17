@@ -43,7 +43,8 @@ export type PaymentInput = {
   cheque?: {
     chequeNumber: string;
     chequeDate: Date;
-    bankName: string;
+    /** Required for an outbound cheque; the rule lives in validateSettlement. */
+    bankName?: string | null;
     beneficiary?: string | null;
     notes?: string | null;
   } | null;
@@ -447,7 +448,7 @@ async function syncDraftPaymentCheque(
   const data = {
     chequeNumber: params.cheque.chequeNumber.trim(),
     chequeDate: params.cheque.chequeDate,
-    bankName: params.cheque.bankName.trim(),
+    bankName: params.cheque.bankName?.trim() || null,
     amount: params.amounts.amount,
     currency: params.amounts.currency,
     rateToUsd: params.amounts.rateToUsd,

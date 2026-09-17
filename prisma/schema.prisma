@@ -1672,7 +1672,8 @@ model Cheque {
   chequeNumber      String
   direction         ChequeDirection
   chequeDate        DateTime        @db.Date
-  bankName          String
+  /// Not always known for a cheque an agent collected on our behalf.
+  bankName          String?
   amount            Decimal         @db.Decimal(18, 4)
   currency          String          @db.VarChar(3)
   rateToUsd         Decimal         @default(1) @db.Decimal(18, 8)

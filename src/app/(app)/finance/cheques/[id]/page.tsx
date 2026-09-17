@@ -64,7 +64,7 @@ export default async function ChequeDetailPage({ params }: { params: Promise<{ i
     <div className="space-y-6">
       <PageHeader
         title={`Cheque ${cheque.chequeNumber}`}
-        description={`${isInbound ? 'Received from' : 'Issued to'} ${party ?? 'unknown party'} · ${cheque.bankName}`}
+        description={[isInbound ? 'Received from' : 'Issued to', party ?? 'unknown party'].join(' ') + (cheque.bankName ? ` · ${cheque.bankName}` : '')}
         breadcrumbs={[
           { label: 'Finance' },
           { label: 'Cheques', href: '/finance/cheques' },
@@ -101,7 +101,7 @@ export default async function ChequeDetailPage({ params }: { params: Promise<{ i
               <div>
                 <DetailRow label="Cheque number">{cheque.chequeNumber}</DetailRow>
                 <DetailRow label="Cheque date">{formatDate(cheque.chequeDate)}</DetailRow>
-                <DetailRow label="Drawee bank">{cheque.bankName}</DetailRow>
+                <DetailRow label="Drawee bank">{cheque.bankName ?? 'Not recorded'}</DetailRow>
                 <DetailRow label="Amount">{formatMoney(cheque.amount, cheque.currency)}</DetailRow>
                 <DetailRow label="USD equivalent">{formatMoney(cheque.amountUsd, 'USD')}</DetailRow>
                 <DetailRow label="Beneficiary">{cheque.beneficiary ?? '—'}</DetailRow>

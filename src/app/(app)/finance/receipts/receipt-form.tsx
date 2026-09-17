@@ -163,9 +163,22 @@ export function ReceiptForm({
       return;
     }
 
-    const agentCollectionReference = [form.chequeNumber.trim() ? `Cheque ${form.chequeNumber.trim()}` : '', form.reference.trim()]
-      .filter(Boolean)
-      .join(' · ');
+    /*
+     * A cheque the agent took away is recorded as a cheque, not as a note.
+     *
+     * Its number used to be pushed into the reference text, which left
+     * nothing that could be marked pending, cleared or bounced. Now the
+     * instrument is sent properly whenever a number was given, and the
+     * reference goes back to being the reference.
+     */
+    const agentCheque = isAgentCollection && form.chequeNumber.trim() ? {
+      chequeNumber: form.chequeNumber,
+      chequeDate: form.chequeDate || form.receiptDate,
+      bankName: form.bankName,
+      beneficiary: form.beneficiary,
+      agentId: form.agentId ?? '',
+      notes: '',
+    } : null;
 
     const payload = {
       receiptDate: form.receiptDate,
@@ -187,9 +200,9 @@ export function ReceiptForm({
             agentId: form.agentId ?? '',
             notes: '',
           }
-        : null,
+        : agentCheque,
       shipmentId: '',
-      reference: isAgentCollection ? agentCollectionReference : form.reference,
+      reference: form.reference,
       description: form.description,
       allocations: Object.entries(allocations)
         .filter(([, amount]) => amount && Number(amount) > 0)
@@ -370,7 +383,7 @@ export function ReceiptForm({
               </Field>
               <Field
                 label="Cheque number"
-                hint="Where applicable. This is a note on the collection, not a cheque FID is holding."
+                hint="Leave blank if the agent took cash. Give the number and the cheque can be tracked, cleared or bounced."
               >
                 <Input
                   value={form.chequeNumber}
@@ -378,6 +391,27 @@ export function ReceiptForm({
                   placeholder="Optional"
                 />
               </Field>
+              {form.chequeNumber.trim() ? (
+                <>
+                  <Field
+                    label="Cheque date"
+                    hint="A cheque dated a few days ahead is still recorded now; it simply stays pending."
+                  >
+                    <Input
+                      type="date"
+                      value={form.chequeDate}
+                      onChange={(e) => setForm({ ...form, chequeDate: e.target.value })}
+                    />
+                  </Field>
+                  <Field label="Bank" hint="The customer's bank, if it is known.">
+                    <Input
+                      value={form.bankName}
+                      onChange={(e) => setForm({ ...form, bankName: e.target.value })}
+                      placeholder="Optional"
+                    />
+                  </Field>
+                </>
+              ) : null}
             </>
           ) : null}
 

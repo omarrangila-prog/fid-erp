@@ -14,10 +14,18 @@ import {
 
 /** Receipt, payment, expense and cheque schemas. */
 
+/*
+ * The bank is optional here and required below only where it is knowable.
+ *
+ * A cheque the company is holding has been looked at, so its bank is on the
+ * paper. One the customer handed to an agent may reach us as a number and a
+ * date and nothing more, and refusing to record it for want of a bank name
+ * would mean recording no cheque at all.
+ */
 const chequeDetails = z.object({
   chequeNumber: requiredText('Cheque number', 40),
   chequeDate: dateString('Cheque date'),
-  bankName: requiredText('Bank', 120),
+  bankName: optionalText(120),
   beneficiary: optionalText(160),
   agentId: optionalCuid,
   notes: optionalText(400),
@@ -62,6 +70,10 @@ export const receiptSchema = z
   .refine((v) => v.paymentMethod !== 'AGENT_COLLECTION' || Boolean(v.agentId), {
     message: 'Choose the agent who collected this money.',
     path: ['agentId'],
+  })
+  .refine((v) => v.paymentMethod !== 'CHEQUE' || !v.cheque || Boolean(v.cheque.bankName?.trim()), {
+    message: 'Enter the bank this cheque is drawn on.',
+    path: ['cheque', 'bankName'],
   });
 
 export const paymentSchema = z
@@ -99,6 +111,11 @@ export const paymentSchema = z
   .refine((v) => v.paymentMethod === 'CHEQUE' || Boolean(v.cashBankAccountId), {
     message: 'Choose the cash or bank account the money was paid from.',
     path: ['cashBankAccountId'],
+  })
+  // A cheque the company writes is drawn on a bank the company knows.
+  .refine((v) => v.paymentMethod !== 'CHEQUE' || !v.cheque || Boolean(v.cheque.bankName?.trim()), {
+    message: 'Enter the bank this cheque is drawn on.',
+    path: ['cheque', 'bankName'],
   })
   // Without a supplier there is nothing for money to sit against, so every
   // dirham has to be put against a cost.

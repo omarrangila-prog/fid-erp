@@ -361,3 +361,32 @@ describe('a second invoice, whose agent cheque bounces', () => {
     expect(health.checks.filter((c) => !c.passed).map((c) => c.label)).toEqual([]);
   }, 300_000);
 });
+
+describe('a cheque whose bank we were never told', () => {
+  it('is recorded even when the drawee bank is not known', async () => {
+    // What reaches us is often a number and a date. Refusing the cheque for
+    // want of a bank name meant recording no cheque at all.
+    const receipt = await createReceipt(
+      {
+        companyId,
+        receiptDate: utcDate('2026-03-22'),
+        customerId: masters.customer.id,
+        currency: 'MAD',
+        amount: '1',
+        rateToUsd: '9.85',
+        rateLocalPerUsd: '9.85',
+        paymentMethod: 'AGENT_COLLECTION',
+        agentId,
+        cheque: { chequeNumber: 'CHQ-NOBANK', chequeDate: utcDate('2026-03-25') },
+      },
+      ctx.admin.id,
+    );
+    await postReceipt({ id: receipt.id, companyId, userId: ctx.admin.id });
+
+    const cheque = await prisma.cheque.findFirstOrThrow({
+      where: { companyId, chequeNumber: 'CHQ-NOBANK' },
+    });
+    expect(cheque.bankName).toBeNull();
+    expect(cheque.status).toBe('RECEIVED');
+  }, 180_000);
+});

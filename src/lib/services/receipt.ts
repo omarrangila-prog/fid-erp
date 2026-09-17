@@ -33,7 +33,8 @@ export type ReceiptAllocationInput = {
 export type ChequeDetailsInput = {
   chequeNumber: string;
   chequeDate: Date;
-  bankName: string;
+  /** Known for a cheque we are holding; often not for one an agent took. */
+  bankName?: string | null;
   beneficiary?: string | null;
   agentId?: string | null;
   receivedDate?: Date | null;
@@ -379,7 +380,7 @@ async function syncDraftCheque(
   const data = {
     chequeNumber: params.cheque.chequeNumber.trim(),
     chequeDate: params.cheque.chequeDate,
-    bankName: params.cheque.bankName.trim(),
+    bankName: params.cheque.bankName?.trim() || null,
     amount: params.amounts.amount,
     currency: params.amounts.currency,
     rateToUsd: params.amounts.rateToUsd,
