@@ -12,6 +12,10 @@ import {
 import { prisma } from '@/lib/db';
 import { dec } from '@/lib/money';
 import { getBatchStock, getItemWarehouseStock } from '@/lib/services/stock';
+import {
+  WarehouseStockPanel,
+  type WarehouseStock,
+} from '@/app/(app)/items/[id]/warehouse-stock';
 import { formatDate, formatMoney, formatQuantityKg } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Badge, StatusBadge } from '@/components/ui/badge';
@@ -50,10 +54,63 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
 
   if (!item) notFound();
 
-  const [batches, warehouseStock] = await Promise.all([
+  const [batches, warehouseStock, balances] = await Promise.all([
     getBatchStock({ companyId, itemId: id, includeEmpty: true }),
     getItemWarehouseStock(companyId, id),
+    /*
+     * Where this coffee physically sits, warehouse by warehouse and batch by
+     * batch. The same coffee arrives in several containers with a batch each,
+     * so the only useful shape is one row per batch per warehouse.
+     */
+    prisma.inventoryBalance.findMany({
+      where: { companyId, itemId: id, onHandKg: { not: 0 } },
+      select: {
+        batchId: true,
+        onHandKg: true,
+        availableKg: true,
+        bags: true,
+        warehouse: { select: { id: true, name: true } },
+        batch: {
+          select: {
+            batchNumber: true,
+            container: { select: { containerNumber: true } },
+            purchaseContract: { select: { contractReference: true } },
+            shipment: { select: { jobNumber: true } },
+          },
+        },
+      },
+    }),
   ]);
+
+  // Grouped by warehouse, largest first, so the busiest store leads.
+  const byWarehouse = new Map<string, WarehouseStock>();
+  for (const balance of balances) {
+    const entry = byWarehouse.get(balance.warehouse.id) ?? {
+      warehouseId: balance.warehouse.id,
+      warehouseName: balance.warehouse.name,
+      totalLabel: '',
+      totalKg: 0,
+      bags: 0,
+      lots: [],
+    };
+    entry.totalKg += Number(balance.onHandKg);
+    entry.bags += balance.bags;
+    entry.lots.push({
+      batchId: balance.batchId,
+      batchNumber: balance.batch.batchNumber,
+      containerNumber: balance.batch.container?.containerNumber ?? '—',
+      reference: balance.batch.purchaseContract?.contractReference ?? '—',
+      jobNumber: balance.batch.shipment?.jobNumber ?? '—',
+      onHandLabel: formatQuantityKg(balance.onHandKg),
+      availableLabel: formatQuantityKg(balance.availableKg),
+      availableKg: Number(balance.availableKg),
+      bags: balance.bags,
+    });
+    byWarehouse.set(balance.warehouse.id, entry);
+  }
+  const warehouseBreakdown = [...byWarehouse.values()]
+    .map((w) => ({ ...w, totalLabel: formatQuantityKg(w.totalKg) }))
+    .sort((a, b) => b.totalKg - a.totalKg);
 
   const availableKg = warehouseStock.totalAvailableKg;
   const soldKg = batches.reduce((a, b) => a.plus(b.soldKg), dec(0));
@@ -178,6 +235,15 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
         </TabsContent>
 
         <TabsContent value="stock">
+          {/*
+            Warehouse first: pick where, see the total, then the containers
+            and batches that make it up. The batch table below keeps the
+            fuller picture, including batches still in transit.
+          */}
+          <div className="mb-6">
+            <WarehouseStockPanel warehouses={warehouseBreakdown} />
+          </div>
+
           {batches.length === 0 ? (
             <EmptyState title="No batches yet" description="Batches are created when a purchase contract is approved." />
           ) : (

@@ -35,8 +35,16 @@ export type LoanCompany = {
  */
 export function IntercompanyLoanForm({ companies }: { companies: LoanCompany[] }) {
   const router = useRouter();
-  const { busy, start, opening } = useSaveAndOpen();
+  const { busy, start } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
+  /** What was posted, shown in place so the client sees it happened. */
+  const [done, setDone] = React.useState<null | {
+    lent: string;
+    received: string;
+    rate: string;
+    bank: string;
+    message: string;
+  }>(null);
 
   const [fromCompanyId, setFromCompany] = React.useState(companies[0]?.id ?? '');
   const [toCompanyId, setToCompany] = React.useState(companies[1]?.id ?? '');
@@ -110,9 +118,59 @@ export function IntercompanyLoanForm({ companies }: { companies: LoanCompany[] }
         return;
       }
       toast.success(result.message ?? 'Loan posted.');
-      opening();
-      router.push('/finance/cash-bank');
+      setDone({
+        lent: formatMoney(amount, fromAccount?.currency ?? 'USD'),
+        received: formatMoney(receivedOverride || converted || 0, toAccount?.currency ?? 'MAD'),
+        rate: sameCurrency ? '1' : exchangeRate,
+        bank: toAccount?.name ?? '',
+        message: result.message ?? '',
+      });
+      router.refresh();
     });
+  }
+
+  if (done) {
+    return (
+      <div className="space-y-5">
+        <Callout tone="info" title="Transaction completed">
+          The loan is on both companies&rsquo; books and the bank balance has moved.
+        </Callout>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>What was recorded</CardTitle>
+            <CardDescription>{done.message}</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <p className="text-xs text-ink-muted">Lent by {from?.name}</p>
+              <p className="text-lg font-semibold tabular-nums text-ink">{done.lent}</p>
+            </div>
+            <div>
+              <p className="text-xs text-ink-muted">Exchange rate</p>
+              <p className="text-lg font-semibold tabular-nums text-ink">{done.rate}</p>
+            </div>
+            <div>
+              <p className="text-xs text-ink-muted">Received into {done.bank}</p>
+              <p className="text-lg font-semibold tabular-nums text-forest-800">{done.received}</p>
+            </div>
+            <div>
+              <p className="text-xs text-ink-muted">Owed by {to?.name}</p>
+              <p className="text-lg font-semibold tabular-nums text-ink">{done.received}</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="outline" onClick={() => setDone(null)}>
+            Record another
+          </Button>
+          <Button variant="accent" onClick={() => router.push('/finance/cash-bank')}>
+            See the bank balance
+          </Button>
+        </div>
+      </div>
+    );
   }
 
   return (

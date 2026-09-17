@@ -74,6 +74,7 @@ test('a customer can be created through the interface', async ({ page }) => {
 test('the journal voucher refuses to post until debits equal credits', async ({ page }) => {
   await signInToDubai(page);
   await page.goto('/accounting/journal/new');
+  await page.getByRole('button', { name: /advanced journal entry/i }).click();
 
   // The button is never disabled — a dead button with no explanation was
   // read as "saving does nothing". It is pressable, and pressing it says why.

@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { GuidedChooser } from '@/app/(app)/accounting/journal/new/guided-chooser';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -81,6 +82,14 @@ export function JournalForm({
 }) {
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
+  /*
+   * The guided chooser comes first. Most of what lands here is money arriving,
+   * leaving or moving, and each of those has a screen that posts the double
+   * entry itself; being made to pick debits and credits to record them is a
+   * tax on somebody running a coffee business. The journal proper is one
+   * click away, and an accountant who wants it goes straight there.
+   */
+  const [mode, setMode] = React.useState<'guided' | 'advanced'>('guided');
   const [entryDate, setEntryDate] = React.useState(today);
   const [description, setDescription] = React.useState('');
   const [currency, setCurrency] = React.useState('USD');
@@ -311,8 +320,20 @@ export function JournalForm({
     });
   }
 
+  if (mode === 'guided') {
+    return <GuidedChooser onAdvanced={() => setMode('advanced')} />;
+  }
+
   return (
     <div className="space-y-4">
+      <button
+        type="button"
+        onClick={() => setMode('guided')}
+        className="text-xs font-medium text-forest-700 underline underline-offset-2 hover:text-forest-800"
+      >
+        ← Back to the guided list
+      </button>
+
       <Callout tone="info" title="This posts straight to the ledger">
         Use a journal voucher for corrections, opening balances and accruals — anything without a purchase, sale,
         receipt or payment behind it. Everything else should be entered on its own screen so stock and the

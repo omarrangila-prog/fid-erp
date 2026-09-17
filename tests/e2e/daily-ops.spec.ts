@@ -168,6 +168,8 @@ test('Record Payment opens from an outstanding invoice', async ({ page }) => {
 
 test('the journal can add an account without leaving the voucher', async ({ page }) => {
   await page.goto('/accounting/journal/new', { waitUntil: 'domcontentloaded' });
+  // The journal opens on the guided list now; the ledger form is behind it.
+  await page.getByRole('button', { name: /advanced journal entry/i }).click();
   // "+ Add New Account" is the first row of the account list, which is the one
   // way in now that the duplicate button beside each line is gone.
   await page.getByRole('combobox', { name: /line 1 account/i }).click();
@@ -189,6 +191,8 @@ test('the journal can add an account without leaving the voucher', async ({ page
 test('the journal offers USD and MAD and posts a balanced USD voucher', async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto('/accounting/journal/new', { waitUntil: 'domcontentloaded' });
+  // The journal opens on the guided list now; the ledger form is behind it.
+  await page.getByRole('button', { name: /advanced journal entry/i }).click();
 
   const currency = page.getByLabel(/^Currency/);
   await expect(currency.locator('option[value="USD"]')).toHaveCount(1);
