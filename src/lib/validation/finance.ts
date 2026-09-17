@@ -214,6 +214,33 @@ export const intercompanyLoanSchema = z
     path: ['toCompanyId'],
   });
 
+/**
+ * A loan with anybody — a director, a friend, the other company.
+ *
+ * The counterparty is a name rather than a party record, because a lender is
+ * not a customer or a supplier and forcing them into one of those would put
+ * loans into the sales or purchase ledgers. A ledger is opened in their name
+ * the first time they lend.
+ */
+export const loanSchema = z
+  .object({
+    loanDate: dateString('Loan date'),
+    direction: z.enum(['RECEIVED', 'GIVEN', 'REPAID']),
+    counterpartyName: optionalText(120),
+    loanAccountId: optionalCuid,
+    cashBankAccountId: cuid,
+    currency: currencyCode,
+    amount: decimalString('Amount'),
+    exchangeRate: optionalDecimalString('Exchange rate'),
+    bankAmount: optionalDecimalString('Amount received'),
+    reference: optionalText(60),
+    description: optionalText(300),
+  })
+  .refine((v) => Boolean(v.counterpartyName?.trim()) || Boolean(v.loanAccountId), {
+    message: 'Say who the loan is with.',
+    path: ['counterpartyName'],
+  });
+
 export const chequeStatusSchema = z.object({
   toStatus: z.enum(['RECEIVED', 'DEPOSITED', 'CLEARED', 'BOUNCED', 'CANCELLED']),
   cashBankAccountId: optionalCuid,

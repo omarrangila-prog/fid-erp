@@ -16,6 +16,7 @@ import {
   revaluationSchema,
   cashBankTransferSchema,
   intercompanyLoanSchema,
+  loanSchema,
 } from '@/lib/validation/finance';
 import { createReceipt, updateReceipt, postReceipt, reverseReceipt, deleteDraftReceipt } from '@/lib/services/receipt';
 import { createPayment, updatePayment, postPayment, reversePayment, deleteDraftPayment } from '@/lib/services/payment';
@@ -33,6 +34,7 @@ import { createAgentSettlement, postAgentSettlement } from '@/lib/services/agent
 import { postRevaluation } from '@/lib/services/revaluation';
 import { postJournalEntry } from '@/lib/services/accounting';
 import { postCashBankTransfer, postIntercompanyLoan } from '@/lib/services/cash-transfer';
+import { postLoan } from '@/lib/services/loan';
 import {
   createRecurringFromExpense,
   generateFromRecurring,
@@ -537,6 +539,52 @@ export async function postIntercompanyLoanAction(payload: string): Promise<DocFo
       ok: true,
       id: result.lenderEntry.id,
       message: `Loan posted: ${result.lenderEntry.entryNumber} and ${result.borrowerEntry.entryNumber}.`,
+    };
+  } catch (error) {
+    return toState(error);
+  }
+}
+
+/**
+ * A loan with anybody, in either direction.
+ *
+ * Distinct from the inter-company screen, which writes to two sets of books.
+ * This writes to one: the money moved through a company account and the other
+ * side is a ledger in somebody's name.
+ */
+export async function postLoanAction(payload: string): Promise<DocFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.ACCOUNTING_POST);
+    const input = loanSchema.parse(parseJson(payload));
+
+    const result = await postLoan({
+      companyId: user.activeCompany.id,
+      userId: user.id,
+      loanDate: input.loanDate,
+      direction: input.direction,
+      counterpartyName: input.counterpartyName,
+      loanAccountId: input.loanAccountId,
+      cashBankAccountId: input.cashBankAccountId,
+      currency: input.currency,
+      amount: input.amount,
+      exchangeRate: input.exchangeRate,
+      bankAmount: input.bankAmount,
+      reference: input.reference,
+      description: input.description,
+    });
+
+    revalidateAll([
+      '/finance/cash-bank',
+      '/finance/loans',
+      '/accounting/journal',
+      '/accounting/chart',
+      '/reports',
+      '/dashboard',
+    ]);
+    return {
+      ok: true,
+      id: result.entry.id,
+      message: `${result.entry.entryNumber} posted to ${result.account.code} ${result.account.name}.`,
     };
   } catch (error) {
     return toState(error);

@@ -6,11 +6,15 @@ import {
   ArrowDownToLine,
   ArrowLeftRight,
   ArrowUpFromLine,
+  Building2,
   HandCoins,
   Landmark,
   PiggyBank,
   Scale,
   SlidersHorizontal,
+  Undo2,
+  UserRound,
+  Wallet,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 
@@ -39,48 +43,120 @@ type Choice = {
   posts: string;
 };
 
-const CHOICES: Choice[] = [
+/** Grouped so the list reads as a question rather than a wall of options. */
+type Group = { heading: string; choices: Choice[] };
+
+const GROUPS: Group[] = [
   {
-    href: '/finance/intercompany-loan',
-    icon: Landmark,
-    title: 'Loan received or given',
-    blurb: 'Money lent between your companies — Dubai to Morocco, or back again.',
-    posts: 'The bank goes up and a loan balance is recorded. Neither side is income or expense.',
+    heading: 'Money in and out',
+    choices: [
+      {
+        href: '/finance/receipts/new',
+        icon: ArrowDownToLine,
+        title: 'Money received',
+        blurb: 'A customer has paid you. Choose who, the account it landed in, and how much.',
+        posts: 'The account rises and what the customer owes falls.',
+      },
+      {
+        href: '/finance/payments/new',
+        icon: ArrowUpFromLine,
+        title: 'Money paid',
+        blurb: 'You have paid a supplier, or settled a cost booked earlier.',
+        posts: 'The account falls and what you owe falls with it.',
+      },
+      {
+        href: '/finance/expenses/new',
+        icon: HandCoins,
+        title: 'A cost',
+        blurb: 'Something the business paid for, or owes for — freight, rent, clearing, commission.',
+        posts: 'The cost is recorded, and either cash falls or a payable is raised.',
+      },
+    ],
   },
   {
-    href: '/finance/receipts/new',
-    icon: ArrowDownToLine,
-    title: 'Money received',
-    blurb: 'A customer has paid you. Choose who, the account it landed in, and how much.',
-    posts: 'The account rises and what the customer owes falls.',
+    heading: 'Moving your own money',
+    choices: [
+      {
+        href: '/finance/cash-bank',
+        icon: ArrowLeftRight,
+        title: 'Transfer between accounts',
+        blurb: 'Your own money moving between your own accounts, converting if the currencies differ.',
+        posts: 'One account down, the other up. Nothing is earned or spent.',
+      },
+      {
+        href: '/finance/cash-bank',
+        icon: Building2,
+        title: 'Cash to bank',
+        blurb: 'Depositing cash from the drawer into a bank account.',
+        posts: 'Cash down, bank up. The same transfer screen.',
+      },
+      {
+        href: '/finance/cash-bank',
+        icon: Wallet,
+        title: 'Bank to cash',
+        blurb: 'Drawing cash out of the bank for the drawer.',
+        posts: 'Bank down, cash up. The same transfer screen.',
+      },
+    ],
   },
   {
-    href: '/finance/payments/new',
-    icon: ArrowUpFromLine,
-    title: 'Money paid',
-    blurb: 'You have paid a supplier, or settled a cost booked earlier.',
-    posts: 'The account falls and what you owe falls with it.',
+    heading: 'Loans and funding',
+    choices: [
+      {
+        href: '/finance/loans/new?direction=RECEIVED',
+        icon: Landmark,
+        title: 'Loan received',
+        blurb: 'Somebody lent the business money — a director, a friend, another company.',
+        posts: 'The account rises and a loan balance is recorded. Not income.',
+      },
+      {
+        href: '/finance/loans/new?direction=GIVEN',
+        icon: HandCoins,
+        title: 'Loan given',
+        blurb: 'The business lent somebody money.',
+        posts: 'The account falls and what they owe you is recorded. Not a cost.',
+      },
+      {
+        href: '/finance/loans/new?direction=REPAID',
+        icon: Undo2,
+        title: 'Loan repayment',
+        blurb: 'Paying back money the business borrowed.',
+        posts: 'The account falls and what you owe them falls with it.',
+      },
+      {
+        href: '/finance/loans/new?direction=RECEIVED',
+        icon: UserRound,
+        title: 'Owner or shareholder funding',
+        blurb: 'Money the owner has put into the business, to be drawn back out later.',
+        posts: 'The account rises and the owner’s running account records what is owed to them.',
+      },
+      {
+        href: '/finance/intercompany-loan',
+        icon: Building2,
+        title: 'Between your two companies',
+        blurb: 'Dubai lending to Morocco, or back again — both sets of books at once.',
+        posts: 'One company is owed, the other owes. Neither is income or expense.',
+      },
+    ],
   },
   {
-    href: '/finance/cash-bank',
-    icon: ArrowLeftRight,
-    title: 'Transfer between accounts',
-    blurb: 'Your own money moving between your own accounts, converting if the currencies differ.',
-    posts: 'One account down, the other up. Nothing is earned or spent.',
-  },
-  {
-    href: '/finance/expenses/new',
-    icon: HandCoins,
-    title: 'A cost',
-    blurb: 'Something the business paid for, or owes for — freight, rent, clearing, commission.',
-    posts: 'The cost is recorded, and either cash falls or a payable is raised.',
-  },
-  {
-    href: '/accounting/chart',
-    icon: PiggyBank,
-    title: 'Opening balances',
-    blurb: 'What an account was already carrying on the day the books started here.',
-    posts: 'Posted against Opening Balance Equity, so the trial balance still balances.',
+    heading: 'Corrections and starting balances',
+    choices: [
+      {
+        href: '/accounting/chart',
+        icon: PiggyBank,
+        title: 'Opening balances',
+        blurb: 'What an account was already carrying on the day the books started here.',
+        posts: 'Posted against Opening Balance Equity, so the trial balance still balances.',
+      },
+      {
+        href: '/accounting/revaluation',
+        icon: Scale,
+        title: 'Adjustment for exchange rates',
+        blurb: 'Restating foreign balances at today’s rate at the end of a period.',
+        posts: 'The local value moves; the foreign balance does not. The difference is FX gain or loss.',
+      },
+    ],
   },
 ];
 
@@ -94,24 +170,31 @@ export function GuidedChooser({ onAdvanced }: { onAdvanced: () => void }) {
             Choose the thing that happened. The accounting is written for you — correctly, and in full.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2">
-          {CHOICES.map((choice) => {
-            const Icon = choice.icon;
-            return (
-              <Link
-                key={choice.href + choice.title}
-                href={choice.href}
-                className="flex gap-3 rounded-xl border-2 border-line bg-surface p-4 transition-colors hover:border-forest-300 hover:bg-forest-50/40"
-              >
-                <Icon className="mt-0.5 size-5 shrink-0 text-forest-700" />
-                <span>
-                  <span className="block text-sm font-semibold text-ink">{choice.title}</span>
-                  <span className="mt-0.5 block text-xs text-ink-muted">{choice.blurb}</span>
-                  <span className="mt-1.5 block text-[11px] text-ink-subtle">{choice.posts}</span>
-                </span>
-              </Link>
-            );
-          })}
+        <CardContent className="space-y-5">
+          {GROUPS.map((group) => (
+            <div key={group.heading}>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-ink-muted">{group.heading}</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {group.choices.map((choice) => {
+                  const Icon = choice.icon;
+                  return (
+                    <Link
+                      key={choice.href + choice.title}
+                      href={choice.href}
+                      className="flex gap-3 rounded-xl border-2 border-line bg-surface p-4 transition-colors hover:border-forest-300 hover:bg-forest-50/40"
+                    >
+                      <Icon className="mt-0.5 size-5 shrink-0 text-forest-700" />
+                      <span>
+                        <span className="block text-sm font-semibold text-ink">{choice.title}</span>
+                        <span className="mt-0.5 block text-xs text-ink-muted">{choice.blurb}</span>
+                        <span className="mt-1.5 block text-[11px] text-ink-subtle">{choice.posts}</span>
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </CardContent>
       </Card>
 
