@@ -290,9 +290,24 @@ export async function postIntercompanyLoan(input: {
           ? rate
           : await usdRate(input.toCompanyId, to.currency);
 
+    /*
+     * A company's own books carry this loan at the rate the loan was struck
+     * at, not at today's.
+     *
+     * Where a company's local currency is the currency its side of the loan
+     * moved in, the loan's own rate is the local rate by definition — Morocco
+     * received dirhams at 9.22, so 9.22 is what its dirham books used. Reading
+     * a stored rate instead put 9.85 on an entry whose lines were all at 9.22,
+     * which stayed invisible only while every line was in dirhams and threw
+     * the local column out the moment one was not.
+     */
     const [lenderLocalRate, borrowerLocalRate] = await Promise.all([
-      usdRate(input.fromCompanyId, lender.localCurrency),
-      usdRate(input.toCompanyId, borrower.localCurrency),
+      lender.localCurrency === from.currency
+        ? Promise.resolve(sentRate)
+        : usdRate(input.fromCompanyId, lender.localCurrency),
+      borrower.localCurrency === to.currency
+        ? Promise.resolve(receivedRateToUsd)
+        : usdRate(input.toCompanyId, borrower.localCurrency),
     ]);
 
     const sourceId = `LOAN-${Date.now()}`;

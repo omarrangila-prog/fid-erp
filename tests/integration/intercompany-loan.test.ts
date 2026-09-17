@@ -428,3 +428,55 @@ describe('carrying the debt in an account the client made', () => {
     ).rejects.toThrow(/asset or liability/i);
   }, 180_000);
 });
+
+describe('a USD account in a dirham company', () => {
+  it('keeps the entry balanced in dirhams when the debt is stated in dollars', async () => {
+    // The local column used to be worked out at the stored rate (9.85) while
+    // every line was at the loan's own rate (9.22). It stayed invisible while
+    // both lines were in dirhams, and threw the entry out by 31,500 the
+    // moment the debt was carried in a USD account.
+    const named = await prisma.account.create({
+      data: {
+        companyId: ctx.morocco.id,
+        code: '1601',
+        name: 'F I D TRADING LLC DUBAI (USD)',
+        type: 'LIABILITY',
+        currency: 'USD',
+      },
+    });
+
+    const loan = await postIntercompanyLoan({
+      fromCompanyId: ctx.dubai.id,
+      toCompanyId: ctx.morocco.id,
+      userId: ctx.admin.id,
+      transferDate: utcDate('2026-06-10'),
+      fromAccountId: dubaiBank,
+      toAccountId: moroccoBank,
+      amount: '50000',
+      exchangeRate: '9.22',
+      toLoanAccountId: named.id,
+    });
+
+    const lines = await prisma.journalLine.findMany({
+      where: { journalEntryId: loan.borrowerEntry.id },
+    });
+
+    const debitLocal = lines.reduce((t, l) => t.plus(dec(l.debitLocal)), dec(0));
+    const creditLocal = lines.reduce((t, l) => t.plus(dec(l.creditLocal)), dec(0));
+    expect(debitLocal.toString()).toBe('461000');
+    expect(creditLocal.toString()).toBe('461000');
+
+    // No exchange difference was invented to make it balance: a loan struck
+    // and received on the same day at one rate has no gain or loss in it.
+    const fx = lines.filter((l) => /exchange/i.test(l.description ?? ''));
+    expect(fx).toHaveLength(0);
+    expect(lines).toHaveLength(2);
+  }, 180_000);
+
+  it('leaves both sets of books reconciling', async () => {
+    for (const company of [ctx.dubai, ctx.morocco]) {
+      const health = await reconcile(company.id);
+      expect(health.healthy).toBe(true);
+    }
+  }, 180_000);
+});
