@@ -58,7 +58,7 @@ beforeAll(async () => {
 
   mainWarehouse = masters.warehouses[0].id;
   const second = masters.warehouses[1] ?? (await prisma.warehouse.create({
-    data: { companyId, code: 'WH-AGENT', name: 'Agent Warehouse', city: 'Casablanca' },
+    data: { companyId, code: 'WH-AGENT', name: 'Agent Warehouse', location: 'Casablanca' },
   }));
   agentWarehouse = second.id;
 

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getBalanceSheet } from '@/lib/services/reports';
@@ -41,7 +42,20 @@ export default async function BalanceSheetPage({ searchParams }: { searchParams:
         section.lines.map((line) => (
           <TR key={`${section.title}-${line.code}`}>
             <TD>
-              <span className="text-ink-subtle">{line.code}</span> {line.name}
+              {/* Each balance opens the movements behind it. A derived line
+                  such as the current period result has no account to open. */}
+              {line.accountId ? (
+                <Link
+                  href={`/reports/general-ledger?account=${line.accountId}`}
+                  className="text-forest-800 hover:text-gold-700 hover:underline"
+                >
+                  <span className="text-ink-subtle">{line.code}</span> {line.name}
+                </Link>
+              ) : (
+                <>
+                  <span className="text-ink-subtle">{line.code}</span> {line.name}
+                </>
+              )}
             </TD>
             <TD numeric>{formatMoney(line.amountUsd, 'USD')}</TD>
             <TD numeric className="text-ink-muted">{formatMoney(line.amountLocal, local)}</TD>

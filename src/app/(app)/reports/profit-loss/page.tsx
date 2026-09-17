@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getProfitAndLoss } from '@/lib/services/reports';
@@ -50,7 +51,17 @@ export default async function ProfitLossPage({
         lines.map((line) => (
           <TR key={line.code}>
             <TD>
-              <span className="text-ink-subtle">{line.code}</span> {line.name}
+              {/* Every figure on the statement opens the transactions behind
+                  it, for the same period. A total nobody can take apart is a
+                  total nobody can check. */}
+              <Link
+                href={`/reports/general-ledger?account=${line.accountId}&from=${fromDate
+                  .toISOString()
+                  .slice(0, 10)}&to=${toDate.toISOString().slice(0, 10)}`}
+                className="text-forest-800 hover:text-gold-700 hover:underline"
+              >
+                <span className="text-ink-subtle">{line.code}</span> {line.name}
+              </Link>
             </TD>
             <TD numeric>{formatMoney(line.amountUsd, 'USD')}</TD>
             <TD numeric className="text-ink-muted">

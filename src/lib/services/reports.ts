@@ -115,7 +115,14 @@ export async function getTrialBalanceReport(params: { companyId: string; from?: 
 // Profit & Loss
 // ---------------------------------------------------------------------------
 
-export type PnlLine = { code: string; name: string; amountUsd: Decimal; amountLocal: Decimal };
+/** `accountId` is what makes a figure on the statement clickable. */
+export type PnlLine = {
+  accountId: string;
+  code: string;
+  name: string;
+  amountUsd: Decimal;
+  amountLocal: Decimal;
+};
 
 export type ProfitAndLoss = {
   revenue: PnlLine[];
@@ -165,6 +172,7 @@ export async function getProfitAndLoss(params: {
 
     if (amountUsd.isZero() && amountLocal.isZero()) continue;
     const line: PnlLine = {
+      accountId: row.accountId,
       code: row.code,
       name: row.name,
       amountUsd: toMoney(amountUsd),
@@ -256,6 +264,7 @@ export async function getBalanceSheet(params: { companyId: string; asOf: Date })
     if (debitMinusCreditUsd.isZero() && debitMinusCreditLocal.isZero()) continue;
 
     const line: PnlLine = {
+      accountId: row.accountId,
       code: row.code,
       name: row.name,
       amountUsd: toMoney(row.type === 'ASSET' ? debitMinusCreditUsd : debitMinusCreditUsd.negated()),
@@ -268,6 +277,8 @@ export async function getBalanceSheet(params: { companyId: string; asOf: Date })
   }
 
   equity.push({
+    // A derived line, not an account, so there is nothing to drill into.
+    accountId: '',
     code: '3900',
     name: 'Current Period Result',
     amountUsd: toMoney(retainedThisPeriodUsd),
