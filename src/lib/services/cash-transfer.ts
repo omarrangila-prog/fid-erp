@@ -57,6 +57,8 @@ export async function postCashBankTransfer(input: {
     if (from.status !== 'ACTIVE') throw new BusinessRuleError(`${from.name} is inactive.`);
     if (to.status !== 'ACTIVE') throw new BusinessRuleError(`${to.name} is inactive.`);
     const crossCurrency = from.currency !== to.currency;
+    // As above: a blank field reaches here as "0", which means nothing was
+    // said rather than that nothing arrived.
     const received = crossCurrency ? toMoney(input.receivedAmount ?? 0) : amount;
     if (crossCurrency && received.lessThanOrEqualTo(0)) {
       throw new BusinessRuleError(
@@ -237,12 +239,20 @@ export async function postIntercompanyLoan(input: {
     if (from.status !== 'ACTIVE') throw new BusinessRuleError(`${from.name} is inactive.`);
     if (to.status !== 'ACTIVE') throw new BusinessRuleError(`${to.name} is inactive.`);
 
-    const received =
-      input.receivedAmount !== undefined && input.receivedAmount !== null && `${input.receivedAmount}` !== ''
-        ? toMoney(input.receivedAmount)
-        : toMoney(sent.times(rate));
+    /*
+     * What actually landed, when somebody has said so.
+     *
+     * An empty field arrives here as "0" rather than as nothing — the
+     * validator fills blanks that way — and zero is not an override, it is
+     * silence. Reading it as an override rejected every loan where the
+     * converted amount was left to be calculated, which is the ordinary case.
+     */
+    const stated = input.receivedAmount === undefined || input.receivedAmount === null
+      ? null
+      : toMoney(input.receivedAmount);
+    const received = stated && stated.greaterThan(0) ? stated : toMoney(sent.times(rate));
     if (received.lessThanOrEqualTo(0)) {
-      throw new BusinessRuleError('The converted amount must be greater than zero.');
+      throw new BusinessRuleError('The converted amount works out at zero. Check the amount and the rate.');
     }
 
     /** Units of a currency per 1 USD, on the day, in one company's books. */

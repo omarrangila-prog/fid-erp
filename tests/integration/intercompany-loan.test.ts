@@ -206,3 +206,60 @@ describe('what a loan will not do', () => {
     ).rejects.toThrow(/exchange rate/i);
   }, 120_000);
 });
+
+describe('the converted amount left to be calculated', () => {
+  it('posts when nothing is typed into "actually received"', async () => {
+    // The validator fills a blank optional amount with the string "0", and
+    // reading that as an override of zero refused every loan where the
+    // conversion was left to the rate — which is the ordinary case.
+    const loan = await postIntercompanyLoan({
+      fromCompanyId: ctx.dubai.id,
+      toCompanyId: ctx.morocco.id,
+      userId: ctx.admin.id,
+      transferDate: utcDate('2026-04-01'),
+      fromAccountId: dubaiBank,
+      toAccountId: moroccoBank,
+      amount: '1000',
+      exchangeRate: '9.22',
+      receivedAmount: '0',
+    });
+    expect(loan.received.toString()).toBe('9220');
+  }, 180_000);
+
+  it('posts when the field is absent altogether', async () => {
+    const loan = await postIntercompanyLoan({
+      fromCompanyId: ctx.dubai.id,
+      toCompanyId: ctx.morocco.id,
+      userId: ctx.admin.id,
+      transferDate: utcDate('2026-04-02'),
+      fromAccountId: dubaiBank,
+      toAccountId: moroccoBank,
+      amount: '1000',
+      exchangeRate: '9.22',
+    });
+    expect(loan.received.toString()).toBe('9220');
+  }, 180_000);
+
+  it('still honours a figure that was actually stated', async () => {
+    const loan = await postIntercompanyLoan({
+      fromCompanyId: ctx.dubai.id,
+      toCompanyId: ctx.morocco.id,
+      userId: ctx.admin.id,
+      transferDate: utcDate('2026-04-03'),
+      fromAccountId: dubaiBank,
+      toAccountId: moroccoBank,
+      amount: '1000',
+      exchangeRate: '9.22',
+      // The bank credited slightly less than the rate implies.
+      receivedAmount: '9180',
+    });
+    expect(loan.received.toString()).toBe('9180');
+  }, 180_000);
+
+  it('leaves both sets of books reconciling afterwards', async () => {
+    for (const company of [ctx.dubai, ctx.morocco]) {
+      const health = await reconcile(company.id);
+      expect(health.checks.filter((c) => !c.passed).map((c) => c.label), company.code).toEqual([]);
+    }
+  }, 240_000);
+});
