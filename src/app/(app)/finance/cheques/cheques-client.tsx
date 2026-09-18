@@ -161,7 +161,12 @@ export function ChequesClient({
             header: '',
             cell: (r: ChequeRow) => (
               <span className="flex justify-end gap-1">
-                {(NEXT[r.status] ?? []).slice(0, 2).map((step) => {
+                {/* Deposit, Clear and Bounce. Bounce was the third and so
+                    never appeared, which left the one action the client asked
+                    for by name reachable only by opening the cheque. Cancel
+                    stays on the cheque's own page, where a reason is asked
+                    for and the consequences are spelled out. */}
+                {(NEXT[r.status] ?? []).slice(0, 3).map((step) => {
                   const Icon = step.icon;
                   return (
                     <Button

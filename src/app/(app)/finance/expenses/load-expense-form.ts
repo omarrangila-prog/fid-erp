@@ -67,7 +67,7 @@ export async function loadExpenseFormOptions(companyId: string) {
 
   const shipmentOptions = shipments.map((s) => ({
     value: s.id,
-    label: `${s.purchaseContract.contractReference} · ${s.jobNumber}`,
+    label: s.purchaseContract.contractReference,
     hint: `${s.vendor.vendorName} · ${s.shipmentNumber} · ${s.item.itemName}`,
     keywords: `${s.purchaseContract.contractReference} ${s.purchaseContract.contractNumber} ${s.jobNumber} ${s.shipmentNumber} ${s.vendor.vendorName} ${s.item.itemName}`,
   }));

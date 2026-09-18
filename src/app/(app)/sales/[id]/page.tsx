@@ -38,7 +38,14 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
     where: { id, companyId },
     include: {
       customer: true,
-      shipment: { select: { id: true, jobNumber: true, shipmentNumber: true } },
+      shipment: {
+        select: {
+          id: true,
+          jobNumber: true,
+          shipmentNumber: true,
+          purchaseContract: { select: { contractReference: true } },
+        },
+      },
       createdBy: { select: { name: true } },
       postedBy: { select: { name: true } },
       lines: {
@@ -114,7 +121,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
             {invoice.status === 'POSTED' ? <StatusBadge status={settlement} meta={SETTLEMENT_STATUS_META} /> : null}
             {invoice.shipment ? (
               <Link href={`/shipments/${invoice.shipment.id}`}>
-                <Badge tone="info">Job {invoice.shipment.jobNumber}</Badge>
+                <Badge tone="info">{invoice.shipment.purchaseContract?.contractReference ?? 'Shipment'}</Badge>
               </Link>
             ) : null}
           </>

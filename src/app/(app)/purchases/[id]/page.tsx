@@ -111,7 +111,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
             <Badge tone="neutral">{INCOTERM_LABELS[contract.incoterm]?.split(' — ')[0] ?? contract.incoterm}</Badge>
             {job ? (
               <Link href={`/shipments/${job.id}`}>
-                <Badge tone="info">Job {job.jobNumber}</Badge>
+                <Badge tone="info">{contract.contractReference}</Badge>
               </Link>
             ) : null}
           </>
@@ -333,7 +333,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                 <dl>
                   <DetailRow label="Job number">
                     <Link href={`/shipments/${job.id}`} className="text-gold-700 hover:underline">
-                      {job.jobNumber}
+                      {contract.contractReference}
                     </Link>
                   </DetailRow>
                   <DetailRow label="Shipment">{job.shipmentNumber}</DetailRow>

@@ -67,7 +67,7 @@ export function ShipmentsClient({
       cell: (r) => (
         <span>
           <span className="block font-medium">{r.shipmentNumber}</span>
-          <span className="block text-xs text-ink-subtle">{r.jobNumber}</span>
+          
         </span>
       ),
     },

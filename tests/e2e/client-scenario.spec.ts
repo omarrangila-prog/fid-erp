@@ -408,24 +408,96 @@ test('the cheque can be marked cleared, and still no money reaches the bank', as
   expect(cashAfter).toBeCloseTo(cashBefore, 2);
 });
 
+test('a second cheque is taken by the agent, and bounces', async ({ page }) => {
+  await signIn(page);
+
+  // Another invoice for the same customer, so there is something to bounce.
+  await page.goto('/sales/new', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined);
+  await page.locator('#warehouseId').selectOption({ index: 1 });
+  await page.getByRole('combobox', { name: /customer/i }).first().click();
+  await page.keyboard.type(CUSTOMER.slice(0, 14));
+  await page.getByRole('listbox').getByRole('option').first().click();
+  await page.getByRole('combobox', { name: /Coffee on item 1/ }).click();
+  await page.getByRole('listbox').getByRole('option').first().click();
+  await page.getByLabel(/Batch on item 1/).selectOption({ index: 1 });
+  await page.getByRole('textbox', { name: /^Quantity/ }).first().fill('500');
+  await page.getByRole('textbox', { name: /Price/ }).first().fill('100');
+  await page.getByRole('button', { name: /^Save invoice$/ }).click();
+  await page.waitForURL(/\/sales\/(?!new)[\w-]+$/, { timeout: 60_000 });
+
+  // Settled by a cheque the agent takes away.
+  await page.goto('/finance/receipts/new', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined);
+  await page.getByRole('combobox', { name: /customer/i }).first().click();
+  await page.keyboard.type(CUSTOMER.slice(0, 14));
+  await page.getByRole('listbox').getByRole('option').first().click();
+  await page.getByLabel('Payment method').selectOption('AGENT_COLLECTION');
+  await page.getByLabel('Amount received').fill('50000');
+  await page.getByRole('combobox', { name: /agent/i }).first().click();
+  await page.getByRole('listbox').getByRole('option').first().click();
+  await page.getByLabel('Cheque number').fill('CHQ-WALK-2');
+  const allocation = page.getByRole('textbox', { name: /Amount applied to/i }).first();
+  await expect(allocation).toBeVisible({ timeout: 30_000 });
+  await allocation.fill('50000');
+  await page.getByRole('button', { name: /Save and post/i }).click();
+  await page.waitForTimeout(2500);
+
+  // Now bounce it.
+  await page.goto('/finance/cheques', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined);
+  const row = page.getByRole('row').filter({ hasText: /CHQ-WALK-2/ }).first();
+  await expect(row).toBeVisible({ timeout: 45_000 });
+
+  const bounce = row.getByRole('button', { name: /^Bounce$/i }).first();
+  await expect(bounce).toBeVisible({ timeout: 30_000 });
+  await bounce.click();
+
+  // A bounce has to say why.
+  const reason = page.getByLabel(/Reason/i).first();
+  await expect(reason).toBeVisible({ timeout: 20_000 });
+  await reason.fill('Returned unpaid — insufficient funds');
+  await page.getByRole('button', { name: /^Bounce|Confirm/i }).last().click();
+  await page.waitForTimeout(3000);
+
+  const after = (await page.locator('main').textContent()) ?? '';
+  console.log(`  cheque two: ${/bounced/i.test(after) ? 'Bounced' : 'not bounced'}`);
+  expect(after).toMatch(/bounced/i);
+});
+
+test('the bounce puts the debt back on the customer and off the agent', async ({ page }) => {
+  await signIn(page);
+
+  await page.goto('/finance/receivables', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined);
+  const owed = (await page.locator('main').textContent()) ?? '';
+  const backOnCustomer = new RegExp(`${CUSTOMER.slice(0, 14)}[^]*?50,000`, 'i').test(owed);
+  console.log(`  customer owes the 50,000 again: ${backOnCustomer}`);
+  expect(backOnCustomer).toBe(true);
+
+  // And a bounce is never a cost.
+  await page.goto('/reports/profit-loss', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined);
+  const pnl = (await page.locator('main').textContent()) ?? '';
+  expect(pnl).not.toMatch(/bounce/i);
+  console.log('  nothing about a bounce reaches the profit and loss');
+});
+
 test('coffee moves between warehouses without becoming a sale', async ({ page }) => {
   await signIn(page);
 
-  await page.goto('/inventory', { waitUntil: 'domcontentloaded' });
-  await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined);
-  const before = (await page.locator('main').textContent()) ?? '';
-  const totalBefore = (before.match(/[\d,]+\.\d{3}\s*KG/g) ?? []).slice(0, 3);
-  console.log(`  stock before: ${totalBefore.join(' | ')}`);
-
   await page.goto('/inventory/transfers/new', { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined);
-  const heading = (await page.locator('main').textContent()) ?? '';
-  console.log(`  transfer screen opens: ${/transfer/i.test(heading)}`);
-  expect(heading).toMatch(/transfer/i);
+  const screen = (await page.locator('main').textContent()) ?? '';
+  expect(screen).toMatch(/transfer/i);
 
-  // A transfer is stock moving, never revenue: the screen must not offer a price.
-  expect(heading).not.toMatch(/selling price|unit price|revenue/i);
+  // A transfer is stock moving, never revenue: no price is asked for.
+  expect(screen).not.toMatch(/selling price|unit price|revenue/i);
   console.log('  the transfer screen asks for no price, because it is not a sale');
+
+  const warehouses = await page.locator('select').first().locator('option').allTextContents();
+  console.log(`  transfer offers: ${warehouses.filter((w) => !/choose/i.test(w)).join(' | ')}`);
+  expect(warehouses.length).toBeGreaterThan(0);
 });
 
 test('no system-issued code is on any of these screens', async ({ page }) => {

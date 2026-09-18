@@ -42,7 +42,13 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
         },
       },
       payments: { orderBy: { paymentDate: 'desc' }, include: { cashBankAccount: { select: { name: true } } } },
-      shipments: { orderBy: { createdAt: 'desc' }, include: { item: { select: { itemName: true } } } },
+      shipments: {
+        orderBy: { createdAt: 'desc' },
+        include: {
+          item: { select: { itemName: true } },
+          purchaseContract: { select: { contractReference: true } },
+        },
+      },
     },
   });
 
@@ -321,7 +327,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
                           {shipment.shipmentNumber}
                         </Link>
                       </TD>
-                      <TD>{shipment.jobNumber}</TD>
+                      <TD className="font-mono text-xs">{shipment.purchaseContract?.contractReference ?? '—'}</TD>
                       <TD>{shipment.item.itemName}</TD>
                       <TD numeric>{formatQuantityKg(shipment.quantityKg)}</TD>
                       <TD>{formatDate(shipment.etaDate)}</TD>

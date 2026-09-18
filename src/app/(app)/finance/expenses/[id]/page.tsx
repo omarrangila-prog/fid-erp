@@ -34,7 +34,14 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
     where: { id, companyId: user.activeCompany.id },
     include: {
       expenseCategory: true,
-      shipment: { select: { id: true, jobNumber: true, shipmentNumber: true } },
+      shipment: {
+        select: {
+          id: true,
+          jobNumber: true,
+          shipmentNumber: true,
+          purchaseContract: { select: { contractReference: true } },
+        },
+      },
       container: { select: { containerNumber: true } },
       batch: { select: { batchNumber: true } },
       vendor: { select: { id: true, vendorName: true } },
@@ -67,12 +74,12 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
   return (
     <div className="space-y-6">
       <PageHeader
-        title={expense.expenseNumber}
-        description={expense.expenseCategory.name}
+        title={expense.expenseCategory.name}
+        description={expense.description ?? formatDate(expense.expenseDate)}
         breadcrumbs={[
           { label: 'Finance' },
           { label: 'Expenses', href: '/finance/expenses' },
-          { label: expense.expenseNumber },
+          { label: expense.expenseCategory.name },
         ]}
         meta={
           <>
@@ -82,7 +89,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
             </Badge>
             {expense.shipment ? (
               <Link href={`/shipments/${expense.shipment.id}`}>
-                <Badge tone="info">Job {expense.shipment.jobNumber}</Badge>
+                <Badge tone="info">{expense.shipment.purchaseContract?.contractReference ?? 'Shipment'}</Badge>
               </Link>
             ) : null}
           </>
@@ -196,7 +203,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
             <DetailRow label="Job">
               {expense.shipment ? (
                 <Link href={`/shipments/${expense.shipment.id}`} className="text-gold-700 hover:underline">
-                  {expense.shipment.jobNumber}
+                  {expense.shipment.purchaseContract?.contractReference ?? 'Shipment'}
                 </Link>
               ) : (
                 '—'

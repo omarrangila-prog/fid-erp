@@ -95,17 +95,16 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
   return (
     <div className="space-y-6">
       <PageHeader
-        title={shipment.shipmentNumber}
+        title={shipment.purchaseContract.contractReference}
         description={`${shipment.item.itemName} · ${shipment.vendor.vendorName}`}
-        breadcrumbs={[{ label: 'Trading' }, { label: 'Shipments', href: '/shipments' }, { label: shipment.shipmentNumber }]}
+        breadcrumbs={[{ label: 'Trading' }, { label: 'Shipments', href: '/shipments' }, { label: shipment.purchaseContract.contractReference }]}
         meta={
           <>
             <StatusBadge status={shipment.status} meta={SHIPMENT_STATUS_META} />
             <StatusBadge status={shipment.documentStatus} meta={DOCUMENT_STATUS_META} />
             <StatusBadge status={settlement.status} meta={SETTLEMENT_STATUS_META} />
-            <Badge tone="neutral">Job {shipment.jobNumber}</Badge>
             <Link href={`/purchases/${shipment.purchaseContract.id}`}>
-              <Badge tone="info">{shipment.purchaseContract.contractNumber}</Badge>
+              <Badge tone="info">{shipment.purchaseContract.contractReference}</Badge>
             </Link>
           </>
         }
@@ -521,7 +520,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                       {e.expenseCategory.name}
                     </span>
                     <span className="block truncate text-xs text-ink-subtle">
-                      {e.expenseNumber} · {formatDate(e.expenseDate)}
+                      {formatDate(e.expenseDate)}
                     </span>
                   </span>
                   <span className="shrink-0 text-right">

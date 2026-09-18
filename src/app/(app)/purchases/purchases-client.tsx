@@ -146,7 +146,7 @@ export function PurchasesClient({
       id: 'job',
       header: 'Job',
       hideable: true,
-      cell: (r) => (r.jobNumber ? <Badge tone="neutral">{r.jobNumber}</Badge> : '—'),
+      cell: (r) => (r.contractReference ? <Badge tone="neutral">{r.contractReference}</Badge> : '—'),
     },
     {
       id: 'status',

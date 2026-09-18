@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
   const expense = await prisma.expense.findUnique({ where: { id }, select: { expenseNumber: true } });
-  return { title: expense ? `Clone ${expense.expenseNumber}` : 'Clone Expense' };
+  return { title: 'Clone Expense' };
 }
 
 /**
@@ -39,7 +39,7 @@ export default async function CloneExpensePage({ params }: { params: Promise<{ i
   return (
     <div className="space-y-6">
       <PageHeader
-        title={`New expense, from ${expense.expenseNumber}`}
+        title="New expense, copied from an earlier one"
         description="Pre-filled from the earlier voucher. This is a new expense with its own number; the original is not changed."
         breadcrumbs={[
           { label: 'Finance' },

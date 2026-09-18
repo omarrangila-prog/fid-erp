@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
   const expense = await prisma.expense.findUnique({ where: { id }, select: { expenseNumber: true } });
-  return { title: expense ? `Edit ${expense.expenseNumber}` : 'Edit Expense' };
+  return { title: 'Edit Expense' };
 }
 
 export default async function EditExpensePage({ params }: { params: Promise<{ id: string }> }) {
@@ -31,7 +31,7 @@ export default async function EditExpensePage({ params }: { params: Promise<{ id
   return (
     <div className="space-y-6">
       <PageHeader
-        title={`Edit ${expense.expenseNumber}`}
+        title="Edit expense"
         description={
           expense.status === 'POSTED'
             ? 'This cost is posted. Saving takes the old posting back out of the books and writes the new one under the same number — the ledger keeps both, so the correction can be traced.'

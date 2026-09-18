@@ -438,7 +438,7 @@ export function ItemsClient({
                       <td className="py-1.5 pr-3 font-mono text-xs">{lot.reference}</td>
                       <td className="py-1.5 pr-3">{lot.batchNumber}</td>
                       <td className="py-1.5 pr-3 font-mono text-xs">{lot.container}</td>
-                      <td className="py-1.5 pr-3 text-xs text-ink-muted">{lot.jobNumber}</td>
+                      
                       <td className="py-1.5 pr-3">{lot.warehouseName}</td>
                       <td className="py-1.5 pr-3 text-right tabular-nums">{lot.onHandLabel}</td>
                       <td className="py-1.5 pr-3 text-right tabular-nums">{lot.availableLabel}</td>

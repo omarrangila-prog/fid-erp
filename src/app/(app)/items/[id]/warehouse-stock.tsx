@@ -122,7 +122,7 @@ export function WarehouseStockPanel({ warehouses }: { warehouses: WarehouseStock
                       >
                         {lot.batchNumber}
                       </Link>
-                      <span className="block text-[11px] text-ink-subtle">{lot.jobNumber}</span>
+                      
                     </td>
                     <td className="px-4 py-2 font-mono text-xs text-ink-muted">{lot.reference}</td>
                     <td className="px-4 py-2 text-right tabular-nums">{lot.onHandLabel}</td>

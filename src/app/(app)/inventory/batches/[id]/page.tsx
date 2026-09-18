@@ -39,7 +39,13 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
         select: { id: true, shipmentNumber: true, jobNumber: true, status: true, etaDate: true, vesselName: true },
       },
       purchaseContract: {
-        select: { id: true, contractNumber: true, contractDate: true, vendor: { select: { id: true, vendorName: true } } },
+        select: {
+          id: true,
+          contractNumber: true,
+          contractReference: true,
+          contractDate: true,
+          vendor: { select: { id: true, vendorName: true } },
+        },
       },
       invoiceLines: {
         where: { salesInvoice: { status: 'POSTED' } },
@@ -85,7 +91,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
             <Badge tone="neutral">{COFFEE_TYPE_LABELS[batch.item.coffeeType]}</Badge>
             {batch.container ? <Badge tone="info">{batch.container.containerNumber}</Badge> : null}
             <Link href={`/shipments/${batch.shipment.id}`}>
-              <Badge tone="info">Job {batch.shipment.jobNumber}</Badge>
+              <Badge tone="info">{batch.purchaseContract.contractReference}</Badge>
             </Link>
           </>
         }

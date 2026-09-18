@@ -22,7 +22,13 @@ export default async function SalesPage() {
       orderBy: [{ invoiceDate: 'desc' }, { invoiceNumber: 'desc' }],
       include: {
         customer: { select: { id: true, customerName: true } },
-        shipment: { select: { id: true, jobNumber: true } },
+        shipment: {
+          select: {
+            id: true,
+            jobNumber: true,
+            purchaseContract: { select: { contractReference: true } },
+          },
+        },
         createdBy: { select: { name: true } },
         lines: { select: { quantityKg: true, item: { select: { itemName: true } } } },
       },
@@ -63,6 +69,7 @@ export default async function SalesPage() {
       items: [...new Set(inv.lines.map((l) => l.item.itemName))].join(', '),
       itemCount: new Set(inv.lines.map((l) => l.item.itemName)).size,
       jobNumber: inv.shipment?.jobNumber ?? null,
+      reference: inv.shipment?.purchaseContract?.contractReference ?? null,
       shipmentId: inv.shipment?.id ?? null,
       warehouseNames: warehouses.byInvoice.get(inv.id) ?? '',
     };

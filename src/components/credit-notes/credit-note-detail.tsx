@@ -127,7 +127,7 @@ export function CreditNoteDetail({
                             {line.contractReference ? (
                               <span className="block font-mono text-[11px] text-ink-subtle">
                                 {line.contractReference}
-                                {line.jobNumber ? ` · ${line.jobNumber}` : ''}
+                                {line.contractReference ? ` · ${line.contractReference}` : ''}
                               </span>
                             ) : null}
                           </span>

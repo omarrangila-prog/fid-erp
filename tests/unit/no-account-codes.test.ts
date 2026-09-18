@@ -53,6 +53,16 @@ const FORBIDDEN: Array<{ pattern: RegExp; why: string }> = [
     pattern: /label: '(?:Customer|Supplier|Agent|Account) code'/,
     why: 'asks the user to type a code the system issues',
   },
+  {
+    // FID-MA-JOB-000001 and FID-MA-EV-000007: the job already has the
+    // client's own ICUL/FID reference, and a cost is known by what it was for.
+    pattern: /\{(?:\w+\.)*(?:jobNumber|expenseNumber)\}/,
+    why: 'renders a job or expense number',
+  },
+  {
+    pattern: /\$\{(?:\w+\.)*(?:jobNumber|expenseNumber)\}/,
+    why: 'puts a job or expense number into a label',
+  },
 ];
 
 /** Codes that are not ours: a port, a warehouse, a VAT band, a company. */

@@ -177,7 +177,7 @@ async function ShipmentTable({
                       ) : (
                         <Link href={`/shipments/${row.shipmentId}`} className="font-medium text-forest-800 hover:text-gold-700">
                           <span className="block">{row.shipmentNumber}</span>
-                          <span className="block text-xs font-normal text-ink-subtle">{row.jobNumber}</span>
+                          
                         </Link>
                       )}
                     </TD>

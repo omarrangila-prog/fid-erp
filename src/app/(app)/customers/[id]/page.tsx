@@ -47,7 +47,10 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
       },
       shipments: {
         orderBy: { createdAt: 'desc' },
-        include: { item: { select: { itemName: true } } },
+        include: {
+        item: { select: { itemName: true } },
+        purchaseContract: { select: { contractReference: true } },
+      },
       },
     },
   });
@@ -371,7 +374,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                           {shipment.shipmentNumber}
                         </Link>
                       </TD>
-                      <TD>{shipment.jobNumber}</TD>
+                      <TD className="font-mono text-xs">{shipment.purchaseContract?.contractReference ?? '—'}</TD>
                       <TD>{shipment.item.itemName}</TD>
                       <TD numeric>{formatQuantityKg(shipment.quantityKg)}</TD>
                       <TD>{formatDate(shipment.etaDate)}</TD>

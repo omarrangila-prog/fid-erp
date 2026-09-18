@@ -36,6 +36,8 @@ export type SaleRow = {
   items: string;
   itemCount: number;
   jobNumber: string | null;
+  /** The client's own ICUL/FID reference for the job. */
+  reference: string | null;
   shipmentId: string | null;
   warehouseNames: string;
 };
@@ -160,7 +162,7 @@ export function SalesClient({
       cell: (r) =>
         r.shipmentId ? (
           <Link href={`/shipments/${r.shipmentId}`} className="text-gold-700 hover:underline">
-            {r.jobNumber}
+            {r.reference ?? '—'}
           </Link>
         ) : (
           <span className="text-ink-subtle">—</span>
