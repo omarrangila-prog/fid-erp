@@ -119,6 +119,8 @@ export async function applyLandedCost(
     select: {
       id: true,
       batchNumber: true,
+      containerId: true,
+      itemId: true,
       orderedQuantityKg: true,
       receivedQuantityKg: true,
       soldQuantityKg: true,
@@ -128,15 +130,51 @@ export async function applyLandedCost(
     orderBy: { batchNumber: 'asc' },
   });
 
-  // Allocation basis is the ordered quantity: freight and clearing cover the
-  // whole shipment, whether or not every container has landed yet.
-  const weights = locked.map((b) => dec(b.orderedQuantityKg));
-  const totalOrdered = sum(weights);
+  const totalOrdered = sum(locked.map((b) => dec(b.orderedQuantityKg)));
   if (totalOrdered.lessThanOrEqualTo(0)) {
     throw new BusinessRuleError('This job has no ordered quantity to spread the cost over.');
   }
 
-  const split = allocateProportionally(amountUsd, weights);
+  /*
+   * A shared shipment cost is divided between the lines, not between the
+   * kilograms.
+   *
+   * Clearing a shipment, filing its documents and moving its containers cost
+   * about the same per container whether the container holds nineteen tonnes
+   * or twenty-one. The client's own costing splits the common charges equally
+   * across the item/container lines on the job — two containers, half each —
+   * and only then divides each line's share by the kilograms in it. Spreading
+   * by weight instead quietly charged the heavier container more for work that
+   * was done once per container.
+   *
+   * Within a line the split is still by quantity, because a line that carries
+   * two batches of the same coffee in the same container really is one lot
+   * divided in two.
+   */
+  const lineKeyOf = (b: { containerId: string | null; itemId: string }) => `${b.containerId ?? 'no-container'}::${b.itemId}`;
+  const lineKeys: string[] = [];
+  for (const batch of locked) {
+    const key = lineKeyOf(batch);
+    if (!lineKeys.includes(key)) lineKeys.push(key);
+  }
+
+  // Equal shares between the lines, to the cent, with any remainder landing
+  // on the first — allocateProportionally already distributes that way.
+  const perLine = allocateProportionally(amountUsd, lineKeys.map(() => dec(1)));
+
+  const split: Decimal[] = locked.map(() => dec(0));
+  lineKeys.forEach((key, lineIndex) => {
+    const members = locked
+      .map((batch, index) => ({ batch, index }))
+      .filter(({ batch }) => lineKeyOf(batch) === key);
+    const withinLine = allocateProportionally(
+      perLine[lineIndex],
+      members.map(({ batch }) => dec(batch.orderedQuantityKg)),
+    );
+    members.forEach(({ index }, memberIndex) => {
+      split[index] = withinLine[memberIndex];
+    });
+  });
   const allocations: LandedCostAllocation[] = [];
 
   for (let i = 0; i < locked.length; i += 1) {
