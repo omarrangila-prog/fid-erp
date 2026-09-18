@@ -1,6 +1,7 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { LIVE_ENTRY_SQL, LIVE_ENTRY_WHERE } from '@/lib/services/journal-visibility';
-import { Decimal, dec, toMoney, toQuantity } from '@/lib/money';
+import { Decimal, dec, sum, toMoney, toQuantity } from '@/lib/money';
 import { REPORT_GROUPS, ACCOUNT_KEYS } from '@/lib/constants';
 import { getCompanyContext } from '@/lib/services/company';
 import { resolveLedgerViewCurrency, pickCashBankCurrency } from '@/lib/ledger-currency';
@@ -1022,3 +1023,231 @@ export async function getForexGainLoss(params: { companyId: string; from?: Date;
   };
 }
 
+
+// ---------------------------------------------------------------------------
+// Sales and purchase registers
+// ---------------------------------------------------------------------------
+
+export type SalesRegisterRow = {
+  invoiceId: string;
+  invoiceNumber: string;
+  invoiceDate: Date;
+  customerId: string;
+  customerName: string;
+  shipmentId: string | null;
+  jobNumber: string | null;
+  currency: string;
+  quantityKg: Decimal;
+  subtotal: Decimal;
+  taxAmount: Decimal;
+  total: Decimal;
+  totalUsd: Decimal;
+  costOfGoodsUsd: Decimal;
+  grossProfitUsd: Decimal;
+  settled: Decimal;
+  outstanding: Decimal;
+  status: string;
+};
+
+/**
+ * Every sale in a period, with what it cost and what is still owed on it.
+ *
+ * Read from the posted invoices rather than from the journal, because the
+ * question a sales register answers is about documents — which invoice, to
+ * whom, for how much coffee — and the money on it is what the receipts and
+ * credit notes say has been settled. Reversed invoices are left out: they did
+ * not happen.
+ */
+export async function getSalesRegister(params: {
+  companyId: string;
+  from?: Date;
+  to?: Date;
+  customerId?: string;
+}): Promise<SalesRegisterRow[]> {
+  const invoices = await prisma.salesInvoice.findMany({
+    where: {
+      companyId: params.companyId,
+      status: 'POSTED',
+      ...(params.customerId ? { customerId: params.customerId } : {}),
+      ...(params.from || params.to
+        ? {
+            invoiceDate: {
+              ...(params.from ? { gte: params.from } : {}),
+              ...(params.to ? { lte: params.to } : {}),
+            },
+          }
+        : {}),
+    },
+    include: {
+      customer: { select: { id: true, customerName: true } },
+      shipment: { select: { id: true, jobNumber: true } },
+      lines: { select: { quantityKg: true } },
+    },
+    orderBy: [{ invoiceDate: 'desc' }, { invoiceNumber: 'desc' }],
+  });
+
+  if (invoices.length === 0) return [];
+
+  // What has actually been settled against each, from the same query the
+  // invoice screen uses — receipts that have not bounced, plus credit notes.
+  const settlements = await prisma.$queryRaw<Array<{ id: string; settled: string }>>`
+    SELECT si."id",
+           (COALESCE(r.paid, 0) + COALESCE(c.credited, 0))::text AS settled
+    FROM sales_invoices si
+    LEFT JOIN LATERAL (
+      SELECT SUM(ra."amount") AS paid
+      FROM receipt_allocations ra
+      JOIN receipts rc ON rc."id" = ra."receiptId"
+      WHERE ra."salesInvoiceId" = si."id" AND rc."status" = 'POSTED'
+        AND NOT EXISTS (
+          SELECT 1 FROM cheques ch
+          WHERE ch."receiptId" = rc."id" AND ch.status IN ('BOUNCED', 'CANCELLED')
+        )
+    ) r ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT SUM(cn."totalAmount") AS credited
+      FROM credit_notes cn
+      WHERE cn."salesInvoiceId" = si."id" AND cn."status" = 'POSTED'
+    ) c ON TRUE
+    WHERE si."id" IN (${Prisma.join(invoices.map((i) => i.id))})
+  `;
+  const settledById = new Map(settlements.map((row) => [row.id, dec(row.settled)]));
+
+  return invoices.map((invoice) => {
+    const settled = toMoney(settledById.get(invoice.id) ?? 0);
+    const total = toMoney(invoice.totalAmount);
+    const totalUsd = toMoney(invoice.totalAmountUsd);
+    const cogs = toMoney(invoice.costOfGoodsUsd);
+    const outstanding = toMoney(total.minus(settled));
+
+    return {
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      invoiceDate: invoice.invoiceDate,
+      customerId: invoice.customer.id,
+      customerName: invoice.customer.customerName,
+      shipmentId: invoice.shipment?.id ?? null,
+      jobNumber: invoice.shipment?.jobNumber ?? null,
+      currency: invoice.currency,
+      quantityKg: toMoney(sum(invoice.lines.map((l) => dec(l.quantityKg)))),
+      subtotal: toMoney(invoice.subtotal),
+      taxAmount: toMoney(invoice.taxAmount),
+      total,
+      totalUsd,
+      costOfGoodsUsd: cogs,
+      grossProfitUsd: toMoney(totalUsd.minus(cogs)),
+      settled,
+      outstanding,
+      status: outstanding.lessThanOrEqualTo(0) ? 'Paid' : settled.greaterThan(0) ? 'Part paid' : 'Unpaid',
+    };
+  });
+}
+
+export type PurchaseRegisterRow = {
+  contractId: string;
+  contractNumber: string;
+  contractReference: string;
+  contractDate: Date;
+  vendorId: string;
+  vendorName: string;
+  origin: string | null;
+  currency: string;
+  quantityKg: Decimal;
+  containers: number;
+  bags: number;
+  goodsValue: Decimal;
+  freight: Decimal;
+  total: Decimal;
+  totalUsd: Decimal;
+  receivedKg: Decimal;
+  settled: Decimal;
+  outstanding: Decimal;
+  status: string;
+};
+
+/**
+ * Every purchase in a period, with how much has landed and how much is paid.
+ *
+ * "Received" is what the goods receipts say arrived, not what was ordered:
+ * coffee is bought months before it turns up, and a register that showed the
+ * contracted tonnage as though it were in the warehouse would be answering a
+ * different question from the one being asked.
+ */
+export async function getPurchaseRegister(params: {
+  companyId: string;
+  from?: Date;
+  to?: Date;
+  vendorId?: string;
+}): Promise<PurchaseRegisterRow[]> {
+  const contracts = await prisma.purchaseContract.findMany({
+    where: {
+      companyId: params.companyId,
+      status: { not: 'DRAFT' },
+      ...(params.vendorId ? { vendorId: params.vendorId } : {}),
+      ...(params.from || params.to
+        ? {
+            contractDate: {
+              ...(params.from ? { gte: params.from } : {}),
+              ...(params.to ? { lte: params.to } : {}),
+            },
+          }
+        : {}),
+    },
+    include: {
+      vendor: { select: { id: true, vendorName: true } },
+      lines: { select: { quantityKg: true } },
+    },
+    orderBy: [{ contractDate: 'desc' }, { contractNumber: 'desc' }],
+  });
+
+  if (contracts.length === 0) return [];
+
+  const received = await prisma.$queryRaw<Array<{ id: string; kg: string }>>`
+    SELECT pc."id", COALESCE(SUM(grl."quantityKg"), 0)::text AS kg
+    FROM purchase_contracts pc
+    LEFT JOIN goods_receipts gr ON gr."purchaseContractId" = pc."id" AND gr."status" = 'POSTED'
+    LEFT JOIN goods_receipt_lines grl ON grl."goodsReceiptId" = gr."id"
+    WHERE pc."id" IN (${Prisma.join(contracts.map((c) => c.id))})
+    GROUP BY pc."id"
+  `;
+  const receivedById = new Map(received.map((row) => [row.id, dec(row.kg)]));
+
+  const paid = await prisma.$queryRaw<Array<{ id: string; paid: string }>>`
+    SELECT pc."id", COALESCE(SUM(pa."amount"), 0)::text AS paid
+    FROM purchase_contracts pc
+    LEFT JOIN payment_allocations pa ON pa."purchaseContractId" = pc."id"
+    LEFT JOIN payments p ON p."id" = pa."paymentId" AND p."status" = 'POSTED'
+    WHERE pc."id" IN (${Prisma.join(contracts.map((c) => c.id))})
+      AND (pa."id" IS NULL OR p."id" IS NOT NULL)
+    GROUP BY pc."id"
+  `;
+  const paidById = new Map(paid.map((row) => [row.id, dec(row.paid)]));
+
+  return contracts.map((contract) => {
+    const total = toMoney(contract.totalValue);
+    const settled = toMoney(paidById.get(contract.id) ?? 0);
+    const outstanding = toMoney(total.minus(settled));
+
+    return {
+      contractId: contract.id,
+      contractNumber: contract.contractNumber,
+      contractReference: contract.contractReference,
+      contractDate: contract.contractDate,
+      vendorId: contract.vendor.id,
+      vendorName: contract.vendor.vendorName,
+      origin: contract.origin,
+      currency: contract.currency,
+      quantityKg: toMoney(sum(contract.lines.map((l) => dec(l.quantityKg)))),
+      containers: contract.containers,
+      bags: contract.totalBags,
+      goodsValue: toMoney(contract.subtotal),
+      freight: toMoney(contract.freightAmount),
+      total,
+      totalUsd: toMoney(contract.totalValueUsd),
+      receivedKg: toMoney(receivedById.get(contract.id) ?? 0),
+      settled,
+      outstanding,
+      status: outstanding.lessThanOrEqualTo(0) ? 'Paid' : settled.greaterThan(0) ? 'Part paid' : 'Unpaid',
+    };
+  });
+}

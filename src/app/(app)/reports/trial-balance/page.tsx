@@ -13,7 +13,8 @@ import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/
 import { Callout } from '@/components/ui/feedback';
 import { Badge } from '@/components/ui/badge';
 import { PrintButton } from '@/components/shared/print-button';
-import { ExcelLink, exportHref } from '@/components/shared/excel-link';
+import { exportHref } from '@/components/shared/excel-link';
+import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
 
 export const metadata: Metadata = { title: 'Trial Balance' };
@@ -56,7 +57,7 @@ export default async function TrialBalancePage({ searchParams }: { searchParams:
         }
         actions={
           <>
-            <ExcelLink href={exportHref('trial-balance', { asOf })} />
+            <ExportLinks href={exportHref('trial-balance', { asOf })} />
             <PrintButton />
           </>
         }

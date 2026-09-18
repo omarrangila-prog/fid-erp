@@ -10,7 +10,8 @@ import { DateRangePicker } from '@/components/shared/date-range';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { PrintButton } from '@/components/shared/print-button';
-import { ExcelLink, exportHref } from '@/components/shared/excel-link';
+import { exportHref } from '@/components/shared/excel-link';
+import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
 import { cn } from '@/lib/utils';
 
@@ -52,7 +53,7 @@ export default async function ExpenseReportPage({
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Expenses' }]}
         actions={
           <>
-            <ExcelLink href={exportHref('expenses', { from, to, groupBy: grouping })} />
+            <ExportLinks href={exportHref('expenses', { from, to, groupBy: grouping })} />
             <PrintButton />
           </>
         }

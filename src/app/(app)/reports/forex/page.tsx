@@ -11,7 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { Callout, EmptyState } from '@/components/ui/feedback';
 import { PrintButton } from '@/components/shared/print-button';
-import { ExcelLink, exportHref } from '@/components/shared/excel-link';
+import { exportHref } from '@/components/shared/excel-link';
+import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
 
 export const metadata: Metadata = { title: 'Forex Gain / Loss' };
@@ -46,7 +47,7 @@ export default async function ForexGainLossPage({
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Forex Gain / Loss' }]}
         actions={
           <>
-            <ExcelLink href={exportHref('forex', { from, to })} />
+            <ExportLinks href={exportHref('forex', { from, to })} />
             <PrintButton />
           </>
         }

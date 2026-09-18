@@ -10,7 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/feedback';
 import { PrintButton } from '@/components/shared/print-button';
-import { ExcelLink, exportHref } from '@/components/shared/excel-link';
+import { exportHref } from '@/components/shared/excel-link';
+import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
 import { dec } from '@/lib/money';
 
@@ -32,7 +33,7 @@ export default async function InventoryValuationPage() {
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Inventory Valuation' }]}
         actions={
           <>
-            {can(user, PERMISSIONS.REPORTS_EXPORT) ? <ExcelLink href={exportHref('inventory-valuation', {})} /> : null}
+            {can(user, PERMISSIONS.REPORTS_EXPORT) ? <ExportLinks href={exportHref('inventory-valuation', {})} /> : null}
             <PrintButton />
           </>
         }

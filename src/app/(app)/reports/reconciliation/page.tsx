@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Callout } from '@/components/ui/feedback';
 import { PrintButton } from '@/components/shared/print-button';
-import { ExcelLink } from '@/components/shared/excel-link';
+import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
 import { cn } from '@/lib/utils';
 
@@ -40,7 +40,7 @@ export default async function ReconciliationPage() {
         }
         actions={
           <>
-            <ExcelLink href={'/api/export/reconciliation'} />
+            <ExportLinks href={'/api/export/reconciliation'} />
             <PrintButton />
           </>
         }

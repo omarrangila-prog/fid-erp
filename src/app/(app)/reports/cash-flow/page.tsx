@@ -8,7 +8,8 @@ import { DateRangePicker } from '@/components/shared/date-range';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { PrintButton } from '@/components/shared/print-button';
-import { ExcelLink, exportHref } from '@/components/shared/excel-link';
+import { exportHref } from '@/components/shared/excel-link';
+import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
 
 export const metadata: Metadata = { title: 'Cash Flow' };
@@ -31,7 +32,7 @@ export default async function CashFlowPage({ searchParams }: { searchParams: Pro
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Cash Flow' }]}
         actions={
           <>
-            <ExcelLink href={exportHref('cash-flow', { from, to })} />
+            <ExportLinks href={exportHref('cash-flow', { from, to })} />
             <PrintButton />
           </>
         }

@@ -10,7 +10,8 @@ import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/feedback';
 import { Metric, MetricGrid } from '@/components/shared/stat-card';
-import { ExcelLink, exportHref } from '@/components/shared/excel-link';
+import { exportHref } from '@/components/shared/excel-link';
+import { ExportLinks } from '@/components/shared/export-links';
 import { dec } from '@/lib/money';
 import {
   AgentCommissionClient,
@@ -63,7 +64,7 @@ export default async function AgentCommissionPage() {
         actions={
           <>
             {can(user, PERMISSIONS.REPORTS_EXPORT) ? (
-              <ExcelLink href={exportHref('agent-commission', {})} />
+              <ExportLinks href={exportHref('agent-commission', {})} />
             ) : null}
             {can(user, PERMISSIONS.EXPENSES_CREATE) ? (
               <Button asChild>

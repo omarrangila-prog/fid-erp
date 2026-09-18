@@ -11,7 +11,8 @@ import Link from 'next/link';
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PrintButton } from '@/components/shared/print-button';
-import { ExcelLink, exportHref } from '@/components/shared/excel-link';
+import { exportHref } from '@/components/shared/excel-link';
+import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
 
 export const metadata: Metadata = { title: 'Journal' };
@@ -53,7 +54,7 @@ export default async function JournalPage({
                 </Link>
               </Button>
             ) : null}
-            <ExcelLink href={exportHref('journal', { from, to })} />
+            <ExportLinks href={exportHref('journal', { from, to })} />
             <PrintButton />
           </>
         }

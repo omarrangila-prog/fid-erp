@@ -7,6 +7,7 @@ import {
   buildWorkbook,
   buildStatementWorkbook,
   buildCsv,
+  csvFromWorkbook,
   workbookFileName,
   type StatementRow,
 } from '@/lib/services/workbook';
@@ -23,6 +24,8 @@ import {
   getExpenseReport,
   getFinancialPosition,
   getForexGainLoss,
+  getSalesRegister,
+  getPurchaseRegister,
   type ExpenseGrouping,
   type PnlLine,
 } from '@/lib/services/reports';
@@ -562,6 +565,74 @@ const REPORTS: Record<string, Report> = {
           { header: 'Per KG (USD)', value: (r) => Number(r.profitPerKgUsd), type: 'money' as const },
           { header: `Per KG (${local})`, value: (r) => Number(r.profitPerKgLocal), type: 'money' as const },
           { header: 'Margin', value: (r) => Number(r.netMarginPct) / 100, type: 'percent' as const },
+        ],
+      });
+    },
+  },
+
+  'sales-register': {
+    title: 'Sales Report',
+    permission: PERMISSIONS.REPORTS_VIEW,
+    build: async (user, query) => {
+      const from = dateParam(query, 'from');
+      const to = dateParam(query, 'to');
+      const rows = await getSalesRegister({ companyId: user.activeCompany.id, from, to });
+
+      return buildWorkbook({
+        companyName: user.activeCompany.name,
+        title: 'Sales Report',
+        subtitle: from && to ? period(from, to) : from ? `from ${asDay(from)}` : to ? `up to ${asDay(to)}` : 'All time',
+        rows,
+        totals: ['Total USD', 'Cost USD', 'Gross profit USD'],
+        columns: [
+          { header: 'Date', value: (r) => r.invoiceDate, type: 'date' },
+          { header: 'Invoice', value: (r) => r.invoiceNumber },
+          { header: 'Customer', value: (r) => r.customerName, width: 30 },
+          { header: 'Job', value: (r) => r.jobNumber ?? '' },
+          { header: 'KG', value: (r) => Number(r.quantityKg), type: 'quantity' },
+          { header: 'Currency', value: (r) => r.currency },
+          { header: 'Total', value: (r) => Number(r.total), type: 'money' },
+          { header: 'Paid', value: (r) => Number(r.settled), type: 'money' },
+          { header: 'Outstanding', value: (r) => Number(r.outstanding), type: 'money' },
+          { header: 'Total USD', value: (r) => Number(r.totalUsd), type: 'money' },
+          { header: 'Cost USD', value: (r) => Number(r.costOfGoodsUsd), type: 'money' },
+          { header: 'Gross profit USD', value: (r) => Number(r.grossProfitUsd), type: 'money' },
+          { header: 'Status', value: (r) => r.status },
+        ],
+      });
+    },
+  },
+
+  'purchase-register': {
+    title: 'Purchase Report',
+    permission: PERMISSIONS.REPORTS_VIEW,
+    build: async (user, query) => {
+      const from = dateParam(query, 'from');
+      const to = dateParam(query, 'to');
+      const rows = await getPurchaseRegister({ companyId: user.activeCompany.id, from, to });
+
+      return buildWorkbook({
+        companyName: user.activeCompany.name,
+        title: 'Purchase Report',
+        subtitle: from && to ? period(from, to) : from ? `from ${asDay(from)}` : to ? `up to ${asDay(to)}` : 'All time',
+        rows,
+        totals: ['Total USD'],
+        columns: [
+          { header: 'Date', value: (r) => r.contractDate, type: 'date' },
+          { header: 'Contract', value: (r) => r.contractNumber },
+          { header: 'Reference', value: (r) => r.contractReference },
+          { header: 'Supplier', value: (r) => r.vendorName, width: 30 },
+          { header: 'Origin', value: (r) => r.origin ?? '' },
+          { header: 'Bought KG', value: (r) => Number(r.quantityKg), type: 'quantity' },
+          { header: 'Landed KG', value: (r) => Number(r.receivedKg), type: 'quantity' },
+          { header: 'Currency', value: (r) => r.currency },
+          { header: 'Goods', value: (r) => Number(r.goodsValue), type: 'money' },
+          { header: 'Freight', value: (r) => Number(r.freight), type: 'money' },
+          { header: 'Total', value: (r) => Number(r.total), type: 'money' },
+          { header: 'Paid', value: (r) => Number(r.settled), type: 'money' },
+          { header: 'Outstanding', value: (r) => Number(r.outstanding), type: 'money' },
+          { header: 'Total USD', value: (r) => Number(r.totalUsd), type: 'money' },
+          { header: 'Status', value: (r) => r.status },
         ],
       });
     },
@@ -1245,9 +1316,19 @@ export async function GET(request: Request, context: { params: Promise<{ report:
     const user = await requirePermission(definition.permission as never);
 
     if (query.get('format') === 'csv') {
-      if (!definition.csv) throw new NotFoundError('Report');
-      const { headers, rows } = await definition.csv(user, query);
-      const body = buildCsv(headers, rows);
+      /*
+       * Every report can be had as CSV, not only the two that were written by
+       * hand. Where a report defines its own rows they are used; otherwise the
+       * workbook is built and read back, so the CSV is whatever the Excel file
+       * says rather than a second definition that can drift from it.
+       */
+      let body: Buffer;
+      if (definition.csv) {
+        const { headers, rows } = await definition.csv(user, query);
+        body = buildCsv(headers, rows);
+      } else {
+        body = await csvFromWorkbook(await definition.build(user, query));
+      }
       return new NextResponse(new Uint8Array(body), {
         headers: {
           'Content-Type': 'text/csv; charset=utf-8',

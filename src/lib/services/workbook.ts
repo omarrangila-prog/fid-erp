@@ -181,6 +181,50 @@ export function buildCsv(headers: string[], rows: Array<Array<string | number | 
   return Buffer.from(`\uFEFF${lines.join('\r\n')}`, 'utf8');
 }
 
+/**
+ * The same report, as comma-separated text.
+ *
+ * Read back out of the workbook that was just written rather than built from
+ * the data a second time. Two builders drift: somebody adds a column to the
+ * spreadsheet, forgets the CSV, and the client has two files that disagree
+ * about the same month. Reading the finished sheet means there is only one
+ * definition of what the report contains, and the CSV is whatever the Excel
+ * file says.
+ */
+export async function csvFromWorkbook(buffer: Buffer): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+  const sheet = workbook.worksheets[0];
+  if (!sheet) return Buffer.from('\uFEFF', 'utf8');
+
+  const escape = (value: unknown) => {
+    if (value == null) return '';
+    // A formatted cell carries its text; a formula cell carries its result.
+    const text =
+      typeof value === 'object' && value !== null
+        ? String(
+            (value as { result?: unknown; text?: unknown; richText?: Array<{ text: string }> }).result ??
+              (value as { text?: unknown }).text ??
+              (value as { richText?: Array<{ text: string }> }).richText?.map((r) => r.text).join('') ??
+              '',
+          )
+        : String(value);
+    if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+    return text;
+  };
+
+  const lines: string[] = [];
+  sheet.eachRow({ includeEmpty: false }, (row) => {
+    const values = Array.isArray(row.values) ? row.values.slice(1) : [];
+    // A row of nothing is a spacer in the spreadsheet and noise in a CSV.
+    const cells = values.map(escape);
+    if (cells.every((c) => c === '')) return;
+    lines.push(cells.join(','));
+  });
+
+  return Buffer.from(`\uFEFF${lines.join('\r\n')}`, 'utf8');
+}
+
 // ---------------------------------------------------------------------------
 // Financial statements
 // ---------------------------------------------------------------------------
