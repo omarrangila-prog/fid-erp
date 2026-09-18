@@ -7,6 +7,58 @@ import {
   type CreatedJournalAccount,
 } from '@/app/(app)/accounting/journal/new/add-account';
 
+/** How many of the last-used accounts to float to the top. */
+const RECENT_LIMIT = 5;
+const RECENT_KEY = 'fid.accounts.recent';
+
+/**
+ * The handful of accounts somebody actually uses, kept per browser.
+ *
+ * The same four or five names come up all day — the bank, the drawer, Dubai,
+ * the agent — and scrolling past forty control accounts to reach them is the
+ * friction this removes. Wrapped in try/catch because localStorage throws
+ * rather than returns in a private window, and a selector that will not open
+ * because it could not read a preference is worse than one with no memory.
+ */
+const NO_RECENT: string[] = [];
+
+/** Cached so the snapshot is stable between renders, as the store requires. */
+let recentCache: string[] = NO_RECENT;
+let recentRaw: string | null = null;
+
+function readRecent(): string[] {
+  if (typeof window === 'undefined') return NO_RECENT;
+  try {
+    const raw = window.localStorage.getItem(RECENT_KEY);
+    if (raw === recentRaw) return recentCache;
+    recentRaw = raw;
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    recentCache = Array.isArray(parsed)
+      ? parsed.filter((id): id is string => typeof id === 'string')
+      : NO_RECENT;
+    return recentCache;
+  } catch {
+    return NO_RECENT;
+  }
+}
+
+/** Another tab choosing an account updates this one too. */
+function subscribeRecent(onChange: () => void): () => void {
+  if (typeof window === 'undefined') return () => undefined;
+  window.addEventListener('storage', onChange);
+  return () => window.removeEventListener('storage', onChange);
+}
+
+function rememberRecent(accountId: string): string[] {
+  const next = [accountId, ...readRecent().filter((id) => id !== accountId)].slice(0, RECENT_LIMIT);
+  try {
+    window.localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  } catch {
+    // Nothing to be done, and nothing that should stop the entry being made.
+  }
+  return next;
+}
+
 export type LedgerOption = {
   id: string;
   name: string;
@@ -34,7 +86,6 @@ export function AccountSelect({
   onChange,
   defaultCurrency,
   placeholder = 'Search or type a name…',
-  recentIds = [],
 }: {
   id?: string;
   accounts: LedgerOption[];
@@ -43,10 +94,19 @@ export function AccountSelect({
   /** The currency a newly created account should default to. */
   defaultCurrency: string;
   placeholder?: string;
-  /** Shown first, because the same few names come up all day. */
-  recentIds?: string[];
 }) {
   const [addOpen, setAddOpen] = React.useState(false);
+  /*
+   * Read on the client, once the component is interactive.
+   *
+   * The server has no localStorage, so reading it while rendering would give
+   * one list on the server and another in the browser. useSyncExternalStore
+   * is built for exactly this: the server snapshot is empty, the client's is
+   * what was stored, and React reconciles the two without a mismatch.
+   */
+  const [recentOverride, setRecentOverride] = React.useState<string[] | null>(null);
+  const storedRecent = React.useSyncExternalStore(subscribeRecent, readRecent, () => NO_RECENT);
+  const recentIds = recentOverride ?? storedRecent;
   const [typedName, setTypedName] = React.useState('');
   const [created, setCreated] = React.useState<LedgerOption[]>([]);
 
@@ -61,12 +121,17 @@ export function AccountSelect({
       .map((rid) => all.find((a) => a.id === rid))
       .filter((a): a is LedgerOption => Boolean(a));
     const rest = all.filter((a) => !recentIds.includes(a.id));
-    return [...recent, ...rest].map((account) => ({
+    const shape = (account: LedgerOption, group: string) => ({
       value: account.id,
       label: account.name,
       hint: account.currency ?? 'any currency',
       keywords: account.name,
-    }));
+      group,
+    });
+    // Only call it a section when there is something to put in it.
+    return recent.length > 0
+      ? [...recent.map((a) => shape(a, 'Recent')), ...rest.map((a) => shape(a, 'All accounts'))]
+      : rest.map((a) => shape(a, ''));
   }, [all, recentIds]);
 
   return (
@@ -75,7 +140,11 @@ export function AccountSelect({
         id={id}
         options={options}
         value={value}
-        onChange={(next) => onChange(next ?? '')}
+        onChange={(next) => {
+          const id = next ?? '';
+          if (id) setRecentOverride(rememberRecent(id));
+          onChange(id);
+        }}
         placeholder={placeholder}
         emptyText="No account by that name yet"
         createLabel="+ Add New Account"
@@ -93,6 +162,7 @@ export function AccountSelect({
         onCreated={(account: CreatedJournalAccount) => {
           // Added to the list and selected, with the rest of the form intact.
           setCreated((existing) => [...existing, { id: account.id, name: account.name, currency: account.currency }]);
+          setRecentOverride(rememberRecent(account.id));
           onChange(account.id);
           setAddOpen(false);
         }}

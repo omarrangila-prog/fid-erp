@@ -235,6 +235,9 @@ test('an invoice is raised warehouse first, and the warehouse drives the coffee'
 
   const main = (await page.locator('main').textContent()) ?? '';
   expect(main).not.toMatch(/does not balance|something went wrong/i);
+  // The invoice is numbered the way anybody says it.
+  expect(main).toMatch(/INV \d+/);
+  console.log(`  numbered: ${main.match(/INV \d+/)?.[0]}`);
   const figures = (main.match(/[\d,]{5,}\.\d{2}/g) ?? []).slice(0, 8);
   console.log(`  invoice figures: ${figures.join(' | ')}`);
   // 2,000 KG at 100 is 200,000 before whatever tax the company applies.
@@ -670,4 +673,70 @@ test('every money form picks a party from a list, never a blank box', async ({ p
     console.log(`  ${path}: picks from a list${canCreate ? ', and can open a new one' : ''}`);
     await page.keyboard.press('Escape');
   }
+});
+
+test('the accounts you use come to the top next time', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/finance/loans/new', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle', { timeout: 6_000 }).catch(() => undefined);
+
+  const party = page.getByRole('combobox', { name: /Received from account/i }).first();
+  await party.click();
+
+  // Nothing used yet, so no sections.
+  const before = (await page.getByRole('listbox').textContent()) ?? '';
+  console.log(`  before choosing: ${/Recent/i.test(before) ? 'has a Recent section' : 'no sections yet'}`);
+
+  // Choose one, then reopen.
+  const options = page.getByRole('listbox').getByRole('option');
+  const chosen = ((await options.nth(2).textContent()) ?? '').split('\n')[0].trim();
+  await options.nth(2).click();
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle', { timeout: 6_000 }).catch(() => undefined);
+  await page.getByRole('combobox', { name: /Received from account/i }).first().click();
+
+  const after = (await page.getByRole('listbox').textContent()) ?? '';
+  console.log(`  after choosing "${chosen.slice(0, 30)}": ${/Recent/i.test(after) ? 'Recent section shown' : 'no Recent section'}`);
+  expect(after).toMatch(/Recent/i);
+  expect(after).toMatch(/All accounts/i);
+
+  // And the one just used is the first thing in the list.
+  const first = ((await page.getByRole('listbox').getByRole('option').first().textContent()) ?? '').trim();
+  console.log(`  top of the list: ${first.split('\n')[0]}`);
+  expect(first).toContain(chosen.slice(0, 12));
+});
+
+test('the sales list reads in the order the client asked for', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/sales', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle', { timeout: 6_000 }).catch(() => undefined);
+
+  const headers = (await page.locator('main table thead th').allTextContents()).map((h) => h.trim());
+  console.log(`  columns: ${headers.join(' | ')}`);
+
+  // Date, invoice, order, customer, status, due, amount, balance, location.
+  const wanted = ['Date', 'Invoice #', 'Order no.', 'Customer', 'Status', 'Due', 'Value', 'Balance due', 'Location'];
+  const positions = wanted.map((w) => headers.findIndex((h) => h.startsWith(w)));
+  for (const [i, w] of wanted.entries()) {
+    expect(positions[i], `${w} should be on the list`).toBeGreaterThan(-1);
+  }
+  const ordered = positions.every((pos, i) => i === 0 || pos > positions[i - 1]);
+  expect(ordered, `order was ${headers.join(' | ')}`).toBe(true);
+
+  // And the invoice is numbered the short way.
+  const body = (await page.locator('main table tbody').textContent()) ?? '';
+  expect(body).toMatch(/INV \d+/);
+  console.log(`  numbered: ${body.match(/INV \d+/)?.[0]}`);
+});
+
+test('the invoice form shows the number it will be given', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/sales/new', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle', { timeout: 6_000 }).catch(() => undefined);
+
+  const main = (await page.locator('main').textContent()) ?? '';
+  expect(main).toMatch(/Invoice number/i);
+  expect(main).toMatch(/INV \d+/);
+  console.log(`  the next invoice will be ${main.match(/INV \d+/)?.[0]}`);
 });

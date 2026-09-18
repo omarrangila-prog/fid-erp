@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { DocumentJournal } from '@/components/shared/document-journal';
 import { Printer } from 'lucide-react';
 import Link from 'next/link';
+import { shortDocumentNumber } from '@/lib/short-number';
 import { notFound } from 'next/navigation';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, TRANSACTION_STATUS_META, SETTLEMENT_STATUS_META } from '@/lib/constants';
@@ -111,9 +112,9 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
   return (
     <div className="space-y-6">
       <PageHeader
-        title={`Invoice to ${invoice.customer.customerName}`}
+        title={`${shortDocumentNumber(invoice.invoiceNumber)} — ${invoice.customer.customerName}`}
         description={[formatDate(invoice.invoiceDate), invoice.reference].filter(Boolean).join(' · ')}
-        breadcrumbs={[{ label: 'Trading' }, { label: 'Sales', href: '/sales' }, { label: invoice.customer.customerName }]}
+        breadcrumbs={[{ label: 'Trading' }, { label: 'Sales', href: '/sales' }, { label: shortDocumentNumber(invoice.invoiceNumber) }]}
         meta={
           <>
             <StatusBadge status={invoice.status} meta={TRANSACTION_STATUS_META} />

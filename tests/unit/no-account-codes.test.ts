@@ -76,6 +76,8 @@ const FORBIDDEN: Array<{ pattern: RegExp; why: string }> = [
   {
     // FID-MA-SI-000008 and the rest of the system's own numbering. A
     // document is named by what it is, who it was with and when.
+    // shortDocumentNumber(r.invoiceNumber) is fine — that is "INV 8". A bare
+    // {r.invoiceNumber} is FID-MA-SI-000008, which is not.
     pattern: /\{(?:\w+\.)*(?:invoiceNumber|receiptNumber|paymentNumber|creditNoteNumber|grnNumber|shipmentNumber|transferNumber|countNumber|settlementNumber)\}/,
     why: 'renders a document number the system issued',
   },

@@ -18,6 +18,7 @@ import { formatMoney, formatQuantityKg, todayInputValue } from '@/lib/format';
 import { preferZeroRateTax } from '@/lib/tax-default';
 import { saveSalesInvoiceAction, postSalesInvoiceAction } from '@/server/actions/trading-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
+import { shortDocumentNumber } from '@/lib/short-number';
 import { AddCustomer } from '@/app/(app)/sales/add-customer';
 import { InvoiceDeleteButton, canCancelSalesInvoice } from '@/app/(app)/sales/[id]/sale-actions';
 
@@ -467,6 +468,15 @@ export function SaleForm({
             ) : null}
           </div>
 
+
+          {/* The number this invoice will carry. Issued by the system, so it
+              is shown rather than asked for — and shown the way anybody says
+              it, INV 8, not FID-MA-SI-000008. */}
+          <Field label="Invoice number" hint="Issued automatically.">
+            <div className="tnum flex h-10 items-center rounded-lg border border-line bg-paper px-3 text-sm font-medium text-ink">
+              {shortDocumentNumber(header.invoiceNumber)}
+            </div>
+          </Field>
 
           <Field label="Invoice date" htmlFor="invoiceDate" error={fieldIssues.invoiceDate}>
             <Input

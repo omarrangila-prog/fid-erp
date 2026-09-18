@@ -13,6 +13,11 @@ export type ComboOption = {
   /** Extra text matched by the search box but not displayed. */
   keywords?: string;
   disabled?: boolean;
+  /**
+   * A heading to sit above this option and the ones after it, until the
+   * heading changes. Options keep the order they are given in.
+   */
+  group?: string;
 };
 
 /**
@@ -144,9 +149,17 @@ export function Combobox({
             {filtered.length === 0 ? (
               <p className="px-3 py-6 text-center text-xs text-ink-subtle">{emptyText}</p>
             ) : (
-              filtered.map((option) => (
+              filtered.map((option, index) => (
+                <React.Fragment key={option.value}>
+                  {/* A heading whenever the group changes, so "recent" and
+                      "all" read as sections rather than one long list. It is
+                      dropped while searching, where the order is the match. */}
+                  {option.group && option.group !== filtered[index - 1]?.group ? (
+                    <p className="px-2.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">
+                      {option.group}
+                    </p>
+                  ) : null}
                 <button
-                  key={option.value}
                   type="button"
                   role="option"
                   aria-selected={option.value === value}
@@ -168,6 +181,7 @@ export function Combobox({
                   </span>
                   {option.value === value ? <Check className="size-4 shrink-0 text-gold-600" /> : null}
                 </button>
+                </React.Fragment>
               ))
             )}
           </div>

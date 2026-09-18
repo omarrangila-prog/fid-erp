@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { shortDocumentNumber } from '@/lib/short-number';
 import { Plus } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
@@ -63,20 +64,79 @@ export function SalesClient({
   const visible = rows;
 
   const columns: DataColumn<SaleRow>[] = [
-    /* The invoice number column is gone: it was the system's own numbering
-       and the row already says who, when and how much. The whole row opens
-       the invoice, so nothing was navigable only from the number. */
+    /* The order the client reads a sales list in: when, which invoice, which
+       order it came from, who it went to, where it stands, when it is due,
+       how much, how much is left, and out of which warehouse. */
+    { id: 'date', header: 'Date', mobile: 'meta', sortValue: (r) => r.invoiceDateSort, cell: (r) => r.invoiceDate },
+    {
+      id: 'number',
+      header: 'Invoice #',
+      mobile: 'title',
+      sortValue: (r) => r.invoiceNumber,
+      exportValue: (r) => shortDocumentNumber(r.invoiceNumber),
+      // INV 8, not FID-MA-SI-000008. The full number stays in the database,
+      // on the printed tax invoice where the law wants it, and in search.
+      cell: (r) => <span className="tnum font-medium">{shortDocumentNumber(r.invoiceNumber)}</span>,
+    },
+    {
+      id: 'order',
+      header: 'Order no.',
+      mobile: 'meta',
+      sortValue: (r) => r.reference ?? '',
+      exportValue: (r) => r.reference ?? '',
+      cell: (r) => <span className="font-mono text-xs text-ink-muted">{r.reference ?? '—'}</span>,
+    },
     {
       id: 'customer',
       header: 'Customer',
-      mobile: 'title',
+      mobile: 'meta',
       sortValue: (r) => r.customerName,
       cell: (r) => <span className="font-medium">{r.customerName}</span>,
     },
-    { id: 'date', header: 'Date', mobile: 'meta', sortValue: (r) => r.invoiceDateSort, cell: (r) => r.invoiceDate },
+    {
+      id: 'status',
+      header: 'Status',
+      mobile: 'badge',
+      sortValue: (r) => r.status,
+      cell: (r) => <StatusBadge status={r.status} meta={TRANSACTION_STATUS_META} />,
+    },
+    {
+      id: 'due',
+      header: 'Due',
+      hideable: true,
+      sortValue: (r) => r.dueDateSort,
+      cell: (r) => (
+        <span>
+          <span className="block">{r.dueDate}</span>
+          {r.daysOverdue > 0 && r.settlement !== 'PAID' ? (
+            <span className="block text-xs font-medium text-red-600">{r.daysOverdue}d overdue</span>
+          ) : null}
+        </span>
+      ),
+    },
+    {
+      id: 'value',
+      header: 'Value',
+      numeric: true,
+      mobile: 'meta',
+      sortValue: (r) => r.totalAmountSort,
+      cell: (r) => (
+        <span>
+          <span className="block font-medium">{r.totalAmount}</span>
+          {r.currency !== 'USD' ? <span className="block text-xs text-ink-subtle">{r.totalAmountUsd}</span> : null}
+        </span>
+      ),
+    },
+    {
+      id: 'outstanding',
+      header: 'Balance due',
+      numeric: true,
+      hideable: true,
+      cell: (r) => <span className="font-medium">{r.outstandingLabel}</span>,
+    },
     {
       id: 'warehouse',
-      header: 'Warehouse',
+      header: 'Location',
       mobile: 'meta',
       sortValue: (r) => r.warehouseNames,
       cell: (r) => r.warehouseNames || '—',
@@ -103,41 +163,7 @@ export function SalesClient({
       sortValue: (r) => r.quantitySort,
       cell: (r) => r.quantityLabel,
     },
-    {
-      id: 'value',
-      header: 'Value',
-      numeric: true,
-      mobile: 'meta',
-      sortValue: (r) => r.totalAmountSort,
-      cell: (r) => (
-        <span>
-          <span className="block font-medium">{r.totalAmount}</span>
-          {r.currency !== 'USD' ? <span className="block text-xs text-ink-subtle">{r.totalAmountUsd}</span> : null}
-        </span>
-      ),
-    },
     { id: 'paid', header: 'Paid', numeric: true, hideable: true, cell: (r) => r.paidLabel },
-    {
-      id: 'outstanding',
-      header: 'Outstanding',
-      numeric: true,
-      hideable: true,
-      cell: (r) => <span className="font-medium">{r.outstandingLabel}</span>,
-    },
-    {
-      id: 'due',
-      header: 'Due',
-      hideable: true,
-      sortValue: (r) => r.dueDateSort,
-      cell: (r) => (
-        <span>
-          <span className="block">{r.dueDate}</span>
-          {r.daysOverdue > 0 && r.settlement !== 'PAID' ? (
-            <span className="block text-xs font-medium text-red-600">{r.daysOverdue}d overdue</span>
-          ) : null}
-        </span>
-      ),
-    },
     {
       id: 'settlement',
       header: 'Payment',
@@ -171,13 +197,6 @@ export function SalesClient({
       sortValue: (r) => r.currency,
       exportValue: (r) => r.currency,
       cell: (r) => r.currency,
-    },
-    {
-      id: 'status',
-      header: 'Status',
-      mobile: 'badge',
-      sortValue: (r) => r.status,
-      cell: (r) => <StatusBadge status={r.status} meta={TRANSACTION_STATUS_META} />,
     },
     {
       id: 'createdBy',
