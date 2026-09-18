@@ -655,3 +655,147 @@ export async function getShipmentCostingIndex(companyId: string): Promise<Map<st
   }
   return index;
 }
+
+// ---------------------------------------------------------------------------
+// One costing, read the same way by every screen
+// ---------------------------------------------------------------------------
+
+export type BatchCosting = {
+  batchId: string;
+  batchNumber: string;
+  itemId: string;
+  itemName: string;
+  shipmentId: string;
+  jobNumber: string;
+  /** The ICUL/FID reference the coffee was bought under. */
+  reference: string;
+  containerId: string | null;
+  containerNumber: string | null;
+  warehouseId: string | null;
+  warehouseName: string | null;
+  orderedKg: Decimal;
+  receivedKg: Decimal;
+  availableKg: Decimal;
+  /** What the supplier charged for this container, in USD. Never averaged. */
+  purchaseUsd: Decimal;
+  purchasePerKgUsd: Decimal;
+  /** This line's share of the job's common local charges. */
+  allocatedExpenseUsd: Decimal;
+  allocatedExpenseLocal: Decimal;
+  landedUsd: Decimal;
+  landedLocal: Decimal;
+  landedPerKgUsd: Decimal;
+  landedPerKgLocal: Decimal;
+  /** Available KG at this batch's own landed cost — not a company average. */
+  stockValueUsd: Decimal;
+  stockValueLocal: Decimal;
+  localCurrency: string;
+  rateLocalPerUsd: Decimal;
+};
+
+/**
+ * The costing of every batch, as one answer.
+ *
+ * Every screen that shows coffee also wants to show what it cost, and each one
+ * working that out for itself is how a shipment page, an item page and a
+ * report come to disagree about the same container. So the calculation lives
+ * here and the screens read it.
+ *
+ * Costs are held in USD because the coffee is bought in dollars; the local
+ * figures are translated at the rate the purchase contract was struck at, so
+ * they are the historical values rather than today's.
+ */
+export async function getBatchCostings(params: {
+  companyId: string;
+  batchIds?: string[];
+  shipmentId?: string;
+  itemId?: string;
+}): Promise<BatchCosting[]> {
+  const company = await prisma.company.findUniqueOrThrow({
+    where: { id: params.companyId },
+    select: { localCurrency: true },
+  });
+  const localCurrency = company.localCurrency;
+
+  const batches = await prisma.batch.findMany({
+    where: {
+      companyId: params.companyId,
+      ...(params.batchIds ? { id: { in: params.batchIds } } : {}),
+      ...(params.shipmentId ? { shipmentId: params.shipmentId } : {}),
+      ...(params.itemId ? { itemId: params.itemId } : {}),
+    },
+    select: {
+      id: true,
+      batchNumber: true,
+      itemId: true,
+      shipmentId: true,
+      containerId: true,
+      warehouseId: true,
+      orderedQuantityKg: true,
+      receivedQuantityKg: true,
+      availableQuantityKg: true,
+      purchaseCostUsd: true,
+      capitalisedCostUsd: true,
+      landedUnitCostUsd: true,
+      item: { select: { itemName: true } },
+      container: { select: { containerNumber: true } },
+      warehouse: { select: { name: true } },
+      shipment: { select: { jobNumber: true } },
+      purchaseContract: { select: { contractReference: true, rateLocalPerUsd: true } },
+    },
+    orderBy: { batchNumber: 'asc' },
+  });
+
+  return batches.map((batch) => {
+    const rateLocalPerUsd = dec(batch.purchaseContract.rateLocalPerUsd);
+    const orderedKg = toQuantity(batch.orderedQuantityKg);
+    const availableKg = toQuantity(batch.availableQuantityKg);
+    const purchaseUsd = toMoney(batch.purchaseCostUsd);
+    const allocatedExpenseUsd = toMoney(batch.capitalisedCostUsd);
+    const landedUsd = toMoney(purchaseUsd.plus(allocatedExpenseUsd));
+    const landedPerKgUsd = orderedKg.greaterThan(0)
+      ? toUnitCost(landedUsd.dividedBy(orderedKg))
+      : dec(batch.landedUnitCostUsd);
+
+    const toLocal = (usd: Decimal) => convertFromUsd(usd, rateLocalPerUsd, localCurrency);
+
+    return {
+      batchId: batch.id,
+      batchNumber: batch.batchNumber,
+      itemId: batch.itemId,
+      itemName: batch.item.itemName,
+      shipmentId: batch.shipmentId,
+      jobNumber: batch.shipment.jobNumber,
+      reference: batch.purchaseContract.contractReference,
+      containerId: batch.containerId,
+      containerNumber: batch.container?.containerNumber ?? null,
+      warehouseId: batch.warehouseId,
+      warehouseName: batch.warehouse?.name ?? null,
+      orderedKg,
+      receivedKg: toQuantity(batch.receivedQuantityKg),
+      availableKg,
+      purchaseUsd,
+      purchasePerKgUsd: orderedKg.greaterThan(0) ? toUnitCost(purchaseUsd.dividedBy(orderedKg)) : dec(0),
+      allocatedExpenseUsd,
+      allocatedExpenseLocal: toLocal(allocatedExpenseUsd),
+      landedUsd,
+      landedLocal: toLocal(landedUsd),
+      landedPerKgUsd,
+      landedPerKgLocal: toUnitCost(landedPerKgUsd.times(rateLocalPerUsd)),
+      stockValueUsd: toMoney(availableKg.times(landedPerKgUsd)),
+      stockValueLocal: toLocal(toMoney(availableKg.times(landedPerKgUsd))),
+      localCurrency,
+      rateLocalPerUsd,
+    };
+  });
+}
+
+/** The same costing, keyed by batch, for a screen that already has the rows. */
+export async function getBatchCostingIndex(params: {
+  companyId: string;
+  batchIds?: string[];
+  shipmentId?: string;
+}): Promise<Map<string, BatchCosting>> {
+  const rows = await getBatchCostings(params);
+  return new Map(rows.map((row) => [row.batchId, row]));
+}

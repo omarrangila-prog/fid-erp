@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import { CostingTable } from '@/components/shared/costing-table';
+import { getBatchCostings } from '@/lib/services/landed-cost';
 import { DocumentJournal } from '@/components/shared/document-journal';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -84,6 +86,12 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
     taxAmount: contract.taxAmount,
     vendorCountry: contract.vendor.country,
     companyCountry: user.activeCompany.country,
+  });
+
+  // §12: what this order's coffee is costing, on the order itself.
+  const costing = await getBatchCostings({
+    companyId: user.activeCompany.id,
+    batchIds: receiptStatus.map((r) => r.batchId),
   });
 
   return (
@@ -343,7 +351,22 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
       {contract.status === 'POSTED' ? (
         <Card>
           <CardHeader>
-            <CardTitle>Receiving progress</CardTitle>
+            {costing.length > 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>What this coffee is costing</CardTitle>
+              <CardDescription>
+                The supplier&rsquo;s price for each container, plus that container&rsquo;s share of the job&rsquo;s
+                local charges. It updates by itself as shipment costs are booked.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-0 pb-0">
+              <CostingTable rows={costing} />
+            </CardContent>
+          </Card>
+        ) : null}
+
+        <CardTitle>Receiving progress</CardTitle>
             <CardDescription>What has physically landed, batch by batch.</CardDescription>
           </CardHeader>
           <CardContent className="px-0 pb-0">

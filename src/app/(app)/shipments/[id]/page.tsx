@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import { CostingTable } from '@/components/shared/costing-table';
+import { getBatchCostings } from '@/lib/services/landed-cost';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requirePageAccess, can } from '@/lib/auth/guards';
@@ -87,6 +89,8 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
       select: { id: true, code: true, name: true, country: true },
     }),
   ]);
+
+  const costing = await getBatchCostings({ companyId, shipmentId: shipment.id });
 
   return (
     <div className="space-y-6">
@@ -219,6 +223,14 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
               />
               <Metric label="Remaining" value={formatQuantityKg(costSheet.remainingKg)} tone="muted" />
             </MetricGrid>
+
+            {/* §7: where the shipment's money went, line by line. The shared
+                local charges are divided equally between the item/container
+                lines, and the table says so on each row. */}
+            <CostingTable
+              rows={costing}
+              caption="Each container keeps its own purchase price; the job's shared local charges are split equally between the lines."
+            />
 
             {costSheet.purchaseLines.length > 0 ? (
               <TableWrap>

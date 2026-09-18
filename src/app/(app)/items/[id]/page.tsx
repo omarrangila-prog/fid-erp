@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import { CostingTable } from '@/components/shared/costing-table';
+import { getBatchCostings } from '@/lib/services/landed-cost';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requirePageAccess, can } from '@/lib/auth/guards';
@@ -19,7 +21,7 @@ import {
 import { formatDate, formatMoney, formatQuantityKg } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Badge, StatusBadge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent, TabCount } from '@/components/ui/tabs';
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/feedback';
@@ -117,6 +119,9 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
   const receivedKg = batches.reduce((a, b) => a.plus(b.receivedKg), dec(0));
   const stockValueUsd = batches.reduce((a, b) => a.plus(b.stockValueUsd), dec(0));
 
+  // §15: stock and cost on the same screen.
+  const costing = await getBatchCostings({ companyId, itemId: id });
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -186,7 +191,22 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
 
         <TabsContent value="specification">
           <div className="grid gap-4 lg:grid-cols-2">
-            <Card>
+            {costing.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>What this coffee cost</CardTitle>
+            <CardDescription>
+              Each lot at its own landed cost — the supplier&rsquo;s price plus that container&rsquo;s share of the
+              job&rsquo;s local charges. Stock and cost on one screen, so neither has to be looked up elsewhere.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="px-0 pb-0">
+            <CostingTable rows={costing} />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Card>
               <CardHeader>
                 <CardTitle>Origin and quality</CardTitle>
               </CardHeader>

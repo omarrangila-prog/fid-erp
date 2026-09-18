@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import { CostingSummary } from '@/components/shared/costing-table';
+import { getBatchCostings } from '@/lib/services/landed-cost';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requirePageAccess, can } from '@/lib/auth/guards';
@@ -62,6 +64,9 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   const totalOnHand = locations.reduce((a, l) => a.plus(l.onHandKg), dec(0));
   const totalAvailable = locations.reduce((a, l) => a.plus(l.availableKg), dec(0));
 
+  // §17: the batch keeps the landed cost of the container it came in.
+  const [costing] = await getBatchCostings({ companyId, batchIds: [batch.id] });
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -109,7 +114,24 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
       </MetricGrid>
 
       <div className="grid gap-4 lg:grid-cols-3">
+        {costing ? (
         <Card>
+          <CardHeader>
+            <CardTitle>What this batch cost</CardTitle>
+            <CardDescription>
+              From {costing.reference}
+              {costing.containerNumber ? `, container ${costing.containerNumber}` : ''}. The supplier&rsquo;s price
+              plus this container&rsquo;s share of the job&rsquo;s local charges, at the rate the contract was
+              struck at.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CostingSummary row={costing} />
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Card>
           <CardHeader>
             <CardTitle>Where it is</CardTitle>
             <CardDescription>Stock held per warehouse.</CardDescription>
