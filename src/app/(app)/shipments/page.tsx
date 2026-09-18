@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db';
 import { dec } from '@/lib/money';
 import { formatQuantityKg, formatDate, daysUntil, formatMoney } from '@/lib/format';
 import { getShipmentSettlement } from '@/lib/services/shipment';
-import { getShipmentCostingIndex } from '@/lib/services/landed-cost';
+import { getShipmentCostingIndex, getBatchCostings } from '@/lib/services/landed-cost';
 import { getWarehouseLabels } from '@/lib/services/stock';
 import { PageHeader } from '@/components/shared/page-header';
 import { EmptyAction } from '@/components/shared/empty-action';
@@ -44,6 +44,21 @@ export default async function ShipmentsPage() {
       const settlement = await getShipmentSettlement(prisma as never, companyId, s.id);
 
       const cost = costing.get(s.id);
+
+      /*
+       * A job carries two containers as often as one, and the row showing
+       * only the job's total made "what did that container cost?" a question
+       * you had to open the shipment to answer. Each container's figures now
+       * sit under the total in the same column.
+       */
+      const perContainer = (await getBatchCostings({ companyId, shipmentId: s.id })).map((line) => ({
+        label: line.containerNumber ?? line.batchNumber,
+        purchaseUsd: formatMoney(line.purchaseUsd, 'USD'),
+        expensesLocal: formatMoney(line.allocatedExpenseLocal, line.localCurrency),
+        landedUsd: formatMoney(line.landedUsd, 'USD'),
+        costPerKg: formatMoney(line.landedPerKgUsd, 'USD'),
+      }));
+
       return {
         id: s.id,
         shipmentNumber: s.shipmentNumber,
@@ -77,6 +92,7 @@ export default async function ShipmentsPage() {
         landedUsd: cost ? formatMoney(cost.totalLandedUsd, 'USD') : null,
         landedLocal: cost ? formatMoney(cost.totalLandedLocal, cost.localCurrency) : null,
         costPerKg: cost ? formatMoney(cost.costPerKgUsd, 'USD') : null,
+        perContainer,
         costPerMt: cost ? formatMoney(cost.costPerMtUsd, 'USD') : null,
         // The same figure in the company's own money, as the landed column
         // already does — a cost per kilo is only useful in the currency the

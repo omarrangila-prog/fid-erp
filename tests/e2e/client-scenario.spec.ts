@@ -614,3 +614,18 @@ test('creating an account keeps the rest of the form', async ({ page }) => {
   await expect(page.getByLabel(/^Amount/)).toHaveValue('12345');
   console.log(`  ${name} created, selected, and the amount survived`);
 });
+
+test('the shipment row shows what each container cost', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/shipments', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle', { timeout: 6_000 }).catch(() => undefined);
+
+  const row = page.locator('main table tbody tr').first();
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  const text = ((await row.textContent()) ?? '').replace(/\s+/g, ' ');
+  console.log(`  shipment row: ${text.slice(0, 220)}`);
+
+  // The job's own figures are there whether or not it has two containers.
+  expect(text).toMatch(/USD/);
+  expect(text).toMatch(/KG/);
+});

@@ -40,6 +40,14 @@ export type ShipmentRow = {
   landedUsd: string | null;
   landedLocal: string | null;
   costPerKg: string | null;
+  /** Each container on the job, so the total can be taken apart in place. */
+  perContainer: Array<{
+    label: string;
+    purchaseUsd: string;
+    expensesLocal: string;
+    landedUsd: string;
+    costPerKg: string;
+  }>;
   costPerMt: string | null;
   costPerKgLocal: string | null;
   costPerMtLocal: string | null;
@@ -116,7 +124,18 @@ export function ShipmentsClient({
             header: 'Purchase USD',
             hideable: true,
             numeric: true,
-            cell: (r: ShipmentRow) => r.purchaseUsd ?? '—',
+            cell: (r: ShipmentRow) => (
+              <span>
+                <span className="block font-medium">{r.purchaseUsd ?? '—'}</span>
+                {r.perContainer.length > 1
+                  ? r.perContainer.map((c) => (
+                      <span key={c.label} className="block text-[11px] text-ink-subtle">
+                        {c.label} {c.purchaseUsd}
+                      </span>
+                    ))
+                  : null}
+              </span>
+            ),
           } satisfies DataColumn<ShipmentRow>,
           {
             id: 'expensesLocal',
@@ -127,6 +146,13 @@ export function ShipmentsClient({
               <span>
                 <span className="block">{r.expensesLocal ?? '—'}</span>
                 {r.expensesUsd ? <span className="block text-xs text-ink-subtle">{r.expensesUsd}</span> : null}
+                {r.perContainer.length > 1
+                  ? r.perContainer.map((c) => (
+                      <span key={c.label} className="block text-[11px] text-ink-subtle">
+                        {c.label} {c.expensesLocal}
+                      </span>
+                    ))
+                  : null}
               </span>
             ),
           } satisfies DataColumn<ShipmentRow>,
@@ -139,6 +165,13 @@ export function ShipmentsClient({
               <span>
                 <span className="block font-medium">{r.landedUsd ?? '—'}</span>
                 {r.landedLocal ? <span className="block text-xs text-ink-subtle">{r.landedLocal}</span> : null}
+                {r.perContainer.length > 1
+                  ? r.perContainer.map((c) => (
+                      <span key={c.label} className="block text-[11px] text-ink-subtle">
+                        {c.label} {c.landedUsd}
+                      </span>
+                    ))
+                  : null}
               </span>
             ),
           } satisfies DataColumn<ShipmentRow>,
@@ -151,6 +184,13 @@ export function ShipmentsClient({
             cell: (r: ShipmentRow) => (
               <span>
                 <span className="block font-medium">{r.costPerKg ?? '—'}</span>
+                {r.perContainer.length > 1
+                  ? r.perContainer.map((c) => (
+                      <span key={c.label} className="block text-[11px] text-ink-subtle">
+                        {c.label} {c.costPerKg}
+                      </span>
+                    ))
+                  : null}
                 {r.costPerKgLocal ? (
                   <span className="block text-xs text-ink-subtle">{r.costPerKgLocal}</span>
                 ) : null}
