@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import * as Popover from '@radix-ui/react-popover';
-import { ChevronRight, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { ChevronRight, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NAV_GROUPS, filterNav, type NavGroup } from '@/components/layout/nav-config';
 
@@ -157,13 +157,55 @@ function ExpandedNav({
     writeOpenGroups(openGroups.includes(label) ? [] : [label]);
   }
 
+  /*
+   * Type what you want rather than remember which section it lives in.
+   *
+   * An ERP has more screens than anybody holds in their head, and "was the
+   * customer ledger under Accounting or under Master Data?" is a question the
+   * rail should answer, not ask. Typing matches the screen's own name and the
+   * name of the section it sits in, so "ledger" finds all four of them.
+   */
+  const [query, setQuery] = React.useState('');
+  const needle = query.trim().toLowerCase();
+
+  const shown = React.useMemo(() => {
+    if (!needle) return groups;
+    return groups
+      .map((group) => ({
+        ...group,
+        items: group.items.filter(
+          (item) =>
+            item.label.toLowerCase().includes(needle) || group.label.toLowerCase().includes(needle),
+        ),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [groups, needle]);
+
+  const matches = shown.reduce((total, group) => total + group.items.length, 0);
+
   return (
     <nav className="flex flex-col gap-1 px-3 py-4" aria-label="Main">
-      {groups.map((group) => {
+      <div className="relative mb-2">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-forest-400" aria-hidden />
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search menu…"
+          aria-label="Search the menu"
+          className="w-full rounded-md border border-forest-800 bg-forest-950/40 py-1.5 pl-8 pr-2 text-sm text-forest-100 placeholder:text-forest-400 focus:border-gold-500 focus:outline-none"
+        />
+      </div>
+
+      {needle && matches === 0 ? (
+        <p className="px-2.5 py-3 text-xs text-forest-300">Nothing matches “{query.trim()}”.</p>
+      ) : null}
+
+      {shown.map((group) => {
         const holdsActive = group.items.some((item) => item.href === activeHref);
         // The section you are working in is always open, so the rail shows
         // where you are without you having to hunt for it.
-        const isOpen = holdsActive || openGroups.includes(group.label);
+        const isOpen = Boolean(needle) || holdsActive || openGroups.includes(group.label);
         const bodyId = `nav-group-${group.label.replace(/\s+/g, '-').toLowerCase()}`;
 
         return (

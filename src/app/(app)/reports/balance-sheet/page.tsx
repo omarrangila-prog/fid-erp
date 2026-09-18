@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { ReportSummary } from '@/components/shared/report-summary';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getBalanceSheet } from '@/lib/services/reports';
@@ -8,7 +9,6 @@ import { PageHeader } from '@/components/shared/page-header';
 import { AsOfPicker } from '@/components/shared/date-range';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
-import { Callout } from '@/components/ui/feedback';
 import { PrintButton } from '@/components/shared/print-button';
 import { exportHref } from '@/components/shared/excel-link';
 import { ExportLinks } from '@/components/shared/export-links';
@@ -90,26 +90,30 @@ export default async function BalanceSheetPage({ searchParams }: { searchParams:
 
       <AsOfPicker defaultDate={asOfDate.toISOString().slice(0, 10)} />
 
-      {!sheet.balancesUsd ? (
-        <Callout tone="danger" title="The balance sheet does not balance">
-          Assets differ from liabilities plus equity by {formatMoney(sheet.differenceUsd, 'USD')}. This should never
-          happen — every posting is balanced by construction. Check the journal for an entry posted outside the
-          application.
-        </Callout>
-      ) : null}
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        {[
-          { label: 'Assets', value: sheet.assets.totalUsd },
-          { label: 'Liabilities', value: sheet.liabilities.totalUsd },
-          { label: 'Equity', value: sheet.equity.totalUsd },
-        ].map((card) => (
-          <Card key={card.label} className="p-4">
-            <p className="text-xs font-medium text-ink-muted">{card.label}</p>
-            <p className="tnum mt-1 text-lg font-semibold text-ink">{formatMoney(card.value, 'USD')}</p>
-          </Card>
-        ))}
-      </div>
+      {/* What the company owns, what it owes, and what is left — with the one
+          check that matters stated rather than left to be worked out. */}
+      <ReportSummary
+        figures={[
+          { label: 'Total assets', value: formatMoney(sheet.assets.totalUsd, 'USD'), hint: formatMoney(sheet.assets.totalLocal, local) },
+          { label: 'Total liabilities', value: formatMoney(sheet.liabilities.totalUsd, 'USD'), hint: formatMoney(sheet.liabilities.totalLocal, local) },
+          { label: 'Total equity', value: formatMoney(sheet.equity.totalUsd, 'USD'), hint: formatMoney(sheet.equity.totalLocal, local) },
+          {
+            label: 'Liabilities + equity',
+            value: formatMoney(sheet.liabilities.totalUsd.plus(sheet.equity.totalUsd), 'USD'),
+            lead: true,
+            hint: 'Should equal total assets',
+          },
+        ]}
+        status={
+          sheet.balancesUsd
+            ? { label: 'Balanced', ok: true, detail: 'Assets equal liabilities plus equity.' }
+            : {
+                label: 'Attention required',
+                ok: false,
+                detail: `Assets differ from liabilities plus equity by ${formatMoney(sheet.differenceUsd, 'USD')}. Every posting balances by construction, so this points at an entry written outside the application.`,
+              }
+        }
+      />
 
       <Card>
         <CardHeader>

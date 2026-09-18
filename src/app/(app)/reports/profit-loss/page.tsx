@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { ReportSummary } from '@/components/shared/report-summary';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getProfitAndLoss } from '@/lib/services/reports';
@@ -100,19 +101,39 @@ export default async function ProfitLossPage({
 
       <DateRangePicker defaultFrom={fromDate.toISOString().slice(0, 10)} defaultTo={toDate.toISOString().slice(0, 10)} />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {[
-          { label: 'Revenue', value: pnl.totals.revenueUsd, tone: 'text-ink' },
-          { label: 'Cost of sales', value: pnl.totals.costOfSalesUsd, tone: 'text-ink' },
-          { label: 'Gross profit', value: pnl.totals.grossProfitUsd, tone: 'text-gold-700' },
-          { label: 'Net profit', value: pnl.totals.netProfitUsd, tone: pnl.totals.netProfitUsd.greaterThanOrEqualTo(0) ? 'text-gold-700' : 'text-red-600' },
-        ].map((card) => (
-          <Card key={card.label} className="p-4">
-            <p className="text-xs font-medium text-ink-muted">{card.label}</p>
-            <p className={`tnum mt-1 text-lg font-semibold ${card.tone}`}>{formatMoney(card.value, 'USD')}</p>
-          </Card>
-        ))}
-      </div>
+      {/* Revenue, what it cost, what was left — read in that order, the way
+          the statement below is read. */}
+      <ReportSummary
+        figures={[
+          {
+            label: 'Revenue',
+            value: formatMoney(pnl.totals.revenueUsd, 'USD'),
+            hint: formatMoney(pnl.totals.revenueLocal, local),
+          },
+          {
+            label: 'Cost of sales',
+            value: formatMoney(pnl.totals.costOfSalesUsd, 'USD'),
+            hint: formatMoney(pnl.totals.costOfSalesLocal, local),
+          },
+          {
+            label: 'Gross profit',
+            value: formatMoney(pnl.totals.grossProfitUsd, 'USD'),
+            hint: formatPercent(pnl.grossMarginPct),
+          },
+          {
+            label: 'Expenses',
+            value: formatMoney(pnl.totals.operatingExpensesUsd, 'USD'),
+            hint: formatMoney(pnl.totals.operatingExpensesLocal, local),
+          },
+          {
+            label: 'Net profit',
+            value: formatMoney(pnl.totals.netProfitUsd, 'USD'),
+            hint: formatMoney(pnl.totals.netProfitLocal, local),
+            lead: true,
+            tone: pnl.totals.netProfitUsd.greaterThanOrEqualTo(0) ? 'positive' : 'negative',
+          },
+        ]}
+      />
 
       <Card>
         <CardHeader>

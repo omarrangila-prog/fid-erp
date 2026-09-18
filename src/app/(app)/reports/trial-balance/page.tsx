@@ -10,12 +10,13 @@ import { PageHeader } from '@/components/shared/page-header';
 import { AsOfPicker } from '@/components/shared/date-range';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
-import { Callout } from '@/components/ui/feedback';
 import { Badge } from '@/components/ui/badge';
 import { PrintButton } from '@/components/shared/print-button';
 import { exportHref } from '@/components/shared/excel-link';
 import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
+import { ReportSummary } from '@/components/shared/report-summary';
+import { dec } from '@/lib/money';
 
 export const metadata: Metadata = { title: 'Trial Balance' };
 export const dynamic = 'force-dynamic';
@@ -70,12 +71,32 @@ export default async function TrialBalancePage({ searchParams }: { searchParams:
 
       <AsOfPicker defaultDate={asOfDate.toISOString().slice(0, 10)} />
 
-      {!trial.isBalanced ? (
-        <Callout tone="danger" title="Debits do not equal credits">
-          This should be impossible: the posting engine refuses any entry that does not balance in USD. Check for
-          data written outside the application.
-        </Callout>
-      ) : null}
+      {/* The three figures the report exists to give, and the verdict. An
+          imbalance is never hidden: it is the only thing a trial balance is
+          for. */}
+      <ReportSummary
+        figures={[
+          { label: 'Total debit', value: formatMoney(trial.totals.debitUsd, 'USD'), hint: formatMoney(trial.totals.debitLocal, local) },
+          { label: 'Total credit', value: formatMoney(trial.totals.creditUsd, 'USD'), hint: formatMoney(trial.totals.creditLocal, local) },
+          {
+            label: 'Difference',
+            value: formatMoney(dec(trial.totals.debitUsd).minus(trial.totals.creditUsd), 'USD'),
+            lead: true,
+            tone: trial.isBalanced ? 'default' : 'negative',
+            hint: `${trial.rows.length} accounts with a balance`,
+          },
+        ]}
+        status={
+          trial.isBalanced
+            ? { label: 'Balanced', ok: true, detail: 'Every debit has a matching credit.' }
+            : {
+                label: 'Attention required',
+                ok: false,
+                detail:
+                  'The posting engine refuses any entry that does not balance, so this points at data written outside the application.',
+              }
+        }
+      />
 
       <Card>
         <CardHeader>

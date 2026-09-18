@@ -4,7 +4,7 @@ import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getShipmentCostSheet } from '@/lib/services/landed-cost';
-import { formatMoney, formatDate, formatQuantityKg, titleCase } from '@/lib/format';
+import { formatMoney, formatDate, formatQuantityKg } from '@/lib/format';
 import { dec } from '@/lib/money';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/shared/page-header';

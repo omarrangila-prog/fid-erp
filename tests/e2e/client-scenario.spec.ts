@@ -520,3 +520,51 @@ test('no system-issued code is on any of these screens', async ({ page }) => {
   console.log(`  checked 6 master screens; ${offenders.length} showing a code`);
   expect(offenders, offenders.join('\n')).toEqual([]);
 });
+
+test('the menu can be searched instead of remembered', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
+
+  const search = page.getByLabel('Search the menu');
+  await expect(search).toBeVisible({ timeout: 30_000 });
+
+  // "ledger" should find all of them, whichever section they live in.
+  await search.fill('ledger');
+  const nav = page.getByRole('navigation', { name: 'Main' });
+  const links = await nav.getByRole('link').allTextContents();
+  console.log(`  "ledger" finds: ${links.join(' | ')}`);
+  expect(links.length).toBeGreaterThan(1);
+  expect(links.join(' ')).toMatch(/Customer Ledgers/i);
+
+  await search.fill('invoice');
+  const invoiceLinks = await nav.getByRole('link').allTextContents();
+  console.log(`  "invoice" finds: ${invoiceLinks.join(' | ')}`);
+  expect(invoiceLinks.join(' ')).toMatch(/Sales Invoices/i);
+
+  await search.fill('zzzz');
+  await expect(page.getByText(/Nothing matches/i)).toBeVisible();
+  console.log('  a search with no matches says so');
+});
+
+test('the statements lead with the figures they exist to give', async ({ page }) => {
+  await signIn(page);
+
+  for (const [path, expected] of [
+    ['/reports/trial-balance', ['Total debit', 'Total credit', 'Difference']],
+    ['/reports/profit-loss', ['Revenue', 'Cost of sales', 'Gross profit', 'Expenses', 'Net profit']],
+    ['/reports/balance-sheet', ['Total assets', 'Total liabilities', 'Total equity', 'Liabilities + equity']],
+  ] as const) {
+    await page.goto(path, { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle', { timeout: 6_000 }).catch(() => undefined);
+    const main = (await page.locator('main').textContent()) ?? '';
+    for (const label of expected) {
+      expect(main, `${path} → ${label}`).toContain(label);
+    }
+    console.log(`  ${path}: ${expected.join(', ')}`);
+  }
+
+  // The verdict is stated, not left to be worked out.
+  await page.goto('/reports/trial-balance', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByText(/^Balanced$|Attention required/).first()).toBeVisible({ timeout: 30_000 });
+  console.log('  the trial balance says whether it balances');
+});
