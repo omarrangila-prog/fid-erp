@@ -785,7 +785,10 @@ export async function quickCreateJournalAccount(params: {
       select: { id: true, name: true, code: true },
     });
     if (nameClash) {
-      throw new ConflictError(`${nameClash.name} is already on the chart.`);
+      throw new ConflictError(
+        `${nameClash.name} already has an account. Close this and pick it from the list rather than opening a second one — `
+          + 'two ledgers for the same person is how a balance goes missing.',
+      );
     }
 
     if (kind.value === 'CASH_BANK') {

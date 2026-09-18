@@ -99,7 +99,21 @@ test('a loan from Dubai reaches the Moroccan bank', async ({ page }) => {
   await expect(page.getByText(/This is not income and not a cost/i)).toBeVisible();
 
   await page.getByRole('button', { name: /We received a loan/i }).click();
-  await page.getByLabel(/Received from/i).fill('FID Trading LLC Dubai');
+
+  // Who the money is with is an account, opened from the selector if new.
+  const party = page.getByRole('combobox', { name: /Received from account/i }).first();
+  await party.click();
+  await page.keyboard.type('FID Trading LLC Dubai');
+  const existing = page.getByRole('listbox').getByRole('option').first();
+  if (await existing.count()) {
+    await existing.click();
+  } else {
+    await page.getByRole('button', { name: /Add New Account/i }).first().click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible({ timeout: 20_000 });
+    await dialog.getByRole('button', { name: /Create|Save|Add/i }).last().click();
+    await expect(dialog).toBeHidden({ timeout: 45_000 });
+  }
   // selectOption matches labels exactly, so find the option's own text first.
   const intoAccount = page.getByLabel(/Received into/i);
   const intoOptions = await intoAccount.locator('option').allTextContents();
@@ -127,7 +141,7 @@ test('the lender has a ledger showing what we owe them', async ({ page }) => {
   await page.goto('/accounting/chart', { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => undefined);
 
-  const account = page.getByRole('link', { name: /Loan from FID Trading LLC Dubai/i }).first();
+  const account = page.getByRole('link', { name: /FID Trading LLC Dubai/i }).first();
   await expect(account).toBeVisible({ timeout: 30_000 });
   await account.click();
   await page.waitForURL(/general-ledger/, { timeout: 30_000 });
@@ -628,4 +642,32 @@ test('the shipment row shows what each container cost', async ({ page }) => {
   // The job's own figures are there whether or not it has two containers.
   expect(text).toMatch(/USD/);
   expect(text).toMatch(/KG/);
+});
+
+test('every money form picks a party from a list, never a blank box', async ({ page }) => {
+  await signIn(page);
+
+  const checks: Array<[string, RegExp]> = [
+    ['/finance/receipts/new', /customer/i],
+    ['/finance/payments/new', /supplier/i],
+    ['/finance/loans/new', /Received from account/i],
+    ['/accounting/journal/new', /account/i],
+  ];
+
+  for (const [path, label] of checks) {
+    await page.goto(path, { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle', { timeout: 6_000 }).catch(() => undefined);
+
+    // Advanced journal is behind the guided chooser.
+    const advanced = page.getByRole('button', { name: /Advanced journal entry/i }).first();
+    if (await advanced.count()) await advanced.click();
+
+    const picker = page.getByRole('combobox', { name: label }).first();
+    await expect(picker, `${path} should pick ${label}`).toBeVisible({ timeout: 30_000 });
+
+    await picker.click();
+    const canCreate = await page.getByRole('button', { name: /Add New|Add Customer|Add Supplier/i }).count();
+    console.log(`  ${path}: picks from a list${canCreate ? ', and can open a new one' : ''}`);
+    await page.keyboard.press('Escape');
+  }
 });

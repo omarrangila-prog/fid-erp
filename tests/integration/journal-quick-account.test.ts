@@ -55,7 +55,7 @@ describe('quickCreateJournalAccount', () => {
         kind: 'PERSONAL',
         currency: 'MAD',
       }),
-    ).rejects.toThrow(/already on the chart/i);
+    ).rejects.toThrow(/already has an account/i);
   });
 });
 
