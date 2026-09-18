@@ -43,14 +43,9 @@ export function GoodsReceiptsClient({
   emptyAction?: React.ReactNode;
 }) {
   const columns: DataColumn<GoodsReceiptRow>[] = [
-    {
-      id: 'grn',
-      header: 'Receipt',
-      mobile: 'title',
-      sortValue: (r) => r.grnNumber,
-      cell: (r) => <span className="font-medium">{r.grnNumber}</span>,
-    },
-    { id: 'date', header: 'Date', mobile: 'meta', sortValue: (r) => r.receiptDateSort, cell: (r) => r.receiptDate },
+    /* The receipt number was the system's own. The reference column below
+       carries the client's, and the whole row opens the receipt. */
+    { id: 'date', header: 'Date', mobile: 'title', sortValue: (r) => r.receiptDateSort, cell: (r) => <span className="font-medium">{r.receiptDate}</span> },
     {
       id: 'contract',
       header: 'Reference',

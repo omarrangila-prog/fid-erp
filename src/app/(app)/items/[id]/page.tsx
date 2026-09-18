@@ -294,7 +294,7 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
                         </Link>
                       </TD>
                       <TD>{batch.warehouseNames || '—'}</TD>
-                      <TD>{batch.shipmentNumber}</TD>
+                      <TD className="font-mono text-xs">{batch.lotNumber}</TD>
                       <TD numeric>{formatQuantityKg(batch.receivedKg)}</TD>
                       <TD numeric>{formatQuantityKg(batch.soldKg)}</TD>
                       <TD numeric>{formatQuantityKg(batch.allocatedKg)}</TD>

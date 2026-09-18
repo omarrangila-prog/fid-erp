@@ -35,7 +35,19 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
       cashBankAccount: true,
       createdBy: { select: { name: true } },
       cheque: { include: { statusHistory: { orderBy: { changedAt: 'desc' }, include: { changedBy: { select: { name: true } } } } } },
-      allocations: { include: { salesInvoice: { select: { id: true, invoiceNumber: true, invoiceDate: true, currency: true } } } },
+      allocations: {
+        include: {
+          salesInvoice: {
+            select: {
+              id: true,
+              invoiceNumber: true,
+              invoiceDate: true,
+              currency: true,
+              customer: { select: { customerName: true } },
+            },
+          },
+        },
+      },
     },
   });
 
@@ -48,12 +60,12 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   return (
     <div className="space-y-6">
       <PageHeader
-        title={receipt.receiptNumber}
-        description={`${receipt.customer.customerName}${receipt.reference ? ` · ${receipt.reference}` : ''}`}
+        title={`Received from ${receipt.customer.customerName}`}
+        description={[formatDate(receipt.receiptDate), receipt.reference].filter(Boolean).join(' · ')}
         breadcrumbs={[
           { label: 'Finance' },
           { label: 'Receipts', href: '/finance/receipts' },
-          { label: receipt.receiptNumber },
+          { label: receipt.customer.customerName },
         ]}
         meta={
           <>
@@ -147,7 +159,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                 >
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium text-forest-800">
-                      {allocation.salesInvoice.invoiceNumber}
+                      {allocation.salesInvoice.customer?.customerName ?? 'Invoice'}
                     </span>
                     <span className="block text-xs text-ink-subtle">
                       {formatDate(allocation.salesInvoice.invoiceDate)}

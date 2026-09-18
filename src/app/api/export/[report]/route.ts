@@ -216,7 +216,6 @@ const REPORTS: Record<string, Report> = {
 
       const moroccoColumns = [
         { header: 'Contract ref', value: (r: (typeof rows)[number]) => r.contractReference },
-        { header: 'FID number', value: (r: (typeof rows)[number]) => r.contractNumber },
         { header: 'Exporter', value: (r: (typeof rows)[number]) => r.exporter },
         { header: 'Importer', value: (r: (typeof rows)[number]) => r.importer },
         {
@@ -240,7 +239,6 @@ const REPORTS: Record<string, Report> = {
       const dubaiColumns = [
         { header: 'Contract date', value: (r: (typeof rows)[number]) => r.contractDate, type: 'date' as const },
         { header: 'Contract ref', value: (r: (typeof rows)[number]) => r.contractReference },
-        { header: 'FID number', value: (r: (typeof rows)[number]) => r.contractNumber },
         { header: 'Exporter', value: (r: (typeof rows)[number]) => r.exporter },
         { header: 'Importer', value: (r: (typeof rows)[number]) => r.importer },
         { header: 'Consignee', value: (r: (typeof rows)[number]) => r.consignee ?? '' },
@@ -337,12 +335,10 @@ const REPORTS: Record<string, Report> = {
         totals: ['Sold (KG)', 'Value', 'Outstanding'],
         columns: [
           { header: 'Contract ref', value: (r) => r.contractReference },
-          { header: 'FID number', value: (r) => r.contractNumber },
           { header: 'Batch', value: (r) => r.batchNumber },
           { header: 'Coffee', value: (r) => r.itemName, width: 34 },
           { header: 'Purchased (KG)', value: (r) => r.purchased, type: 'quantity' },
           { header: 'Customer', value: (r) => r.customerName, width: 30 },
-          { header: 'Invoice', value: (r) => r.invoiceNumber },
           { header: 'Invoice date', value: (r) => r.invoiceDate, type: 'date' },
           { header: 'Sold (KG)', value: (r) => r.quantity, type: 'quantity' },
           { header: 'Currency', value: (r) => r.currency, width: 10 },
@@ -367,7 +363,6 @@ const REPORTS: Record<string, Report> = {
         rows,
         totals: ['Invoice total', 'Received', 'Outstanding', 'Outstanding (USD)'],
         columns: [
-          { header: 'Invoice', value: (r) => r.invoiceNumber },
           { header: 'Date', value: (r) => r.invoiceDate, type: 'date' },
           { header: 'Due', value: (r) => r.dueDate, type: 'date' },
           { header: 'Customer', value: (r) => r.customerName, width: 32 },
@@ -395,7 +390,6 @@ const REPORTS: Record<string, Report> = {
         rows,
         totals: ['Contract value', 'Paid', 'Outstanding', 'Outstanding (USD)'],
         columns: [
-          { header: 'Contract', value: (r) => r.contractNumber },
           { header: 'Supplier ref', value: (r) => r.contractReference },
           { header: 'Date', value: (r) => r.contractDate, type: 'date' },
           { header: 'Due', value: (r) => r.dueDate, type: 'date' },
@@ -542,12 +536,8 @@ const REPORTS: Record<string, Report> = {
           ...(byContract
             ? [
                 { header: 'Contract ref', value: (r: (typeof rows)[number]) => r.contractReference, width: 22 },
-                { header: 'Contract', value: (r: (typeof rows)[number]) => r.contractNumber },
-                { header: 'Job', value: (r: (typeof rows)[number]) => r.jobNumber },
               ]
             : [
-                { header: 'Job', value: (r: (typeof rows)[number]) => r.jobNumber },
-                { header: 'Shipment', value: (r: (typeof rows)[number]) => r.shipmentNumber },
                 { header: 'Contract ref', value: (r: (typeof rows)[number]) => r.contractReference, width: 22 },
               ]),
           { header: 'Coffee', value: (r) => r.itemName, width: 28 },
@@ -586,9 +576,7 @@ const REPORTS: Record<string, Report> = {
         totals: ['Total USD', 'Cost USD', 'Gross profit USD'],
         columns: [
           { header: 'Date', value: (r) => r.invoiceDate, type: 'date' },
-          { header: 'Invoice', value: (r) => r.invoiceNumber },
           { header: 'Customer', value: (r) => r.customerName, width: 30 },
-          { header: 'Job', value: (r) => r.jobNumber ?? '' },
           { header: 'KG', value: (r) => Number(r.quantityKg), type: 'quantity' },
           { header: 'Currency', value: (r) => r.currency },
           { header: 'Total', value: (r) => Number(r.total), type: 'money' },
@@ -619,7 +607,6 @@ const REPORTS: Record<string, Report> = {
         totals: ['Total USD'],
         columns: [
           { header: 'Date', value: (r) => r.contractDate, type: 'date' },
-          { header: 'Contract', value: (r) => r.contractNumber },
           { header: 'Reference', value: (r) => r.contractReference },
           { header: 'Supplier', value: (r) => r.vendorName, width: 30 },
           { header: 'Origin', value: (r) => r.origin ?? '' },
@@ -831,7 +818,6 @@ const REPORTS: Record<string, Report> = {
         totals: ['Debit USD', 'Credit USD'],
         columns: [
           { header: 'Date', value: (r) => r.entryDate, type: 'date' },
-          { header: 'Entry', value: (r) => r.entryNumber },
           { header: 'Source', value: (r) => r.sourceType.replace(/_/g, ' ') },
           { header: 'Description', value: (r) => r.description, width: 40 },
           { header: 'Reference', value: (r) => r.reference ?? '', width: 28 },
@@ -891,7 +877,6 @@ const REPORTS: Record<string, Report> = {
         totals: ['Debit USD', 'Credit USD'],
         columns: [
           { header: 'Date', value: (r) => r.entryDate, type: 'date' },
-          { header: 'Entry', value: (r) => r.entryNumber },
           { header: 'Source', value: (r) => r.sourceType.replace(/_/g, ' ') },
           { header: 'Narration', value: (r) => r.narration, width: 38 },
           { header: 'Account', value: (r) => r.accountName, width: 32 },
@@ -1121,7 +1106,6 @@ const REPORTS: Record<string, Report> = {
         totals: ['Loss USD', 'Gain USD', `Loss ${local}`, `Gain ${local}`],
         columns: [
           { header: 'Date', value: (r) => r.entryDate, type: 'date' },
-          { header: 'Voucher', value: (r) => r.entryNumber },
           { header: 'Source', value: (r) => r.sourceType.replaceAll('_', ' ') },
           { header: 'Description', value: (r) => r.description, width: 40 },
           { header: 'Currency', value: (r) => r.currency },
@@ -1183,7 +1167,6 @@ const REPORTS: Record<string, Report> = {
         totals: ['Quantity (KG)', 'Revenue (USD)', 'COGS (USD)', 'Gross profit (USD)'],
         columns: [
           { header: 'Date', value: (r) => r.invoiceDate, type: 'date' },
-          { header: 'Invoice', value: (r) => r.invoiceNumber },
           { header: 'Customer', value: (r) => r.customerName, width: 28 },
           { header: 'Coffee', value: (r) => r.itemName, width: 28 },
           { header: 'Batch', value: (r) => r.batchNumber },
@@ -1209,11 +1192,9 @@ const REPORTS: Record<string, Report> = {
         rows,
         totals: ['Amount USD', 'Paid USD', 'Outstanding USD'],
         columns: [
-          { header: 'Voucher', value: (r) => r.expenseNumber },
           { header: 'Date', value: (r) => r.expenseDate, type: 'date' },
           { header: 'Agent', value: (r) => r.agentName, width: 26 },
           { header: 'Contract ref', value: (r) => r.contractReference ?? '', width: 22 },
-          { header: 'Shipment', value: (r) => r.jobNumber ?? '' },
           { header: 'Container', value: (r) => r.containerNumber ?? '' },
           { header: 'Currency', value: (r) => r.currency },
           { header: 'Amount', value: (r) => Number(r.amount), type: 'money' },
@@ -1243,7 +1224,6 @@ const REPORTS: Record<string, Report> = {
         rows: data.ledger.rows,
         columns: [
           { header: 'Date', value: (r) => r.entryDate, type: 'date' },
-          { header: 'Voucher', value: (r) => r.entryNumber },
           { header: 'Type', value: (r) => r.sourceType.replaceAll('_', ' ') },
           { header: 'Reference', value: (r) => r.reference ?? '' },
           { header: 'Description', value: (r) => r.description, width: 40 },
@@ -1276,7 +1256,6 @@ const REPORTS: Record<string, Report> = {
         rows: data.ledger.rows,
         columns: [
           { header: 'Date', value: (r) => r.entryDate, type: 'date' },
-          { header: 'Voucher', value: (r) => r.entryNumber },
           { header: 'Type', value: (r) => r.sourceType.replaceAll('_', ' ') },
           { header: 'Reference', value: (r) => r.reference ?? '' },
           { header: 'Description', value: (r) => r.description, width: 40 },

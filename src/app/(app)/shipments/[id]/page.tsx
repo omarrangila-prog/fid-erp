@@ -486,7 +486,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                   className="flex items-center justify-between gap-3 border-b border-line pb-3 last:border-0 last:pb-0"
                 >
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium text-forest-800">{inv.invoiceNumber}</span>
+                    <span className="block truncate text-sm font-medium text-forest-800">{inv.customer.customerName}</span>
                     <span className="block truncate text-xs text-ink-subtle">
                       {inv.customer.customerName} · {formatDate(inv.invoiceDate)}
                     </span>

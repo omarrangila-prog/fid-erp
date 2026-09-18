@@ -30,7 +30,15 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
     where: { id, companyId: user.activeCompany.id },
     include: {
       customer: true,
-      shipment: { select: { jobNumber: true, shipmentNumber: true, billOfLading: true, vesselName: true } },
+      shipment: {
+        select: {
+          jobNumber: true,
+          shipmentNumber: true,
+          billOfLading: true,
+          vesselName: true,
+          purchaseContract: { select: { contractReference: true } },
+        },
+      },
       lines: {
         orderBy: { lineNumber: 'asc' },
         include: {
@@ -160,7 +168,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
             {invoice.shipment ? (
               <>
                 <dt className="text-ink-subtle">Shipment</dt>
-                <dd className="font-medium text-ink">{invoice.shipment.shipmentNumber}</dd>
+                <dd className="font-medium text-ink">{invoice.shipment.purchaseContract?.contractReference ?? '—'}</dd>
                 {invoice.shipment.billOfLading ? (
                   <>
                     <dt className="text-ink-subtle">B/L</dt>

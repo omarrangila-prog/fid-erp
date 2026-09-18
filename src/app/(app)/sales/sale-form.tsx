@@ -467,20 +467,6 @@ export function SaleForm({
             ) : null}
           </div>
 
-          <Field
-            label="Invoice number"
-            htmlFor="invoiceNumber"
-            error={fieldIssues.invoiceNumber}
-            hint="The next free number. You can type a different one — 5 or 005 both become the same document number."
-          >
-            <Input
-              id="invoiceNumber"
-              value={header.invoiceNumber}
-              onChange={(e) => setHeader({ ...header, invoiceNumber: e.target.value })}
-              placeholder="Next free number"
-              autoComplete="off"
-            />
-          </Field>
 
           <Field label="Invoice date" htmlFor="invoiceDate" error={fieldIssues.invoiceDate}>
             <Input

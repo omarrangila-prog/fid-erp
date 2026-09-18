@@ -244,7 +244,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
                           href={`/finance/payments/${payment.id}`}
                           className="font-medium text-forest-800 hover:text-gold-700"
                         >
-                          {payment.paymentNumber}
+                          {formatDate(payment.paymentDate)}
                         </Link>
                       </TD>
                       <TD>{formatDate(payment.paymentDate)}</TD>

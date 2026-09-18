@@ -109,7 +109,7 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
   return (
     <div className="space-y-6">
       <PageHeader
-        title={`Edit ${invoice.invoiceNumber}`}
+        title="Edit invoice"
         description="Correct quantity, rate, batch, due date and other details. Totals, stock and the customer ledger are recalculated when you save."
         breadcrumbs={[
           { label: 'Trading' },

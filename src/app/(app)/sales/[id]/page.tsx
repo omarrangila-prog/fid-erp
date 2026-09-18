@@ -111,9 +111,9 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
   return (
     <div className="space-y-6">
       <PageHeader
-        title={invoice.invoiceNumber}
-        description={`${invoice.customer.customerName}${invoice.reference ? ` · ${invoice.reference}` : ''}`}
-        breadcrumbs={[{ label: 'Trading' }, { label: 'Sales', href: '/sales' }, { label: invoice.invoiceNumber }]}
+        title={`Invoice to ${invoice.customer.customerName}`}
+        description={[formatDate(invoice.invoiceDate), invoice.reference].filter(Boolean).join(' · ')}
+        breadcrumbs={[{ label: 'Trading' }, { label: 'Sales', href: '/sales' }, { label: invoice.customer.customerName }]}
         meta={
           <>
             <StatusBadge status={invoice.status} meta={TRANSACTION_STATUS_META} />
@@ -331,7 +331,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                   >
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-medium text-forest-800">
-                        {allocation.receipt.receiptNumber}
+                        {formatDate(allocation.receipt.receiptDate)}
                       </span>
                       <span className="block text-xs text-ink-subtle">
                         {formatDate(allocation.receipt.receiptDate)} ·{' '}

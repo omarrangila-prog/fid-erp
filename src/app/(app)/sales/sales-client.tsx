@@ -63,21 +63,17 @@ export function SalesClient({
   const visible = rows;
 
   const columns: DataColumn<SaleRow>[] = [
-    {
-      id: 'number',
-      header: 'Invoice',
-      mobile: 'title',
-      sortValue: (r) => r.invoiceNumber,
-      cell: (r) => <span className="font-medium">{r.invoiceNumber}</span>,
-    },
-    { id: 'date', header: 'Date', mobile: 'meta', sortValue: (r) => r.invoiceDateSort, cell: (r) => r.invoiceDate },
+    /* The invoice number column is gone: it was the system's own numbering
+       and the row already says who, when and how much. The whole row opens
+       the invoice, so nothing was navigable only from the number. */
     {
       id: 'customer',
       header: 'Customer',
-      mobile: 'meta',
+      mobile: 'title',
       sortValue: (r) => r.customerName,
-      cell: (r) => r.customerName,
+      cell: (r) => <span className="font-medium">{r.customerName}</span>,
     },
+    { id: 'date', header: 'Date', mobile: 'meta', sortValue: (r) => r.invoiceDateSort, cell: (r) => r.invoiceDate },
     {
       id: 'warehouse',
       header: 'Warehouse',

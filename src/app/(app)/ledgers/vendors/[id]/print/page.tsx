@@ -140,7 +140,7 @@ export default async function VendorLedgerPrintPage({
               return (
                 <tr key={`${row.journalEntryId}-${index}`}>
                   <td className="border border-line px-2 py-1.5 whitespace-nowrap">{formatDate(row.entryDate)}</td>
-                  <td className="border border-line px-2 py-1.5 font-medium">{row.reference ?? row.entryNumber}</td>
+                  <td className="border border-line px-2 py-1.5 font-medium">{row.reference ?? '—'}</td>
                   <td className="border border-line px-2 py-1.5">
                     {row.description}
                     <span className="block text-[10px] text-ink-subtle">{titleCase(row.sourceType)}</span>

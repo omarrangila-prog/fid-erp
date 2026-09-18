@@ -737,7 +737,7 @@ export default async function DashboardPage() {
                     className="-mx-2 flex items-center justify-between gap-3 rounded-lg border-b border-line px-2 py-2.5 transition-colors last:border-0 hover:bg-forest-50/60"
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-forest-800">{s.shipmentNumber}</p>
+                      <p className="truncate text-sm font-medium text-forest-800">{s.vendorName}</p>
                       <p className="truncate text-xs text-ink-subtle">
                         {s.itemName} · {s.vendorName}
                       </p>

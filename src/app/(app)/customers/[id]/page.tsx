@@ -37,7 +37,13 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
       salesInvoices: {
         orderBy: { invoiceDate: 'desc' },
         include: {
-          shipment: { select: { id: true, shipmentNumber: true } },
+          shipment: {
+            select: {
+              id: true,
+              shipmentNumber: true,
+              purchaseContract: { select: { contractReference: true } },
+            },
+          },
           lines: { select: { quantityKg: true } },
         },
       },
@@ -240,7 +246,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                       <TD>
                         {invoice.shipment ? (
                           <Link href={`/shipments/${invoice.shipment.id}`} className="text-forest-800 hover:text-gold-700">
-                            {invoice.shipment.shipmentNumber}
+                            {invoice.shipment.purchaseContract?.contractReference ?? '—'}
                           </Link>
                         ) : (
                           '—'
@@ -287,7 +293,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                           href={`/finance/receipts/${receipt.id}`}
                           className="font-medium text-forest-800 hover:text-gold-700"
                         >
-                          {receipt.receiptNumber}
+                          {formatDate(receipt.receiptDate)}
                         </Link>
                       </TD>
                       <TD>{formatDate(receipt.receiptDate)}</TD>

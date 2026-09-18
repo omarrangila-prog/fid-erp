@@ -701,7 +701,7 @@ export function LoadingSheet({
             r.origin,
             r.destination,
             r.remarks,
-            ...r.allocations.map((a) => `${a.customerName} ${a.invoiceNumber}`),
+            ...r.allocations.map((a) => a.customerName),
           ]
             .filter(Boolean)
             .join(' ')
@@ -817,7 +817,7 @@ export function LoadingSheet({
                             href={`/sales/${allocation.invoiceId}`}
                             className="text-forest-700 hover:underline"
                           >
-                            {allocation.invoiceNumber}
+                            {allocation.customerName}
                           </Link>
                           <span className="block text-xs text-ink-subtle">{allocation.invoiceDate}</span>
                         </TD>

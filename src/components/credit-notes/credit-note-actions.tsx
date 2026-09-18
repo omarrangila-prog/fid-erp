@@ -10,13 +10,13 @@ import { postCreditNoteAction, reverseCreditNoteAction } from '@/server/actions/
 
 export function CreditNoteActions({
   id,
-  number,
+  label,
   status,
   returnsStock,
   basePath,
 }: {
   id: string;
-  number: string;
+  label: string;
   status: string;
   returnsStock: boolean;
   basePath: string;
@@ -44,7 +44,7 @@ export function CreditNoteActions({
       <ConfirmDialog
         open={confirmPost}
         onOpenChange={setConfirmPost}
-        title={`Post ${number}?`}
+        title={`Post ${label}?`}
         description={
           returnsStock
             ? 'The party ledger is credited, the coffee comes back into the warehouse at its landed cost, and the same cost is taken back out of cost of sales.'
@@ -56,7 +56,7 @@ export function CreditNoteActions({
           try {
             const result = await postCreditNoteAction(id);
             if (result.ok) {
-              toast.success(`${number} posted.`);
+              toast.success(`${label} posted.`);
               router.refresh();
             } else {
               throw new Error(result.error);
@@ -70,7 +70,7 @@ export function CreditNoteActions({
       <ConfirmDialog
         open={confirmReverse}
         onOpenChange={setConfirmReverse}
-        title={`Delete ${number}?`}
+        title={`Delete ${label}?`}
         description={
           returnsStock
             ? 'The note is taken back out of the books and the coffee it brought back is taken out of the warehouse again. If it has since been sold on, the deletion will be refused.'
@@ -83,7 +83,7 @@ export function CreditNoteActions({
         onConfirm={async (reason) => {
           const result = await reverseCreditNoteAction(id, reason ?? '');
           if (result.ok) {
-            toast.success(`${number} deleted.`);
+            toast.success(`${label} deleted.`);
             router.push(basePath);
             router.refresh();
           } else {

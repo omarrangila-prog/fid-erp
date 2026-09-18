@@ -594,7 +594,7 @@ export function ReceiptForm({
                   </div>
                   <div className="w-36 shrink-0">
                     <MoneyInput
-                      aria-label={`Amount applied to ${invoice.invoiceNumber}`}
+                      aria-label={`Amount applied to the invoice of ${invoice.invoiceDate}`}
                       currency={invoice.currency}
                       value={allocations[invoice.id] ?? ''}
                       onChange={(e) => setAllocations({ ...allocations, [invoice.id]: e.target.value })}

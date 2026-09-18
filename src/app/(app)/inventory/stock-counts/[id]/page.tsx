@@ -64,7 +64,7 @@ export default async function StockCountPage({ params }: { params: Promise<{ id:
   return (
     <div className="space-y-6">
       <PageHeader
-        title={`Stock Count ${count.countNumber}`}
+        title={`Stock count · ${formatDate(count.countDate)}`}
         description={`${count.warehouse.name} · counted as at ${formatDate(count.countDate)}`}
         breadcrumbs={[
           { label: 'Inventory', href: '/inventory' },
@@ -92,7 +92,7 @@ export default async function StockCountPage({ params }: { params: Promise<{ id:
 
       <CountSheet
         id={count.id}
-        countNumber={count.countNumber}
+        countLabel={formatDate(count.countDate)}
         status={count.status}
         lines={lines}
         canManage={can(user, PERMISSIONS.STOCK_COUNT_MANAGE)}

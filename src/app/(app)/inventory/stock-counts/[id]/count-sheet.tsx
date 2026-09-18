@@ -43,14 +43,14 @@ const REASONS: Array<{ value: string; label: string }> = [
  */
 export function CountSheet({
   id,
-  countNumber,
+  countLabel,
   status,
   lines: initialLines,
   canManage,
   canPost,
 }: {
   id: string;
-  countNumber: string;
+  countLabel: string;
   status: string;
   lines: CountLine[];
   canManage: boolean;
@@ -262,7 +262,7 @@ export function CountSheet({
       <ConfirmDialog
         open={confirmPost}
         onOpenChange={setConfirmPost}
-        title={`Post ${countNumber}?`}
+        title="Post this stock count?"
         description={`${differenceRows.length} difference${differenceRows.length === 1 ? '' : 's'} will be written to the stock ledger and valued at ${formatMoney(netValueUsd, 'USD')} net against Inventory Adjustments. This cannot be undone — a mistake is corrected with a further count.`}
         confirmLabel="Post adjustments"
         onConfirm={async () => {

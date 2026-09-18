@@ -71,14 +71,9 @@ export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canM
   }
 
   const columns: DataColumn<TransferRow>[] = [
-    {
-      id: 'number',
-      header: 'Transfer',
-      mobile: 'title',
-      sortValue: (r) => r.transferNumber,
-      cell: (r) => <span className="font-medium">{r.transferNumber}</span>,
-    },
-    { id: 'date', header: 'Date', mobile: 'meta', sortValue: (r) => r.transferDateSort, cell: (r) => r.transferDate },
+    /* A transfer is known by where the coffee went and when, not by a
+       number the system issued to itself. */
+    { id: 'date', header: 'Date', mobile: 'title', sortValue: (r) => r.transferDateSort, cell: (r) => <span className="font-medium">{r.transferDate}</span> },
     {
       id: 'route',
       header: 'From → To',
@@ -146,7 +141,7 @@ export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canM
                   <Button
                     size="icon"
                     variant="ghost"
-                    aria-label={`Cancel ${r.transferNumber}`}
+                    aria-label={`Cancel the transfer of ${r.transferDate}`}
                     onClick={() => setCancelling(r)}
                   >
                     <X className="text-red-500" />

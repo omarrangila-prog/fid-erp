@@ -208,7 +208,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               <DetailRow label="Contract date">{formatDate(batch.purchaseContract.contractDate)}</DetailRow>
               <DetailRow label="Shipment">
                 <Link href={`/shipments/${batch.shipment.id}`} className="text-gold-700 hover:underline">
-                  {batch.shipment.shipmentNumber}
+                  {batch.purchaseContract.contractReference}
                 </Link>
               </DetailRow>
               <DetailRow label="Shipment status">

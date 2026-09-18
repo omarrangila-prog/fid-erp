@@ -73,10 +73,25 @@ const FORBIDDEN: Array<{ pattern: RegExp; why: string }> = [
     pattern: /\$\{(?:\w+\.)*contractNumber\}/,
     why: 'puts a contract number into a label',
   },
+  {
+    // FID-MA-SI-000008 and the rest of the system's own numbering. A
+    // document is named by what it is, who it was with and when.
+    pattern: /\{(?:\w+\.)*(?:invoiceNumber|receiptNumber|paymentNumber|creditNoteNumber|grnNumber|shipmentNumber|transferNumber|countNumber|settlementNumber)\}/,
+    why: 'renders a document number the system issued',
+  },
+  {
+    pattern: /\$\{(?:\w+\.)*(?:invoiceNumber|receiptNumber|paymentNumber|creditNoteNumber|grnNumber|shipmentNumber|transferNumber|countNumber|settlementNumber)\}/,
+    why: 'puts a system document number into a label',
+  },
 ];
 
 /** Codes that are not ours: a port, a warehouse, a VAT band, a company. */
 const ALLOWED_FILES = [
+  // A tax invoice must carry a sequential number by law in both Morocco and
+  // the UAE, so the printed customer copy keeps one.
+  'sales/[id]/print',
+  'ledgers/customers/[id]/print',
+  'ledgers/vendors/[id]/print',
   'ports',
   'warehouses',
   'shipping-lines',

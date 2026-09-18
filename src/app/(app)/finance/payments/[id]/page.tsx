@@ -52,12 +52,12 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
   return (
     <div className="space-y-6">
       <PageHeader
-        title={payment.paymentNumber}
-        description={`${payment.vendor?.vendorName ?? 'Accrued costs'}${payment.reference ? ` · ${payment.reference}` : ''}`}
+        title={`Paid to ${payment.vendor?.vendorName ?? 'accrued costs'}`}
+        description={[formatDate(payment.paymentDate), payment.reference].filter(Boolean).join(' · ')}
         breadcrumbs={[
           { label: 'Finance' },
           { label: 'Payments', href: '/finance/payments' },
-          { label: payment.paymentNumber },
+          { label: payment.vendor?.vendorName ?? 'Payment' },
         ]}
         meta={
           <>

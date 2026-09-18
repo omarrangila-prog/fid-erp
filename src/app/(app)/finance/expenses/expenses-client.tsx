@@ -45,9 +45,10 @@ export function ExpensesClient({
   canDelete?: boolean;
 }) {
   const columns: DataColumn<ExpenseRow>[] = [
-    { id: 'number', header: 'Voucher', mobile: 'title', sortValue: (r) => r.number, exportValue: (r) => r.number, cell: (r) => <span className="font-medium">{r.number}</span> },
+    /* The voucher number was the system's own; a cost is known by what it
+       was for. The whole row opens the expense. */
+    { id: 'category', header: 'Category', mobile: 'title', sortValue: (r) => r.category, exportValue: (r) => r.category, cell: (r) => <span className="font-medium">{r.category}</span> },
     { id: 'date', header: 'Date', mobile: 'meta', sortValue: (r) => r.dateSort, exportValue: (r) => r.date, cell: (r) => r.date },
-    { id: 'category', header: 'Category', mobile: 'meta', sortValue: (r) => r.category, exportValue: (r) => r.category, cell: (r) => r.category },
     {
       id: 'type',
       header: 'Type',

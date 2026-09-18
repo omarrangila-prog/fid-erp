@@ -66,7 +66,7 @@ export function ShipmentsClient({
       sortValue: (r) => r.shipmentNumber,
       cell: (r) => (
         <span>
-          <span className="block font-medium">{r.shipmentNumber}</span>
+          
           
         </span>
       ),

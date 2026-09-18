@@ -43,7 +43,7 @@ export function CreditNoteDetail({
   return (
     <div className="space-y-6">
       <PageHeader
-        title={`${noun} ${note.creditNoteNumber}`}
+        title={`${noun} — ${note.customer?.customerName ?? note.vendor?.vendorName ?? ''}`.trim()}
         description={note.reason}
         breadcrumbs={[
           { label: kind === 'customer' ? 'Sales' : 'Purchases', href: kind === 'customer' ? '/sales' : '/purchases' },
@@ -68,7 +68,7 @@ export function CreditNoteDetail({
             {canPost ? (
               <CreditNoteActions
                 id={note.id}
-                number={note.creditNoteNumber}
+                label={note.customer?.customerName ?? note.vendor?.vendorName ?? ''}
                 status={note.status}
                 returnsStock={note.lines.some((line) => line.batchId !== null)}
                 basePath={basePath}

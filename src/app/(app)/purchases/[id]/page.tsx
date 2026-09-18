@@ -336,7 +336,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                       {contract.contractReference}
                     </Link>
                   </DetailRow>
-                  <DetailRow label="Shipment">{job.shipmentNumber}</DetailRow>
+                  <DetailRow label="Shipment">{contract.contractReference}</DetailRow>
                   <DetailRow label="Status">
                     <StatusBadge status={job.status} meta={SHIPMENT_STATUS_META} />
                   </DetailRow>
