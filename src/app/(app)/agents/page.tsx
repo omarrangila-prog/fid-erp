@@ -13,7 +13,6 @@ export const metadata: Metadata = { title: 'Agents' };
 export const dynamic = 'force-dynamic';
 
 const FIELDS: FieldSpec[] = [
-  { kind: 'text', name: 'agentCode', label: 'Agent code', placeholder: 'AGT-0001', hint: 'Issued automatically if left blank.' },
   { kind: 'text', name: 'agentName', label: 'Agent name', required: true },
   { kind: 'text', name: 'contactPerson', label: 'Contact person' },
   { kind: 'tel', name: 'phone', label: 'Phone' },
@@ -25,7 +24,6 @@ const FIELDS: FieldSpec[] = [
 
 const COLUMNS: SimpleColumnSpec[] = [
   { id: 'name', header: 'Agent', key: 'agentName', mobile: 'title' },
-  { id: 'code', header: 'Code', key: 'agentCode', mobile: 'meta' },
   { id: 'contact', header: 'Contact', key: 'contactPerson', mobile: 'meta' },
   { id: 'phone', header: 'Phone', key: 'phone', hideable: true },
   { id: 'email', header: 'Email', key: 'email', hideable: true, defaultHidden: true },

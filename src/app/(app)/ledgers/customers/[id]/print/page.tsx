@@ -97,7 +97,6 @@ export default async function CustomerLedgerPrintPage({
             <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">Customer</p>
             <p className="mt-1.5 text-sm font-semibold text-ink">{customer.customerName}</p>
             <p className="mt-0.5 text-xs text-ink-muted">
-              {customer.customerCode}
               {customer.address ? (
                 <>
                   <br />

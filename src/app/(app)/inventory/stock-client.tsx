@@ -74,7 +74,7 @@ export function StockClient({
         <span>
           <span className="block font-medium">{r.itemName}</span>
           <span className="block text-xs text-ink-subtle">
-            {r.itemCode} · {r.origin}
+            {r.origin}
           </span>
         </span>
       ),

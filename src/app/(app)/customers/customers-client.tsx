@@ -39,12 +39,6 @@ export type CustomerRow = {
 const FIELDS = (defaultCurrency: string): FieldSpec[] => [
   { kind: 'section', title: 'Identity' },
   { kind: 'text', name: 'customerName', label: 'Customer name', required: true },
-  {
-    kind: 'text',
-    name: 'customerCode',
-    label: 'Customer code',
-    hint: 'Leave blank to issue the next CUS number. On edit this stays as it is.',
-  },
   { kind: 'text', name: 'country', label: 'Country' },
   {
     kind: 'select',
@@ -100,7 +94,7 @@ export function CustomersClient({
       cell: (r) => (
         <span>
           <span className="block font-medium">{r.customerName}</span>
-          <span className="block text-xs text-ink-subtle">{r.customerCode}</span>
+          
         </span>
       ),
     },

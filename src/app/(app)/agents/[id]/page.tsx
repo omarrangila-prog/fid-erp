@@ -57,9 +57,9 @@ export default async function AgentLedgerPage({ params }: { params: Promise<{ id
     <div className="space-y-6">
       <PageHeader
         title={agent.agentName}
-        description={`${agent.agentCode}${agent.contactPerson ? ` · ${agent.contactPerson}` : ''}${
-          agent.phone ? ` · ${agent.phone}` : ''
-        }`}
+        description={
+          [agent.contactPerson, agent.phone].filter(Boolean).join(' · ') || undefined
+        }
         breadcrumbs={[{ label: 'Contacts' }, { label: 'Agents', href: '/agents' }, { label: agent.agentName }]}
         actions={
           <>

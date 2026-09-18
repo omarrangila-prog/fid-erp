@@ -131,7 +131,7 @@ export default async function NewPaymentPage({
         vendors={vendors.map((v) => ({
           value: v.id,
           label: v.vendorName,
-          hint: `${v.vendorCode} · ${v.primaryCurrency}`,
+          hint: v.primaryCurrency,
           keywords: v.vendorCode,
           currency: v.primaryCurrency,
         }))}

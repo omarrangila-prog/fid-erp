@@ -97,7 +97,6 @@ export default async function VendorLedgerPrintPage({
             <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">Supplier</p>
             <p className="mt-1.5 text-sm font-semibold text-ink">{vendor.vendorName}</p>
             <p className="mt-0.5 text-xs text-ink-muted">
-              {vendor.vendorCode}
               {vendor.country ? (
                 <>
                   <br />

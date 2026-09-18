@@ -71,7 +71,7 @@ export default async function VendorLedgerPage({
     <div className="space-y-6">
       <PageHeader
         title={vendor.vendorName}
-        description={`${vendor.vendorCode}${vendor.country ? ` · ${vendor.country}` : ''}`}
+        description={vendor.country ?? undefined}
         breadcrumbs={[
           { label: 'Finance' },
           { label: 'Supplier Ledgers', href: '/ledgers/vendors' },

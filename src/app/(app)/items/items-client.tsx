@@ -93,14 +93,6 @@ const FIELDS: FieldSpec[] = [
     ],
     hint: 'Stock is always held in KG. This is only the unit staff type in.',
   },
-  {
-    kind: 'text',
-    name: 'itemCode',
-    label: 'SKU',
-    placeholder: 'Optional',
-    hint: 'Leave blank and the system issues ITM-0001, same as customers.',
-  },
-
   { kind: 'section', title: 'Coffee details' },
   { kind: 'select', name: 'coffeeType', label: 'Type', required: true, options: asOptions(COFFEE_TYPE_LABELS) },
   { kind: 'text', name: 'originCountry', label: 'Origin country', required: true, placeholder: 'Uganda' },
@@ -166,7 +158,7 @@ export function ItemsClient({
       cell: (r) => (
         <span>
           <span className="block font-medium text-forest-700">{r.itemName}</span>
-          <span className="block text-xs text-ink-subtle">{r.itemCode}</span>
+          
         </span>
       ),
     },

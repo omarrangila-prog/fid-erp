@@ -71,7 +71,6 @@ export default async function AgentLedgersPage() {
               <THead>
                 <TR className="hover:bg-transparent">
                   <TH>Agent</TH>
-                  <TH>Code</TH>
                   <TH numeric>Holding for us (USD)</TH>
                   <TH numeric>Holding ({local})</TH>
                   <TH numeric>Commission owed (USD)</TH>
@@ -90,7 +89,6 @@ export default async function AgentLedgersPage() {
                         {position.agentName}
                       </Link>
                     </TD>
-                    <TD>{position.agentCode}</TD>
                     <TD numeric className={dec(position.holdingUsd).greaterThan(0) ? 'font-semibold text-ink' : ''}>
                       {formatMoney(position.holdingUsd, 'USD')}
                     </TD>

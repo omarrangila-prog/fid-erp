@@ -21,7 +21,6 @@ export const STATEMENT_GROUP_OPTIONS = [
 ];
 
 const FIELDS: FieldSpec[] = [
-  { kind: 'text', name: 'code', label: 'Account code', required: true, placeholder: '6200' },
   { kind: 'text', name: 'name', label: 'Account name', required: true, placeholder: 'Warehouse rent' },
   {
     kind: 'select',

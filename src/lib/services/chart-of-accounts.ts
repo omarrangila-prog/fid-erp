@@ -483,6 +483,15 @@ export async function provisionCompany(tx: Tx, companyId: string): Promise<void>
   await ensurePorts(tx, companyId, company.country);
 }
 
+/** Where a new account of each kind starts looking for a free number. */
+const SERIES_FOR_TYPE: Record<AccountType, number> = {
+  ASSET: 1600,
+  LIABILITY: 2300,
+  EQUITY: 3200,
+  INCOME: 4200,
+  EXPENSE: 6200,
+};
+
 const REPORT_GROUP_FOR_TYPE: Record<AccountType, string[]> = {
   ASSET: [REPORT_GROUPS.CURRENT_ASSET, REPORT_GROUPS.NON_CURRENT_ASSET],
   LIABILITY: [REPORT_GROUPS.CURRENT_LIABILITY, REPORT_GROUPS.NON_CURRENT_LIABILITY],
@@ -673,15 +682,14 @@ export async function getChartOfAccounts(companyId: string, localCurrency: strin
  */
 export async function createLedgerAccount(input: {
   companyId: string;
-  code: string;
+  /** Left blank, one is issued in the series for this kind of account. */
+  code?: string | null;
   name: string;
   type: AccountType;
   reportGroup?: string | null;
   currency?: string | null;
 }) {
-  const code = input.code.trim();
   const name = input.name.trim();
-  if (!code) throw new BusinessRuleError('Enter an account code.');
   if (!name) throw new BusinessRuleError('Enter an account name.');
 
   const allowed = REPORT_GROUP_FOR_TYPE[input.type];
@@ -693,6 +701,13 @@ export async function createLedgerAccount(input: {
   }
 
   return transaction(async (tx) => {
+    /*
+     * A code the person never sees is a code they should not have to invent.
+     * Every other master issues its own; the chart now does too, in the series
+     * that matches the kind of account being opened.
+     */
+    const code = input.code?.trim() || (await nextCodeInSeries(tx, input.companyId, SERIES_FOR_TYPE[input.type]));
+
     const duplicate = await tx.account.findFirst({ where: { companyId: input.companyId, code } });
     if (duplicate) throw new ConflictError(`Account code ${code} is already in use.`);
 

@@ -38,12 +38,6 @@ export type VendorRow = {
 const FIELDS: FieldSpec[] = [
   { kind: 'section', title: 'Identity' },
   { kind: 'text', name: 'vendorName', label: 'Supplier name', required: true, placeholder: 'Fazenda Santa Clara Exportadora' },
-  {
-    kind: 'text',
-    name: 'vendorCode',
-    label: 'Supplier code',
-    hint: 'Leave blank to issue the next SUP number. On edit this stays as it is.',
-  },
   { kind: 'text', name: 'country', label: 'Origin country', placeholder: 'Brazil' },
   {
     kind: 'select',
@@ -103,7 +97,7 @@ export function VendorsClient({
       cell: (r) => (
         <span>
           <span className="block font-medium">{r.vendorName}</span>
-          <span className="block text-xs text-ink-subtle">{r.vendorCode}</span>
+          
         </span>
       ),
     },

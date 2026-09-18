@@ -123,7 +123,7 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
         customers={customers.map((c) => ({
           value: c.id,
           label: c.customerName,
-          hint: `${c.customerCode} · ${c.primaryCurrency}`,
+          hint: c.primaryCurrency,
           currency: c.primaryCurrency,
           paymentTermDays: c.paymentTermDays,
         }))}

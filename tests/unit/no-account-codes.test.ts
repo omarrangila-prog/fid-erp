@@ -39,6 +39,20 @@ const FORBIDDEN: Array<{ pattern: RegExp; why: string }> = [
     pattern: /header: 'Code', value: \(r\) => r\.(?:accountCode|code)\b/,
     why: 'exports an account code column',
   },
+  {
+    // CUS-0001, SUP-0002, AG-RID, ITM-0007 — issued by the system, meaningless
+    // to the person reading the screen.
+    pattern: /\{(?:\w+\.)*(?:customerCode|vendorCode|agentCode|itemCode)\}/,
+    why: 'renders a master-data code',
+  },
+  {
+    pattern: /\$\{(?:\w+\.)*(?:customerCode|vendorCode|agentCode|itemCode)\}/,
+    why: 'puts a master-data code into a label',
+  },
+  {
+    pattern: /label: '(?:Customer|Supplier|Agent|Account) code'/,
+    why: 'asks the user to type a code the system issues',
+  },
 ];
 
 /** Codes that are not ours: a port, a warehouse, a VAT band, a company. */
@@ -63,7 +77,7 @@ function walk(dir: string): string[] {
   return out;
 }
 
-describe('no accounting code reaches the screen', () => {
+describe('no system-issued code reaches the screen', () => {
   const files = ROOTS.flatMap(walk).filter(
     (f) => !ALLOWED_FILES.some((allowed) => f.includes(allowed)),
   );
@@ -72,14 +86,16 @@ describe('no accounting code reaches the screen', () => {
     expect(files.length).toBeGreaterThan(50);
   });
 
-  it('renders account names, never account codes', () => {
+  it('renders names, never the codes the system issues for itself', () => {
     const offences: string[] = [];
 
     for (const file of files) {
       const lines = readFileSync(file, 'utf8').split('\n');
       lines.forEach((line, index) => {
-        // A key or a search term is not something anybody reads.
-        if (/\bkey=|keywords|searchText|searchValue/.test(line)) return;
+        // A key or a search term is not something anybody reads. A search
+        // template often spans several lines, so look back a little.
+        const context = lines.slice(Math.max(0, index - 3), index + 1).join('\n');
+        if (/\bkey=|keywords|searchText|searchValue/.test(context)) return;
         for (const { pattern, why } of FORBIDDEN) {
           if (pattern.test(line)) {
             offences.push(`${file}:${index + 1} ${why}\n    ${line.trim()}`);

@@ -62,7 +62,7 @@ export default async function NewJournalEntryPage() {
         customers={customerRows.map((c) => ({
           value: c.id,
           label: c.customerName,
-          hint: `${c.customerCode} · ${c.primaryCurrency}`,
+          hint: c.primaryCurrency,
           keywords: c.customerCode,
         }))}
         localCurrency={user.activeCompany.localCurrency}

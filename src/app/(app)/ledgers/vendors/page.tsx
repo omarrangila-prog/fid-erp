@@ -60,7 +60,7 @@ export default async function VendorLedgersPage() {
                   <TD>
                     <Link href={`/ledgers/vendors/${vendor.id}`} className="font-medium text-forest-800 hover:text-gold-700">
                       <span className="block">{vendor.vendorName}</span>
-                      <span className="block text-xs font-normal text-ink-subtle">{vendor.vendorCode}</span>
+                      
                     </Link>
                   </TD>
                   <TD>{vendor.country ?? '—'}</TD>

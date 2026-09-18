@@ -109,7 +109,7 @@ export default async function NewSalePage() {
         customers={customers.map((c) => ({
           value: c.id,
           label: c.customerName,
-          hint: `${c.customerCode} · ${c.primaryCurrency}`,
+          hint: c.primaryCurrency,
           keywords: c.customerCode,
           currency: c.primaryCurrency,
         }))}

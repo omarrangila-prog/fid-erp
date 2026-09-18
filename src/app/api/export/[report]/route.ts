@@ -1239,7 +1239,7 @@ const REPORTS: Record<string, Report> = {
       return buildWorkbook({
         companyName: user.activeCompany.name,
         title: `Statement — ${data.customer.customerName}`,
-        subtitle: `${data.customer.customerCode} · ${data.view} · ${range}`,
+        subtitle: `${data.customer.customerName} · ${data.view} · ${range}`,
         rows: data.ledger.rows,
         columns: [
           { header: 'Date', value: (r) => r.entryDate, type: 'date' },
@@ -1272,7 +1272,7 @@ const REPORTS: Record<string, Report> = {
       return buildWorkbook({
         companyName: user.activeCompany.name,
         title: `Statement — ${data.vendor.vendorName}`,
-        subtitle: `${data.vendor.vendorCode} · ${data.view} · ${range}`,
+        subtitle: `${data.vendor.vendorName} · ${data.view} · ${range}`,
         rows: data.ledger.rows,
         columns: [
           { header: 'Date', value: (r) => r.entryDate, type: 'date' },

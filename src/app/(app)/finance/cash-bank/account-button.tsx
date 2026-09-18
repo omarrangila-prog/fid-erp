@@ -19,13 +19,6 @@ const CURRENCY_OPTIONS = [
 ];
 
 const CREATE_FIELDS: FieldSpec[] = [
-  {
-    kind: 'text',
-    name: 'code',
-    label: 'Account code',
-    placeholder: 'CBA-0001',
-    hint: 'Issued automatically if left blank.',
-  },
   { kind: 'text', name: 'name', label: 'Account name', required: true, placeholder: 'AED Bank Account' },
   {
     kind: 'select',

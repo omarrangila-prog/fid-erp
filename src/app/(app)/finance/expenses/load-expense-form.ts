@@ -94,7 +94,7 @@ export async function loadExpenseFormOptions(companyId: string) {
     vendors: vendors.map((v) => ({
       value: v.id,
       label: v.vendorName,
-      hint: `${v.vendorCode} · ${v.primaryCurrency}`,
+      hint: v.primaryCurrency,
       keywords: v.vendorCode,
       currency: v.primaryCurrency,
     })),

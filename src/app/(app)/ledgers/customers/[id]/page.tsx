@@ -71,7 +71,7 @@ export default async function CustomerLedgerPage({
     <div className="space-y-6">
       <PageHeader
         title={customer.customerName}
-        description={`${customer.customerCode}${customer.country ? ` · ${customer.country}` : ''}`}
+        description={customer.country ?? undefined}
         breadcrumbs={[
           { label: 'Finance' },
           { label: 'Customer Ledgers', href: '/ledgers/customers' },
