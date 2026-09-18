@@ -18,6 +18,8 @@ test.describe.configure({ mode: 'serial' });
 /** "1100 · Name", "4000 — Name", "(1200)" — a code sitting beside a name. */
 const CODE_BESIDE_NAME = /\b[12345]\d{3}\s*[·—–-]\s*[A-Z]/;
 const CODE_IN_BRACKETS = /\(\s*[12345]\d{3}\s*\)/;
+/** FID-MA-SI-000008 and every other number the system issues itself. */
+const SYSTEM_DOCUMENT_NUMBER = /\bFID-[A-Z]{2,3}-[A-Z]{2,4}-\d{4,}\b/;
 
 async function signIn(page: Page) {
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
@@ -52,6 +54,25 @@ async function signIn(page: Page) {
     }
   }
 }
+
+/** Where the system's own document numbering used to appear. */
+const DOCUMENT_SCREENS = [
+  '/sales',
+  '/sales/credit-notes',
+  '/purchases',
+  '/shipments',
+  '/loading',
+  '/goods-receipts',
+  '/inventory/batches',
+  '/inventory/transfers',
+  '/finance/receipts',
+  '/finance/payments',
+  '/finance/expenses',
+  '/finance/cheques',
+  '/ledgers/customers',
+  '/ledgers/vendors',
+  '/profitability',
+];
 
 const SCREENS = [
   '/accounting/chart',
@@ -102,5 +123,25 @@ test('no accounting code is shown anywhere a person looks', async ({ page }) => 
 
   for (const line of offences) console.log('  ! ' + line);
   console.log(`  checked ${SCREENS.length} screens; ${offences.length} showing a code`);
+  expect(offences, offences.join('\n')).toEqual([]);
+});
+
+test('no document number the system issued is shown either', async ({ page }) => {
+  test.setTimeout(15 * 60_000);
+  await signIn(page);
+
+  const offences: string[] = [];
+  for (const path of DOCUMENT_SCREENS) {
+    await page.goto(path, { waitUntil: 'domcontentloaded' });
+    // Long enough for the table to render, short enough that fifteen screens
+    // finish: a page that polls never reaches networkidle at all.
+    await page.waitForLoadState('networkidle', { timeout: 4_000 }).catch(() => undefined);
+    const body = (await page.locator('main').textContent()) ?? '';
+    const hit = body.match(SYSTEM_DOCUMENT_NUMBER);
+    if (hit) offences.push(`${path}: "${hit[0]}"`);
+  }
+
+  for (const line of offences) console.log('  ! ' + line);
+  console.log(`  checked ${DOCUMENT_SCREENS.length} document screens; ${offences.length} showing a number`);
   expect(offences, offences.join('\n')).toEqual([]);
 });
