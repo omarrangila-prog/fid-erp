@@ -62,7 +62,7 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
   return (
     <div className="space-y-6">
       <PageHeader
-        title={`Edit ${contract.contractNumber}`}
+        title={`Edit ${contract.contractReference}`}
         description="Only draft contracts can be edited. Once approved, a correction means deleting it and entering it again."
         breadcrumbs={[
           { label: 'Trading' },

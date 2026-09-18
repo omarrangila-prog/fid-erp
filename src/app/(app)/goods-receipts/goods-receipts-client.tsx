@@ -60,7 +60,6 @@ export function GoodsReceiptsClient({
       cell: (r) => (
         <span className="block min-w-44">
           <span className="block font-mono text-xs font-medium">{r.contractReference}</span>
-          <span className="block text-[11px] text-ink-subtle">{r.contractNumber}</span>
         </span>
       ),
     },

@@ -26,13 +26,13 @@ export type ContainerEditLine = {
  */
 export function ManageContainersDialog({
   shipmentId,
-  contractNumber,
+  contractLabel,
   lines,
   knownNumbers,
   onClose,
 }: {
   shipmentId: string;
-  contractNumber: string;
+  contractLabel: string;
   lines: ContainerEditLine[];
   knownNumbers: string[];
   onClose: () => void;
@@ -87,7 +87,7 @@ export function ManageContainersDialog({
       open
       onOpenChange={(open) => !open && onClose()}
       title="Manage containers"
-      description={`${contractNumber}. Each physical box has its own number, even when they share a PO.`}
+      description={`${contractLabel}. Each physical box has its own number, even when they share a PO.`}
       width="lg"
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

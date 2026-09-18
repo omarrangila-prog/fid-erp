@@ -7,7 +7,7 @@ import { GoodsReceiptDialog, type ReceivableBatch } from '@/app/(app)/purchases/
 /** Holds the shared open/closed state between the toolbar and the receipt sheet. */
 export function PurchaseDetailToolbar({
   id,
-  contractNumber,
+  contractLabel,
   status,
   permissions,
   fullyReceived,
@@ -16,7 +16,7 @@ export function PurchaseDetailToolbar({
   defaultWarehouseId,
 }: {
   id: string;
-  contractNumber: string;
+  contractLabel: string;
   status: string;
   permissions: {
     approve: boolean;
@@ -50,7 +50,7 @@ export function PurchaseDetailToolbar({
         open={receiving}
         onOpenChange={setReceiving}
         purchaseContractId={id}
-        contractNumber={contractNumber}
+        contractLabel={contractLabel}
         batches={batches.filter((b) => Number(b.outstandingKg) > 0)}
         warehouses={warehouses}
         defaultWarehouseId={defaultWarehouseId}

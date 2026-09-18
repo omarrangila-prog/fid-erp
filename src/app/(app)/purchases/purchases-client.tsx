@@ -55,11 +55,10 @@ export function PurchasesClient({
       id: 'contract',
       header: 'Contract',
       mobile: 'title',
-      sortValue: (r) => r.contractNumber,
+      sortValue: (r) => r.contractReference,
       cell: (r) => (
         <span>
-          <span className="block font-medium">{r.contractNumber}</span>
-          <span className="block text-xs text-ink-subtle">{r.contractReference}</span>
+          <span className="block font-medium">{r.contractReference}</span>
         </span>
       ),
     },

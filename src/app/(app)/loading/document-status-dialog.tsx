@@ -17,12 +17,12 @@ import { changeDocumentStatusAction } from '@/server/actions/trading-actions';
  */
 export function DocumentStatusDialog({
   shipmentId,
-  contractNumber,
+  contractLabel,
   currentStatus,
   onClose,
 }: {
   shipmentId: string;
-  contractNumber: string;
+  contractLabel: string;
   currentStatus: string;
   onClose: () => void;
 }) {
@@ -51,7 +51,7 @@ export function DocumentStatusDialog({
       open
       onOpenChange={(open) => !open && onClose()}
       title="Update document status"
-      description={`${contractNumber}. Currently ${DOCUMENT_STATUS_META[currentStatus]?.label ?? currentStatus}.`}
+      description={`${contractLabel}. Currently ${DOCUMENT_STATUS_META[currentStatus]?.label ?? currentStatus}.`}
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="outline" onClick={onClose} disabled={pending}>

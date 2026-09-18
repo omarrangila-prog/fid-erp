@@ -28,7 +28,7 @@ export function MarkLoadedDialog({
   open,
   onOpenChange,
   shipmentId,
-  contractNumber,
+  contractLabel,
   shippingLines,
   ports = [],
   defaults,
@@ -36,7 +36,7 @@ export function MarkLoadedDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   shipmentId: string;
-  contractNumber: string;
+  contractLabel: string;
   shippingLines: Array<{ id: string; name: string }>;
   /** Names from the Ports master, offered as the user types. */
   ports?: string[];
@@ -58,7 +58,7 @@ export function MarkLoadedDialog({
       open={open}
       onOpenChange={onOpenChange}
       shipmentId={shipmentId}
-      contractNumber={contractNumber}
+      contractLabel={contractLabel}
       shippingLines={shippingLines}
       ports={ports}
       defaults={defaults}
@@ -70,7 +70,7 @@ function MarkLoadedBody({
   open,
   onOpenChange,
   shipmentId,
-  contractNumber,
+  contractLabel,
   shippingLines,
   ports = [],
   defaults,
@@ -171,7 +171,7 @@ function MarkLoadedBody({
       open={open}
       onOpenChange={onOpenChange}
       title="Mark as loaded"
-      description={`${contractNumber}. The loading sheet updates from what you enter here.`}
+      description={`${contractLabel}. The loading sheet updates from what you enter here.`}
       width="md"
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

@@ -47,7 +47,14 @@ export default async function NewPaymentPage({
             vendorId: null,
             payableToAgentId: null,
           },
-          select: { id: true, expenseNumber: true, expenseDate: true, currency: true },
+          select: {
+            id: true,
+            expenseNumber: true,
+            expenseDate: true,
+            currency: true,
+            description: true,
+            expenseCategory: { select: { name: true } },
+          },
         })
       : Promise.resolve(null),
   ]);
@@ -96,7 +103,7 @@ export default async function NewPaymentPage({
     .map((p) => ({
       kind: p.kind,
       id: p.contractId,
-      contractNumber: p.contractNumber,
+      label: p.contractReference || p.contractNumber,
       contractDate: toDateInputValue(p.contractDate),
       currency: p.currency,
       outstanding: p.outstandingAmount.toString(),
@@ -112,7 +119,7 @@ export default async function NewPaymentPage({
     contracts.unshift({
       kind: 'EXPENSE',
       id: accrued.id,
-      contractNumber: accrued.expenseNumber,
+      label: accrued.expenseCategory?.name ?? accrued.description ?? 'Cost',
       contractDate: toDateInputValue(accrued.expenseDate),
       currency: accrued.currency,
       outstanding: accruedOutstanding.amount.toString(),

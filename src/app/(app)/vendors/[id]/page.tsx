@@ -197,7 +197,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
                     <TR key={contract.id}>
                       <TD>
                         <Link href={`/purchases/${contract.id}`} className="font-medium text-forest-800 hover:text-gold-700">
-                          {contract.contractNumber}
+                          {contract.contractReference}
                         </Link>
                         <span className="block text-xs text-ink-subtle">{contract.contractReference}</span>
                       </TD>
@@ -286,7 +286,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
                           href={row.kind === 'EXPENSE' ? `/finance/expenses/${row.contractId}` : `/purchases/${row.contractId}`}
                           className="font-medium text-forest-800 hover:text-gold-700"
                         >
-                          {row.contractNumber}
+                          {row.contractReference}
                         </Link>
                       </TD>
                       <TD>{formatDate(row.dueDate)}</TD>

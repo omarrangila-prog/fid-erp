@@ -24,12 +24,12 @@ import { formatDate, formatDateTime, todayInputValue } from '@/lib/format';
  */
 export function EtaDialog({
   shipmentId,
-  contractNumber,
+  contractLabel,
   currentEta,
   onClose,
 }: {
   shipmentId: string;
-  contractNumber: string;
+  contractLabel: string;
   currentEta: string | null;
   onClose: () => void;
 }) {
@@ -70,7 +70,7 @@ export function EtaDialog({
       open
       onOpenChange={(next) => !next && onClose()}
       title="Expected arrival"
-      description={`${contractNumber}. Change it as often as the line changes it.`}
+      description={`${contractLabel}. Change it as often as the line changes it.`}
       width="md"
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -134,11 +134,11 @@ export function EtaDialog({
  */
 export function ArrivedDialog({
   shipmentId,
-  contractNumber,
+  contractLabel,
   onClose,
 }: {
   shipmentId: string;
-  contractNumber: string;
+  contractLabel: string;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -170,7 +170,7 @@ export function ArrivedDialog({
       open
       onOpenChange={(next) => !next && onClose()}
       title="Mark as arrived"
-      description={`${contractNumber} has landed.`}
+      description={`${contractLabel} has landed.`}
       width="md"
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

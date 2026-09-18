@@ -224,14 +224,14 @@ export function LoadingSheet({
     header: 'Contract date & ref',
     mobile: 'title',
     sortValue: (r) => r.contractDateSort,
-    exportValue: (r) => `${r.contractDate} ${r.contractReference} (${r.contractNumber})`,
+    exportValue: (r) => `${r.contractDate} ${r.contractReference}`,
     cell: (r) => (
       <span className="block min-w-40">
         <Link href={`/purchases/${r.contractId}`} className="font-medium text-forest-700 hover:underline">
           {r.contractReference}
         </Link>
         <span className="block text-xs text-ink-subtle">
-          {r.contractDate} · {r.contractNumber}
+          {r.contractDate}
         </span>
       </span>
     ),
@@ -714,7 +714,7 @@ export function LoadingSheet({
       {editingEta ? (
         <EtaDialog
           shipmentId={editingEta.shipmentId}
-          contractNumber={editingEta.contractNumber}
+          contractLabel={editingEta.contractReference}
           currentEta={editingEta.etaIso}
           onClose={() => setEditingEta(null)}
         />
@@ -723,7 +723,7 @@ export function LoadingSheet({
       {arrivingRow ? (
         <ArrivedDialog
           shipmentId={arrivingRow.shipmentId}
-          contractNumber={arrivingRow.contractNumber}
+          contractLabel={arrivingRow.contractReference}
           onClose={() => setArrivingRow(null)}
         />
       ) : null}
@@ -733,7 +733,7 @@ export function LoadingSheet({
           open
           onOpenChange={(open) => !open && setLoadingRow(null)}
           shipmentId={loadingRow.shipmentId}
-          contractNumber={loadingRow.contractNumber}
+          contractLabel={loadingRow.contractReference}
           shippingLines={shippingLines}
           ports={ports}
           defaults={{
@@ -752,7 +752,7 @@ export function LoadingSheet({
       {documentsRow ? (
         <DocumentStatusDialog
           shipmentId={documentsRow.shipmentId}
-          contractNumber={documentsRow.contractNumber}
+          contractLabel={documentsRow.contractReference}
           currentStatus={documentsRow.documentStatus}
           onClose={() => setDocumentsRow(null)}
         />
@@ -761,7 +761,7 @@ export function LoadingSheet({
       {containersRow ? (
         <ManageContainersDialog
           shipmentId={containersRow.shipmentId}
-          contractNumber={containersRow.contractNumber}
+          contractLabel={containersRow.contractReference}
           lines={containersRow.lines}
           knownNumbers={containersRow.containerNumbers}
           onClose={() => setContainersRow(null)}
@@ -773,7 +773,7 @@ export function LoadingSheet({
           open
           onOpenChange={(open) => !open && setReceivingRow(null)}
           purchaseContractId={receivingRow.contractId}
-          contractNumber={receivingRow.contractNumber}
+          contractLabel={receivingRow.contractReference}
           batches={receivableBatches(receivingRow)}
           warehouses={warehouses}
           defaultWarehouseId={defaultWarehouseId}

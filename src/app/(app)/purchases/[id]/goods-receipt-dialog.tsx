@@ -57,7 +57,7 @@ type GoodsReceiptDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   purchaseContractId: string;
-  contractNumber: string;
+  contractLabel: string;
   batches: ReceivableBatch[];
   warehouses: Array<{ id: string; name: string; code: string }>;
   defaultWarehouseId: string | null;
@@ -73,7 +73,7 @@ function GoodsReceiptDialogBody({
   open,
   onOpenChange,
   purchaseContractId,
-  contractNumber,
+  contractLabel,
   batches,
   warehouses,
   defaultWarehouseId,
@@ -224,7 +224,7 @@ function GoodsReceiptDialogBody({
       open={open}
       onOpenChange={onOpenChange}
       title="Receive goods"
-      description={`Against ${contractNumber}. Stock becomes available in the warehouse you choose.`}
+      description={`Against ${contractLabel}. Stock becomes available in the warehouse you choose.`}
       width="lg"
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

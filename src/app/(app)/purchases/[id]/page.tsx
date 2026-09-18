@@ -97,7 +97,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
   return (
     <div className="space-y-6">
       <PageHeader
-        title={contract.contractNumber}
+        title={contract.contractReference}
         description={`${contract.vendor.vendorName} · ${contract.contractReference}`}
         breadcrumbs={[
           { label: 'Trading' },
@@ -119,7 +119,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
         actions={
           <PurchaseDetailToolbar
             id={contract.id}
-            contractNumber={contract.contractNumber}
+            contractLabel={contract.contractReference}
             status={contract.status}
             permissions={{
               approve: can(user, PERMISSIONS.PURCHASES_APPROVE),

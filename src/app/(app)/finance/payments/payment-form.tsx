@@ -24,7 +24,8 @@ export type OpenContract = {
   /** A contract is the coffee; an expense is a cost the supplier billed. */
   kind: 'CONTRACT' | 'EXPENSE';
   id: string;
-  contractNumber: string;
+  /** What to call this on screen: the client's own reference, or the cost. */
+  label: string;
   contractDate: string;
   currency: string;
   outstanding: string;
@@ -192,7 +193,7 @@ export function PaymentForm({
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {accruedCost ? (
             <Field label="Settles" hint="Booked without a supplier, so none is asked for here.">
-              <Input value={`Cost ${accruedCost.contractNumber}`} readOnly />
+              <Input value={accruedCost.label} readOnly />
             </Field>
           ) : (
             <Field label="Supplier" required error={fieldIssues.vendorId}>
@@ -333,7 +334,7 @@ export function PaymentForm({
               vendorContracts.map((contract) => (
                 <div key={contract.id} className="flex items-center justify-between gap-3 rounded-lg border border-line p-3">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-ink">{contract.contractNumber}</p>
+                    <p className="truncate text-sm font-medium text-ink">{contract.label}</p>
                     <p className="text-xs text-ink-subtle">
                       {contract.kind === 'EXPENSE' ? 'Cost · ' : ''}
                       {formatDate(contract.contractDate)} · {formatMoney(contract.outstanding, contract.currency)} outstanding
@@ -341,7 +342,7 @@ export function PaymentForm({
                   </div>
                   <div className="w-36 shrink-0">
                     <MoneyInput
-                      aria-label={`Amount applied to ${contract.contractNumber}`}
+                      aria-label={`Amount applied to ${contract.label}`}
                       currency={contract.currency}
                       value={allocations[contract.id] ?? ''}
                       onChange={(e) => setAllocations({ ...allocations, [contract.id]: e.target.value })}

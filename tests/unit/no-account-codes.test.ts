@@ -63,6 +63,16 @@ const FORBIDDEN: Array<{ pattern: RegExp; why: string }> = [
     pattern: /\$\{(?:\w+\.)*(?:jobNumber|expenseNumber)\}/,
     why: 'puts a job or expense number into a label',
   },
+  {
+    // FID-MA-PO-000001: the order already carries the client's own
+    // ICUL/FID reference, which is what they quote and search by.
+    pattern: /\{(?:\w+\.)*contractNumber\}/,
+    why: 'renders a contract number',
+  },
+  {
+    pattern: /\$\{(?:\w+\.)*contractNumber\}/,
+    why: 'puts a contract number into a label',
+  },
 ];
 
 /** Codes that are not ours: a port, a warehouse, a VAT band, a company. */

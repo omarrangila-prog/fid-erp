@@ -172,7 +172,6 @@ async function ShipmentTable({
                       {lead === 'contract' ? (
                         <Link href={`/purchases/${row.contractId}`} className="font-medium text-forest-800 hover:text-gold-700">
                           <span className="block">{row.contractReference}</span>
-                          <span className="block text-xs font-normal text-ink-subtle">{row.contractNumber}</span>
                         </Link>
                       ) : (
                         <Link href={`/shipments/${row.shipmentId}`} className="font-medium text-forest-800 hover:text-gold-700">
