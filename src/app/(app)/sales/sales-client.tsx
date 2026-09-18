@@ -228,6 +228,7 @@ export function SalesClient({
 
   return (
     <DataTable
+      prefsKey="sales"
       data={visible}
       filters={[
       { id: 'status', label: 'Status', value: (r) => r.status },

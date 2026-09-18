@@ -22,6 +22,7 @@ export type StockRow = {
   inTransitLabel: string;
   bags: number;
   valueLabel: string;
+  costPerKgLabel: string;
   valueSort: number;
   /** Every batch making up this row, with where it came from. */
   lots: Array<{
@@ -123,6 +124,14 @@ export function StockClient({
     ...(showValue
       ? [
           {
+            id: 'costPerKg',
+            header: 'Landed cost / KG',
+            numeric: true,
+            mobile: 'meta',
+            sortValue: (r: StockRow) => (r.onHandSort > 0 ? r.valueSort / r.onHandSort : 0),
+            cell: (r: StockRow) => r.costPerKgLabel,
+          } satisfies DataColumn<StockRow>,
+          {
             id: 'value',
             header: 'Stock value',
             numeric: true,
@@ -155,6 +164,7 @@ export function StockClient({
 
   return (
     <DataTable
+      prefsKey="stock"
       data={filtered}
       columns={columns}
       getRowId={(r) => r.id}

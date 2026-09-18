@@ -81,6 +81,8 @@ export default async function ChartOfAccountsPage() {
                     <TH>Type</TH>
                     <TH>Currency</TH>
                     <TH>Status</TH>
+                    <TH numeric>Debit USD</TH>
+                    <TH numeric>Credit USD</TH>
                     <TH numeric>Balance USD</TH>
                     <TH numeric>Balance {localCurrency}</TH>
                     <TH className="text-right print:hidden">Actions</TH>
@@ -124,6 +126,12 @@ export default async function ChartOfAccountsPage() {
                         <Badge tone={account.status === 'INACTIVE' ? 'neutral' : 'success'}>
                           {account.status === 'INACTIVE' ? 'Inactive' : 'Active'}
                         </Badge>
+                      </TD>
+                      <TD numeric className="text-ink-muted">
+                        {account.debitUsd.greaterThan(0) ? formatMoney(account.debitUsd, 'USD') : '—'}
+                      </TD>
+                      <TD numeric className="text-ink-muted">
+                        {account.creditUsd.greaterThan(0) ? formatMoney(account.creditUsd, 'USD') : '—'}
                       </TD>
                       <TD numeric>{formatMoney(account.balanceUsd, 'USD')}</TD>
                       <TD numeric>{formatMoney(account.balanceLocal, localCurrency)}</TD>

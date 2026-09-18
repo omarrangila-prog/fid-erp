@@ -60,7 +60,34 @@ type SortState = { columnId: string; direction: 'asc' | 'desc' } | null;
  * columns into a phone-width table would make the data unreadable, which is the
  * one thing this application cannot afford.
  */
+/**
+ * Per-browser table preferences.
+ *
+ * Wrapped in try/catch because localStorage throws rather than returns in a
+ * private window, behind blocked site data, and inside a screenshot capture —
+ * and a table that will not render because it could not remember a sort order
+ * is worse than one that forgets.
+ */
+function readPreference<T>(key: string | undefined, name: string, fallback: T): T {
+  if (!key || typeof window === 'undefined') return fallback;
+  try {
+    const raw = window.localStorage.getItem(`fid.table.${key}.${name}`);
+    return raw === null ? fallback : (JSON.parse(raw) as T);
+  } catch {
+    return fallback;
+  }
+}
+
+function writePreference(key: string, name: string, value: unknown): void {
+  try {
+    window.localStorage.setItem(`fid.table.${key}.${name}`, JSON.stringify(value));
+  } catch {
+    // Nothing to be done, and nothing that should stop the table working.
+  }
+}
+
 export function DataTable<T>({
+  prefsKey,
   data,
   columns,
   getRowId,
@@ -128,16 +155,45 @@ export function DataTable<T>({
    * if the table in front of the user is showing a page of it.
    */
   exportHref?: string;
+  /**
+   * Remember this table's column visibility, sorting and density under this
+   * name. Omit and the table keeps nothing.
+   */
+  prefsKey?: string;
 }) {
   const [query, setQuery] = React.useState('');
-  const [sort, setSort] = React.useState<SortState>(null);
+  const [sort, setSort] = React.useState<SortState>(() => readPreference(prefsKey, 'sort', null));
   const [page, setPage] = React.useState(0);
-  const [hidden, setHidden] = React.useState<Set<string>>(
-    () => new Set(columns.filter((c) => c.defaultHidden).map((c) => c.id)),
-  );
+  const [hidden, setHidden] = React.useState<Set<string>>(() => {
+    const remembered = readPreference<string[] | null>(prefsKey, 'hidden', null);
+    if (remembered) return new Set(remembered);
+    return new Set(columns.filter((c) => c.defaultHidden).map((c) => c.id));
+  });
   // Compact fits about a third more rows on a screen, which matters on a
   // follow-up sheet somebody scans all day.
-  const [compact, setCompact] = React.useState(dense);
+  const [compact, setCompact] = React.useState(() => readPreference(prefsKey, 'compact', dense));
+
+  /*
+   * Which columns you hid, how you sorted and how tight the rows are, kept.
+   *
+   * Somebody who works the same sheet every morning should not have to set it
+   * up every morning. This is a per-browser convenience, not data: it is read
+   * inside try/catch and the table renders correctly when there is nothing to
+   * read, which is what happens in a private window or on a colleague's
+   * machine.
+   */
+  React.useEffect(() => {
+    if (!prefsKey) return;
+    writePreference(prefsKey, 'hidden', [...hidden]);
+  }, [prefsKey, hidden]);
+  React.useEffect(() => {
+    if (!prefsKey) return;
+    writePreference(prefsKey, 'sort', sort);
+  }, [prefsKey, sort]);
+  React.useEffect(() => {
+    if (!prefsKey) return;
+    writePreference(prefsKey, 'compact', compact);
+  }, [prefsKey, compact]);
 
   const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set());
   const [filterValues, setFilterValues] = React.useState<Record<string, string>>({});

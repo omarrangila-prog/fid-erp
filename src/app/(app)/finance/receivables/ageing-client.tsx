@@ -157,6 +157,7 @@ export function AgeingClient({
 
   return (
     <DataTable
+      prefsKey="ageing"
       data={filtered}
       columns={columns}
       getRowId={(r) => r.id}

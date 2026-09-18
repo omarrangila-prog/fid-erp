@@ -173,6 +173,7 @@ export function MovementsClient({
 
   return (
     <DataTable
+      prefsKey="movements"
       data={filtered}
       columns={columns}
       getRowId={(r) => r.id}

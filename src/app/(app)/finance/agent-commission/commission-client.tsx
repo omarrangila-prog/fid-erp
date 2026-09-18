@@ -123,6 +123,7 @@ export function AgentCommissionClient({ rows }: { rows: CommissionRow[] }) {
 
   return (
     <DataTable
+      prefsKey="agent-commission"
       data={rows}
       columns={columns}
       getRowId={(r) => r.id}

@@ -182,6 +182,7 @@ export function JournalClient({
 
   return (
     <DataTable
+      prefsKey="journal"
       data={rows}
       columns={columns}
       getRowId={(r) => r.id}

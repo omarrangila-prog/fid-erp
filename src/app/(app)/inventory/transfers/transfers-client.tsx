@@ -157,6 +157,7 @@ export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canM
   return (
     <>
       <DataTable
+      prefsKey="transfers"
         data={rows}
         columns={columns}
         getRowId={(r) => r.id}

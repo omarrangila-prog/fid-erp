@@ -194,6 +194,7 @@ export function ChequesClient({
   return (
     <>
       <DataTable
+      prefsKey="cheques"
         data={rows}
         columns={columns}
         getRowId={(r) => r.id}

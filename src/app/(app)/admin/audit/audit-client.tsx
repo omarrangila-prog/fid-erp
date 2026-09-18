@@ -52,6 +52,7 @@ export function AuditClient({ rows }: { rows: AuditRow[] }) {
   return (
     <>
       <DataTable
+      prefsKey="audit"
         data={rows}
         columns={columns}
         getRowId={(r) => r.id}

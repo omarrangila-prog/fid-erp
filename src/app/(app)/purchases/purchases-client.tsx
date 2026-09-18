@@ -234,6 +234,7 @@ export function PurchasesClient({
 
   return (
     <DataTable
+      prefsKey="purchases"
       data={rows}
       filters={[
       { id: 'status', label: 'Status', value: (r) => r.status },

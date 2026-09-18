@@ -223,6 +223,7 @@ export function VendorsClient({
   return (
     <>
       <DataTable
+      prefsKey="vendors"
         data={rows}
           filters={[
             { id: 'status', label: 'Status', value: (r) => r.status },

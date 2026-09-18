@@ -223,6 +223,7 @@ export function CustomersClient({
   return (
     <>
       <DataTable
+      prefsKey="customers"
         data={rows}
           filters={[
             { id: 'status', label: 'Status', value: (r) => r.status },

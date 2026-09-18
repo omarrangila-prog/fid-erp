@@ -407,6 +407,7 @@ export function ItemsClient({
   return (
     <>
       <DataTable
+      prefsKey="items"
         data={rows}
         columns={columns}
         getRowId={(r) => r.id}

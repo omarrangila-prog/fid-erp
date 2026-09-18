@@ -7,6 +7,7 @@ import { HandCoins, ArrowDownToLine, ArrowUpFromLine, Undo2 } from 'lucide-react
 import { FormError } from '@/components/shared/form-error';
 import { Button } from '@/components/ui/button';
 import { Input, MoneyInput, Select } from '@/components/ui/input';
+import { AccountSelect } from '@/components/shared/account-select';
 import { Field } from '@/components/ui/field';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Callout } from '@/components/ui/feedback';
@@ -72,7 +73,6 @@ export function LoanForm({
   const [error, setError] = React.useState<string | null>(null);
 
   const [direction, setDirection] = React.useState(initialDirection);
-  const [counterparty, setCounterparty] = React.useState('');
   const [loanAccountId, setLoanAccountId] = React.useState('');
   const [cashBankAccountId, setAccount] = React.useState(accounts[0]?.id ?? '');
   const [loanDate, setDate] = React.useState(todayInputValue());
@@ -100,12 +100,12 @@ export function LoanForm({
 
   const chosen = DIRECTIONS.find((d) => d.value === direction)!;
   const moneyIn = direction === 'RECEIVED';
-  const who = counterparty.trim() || existing?.label || 'them';
+  const who = existing?.label ?? 'them';
 
   function submit() {
     setError(null);
     if (!cashBankAccountId) return setError('Choose the account the money moved through.');
-    if (!counterparty.trim() && !loanAccountId) return setError('Say who the loan is with.');
+    if (!loanAccountId) return setError('Choose the account the loan is with.');
     if (tryDec(amount).lessThanOrEqualTo(0)) return setError('Enter the amount.');
     if (!sameCurrency && tryDec(exchangeRate).lessThanOrEqualTo(0)) {
       return setError(`Enter the rate used to turn ${currency} into ${bankCurrency}.`);
@@ -116,7 +116,6 @@ export function LoanForm({
         JSON.stringify({
           loanDate,
           direction,
-          counterpartyName: counterparty,
           loanAccountId,
           cashBankAccountId,
           currency,
@@ -188,40 +187,26 @@ export function LoanForm({
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
+          {/*
+            * Who the money is with is an account, not a name typed into a box.
+            * Pick them and every entry lands in their ledger; type somebody
+            * new and the ledger is opened without losing the form.
+            */}
           <Field
-            label={moneyIn ? 'Received from' : direction === 'GIVEN' ? 'Lent to' : 'Repaid to'}
+            label={moneyIn ? 'Received from account' : direction === 'GIVEN' ? 'Lent to account' : 'Repaid to account'}
+            htmlFor="loanParty"
             required
-            hint="A person or a company — a director, a shareholder, a friend."
+            className="sm:col-span-2"
+            hint="Their ledger records it automatically. Type a name nobody has yet to open one."
           >
-            <Input
-              value={counterparty}
-              onChange={(e) => {
-                setCounterparty(e.target.value);
-                if (e.target.value.trim()) setLoanAccountId('');
-              }}
-              placeholder="Ahmed"
-            />
-          </Field>
-
-          <Field
-            label="Or an account they already have"
-            hint={loanAccounts.length === 0 ? 'None yet — type a name above.' : 'Use this to be certain which ledger it lands in.'}
-          >
-            <Select
+            <AccountSelect
+              id="loanParty"
+              accounts={loanAccounts.map((a) => ({ id: a.id, name: a.label, currency: a.currency }))}
               value={loanAccountId}
-              onChange={(e) => {
-                setLoanAccountId(e.target.value);
-                if (e.target.value) setCounterparty('');
-              }}
-            >
-              <option value="">Open a new ledger from the name</option>
-              {loanAccounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.label}
-                  {a.currency ? ` · ${a.currency}` : ''}
-                </option>
-              ))}
-            </Select>
+              onChange={setLoanAccountId}
+              defaultCurrency={localCurrency}
+              placeholder="Search or type a name…"
+            />
           </Field>
 
           <Field label={moneyIn ? 'Received into' : 'Paid from'} required>

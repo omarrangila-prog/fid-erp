@@ -61,7 +61,7 @@ export function ShipmentsClient({
   const columns: DataColumn<ShipmentRow>[] = [
     {
       id: 'number',
-      header: 'Shipment / Job',
+      header: 'Reference',
       mobile: 'title',
       sortValue: (r) => r.shipmentNumber,
       cell: (r) => (
@@ -270,6 +270,7 @@ export function ShipmentsClient({
 
   return (
     <DataTable
+      prefsKey="shipments"
       data={rows}
       columns={columns}
       getRowId={(r) => r.id}

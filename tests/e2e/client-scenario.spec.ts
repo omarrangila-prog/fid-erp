@@ -568,3 +568,49 @@ test('the statements lead with the figures they exist to give', async ({ page })
   await expect(page.getByText(/^Balanced$|Attention required/).first()).toBeVisible({ timeout: 30_000 });
   console.log('  the trial balance says whether it balances');
 });
+
+test('who the loan is with is chosen from the ledgers, not typed', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/finance/loans/new', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle', { timeout: 6_000 }).catch(() => undefined);
+
+  // No blank name box: it is a searchable list of accounts.
+  const party = page.getByRole('combobox', { name: /Received from account/i }).first();
+  await expect(party).toBeVisible({ timeout: 30_000 });
+  await party.click();
+
+  const options = await page.getByRole('listbox').getByRole('option').allTextContents();
+  console.log(`  accounts offered: ${options.slice(0, 6).join(' | ')}`);
+  expect(options.length).toBeGreaterThan(0);
+
+  // Typing a name nobody has yet offers to open a ledger for them.
+  await page.keyboard.type('Zahra Holdings');
+  // The create row sits above the list as a button, not inside the listbox.
+  const create = page.getByRole('button', { name: /Add New Account/i }).first();
+  await expect(create).toBeVisible({ timeout: 15_000 });
+  console.log('  a name nobody has offers to open a ledger');
+});
+
+test('creating an account keeps the rest of the form', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/finance/loans/new', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle', { timeout: 6_000 }).catch(() => undefined);
+
+  // Fill the form first, then discover the account is missing.
+  await page.getByLabel(/^Amount/).fill('12345');
+  const name = `Zahra ${Date.now().toString().slice(-5)}`;
+
+  await page.getByRole('combobox', { name: /Received from account/i }).first().click();
+  await page.keyboard.type(name);
+  await page.getByRole('button', { name: /Add New Account/i }).first().click();
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible({ timeout: 20_000 });
+  await dialog.getByRole('button', { name: /Create|Save|Add/i }).last().click();
+  await expect(dialog).toBeHidden({ timeout: 45_000 });
+
+  // The new ledger is selected, and nothing typed earlier was lost.
+  await expect(page.getByText(name).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByLabel(/^Amount/)).toHaveValue('12345');
+  console.log(`  ${name} created, selected, and the amount survived`);
+});

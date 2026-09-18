@@ -103,6 +103,7 @@ export function StockCountsClient({ rows, canManage }: { rows: StockCountRow[]; 
   return (
     <>
       <DataTable
+      prefsKey="stock-counts"
         data={rows}
         columns={columns}
         getRowId={(r) => r.id}

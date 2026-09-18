@@ -30,7 +30,13 @@ export default async function ExpensesPage() {
       orderBy: [{ expenseDate: 'desc' }, { expenseNumber: 'desc' }],
       include: {
         expenseCategory: { select: { name: true } },
-        shipment: { select: { id: true, jobNumber: true } },
+        shipment: {
+          select: {
+            id: true,
+            jobNumber: true,
+            purchaseContract: { select: { contractReference: true } },
+          },
+        },
         cashBankAccount: { select: { name: true } },
         vendor: { select: { vendorName: true } },
         agent: { select: { agentName: true } },
@@ -62,7 +68,8 @@ export default async function ExpensesPage() {
     date: formatDate(e.expenseDate),
     dateSort: e.expenseDate.getTime(),
     category: e.expenseCategory.name,
-    job: e.shipment?.jobNumber ?? null,
+    description: e.description,
+    job: e.shipment?.purchaseContract?.contractReference ?? null,
     jobId: e.shipment?.id ?? null,
     currency: e.currency,
     amount: formatMoney(e.amount, e.currency),

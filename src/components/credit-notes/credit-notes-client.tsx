@@ -204,6 +204,7 @@ export function CreditNotesClient({
   return (
     <>
       <DataTable
+      prefsKey="credit-notes"
         data={rows}
         columns={columns}
         getRowId={(r) => r.id}

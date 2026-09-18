@@ -78,7 +78,6 @@ export function BatchesClient({
     { id: 'lot', header: 'Lot', hideable: true, defaultHidden: true, exportValue: (r) => r.lotNumber, cell: (r) => r.lotNumber },
     { id: 'origin', header: 'Origin', hideable: true, defaultHidden: true, exportValue: (r) => r.origin, cell: (r) => r.origin },
     { id: 'container', header: 'Container', hideable: true, exportValue: (r) => r.containerNumber ?? '', cell: (r) => r.containerNumber ?? '—' },
-    { id: 'shipment', header: 'Shipment', hideable: true, exportValue: (r) => r.shipmentNumber, cell: (r) => r.shipmentNumber },
     // Shown by default, not hidden behind the column picker: the client tracks
     // stock back to the contract it came in on, and a reference you have to go
     // looking for is one you stop using.
@@ -168,6 +167,7 @@ export function BatchesClient({
 
   return (
     <DataTable
+      prefsKey="batches"
       data={rows}
       columns={columns}
       getRowId={(r) => r.id}

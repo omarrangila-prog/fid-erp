@@ -88,6 +88,8 @@ export default async function InventoryPage() {
         dec(existing.reservedLabel.replace(/[^\d.-]/g, '') || 0).plus(reserved),
       );
       existing.valueLabel = formatMoney(existing.valueSort, 'USD');
+      existing.costPerKgLabel =
+        existing.onHandSort > 0 ? formatMoney(existing.valueSort / existing.onHandSort, 'USD') : '—';
     } else {
       grouped.set(key, {
         id: key,
@@ -106,6 +108,8 @@ export default async function InventoryPage() {
         bags: balance.bags,
         valueLabel: formatMoney(value, 'USD'),
         valueSort: Number(value),
+        // §24: what a kilo of this actually cost, beside how much there is.
+        costPerKgLabel: Number(onHand) > 0 ? formatMoney(Number(value) / Number(onHand), 'USD') : '—',
         lots: [lot],
       });
     }

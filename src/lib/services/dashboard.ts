@@ -349,15 +349,15 @@ export async function getMyRecentEntries(companyId: string, userId: string, limi
     ...purchases.map((row) => ({
       id: `po-${row.id}`,
       href: `/purchases/${row.id}`,
-      reference: row.contractNumber,
-      description: `${row.vendor.vendorName} · ${row.contractReference}`,
+      reference: row.contractReference,
+      description: row.vendor.vendorName,
       at: row.createdAt,
       status: row.status as string,
     })),
     ...sales.map((row) => ({
       id: `si-${row.id}`,
       href: `/sales/${row.id}`,
-      reference: row.invoiceNumber,
+      reference: 'Sales invoice',
       description: row.customer.customerName,
       at: row.createdAt,
       status: row.status as string,
@@ -365,7 +365,7 @@ export async function getMyRecentEntries(companyId: string, userId: string, limi
     ...receipts.map((row) => ({
       id: `rv-${row.id}`,
       href: `/finance/receipts/${row.id}`,
-      reference: row.receiptNumber,
+      reference: 'Receipt',
       description: `Received from ${row.customer.customerName}`,
       at: row.createdAt,
       status: row.status as string,
@@ -373,7 +373,7 @@ export async function getMyRecentEntries(companyId: string, userId: string, limi
     ...expenses.map((row) => ({
       id: `ev-${row.id}`,
       href: `/finance/expenses/${row.id}`,
-      reference: row.expenseNumber,
+      reference: 'Expense',
       description: row.description ?? 'Expense',
       at: row.createdAt,
       status: row.status as string,

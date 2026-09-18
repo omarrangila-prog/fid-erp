@@ -515,6 +515,9 @@ export type ChartAccount = {
   expenseCategory: { id: string; code: string } | null;
   balanceUsd: ReturnType<typeof toMoney>;
   balanceLocal: ReturnType<typeof toMoney>;
+  /** What has gone through the account, each way, rather than only the net. */
+  debitUsd: ReturnType<typeof toMoney>;
+  creditUsd: ReturnType<typeof toMoney>;
 };
 
 export type ChartSection = {
@@ -603,6 +606,8 @@ export async function getChartOfAccounts(companyId: string, localCurrency: strin
         : null,
       balanceUsd: signed.usd,
       balanceLocal: signed.local,
+      debitUsd,
+      creditUsd,
     };
   });
 

@@ -679,6 +679,7 @@ export function LoadingSheet({
   return (
     <>
       <DataTable
+      prefsKey="loading-sheet"
         data={rows}
         columns={isDubai ? dubaiColumns : moroccoColumns}
         getRowId={(r) => r.id}

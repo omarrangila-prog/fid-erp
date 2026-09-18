@@ -115,6 +115,7 @@ export function GoodsReceiptsClient({
 
   return (
     <DataTable
+      prefsKey="goods-receipts"
       data={rows}
       columns={columns}
       getRowId={(r) => r.id}

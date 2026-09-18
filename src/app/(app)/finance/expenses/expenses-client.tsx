@@ -12,6 +12,7 @@ export type ExpenseRow = {
   date: string;
   dateSort: number;
   category: string;
+  description: string | null;
   job: string | null;
   jobId: string | null;
   currency: string;
@@ -50,6 +51,14 @@ export function ExpensesClient({
     { id: 'category', header: 'Category', mobile: 'title', sortValue: (r) => r.category, exportValue: (r) => r.category, cell: (r) => <span className="font-medium">{r.category}</span> },
     { id: 'date', header: 'Date', mobile: 'meta', sortValue: (r) => r.dateSort, exportValue: (r) => r.date, cell: (r) => r.date },
     {
+      id: 'description',
+      header: 'Description',
+      mobile: 'meta',
+      sortValue: (r) => r.description ?? '',
+      exportValue: (r) => r.description ?? '',
+      cell: (r) => <span className="text-ink-muted">{r.description ?? '—'}</span>,
+    },
+    {
       id: 'type',
       header: 'Type',
       mobile: 'badge',
@@ -61,7 +70,7 @@ export function ExpensesClient({
         </Badge>
       ),
     },
-    { id: 'job', header: 'Job', mobile: 'meta', exportValue: (r) => r.job ?? '', cell: (r) => r.job ?? '—' },
+    { id: 'job', header: 'Shipment', mobile: 'meta', exportValue: (r) => r.job ?? '', cell: (r) => r.job ?? '—' },
     {
       id: 'warehouse',
       header: 'Warehouse',
@@ -143,6 +152,7 @@ export function ExpensesClient({
 
   return (
     <DataTable
+      prefsKey="expenses"
       data={rows}
       filters={[
       { id: 'status', label: 'Status', value: (r) => r.status },

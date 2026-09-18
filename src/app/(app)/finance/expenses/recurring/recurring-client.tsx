@@ -123,6 +123,7 @@ export function RecurringClient({ rows }: { rows: RecurringRow[] }) {
   return (
     <div aria-busy={pending}>
       <DataTable<RecurringRow>
+        prefsKey="recurring-expenses"
         data={rows}
         columns={columns}
         getRowId={(r) => r.id}
