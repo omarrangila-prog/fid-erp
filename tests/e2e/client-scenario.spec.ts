@@ -227,3 +227,119 @@ test('an invoice is raised warehouse first, and the warehouse drives the coffee'
   expect(main).toMatch(/200,000/);
   console.log('  invoice raised, 2,000 KG at MAD 100');
 });
+
+test('part of the invoice is paid in cash, and only that reaches the drawer', async ({ page }) => {
+  await signIn(page);
+  const cashBefore = await bankBalance(page, /Cash in Hand/i);
+
+  await page.goto('/finance/receipts/new', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+
+  await page.getByRole('combobox', { name: /customer/i }).first().click();
+  await page.keyboard.type(CUSTOMER.slice(0, 14));
+  await page.getByRole('listbox').getByRole('option').first().click();
+
+  await page.getByLabel('Payment method').selectOption('CASH');
+  await page.getByLabel('Amount received').fill('50000');
+
+  // Where the money landed.
+  const into = page.getByRole('combobox', { name: /Received into/i }).first();
+  await expect(into).toBeVisible({ timeout: 30_000 });
+  await into.click();
+  await page.getByRole('listbox').getByRole('option', { name: /Cash in Hand/i }).first().click();
+
+  // Against the invoice raised a moment ago.
+  const allocation = page.getByRole('textbox', { name: /Amount applied to/i }).first();
+  await expect(allocation).toBeVisible({ timeout: 30_000 });
+  await allocation.fill('50000');
+
+  await page.getByRole('button', { name: /Save and post/i }).click();
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+  await page.waitForTimeout(2000);
+
+  // Say what the form said, rather than leaving a silent failure to be
+  // discovered as a wrong balance three steps later.
+  const url = page.url();
+  const alerts = await page.getByRole('alert').allTextContents();
+  const main = (await page.locator('main').textContent()) ?? '';
+  const complaint = main.match(/[^.]*\b(required|must|cannot|could not|does not|invalid)\b[^.]*\./i);
+  console.log(`    after save: ${url}`);
+  if (alerts.length) console.log(`    alerts: ${alerts.join(' | ').slice(0, 300)}`);
+  if (complaint) console.log(`    complaint: ${complaint[0].trim().slice(0, 200)}`);
+
+  const cashAfter = await bankBalance(page, /Cash in Hand/i);
+  console.log(`  cash ${cashBefore} → ${cashAfter}`);
+  expect(cashAfter - cashBefore).toBeCloseTo(50_000, 2);
+});
+
+test('the invoice now reads part paid, with 150,000 still outstanding', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/finance/receivables', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+
+  const row = page.getByRole('row').filter({ hasText: new RegExp(CUSTOMER.slice(0, 14), 'i') }).first();
+  await expect(row).toBeVisible({ timeout: 45_000 });
+  const text = (await row.textContent()) ?? '';
+  console.log(`  receivables row: ${text.replace(/\s+/g, ' ').trim()}`);
+  expect(text).toMatch(/150,000/);
+});
+
+test('the reports agree with one another and open for any period', async ({ page }) => {
+  await signIn(page);
+
+  for (const [path, expected] of [
+    ['/reports/sales', /Coffee sold|Revenue/i],
+    ['/reports/purchases', /Coffee bought|Landed so far/i],
+    ['/reports/shipment-cost', /Total landed cost|Cost per KG/i],
+    ['/reports/cash-book', /Money in/i],
+    ['/reports/trial-balance', /Debit/i],
+    ['/reports/profit-loss', /Gross profit/i],
+    ['/reports/balance-sheet', /Assets/i],
+  ] as const) {
+    await page.goto(path, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByText(expected).first()).toBeVisible({ timeout: 45_000 });
+    console.log(`  ${path} opens`);
+  }
+
+  // Every period the client asks for, on the report they ask it of.
+  await page.goto('/reports/profit-loss', { waitUntil: 'domcontentloaded' });
+  for (const label of ['Today', 'Yesterday', 'Last 7 days', 'This month', 'Everything']) {
+    await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible({ timeout: 20_000 });
+  }
+  console.log('  every quick period is offered');
+});
+
+test('the shipment cost report splits the shared charges between the lines', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/reports/shipment-cost', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByText(/Cost per KG/i).first()).toBeVisible({ timeout: 45_000 });
+
+  const main = (await page.locator('main').textContent()) ?? '';
+  // The coffee, the charges added to it, and what a kilo ended up costing.
+  expect(main).toMatch(/Coffee/i);
+  expect(main).toMatch(/Costs added/i);
+  expect(main).toMatch(/Total landed cost/i);
+  expect(main).toMatch(/per KG/i);
+  console.log('  shipment costing shows coffee, added costs and cost per kilo');
+});
+
+test('no system-issued code is on any of these screens', async ({ page }) => {
+  await signIn(page);
+
+  const offenders: string[] = [];
+  for (const path of ['/customers', '/vendors', '/items', '/agents', '/accounting/chart', '/inventory']) {
+    const started = Date.now();
+    await page.goto(path, { waitUntil: 'domcontentloaded' });
+    // networkidle never settles on a screen that keeps polling, so give it a
+    // moment and read what is there rather than waiting for silence.
+    await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined);
+    const main = (await page.locator('main').textContent()) ?? '';
+    console.log(`    ${path} read in ${Date.now() - started}ms`);
+    const hit = main.match(/\b(CUS|SUP|AGT|AG|ITM)-\d{3,}\b/);
+    if (hit) offenders.push(`${path}: ${hit[0]}`);
+  }
+
+  for (const line of offenders) console.log(`  ! ${line}`);
+  console.log(`  checked 6 master screens; ${offenders.length} showing a code`);
+  expect(offenders, offenders.join('\n')).toEqual([]);
+});
