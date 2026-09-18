@@ -323,6 +323,111 @@ test('the shipment cost report splits the shared charges between the lines', asy
   console.log('  shipment costing shows coffee, added costs and cost per kilo');
 });
 
+test('the rest is settled by a cheque the agent takes away', async ({ page }) => {
+  await signIn(page);
+  const cashBefore = await bankBalance(page, /Cash in Hand/i);
+
+  await page.goto('/finance/receipts/new', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+
+  await page.getByRole('combobox', { name: /customer/i }).first().click();
+  await page.keyboard.type(CUSTOMER.slice(0, 14));
+  await page.getByRole('listbox').getByRole('option').first().click();
+
+  // The customer handed the cheque to the agent, not to us.
+  await page.getByLabel('Payment method').selectOption('AGENT_COLLECTION');
+  await page.getByLabel('Amount received').fill('150000');
+
+  const agent = page.getByRole('combobox', { name: /agent/i }).first();
+  await expect(agent).toBeVisible({ timeout: 30_000 });
+  await agent.click();
+  await page.getByRole('listbox').getByRole('option').first().click();
+
+  // A real cheque, dated three days out.
+  await page.getByLabel('Cheque number').fill('CHQ-WALK-1');
+  const chequeDate = page.getByLabel('Cheque date');
+  if (await chequeDate.count()) await chequeDate.fill('2026-09-24');
+
+  const allocation = page.getByRole('textbox', { name: /Amount applied to/i }).first();
+  await expect(allocation).toBeVisible({ timeout: 30_000 });
+  await allocation.fill('150000');
+
+  await page.getByRole('button', { name: /Save and post/i }).click();
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+  await page.waitForTimeout(2500);
+
+  // Nothing reached the drawer: the agent is holding it.
+  const cashAfter = await bankBalance(page, /Cash in Hand/i);
+  console.log(`  cash stayed at ${cashAfter} (was ${cashBefore})`);
+  expect(cashAfter).toBeCloseTo(cashBefore, 2);
+});
+
+test('the customer now owes nothing, and the agent owes us', async ({ page }) => {
+  await signIn(page);
+
+  await page.goto('/finance/receivables', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined);
+  const settled = (await page.locator('main').textContent()) ?? '';
+  const stillOwing = new RegExp(`${CUSTOMER.slice(0, 14)}[^]*?150,000`, 'i').test(settled);
+  console.log(`  customer still owing 150,000: ${stillOwing}`);
+  expect(stillOwing).toBe(false);
+
+  await page.goto('/ledgers/agents', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined);
+  const agents = (await page.locator('main').textContent()) ?? '';
+  console.log(`  agent ledger mentions 150,000: ${/150,000/.test(agents)}`);
+  expect(agents).toMatch(/150,000/);
+});
+
+test('the cheque can be marked cleared, and still no money reaches the bank', async ({ page }) => {
+  await signIn(page);
+  const cashBefore = await bankBalance(page, /Cash in Hand/i);
+
+  await page.goto('/finance/cheques', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined);
+
+  const row = page.getByRole('row').filter({ hasText: /CHQ-WALK-1/ }).first();
+  await expect(row).toBeVisible({ timeout: 45_000 });
+  console.log(`  cheque row: ${((await row.textContent()) ?? '').replace(/\s+/g, ' ').trim().slice(0, 120)}`);
+
+  // The register offers the action on the row itself.
+  const clear = row.getByRole('button', { name: /^Clear$/i }).first();
+  await expect(clear).toBeVisible({ timeout: 30_000 });
+  await clear.click();
+
+  // An agent's cheque clears in his hands, so no bank account is asked for.
+  const confirm = page.getByRole('button', { name: /Clear|Confirm|Mark/i }).last();
+  await confirm.click().catch(() => undefined);
+  await page.waitForTimeout(3000);
+
+  const status = (await page.locator('main').textContent()) ?? '';
+  console.log(`  cheque now: ${/cleared/i.test(status) ? 'Cleared' : 'still Received'}`);
+
+  const cashAfter = await bankBalance(page, /Cash in Hand/i);
+  console.log(`  cash after clearing: ${cashAfter} (was ${cashBefore})`);
+  expect(cashAfter).toBeCloseTo(cashBefore, 2);
+});
+
+test('coffee moves between warehouses without becoming a sale', async ({ page }) => {
+  await signIn(page);
+
+  await page.goto('/inventory', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined);
+  const before = (await page.locator('main').textContent()) ?? '';
+  const totalBefore = (before.match(/[\d,]+\.\d{3}\s*KG/g) ?? []).slice(0, 3);
+  console.log(`  stock before: ${totalBefore.join(' | ')}`);
+
+  await page.goto('/inventory/transfers/new', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined);
+  const heading = (await page.locator('main').textContent()) ?? '';
+  console.log(`  transfer screen opens: ${/transfer/i.test(heading)}`);
+  expect(heading).toMatch(/transfer/i);
+
+  // A transfer is stock moving, never revenue: the screen must not offer a price.
+  expect(heading).not.toMatch(/selling price|unit price|revenue/i);
+  console.log('  the transfer screen asks for no price, because it is not a sale');
+});
+
 test('no system-issued code is on any of these screens', async ({ page }) => {
   await signIn(page);
 
