@@ -3,13 +3,17 @@ import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getGeneralLedger } from '@/lib/services/reports';
-import { resolveLedgerViewCurrency, pickCashBankCurrency, ledgerCurrencyLabel } from '@/lib/ledger-currency';
+import {
+  resolveLedgerViewCurrency,
+  pickCashBankCurrency,
+  ledgerCurrencyLabel,
+  ledgerDisplayCurrency,
+} from '@/lib/ledger-currency';
 import { formatMoney, formatDate, titleCase } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/feedback';
-import { PrintButton } from '@/components/shared/print-button';
 import { exportHref } from '@/components/shared/excel-link';
 import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
@@ -81,7 +85,6 @@ export default async function GeneralLedgerPage({
         actions={
           <>
             <ExportLinks href={exportHref('general-ledger', { account: selectedId, from, to, currency: selectedCurrency })} />
-            <PrintButton />
           </>
         }
       />
@@ -111,7 +114,56 @@ export default async function GeneralLedgerPage({
           * for Dubai, saw −50,000 and could not tell which way round it was.
           * The figure is the same; it is now said in words.
           */}
-        {ledger.mixedCurrencies ? null : (() => {
+        {ledger.mixedCurrencies ? (() => {
+          /*
+           * A running account with one person holds whatever currency they
+           * deal in, so its ledger lists each separately and never adds them
+           * together. It still has to say which way round each one is: this
+           * is the account the client opens to ask "what do we owe Dubai",
+           * and skipping the summary here skipped it for exactly the accounts
+           * the question is about.
+           */
+          const byCurrency = new Map<string, { debit: ReturnType<typeof dec>; credit: ReturnType<typeof dec> }>();
+          for (const row of ledger.rows) {
+            const seen = byCurrency.get(row.currency) ?? { debit: dec(0), credit: dec(0) };
+            byCurrency.set(row.currency, {
+              debit: seen.debit.plus(dec(row.debit)),
+              credit: seen.credit.plus(dec(row.credit)),
+            });
+          }
+          if (byCurrency.size === 0) return null;
+
+          return (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {[...byCurrency.entries()].map(([currency, totals]) => {
+                const meaning = describeLedgerBalance(
+                  totals.debit.minus(totals.credit),
+                  ledger.account.type,
+                  ledger.account.name,
+                );
+                return (
+                  <Card
+                    key={currency}
+                    className={meaning.settled ? undefined : 'border-forest-300 bg-forest-50/40'}
+                  >
+                    <CardContent className="pt-5">
+                      <p className="text-xs text-ink-muted">
+                        {meaning.label} · {currency}
+                      </p>
+                      <p className="text-lg font-semibold tabular-nums text-forest-800">
+                        {formatMoney(meaning.amount, currency)}
+                      </p>
+                      <p className="mt-1 text-[11px] text-ink-subtle">
+                        {meaning.sentence} Debit {formatMoney(totals.debit, currency)}, credit{' '}
+                        {formatMoney(totals.credit, currency)}.
+                      </p>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          );
+        })() : (() => {
           const meaning = describeLedgerBalance(
             ledger.closingBalance,
             ledger.account.type,
@@ -125,7 +177,7 @@ export default async function GeneralLedgerPage({
                 <CardContent className="pt-5">
                   <p className="text-xs text-ink-muted">Opening balance</p>
                   <p className="text-lg font-semibold tabular-nums text-ink">
-                    {formatMoney(ledger.openingBalance, ledger.viewCurrency)}
+                    {formatMoney(ledger.openingBalance, ledgerDisplayCurrency(ledger.viewCurrency))}
                   </p>
                 </CardContent>
               </Card>
@@ -133,7 +185,7 @@ export default async function GeneralLedgerPage({
                 <CardContent className="pt-5">
                   <p className="text-xs text-ink-muted">Total debit</p>
                   <p className="text-lg font-semibold tabular-nums text-ink">
-                    {formatMoney(totalDebit, ledger.viewCurrency)}
+                    {formatMoney(totalDebit, ledgerDisplayCurrency(ledger.viewCurrency))}
                   </p>
                 </CardContent>
               </Card>
@@ -141,7 +193,7 @@ export default async function GeneralLedgerPage({
                 <CardContent className="pt-5">
                   <p className="text-xs text-ink-muted">Total credit</p>
                   <p className="text-lg font-semibold tabular-nums text-ink">
-                    {formatMoney(totalCredit, ledger.viewCurrency)}
+                    {formatMoney(totalCredit, ledgerDisplayCurrency(ledger.viewCurrency))}
                   </p>
                 </CardContent>
               </Card>
@@ -149,7 +201,7 @@ export default async function GeneralLedgerPage({
                 <CardContent className="pt-5">
                   <p className="text-xs text-ink-muted">{meaning.label}</p>
                   <p className="text-lg font-semibold tabular-nums text-forest-800">
-                    {formatMoney(meaning.amount, ledger.viewCurrency)}
+                    {formatMoney(meaning.amount, ledgerDisplayCurrency(ledger.viewCurrency))}
                   </p>
                   <p className="mt-1 text-[11px] text-ink-subtle">{meaning.sentence}</p>
                 </CardContent>
@@ -193,7 +245,7 @@ export default async function GeneralLedgerPage({
                         Opening balance
                       </TD>
                       <TD numeric className="font-semibold">
-                        {formatMoney(ledger.openingBalance, ledger.viewCurrency)}
+                        {formatMoney(ledger.openingBalance, ledgerDisplayCurrency(ledger.viewCurrency))}
                       </TD>
                       <TD />
                     </TR>
@@ -225,7 +277,7 @@ export default async function GeneralLedgerPage({
                         </TD>
                         {ledger.mixedCurrencies ? null : (
                           <TD numeric className="font-medium">
-                            {formatMoney(row.balance, ledger.viewCurrency)}
+                            {formatMoney(row.balance, ledgerDisplayCurrency(ledger.viewCurrency))}
                           </TD>
                         )}
                         <TD>
@@ -243,7 +295,7 @@ export default async function GeneralLedgerPage({
                   <TFoot>
                     <tr>
                       <TD colSpan={6}>Closing balance</TD>
-                      <TD numeric>{formatMoney(ledger.closingBalance, ledger.viewCurrency)}</TD>
+                      <TD numeric>{formatMoney(ledger.closingBalance, ledgerDisplayCurrency(ledger.viewCurrency))}</TD>
                       <TD />
                     </tr>
                   </TFoot>

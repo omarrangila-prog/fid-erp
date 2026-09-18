@@ -76,6 +76,20 @@ export function ledgerHref(accountId: string, currency?: string | null): string 
 }
 
 /** Human label for the GL header — never say "USD only" for a MAD cash head. */
+/**
+ * The currency to print an amount in for a given view.
+ *
+ * "REPORTING" and "ALL" are ways of looking at a ledger, not currencies, and
+ * handing either to a money formatter printed "REPORTING 50,000.00" on the
+ * screen. The reporting view states every line at its USD value, so USD is
+ * what those figures are in.
+ */
+export function ledgerDisplayCurrency(viewCurrency: string, fallback = 'USD'): string {
+  if (viewCurrency === 'REPORTING') return 'USD';
+  if (viewCurrency === 'ALL') return fallback;
+  return viewCurrency;
+}
+
 export function ledgerCurrencyLabel(viewCurrency: string, mixed: boolean): string {
   if (mixed) return 'all currencies listed separately — USD and MAD are never added together';
   if (viewCurrency === 'REPORTING') return 'every line at its USD value';
