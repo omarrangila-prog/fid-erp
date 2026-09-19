@@ -15,6 +15,7 @@ import { writeAudit } from '@/lib/services/audit';
 import { repairSharedContainerAssignments } from '@/lib/services/shipment';
 import { NO_TAX, resolveTaxCode, supplierGrossPayable, supplierInvoiceIncludesInputTax } from '@/lib/services/tax';
 import { computePurchaseTotals } from '@/lib/calc/purchase';
+import { shortDocumentNumber } from '@/lib/short-number';
 import type { PurchaseContractInput, PurchaseLineInput } from '@/lib/calc/purchase';
 
 /**
@@ -270,9 +271,10 @@ export async function createPurchaseContract(input: PurchaseContractInput, userI
      * inventing one at the moment somebody was trying to record a deal — and
      * an invented reference matches nothing on the supplier's paperwork, which
      * is the only thing the field is for. The FID number is already unique, so
-     * it stands in until the real reference arrives.
+     * its short form — "PO 3", the way anybody says it — stands in until the
+     * real reference arrives. The long FID-MA-PO-000003 never reaches a screen.
      */
-    const reference = input.contractReference?.trim() || contractNumber;
+    const reference = input.contractReference?.trim() || shortDocumentNumber(contractNumber, 'PO');
     await assertReferenceIsFree(tx, input.companyId, reference);
 
     const contract = await tx.purchaseContract.create({
@@ -334,7 +336,7 @@ export async function updatePurchaseContract(id: string, input: PurchaseContract
       throw new BusinessRuleError('Only draft contracts can be edited. Reverse the contract to correct a posted one.');
     }
 
-    const reference = input.contractReference?.trim() || existing.contractNumber;
+    const reference = input.contractReference?.trim() || shortDocumentNumber(existing.contractNumber, 'PO');
     await assertReferenceIsFree(tx, input.companyId, reference, id);
     await assertTraceabilityNumbersAreFree(tx, input.companyId, input.lines, id);
 
@@ -520,12 +522,15 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
        * the contract number, and flagged. The goods receipt replaces it with
        * the real lot, splitting it if the coffee arrived under several.
        *
-       * A placeholder is never silent: it reads `MOR-PO-000042/1`, which
-       * nobody will mistake for a supplier's lot number, and the batch cannot
-       * be sold until the receipt has named it.
+       * A placeholder is never silent: it reads `ICUL/FID/002/1` — the
+       * client's own order reference and the line — which nobody will mistake
+       * for a supplier's lot number, and the batch cannot be sold until the
+       * receipt has named it. It is built from the reference, not the FID
+       * number, because the placeholder shows on every stock screen and the
+       * FID number is the one thing the client asked never to see.
        */
       const traceabilityPending = !line.lotNumber && !line.batchNumber;
-      const lotNumber = line.lotNumber ?? `${contract.contractNumber}/${line.lineNumber}`;
+      const lotNumber = line.lotNumber ?? `${contract.contractReference}/${line.lineNumber}`;
       const batchNumber = line.batchNumber ?? lotNumber;
 
       // Lot: shared across lines that quote the same supplier lot number.

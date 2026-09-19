@@ -443,9 +443,11 @@ describe('the least a purchase contract needs', () => {
     );
 
     expect(contract.contractNumber).toMatch(/^FID-DXB-PO-/);
-    // The reference falls back to the number the system issued, so it is still
-    // unique and still searchable — it just was not typed.
-    expect(contract.contractReference).toBe(contract.contractNumber);
+    // The reference falls back to the short form of the number the system
+    // issued — "PO 1", the way anybody says it — so it is still unique and
+    // still searchable, and the long FID-DXB-PO-000001 stays off the screen.
+    expect(contract.contractReference).toMatch(/^PO \d+$/);
+    expect(contract.contractReference).not.toBe(contract.contractNumber);
 
     // And the missing batch was filled from the lot, so stock can still move.
     expect(contract.lines[0].lotNumber).toBe('MIN/LOT/1');
@@ -511,13 +513,16 @@ describe('the least a purchase contract needs', () => {
 
     // Approving still creates the batch — it carries the money, the payable
     // and the in-transit quantity — under a name nobody will mistake for a
-    // supplier's lot, and flagged so the receipt knows to ask.
+    // supplier's lot, and flagged so the receipt knows to ask. The name is
+    // built from the client's reference, never the FID number: the
+    // placeholder shows on every stock screen until the receipt renames it.
     const batch = await prisma.batch.findFirstOrThrow({
       where: { purchaseContractId: contract.id },
       include: { lot: true },
     });
     expect(batch.traceabilityPending).toBe(true);
-    expect(batch.batchNumber).toBe(`${contract.contractNumber}/1`);
-    expect(batch.lot.lotNumber).toBe(`${contract.contractNumber}/1`);
+    expect(batch.batchNumber).toBe(`${contract.contractReference}/1`);
+    expect(batch.lot.lotNumber).toBe(`${contract.contractReference}/1`);
+    expect(batch.lot.lotNumber).not.toContain(contract.contractNumber);
   });
 });

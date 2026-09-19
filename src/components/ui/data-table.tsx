@@ -162,16 +162,14 @@ export function DataTable<T>({
   prefsKey?: string;
 }) {
   const [query, setQuery] = React.useState('');
-  const [sort, setSort] = React.useState<SortState>(() => readPreference(prefsKey, 'sort', null));
   const [page, setPage] = React.useState(0);
-  const [hidden, setHidden] = React.useState<Set<string>>(() => {
-    const remembered = readPreference<string[] | null>(prefsKey, 'hidden', null);
-    if (remembered) return new Set(remembered);
-    return new Set(columns.filter((c) => c.defaultHidden).map((c) => c.id));
-  });
+  const [sort, setSort] = React.useState<SortState>(null);
+  const [hidden, setHidden] = React.useState<Set<string>>(
+    () => new Set(columns.filter((c) => c.defaultHidden).map((c) => c.id)),
+  );
   // Compact fits about a third more rows on a screen, which matters on a
   // follow-up sheet somebody scans all day.
-  const [compact, setCompact] = React.useState(() => readPreference(prefsKey, 'compact', dense));
+  const [compact, setCompact] = React.useState(dense);
 
   /*
    * Which columns you hid, how you sorted and how tight the rows are, kept.
@@ -181,17 +179,39 @@ export function DataTable<T>({
    * inside try/catch and the table renders correctly when there is nothing to
    * read, which is what happens in a private window or on a colleague's
    * machine.
+   *
+   * The remembered values are applied after mounting, never during the first
+   * render. The server has no localStorage and renders the defaults; if the
+   * client's first render used the remembered values, React would find the
+   * two differ and report a hydration error on every table for anybody with a
+   * saved preference. Setting state in this effect is the point of it: it is
+   * the one place a client-only value may enter the tree.
    */
+  const loaded = React.useRef(false);
   React.useEffect(() => {
     if (!prefsKey) return;
+    const rememberedSort = readPreference<SortState>(prefsKey, 'sort', null);
+    const rememberedHidden = readPreference<string[] | null>(prefsKey, 'hidden', null);
+    const rememberedCompact = readPreference<boolean | null>(prefsKey, 'compact', null);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- applying a client-only value after hydration
+    if (rememberedSort) setSort(rememberedSort);
+    if (rememberedHidden) setHidden(new Set(rememberedHidden));
+    if (rememberedCompact !== null) setCompact(rememberedCompact);
+    loaded.current = true;
+  }, [prefsKey]);
+
+  // Written only once the remembered settings have been read, so the defaults
+  // of a fresh mount never overwrite what was saved.
+  React.useEffect(() => {
+    if (!prefsKey || !loaded.current) return;
     writePreference(prefsKey, 'hidden', [...hidden]);
   }, [prefsKey, hidden]);
   React.useEffect(() => {
-    if (!prefsKey) return;
+    if (!prefsKey || !loaded.current) return;
     writePreference(prefsKey, 'sort', sort);
   }, [prefsKey, sort]);
   React.useEffect(() => {
-    if (!prefsKey) return;
+    if (!prefsKey || !loaded.current) return;
     writePreference(prefsKey, 'compact', compact);
   }, [prefsKey, compact]);
 

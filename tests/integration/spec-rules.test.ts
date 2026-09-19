@@ -92,7 +92,8 @@ describe('rule 1 — a purchase order must have a contract reference', () => {
     contractId = contract.id;
 
     expect(contract.contractReference).toBeTruthy();
-    expect(contract.contractReference).toBe(contract.contractNumber);
+    // "PO 1" — the number's short form, never the long FID-…-PO-000001.
+    expect(contract.contractReference).toMatch(/^PO \d+$/);
   });
 });
 

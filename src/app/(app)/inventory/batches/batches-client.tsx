@@ -1,7 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import Link from 'next/link';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { History, Ship, ArrowLeftRight } from 'lucide-react';
 import { RowActions, viewAction } from '@/components/shared/row-actions';
@@ -91,9 +90,7 @@ export function BatchesClient({
       cell: (r) => (
         <span className="block min-w-44">
           <span className="block font-mono text-xs font-medium">{r.contractReference || '—'}</span>
-          <Link href={`/shipments/${r.shipmentId}`} className="block text-[11px] text-ink-subtle hover:text-gold-700">
-            {r.shipmentLabel}
-          </Link>
+          <span className="block text-[11px] text-ink-subtle">{r.shipmentLabel}</span>
         </span>
       ),
     },

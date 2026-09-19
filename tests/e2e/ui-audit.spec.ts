@@ -96,3 +96,40 @@ test('what every screen shows', async ({ page }) => {
 
   expect(true).toBe(true);
 });
+
+test('a remembered table setting survives a reload without a hydration error', async ({ page }) => {
+  await signIn(page);
+
+  // Anything React reports on the page: a hydration mismatch arrives here as
+  // a pageerror in production, with only a minified number to go on.
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+
+  await page.goto('/inventory/batches', { waitUntil: 'domcontentloaded' });
+  const compact = page.getByRole('button', { name: /Show compact rows/i }).first();
+  await expect(compact).toBeVisible({ timeout: 30_000 });
+  await compact.click();
+  await expect(page.getByRole('button', { name: /Show comfortable rows/i }).first()).toBeVisible();
+
+  // Hide a column as well: that changes the table's shape, which is the kind
+  // of difference hydration cannot paper over.
+  await page.getByRole('button', { name: /^Columns$/ }).first().click();
+  const firstColumn = page.getByRole('dialog').getByRole('checkbox').first();
+  const columnLabel = ((await firstColumn.locator('..').textContent()) ?? '').trim();
+  const wasShown = await firstColumn.isChecked();
+  await firstColumn.click();
+  await page.keyboard.press('Escape');
+  const header = page.locator('main table thead').first();
+  if (wasShown) await expect(header).not.toContainText(columnLabel);
+  console.log(`  ${wasShown ? 'hid' : 'showed'} the "${columnLabel}" column, then reloaded`);
+
+  // Come back: the settings are remembered, and applying them did not make
+  // the client's first render disagree with the server's HTML.
+  await page.goto('/inventory/batches', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('button', { name: /Show comfortable rows/i }).first()).toBeVisible({ timeout: 30_000 });
+  if (wasShown) await expect(page.locator('main table thead').first()).not.toContainText(columnLabel);
+  await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => undefined);
+
+  const hydration = errors.filter((e) => /#418|#423|#425|hydrat/i.test(e));
+  expect(hydration, hydration.join('\n')).toEqual([]);
+});
