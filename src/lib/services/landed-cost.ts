@@ -160,26 +160,15 @@ export async function applyLandedCost(
    * A shared shipment cost is divided between the lines, not between the
    * kilograms.
    *
-   * Clearing a shipment, filing its documents and moving its containers cost
-   * about the same per container whether the container holds nineteen tonnes
-   * or twenty-one. The client's own costing splits the common charges equally
-   * across the item/container lines on the job — two containers, half each —
-   * and only then divides each line's share by the kilograms in it. Spreading
-   * by weight instead quietly charged the heavier container more for work that
-   * was done once per container.
-   *
-   * Within a line the split is still by quantity, because a line that carries
-   * two batches of the same coffee in the same container really is one lot
-   * divided in two.
-   *
-   * A container is known by its number when it has one, and by its shipment
-   * when it does not: every container on an order now travels as its own
-   * shipment, so two boxes of the same coffee that nobody has numbered yet
-   * are still two lines, not one — the split does not change when the
-   * numbers are typed in later.
+   * The client's own costing splits the common charges equally across the
+   * coffees on the order — two coffees, half each — and only then divides
+   * each coffee's share by the kilograms in it. Two containers of the same
+   * coffee are one line for this purpose: the coffee takes its half and the
+   * two boxes share it by weight. Spreading by weight across the order
+   * instead quietly charged the heavier coffee more for work that was done
+   * once per consignment, and the client said no to that.
    */
-  const lineKeyOf = (b: { containerId: string | null; shipmentId: string; itemId: string }) =>
-    `${b.containerId ?? `shipment:${b.shipmentId}`}::${b.itemId}`;
+  const lineKeyOf = (b: { itemId: string }) => b.itemId;
   const lineKeys: string[] = [];
   for (const batch of locked) {
     const key = lineKeyOf(batch);

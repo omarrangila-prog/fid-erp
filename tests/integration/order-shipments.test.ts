@@ -975,12 +975,12 @@ describe('approving an order divides its rows by container', () => {
 
 describe('shared expenses on a divided order', () => {
   /**
-   * The client's order: two containers of Screen 18 (nobody has typed their
-   * numbers yet) and one of Screen 12. Clearing and transport are booked once
-   * against the order and cost the same per container, so each of the three
-   * takes a third — the two unnumbered boxes are two lines, not one.
+   * The client's order: two containers of Screen 18 and one of Screen 12.
+   * Clearing and transport are booked once against the order and split
+   * equally between the two coffees — half each, as the client's own sheet
+   * does — and Screen 18's half is then shared by its two containers.
    */
-  it("splits the job's local charges a third to each container", async () => {
+  it("splits the job's local charges half to each coffee, then by weight", async () => {
     const itemB = await prisma.coffeeItem.create({
       data: { companyId, itemCode: 'SPLIT-12', itemName: 'Split Screen 12', coffeeType: 'ROBUSTA', originCountry: 'Uganda', defaultUnit: 'KG', bagWeightKg: '60' },
     });
@@ -1014,10 +1014,13 @@ describe('shared expenses on a divided order', () => {
     await postExpense({ id: expense.id, companyId, userId: ctx.admin.id });
 
     const batches = await prisma.batch.findMany({ where: { purchaseContractId: contract.id }, select: { capitalisedCostUsd: true, orderedQuantityKg: true, item: { select: { itemName: true } } } });
-    const shares = batches.map((b) => Number(b.capitalisedCostUsd));
-    const total = shares.reduce((a, b) => a + b, 0);
-    // 300,000 MAD at 9.60 = 31,250 USD, a third each — not half to Screen 12.
+    const total = batches.reduce((a, b) => a + Number(b.capitalisedCostUsd), 0);
+    // 300,000 MAD at 9.60 = 31,250 USD: half to Screen 12, half to Screen 18 shared by its two boxes.
     expect(total).toBeCloseTo(31250, 1);
-    for (const share of shares) expect(share).toBeCloseTo(31250 / 3, 0);
+    const screen12 = batches.filter((b) => b.item.itemName === 'Split Screen 12').reduce((a, b) => a + Number(b.capitalisedCostUsd), 0);
+    const screen18 = batches.filter((b) => b.item.itemName !== 'Split Screen 12').map((b) => Number(b.capitalisedCostUsd));
+    expect(screen12).toBeCloseTo(15625, 0);
+    expect(screen18).toHaveLength(2);
+    for (const share of screen18) expect(share).toBeCloseTo(7812.5, 0);
   }, 300_000);
 });
