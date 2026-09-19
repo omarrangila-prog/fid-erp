@@ -495,8 +495,9 @@ export function PurchaseForm({
           */}
           {declaredContainers > lines.length ? (
             <Callout tone="info" title={`${declaredContainers} containers, ${lines.length} ${lines.length === 1 ? 'row' : 'rows'}`}>
-              A container can only load, arrive and be received on its own if it has its own row. Split a row into
-              containers with the control on the row, or add a row per container.
+              When you save, the heavier rows are divided so every container has its own row — the same coffee and
+              price, the kilograms shared — and each then loads, arrives and is received on its own. To choose the
+              split yourself, use the control on the row.
             </Callout>
           ) : null}
 

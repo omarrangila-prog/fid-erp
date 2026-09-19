@@ -1,4 +1,5 @@
 import type { Tx } from '@/lib/db';
+import type { ContainerType, UnitOfMeasure } from '@prisma/client';
 import { transaction } from '@/lib/db';
 import {
   dec,
@@ -452,6 +453,24 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
 
     const company = await getCompanyContext(tx, params.companyId);
     const postedAt = new Date();
+
+    /*
+     * --- 1b: one row per container, before anything is opened ---------------
+     *
+     * The order says three containers and the buyer typed two rows: 40,080 KG
+     * of one coffee that sails in two boxes, and 21,000 KG of another. Each
+     * container arrives and is received on its own, so a row covering two
+     * containers is divided here into two rows of half each — same coffee,
+     * same price, the money shared by weight to the cent — before shipments
+     * and batches are created. The buyer sees two containers on the order,
+     * as the bill of lading will show them, without having to say so twice.
+     */
+    await divideRowsByContainer(tx, contract.id, contract.containers, contract.lines);
+    const dividedLines = await tx.purchaseContractLine.findMany({
+      where: { purchaseContractId: contract.id },
+      orderBy: { lineNumber: 'asc' },
+    });
+    contract.lines = dividedLines;
 
     /*
      * --- 2: one shipment per line ------------------------------------------
@@ -1804,4 +1823,127 @@ export async function addContainerToOrder(input: AddContainerInput) {
 
     return { lineId: line.id, shipmentId: shipment.id, batchId: batch.id, lineNumber };
   });
+}
+
+/**
+ * Divide each row that spans several containers into one row per container.
+ *
+ * Runs while the order is still on paper — no shipment, batch or journal
+ * exists — so it is arithmetic on the rows only. Rows that name a container
+ * cover one; the order's declared count, less those, is shared across the
+ * rows that name none, in proportion to their kilograms. A row given two
+ * containers becomes two rows of half each; lot and batch numbers stay on
+ * the first, the copies are named at the receipt like any other container.
+ */
+async function divideRowsByContainer(
+  tx: Tx,
+  contractId: string,
+  declared: number,
+  lines: Array<{
+    id: string;
+    lineNumber: number;
+    quantity: Decimal;
+    quantityKg: Decimal;
+    bags: number;
+    lineSubtotal: Decimal;
+    freightAllocated: Decimal;
+    otherChargesAllocated: Decimal;
+    lineTotal: Decimal;
+    taxAmount: Decimal;
+    taxAmountUsd: Decimal;
+    containerNumber: string | null;
+    lotNumber: string | null;
+    batchNumber: string | null;
+    itemId: string;
+    unit: UnitOfMeasure;
+    unitPrice: Decimal;
+    unitPriceKg: Decimal;
+    unitCostKg: Decimal;
+    bagWeightKg: Decimal;
+    taxCodeId: string | null;
+    taxRatePct: Decimal;
+    notes: string | null;
+    containerType: ContainerType;
+  }>,
+): Promise<void> {
+  const unnamed = lines.filter((l) => !l.containerNumber);
+  const spare = Math.max(0, declared - (lines.length - unnamed.length));
+  if (unnamed.length === 0 || spare <= unnamed.length) return;
+
+  // Share the spare containers by weight, every unnamed row getting at least one.
+  const totalKg = sum(unnamed.map((l) => dec(l.quantityKg)));
+  const shares = unnamed.map((l) => Math.max(1, Math.floor(dec(l.quantityKg).dividedBy(totalKg).times(spare).toNumber())));
+  let left = spare - shares.reduce((a, b) => a + b, 0);
+  // Any remainder goes to the heaviest rows first.
+  const byWeight = unnamed
+    .map((l, i) => ({ i, kg: dec(l.quantityKg) }))
+    .sort((a, b) => b.kg.comparedTo(a.kg));
+  for (const { i } of byWeight) {
+    if (left <= 0) break;
+    shares[i] += 1;
+    left -= 1;
+  }
+
+  let nextLineNumber = Math.max(...lines.map((l) => l.lineNumber)) + 1;
+  for (const [index, line] of unnamed.entries()) {
+    const n = shares[index];
+    if (n <= 1) continue;
+    const weights = Array.from({ length: n }, () => dec(1));
+    const kgs = allocateProportionally(dec(line.quantityKg), weights).map((q) => toQuantity(q));
+    const qty = allocateProportionally(dec(line.quantity), weights).map((q) => toQuantity(q));
+    const subtotals = allocateProportionally(line.lineSubtotal, weights);
+    const freights = allocateProportionally(line.freightAllocated, weights);
+    const others = allocateProportionally(line.otherChargesAllocated, weights);
+    const totals = allocateProportionally(line.lineTotal, weights);
+    const taxes = allocateProportionally(line.taxAmount, weights);
+    const taxesUsd = allocateProportionally(line.taxAmountUsd, weights);
+    const bags = allocateProportionally(dec(line.bags), weights).map((b) => Number(b.toDecimalPlaces(0)));
+
+    await tx.purchaseContractLine.update({
+      where: { id: line.id },
+      data: {
+        quantity: qty[0],
+        quantityKg: kgs[0],
+        bags: bags[0],
+        lineSubtotal: subtotals[0],
+        freightAllocated: freights[0],
+        otherChargesAllocated: others[0],
+        lineTotal: totals[0],
+        taxAmount: taxes[0],
+        taxAmountUsd: taxesUsd[0],
+        containers: 1,
+      },
+    });
+    for (let i = 1; i < n; i++) {
+      await tx.purchaseContractLine.create({
+        data: {
+          purchaseContractId: contractId,
+          lineNumber: nextLineNumber++,
+          itemId: line.itemId,
+          quantity: qty[i],
+          unit: line.unit,
+          quantityKg: kgs[i],
+          unitPrice: line.unitPrice,
+          unitPriceKg: line.unitPriceKg,
+          lineSubtotal: subtotals[i],
+          freightAllocated: freights[i],
+          otherChargesAllocated: others[i],
+          lineTotal: totals[i],
+          unitCostKg: line.unitCostKg,
+          containers: 1,
+          lotNumber: line.lotNumber,
+          batchNumber: line.batchNumber ? `${line.batchNumber}/${i + 1}` : null,
+          containerNumber: null,
+          bags: bags[i],
+          bagWeightKg: line.bagWeightKg,
+          containerType: line.containerType,
+          taxCodeId: line.taxCodeId,
+          taxRatePct: line.taxRatePct,
+          taxAmount: taxes[i],
+          taxAmountUsd: taxesUsd[i],
+          notes: line.notes,
+        },
+      });
+    }
+  }
 }

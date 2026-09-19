@@ -310,7 +310,9 @@ describe('an order opened before shipments were split per line', () => {
         rateLocalPerUsd: '9.85',
         freightAmount: '0',
         contractReference: 'ICUL/FID/LEGACY',
-        containers: 3,
+        // Declared as two so nothing is divided at approval; the old job's
+        // three-container header is put back below, as the live data had it.
+        containers: 2,
         lines: [
           { itemId: itemE.id, quantity: '40080', unit: 'KG', unitPrice: '4.20', bagWeightKg: '60', lotNumber: 'LOT-L1', batchNumber: 'BATCH-L1' },
           { itemId: masters.item.id, quantity: '21000', unit: 'KG', unitPrice: '4.00', bagWeightKg: '60', lotNumber: 'LOT-L2', batchNumber: 'BATCH-L2' },
@@ -622,7 +624,7 @@ describe('dividing an approved order into containers', () => {
         rateLocalPerUsd: '9.85',
         freightAmount: '0',
         contractReference: 'ICUL/FID/DIVIDE',
-        containers: 3,
+        containers: 2,
         lines: [
           { itemId: masters.item.id, quantity: '40080', unit: 'KG', unitPrice: '4.329', bagWeightKg: '60' },
           { itemId: masters.item.id, quantity: '21000', unit: 'KG', unitPrice: '3.998', bagWeightKg: '60' },
@@ -908,5 +910,64 @@ describe('a reversed order gives its reference back', () => {
     await postPurchaseContract({ id: second.id, companyId, userId: ctx.admin.id });
     const overview = await getOrderOverview(companyId, second.id);
     expect(overview.containerCount).toBe(1);
+  }, 300_000);
+});
+
+describe('approving an order divides its rows by container', () => {
+  it('turns "three containers, two rows" into three rows of one container each', async () => {
+    const contract = await createPurchaseContract(
+      {
+        companyId, vendorId: masters.vendor.id, contractDate: utcDate('2026-09-19'), currency: 'USD', rateToUsd: '1', rateLocalPerUsd: '9.85', freightAmount: '0',
+        contractReference: 'ICUL/FID/AUTO', containers: 3,
+        lines: [
+          { itemId: masters.item.id, quantity: '40080', unit: 'KG', unitPrice: '4.329', bagWeightKg: '60' },
+          { itemId: masters.item.id, quantity: '21000', unit: 'KG', unitPrice: '3.998', bagWeightKg: '60' },
+        ],
+      },
+      ctx.admin.id,
+    );
+    const totalBefore = (await prisma.purchaseContract.findUniqueOrThrow({ where: { id: contract.id } })).totalValue;
+    await postPurchaseContract({ id: contract.id, companyId, userId: ctx.admin.id });
+
+    const overview = await getOrderOverview(companyId, contract.id);
+    expect(overview.totalShipments).toBe(3);
+    expect(overview.containerCount).toBe(3);
+    // The 40,080 KG row became two containers of 20,040; the 21,000 KG row is one.
+    expect(overview.shipments.map((l) => Number(l.orderedKg)).sort((a, b) => a - b)).toEqual([20040, 20040, 21000]);
+    expect(Number(overview.totalKg)).toBe(61080);
+
+    // Same money, to the cent.
+    const after = await prisma.purchaseContract.findUniqueOrThrow({ where: { id: contract.id }, include: { lines: true } });
+    expect(after.totalValue.toString()).toBe(totalBefore.toString());
+    expect(after.lines.reduce((a, l) => a.plus(l.lineSubtotal), dec(0)).toFixed(4)).toBe(after.subtotal.toFixed(4));
+    expect(after.lines).toHaveLength(3);
+
+    // Each container is its own: one arrives, the others do not.
+    const first = overview.shipments[0];
+    await changeShipmentStatus({ shipmentId: first.shipmentId, companyId, userId: ctx.admin.id, toStatus: 'LOADED', loadingDate: utcDate('2026-09-20'), etaDate: utcDate('2026-10-05'), shippingLineId: masters.shippingLine.id });
+    await changeShipmentStatus({ shipmentId: first.shipmentId, companyId, userId: ctx.admin.id, toStatus: 'ARRIVED', ataDate: utcDate('2026-10-06') });
+    const later = await getOrderOverview(companyId, contract.id);
+    expect(later.arrivedContainers).toBe(1);
+    expect(later.arrival).toBe('PARTIALLY_ARRIVED');
+  }, 300_000);
+
+  it('leaves rows that already name a container alone', async () => {
+    const contract = await createPurchaseContract(
+      {
+        companyId, vendorId: masters.vendor.id, contractDate: utcDate('2026-09-19'), currency: 'USD', rateToUsd: '1', rateLocalPerUsd: '9.85', freightAmount: '0',
+        contractReference: 'ICUL/FID/NAMED', containers: 3,
+        lines: [
+          { itemId: masters.item.id, quantity: '20000', unit: 'KG', unitPrice: '4.00', bagWeightKg: '60', containerNumber: 'NAMED-1' },
+          { itemId: masters.item.id, quantity: '40000', unit: 'KG', unitPrice: '4.00', bagWeightKg: '60' },
+        ],
+      },
+      ctx.admin.id,
+    );
+    await postPurchaseContract({ id: contract.id, companyId, userId: ctx.admin.id });
+    const overview = await getOrderOverview(companyId, contract.id);
+    // The named row is one container; the other two of the three go to the unnamed row, which is divided.
+    expect(overview.totalShipments).toBe(3);
+    expect(overview.shipments.map((l) => Number(l.orderedKg)).sort((a, b) => a - b)).toEqual([20000, 20000, 20000]);
+    expect(overview.shipments.filter((l) => l.containerNumber === 'NAMED-1')).toHaveLength(1);
   }, 300_000);
 });
