@@ -12,7 +12,9 @@ import { Badge, StatusBadge } from '@/components/ui/badge';
 import { TRANSACTION_STATUS_META } from '@/lib/constants';
 
 export type PurchaseShipmentRow = {
+  /** The batch, or the shipment when it has none yet. */
   id: string;
+  shipmentId: string;
   ordinal: number;
   status: string;
   itemName: string;
@@ -314,7 +316,7 @@ export function PurchasesClient({
                   return (
                     <tr key={s.id} className="border-b border-line/60 last:border-0">
                       <td className="py-1.5 pr-3 font-medium">
-                        <Link href={`/shipments/${s.id}`} className="text-forest-800 hover:text-gold-700">
+                        <Link href={`/shipments/${s.shipmentId}`} className="text-forest-800 hover:text-gold-700">
                           Shipment {s.ordinal}
                         </Link>
                       </td>

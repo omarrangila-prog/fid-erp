@@ -774,6 +774,14 @@ export type OrderShipmentLine = {
   shipmentId: string;
   /** "Shipment 1", by position on the order — the way the client refers to it. */
   ordinal: number;
+  /**
+   * One row per batch. A shipment opened under the current rule carries one;
+   * an older job may carry several — two coffees in three containers on one
+   * shipment — and each still gets its own row, so nothing on the order is
+   * hidden behind the first.
+   */
+  batchOrdinal: number;
+  batchesOnShipment: number;
   status: string;
   arrived: boolean;
   itemName: string;
@@ -832,8 +840,11 @@ export async function getOrderOverview(companyId: string, contractId: string): P
           etaDate: true,
           ataDate: true,
           item: { select: { itemName: true } },
+          containers: true,
+          containerList: { select: { containerNumber: true } },
           batches: {
-            orderBy: { batchNumber: 'asc' },
+            where: { status: 'ACTIVE' },
+            orderBy: [{ createdAt: 'asc' }, { batchNumber: 'asc' }],
             select: {
               id: true,
               batchNumber: true,
@@ -841,6 +852,7 @@ export async function getOrderOverview(companyId: string, contractId: string): P
               receivedQuantityKg: true,
               availableQuantityKg: true,
               purchaseCostUsd: true,
+              item: { select: { itemName: true } },
               lot: { select: { lotNumber: true } },
               container: { select: { containerNumber: true } },
               warehouse: { select: { name: true } },
@@ -851,52 +863,67 @@ export async function getOrderOverview(companyId: string, contractId: string): P
     },
   });
 
-  const shipments: OrderShipmentLine[] = contract.shipments.map((shipment, index) => {
-    // A shipment carries one line's coffee; an older job may carry several
-    // batches, in which case they are summed and the first names the lot.
-    const first = shipment.batches[0];
-    const orderedKg = toQuantity(sum(shipment.batches.map((b) => dec(b.orderedQuantityKg))));
-    const receivedKg = toQuantity(sum(shipment.batches.map((b) => dec(b.receivedQuantityKg))));
-    const availableKg = toQuantity(sum(shipment.batches.map((b) => dec(b.availableQuantityKg))));
+  const shipments: OrderShipmentLine[] = contract.shipments.flatMap((shipment, index) => {
     const arrived = SHIPMENT_STATUSES_LANDED.includes(shipment.status);
+    // A shipment with no batch yet still exists: it is a row with nothing in it.
+    const batches = shipment.batches.length > 0 ? shipment.batches : [null];
 
-    return {
-      shipmentId: shipment.id,
-      ordinal: index + 1,
-      status: shipment.status,
-      arrived,
-      itemName: shipment.item.itemName,
-      containerNumber: first?.container?.containerNumber ?? null,
-      lotNumber: first?.lot?.lotNumber ?? null,
-      batchNumber: first?.batchNumber ?? null,
-      batchId: first?.id ?? null,
-      warehouseName: first?.warehouse?.name ?? null,
-      orderedKg,
-      receivedKg,
-      availableKg,
-      purchaseUsd: toMoney(sum(shipment.batches.map((b) => dec(b.purchaseCostUsd)))),
-      etaDate: shipment.etaDate,
-      ataDate: shipment.ataDate,
-      received: orderedKg.greaterThan(0) && receivedKg.greaterThanOrEqualTo(orderedKg),
-    };
+    return batches.map((batch, batchIndex) => {
+      const orderedKg = toQuantity(batch ? dec(batch.orderedQuantityKg) : dec(0));
+      const receivedKg = toQuantity(batch ? dec(batch.receivedQuantityKg) : dec(0));
+      return {
+        shipmentId: shipment.id,
+        ordinal: index + 1,
+        batchOrdinal: batchIndex + 1,
+        batchesOnShipment: batches.length,
+        status: shipment.status,
+        arrived,
+        itemName: batch?.item.itemName ?? shipment.item.itemName,
+        containerNumber: batch?.container?.containerNumber ?? null,
+        lotNumber: batch?.lot?.lotNumber ?? null,
+        batchNumber: batch?.batchNumber ?? null,
+        batchId: batch?.id ?? null,
+        warehouseName: batch?.warehouse?.name ?? null,
+        orderedKg,
+        receivedKg,
+        availableKg: toQuantity(batch ? dec(batch.availableQuantityKg) : dec(0)),
+        purchaseUsd: toMoney(batch ? dec(batch.purchaseCostUsd) : dec(0)),
+        etaDate: shipment.etaDate,
+        ataDate: shipment.ataDate,
+        received: orderedKg.greaterThan(0) && receivedKg.greaterThanOrEqualTo(orderedKg),
+      };
+    });
   });
 
-  const arrivedCount = shipments.filter((s) => s.arrived).length;
-  const receivedCount = shipments.filter((s) => s.received).length;
+  // Counts are of shipments, not rows: a shipment carrying two batches is
+  // one shipment, arrived once, and received only when both batches are.
+  const shipmentIds = [...new Set(shipments.map((s) => s.shipmentId))];
+  const arrivedCount = shipmentIds.filter((id) => shipments.some((s) => s.shipmentId === id && s.arrived)).length;
+  const receivedCount = shipmentIds.filter((id) => shipments.filter((s) => s.shipmentId === id).every((s) => s.received)).length;
   const totalKg = toQuantity(sum(shipments.map((s) => s.orderedKg)));
   const receivedKg = toQuantity(sum(shipments.map((s) => s.receivedKg)));
 
+  // Containers per shipment: the numbered ones on its list, the ones its
+  // batches sit in, or the count declared on the order — whichever knows most.
+  // A job whose three containers were declared but not yet numbered is still
+  // three containers.
+  const containerCount = contract.shipments.reduce((count, shipment) => {
+    const listed = shipment.containerList.length;
+    const onBatches = new Set(shipment.batches.map((b) => b.container?.containerNumber).filter(Boolean)).size;
+    return count + Math.max(listed, onBatches, shipment.containers);
+  }, 0);
+
   const verdict = <T extends string>(count: number, none: T, some: T, all: T): T =>
-    shipments.length === 0 || count === 0 ? none : count === shipments.length ? all : some;
+    shipmentIds.length === 0 || count === 0 ? none : count === shipmentIds.length ? all : some;
 
   return {
     contractId: contract.id,
     reference: contract.contractReference,
     shipments,
-    totalShipments: shipments.length,
+    totalShipments: shipmentIds.length,
     arrivedCount,
     receivedCount,
-    containerCount: new Set(shipments.map((s) => s.containerNumber).filter(Boolean)).size,
+    containerCount,
     totalKg,
     receivedKg,
     remainingKg: toQuantity(totalKg.minus(receivedKg)),

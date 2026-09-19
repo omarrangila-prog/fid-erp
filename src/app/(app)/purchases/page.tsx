@@ -35,11 +35,14 @@ export default async function PurchasesPage() {
             item: { select: { itemName: true } },
             containerList: { select: { containerNumber: true }, orderBy: { createdAt: 'asc' } },
             batches: {
+              where: { status: 'ACTIVE' },
+              orderBy: [{ createdAt: 'asc' }, { batchNumber: 'asc' }],
               select: {
                 id: true,
                 batchNumber: true,
                 orderedQuantityKg: true,
                 receivedQuantityKg: true,
+                item: { select: { itemName: true } },
                 container: { select: { containerNumber: true } },
                 lot: { select: { lotNumber: true } },
               },
@@ -88,24 +91,30 @@ export default async function PurchasesPage() {
       shipmentStatus: c.shipments.length === 1 ? c.shipments[0].status : null,
       shipmentCount: c.shipments.length,
       arrivedCount: c.shipments.filter((s) => SHIPMENT_STATUSES_LANDED.includes(s.status)).length,
-      shipments: c.shipments.map((s, index) => {
-        const batch = s.batches[0];
-        const received = s.batches.reduce((a, b) => a.plus(dec(b.receivedQuantityKg)), dec(0));
-        return {
-          id: s.id,
-          ordinal: index + 1,
-          status: s.status,
-          itemName: s.item?.itemName ?? '—',
-          containerNumber: batch?.container?.containerNumber ?? s.containerList[0]?.containerNumber ?? null,
-          lotNumber: batch?.lot?.lotNumber ?? null,
-          batchNumber: batch?.batchNumber ?? null,
-          quantityLabel: formatQuantityKg(s.quantityKg),
-          receivedLabel: formatQuantityKg(received),
-          arrived: SHIPMENT_STATUSES_LANDED.includes(s.status),
-          received: received.greaterThan(0),
-          date: formatDate(s.ataDate ?? s.etaDate),
-          warehouseNames: batch ? (warehouses.byBatch.get(batch.id) ?? '') : '',
-        };
+      // One child row per batch: a shipment opened under the current rule
+      // carries one, an older job may carry two coffees in three containers
+      // on one shipment, and each still gets its own row.
+      shipments: c.shipments.flatMap((s, index) => {
+        const batches = s.batches.length > 0 ? s.batches : [null];
+        return batches.map((batch) => {
+          const received = batch ? dec(batch.receivedQuantityKg) : dec(0);
+          return {
+            id: batch?.id ?? s.id,
+            shipmentId: s.id,
+            ordinal: index + 1,
+            status: s.status,
+            itemName: batch?.item?.itemName ?? s.item?.itemName ?? '—',
+            containerNumber: batch?.container?.containerNumber ?? s.containerList[0]?.containerNumber ?? null,
+            lotNumber: batch?.lot?.lotNumber ?? null,
+            batchNumber: batch?.batchNumber ?? null,
+            quantityLabel: formatQuantityKg(batch ? batch.orderedQuantityKg : s.quantityKg),
+            receivedLabel: formatQuantityKg(received),
+            arrived: SHIPMENT_STATUSES_LANDED.includes(s.status),
+            received: received.greaterThan(0),
+            date: formatDate(s.ataDate ?? s.etaDate),
+            warehouseNames: batch ? (warehouses.byBatch.get(batch.id) ?? '') : '',
+          };
+        });
       }),
       receivedPct,
       receivedLabel: c.status === 'POSTED' ? `${receivedPct}%` : '—',

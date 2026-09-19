@@ -19,6 +19,8 @@ import { markOrderArrivedAction } from '@/server/actions/trading-actions';
 export type OrderShipmentRow = {
   shipmentId: string;
   ordinal: number;
+  batchOrdinal: number;
+  batchesOnShipment: number;
   status: string;
   arrived: boolean;
   received: boolean;
@@ -122,8 +124,14 @@ export function OrderShipments({
           <Badge tone={summary.receipt === 'FULLY_RECEIVED' ? 'success' : summary.receipt === 'PARTIALLY_RECEIVED' ? 'warning' : 'neutral'}>
             {RECEIPT_LABEL[summary.receipt]}
           </Badge>
-          {canMarkArrived && pending > 0 ? (
-            <Button variant="outline" size="sm" onClick={() => setConfirmOpen(true)}>
+          {canMarkArrived ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setConfirmOpen(true)}
+              disabled={pending === 0}
+              title={pending === 0 ? 'Every shipment on this order has already arrived.' : undefined}
+            >
               <PackageCheck />
               Mark all arrived
             </Button>
@@ -151,11 +159,16 @@ export function OrderShipments({
             </THead>
             <TBody>
               {rows.map((row) => (
-                <TR key={row.shipmentId}>
+                <TR key={row.batchId ?? `${row.shipmentId}-${row.batchOrdinal}`}>
                   <TD>
                     <Link href={`/shipments/${row.shipmentId}`} className="font-medium text-forest-800 hover:text-gold-700">
                       Shipment {row.ordinal}
                     </Link>
+                    {row.batchesOnShipment > 1 ? (
+                      <span className="block text-[11px] text-ink-subtle">
+                        batch {row.batchOrdinal} of {row.batchesOnShipment} on it
+                      </span>
+                    ) : null}
                   </TD>
                   <TD className="font-mono text-xs">{row.containerNumber ?? '—'}</TD>
                   <TD>{row.itemName}</TD>

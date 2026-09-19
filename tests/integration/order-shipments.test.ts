@@ -286,3 +286,65 @@ describe('marking a whole order arrived at once', () => {
     expect(again.marked).toBe(0);
   }, 300_000);
 });
+
+describe('an order opened before shipments were split per line', () => {
+  /**
+   * The client's own live orders: two coffees in three containers on ONE
+   * shipment, because the job was opened before each line got its own. The
+   * overview must still show both coffees, all three containers and the
+   * right totals — the second line cannot vanish behind the first.
+   */
+  it('shows every batch on the one shipment, and counts the shipment once', async () => {
+    const itemE = await prisma.coffeeItem.create({
+      data: { companyId, itemCode: 'LEGACY-18', itemName: 'Legacy Screen 18', coffeeType: 'ROBUSTA', originCountry: 'Uganda', defaultUnit: 'KG', bagWeightKg: '60' },
+    });
+    const contract = await createPurchaseContract(
+      {
+        companyId,
+        vendorId: masters.vendor.id,
+        contractDate: utcDate('2026-05-13'),
+        currency: 'USD',
+        rateToUsd: '1',
+        rateLocalPerUsd: '9.85',
+        freightAmount: '0',
+        contractReference: 'ICUL/FID/LEGACY',
+        containers: 3,
+        lines: [
+          { itemId: itemE.id, quantity: '40080', unit: 'KG', unitPrice: '4.20', bagWeightKg: '60', lotNumber: 'LOT-L1', batchNumber: 'BATCH-L1' },
+          { itemId: masters.item.id, quantity: '21000', unit: 'KG', unitPrice: '4.00', bagWeightKg: '60', lotNumber: 'LOT-L2', batchNumber: 'BATCH-L2' },
+        ],
+      },
+      ctx.admin.id,
+    );
+    await postPurchaseContract({ id: contract.id, companyId, userId: ctx.admin.id });
+
+    // Collapse the two shipments into one, the way the older rule left them.
+    const [keep, drop] = await prisma.shipment.findMany({
+      where: { purchaseContractId: contract.id },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    await prisma.batch.updateMany({ where: { shipmentId: drop.id }, data: { shipmentId: keep.id } });
+    await prisma.container.updateMany({ where: { shipmentId: drop.id }, data: { shipmentId: keep.id } });
+    await prisma.shipmentStatusHistory.deleteMany({ where: { shipmentId: drop.id } });
+    await prisma.shipment.delete({ where: { id: drop.id } });
+    // The old rule put the order's whole container count on its one shipment.
+    await prisma.shipment.update({ where: { id: keep.id }, data: { containers: 3 } });
+    await prisma.container.create({
+      data: { companyId, shipmentId: keep.id, purchaseContractId: contract.id, containerNumber: 'HASU-THIRD' },
+    });
+
+    const overview = await getOrderOverview(companyId, contract.id);
+    expect(overview.totalShipments).toBe(1);
+    expect(overview.shipments).toHaveLength(2);
+    expect(overview.shipments.map((l) => l.ordinal)).toEqual([1, 1]);
+    expect(overview.shipments.map((l) => l.batchOrdinal)).toEqual([1, 2]);
+    expect(overview.shipments.map((l) => l.itemName)).toEqual(['Legacy Screen 18', masters.item.itemName]);
+    expect(overview.shipments.map((l) => l.batchNumber)).toEqual(['BATCH-L1', 'BATCH-L2']);
+    expect(overview.shipments.map((l) => Number(l.orderedKg))).toEqual([40080, 21000]);
+    expect(Number(overview.totalKg)).toBe(61080);
+    expect(overview.containerCount).toBe(3);
+    expect(overview.arrival).toBe('NOT_ARRIVED');
+    expect(overview.receipt).toBe('NOT_RECEIVED');
+  }, 300_000);
+});

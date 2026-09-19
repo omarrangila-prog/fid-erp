@@ -183,7 +183,8 @@ test('the last is marked from the order itself, and the order is fully arrived',
 
   await expect(page.getByText(/3 of 3 arrived/).first()).toBeVisible({ timeout: 45_000 });
   await expect(page.getByText(/Fully arrived/).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: /Mark all arrived/i })).toHaveCount(0);
+  // The button stays, greyed out, so nobody wonders where it went.
+  await expect(page.getByRole('button', { name: /Mark all arrived/i })).toBeDisabled();
 });
 
 test('all three are received in one receipt, into stock, separately', async ({ page }) => {

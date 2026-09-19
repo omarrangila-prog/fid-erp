@@ -83,6 +83,12 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
   const totalOrdered = receiptStatus.reduce((a, r) => a.plus(r.orderedKg), dec(0));
   const totalReceived = receiptStatus.reduce((a, r) => a.plus(r.receivedKg), dec(0));
   const fullyReceived = totalOrdered.greaterThan(0) && totalReceived.greaterThanOrEqualTo(totalOrdered);
+  // Which shipment each batch sails in, for the receipt dialog's labels. On
+  // an order opened under the current rule that is one per line; an older
+  // job carries all its batches on one shipment, and says so.
+  const shipmentOrdinalByBatch = new Map(
+    (order?.shipments ?? []).flatMap((line) => (line.batchId ? [[line.batchId, line.ordinal] as const] : [])),
+  );
   const supplierPayable = supplierGrossPayable({
     netAmount: contract.totalValue,
     taxAmount: contract.taxAmount,
@@ -134,7 +140,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
             batches={receiptStatus.map((r) => ({
               batchId: r.batchId,
               batchNumber: r.batchNumber,
-              shipmentOrdinal: r.lineNumber,
+              shipmentOrdinal: shipmentOrdinalByBatch.get(r.batchId) ?? r.lineNumber,
               itemName: r.itemName,
               lotNumber: r.lotNumber,
               containerNumber: r.containerNumber,
@@ -383,6 +389,8 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
           rows={order.shipments.map((line) => ({
             shipmentId: line.shipmentId,
             ordinal: line.ordinal,
+            batchOrdinal: line.batchOrdinal,
+            batchesOnShipment: line.batchesOnShipment,
             status: line.status,
             arrived: line.arrived,
             received: line.received,
