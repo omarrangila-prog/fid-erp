@@ -1449,68 +1449,14 @@ export async function editContainer(input: EditContainerInput) {
       });
       await tx.shipment.update({ where: { id: shipment.id }, data: { quantityKg: newKg, bags: newBags } });
 
-      // The supplier is owed the difference. Same accounts, same rates as
-      // the order's own posting, so a reversal of the order takes this back
-      // out with it.
-      if (!deltaSubtotal.isZero()) {
-        const payable = supplierGrossPayable({
-          netAmount: deltaSubtotal.abs(),
-          taxAmount: deltaTax.abs(),
-          netAmountUsd: toUsd(deltaSubtotal.abs()),
-          taxAmountUsd: toUsd(deltaTax.abs()),
-          vendorCountry: contract.vendor.country,
-          companyCountry: contract.company.country,
-        });
-        const taxOnSupplier = payable.taxOnSupplierInvoice && !deltaTax.isZero();
-        const up = deltaSubtotal.greaterThan(0);
-        await postJournalEntry(tx, {
-          companyId: input.companyId,
-          entryDate: new Date(),
-          description: `${contract.contractReference}: container corrected ${before.quantityKg} → ${newKg.toString()} KG${input.reason?.trim() ? ` — ${input.reason.trim()}` : ''}`,
-          sourceType: 'PURCHASE_CONTRACT',
-          sourceId: contract.id,
-          createdById: input.userId,
-          localCurrency: contract.company.localCurrency,
-          rateLocalPerUsd: contract.rateLocalPerUsd,
-          lines: [
-            {
-              accountKey: ACCOUNT_KEYS.INVENTORY_IN_TRANSIT,
-              direction: up ? 'DEBIT' : 'CREDIT',
-              currency: contract.currency,
-              amount: deltaSubtotal.abs(),
-              rateToUsd: contract.rateToUsd,
-              description: up ? 'More coffee on the order, in transit' : 'Less coffee on the order, in transit',
-              purchaseContractId: contract.id,
-              vendorId: contract.vendorId,
-              shipmentId: shipment.id,
-            },
-            ...(taxOnSupplier
-              ? [
-                  {
-                    accountKey: ACCOUNT_KEYS.VAT_INPUT,
-                    direction: (up ? 'DEBIT' : 'CREDIT') as 'DEBIT' | 'CREDIT',
-                    currency: contract.currency,
-                    amount: deltaTax.abs(),
-                    rateToUsd: contract.rateToUsd,
-                    description: `Input tax on the correction`,
-                    purchaseContractId: contract.id,
-                  },
-                ]
-              : []),
-            {
-              accountKey: ACCOUNT_KEYS.ACCOUNTS_PAYABLE,
-              direction: up ? 'CREDIT' : 'DEBIT',
-              currency: contract.currency,
-              amount: payable.amount,
-              rateToUsd: contract.rateToUsd,
-              description: `Payable to ${contract.vendor.vendorName} corrected`,
-              vendorId: contract.vendorId,
-              purchaseContractId: contract.id,
-              shipmentId: shipment.id,
-            },
-          ],
-        });
-      }
+      await postOrderAdjustment(tx, {
+        contract,
+        deltaSubtotal,
+        deltaTax,
+        shipmentId: shipment.id,
+        userId: input.userId,
+        description: `${contract.contractReference}: container corrected ${before.quantityKg} → ${newKg.toString()} KG${input.reason?.trim() ? ` — ${input.reason.trim()}` : ''}`,
+      });
     } else if (input.bags !== undefined && input.bags !== null && input.bags !== line.bags) {
       await tx.purchaseContractLine.update({ where: { id: line.id }, data: { bags: newBags } });
       await tx.batch.update({ where: { id: batch.id }, data: { orderedBags: newBags } });
@@ -1578,5 +1524,275 @@ export async function editContainer(input: EditContainerInput) {
       after: { ...after, reason: input.reason?.trim() || null },
     });
     return { before, after, contractId: contract.id };
+  });
+}
+
+type AdjustableContract = {
+  id: string;
+  companyId: string;
+  contractReference: string;
+  currency: string;
+  rateToUsd: Decimal;
+  rateLocalPerUsd: Decimal;
+  vendorId: string;
+  vendor: { vendorName: string; country: string | null };
+  company: { country: string | null; localCurrency: string };
+};
+
+/**
+ * The supplier is owed more or less: post the difference against the order.
+ *
+ * Same accounts and rates as the order's own posting, under the same source,
+ * so a reversal of the order takes this back out with it. Nothing is posted
+ * when the difference is zero.
+ */
+async function postOrderAdjustment(
+  tx: Tx,
+  params: { contract: AdjustableContract; deltaSubtotal: Decimal; deltaTax: Decimal; shipmentId: string; userId: string; description: string },
+) {
+  const { contract, deltaSubtotal, deltaTax } = params;
+  if (deltaSubtotal.isZero() && deltaTax.isZero()) return;
+  const toUsd = (amount: Decimal) => toMoney(contract.currency === 'USD' ? amount : amount.dividedBy(contract.rateToUsd));
+  const payable = supplierGrossPayable({
+    netAmount: deltaSubtotal.abs(),
+    taxAmount: deltaTax.abs(),
+    netAmountUsd: toUsd(deltaSubtotal.abs()),
+    taxAmountUsd: toUsd(deltaTax.abs()),
+    vendorCountry: contract.vendor.country,
+    companyCountry: contract.company.country,
+  });
+  const taxOnSupplier = payable.taxOnSupplierInvoice && !deltaTax.isZero();
+  const up = deltaSubtotal.greaterThanOrEqualTo(0);
+  await postJournalEntry(tx, {
+    companyId: contract.companyId,
+    entryDate: new Date(),
+    description: params.description,
+    sourceType: 'PURCHASE_CONTRACT',
+    sourceId: contract.id,
+    createdById: params.userId,
+    localCurrency: contract.company.localCurrency,
+    rateLocalPerUsd: contract.rateLocalPerUsd,
+    lines: [
+      {
+        accountKey: ACCOUNT_KEYS.INVENTORY_IN_TRANSIT,
+        direction: up ? 'DEBIT' : 'CREDIT',
+        currency: contract.currency,
+        amount: deltaSubtotal.abs(),
+        rateToUsd: contract.rateToUsd,
+        description: up ? 'More coffee on the order, in transit' : 'Less coffee on the order, in transit',
+        purchaseContractId: contract.id,
+        vendorId: contract.vendorId,
+        shipmentId: params.shipmentId,
+      },
+      ...(taxOnSupplier
+        ? [
+            {
+              accountKey: ACCOUNT_KEYS.VAT_INPUT,
+              direction: (up ? 'DEBIT' : 'CREDIT') as 'DEBIT' | 'CREDIT',
+              currency: contract.currency,
+              amount: deltaTax.abs(),
+              rateToUsd: contract.rateToUsd,
+              description: 'Input tax on the correction',
+              purchaseContractId: contract.id,
+            },
+          ]
+        : []),
+      {
+        accountKey: ACCOUNT_KEYS.ACCOUNTS_PAYABLE,
+        direction: up ? 'CREDIT' : 'DEBIT',
+        currency: contract.currency,
+        amount: payable.amount,
+        rateToUsd: contract.rateToUsd,
+        description: `Payable to ${contract.vendor.vendorName} corrected`,
+        vendorId: contract.vendorId,
+        purchaseContractId: contract.id,
+        shipmentId: params.shipmentId,
+      },
+    ],
+  });
+}
+
+export type AddContainerInput = {
+  companyId: string;
+  contractId: string;
+  userId: string;
+  itemId: string;
+  quantityKg: string | number;
+  /** Price per KG in the order's currency. */
+  unitPriceKg: string | number;
+  bags?: number | null;
+  containerNumber?: string | null;
+  lotNumber?: string | null;
+  batchNumber?: string | null;
+  reason?: string | null;
+};
+
+/**
+ * One more container on an approved order.
+ *
+ * "The order had three containers; there should be four." The fourth goes
+ * on the same order — its own row, shipment, batch and lot, pending loading
+ * like the others — and the supplier is owed its value, posted as its own
+ * entry against the order. No second, unrelated order.
+ */
+export async function addContainerToOrder(input: AddContainerInput) {
+  return transaction(async (tx) => {
+    const contract = await tx.purchaseContract.findFirst({
+      where: { id: input.contractId, companyId: input.companyId },
+      include: { vendor: true, company: true, lines: { orderBy: { lineNumber: 'asc' } } },
+    });
+    if (!contract) throw new NotFoundError('Purchase contract');
+    if (contract.status !== 'POSTED') throw new BusinessRuleError('Add the container to the draft order directly.');
+    const item = await tx.coffeeItem.findFirst({ where: { id: input.itemId, companyId: input.companyId } });
+    if (!item) throw new NotFoundError('Coffee item');
+
+    const kg = toQuantity(dec(input.quantityKg));
+    const price = toUnitCost(dec(input.unitPriceKg));
+    if (kg.lessThanOrEqualTo(0)) throw new BusinessRuleError('The quantity must be more than zero.');
+    if (price.lessThanOrEqualTo(0)) throw new BusinessRuleError('The price must be more than zero.');
+    const bagWeight = dec(item.bagWeightKg).greaterThan(0) ? dec(item.bagWeightKg) : dec(60);
+    const bags = input.bags ?? Number(kg.dividedBy(bagWeight).toDecimalPlaces(0));
+    const subtotal = toMoney(kg.times(price));
+    // The same tax treatment as the order's other rows.
+    const sample = contract.lines[0];
+    const taxRatePct = sample ? dec(sample.taxRatePct) : dec(0);
+    const tax = toMoney(subtotal.times(taxRatePct).dividedBy(100));
+    const toUsd = (amount: Decimal) => toMoney(contract.currency === 'USD' ? amount : amount.dividedBy(contract.rateToUsd));
+    const lineNumber = (contract.lines.at(-1)?.lineNumber ?? 0) + 1;
+    const containerNumber = input.containerNumber?.trim() || null;
+    const lotNumber = input.lotNumber?.trim() || null;
+    const batchNumber = input.batchNumber?.trim() || null;
+
+    const line = await tx.purchaseContractLine.create({
+      data: {
+        purchaseContractId: contract.id,
+        lineNumber,
+        itemId: item.id,
+        quantity: kg,
+        unit: 'KG',
+        quantityKg: kg,
+        unitPrice: price,
+        unitPriceKg: price,
+        lineSubtotal: subtotal,
+        lineTotal: subtotal,
+        unitCostKg: price,
+        containers: 1,
+        lotNumber,
+        batchNumber,
+        containerNumber,
+        bags,
+        bagWeightKg: bagWeight,
+        taxCodeId: sample?.taxCodeId ?? null,
+        taxRatePct,
+        taxAmount: tax,
+        taxAmountUsd: toUsd(tax),
+        notes: input.reason?.trim() || null,
+      },
+    });
+
+    const shipmentNumber = await nextReference(tx, { companyId: input.companyId, docType: DOC_TYPES.SHIPMENT });
+    const jobNumber = await nextReference(tx, { companyId: input.companyId, docType: DOC_TYPES.JOB });
+    const shipment = await tx.shipment.create({
+      data: {
+        companyId: input.companyId,
+        shipmentNumber,
+        jobNumber,
+        purchaseContractId: contract.id,
+        purchaseContractLineId: line.id,
+        vendorId: contract.vendorId,
+        itemId: item.id,
+        quantityKg: kg,
+        bags,
+        containers: 1,
+        origin: contract.origin,
+        destination: contract.destination,
+        portOfLoading: contract.portOfLoading,
+        incoterm: contract.incoterm,
+        status: 'CONTRACT_CREATED',
+        documentStatus: 'DRAFT_PENDING',
+        createdById: input.userId,
+      },
+    });
+    await tx.shipmentStatusHistory.create({
+      data: { shipmentId: shipment.id, fromStatus: null, toStatus: 'CONTRACT_CREATED', changedById: input.userId, notes: `Added to ${contract.contractReference} as container ${lineNumber}.` },
+    });
+
+    const traceabilityPending = !lotNumber && !batchNumber;
+    const lotName = lotNumber ?? `${contract.contractReference}/${lineNumber}`;
+    const lot =
+      (await tx.lot.findFirst({ where: { companyId: input.companyId, lotNumber: lotName }, select: { id: true } })) ??
+      (await tx.lot.create({ data: { companyId: input.companyId, lotNumber: lotName, itemId: item.id, purchaseContractId: contract.id }, select: { id: true } }));
+    const batchName = batchNumber ?? lotName;
+    if (await tx.batch.findFirst({ where: { companyId: input.companyId, batchNumber: batchName }, select: { id: true } })) {
+      throw new BusinessRuleError(`Batch ${batchName} already exists.`);
+    }
+    let containerId: string | null = null;
+    if (containerNumber) {
+      const existing = await tx.container.findFirst({ where: { companyId: input.companyId, containerNumber }, select: { id: true, shipmentId: true } });
+      if (existing?.shipmentId && existing.shipmentId !== shipment.id) throw new BusinessRuleError(`Container ${containerNumber} is already on another shipment.`);
+      containerId = existing
+        ? (await tx.container.update({ where: { id: existing.id }, data: { shipmentId: shipment.id, purchaseContractId: contract.id, netWeightKg: kg, bags }, select: { id: true } })).id
+        : (await tx.container.create({ data: { companyId: input.companyId, containerNumber, purchaseContractId: contract.id, shipmentId: shipment.id, netWeightKg: kg, bags }, select: { id: true } })).id;
+    }
+    const unitCostUsd = toUnitCost(contract.currency === 'USD' ? price : price.dividedBy(contract.rateToUsd));
+    const batch = await tx.batch.create({
+      data: {
+        companyId: input.companyId,
+        batchNumber: batchName,
+        traceabilityPending,
+        itemId: item.id,
+        lotId: lot.id,
+        containerId,
+        shipmentId: shipment.id,
+        purchaseContractId: contract.id,
+        purchaseContractLineId: line.id,
+        orderedQuantityKg: kg,
+        inTransitQuantityKg: kg,
+        orderedBags: bags,
+        bagWeightKg: bagWeight,
+        unitCost: price,
+        currency: contract.currency,
+        unitCostUsd,
+        purchaseCostUsd: toMoney(kg.times(unitCostUsd)),
+        landedUnitCostUsd: unitCostUsd,
+      },
+      select: { id: true },
+    });
+
+    const newSubtotal = toMoney(dec(contract.subtotal).plus(subtotal));
+    const newTax = toMoney(dec(contract.taxAmount).plus(tax));
+    const newTotal = toMoney(dec(contract.totalValue).plus(subtotal));
+    await tx.purchaseContract.update({
+      where: { id: contract.id },
+      data: {
+        subtotal: newSubtotal,
+        taxAmount: newTax,
+        taxAmountUsd: toUsd(newTax),
+        totalValue: newTotal,
+        totalValueUsd: toUsd(newTotal),
+        totalBags: contract.totalBags + bags,
+        containers: contract.containers + 1,
+      },
+    });
+
+    await postOrderAdjustment(tx, {
+      contract,
+      deltaSubtotal: subtotal,
+      deltaTax: tax,
+      shipmentId: shipment.id,
+      userId: input.userId,
+      description: `${contract.contractReference}: container ${lineNumber} added — ${item.itemName}, ${kg.toString()} KG${input.reason?.trim() ? ` — ${input.reason.trim()}` : ''}`,
+    });
+
+    await writeAudit(tx, {
+      companyId: input.companyId,
+      userId: input.userId,
+      action: 'CONTAINER_ADDED',
+      entityType: 'PurchaseContract',
+      entityId: contract.id,
+      after: { lineNumber, item: item.itemName, quantityKg: kg.toString(), unitPriceKg: price.toString(), containerNumber, reason: input.reason ?? null },
+    });
+
+    return { lineId: line.id, shipmentId: shipment.id, batchId: batch.id, lineNumber };
   });
 }

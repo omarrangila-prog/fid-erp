@@ -372,3 +372,50 @@ test('stock, batches, items and the loading sheet each show three lines under th
   }
   console.log('  three shipments visible on batches, stock, shipments, loading sheet and the order list');
 });
+
+test('a mistake is corrected in place: add a container, undo loading, fix the KG', async ({ page }) => {
+  await signIn(page);
+  await page.goto(orderUrl, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByText(/3 containers on this order/)).toBeVisible({ timeout: 45_000 });
+
+  // The order was three containers; there should have been four.
+  await page.getByRole('button', { name: /^Add container$/ }).click();
+  const addDialog = page.getByRole('dialog');
+  await addDialog.getByLabel(/^Coffee/).selectOption({ index: 1 });
+  await addDialog.getByLabel(/^Quantity \(KG\)/).fill('20000');
+  await addDialog.getByLabel(/^Price per KG/).fill('4.2');
+  await addDialog.getByLabel(/^Container number/).fill(`CONT-${STAMP}-4`);
+  await addDialog.getByLabel(/^Reason/).fill('Fourth container confirmed by the supplier');
+  await addDialog.getByRole('button', { name: /^Add container$/ }).click();
+  await expect(page.getByText(/4 containers on this order/)).toBeVisible({ timeout: 45_000 });
+  const fourth = containerRow(page, `CONT-${STAMP}-4`);
+  await expect(fourth).toContainText('Pending loading');
+
+  // It is marked loaded, by mistake, from the loading sheet …
+  await page.goto('/loading', { waitUntil: 'domcontentloaded' });
+  const sheetRowFour = page.getByRole('row').filter({ hasText: REFERENCE }).filter({ hasText: /Shipment 4 of 4/ }).first();
+  await expect(sheetRowFour).toBeVisible({ timeout: 30_000 });
+  await sheetRowFour.getByRole('button', { name: /Mark loaded/i }).first().click();
+  await page.getByLabel(/estimated arrival/i).fill('2026-09-25');
+  await page.getByLabel(/shipping line/i).selectOption({ index: 1 });
+  await page.getByLabel(/booking number/i).fill(`BK-${STAMP}-4`);
+  await page.getByRole('button', { name: /^Mark as loaded$/i }).click();
+  await expect(page.getByLabel(/loading date/i)).toHaveCount(0, { timeout: 30_000 });
+
+  // … and undone from the order, then the KG corrected on that container only.
+  await page.goto(orderUrl, { waitUntil: 'domcontentloaded' });
+  await expect(containerRow(page, `CONT-${STAMP}-4`)).toContainText('Loaded', { timeout: 45_000 });
+  await containerRow(page, `CONT-${STAMP}-4`).getByRole('button', { name: /Undo loading/i }).click();
+  await page.getByRole('dialog').getByRole('button', { name: /^Undo loading$/ }).click();
+  await expect(containerRow(page, `CONT-${STAMP}-4`)).toContainText('Pending loading', { timeout: 45_000 });
+
+  await containerRow(page, `CONT-${STAMP}-4`).getByRole('button', { name: /^Edit$/ }).click();
+  const editDialog = page.getByRole('dialog');
+  await editDialog.getByLabel(/^Quantity \(KG\)/).fill('19500');
+  await editDialog.getByLabel(/^Reason/).fill('Correction before final receipt');
+  await editDialog.getByRole('button', { name: /^Save correction$/ }).click();
+  await expect(containerRow(page, `CONT-${STAMP}-4`)).toContainText('19,500 KG', { timeout: 45_000 });
+  // The other three are untouched.
+  for (const line of LINES) await expect(containerRow(page, line.container)).toContainText('Received');
+  console.log('  fourth container added, loading undone, KG corrected 20,000 → 19,500');
+});

@@ -77,6 +77,11 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
     getWarehouseLabels(companyId),
     contract.shipments.length > 0 ? getOrderOverview(companyId, contract.id) : Promise.resolve(null),
   ]);
+  const items = await prisma.coffeeItem.findMany({
+    where: { companyId, status: 'ACTIVE' },
+    orderBy: { itemName: 'asc' },
+    select: { id: true, itemName: true, bagWeightKg: true },
+  });
 
   const warehouseByLineId = new Map(
     receiptStatus.map((row) => [row.lineId, warehouseLabels.byBatch.get(row.batchId) || '—']),
@@ -221,6 +226,8 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
             <SplitLineDialog
               contractId={contract.id}
               contractReference={contract.contractReference}
+              currency={contract.currency}
+              items={items.map((i) => ({ id: i.id, name: i.itemName, bagWeightKg: i.bagWeightKg.toString() }))}
               canSplit={contract.status === 'POSTED' && can(user, PERMISSIONS.PURCHASES_APPROVE)}
               canCorrect={contract.status === 'POSTED' && can(user, PERMISSIONS.PURCHASES_APPROVE) && receiptStatus.every((r) => Number(r.receivedKg) === 0)}
               lines={contract.lines.map((line) => ({

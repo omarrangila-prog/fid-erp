@@ -4,13 +4,17 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Pencil, Scissors, SplitSquareHorizontal } from 'lucide-react';
+import { Pencil, Plus, Scissors, SplitSquareHorizontal } from 'lucide-react';
+import { Select, Textarea } from '@/components/ui/input';
+import { addContainerAction } from '@/server/actions/trading-actions';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { Callout } from '@/components/ui/feedback';
 import { splitContractLineAction } from '@/server/actions/trading-actions';
+
+export type ItemChoice = { id: string; name: string; bagWeightKg: string };
 
 export type SplittableLine = {
   id: string;
@@ -34,17 +38,51 @@ export type SplittableLine = {
 export function SplitLineDialog({
   contractId,
   contractReference,
+  currency,
+  items,
   lines,
   canSplit,
   canCorrect,
 }: {
   contractId: string;
   contractReference: string;
+  currency: string;
+  items: ItemChoice[];
   lines: SplittableLine[];
   canSplit: boolean;
   canCorrect: boolean;
 }) {
   const router = useRouter();
+  const [adding, setAdding] = React.useState(false);
+  const [add, setAdd] = React.useState({ itemId: '', quantityKg: '', unitPriceKg: '', containerNumber: '', lotNumber: '', batchNumber: '', reason: '' });
+  const [addError, setAddError] = React.useState<string | null>(null);
+  const [addBusy, setAddBusy] = React.useState(false);
+
+  async function submitAdd() {
+    setAddError(null);
+    if (!add.itemId) return setAddError('Choose the coffee.');
+    if (!(Number(add.quantityKg) > 0)) return setAddError('Enter the kilograms.');
+    if (!(Number(add.unitPriceKg) > 0)) return setAddError(`Enter the price per KG in ${currency}.`);
+    setAddBusy(true);
+    const result = await addContainerAction(
+      JSON.stringify({
+        purchaseContractId: contractId,
+        itemId: add.itemId,
+        quantityKg: add.quantityKg.trim(),
+        unitPriceKg: add.unitPriceKg.trim(),
+        containerNumber: add.containerNumber.trim() || undefined,
+        lotNumber: add.lotNumber.trim() || undefined,
+        batchNumber: add.batchNumber.trim() || undefined,
+        reason: add.reason.trim() || undefined,
+      }),
+    );
+    setAddBusy(false);
+    if (!result.ok) return setAddError(result.error);
+    toast.success(`Container ${result.data.lineNumber} added to the order.`);
+    setAdding(false);
+    setAdd({ itemId: '', quantityKg: '', unitPriceKg: '', containerNumber: '', lotNumber: '', batchNumber: '', reason: '' });
+    router.refresh();
+  }
   const [line, setLine] = React.useState<SplittableLine | null>(null);
   const [count, setCount] = React.useState('2');
   const [parts, setParts] = React.useState<Array<{ quantityKg: string; containerNumber: string }>>([]);
@@ -107,10 +145,16 @@ export function SplitLineDialog({
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
+        {canSplit ? (
+          <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+            <Plus />
+            Add container
+          </Button>
+        ) : null}
         {canSplit && splittable.length > 0 ? (
           <Button variant="outline" size="sm" onClick={() => openFor(splittable[0])}>
             <SplitSquareHorizontal />
-            Add a container
+            Divide a row
           </Button>
         ) : null}
         {canCorrect ? (
@@ -135,6 +179,56 @@ export function SplitLineDialog({
             />
           ))
         : null}
+
+      <Dialog open={adding} onOpenChange={setAdding}>
+        <DialogContent
+          title="Add a container to this order"
+          description={`One more container on ${contractReference}: its own row, shipment, lot and batch, pending loading like the others. The supplier is owed its value, posted against this order.`}
+        >
+          <div className="space-y-3">
+            <Field label="Coffee" htmlFor="addItem" required>
+              <Select id="addItem" value={add.itemId} onChange={(e) => setAdd((p) => ({ ...p, itemId: e.target.value }))}>
+                <option value="">Choose a coffee…</option>
+                {items.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Quantity (KG)" htmlFor="addKg" required>
+                <Input id="addKg" inputMode="decimal" className="tnum text-right" value={add.quantityKg} onChange={(e) => setAdd((p) => ({ ...p, quantityKg: e.target.value }))} placeholder="20000" />
+              </Field>
+              <Field label={`Price per KG (${currency})`} htmlFor="addPrice" required>
+                <Input id="addPrice" inputMode="decimal" className="tnum text-right" value={add.unitPriceKg} onChange={(e) => setAdd((p) => ({ ...p, unitPriceKg: e.target.value }))} placeholder="4.20" />
+              </Field>
+              <Field label="Container number" htmlFor="addCtr" hint="If known.">
+                <Input id="addCtr" className="font-mono" value={add.containerNumber} onChange={(e) => setAdd((p) => ({ ...p, containerNumber: e.target.value }))} placeholder="MSCU1234567" />
+              </Field>
+              <Field label="Lot number" htmlFor="addLot" hint="Or leave for the receipt.">
+                <Input id="addLot" value={add.lotNumber} onChange={(e) => setAdd((p) => ({ ...p, lotNumber: e.target.value }))} />
+              </Field>
+              <Field label="Batch number" htmlFor="addBatch">
+                <Input id="addBatch" value={add.batchNumber} onChange={(e) => setAdd((p) => ({ ...p, batchNumber: e.target.value }))} />
+              </Field>
+            </div>
+            <Field label="Reason" htmlFor="addReason" hint="Kept in the audit log.">
+              <Textarea id="addReason" value={add.reason} onChange={(e) => setAdd((p) => ({ ...p, reason: e.target.value }))} placeholder="Fourth container confirmed by the supplier" />
+            </Field>
+            {addError ? <p className="text-xs font-medium text-red-600">{addError}</p> : null}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAdding(false)} disabled={addBusy}>
+              Cancel
+            </Button>
+            <Button onClick={submitAdd} loading={addBusy}>
+              <Plus />
+              Add container
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={line !== null} onOpenChange={(open) => !open && setLine(null)}>
         <DialogContent

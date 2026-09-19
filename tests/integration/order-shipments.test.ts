@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { prisma, resetDatabase, getContext, createMasters, utcDate } from '../helpers';
 import { createPurchaseContract, postPurchaseContract } from '@/lib/services/purchase';
 import { createGoodsReceipt, postGoodsReceipt, receiveContainers } from '@/lib/services/goods-receipt';
-import { getReceiptStatus, splitContractLine, correctPurchaseContract, editContainer } from '@/lib/services/purchase';
+import { getReceiptStatus, splitContractLine, correctPurchaseContract, editContainer, addContainerToOrder } from '@/lib/services/purchase';
 import { transaction } from '@/lib/db';
 import { changeShipmentStatus, getOrderOverview, markOrderArrived, undoLoading } from '@/lib/services/shipment';
 import { getBatchCostings } from '@/lib/services/landed-cost';
@@ -833,5 +833,52 @@ describe('correcting a mistake without deleting anything', () => {
     const after = await getOrderOverview(companyId, contract.id);
     expect(after.shipments[1].containerNumber).toBe('FIXED-2');
     expect(after.shipments[1].lotNumber).toBe('LOT-U2');
+  }, 300_000);
+});
+
+describe('adding a container to an approved order', () => {
+  it('puts a fourth container on the same order and owes the supplier its value', async () => {
+    const contract = await createPurchaseContract(
+      {
+        companyId, vendorId: masters.vendor.id, contractDate: utcDate('2026-09-01'), currency: 'USD', rateToUsd: '1', rateLocalPerUsd: '9.85', freightAmount: '0',
+        contractReference: 'ICUL/FID/FOURTH', containers: 3,
+        lines: [1, 2, 3].map((n) => ({ itemId: masters.item.id, quantity: '20000', unit: 'KG' as const, unitPrice: '4.00', bagWeightKg: '60', containerNumber: `FOURTH-${n}` })),
+      },
+      ctx.admin.id,
+    );
+    await postPurchaseContract({ id: contract.id, companyId, userId: ctx.admin.id });
+    const owed = async () => {
+      const sums = await prisma.journalLine.aggregate({ where: { purchaseContractId: contract.id, account: { systemKey: 'ACCOUNTS_PAYABLE' } }, _sum: { creditUsd: true, debitUsd: true } });
+      return dec(sums._sum.creditUsd ?? 0).minus(sums._sum.debitUsd ?? 0);
+    };
+    const before = await owed();
+
+    const added = await addContainerToOrder({
+      companyId, contractId: contract.id, userId: ctx.admin.id,
+      itemId: masters.item.id, quantityKg: '19500', unitPriceKg: '4.10', containerNumber: 'FOURTH-4', reason: 'Fourth container confirmed',
+    });
+    expect(added.lineNumber).toBe(4);
+
+    const overview = await getOrderOverview(companyId, contract.id);
+    expect(overview.containerCount).toBe(4);
+    expect(overview.totalShipments).toBe(4);
+    expect(overview.shipments[3].containerNumber).toBe('FOURTH-4');
+    expect(overview.shipments[3].stage).toBe('PENDING_LOADING');
+    expect(Number(overview.totalKg)).toBe(79500);
+
+    const order = await prisma.purchaseContract.findUniqueOrThrow({ where: { id: contract.id } });
+    expect(order.totalValue.toFixed(2)).toBe('319950.00');
+    expect(order.containers).toBe(4);
+    expect((await owed()).minus(before).toFixed(2)).toBe('79950.00');
+
+    // It arrives and is received like any other.
+    await changeShipmentStatus({ shipmentId: overview.shipments[3].shipmentId, companyId, userId: ctx.admin.id, toStatus: 'LOADED', loadingDate: utcDate('2026-09-05'), etaDate: utcDate('2026-09-20'), shippingLineId: masters.shippingLine.id });
+    await changeShipmentStatus({ shipmentId: overview.shipments[3].shipmentId, companyId, userId: ctx.admin.id, toStatus: 'ARRIVED', ataDate: utcDate('2026-09-21') });
+    const status = await transaction((tx) => getReceiptStatus(tx, contract.id));
+    const fourth = status.find((r) => r.lineNumber === 4)!;
+    await receiveContainers({ companyId, purchaseContractId: contract.id, receiptDate: utcDate('2026-09-22'), receivedById: ctx.admin.id, lines: [{ batchId: fourth.batchId, quantityKg: '19500', lotNumber: 'LOT-4', warehouseId: masters.warehouses[0].id }] });
+    const after = await getOrderOverview(companyId, contract.id);
+    expect(after.receivedContainers).toBe(1);
+    expect(after.shipments[3].stage).toBe('RECEIVED');
   }, 300_000);
 });

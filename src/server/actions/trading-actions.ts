@@ -13,6 +13,7 @@ import {
   receiveContainersSchema,
   splitContractLineSchema,
   editContainerSchema,
+  addContainerSchema,
   salesInvoiceSchema,
   stockTransferSchema,
   shipmentStatusSchema,
@@ -30,6 +31,7 @@ import {
   splitContractLine,
   correctPurchaseContract,
   editContainer,
+  addContainerToOrder,
 } from '@/lib/services/purchase';
 import {
   createGoodsReceipt,
@@ -525,6 +527,34 @@ export async function undoLoadingAction(shipmentId: string, reason: string): Pro
     return { ok: true, id: shipmentId, message: 'Back to pending loading. Correct the details and mark it loaded again.' };
   } catch (error) {
     return toState(error);
+  }
+}
+
+/** One more container on an approved order, with the supplier owed its value. */
+export async function addContainerAction(payload: string): Promise<ActionResult<{ lineNumber: number }>> {
+  try {
+    const user = await requirePermission(PERMISSIONS.PURCHASES_APPROVE);
+    const input = addContainerSchema.parse(parseJson(payload));
+    const result = await addContainerToOrder({
+      companyId: user.activeCompany.id,
+      contractId: input.purchaseContractId,
+      userId: user.id,
+      itemId: input.itemId,
+      quantityKg: input.quantityKg,
+      unitPriceKg: input.unitPriceKg,
+      bags: input.bags,
+      containerNumber: input.containerNumber,
+      lotNumber: input.lotNumber,
+      batchNumber: input.batchNumber,
+      reason: input.reason,
+    });
+    revalidatePath('/loading');
+    revalidatePath('/shipments');
+    revalidatePath('/purchases');
+    revalidatePath(`/purchases/${input.purchaseContractId}`);
+    return ok({ lineNumber: result.lineNumber });
+  } catch (error) {
+    return fail(error);
   }
 }
 
