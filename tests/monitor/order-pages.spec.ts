@@ -66,12 +66,26 @@ test('what each purchase order shows', async ({ page }) => {
     await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined);
     await page.screenshot({ path: `test-results/live-order-${index + 1}.png`, fullPage: true });
     const main = ((await page.locator('main').textContent()) ?? '').replace(/\s+/g, ' ');
-    const card = main.match(/(\d+) shipments? on this order.{0,400}/);
+    const card = main.match(/(\d+) containers? on this order.{0,520}/);
     console.log(`\n  order ${index + 1} (${href}):`);
     console.log(`    title: ${(await page.locator('main h1').first().textContent())?.trim()}`);
     console.log(`    shipments card: ${card ? card[0].slice(0, 400) : 'NOT PRESENT'}`);
     console.log(`    order status: ${main.match(/Order status.{0,260}/)?.[0] ?? 'NOT PRESENT'}`);
     console.log(`    receipts: ${main.match(/Goods receipts.{0,160}/)?.[0] ?? '—'}`);
+
+    // Open the receive sheet, read it, close it. Nothing is submitted.
+    const receive = page.getByRole('button', { name: /^Receive goods$/i }).first();
+    if (await receive.count()) {
+      await receive.click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toBeVisible({ timeout: 15_000 });
+      const text = ((await dialog.textContent()) ?? '').replace(/\s+/g, ' ');
+      const rows = text.match(/Container \d+/g) ?? [];
+      console.log(`    receive sheet: ${text.match(/\d+ of \d+ containers ticked/)?.[0] ?? '?'} · rows: ${rows.join(', ')}`);
+      console.log(`    containers offered: ${(text.match(/[A-Z]{4}\d{7}/g) ?? []).join(', ')}`);
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0, { timeout: 10_000 });
+    }
   }
 
   console.log(`\n  page errors: ${errors.length ? errors.join(' | ') : 'none'}`);
