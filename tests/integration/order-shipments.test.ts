@@ -656,6 +656,8 @@ describe('dividing an approved order into containers', () => {
     const overview = await getOrderOverview(companyId, contract.id);
     expect(overview.totalShipments).toBe(3);
     expect(overview.containerCount).toBe(3);
+    // Declared two, one row divided in two: three, not four.
+    expect((await prisma.purchaseContract.findUniqueOrThrow({ where: { id: contract.id } })).containers).toBe(3);
     expect(overview.shipments.map((l) => Number(l.orderedKg))).toEqual([20040, 21000, 20040]);
     expect(overview.shipments.map((l) => l.containerNumber)).toEqual(['SUDU1701982', null, 'HASU1001190']);
     expect(Number(overview.totalKg)).toBe(61080);

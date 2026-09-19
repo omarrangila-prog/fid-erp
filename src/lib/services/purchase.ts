@@ -1264,10 +1264,13 @@ export async function splitContractLine(params: {
       await tx.batch.update({ where: { id: targets[i].batchId }, data: { containerId: container.id } });
     }
 
-    // The order's declared container count grows by the rows added.
+    // The order's declared count: the containers this shipment already
+    // covered come off, the parts go on. Dividing a two-container row into
+    // two leaves a three-container order at three; dividing a one-container
+    // row into two really adds one.
     await tx.purchaseContract.update({
       where: { id: contract.id },
-      data: { containers: Math.max(contract.containers, 0) + (params.parts.length - 1) },
+      data: { containers: Math.max(0, contract.containers - Math.max(shipment.containers, 1)) + params.parts.length },
     });
 
     await writeAudit(tx, {
