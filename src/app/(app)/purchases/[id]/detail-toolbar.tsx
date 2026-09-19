@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { PurchaseActions } from '@/app/(app)/purchases/[id]/purchase-actions';
 import { GoodsReceiptDialog, type ReceivableBatch } from '@/app/(app)/purchases/[id]/goods-receipt-dialog';
+import { RECEIVE_GOODS_EVENT } from '@/app/(app)/purchases/[id]/order-shipments';
 
 /** Holds the shared open/closed state between the toolbar and the receipt sheet. */
 export function PurchaseDetailToolbar({
@@ -31,6 +32,15 @@ export function PurchaseDetailToolbar({
   defaultWarehouseId: string | null;
 }) {
   const [receiving, setReceiving] = React.useState(false);
+
+  // A row on the containers table can open the same sheet, so "Receive
+  // goods" is beside the container and not only at the top of the page.
+  React.useEffect(() => {
+    if (!permissions.receive) return;
+    const open = () => setReceiving(true);
+    window.addEventListener(RECEIVE_GOODS_EVENT, open);
+    return () => window.removeEventListener(RECEIVE_GOODS_EVENT, open);
+  }, [permissions.receive]);
 
   return (
     <>

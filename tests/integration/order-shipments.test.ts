@@ -1,7 +1,9 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { prisma, resetDatabase, getContext, createMasters, utcDate } from '../helpers';
 import { createPurchaseContract, postPurchaseContract } from '@/lib/services/purchase';
-import { createGoodsReceipt, postGoodsReceipt } from '@/lib/services/goods-receipt';
+import { createGoodsReceipt, postGoodsReceipt, receiveContainers } from '@/lib/services/goods-receipt';
+import { getReceiptStatus } from '@/lib/services/purchase';
+import { transaction } from '@/lib/db';
 import { changeShipmentStatus, getOrderOverview, markOrderArrived } from '@/lib/services/shipment';
 import { getBatchCostings } from '@/lib/services/landed-cost';
 import { reconcile } from '@/lib/services/reconciliation';
@@ -330,6 +332,15 @@ describe('an order opened before shipments were split per line', () => {
     await prisma.shipment.delete({ where: { id: drop.id } });
     // The old rule put the order's whole container count on its one shipment.
     await prisma.shipment.update({ where: { id: keep.id }, data: { containers: 3 } });
+    // Three numbered containers, as the client's job has: one on each batch
+    // and a third nobody assigned.
+    const batches = await prisma.batch.findMany({ where: { purchaseContractId: contract.id }, orderBy: { batchNumber: 'asc' }, select: { id: true } });
+    for (const [i, number] of ['SUDU-FIRST', 'TCLU-SECOND'].entries()) {
+      const container = await prisma.container.create({
+        data: { companyId, shipmentId: keep.id, purchaseContractId: contract.id, containerNumber: number },
+      });
+      await prisma.batch.update({ where: { id: batches[i].id }, data: { containerId: container.id } });
+    }
     await prisma.container.create({
       data: { companyId, shipmentId: keep.id, purchaseContractId: contract.id, containerNumber: 'HASU-THIRD' },
     });
@@ -346,5 +357,255 @@ describe('an order opened before shipments were split per line', () => {
     expect(overview.containerCount).toBe(3);
     expect(overview.arrival).toBe('NOT_ARRIVED');
     expect(overview.receipt).toBe('NOT_RECEIVED');
+    expect(overview.arrivedContainers).toBe(0);
+    expect(overview.shipments.map((l) => l.stage)).toEqual(['PENDING_LOADING', 'PENDING_LOADING']);
+
+    // The receive screen gets one row per container: the third, unassigned
+    // container goes with the 40,080 KG batch, so nothing is missing.
+    const status = await transaction((tx) => getReceiptStatus(tx, contract.id));
+    expect(status.map((r) => r.containerNumbers.length)).toEqual([2, 1]);
+    expect(status[0].containerNumbers).toContain('HASU-THIRD');
+    expect(status.flatMap((r) => r.containerNumbers)).toHaveLength(3);
+  }, 300_000);
+});
+
+describe('containers arrive one at a time', () => {
+  /**
+   * One container arriving must not mark the others. The order counts
+   * containers — "1 of 3 containers arrived" — and every row carries its own
+   * stage: pending loading, loaded, arrived, received.
+   */
+  it('counts 1 of 3, then 2 of 3, and each row keeps its own stage', async () => {
+    const contract = await createPurchaseContract(
+      {
+        companyId,
+        vendorId: masters.vendor.id,
+        contractDate: utcDate('2026-06-01'),
+        currency: 'USD',
+        rateToUsd: '1',
+        rateLocalPerUsd: '9.85',
+        freightAmount: '0',
+        contractReference: 'ICUL/FID/STAGES',
+        containers: 3,
+        lines: [
+          { itemId: masters.item.id, quantity: '20000', unit: 'KG', unitPrice: '4.10', bagWeightKg: '60', containerNumber: 'CONT-S1', lotNumber: 'LOT-S1', batchNumber: 'BATCH-S1' },
+          { itemId: masters.item.id, quantity: '20000', unit: 'KG', unitPrice: '4.10', bagWeightKg: '60', containerNumber: 'CONT-S2', lotNumber: 'LOT-S2', batchNumber: 'BATCH-S2' },
+          { itemId: masters.item.id, quantity: '20000', unit: 'KG', unitPrice: '4.10', bagWeightKg: '60', containerNumber: 'CONT-S3', lotNumber: 'LOT-S3', batchNumber: 'BATCH-S3' },
+        ],
+      },
+      ctx.admin.id,
+    );
+    await postPurchaseContract({ id: contract.id, companyId, userId: ctx.admin.id });
+
+    let overview = await getOrderOverview(companyId, contract.id);
+    expect(overview.containerCount).toBe(3);
+    expect(overview.arrivedContainers).toBe(0);
+    expect(overview.shipments.map((l) => l.stage)).toEqual(['PENDING_LOADING', 'PENDING_LOADING', 'PENDING_LOADING']);
+
+    const [first, second] = overview.shipments;
+    const land = async (shipmentId: string) => {
+      await changeShipmentStatus({ shipmentId, companyId, userId: ctx.admin.id, toStatus: 'LOADED', etaDate: utcDate('2026-06-20'), loadingDate: utcDate('2026-06-10'), shippingLineId: masters.shippingLine.id });
+      await changeShipmentStatus({ shipmentId, companyId, userId: ctx.admin.id, toStatus: 'ARRIVED', ataDate: utcDate('2026-06-21') });
+    };
+
+    await land(first.shipmentId);
+    overview = await getOrderOverview(companyId, contract.id);
+    expect(overview.arrivedContainers).toBe(1);
+    expect(overview.arrival).toBe('PARTIALLY_ARRIVED');
+    expect(overview.shipments.map((l) => l.stage)).toEqual(['ARRIVED', 'PENDING_LOADING', 'PENDING_LOADING']);
+
+    await changeShipmentStatus({ shipmentId: second.shipmentId, companyId, userId: ctx.admin.id, toStatus: 'LOADED', etaDate: utcDate('2026-06-25'), loadingDate: utcDate('2026-06-12'), shippingLineId: masters.shippingLine.id });
+    overview = await getOrderOverview(companyId, contract.id);
+    expect(overview.arrivedContainers).toBe(1);
+    expect(overview.shipments.map((l) => l.stage)).toEqual(['ARRIVED', 'LOADED', 'PENDING_LOADING']);
+
+    await changeShipmentStatus({ shipmentId: second.shipmentId, companyId, userId: ctx.admin.id, toStatus: 'ARRIVED', ataDate: utcDate('2026-06-26') });
+    overview = await getOrderOverview(companyId, contract.id);
+    expect(overview.arrivedContainers).toBe(2);
+    expect(overview.arrival).toBe('PARTIALLY_ARRIVED');
+    expect(overview.shipments.map((l) => l.stage)).toEqual(['ARRIVED', 'ARRIVED', 'PENDING_LOADING']);
+  }, 300_000);
+});
+
+describe('receiving container by container', () => {
+  const order = async (reference: string, count: number, kgEach = '20000') => {
+    const contract = await createPurchaseContract(
+      {
+        companyId,
+        vendorId: masters.vendor.id,
+        contractDate: utcDate('2026-07-01'),
+        currency: 'USD',
+        rateToUsd: '1',
+        rateLocalPerUsd: '9.85',
+        freightAmount: '0',
+        contractReference: reference,
+        containers: count,
+        lines: Array.from({ length: count }, (_, i) => ({
+          itemId: masters.item.id,
+          quantity: kgEach,
+          unit: 'KG' as const,
+          unitPrice: '4.00',
+          bagWeightKg: '60',
+          containerNumber: `${reference.replace(/\W/g, '')}-C${i + 1}`,
+        })),
+      },
+      ctx.admin.id,
+    );
+    await postPurchaseContract({ id: contract.id, companyId, userId: ctx.admin.id });
+    return contract;
+  };
+  const land = async (shipmentId: string) => {
+    await changeShipmentStatus({ shipmentId, companyId, userId: ctx.admin.id, toStatus: 'LOADED', loadingDate: utcDate('2026-07-05'), etaDate: utcDate('2026-07-20'), shippingLineId: masters.shippingLine.id });
+    await changeShipmentStatus({ shipmentId, companyId, userId: ctx.admin.id, toStatus: 'ARRIVED', ataDate: utcDate('2026-07-21') });
+  };
+
+  /** Test case A: three containers arrive together and are received in one go. */
+  it('receives all three containers at once, each with its own lot, batch and warehouse', async () => {
+    const contract = await order('ICUL/FID/A', 3);
+    await markOrderArrived({ companyId, contractId: contract.id, userId: ctx.admin.id, ataDate: utcDate('2026-07-21') });
+
+    // The receive screen offers every container, ticked because it arrived.
+    const status = await transaction((tx) => getReceiptStatus(tx, contract.id));
+    expect(status).toHaveLength(3);
+    expect(status.every((r) => r.arrived)).toBe(true);
+    expect(status.every((r) => r.traceabilityPending)).toBe(true);
+
+    const receipts = await receiveContainers({
+      companyId,
+      purchaseContractId: contract.id,
+      receiptDate: utcDate('2026-07-22'),
+      receivedById: ctx.admin.id,
+      lines: [
+        { batchId: status[0].batchId, quantityKg: '20000', lotNumber: 'LOT-A1', batchNumber: 'BATCH-A1', containerNumber: status[0].containerNumbers[0], warehouseId: masters.warehouses[0].id },
+        { batchId: status[1].batchId, quantityKg: '20000', lotNumber: 'LOT-A2', batchNumber: 'BATCH-A2', containerNumber: status[1].containerNumbers[0], warehouseId: masters.warehouses[0].id },
+        { batchId: status[2].batchId, quantityKg: '20000', lotNumber: 'LOT-A3', batchNumber: 'BATCH-A3', containerNumber: status[2].containerNumbers[0], warehouseId: secondWarehouse },
+      ],
+    });
+    // One receipt per warehouse, both posted in the same transaction.
+    expect(receipts).toHaveLength(2);
+
+    const overview = await getOrderOverview(companyId, contract.id);
+    expect(overview.receivedContainers).toBe(3);
+    expect(overview.receipt).toBe('FULLY_RECEIVED');
+    expect(overview.shipments.map((l) => l.stage)).toEqual(['RECEIVED', 'RECEIVED', 'RECEIVED']);
+    expect(overview.shipments.map((l) => l.lotNumber)).toEqual(['LOT-A1', 'LOT-A2', 'LOT-A3']);
+    expect(overview.shipments.map((l) => l.batchNumber)).toEqual(['BATCH-A1', 'BATCH-A2', 'BATCH-A3']);
+    expect(overview.shipments.map((l) => l.warehouseName)).toEqual([
+      masters.warehouses[0].name,
+      masters.warehouses[0].name,
+      (await prisma.warehouse.findUniqueOrThrow({ where: { id: secondWarehouse } })).name,
+    ]);
+
+    // Three stock records, sellable, in the warehouses named.
+    const balances = await prisma.inventoryBalance.findMany({
+      where: { batch: { purchaseContractId: contract.id } },
+      select: { warehouseId: true, availableKg: true, batch: { select: { batchNumber: true } } },
+      orderBy: { batch: { batchNumber: 'asc' } },
+    });
+    expect(balances.map((b) => [b.batch.batchNumber, Number(b.availableKg)])).toEqual([
+      ['BATCH-A1', 20000],
+      ['BATCH-A2', 20000],
+      ['BATCH-A3', 20000],
+    ]);
+    expect(balances[2].warehouseId).toBe(secondWarehouse);
+  }, 300_000);
+
+  /** Test case B: six containers, five arrive, three are received, the rest later. */
+  it('keeps every container at its own stage through partial arrival and receipt', async () => {
+    const contract = await order('ICUL/FID/B', 6);
+    let overview = await getOrderOverview(companyId, contract.id);
+    expect(overview.containerCount).toBe(6);
+
+    for (const line of overview.shipments.slice(0, 5)) await land(line.shipmentId);
+    overview = await getOrderOverview(companyId, contract.id);
+    expect(overview.arrivedContainers).toBe(5);
+    expect(overview.arrival).toBe('PARTIALLY_ARRIVED');
+
+    const status = await transaction((tx) => getReceiptStatus(tx, contract.id));
+    expect(status.map((r) => r.arrived)).toEqual([true, true, true, true, true, false]);
+
+    await receiveContainers({
+      companyId,
+      purchaseContractId: contract.id,
+      receiptDate: utcDate('2026-07-22'),
+      receivedById: ctx.admin.id,
+      lines: status.slice(0, 3).map((r, i) => ({
+        batchId: r.batchId,
+        quantityKg: '20000',
+        lotNumber: `LOT-B${i + 1}`,
+        batchNumber: `BATCH-B${i + 1}`,
+        warehouseId: masters.warehouses[0].id,
+      })),
+    });
+    overview = await getOrderOverview(companyId, contract.id);
+    expect(overview.receivedContainers).toBe(3);
+    expect(overview.arrivedContainers).toBe(5);
+    expect(overview.receipt).toBe('PARTIALLY_RECEIVED');
+    expect(overview.shipments.map((l) => l.stage)).toEqual([
+      'RECEIVED', 'RECEIVED', 'RECEIVED', 'ARRIVED', 'ARRIVED', 'PENDING_LOADING',
+    ]);
+    // Pending arrival 1, pending receipt 3 (two landed, one still at sea).
+    expect(overview.containerCount - overview.arrivedContainers).toBe(1);
+    expect(overview.containerCount - overview.receivedContainers).toBe(3);
+
+    // The other two landed containers, on their own day.
+    const later = await transaction((tx) => getReceiptStatus(tx, contract.id));
+    const outstanding = later.filter((r) => Number(r.outstandingKg) > 0 && r.arrived);
+    expect(outstanding).toHaveLength(2);
+    await receiveContainers({
+      companyId,
+      purchaseContractId: contract.id,
+      receiptDate: utcDate('2026-07-23'),
+      receivedById: ctx.admin.id,
+      lines: outstanding.map((r, i) => ({
+        batchId: r.batchId,
+        quantityKg: '20000',
+        lotNumber: `LOT-B${i + 4}`,
+        warehouseId: secondWarehouse,
+      })),
+    });
+    overview = await getOrderOverview(companyId, contract.id);
+    expect(overview.receivedContainers).toBe(5);
+    expect(overview.shipments[5].stage).toBe('PENDING_LOADING');
+
+    // The last one lands and is received; the order is complete.
+    await land(overview.shipments[5].shipmentId);
+    const last = (await transaction((tx) => getReceiptStatus(tx, contract.id))).find((r) => Number(r.outstandingKg) > 0)!;
+    await receiveContainers({
+      companyId,
+      purchaseContractId: contract.id,
+      receiptDate: utcDate('2026-07-30'),
+      receivedById: ctx.admin.id,
+      lines: [{ batchId: last.batchId, quantityKg: '20000', lotNumber: 'LOT-B6', warehouseId: masters.warehouses[0].id }],
+    });
+    overview = await getOrderOverview(companyId, contract.id);
+    expect(overview.arrival).toBe('FULLY_ARRIVED');
+    expect(overview.receipt).toBe('FULLY_RECEIVED');
+    expect(overview.receivedContainers).toBe(6);
+  }, 300_000);
+
+  it('receives nothing at all when one container of the batch is wrong', async () => {
+    const contract = await order('ICUL/FID/ATOMIC', 2);
+    await markOrderArrived({ companyId, contractId: contract.id, userId: ctx.admin.id, ataDate: utcDate('2026-07-21') });
+    const status = await transaction((tx) => getReceiptStatus(tx, contract.id));
+
+    await expect(
+      receiveContainers({
+        companyId,
+        purchaseContractId: contract.id,
+        receiptDate: utcDate('2026-07-22'),
+        receivedById: ctx.admin.id,
+        lines: [
+          { batchId: status[0].batchId, quantityKg: '20000', lotNumber: 'LOT-OK', warehouseId: masters.warehouses[0].id },
+          // More than the container has left — the second warehouse's receipt fails.
+          { batchId: status[1].batchId, quantityKg: '25000', lotNumber: 'LOT-OVER', warehouseId: secondWarehouse },
+        ],
+      }),
+    ).rejects.toThrow();
+
+    const overview = await getOrderOverview(companyId, contract.id);
+    expect(overview.receivedContainers).toBe(0);
+    const balances = await prisma.inventoryBalance.count({ where: { batch: { purchaseContractId: contract.id } } });
+    expect(balances).toBe(0);
   }, 300_000);
 });

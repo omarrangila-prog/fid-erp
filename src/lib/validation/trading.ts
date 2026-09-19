@@ -110,6 +110,20 @@ export const goodsReceiptSchema = z.object({
   lines: z.array(goodsReceiptLineSchema).min(1, 'Add at least one line to receive.'),
 });
 
+/**
+ * Receiving container by container: each row names its own warehouse, so
+ * three containers landing together can go to two stores in one operation.
+ */
+export const receiveContainersSchema = z.object({
+  purchaseContractId: cuid,
+  receiptDate: dateString('Receipt date'),
+  reference: optionalText(60),
+  notes: optionalText(600),
+  lines: z
+    .array(goodsReceiptLineSchema.extend({ warehouseId: requiredChoice('Warehouse') }))
+    .min(1, 'Tick at least one container to receive.'),
+});
+
 export const salesLineSchema = z.object({
   batchId: requiredChoice('Batch'),
   warehouseId: requiredChoice('Warehouse'),
@@ -285,6 +299,7 @@ export const reversalSchema = z.object({
 
 export type PurchaseContractFormInput = z.infer<typeof purchaseContractSchema>;
 export type GoodsReceiptFormInput = z.infer<typeof goodsReceiptSchema>;
+export type ReceiveContainersFormInput = z.infer<typeof receiveContainersSchema>;
 export type SalesInvoiceFormInput = z.infer<typeof salesInvoiceSchema>;
 export type StockTransferFormInput = z.infer<typeof stockTransferSchema>;
 

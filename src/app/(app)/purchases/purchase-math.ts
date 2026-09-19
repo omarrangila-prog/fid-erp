@@ -143,3 +143,37 @@ export function computePurchaseTotalsClient(input: {
     ).size,
   };
 }
+
+/**
+ * One row per container.
+ *
+ * The client buys 60,000 KG in three containers and each container loads,
+ * arrives and is received on its own day — so each needs its own row, with
+ * its own lot, batch and container number. Splitting divides the quantity
+ * and the bags evenly, in the row's own unit, with the rounding remainder on
+ * the last row so the total is unchanged. The first row keeps the numbers
+ * already typed; the copies start blank, because they belong to different
+ * containers.
+ */
+export function splitLineIntoContainers(line: LineDraft, count: number): LineDraft[] {
+  const n = Math.max(1, Math.floor(count));
+  if (n === 1) return [line];
+  const quantity = dec(line.quantity);
+  const bags = dec(line.bags);
+  const each = quantity.dividedBy(n).toDecimalPlaces(3, Decimal.ROUND_DOWN);
+  const eachBags = bags.dividedBy(n).toDecimalPlaces(0, Decimal.ROUND_DOWN);
+  return Array.from({ length: n }, (_, index) => {
+    const last = index === n - 1;
+    const q = last ? quantity.minus(each.times(n - 1)) : each;
+    const b = last ? bags.minus(eachBags.times(n - 1)) : eachBags;
+    return {
+      ...line,
+      key: index === 0 ? line.key : crypto.randomUUID(),
+      quantity: quantity.isZero() ? '' : q.toString(),
+      bags: bags.isZero() ? '' : b.toString(),
+      lotNumber: index === 0 ? line.lotNumber : '',
+      batchNumber: index === 0 ? line.batchNumber : '',
+      containerNumber: index === 0 ? line.containerNumber : '',
+    };
+  });
+}

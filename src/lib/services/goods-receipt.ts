@@ -440,231 +440,237 @@ async function resolveLines(tx: Tx, input: GoodsReceiptInput): Promise<ResolvedG
   return resolved;
 }
 
-export async function createGoodsReceipt(input: GoodsReceiptInput, userId: string) {
-  return transaction(async (tx) => {
-    const contract = await tx.purchaseContract.findFirst({
-      where: { id: input.purchaseContractId, companyId: input.companyId },
-      include: { shipments: { select: { id: true } } },
-    });
-    if (!contract) throw new NotFoundError('Purchase contract');
-    if (contract.status !== 'POSTED') {
-      throw new BusinessRuleError('Goods can only be received against an approved purchase contract.');
-    }
-
-    const warehouse = await tx.warehouse.findFirst({
-      where: { id: input.warehouseId, companyId: input.companyId },
-      select: { id: true, name: true, status: true },
-    });
-    if (!warehouse) throw new NotFoundError('Warehouse');
-    if (warehouse.status !== 'ACTIVE') {
-      throw new BusinessRuleError(`${warehouse.name} is inactive and cannot receive stock.`);
-    }
-
-    // Name the placeholder batches and split any that arrived under more than
-    // one lot, then resolve against the batches that result.
-    const withIdentity = await applyReceiptTraceability(tx, input);
-    const lines = await resolveLines(tx, { ...input, lines: withIdentity });
-
-    const grnNumber = await nextReference(tx, { companyId: input.companyId, docType: 'GRN' });
-
-    const receipt = await tx.goodsReceipt.create({
-      data: {
-        companyId: input.companyId,
-        grnNumber,
-        receiptDate: input.receiptDate,
-        purchaseContractId: contract.id,
-        /*
-         * A contract may hold several shipments now, and a receipt may land
-         * coffee from more than one of them. The header names a shipment only
-         * when every batch received came off the same one; each batch keeps
-         * its own shipment regardless, so nothing is lost either way.
-         */
-        shipmentId: (() => {
-          const ids = new Set(lines.map((l) => l.shipmentId).filter(Boolean));
-          return ids.size === 1 ? [...ids][0] : null;
-        })(),
-        vendorId: contract.vendorId,
-        warehouseId: input.warehouseId,
-        reference: input.reference ?? null,
-        notes: input.notes ?? null,
-        status: 'DRAFT',
-        receivedById: input.receivedById,
-        createdById: userId,
-        lines: {
-          create: lines.map((l) => ({
-            lineNumber: l.lineNumber,
-            purchaseContractLineId: l.contractLineId,
-            batchId: l.batchId,
-            itemId: l.itemId,
-            containerId: l.containerId,
-            quantityKg: l.quantityKg,
-            bags: l.bags,
-            lotNumber: l.lotNumber,
-            batchNumber: l.batchNumber,
-            containerNumber: l.containerNumber,
-            notes: l.notes,
-          })),
-        },
-      },
-      include: { lines: true },
-    });
-
-    await writeAudit(tx, {
-      companyId: input.companyId,
-      userId,
-      action: 'GOODS_RECEIPT_CREATED',
-      entityType: 'GoodsReceipt',
-      entityId: receipt.id,
-      after: {
-        grnNumber,
-        warehouse: warehouse.name,
-        contract: contract.contractNumber,
-        totalKg: sum(lines.map((l) => l.quantityKg)).toString(),
-      },
-    });
-
-    return receipt;
+/** The receipt, inside a transaction somebody else opened. */
+export async function createGoodsReceiptIn(tx: Tx, input: GoodsReceiptInput, userId: string) {
+  const contract = await tx.purchaseContract.findFirst({
+    where: { id: input.purchaseContractId, companyId: input.companyId },
+    include: { shipments: { select: { id: true } } },
   });
+  if (!contract) throw new NotFoundError('Purchase contract');
+  if (contract.status !== 'POSTED') {
+    throw new BusinessRuleError('Goods can only be received against an approved purchase contract.');
+  }
+
+  const warehouse = await tx.warehouse.findFirst({
+    where: { id: input.warehouseId, companyId: input.companyId },
+    select: { id: true, name: true, status: true },
+  });
+  if (!warehouse) throw new NotFoundError('Warehouse');
+  if (warehouse.status !== 'ACTIVE') {
+    throw new BusinessRuleError(`${warehouse.name} is inactive and cannot receive stock.`);
+  }
+
+  // Name the placeholder batches and split any that arrived under more than
+  // one lot, then resolve against the batches that result.
+  const withIdentity = await applyReceiptTraceability(tx, input);
+  const lines = await resolveLines(tx, { ...input, lines: withIdentity });
+
+  const grnNumber = await nextReference(tx, { companyId: input.companyId, docType: 'GRN' });
+
+  const receipt = await tx.goodsReceipt.create({
+    data: {
+      companyId: input.companyId,
+      grnNumber,
+      receiptDate: input.receiptDate,
+      purchaseContractId: contract.id,
+      /*
+       * A contract may hold several shipments now, and a receipt may land
+       * coffee from more than one of them. The header names a shipment only
+       * when every batch received came off the same one; each batch keeps
+       * its own shipment regardless, so nothing is lost either way.
+       */
+      shipmentId: (() => {
+        const ids = new Set(lines.map((l) => l.shipmentId).filter(Boolean));
+        return ids.size === 1 ? [...ids][0] : null;
+      })(),
+      vendorId: contract.vendorId,
+      warehouseId: input.warehouseId,
+      reference: input.reference ?? null,
+      notes: input.notes ?? null,
+      status: 'DRAFT',
+      receivedById: input.receivedById,
+      createdById: userId,
+      lines: {
+        create: lines.map((l) => ({
+          lineNumber: l.lineNumber,
+          purchaseContractLineId: l.contractLineId,
+          batchId: l.batchId,
+          itemId: l.itemId,
+          containerId: l.containerId,
+          quantityKg: l.quantityKg,
+          bags: l.bags,
+          lotNumber: l.lotNumber,
+          batchNumber: l.batchNumber,
+          containerNumber: l.containerNumber,
+          notes: l.notes,
+        })),
+      },
+    },
+    include: { lines: true },
+  });
+
+  await writeAudit(tx, {
+    companyId: input.companyId,
+    userId,
+    action: 'GOODS_RECEIPT_CREATED',
+    entityType: 'GoodsReceipt',
+    entityId: receipt.id,
+    after: {
+      grnNumber,
+      warehouse: warehouse.name,
+      contract: contract.contractNumber,
+      totalKg: sum(lines.map((l) => l.quantityKg)).toString(),
+    },
+  });
+
+  return receipt;
+}
+
+export async function createGoodsReceipt(input: GoodsReceiptInput, userId: string) {
+  return transaction((tx) => createGoodsReceiptIn(tx, input, userId));
+}
+
+/** Posting, inside a transaction somebody else opened. */
+export async function postGoodsReceiptIn(tx: Tx, params: { id: string; companyId: string; userId: string }) {
+  const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>`
+    SELECT "id", "status"::text FROM goods_receipts
+    WHERE "id" = ${params.id} AND "companyId" = ${params.companyId}
+    FOR UPDATE
+  `;
+  if (locked.length === 0) throw new NotFoundError('Goods receipt');
+  if (locked[0].status !== 'DRAFT') {
+    throw new BusinessRuleError(`This goods receipt is already ${locked[0].status.toLowerCase()}.`);
+  }
+
+  const receipt = await tx.goodsReceipt.findUniqueOrThrow({
+    where: { id: params.id },
+    include: {
+      lines: { orderBy: { lineNumber: 'asc' }, include: { batch: true } },
+      warehouse: true,
+      purchaseContract: true,
+    },
+  });
+
+  const company = await getCompanyContext(tx, params.companyId);
+  let receivedValueUsd = new Decimal(0);
+
+  const batchIds = [...new Set(receipt.lines.map((line) => line.batchId))].sort();
+  for (const batchId of batchIds) {
+    await lockBatch(tx, params.companyId, batchId);
+  }
+
+  const claimedKg = new Map<string, Decimal>();
+
+  for (const line of receipt.lines) {
+    const batch = await tx.batch.findUniqueOrThrow({
+      where: { id: line.batchId },
+      select: {
+        id: true,
+        batchNumber: true,
+        orderedQuantityKg: true,
+        receivedQuantityKg: true,
+        landedUnitCostUsd: true,
+        unitCostUsd: true,
+        warehouseId: true,
+      },
+    });
+    const outstanding = toQuantity(
+      dec(batch.orderedQuantityKg)
+        .minus(dec(batch.receivedQuantityKg))
+        .minus(claimedKg.get(line.batchId) ?? 0),
+    );
+    if (dec(line.quantityKg).greaterThan(outstanding)) {
+      throw new BusinessRuleError(
+        `Batch ${batch.batchNumber} now has only ${outstanding.toFixed(3)} KG outstanding, which is less than the ${dec(line.quantityKg).toFixed(3)} KG on this receipt.`,
+      );
+    }
+    claimedKg.set(line.batchId, (claimedKg.get(line.batchId) ?? new Decimal(0)).plus(line.quantityKg));
+
+    const unitCostUsd = dec(batch.landedUnitCostUsd).greaterThan(0)
+      ? dec(batch.landedUnitCostUsd)
+      : dec(batch.unitCostUsd);
+
+    await receiveStock(tx, {
+      companyId: params.companyId,
+      batchId: line.batchId,
+      warehouseId: receipt.warehouseId,
+      quantityKg: line.quantityKg,
+      bags: line.bags,
+      unitCostUsd,
+      referenceType: 'GOODS_RECEIPT',
+      referenceId: receipt.id,
+      transactionDate: receipt.receiptDate,
+      createdById: params.userId,
+      notes: `Received into ${receipt.warehouse.name} on ${receipt.grnNumber}`,
+    });
+
+    // Record the warehouse on the batch as its primary location hint.
+    if (!batch.warehouseId) {
+      await tx.batch.update({ where: { id: batch.id }, data: { warehouseId: receipt.warehouseId } });
+    }
+
+    receivedValueUsd = receivedValueUsd.plus(toMoney(dec(line.quantityKg).times(unitCostUsd)));
+  }
+
+  receivedValueUsd = toMoney(receivedValueUsd);
+
+  // The goods move from "in transit" to warehouse stock. Both sides are in
+  // USD because inventory is carried in the group currency.
+  await postJournalEntry(tx, {
+    companyId: params.companyId,
+    entryDate: receipt.receiptDate,
+    description: `Goods receipt ${receipt.grnNumber} into ${receipt.warehouse.name}`,
+    sourceType: 'PURCHASE_CONTRACT',
+    sourceId: receipt.id,
+    createdById: params.userId,
+    localCurrency: company.localCurrency,
+    rateLocalPerUsd: receipt.purchaseContract.rateLocalPerUsd,
+    lines: [
+      {
+        accountKey: ACCOUNT_KEYS.INVENTORY,
+        direction: 'DEBIT',
+        currency: 'USD',
+        amount: receivedValueUsd,
+        rateToUsd: 1,
+        description: `Coffee received into ${receipt.warehouse.name}`,
+        purchaseContractId: receipt.purchaseContractId,
+        shipmentId: receipt.shipmentId,
+        vendorId: receipt.vendorId,
+      },
+      {
+        accountKey: ACCOUNT_KEYS.INVENTORY_IN_TRANSIT,
+        direction: 'CREDIT',
+        currency: 'USD',
+        amount: receivedValueUsd,
+        rateToUsd: 1,
+        description: 'Cleared from goods in transit',
+        purchaseContractId: receipt.purchaseContractId,
+        shipmentId: receipt.shipmentId,
+        vendorId: receipt.vendorId,
+      },
+    ],
+  });
+
+  const posted = await tx.goodsReceipt.update({
+    where: { id: receipt.id },
+    data: { status: 'POSTED', postedAt: new Date() },
+  });
+
+  await writeAudit(tx, {
+    companyId: params.companyId,
+    userId: params.userId,
+    action: 'GOODS_RECEIPT_POSTED',
+    entityType: 'GoodsReceipt',
+    entityId: receipt.id,
+    before: { status: 'DRAFT' },
+    after: { status: 'POSTED', warehouse: receipt.warehouse.name, valueUsd: receivedValueUsd },
+  });
+
+  return posted;
 }
 
 export async function postGoodsReceipt(params: { id: string; companyId: string; userId: string }) {
-  return transaction(async (tx) => {
-    const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>`
-      SELECT "id", "status"::text FROM goods_receipts
-      WHERE "id" = ${params.id} AND "companyId" = ${params.companyId}
-      FOR UPDATE
-    `;
-    if (locked.length === 0) throw new NotFoundError('Goods receipt');
-    if (locked[0].status !== 'DRAFT') {
-      throw new BusinessRuleError(`This goods receipt is already ${locked[0].status.toLowerCase()}.`);
-    }
-
-    const receipt = await tx.goodsReceipt.findUniqueOrThrow({
-      where: { id: params.id },
-      include: {
-        lines: { orderBy: { lineNumber: 'asc' }, include: { batch: true } },
-        warehouse: true,
-        purchaseContract: true,
-      },
-    });
-
-    const company = await getCompanyContext(tx, params.companyId);
-    let receivedValueUsd = new Decimal(0);
-
-    const batchIds = [...new Set(receipt.lines.map((line) => line.batchId))].sort();
-    for (const batchId of batchIds) {
-      await lockBatch(tx, params.companyId, batchId);
-    }
-
-    const claimedKg = new Map<string, Decimal>();
-
-    for (const line of receipt.lines) {
-      const batch = await tx.batch.findUniqueOrThrow({
-        where: { id: line.batchId },
-        select: {
-          id: true,
-          batchNumber: true,
-          orderedQuantityKg: true,
-          receivedQuantityKg: true,
-          landedUnitCostUsd: true,
-          unitCostUsd: true,
-          warehouseId: true,
-        },
-      });
-      const outstanding = toQuantity(
-        dec(batch.orderedQuantityKg)
-          .minus(dec(batch.receivedQuantityKg))
-          .minus(claimedKg.get(line.batchId) ?? 0),
-      );
-      if (dec(line.quantityKg).greaterThan(outstanding)) {
-        throw new BusinessRuleError(
-          `Batch ${batch.batchNumber} now has only ${outstanding.toFixed(3)} KG outstanding, which is less than the ${dec(line.quantityKg).toFixed(3)} KG on this receipt.`,
-        );
-      }
-      claimedKg.set(line.batchId, (claimedKg.get(line.batchId) ?? new Decimal(0)).plus(line.quantityKg));
-
-      const unitCostUsd = dec(batch.landedUnitCostUsd).greaterThan(0)
-        ? dec(batch.landedUnitCostUsd)
-        : dec(batch.unitCostUsd);
-
-      await receiveStock(tx, {
-        companyId: params.companyId,
-        batchId: line.batchId,
-        warehouseId: receipt.warehouseId,
-        quantityKg: line.quantityKg,
-        bags: line.bags,
-        unitCostUsd,
-        referenceType: 'GOODS_RECEIPT',
-        referenceId: receipt.id,
-        transactionDate: receipt.receiptDate,
-        createdById: params.userId,
-        notes: `Received into ${receipt.warehouse.name} on ${receipt.grnNumber}`,
-      });
-
-      // Record the warehouse on the batch as its primary location hint.
-      if (!batch.warehouseId) {
-        await tx.batch.update({ where: { id: batch.id }, data: { warehouseId: receipt.warehouseId } });
-      }
-
-      receivedValueUsd = receivedValueUsd.plus(toMoney(dec(line.quantityKg).times(unitCostUsd)));
-    }
-
-    receivedValueUsd = toMoney(receivedValueUsd);
-
-    // The goods move from "in transit" to warehouse stock. Both sides are in
-    // USD because inventory is carried in the group currency.
-    await postJournalEntry(tx, {
-      companyId: params.companyId,
-      entryDate: receipt.receiptDate,
-      description: `Goods receipt ${receipt.grnNumber} into ${receipt.warehouse.name}`,
-      sourceType: 'PURCHASE_CONTRACT',
-      sourceId: receipt.id,
-      createdById: params.userId,
-      localCurrency: company.localCurrency,
-      rateLocalPerUsd: receipt.purchaseContract.rateLocalPerUsd,
-      lines: [
-        {
-          accountKey: ACCOUNT_KEYS.INVENTORY,
-          direction: 'DEBIT',
-          currency: 'USD',
-          amount: receivedValueUsd,
-          rateToUsd: 1,
-          description: `Coffee received into ${receipt.warehouse.name}`,
-          purchaseContractId: receipt.purchaseContractId,
-          shipmentId: receipt.shipmentId,
-          vendorId: receipt.vendorId,
-        },
-        {
-          accountKey: ACCOUNT_KEYS.INVENTORY_IN_TRANSIT,
-          direction: 'CREDIT',
-          currency: 'USD',
-          amount: receivedValueUsd,
-          rateToUsd: 1,
-          description: 'Cleared from goods in transit',
-          purchaseContractId: receipt.purchaseContractId,
-          shipmentId: receipt.shipmentId,
-          vendorId: receipt.vendorId,
-        },
-      ],
-    });
-
-    const posted = await tx.goodsReceipt.update({
-      where: { id: receipt.id },
-      data: { status: 'POSTED', postedAt: new Date() },
-    });
-
-    await writeAudit(tx, {
-      companyId: params.companyId,
-      userId: params.userId,
-      action: 'GOODS_RECEIPT_POSTED',
-      entityType: 'GoodsReceipt',
-      entityId: receipt.id,
-      before: { status: 'DRAFT' },
-      after: { status: 'POSTED', warehouse: receipt.warehouse.name, valueUsd: receivedValueUsd },
-    });
-
-    return posted;
-  });
+  return transaction((tx) => postGoodsReceiptIn(tx, params));
 }
 
 export async function reverseGoodsReceipt(params: {
@@ -765,4 +771,60 @@ export async function deleteDraftGoodsReceipt(params: { id: string; companyId: s
     });
     await tx.goodsReceipt.delete({ where: { id: params.id } });
   });
+}
+
+export type ContainerReceiptLine = GoodsReceiptLineInput & { warehouseId: string };
+
+export type ReceiveContainersInput = {
+  companyId: string;
+  purchaseContractId: string;
+  receiptDate: Date;
+  receivedById: string;
+  reference?: string | null;
+  notes?: string | null;
+  /** One per container being received, each naming its own warehouse. */
+  lines: ContainerReceiptLine[];
+};
+
+/**
+ * Receive whichever containers the user ticked, into whichever warehouses
+ * they named, as one operation.
+ *
+ * Three containers landing together and going to two warehouses is one
+ * event to the person at the gate, so it is one press of the button. A
+ * goods receipt lands in one warehouse, so the containers are grouped by
+ * warehouse into as many receipts as needed — created and posted inside one
+ * transaction, so either every container becomes stock or none does.
+ */
+export async function receiveContainers(input: ReceiveContainersInput) {
+  if (input.lines.length === 0) throw new BusinessRuleError('Choose at least one container to receive.');
+
+  const byWarehouse = new Map<string, GoodsReceiptLineInput[]>();
+  for (const { warehouseId, ...line } of input.lines) {
+    if (!warehouseId) throw new BusinessRuleError('Choose a warehouse for every container being received.');
+    byWarehouse.set(warehouseId, [...(byWarehouse.get(warehouseId) ?? []), line]);
+  }
+
+  return transaction(async (tx) => {
+    const receipts: Array<{ id: string; grnNumber: string; warehouseId: string }> = [];
+    for (const [warehouseId, lines] of byWarehouse) {
+      const receipt = await createGoodsReceiptIn(
+        tx,
+        {
+          companyId: input.companyId,
+          purchaseContractId: input.purchaseContractId,
+          warehouseId,
+          receiptDate: input.receiptDate,
+          receivedById: input.receivedById,
+          reference: input.reference,
+          notes: input.notes,
+          lines,
+        },
+        input.receivedById,
+      );
+      await postGoodsReceiptIn(tx, { id: receipt.id, companyId: input.companyId, userId: input.receivedById });
+      receipts.push({ id: receipt.id, grnNumber: receipt.grnNumber, warehouseId });
+    }
+    return receipts;
+  }, 60_000);
 }

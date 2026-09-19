@@ -6,10 +6,11 @@ import { toast } from 'sonner';
 import { AlertCircle, Plus } from 'lucide-react';
 import { Sheet } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input, Select, Textarea } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { Callout } from '@/components/ui/feedback';
-import { saveGoodsReceiptAction, postGoodsReceiptAction } from '@/server/actions/trading-actions';
+import { receiveContainersAction } from '@/server/actions/trading-actions';
 import { todayInputValue } from '@/lib/format';
 
 export type ReceivableBatch = {
@@ -17,9 +18,13 @@ export type ReceivableBatch = {
   batchNumber: string;
   /** "Shipment 2" — which shipment on the order this batch sails in. */
   shipmentOrdinal: number;
+  /** Landed, so it can be received. Ticked by default; the rest are not. */
+  arrived: boolean;
   itemName: string;
   lotNumber: string;
   containerNumber: string | null;
+  /** Every container this batch is received from — one row each. */
+  containerNumbers: string[];
   orderedKg: string;
   receivedKg: string;
   outstandingKg: string;
@@ -28,32 +33,32 @@ export type ReceivableBatch = {
   traceabilityPending: boolean;
 };
 
-/** One quantity arriving under one identity. A batch may have several. */
+/** One container being received: its own identity, quantity and store. */
 type ReceiptLine = {
   key: string;
   batchId: string;
+  selected: boolean;
   quantityKg: string;
   lotNumber: string;
   batchNumber: string;
   containerNumber: string;
+  warehouseId: string;
 };
 
 /**
- * Goods receipt entry.
+ * Goods receipt, container by container.
  *
- * This is the moment the coffee becomes stock, so it is the moment the system
- * asks what the coffee actually is. The purchase order did not ask — the
- * supplier had not decided yet — so a contract that named no lot arrives here
- * with empty Lot and Batch boxes and one of them must be filled.
+ * A purchase order is five or six containers that land on different days, so
+ * this is the moment the user says exactly which of them are in: every
+ * container on the order is a row with a tick box, and each ticked row carries
+ * its own received kilograms, lot number, batch number and warehouse. Three
+ * containers landing together and going to two stores is one press of the
+ * button; the fourth landing tomorrow is another. Nothing here is fixed at
+ * one or two rows — a batch that was ordered across two containers shows two.
  *
- * A consignment can also arrive as more than one lot. "Arrived as another lot"
- * adds a second quantity under a second number against the same contract line,
- * which is the client's own case: 42 MT ordered landing as 21 MT under 120229
- * and 21 MT under 120230.
- *
- * The warehouse is mandatory — stock is held per location, so "received" with
- * no warehouse would be meaningless. Quantities default to everything still
- * outstanding, and a partial receipt is simply a smaller number.
+ * Lot and batch are asked here rather than on the order because this is when
+ * the supplier has said what the coffee is. A batch the contract already
+ * named keeps its numbers; a placeholder starts blank and must be filled in.
  */
 type GoodsReceiptDialogProps = {
   open: boolean;
@@ -66,9 +71,34 @@ type GoodsReceiptDialogProps = {
 };
 
 export function GoodsReceiptDialog(props: GoodsReceiptDialogProps) {
-  // Remounting on each open reseeds the quantities from what is still
-  // outstanding, without a reset effect that would render twice.
+  // Remounting on each open reseeds the rows from what is still outstanding,
+  // without a reset effect that would render twice.
   return <GoodsReceiptDialogBody key={props.open ? 'open' : 'closed'} {...props} />;
+}
+
+/** Divide what is outstanding across the batch's containers, remainder on the last. */
+function seedRows(batch: ReceivableBatch, warehouseId: string): ReceiptLine[] {
+  const containers = batch.containerNumbers.length > 0 ? batch.containerNumbers : [batch.containerNumber ?? ''];
+  const outstanding = Number(batch.outstandingKg) || 0;
+  const each = Math.floor((outstanding / containers.length) * 1000) / 1000;
+  return containers.map((containerNumber, index) => {
+    const last = index === containers.length - 1;
+    const quantity = last ? Math.round((outstanding - each * (containers.length - 1)) * 1000) / 1000 : each;
+    return {
+      key: `${batch.batchId}:${index}`,
+      batchId: batch.batchId,
+      selected: batch.arrived,
+      quantityKg: quantity > 0 ? String(quantity) : '',
+      // The first container keeps the numbers the contract named; the rest
+      // are other containers and get their own at the gate. A placeholder
+      // starts blank, because showing `ICUL/FID/002/1` in a box the user is
+      // meant to replace invites them to leave it.
+      lotNumber: index === 0 && !batch.traceabilityPending ? batch.lotNumber : '',
+      batchNumber: index === 0 && !batch.traceabilityPending ? batch.batchNumber : '',
+      containerNumber,
+      warehouseId,
+    };
+  });
 }
 
 function GoodsReceiptDialogBody({
@@ -83,52 +113,50 @@ function GoodsReceiptDialogBody({
   const router = useRouter();
   const [pending, startTransition] = React.useTransition();
   const [error, setError] = React.useState<string | null>(null);
-  const [warehouseId, setWarehouseId] = React.useState(defaultWarehouseId ?? warehouses[0]?.id ?? '');
+  const firstWarehouse = defaultWarehouseId ?? warehouses[0]?.id ?? '';
   const [receiptDate, setReceiptDate] = React.useState(todayInputValue());
   const [reference, setReference] = React.useState('');
   const [notes, setNotes] = React.useState('');
-  // Seeded once on mount. The dialog is remounted each time it opens, so the
-  // quantities always start from what is genuinely still outstanding.
   const [lines, setLines] = React.useState<ReceiptLine[]>(() =>
-    batches.map((b) => ({
-      key: b.batchId,
-      batchId: b.batchId,
-      quantityKg: b.outstandingKg,
-      // A batch the contract already identified keeps its numbers; a
-      // placeholder starts blank, because showing `MOR-PO-000042/1` in a box
-      // the user is meant to replace invites them to leave it.
-      lotNumber: b.traceabilityPending ? '' : b.lotNumber,
-      batchNumber: b.traceabilityPending ? '' : b.batchNumber,
-      containerNumber: b.containerNumber ?? '',
-    })),
+    batches.flatMap((batch) => seedRows(batch, firstWarehouse)),
   );
 
   const byId = React.useMemo(() => new Map(batches.map((b) => [b.batchId, b])), [batches]);
+  const selected = lines.filter((l) => l.selected);
+  const allSelected = lines.length > 0 && selected.length === lines.length;
 
   function update(key: string, patch: Partial<ReceiptLine>) {
     setLines((prev) => prev.map((line) => (line.key === key ? { ...line, ...patch } : line)));
   }
 
+  function selectAll(value: boolean) {
+    setLines((prev) => prev.map((line) => ({ ...line, selected: value })));
+  }
+
+  /** Every ticked container into the same store, in one motion. */
+  function sendAllTo(warehouseId: string) {
+    setLines((prev) => prev.map((line) => (line.selected ? { ...line, warehouseId } : line)));
+  }
+
+  /** A container that arrived as two lots: one more row against the same batch. */
   function splitFrom(line: ReceiptLine) {
     const batch = byId.get(line.batchId);
     if (!batch) return;
-
-    // The new line starts with whatever the first one is not taking, so the
-    // two add up to the consignment without anyone doing arithmetic.
     const claimed = lines
       .filter((l) => l.batchId === line.batchId)
       .reduce((sum, l) => sum + (Number(l.quantityKg) || 0), 0);
     const remaining = Math.max(0, Number(batch.outstandingKg) - claimed);
-
     setLines((prev) => {
       const index = prev.findIndex((l) => l.key === line.key);
       const created: ReceiptLine = {
         key: `${line.batchId}:${Date.now()}`,
         batchId: line.batchId,
+        selected: true,
         quantityKg: remaining > 0 ? String(remaining) : '',
         lotNumber: '',
         batchNumber: '',
-        containerNumber: '',
+        containerNumber: line.containerNumber,
+        warehouseId: line.warehouseId,
       };
       return [...prev.slice(0, index + 1), created, ...prev.slice(index + 1)];
     });
@@ -141,14 +169,18 @@ function GoodsReceiptDialogBody({
   function submit() {
     setError(null);
 
-    const entered = lines.filter((l) => l.quantityKg.trim() !== '' && Number(l.quantityKg) > 0);
-
-    if (entered.length === 0) {
-      setError('Enter a quantity for at least one line.');
+    const entered = selected.filter((l) => l.quantityKg.trim() !== '' && Number(l.quantityKg) > 0);
+    if (selected.length === 0) {
+      setError('Tick the containers that have been received.');
       return;
     }
-    if (!warehouseId) {
-      setError('Choose the warehouse the coffee was received into.');
+    if (entered.length !== selected.length) {
+      setError('Enter the kilograms received for every ticked container.');
+      return;
+    }
+    const noStore = entered.find((l) => !l.warehouseId);
+    if (noStore) {
+      setError('Choose the warehouse for every ticked container.');
       return;
     }
 
@@ -161,13 +193,12 @@ function GoodsReceiptDialogBody({
     });
     if (unnamed) {
       setError(
-        'Enter a Lot Number or a Batch Number for each line. This is the point the coffee becomes stock, and stock without an identity cannot be traced to a customer later.',
+        `Enter a Lot Number or a Batch Number for container ${unnamed.containerNumber || ''}. This is the point the coffee becomes stock, and stock without an identity cannot be traced to a customer later.`,
       );
       return;
     }
 
-    // A second identity against the same contract line is a split, and the
-    // parts cannot come to more than the line has left.
+    // The containers of one batch cannot come to more than the batch has left.
     for (const batch of batches) {
       const claimed = entered
         .filter((l) => l.batchId === batch.batchId)
@@ -186,6 +217,7 @@ function GoodsReceiptDialogBody({
       const batch = byId.get(l.batchId);
       return {
         batchId: l.batchId,
+        warehouseId: l.warehouseId,
         quantityKg: l.quantityKg.trim(),
         lotNumber: l.lotNumber.trim() || undefined,
         batchNumber: l.batchNumber.trim() || undefined,
@@ -198,44 +230,44 @@ function GoodsReceiptDialogBody({
     });
 
     startTransition(async () => {
-      const created = await saveGoodsReceiptAction(
-        JSON.stringify({ purchaseContractId, warehouseId, receiptDate, reference, notes, lines: payload }),
+      const result = await receiveContainersAction(
+        JSON.stringify({ purchaseContractId, receiptDate, reference, notes, lines: payload }),
       );
-
-      if (!created?.ok) {
-        setError(created?.error ?? 'The goods receipt could not be created.');
+      if (!result.ok) {
+        setError(result.error);
         return;
       }
-
-      // Creating and posting are one user action here: a receipt that is not
-      // posted has not actually brought any coffee into stock.
-      const posted = await postGoodsReceiptAction(created.id);
-      if (!posted.ok) {
-        setError(posted.error);
-        return;
-      }
-
-      toast.success('Goods received into stock.');
+      const stores = new Set(payload.map((l) => l.warehouseId)).size;
+      toast.success(
+        `${payload.length} ${payload.length === 1 ? 'container' : 'containers'} received into stock${stores > 1 ? ` across ${stores} warehouses` : ''}.`,
+      );
       onOpenChange(false);
       router.refresh();
     });
   }
+
+  const warehouseName = (id: string) => warehouses.find((w) => w.id === id)?.name ?? '';
 
   return (
     <Sheet
       open={open}
       onOpenChange={onOpenChange}
       title="Receive goods"
-      description={`Against ${contractLabel}. Stock becomes available in the warehouse you choose.`}
+      description={`Against ${contractLabel}. Tick the containers that are in; each becomes stock in the warehouse you choose for it.`}
       width="lg"
       footer={
-        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
-            Cancel
-          </Button>
-          <Button onClick={submit} loading={pending}>
-            Receive into stock
-          </Button>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <span className="text-xs text-ink-muted">
+            {selected.length} of {lines.length} {lines.length === 1 ? 'container' : 'containers'} ticked
+          </span>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row">
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
+              Cancel
+            </Button>
+            <Button onClick={submit} loading={pending} disabled={selected.length === 0}>
+              {allSelected ? 'Receive all' : `Receive selected (${selected.length})`}
+            </Button>
+          </div>
         </div>
       }
     >
@@ -248,71 +280,106 @@ function GoodsReceiptDialogBody({
         ) : null}
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Warehouse" htmlFor="warehouseId" required hint="Stock is tracked per warehouse.">
-            <Select id="warehouseId" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+          <Field label="Receipt date" htmlFor="receiptDate" required>
+            <Input id="receiptDate" type="date" value={receiptDate} onChange={(e) => setReceiptDate(e.target.value)} />
+          </Field>
+          <Field label="Reference" htmlFor="reference" hint="Delivery note or weighbridge ticket.">
+            <Input id="reference" value={reference} onChange={(e) => setReference(e.target.value)} />
+          </Field>
+          <Field
+            label="Send all ticked containers to"
+            htmlFor="allWarehouse"
+            hint="A shortcut. Each container below still has its own warehouse."
+          >
+            <Select id="allWarehouse" value="" onChange={(e) => e.target.value && sendAllTo(e.target.value)}>
+              <option value="">Choose a warehouse…</option>
               {warehouses.map((w) => (
                 <option key={w.id} value={w.id}>
-                  {w.name} ({w.code})
+                  {w.name}
                 </option>
               ))}
             </Select>
           </Field>
-
-          <Field label="Receipt date" htmlFor="receiptDate" required>
-            <Input
-              id="receiptDate"
-              type="date"
-              value={receiptDate}
-              onChange={(e) => setReceiptDate(e.target.value)}
-            />
-          </Field>
-
-          <Field label="Reference" htmlFor="reference" hint="Delivery note or weighbridge ticket.">
-            <Input id="reference" value={reference} onChange={(e) => setReference(e.target.value)} />
-          </Field>
         </div>
 
         <div className="space-y-3">
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">Receive container by container</h4>
-          <p className="text-xs text-ink-muted">
-            Each container has its own number, batch and kilograms. This receipt lands in one warehouse; if a
-            container goes to a different location, receive it on a second receipt.
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">
+                Containers on this order
+              </h4>
+              <p className="text-xs text-ink-muted">
+                Containers that have arrived are ticked. Untick any that are not in yet, or tick them all.
+              </p>
+            </div>
+            <label className="flex items-center gap-2 text-xs font-medium text-ink">
+              <input
+                type="checkbox"
+                className="size-4 accent-gold-600"
+                checked={allSelected}
+                onChange={(e) => selectAll(e.target.checked)}
+                aria-label="Select all containers"
+              />
+              Select all
+            </label>
+          </div>
 
-          {batches.map((batch) => {
-            const rows = lines.filter((l) => l.batchId === batch.batchId);
-            const claimed = rows.reduce((sum, l) => sum + (Number(l.quantityKg) || 0), 0);
+          {lines.map((line, index) => {
+            const batch = byId.get(line.batchId);
+            if (!batch) return null;
+            const siblings = lines.filter((l) => l.batchId === line.batchId);
+            const claimed = siblings.reduce((sum, l) => sum + (Number(l.quantityKg) || 0), 0);
             const over = claimed > Number(batch.outstandingKg) + 0.0005;
+            const perContainer = Number(batch.orderedKg) / Math.max(1, batch.containerNumbers.length);
 
             return (
-              <div key={batch.batchId} className="space-y-3 rounded-lg border border-line p-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-ink">
-                    {batches.length > 1 ? `Shipment ${batch.shipmentOrdinal} · ` : ''}
-                    {batch.itemName}
-                    {batch.containerNumber ? <span className="font-mono text-xs text-ink-muted"> · {batch.containerNumber}</span> : null}
-                  </p>
-                  <p className="tnum mt-0.5 text-xs text-ink-muted">
-                    Ordered {Number(batch.orderedKg).toLocaleString()} KG · already received{' '}
-                    {Number(batch.receivedKg).toLocaleString()} KG · outstanding{' '}
-                    <span className="font-semibold text-ink">
-                      {Number(batch.outstandingKg).toLocaleString()} KG
+              <div
+                key={line.key}
+                className={`space-y-3 rounded-lg border p-3 ${line.selected ? 'border-line' : 'border-line/60 bg-surface-sunken/40'}`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <label className="flex min-w-0 items-start gap-2">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 size-4 shrink-0 accent-gold-600"
+                      checked={line.selected}
+                      onChange={(e) => update(line.key, { selected: e.target.checked })}
+                      aria-label={`Receive container ${index + 1}`}
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-ink">
+                        Container {index + 1}
+                        {line.containerNumber ? (
+                          <span className="ml-2 font-mono text-xs text-ink-muted">{line.containerNumber}</span>
+                        ) : null}
+                        <span className="ml-2 text-xs font-normal text-ink-muted">· {batch.itemName}</span>
+                      </span>
+                      <span className="tnum block text-xs text-ink-muted">
+                        Ordered {perContainer.toLocaleString(undefined, { maximumFractionDigits: 0 })} KG
+                        {siblings.length > 1
+                          ? ` (${Number(batch.orderedKg).toLocaleString()} KG across ${siblings.length} containers)`
+                          : ''}{' '}
+                        · outstanding{' '}
+                        <span className="font-semibold text-ink">{Number(batch.outstandingKg).toLocaleString()} KG</span>
+                        {batches.length > 1 ? ` · Shipment ${batch.shipmentOrdinal}` : ''}
+                      </span>
                     </span>
-                  </p>
-                  {over ? (
-                    <p className="tnum mt-1 text-xs font-medium text-red-700">
-                      {claimed.toLocaleString()} KG entered, which is more than the contract has left.
-                    </p>
-                  ) : null}
+                  </label>
+                  <Badge tone={batch.arrived ? 'progress' : 'neutral'}>
+                    {batch.arrived ? 'Arrived' : 'Pending arrival'}
+                  </Badge>
                 </div>
 
-                {rows.map((line, index) => (
-                  <div key={line.key} className="space-y-2 rounded-md bg-forest-50/40 p-2">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">
-                      Container {index + 1}
-                      {line.containerNumber.trim() ? ` · ${line.containerNumber.trim()}` : ''}
-                    </p>
-                    <div className="grid gap-2 sm:grid-cols-2">
+                {over ? (
+                  <p className="tnum text-xs font-medium text-red-700">
+                    {claimed.toLocaleString()} KG entered for {batch.itemName}, which is more than the{' '}
+                    {Number(batch.outstandingKg).toLocaleString()} KG it has left.
+                  </p>
+                ) : null}
+
+                {line.selected ? (
+                  <>
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
                       <Field label="Container number" htmlFor={`ctr-${line.key}`}>
                         <Input
                           id={`ctr-${line.key}`}
@@ -323,14 +390,10 @@ function GoodsReceiptDialogBody({
                         />
                       </Field>
                       <Field
-                        label={index === 0 ? 'Lot number' : 'Lot number (second lot)'}
+                        label="Lot number"
                         htmlFor={`lot-${line.key}`}
                         required={batch.traceabilityPending}
-                        hint={
-                          index === 0 && batch.traceabilityPending
-                            ? 'Whatever the supplier marked it as.'
-                            : undefined
-                        }
+                        hint={batch.traceabilityPending ? 'Whatever the supplier marked it as.' : undefined}
                       >
                         <Input
                           id={`lot-${line.key}`}
@@ -339,15 +402,15 @@ function GoodsReceiptDialogBody({
                           placeholder="120229"
                         />
                       </Field>
-                      <Field label="Batch number" htmlFor={`batch-${line.key}`} hint="If different from the lot.">
+                      <Field label="Batch number" htmlFor={`batch-${line.key}`} required={batch.traceabilityPending}>
                         <Input
                           id={`batch-${line.key}`}
                           value={line.batchNumber}
                           onChange={(e) => update(line.key, { batchNumber: e.target.value })}
-                          placeholder="Optional"
+                          placeholder={batch.traceabilityPending ? '' : 'Optional'}
                         />
                       </Field>
-                      <Field label="Quantity received (KG)" htmlFor={`qty-${line.key}`} required>
+                      <Field label="Received (KG)" htmlFor={`qty-${line.key}`} required>
                         <Input
                           id={`qty-${line.key}`}
                           value={line.quantityKg}
@@ -357,19 +420,38 @@ function GoodsReceiptDialogBody({
                           placeholder="0"
                         />
                       </Field>
+                      <Field label="Warehouse" htmlFor={`wh-${line.key}`} required>
+                        <Select
+                          id={`wh-${line.key}`}
+                          value={line.warehouseId}
+                          onChange={(e) => update(line.key, { warehouseId: e.target.value })}
+                        >
+                          {warehouses.map((w) => (
+                            <option key={w.id} value={w.id}>
+                              {w.name}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
                     </div>
-                    {rows.length > 1 ? (
-                      <Button variant="ghost" size="sm" onClick={() => removeLine(line.key)}>
-                        Remove this container
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="ghost" size="sm" onClick={() => splitFrom(line)}>
+                        <Plus />
+                        Arrived as another lot
                       </Button>
-                    ) : null}
-                  </div>
-                ))}
-
-                <Button variant="outline" size="sm" onClick={() => splitFrom(rows[rows.length - 1])}>
-                  <Plus />
-                  Add another container or lot
-                </Button>
+                      {siblings.length > 1 ? (
+                        <Button variant="ghost" size="sm" onClick={() => removeLine(line.key)}>
+                          Remove this row
+                        </Button>
+                      ) : null}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-xs text-ink-subtle">
+                    Not being received now.
+                    {line.warehouseId ? ` Would go to ${warehouseName(line.warehouseId)}.` : ''}
+                  </p>
+                )}
               </div>
             );
           })}
@@ -381,8 +463,8 @@ function GoodsReceiptDialogBody({
 
         <Callout tone="info">
           Receiving moves the value from <strong>Inventory in Transit</strong> into <strong>Inventory</strong> at the
-          batch&rsquo;s landed cost, and makes the coffee available to sell from this warehouse. You can receive a
-          contract in as many partial receipts as reality requires.
+          batch&rsquo;s landed cost, and makes each container&rsquo;s coffee available to sell from its warehouse. Containers
+          that land later are received the same way, on their own day.
         </Callout>
       </div>
     </Sheet>

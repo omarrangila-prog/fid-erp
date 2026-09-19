@@ -16,7 +16,7 @@ import { Callout } from '@/components/ui/feedback';
 import { ConfirmDialog } from '@/components/ui/confirm';
 import { INCOTERM_LABELS } from '@/lib/constants';
 import { savePurchaseContractAction, postPurchaseContractAction } from '@/server/actions/trading-actions';
-import { computePurchaseTotalsClient, type LineDraft } from '@/app/(app)/purchases/purchase-math';
+import { computePurchaseTotalsClient, splitLineIntoContainers, type LineDraft } from '@/app/(app)/purchases/purchase-math';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { todayInputValue, formatMoney } from '@/lib/format';
 
@@ -160,10 +160,14 @@ export function PurchaseForm({
     [lines, header.freightAmount, header.otherCharges, header.rateToUsd, header.currency],
   );
 
+  const declaredContainers = Number(header.containers) || 0;
+
   function buildPayload() {
     return JSON.stringify({
       ...header,
-      containers: header.containers ? Number(header.containers) : undefined,
+      // Left blank, the container count is the number of rows: one row per
+      // container is the rule the form is built around.
+      containers: header.containers ? Number(header.containers) : lines.length,
       dueDate: header.dueDate || undefined,
       freightAmount: header.freightAmount || '0',
       otherCharges: header.otherCharges || '0',
@@ -304,7 +308,7 @@ export function PurchaseForm({
               <Field
                 label="Number of containers"
                 htmlFor="containers"
-                hint="If you know it yet."
+                hint="Usually one row per container below, so each can arrive on its own."
               >
                 <Input
                   id="containers"
@@ -465,9 +469,10 @@ export function PurchaseForm({
         <CardContent className="space-y-4 pt-5">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h3 className="text-sm font-semibold text-ink">Coffee lines</h3>
+              <h3 className="text-sm font-semibold text-ink">Containers</h3>
               <p className="mt-0.5 text-xs text-ink-muted">
-                One line per lot/batch. Add a container number to track it separately through the shipment.
+                One row per container: its coffee, quantity and price, and — when the supplier has named them — its
+                container, lot and batch numbers. Each container then loads, arrives and is received on its own.
               </p>
             </div>
             <Button
@@ -476,26 +481,44 @@ export function PurchaseForm({
               onClick={() => setLines((prev) => [...prev, emptyLine(prev.at(-1)?.bagWeightKg ?? '60')])}
             >
               <Plus />
-              Add line
+              Add container
             </Button>
           </div>
 
           {errors.lines ? <p className="text-xs font-medium text-red-600">{errors.lines}</p> : null}
+
+          {/*
+            A row covering several containers cannot arrive one container at a
+            time. Say so, and offer to split it, rather than let three
+            containers travel as one and surprise the reader when the first
+            lands and "the order" reads arrived.
+          */}
+          {declaredContainers > lines.length ? (
+            <Callout tone="info" title={`${declaredContainers} containers, ${lines.length} ${lines.length === 1 ? 'row' : 'rows'}`}>
+              A container can only load, arrive and be received on its own if it has its own row. Split a row into
+              containers with the control on the row, or add a row per container.
+            </Callout>
+          ) : null}
 
           <div className="space-y-4">
             {lines.map((line, index) => {
               const math = totals.lines[index];
               return (
                 <div key={line.key} className="rounded-xl border border-line bg-forest-50/30 p-4">
-                  <div className="mb-3 flex items-center justify-between gap-2">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <span className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">
-                      Line {index + 1}
+                      Container {index + 1}
                     </span>
                     <div className="flex items-center gap-1">
+                      <SplitControl
+                        onSplit={(count) =>
+                          setLines((prev) => prev.flatMap((l) => (l.key === line.key ? splitLineIntoContainers(l, count) : [l])))
+                        }
+                      />
                       <Button
                         variant="ghost"
                         size="icon"
-                        aria-label="Duplicate line"
+                        aria-label="Duplicate container"
                         onClick={() =>
                           setLines((prev) => {
                             const copy = { ...line, key: crypto.randomUUID(), batchNumber: '', containerNumber: '' };
@@ -510,7 +533,7 @@ export function PurchaseForm({
                       <Button
                         variant="ghost"
                         size="icon"
-                        aria-label="Remove line"
+                        aria-label="Remove container"
                         disabled={lines.length === 1}
                         onClick={() => setLines((prev) => prev.filter((l) => l.key !== line.key))}
                       >
@@ -781,5 +804,41 @@ export function PurchaseForm({
         onConfirm={() => save(true)}
       />
     </div>
+  );
+}
+
+/**
+ * "Split into 3" — turns one row into three containers of a third each.
+ *
+ * A small number box and a button rather than a dialog: the person typing
+ * the order knows the container count from the supplier's paperwork and
+ * wants it done in one motion.
+ */
+function SplitControl({ onSplit }: { onSplit: (count: number) => void }) {
+  const [count, setCount] = React.useState('');
+  const n = Number(count);
+  const valid = Number.isInteger(n) && n >= 2 && n <= 40;
+  return (
+    <span className="flex items-center gap-1">
+      <Input
+        aria-label="Split into containers"
+        inputMode="numeric"
+        className="tnum h-8 w-14 text-right text-xs"
+        placeholder="3"
+        value={count}
+        onChange={(e) => setCount(e.target.value)}
+      />
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={!valid}
+        onClick={() => {
+          onSplit(n);
+          setCount('');
+        }}
+      >
+        Split into {valid ? n : '…'}
+      </Button>
+    </span>
   );
 }

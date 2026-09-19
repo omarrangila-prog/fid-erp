@@ -55,9 +55,14 @@ async function signIn(page: Page) {
   }
 }
 
-/** The card for one line on the purchase order form. */
+/** The card for one container on the purchase order form. */
 function lineCard(page: Page, n: number) {
-  return page.locator('div.rounded-xl.p-4').filter({ has: page.getByText(`Line ${n}`, { exact: true }) });
+  return page.locator('div.rounded-xl.p-4').filter({ has: page.getByText(`Container ${n}`, { exact: true }) });
+}
+
+/** The row on the order's containers table for one container (not the contract line above it). */
+function containerRow(page: Page, containerNumber: string) {
+  return page.getByRole('row').filter({ hasText: containerNumber }).filter({ hasText: /Shipment \d/ }).first();
 }
 
 /** The row on the loading sheet for one shipment of this order. */
@@ -114,18 +119,22 @@ test('one purchase order is entered with three containers, lots and batches', as
 
   await page.locator('#containers').fill('3');
 
+  // One row, then "Split into 3": three containers of a third each, the way
+  // the order arrives from the supplier's paperwork.
+  const first = lineCard(page, 1);
+  await first.getByRole('combobox').first().click();
+  await page.getByRole('listbox').getByRole('option').first().click();
+  await first.getByLabel(/^Quantity/).fill('60000');
+  await first.getByRole('textbox', { name: /Rate per unit|Price per unit/ }).fill(LINES[0].price);
+  await first.getByLabel(/Split into containers/).fill('3');
+  await first.getByRole('button', { name: /^Split into 3$/ }).click();
+  await expect(lineCard(page, 3)).toBeVisible();
+
   for (const [index, line] of LINES.entries()) {
-    const n = index + 1;
-    if (n > 1) await page.getByRole('button', { name: /^Add line$/ }).click();
-    const card = lineCard(page, n);
-    await expect(card).toBeVisible();
-
-    await card.getByRole('combobox').first().click();
-    await page.getByRole('listbox').getByRole('option').first().click();
-
+    const card = lineCard(page, index + 1);
+    await expect(card.getByLabel(/^Quantity/)).toHaveValue('20000');
     await card.getByLabel(/^Quantity/).fill(line.kg);
     await card.getByRole('textbox', { name: /Rate per unit|Price per unit/ }).fill(line.price);
-
     await card.getByText(/Lot, batch, container and packing/).click();
     await card.getByLabel(/lot number/i).fill(line.lot);
     await card.getByLabel(/batch number/i).fill(line.batch);
@@ -137,10 +146,12 @@ test('one purchase order is entered with three containers, lots and batches', as
   await page.waitForURL(/\/purchases\/(?!new)[\w-]+$/, { waitUntil: 'domcontentloaded', timeout: 90_000 });
   orderUrl = page.url();
 
-  await expect(page.getByText(/3 shipments on this order/)).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByText(/3 containers on this order/)).toBeVisible({ timeout: 45_000 });
   const main = (await page.locator('main').textContent()) ?? '';
-  expect(main).toMatch(/0 of 3 arrived/);
+  expect(main).toMatch(/0 of 3 containers arrived/);
   expect(main).toMatch(/Not arrived/);
+  // Each container is at its own stage, in the client's four words.
+  expect(main.match(/Pending loading/g)?.length ?? 0).toBeGreaterThanOrEqual(3);
   for (const line of LINES) {
     expect(main).toContain(line.container);
     expect(main).toContain(line.lot);
@@ -158,8 +169,12 @@ test('the first shipment lands and the order reads 1 of 3 arrived', async ({ pag
   await landShipment(page, 1);
 
   await page.goto(orderUrl, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByText(/1 of 3 arrived/).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/1 of 3 containers arrived/).first()).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/Partially arrived/).first()).toBeVisible();
+  // One container landing did not mark the other two.
+  await expect(containerRow(page, LINES[0].container)).toContainText('Arrived');
+  await expect(containerRow(page, LINES[1].container)).toContainText('Pending loading');
+  await expect(containerRow(page, LINES[2].container)).toContainText('Pending loading');
 });
 
 test('the second lands and it reads 2 of 3, still partial', async ({ page }) => {
@@ -167,7 +182,7 @@ test('the second lands and it reads 2 of 3, still partial', async ({ page }) => 
   await landShipment(page, 2);
 
   await page.goto(orderUrl, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByText(/2 of 3 arrived/).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/2 of 3 containers arrived/).first()).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/Partially arrived/).first()).toBeVisible();
 });
 
@@ -181,7 +196,7 @@ test('the last is marked from the order itself, and the order is fully arrived',
   await expect(dialog).toContainText(/Mark all 1 shipment under/);
   await dialog.getByRole('button', { name: /^Mark all arrived$/ }).click();
 
-  await expect(page.getByText(/3 of 3 arrived/).first()).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByText(/3 of 3 containers arrived/).first()).toBeVisible({ timeout: 45_000 });
   await expect(page.getByText(/Fully arrived/).first()).toBeVisible();
   // The button stays, greyed out, so nobody wonders where it went.
   await expect(page.getByRole('button', { name: /Mark all arrived/i })).toBeDisabled();
@@ -192,25 +207,108 @@ test('all three are received in one receipt, into stock, separately', async ({ p
   await page.goto(orderUrl, { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => undefined);
 
-  await page.getByRole('button', { name: /Receive goods/i }).click();
+  await page.getByRole('button', { name: /Receive goods/i }).first().click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible({ timeout: 15_000 });
 
-  // Every shipment on the order is offered together, each named by its place.
-  const offered = (await dialog.textContent()) ?? '';
-  expect(offered).toMatch(/Shipment 1/);
-  expect(offered).toMatch(/Shipment 2/);
-  expect(offered).toMatch(/Shipment 3/);
-  for (const line of LINES) expect(offered).toContain(line.container);
+  // Every container on the order is offered, ticked because it arrived, each
+  // with its own lot, batch, kilograms and warehouse.
+  await expect(dialog.getByText(/3 of 3 containers ticked/)).toBeVisible();
+  for (const [index, line] of LINES.entries()) {
+    const row = dialog.locator('div.rounded-lg').filter({ hasText: `Container ${index + 1}` }).first();
+    await expect(row).toContainText(line.container);
+    await expect(row.getByLabel(/^Lot number/)).toHaveValue(line.lot);
+    await expect(row.getByLabel(/^Batch number/)).toHaveValue(line.batch);
+    await expect(row.getByLabel(/^Received \(KG\)/)).toHaveValue(line.kg);
+    await expect(row.getByLabel(/^Warehouse/)).toBeVisible();
+  }
+  // The third container goes to a different warehouse than the first two.
+  const third = dialog.locator('div.rounded-lg').filter({ hasText: 'Container 3' }).first();
+  const thirdWarehouse = third.getByLabel(/^Warehouse/);
+  if ((await thirdWarehouse.locator('option').count()) > 1) await thirdWarehouse.selectOption({ index: 1 });
 
-  const warehouse = dialog.getByLabel(/warehouse/i).first();
-  if ((await warehouse.locator('option').count()) > 1) await warehouse.selectOption({ index: 1 });
-  await dialog.getByRole('button', { name: /^Receive into stock$/i }).click();
+  await dialog.getByRole('button', { name: /^Receive all$/i }).click();
   await expect(dialog).toHaveCount(0, { timeout: 60_000 });
 
   await page.waitForLoadState('networkidle').catch(() => undefined);
   await expect(page.getByText(/3 of 3 received/).first()).toBeVisible({ timeout: 45_000 });
   await expect(page.getByText(/Fully received/).first()).toBeVisible();
+  for (const line of LINES) {
+    await expect(containerRow(page, line.container)).toContainText('Received');
+  }
+});
+
+test('a six-container order arrives five at a time and is received three at a time', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/purchases/new', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+
+  const reference = `ICUL/FID/SIX-${STAMP}`;
+  await page.locator('#contractReference').fill(reference);
+  await page.locator('#vendorId').click();
+  await page.getByRole('listbox').getByRole('option').first().click();
+
+  const first = lineCard(page, 1);
+  await first.getByRole('combobox').first().click();
+  await page.getByRole('listbox').getByRole('option').first().click();
+  await first.getByLabel(/^Quantity/).fill('120000');
+  await first.getByRole('textbox', { name: /Rate per unit|Price per unit/ }).fill('4');
+  await first.getByLabel(/Split into containers/).fill('6');
+  await first.getByRole('button', { name: /^Split into 6$/ }).click();
+  await expect(lineCard(page, 6)).toBeVisible();
+  for (let n = 1; n <= 6; n++) {
+    const card = lineCard(page, n);
+    await card.getByText(/Lot, batch, container and packing/).click();
+    await card.getByLabel(/container number/i).fill(`SIX-${STAMP}-${n}`);
+  }
+  await page.getByRole('button', { name: /^Save purchase order$/ }).click();
+  await page.getByRole('dialog').getByRole('button', { name: /^Save purchase order$/ }).click();
+  await page.waitForURL(/\/purchases\/(?!new)[\w-]+$/, { waitUntil: 'domcontentloaded', timeout: 90_000 });
+  const sixUrl = page.url();
+  await expect(page.getByText(/6 containers on this order/)).toBeVisible({ timeout: 45_000 });
+
+  // Five arrive, one at a time from the row's own control; the sixth does not.
+  for (let n = 1; n <= 5; n++) {
+    const row = containerRow(page, `SIX-${STAMP}-${n}`);
+    await row.getByRole('button', { name: /Mark arrived/i }).click();
+    await page.getByRole('dialog').getByRole('button', { name: /^Mark arrived$/ }).click();
+    await expect(page.getByText(new RegExp(`${n} of 6 containers arrived`)).first()).toBeVisible({ timeout: 30_000 });
+  }
+  await expect(page.getByText(/Partially arrived/).first()).toBeVisible();
+
+  // Receive three of the five: untick the fourth and fifth, which arrived,
+  // and the sixth, which has not, is offered unticked already.
+  await page.getByRole('button', { name: /Receive goods/i }).first().click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByText(/5 of 6 containers ticked/)).toBeVisible({ timeout: 15_000 });
+  for (const n of [4, 5]) {
+    await dialog.getByRole('checkbox', { name: `Receive container ${n}` }).uncheck();
+  }
+  await expect(dialog.getByText(/3 of 6 containers ticked/)).toBeVisible();
+  for (const n of [1, 2, 3]) {
+    const row = dialog.locator('div.rounded-lg').filter({ hasText: `Container ${n}` }).first();
+    await row.getByLabel(/^Lot number/).fill(`LOT-SIX-${STAMP}-${n}`);
+    await row.getByLabel(/^Batch number/).fill(`BATCH-SIX-${STAMP}-${n}`);
+  }
+  await dialog.getByRole('button', { name: /^Receive selected \(3\)$/ }).click();
+  await expect(dialog).toHaveCount(0, { timeout: 60_000 });
+
+  await page.goto(sixUrl, { waitUntil: 'domcontentloaded' });
+  // Wait for the order itself, not just the URL: read mid-stream it is the shell.
+  await expect(page.getByText(/5 of 6 containers arrived/).first()).toBeVisible({ timeout: 45_000 });
+  const main = (await page.locator('main').textContent()) ?? '';
+  expect(main).toMatch(/3 of 6 received/);
+  expect(main).toMatch(/Partially received/);
+  for (const n of [1, 2, 3]) await expect(containerRow(page, `SIX-${STAMP}-${n}`)).toContainText('Received');
+  for (const n of [4, 5]) await expect(containerRow(page, `SIX-${STAMP}-${n}`)).toContainText('Arrived');
+  await expect(containerRow(page, `SIX-${STAMP}-6`)).toContainText('Pending loading');
+
+  // The stock exists for exactly the three received, in the warehouse.
+  await page.goto('/inventory/batches', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByText(`BATCH-SIX-${STAMP}-1`).first()).toBeVisible({ timeout: 45_000 });
+  const batchesText = (await page.locator('main').textContent()) ?? '';
+  for (const n of [1, 2, 3]) expect(batchesText).toContain(`BATCH-SIX-${STAMP}-${n}`);
+  console.log(`  six-container order: 5 of 6 arrived, 3 of 6 received`);
 });
 
 test('stock, batches, items and the loading sheet each show three lines under the one reference', async ({ page }) => {
@@ -227,10 +325,16 @@ test('stock, batches, items and the loading sheet each show three lines under th
   // Stock on hand: the row for this order's coffee opens into its three
   // batches, each with its own container and lot.
   await page.goto('/inventory', { waitUntil: 'domcontentloaded' });
-  const stockRow = page.getByRole('row').filter({ hasText: REFERENCE }).first();
-  await expect(stockRow).toBeVisible({ timeout: 30_000 });
-  await stockRow.getByRole('button', { name: /Show detail/i }).click({ timeout: 15_000 });
-  await expect(page.getByText(/batches behind this stock/).first()).toBeVisible({ timeout: 15_000 });
+  // Stock is one row per coffee per warehouse, and this coffee now holds
+  // stock from three orders, so the row says "+2 more" and the breakdown
+  // underneath names them all. Open every row until ours is on the page.
+  const detailButtons = page.locator('main table').getByRole('button', { name: /Show detail/i });
+  await expect(detailButtons.first()).toBeVisible({ timeout: 30_000 });
+  const detailCount = await detailButtons.count();
+  for (let i = 0; i < detailCount; i++) {
+    await page.locator('main table').getByRole('button', { name: /Show detail/i }).first().click();
+    if (((await page.locator('main').textContent()) ?? '').includes(REFERENCE)) break;
+  }
   const stockText = (await page.locator('main').textContent()) ?? '';
   expect(stockText).toContain(REFERENCE);
   for (const line of LINES) {
@@ -255,11 +359,11 @@ test('stock, batches, items and the loading sheet each show three lines under th
   await page.goto('/purchases', { waitUntil: 'domcontentloaded' });
   const orderRow = page.getByRole('row').filter({ hasText: REFERENCE }).first();
   await expect(orderRow).toBeVisible({ timeout: 30_000 });
-  await expect(orderRow).toContainText(/Fully arrived/);
+  await expect(orderRow).toContainText(/3 of 3 containers arrived/);
   await orderRow.getByRole('button', { name: /Show detail/i }).click({ timeout: 15_000 });
-  await expect(page.getByText(/The 3 shipments on this order/).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/The 3 containers on this order/).filter({ visible: true }).first()).toBeVisible({ timeout: 15_000 });
   const listText = (await page.locator('main').textContent()) ?? '';
-  expect(listText).toMatch(/The 3 shipments on this order/);
+  expect(listText).toMatch(/The 3 containers on this order/);
   for (const line of LINES) expect(listText).toContain(line.container);
 
   // And nowhere along the way did a system code appear.

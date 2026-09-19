@@ -119,7 +119,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
             <Badge tone="neutral">{INCOTERM_LABELS[contract.incoterm]?.split(' — ')[0] ?? contract.incoterm}</Badge>
             {order ? (
               <Badge tone={order.arrival === 'FULLY_ARRIVED' ? 'success' : order.arrival === 'PARTIALLY_ARRIVED' ? 'warning' : 'info'}>
-                {order.arrivedCount} of {order.totalShipments} arrived
+                {order.arrivedContainers} of {order.containerCount} containers arrived
               </Badge>
             ) : null}
           </>
@@ -141,6 +141,8 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
               batchId: r.batchId,
               batchNumber: r.batchNumber,
               shipmentOrdinal: shipmentOrdinalByBatch.get(r.batchId) ?? r.lineNumber,
+              arrived: r.arrived,
+              containerNumbers: r.containerNumbers,
               itemName: r.itemName,
               lotNumber: r.lotNumber,
               containerNumber: r.containerNumber,
@@ -210,8 +212,8 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Coffee lines</CardTitle>
-            <CardDescription>Each line is a lot and batch you can receive and sell separately.</CardDescription>
+            <CardTitle>Containers ordered</CardTitle>
+            <CardDescription>What the supplier sold, container by container — each with its own lot and batch, received and sold separately.</CardDescription>
           </CardHeader>
           <CardContent className="px-0 pb-0">
             <TableWrap className="rounded-none border-0 border-t">
@@ -340,14 +342,16 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
               </CardHeader>
               <CardContent>
                 <dl>
-                  <DetailRow label="Shipments">{order.totalShipments}</DetailRow>
+                  <DetailRow label="Containers">{order.containerCount}</DetailRow>
                   <DetailRow label="Arrived">
-                    {order.arrivedCount} of {order.totalShipments}
+                    {order.arrivedContainers} of {order.containerCount} containers
                   </DetailRow>
                   <DetailRow label="Received">
-                    {order.receivedCount} of {order.totalShipments}
+                    {order.receivedContainers} of {order.containerCount} containers
                   </DetailRow>
-                  <DetailRow label="Containers">{order.containerCount}</DetailRow>
+                  {order.totalShipments !== order.containerCount ? (
+                    <DetailRow label="Shipments">{order.totalShipments}</DetailRow>
+                  ) : null}
                   <DetailRow label="Total quantity">{formatQuantityKg(order.totalKg)}</DetailRow>
                   {showCost ? (
                     <DetailRow label="Purchase value">{formatMoney(order.totalPurchaseUsd, 'USD')}</DetailRow>
@@ -373,12 +377,15 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
         <OrderShipments
           contractId={contract.id}
           canMarkArrived={can(user, PERMISSIONS.SHIPMENTS_UPDATE)}
+          canReceive={contract.status === 'POSTED' && can(user, PERMISSIONS.PURCHASES_APPROVE)}
           summary={{
             reference: order.reference,
             totalShipments: order.totalShipments,
             arrivedCount: order.arrivedCount,
             receivedCount: order.receivedCount,
             containerCount: order.containerCount,
+            arrivedContainers: order.arrivedContainers,
+            receivedContainers: order.receivedContainers,
             totalKg: formatQuantityKg(order.totalKg),
             receivedKg: formatQuantityKg(order.receivedKg),
             remainingKg: formatQuantityKg(order.remainingKg),
@@ -391,6 +398,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
             ordinal: line.ordinal,
             batchOrdinal: line.batchOrdinal,
             batchesOnShipment: line.batchesOnShipment,
+            stage: line.stage,
             status: line.status,
             arrived: line.arrived,
             received: line.received,

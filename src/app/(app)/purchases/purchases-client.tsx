@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { Plus } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
-import { SHIPMENT_STATUS_META } from '@/lib/constants';
+import { CONTAINER_STAGE_META, type ContainerStage } from '@/lib/container-stage';
 import { Ship, PackageCheck, BookOpen } from 'lucide-react';
 import { RowActions, viewAction, editAction } from '@/components/shared/row-actions';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,7 @@ export type PurchaseShipmentRow = {
   receivedLabel: string;
   arrived: boolean;
   received: boolean;
+  stage: ContainerStage;
   date: string;
   warehouseNames: string;
 };
@@ -52,6 +53,8 @@ export type PurchaseRow = {
   shipmentStatus: string | null;
   shipmentCount: number;
   arrivedCount: number;
+  containerCount: number;
+  arrivedContainers: number;
   shipments: PurchaseShipmentRow[];
   receivedPct: number;
   receivedLabel: string;
@@ -60,13 +63,14 @@ export type PurchaseRow = {
   warehouseNames: string;
 };
 
-/** "2 of 3 arrived" — the order's arrival in the client's own words. */
+/**
+ * "3 of 5 containers arrived" — the order's arrival counted the way the
+ * client counts it. A one-container order just says where that container is.
+ */
 function arrivalLabel(r: PurchaseRow): string {
   if (r.shipmentCount === 0) return '';
-  if (r.shipmentCount === 1 && r.shipmentStatus) return SHIPMENT_STATUS_META[r.shipmentStatus]?.label ?? r.shipmentStatus;
-  if (r.arrivedCount === r.shipmentCount) return 'Fully arrived';
-  if (r.arrivedCount === 0) return 'Not arrived';
-  return `${r.arrivedCount} of ${r.shipmentCount} arrived`;
+  if (r.containerCount <= 1 && r.shipments[0]) return CONTAINER_STAGE_META[r.shipments[0].stage].label;
+  return `${r.arrivedContainers} of ${r.containerCount} containers arrived`;
 }
 
 export function PurchasesClient({
@@ -228,16 +232,16 @@ export function PurchasesClient({
       id: 'loading',
       header: 'Arrival',
       mobile: 'badge',
-      sortValue: (r) => (r.shipmentCount ? r.arrivedCount / r.shipmentCount : -1),
+      sortValue: (r) => (r.containerCount ? r.arrivedContainers / r.containerCount : -1),
       exportValue: (r) => arrivalLabel(r),
       cell: (r) => {
         if (r.shipmentCount === 0) return <span className="text-ink-subtle">—</span>;
-        if (r.shipmentCount === 1 && r.shipmentStatus) {
-          const meta = SHIPMENT_STATUS_META[r.shipmentStatus];
-          return <Badge tone={meta?.tone ?? 'neutral'}>{meta?.label ?? r.shipmentStatus}</Badge>;
+        if (r.containerCount <= 1 && r.shipments[0]) {
+          const meta = CONTAINER_STAGE_META[r.shipments[0].stage];
+          return <Badge tone={meta.tone}>{meta.label}</Badge>;
         }
         return (
-          <Badge tone={r.arrivedCount === r.shipmentCount ? 'success' : r.arrivedCount > 0 ? 'warning' : 'neutral'}>
+          <Badge tone={r.arrivedContainers === r.containerCount ? 'success' : r.arrivedContainers > 0 ? 'warning' : 'neutral'}>
             {arrivalLabel(r)}
           </Badge>
         );
@@ -248,6 +252,7 @@ export function PurchasesClient({
       header: 'Shipments',
       numeric: true,
       hideable: true,
+      defaultHidden: true,
       sortValue: (r) => r.shipmentCount,
       exportValue: (r) => String(r.shipmentCount),
       cell: (r) => (r.shipmentCount ? r.shipmentCount : <span className="text-ink-subtle">—</span>),
@@ -294,7 +299,8 @@ export function PurchasesClient({
         ) : (
           <div className="overflow-x-auto">
             <p className="mb-2 text-xs text-ink-muted">
-              {r.shipments.length === 1 ? 'The one shipment on this order' : `The ${r.shipments.length} shipments on this order`}
+              {r.shipments.length === 1 ? 'The one container on this order' : `The ${r.shipments.length} containers on this order`}
+              {r.containerCount !== r.shipments.length ? ` (${r.containerCount} containers on ${r.shipmentCount} ${r.shipmentCount === 1 ? 'shipment' : 'shipments'})` : ''}
             </p>
             <table className="w-full min-w-[40rem] text-sm">
               <thead>
@@ -312,7 +318,7 @@ export function PurchasesClient({
               </thead>
               <tbody>
                 {r.shipments.map((s) => {
-                  const meta = SHIPMENT_STATUS_META[s.status];
+                  const meta = CONTAINER_STAGE_META[s.stage];
                   return (
                     <tr key={s.id} className="border-b border-line/60 last:border-0">
                       <td className="py-1.5 pr-3 font-medium">
@@ -327,7 +333,7 @@ export function PurchasesClient({
                       <td className="py-1.5 pr-3 text-right tabular-nums">{s.quantityLabel}</td>
                       <td className="py-1.5 pr-3 text-right tabular-nums">{s.receivedLabel}</td>
                       <td className="py-1.5 pr-3">
-                        <Badge tone={meta?.tone ?? 'neutral'}>{meta?.label ?? s.status}</Badge>
+                        <Badge tone={meta.tone}>{meta.label}</Badge>
                       </td>
                       <td className="py-1.5 text-xs text-ink-muted">{s.warehouseNames || (s.arrived ? 'Not yet received' : '—')}</td>
                     </tr>

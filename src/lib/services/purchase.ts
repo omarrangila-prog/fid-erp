@@ -6,7 +6,7 @@ import {
   toUnitCost,
   toQuantity,
 } from '@/lib/money';
-import { ACCOUNT_KEYS, DOC_TYPES } from '@/lib/constants';
+import { ACCOUNT_KEYS, DOC_TYPES, SHIPMENT_STATUSES_LANDED } from '@/lib/constants';
 import { BusinessRuleError, ConflictError, NotFoundError } from '@/lib/errors';
 import { nextReference } from '@/lib/services/numbering';
 import { postJournalEntry, reverseJournalEntry } from '@/lib/services/accounting';
@@ -844,6 +844,8 @@ export async function getReceiptStatus(tx: Tx, purchaseContractId: string) {
       lineNumber: number;
       batchId: string;
       batchNumber: string;
+      shipmentId: string;
+      shipmentStatus: string;
       itemName: string;
       lotNumber: string;
       containerNumber: string | null;
@@ -856,6 +858,7 @@ export async function getReceiptStatus(tx: Tx, purchaseContractId: string) {
     }>
   >`
     SELECT pcl."id" AS "lineId", pcl."lineNumber", b."id" AS "batchId", b."batchNumber",
+           b."shipmentId", s."status"::text AS "shipmentStatus",
            ci."itemName", l."lotNumber", c."containerNumber",
            b."orderedQuantityKg"::text AS "orderedKg",
            b."receivedQuantityKg"::text AS "receivedKg",
@@ -865,21 +868,60 @@ export async function getReceiptStatus(tx: Tx, purchaseContractId: string) {
            b."traceabilityPending"     AS "traceabilityPending"
     FROM purchase_contract_lines pcl
     JOIN batches b ON b."purchaseContractLineId" = pcl."id"
+    JOIN shipments s ON s."id" = b."shipmentId"
     JOIN coffee_items ci ON ci."id" = b."itemId"
     JOIN lots l ON l."id" = b."lotId"
     LEFT JOIN containers c ON c."id" = b."containerId"
     WHERE pcl."purchaseContractId" = ${purchaseContractId}
-    ORDER BY pcl."lineNumber"
+    ORDER BY pcl."lineNumber", b."createdAt", b."batchNumber"
   `;
+
+  /*
+   * Which containers each batch will be received from.
+   *
+   * A batch opened under the current rule has one container. An older job
+   * carries several batches and several containers on one shipment, some of
+   * them not yet tied to a batch — the client's 40,080 KG in two containers
+   * beside 21,000 KG in one. Every container on the shipment is handed to a
+   * batch: its own where it has one, otherwise the batch with the most
+   * coffee per container so far, so the receive screen shows one row per
+   * container and none of them goes missing.
+   */
+  const containers = await tx.container.findMany({
+    where: { shipmentId: { in: [...new Set(rows.map((r) => r.shipmentId))] } },
+    orderBy: { createdAt: 'asc' },
+    select: { containerNumber: true, shipmentId: true, batches: { select: { id: true } } },
+  });
+  const containersByBatch = new Map<string, string[]>();
+  for (const row of rows) containersByBatch.set(row.batchId, []);
+  for (const shipmentId of new Set(rows.map((r) => r.shipmentId))) {
+    const onShipment = rows.filter((r) => r.shipmentId === shipmentId);
+    for (const container of containers.filter((c) => c.shipmentId === shipmentId)) {
+      const owner = onShipment.find((r) => container.batches.some((b) => b.id === r.batchId));
+      const target =
+        owner ??
+        onShipment.reduce((best, r) => {
+          const perContainer = (r: (typeof onShipment)[number]) =>
+            Number(r.orderedKg) / ((containersByBatch.get(r.batchId)?.length ?? 0) + 1);
+          return perContainer(r) > perContainer(best) ? r : best;
+        }, onShipment[0]);
+      if (target) containersByBatch.get(target.batchId)?.push(container.containerNumber);
+    }
+  }
 
   return rows.map((row) => ({
     lineId: row.lineId,
     lineNumber: row.lineNumber,
     batchId: row.batchId,
     batchNumber: row.batchNumber,
+    shipmentId: row.shipmentId,
+    /** Landed, so it can be received; the receive screen ticks these by default. */
+    arrived: SHIPMENT_STATUSES_LANDED.includes(row.shipmentStatus),
     itemName: row.itemName,
     lotNumber: row.lotNumber,
     containerNumber: row.containerNumber,
+    /** Every container this batch is received from, its own first. */
+    containerNumbers: containersByBatch.get(row.batchId) ?? [],
     orderedKg: toQuantity(row.orderedKg),
     receivedKg: toQuantity(row.receivedKg),
     outstandingKg: toQuantity(dec(row.orderedKg).minus(dec(row.receivedKg))),

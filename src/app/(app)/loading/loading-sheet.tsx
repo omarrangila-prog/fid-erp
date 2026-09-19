@@ -9,7 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Table, THead, TBody, TR, TH, TD } from '@/components/ui/table';
-import { SHIPMENT_STATUS_META, DOCUMENT_STATUS_META, type BadgeTone } from '@/lib/constants';
+import { DOCUMENT_STATUS_META, type BadgeTone } from '@/lib/constants';
+import { CONTAINER_STAGE_META, containerStage } from '@/lib/container-stage';
 import { MarkLoadedDialog } from '@/app/(app)/loading/mark-loaded-dialog';
 import { EtaDialog, ArrivedDialog } from '@/app/(app)/loading/eta-dialog';
 import { DocumentStatusDialog } from '@/app/(app)/loading/document-status-dialog';
@@ -116,18 +117,15 @@ const PAYMENT_META: Record<string, { label: string; tone: BadgeTone }> = {
 };
 
 /**
- * The four statuses the follow-up sheet actually uses.
+ * The four stages the follow-up sheet actually uses: Pending loading, Loaded,
+ * Arrived, Received — the same four the purchase order shows per container.
  *
- * Older rows may still hold Awaiting Loading, In Transit or Customs internally.
- * Those are shown as Not loaded yet, Loaded or Arrived so the sheet does not
- * invent stages the workflow does not have.
+ * Older rows may still hold Awaiting Loading, In Transit or Customs
+ * internally; those map onto the four so the sheet does not invent stages the
+ * workflow does not have.
  */
 function displayStatus(row: LoadingRow): { label: string; tone: BadgeTone } {
-  if (row.fullyReceived) return { label: 'PO Received', tone: 'success' };
-  if (NOT_YET_LOADED.includes(row.status)) return { label: 'Not loaded yet', tone: 'neutral' };
-  if (row.status === 'IN_TRANSIT') return { label: 'Loaded', tone: 'info' };
-  if (LANDED.includes(row.status) && row.status !== 'ARRIVED') return { label: 'Arrived', tone: 'info' };
-  return SHIPMENT_STATUS_META[row.status] ?? { label: row.status, tone: 'neutral' };
+  return CONTAINER_STAGE_META[containerStage(row.status, row.fullyReceived)];
 }
 
 function itemNames(row: LoadingRow) {
@@ -163,21 +161,38 @@ function ItemsCell({ row }: { row: LoadingRow }) {
 }
 
 function receivableBatches(row: LoadingRow): ReceivableBatch[] {
-  return row.lines
-    .filter((line) => Number(line.outstandingKg) > 0.001)
-    .map((line) => ({
-      batchId: line.batchId,
-      batchNumber: line.batchNumber,
-      shipmentOrdinal: row.shipmentOrdinal,
-      itemName: line.itemName,
-      lotNumber: line.lotNumber,
-      containerNumber: line.containerNumber,
-      orderedKg: String(line.quantityKg),
-      receivedKg: String(line.receivedKg),
-      outstandingKg: line.outstandingKg,
-      bagWeightKg: line.bagWeightKg,
-      traceabilityPending: line.traceabilityPending,
-    }));
+  const lines = row.lines.filter((line) => Number(line.outstandingKg) > 0.001);
+
+  // Every container on the shipment handed to a line: its own where it has
+  // one, otherwise the line with the most coffee per container so far — the
+  // same rule the purchase order uses, so both screens show the same rows.
+  const containersByBatch = new Map<string, string[]>(lines.map((line) => [line.batchId, []]));
+  for (const containerNumber of row.containerNumbers) {
+    const owner = lines.find((line) => line.containerNumber === containerNumber);
+    const target =
+      owner ??
+      lines.reduce<LoadingLine | null>((best, line) => {
+        const perContainer = (l: LoadingLine) => l.quantityKg / ((containersByBatch.get(l.batchId)?.length ?? 0) + 1);
+        return !best || perContainer(line) > perContainer(best) ? line : best;
+      }, null);
+    if (target) containersByBatch.get(target.batchId)?.push(containerNumber);
+  }
+
+  return lines.map((line) => ({
+    batchId: line.batchId,
+    batchNumber: line.batchNumber,
+    shipmentOrdinal: row.shipmentOrdinal,
+    arrived: LANDED.includes(row.status),
+    itemName: line.itemName,
+    lotNumber: line.lotNumber,
+    containerNumber: line.containerNumber,
+    containerNumbers: containersByBatch.get(line.batchId) ?? [],
+    orderedKg: String(line.quantityKg),
+    receivedKg: String(line.receivedKg),
+    outstandingKg: line.outstandingKg,
+    bagWeightKg: line.bagWeightKg,
+    traceabilityPending: line.traceabilityPending,
+  }));
 }
 
 /**

@@ -10,6 +10,7 @@ import { fieldErrors } from '@/lib/validation/common';
 import {
   purchaseContractSchema,
   goodsReceiptSchema,
+  receiveContainersSchema,
   salesInvoiceSchema,
   stockTransferSchema,
   shipmentStatusSchema,
@@ -30,6 +31,7 @@ import {
   postGoodsReceipt,
   reverseGoodsReceipt,
   deleteDraftGoodsReceipt,
+  receiveContainers,
 } from '@/lib/services/goods-receipt';
 import {
   createSalesInvoice,
@@ -55,6 +57,7 @@ import {
   saveShipmentContainers,
   getEtaHistory,
   markOrderArrived,
+  markShipmentArrived,
 } from '@/lib/services/shipment';
 import { fail, ok, type ActionResult } from '@/server/actions/action-utils';
 
@@ -479,6 +482,70 @@ export async function markOrderArrivedAction(
     return ok(result);
   } catch (error) {
     return fail(error);
+  }
+}
+
+/**
+ * Receive the ticked containers, each into its own warehouse, in one go.
+ * Created and posted together: a receipt that is not posted has brought no
+ * coffee into stock, and the person at the gate pressed one button.
+ */
+export async function receiveContainersAction(
+  payload: string,
+): Promise<ActionResult<{ receipts: Array<{ id: string; grnNumber: string }> }>> {
+  try {
+    // The same permission the existing receive-and-post path requires.
+    const user = await requirePermission(PERMISSIONS.PURCHASES_APPROVE);
+    const input = receiveContainersSchema.parse(parseJson(payload));
+
+    const receipts = await receiveContainers({
+      companyId: user.activeCompany.id,
+      purchaseContractId: input.purchaseContractId,
+      // dateString has already turned it into a UTC midnight Date.
+      receiptDate: input.receiptDate,
+      receivedById: user.id,
+      reference: input.reference,
+      notes: input.notes,
+      lines: input.lines,
+    });
+
+    revalidatePath('/goods-receipts');
+    revalidatePath('/inventory');
+    revalidatePath('/inventory/batches');
+    revalidatePath('/loading');
+    revalidatePath('/purchases');
+    revalidatePath(`/purchases/${input.purchaseContractId}`);
+    return ok({ receipts: receipts.map((r) => ({ id: r.id, grnNumber: r.grnNumber })) });
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+/**
+ * One container arrived, from its row on the order. Steps through Loaded if
+ * nobody marked it, like "mark all arrived" does; touches nothing else.
+ */
+export async function markContainerArrivedAction(shipmentId: string, ataDate: string): Promise<DocFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.SHIPMENTS_UPDATE);
+    const parsed = new Date(`${ataDate}T00:00:00.000Z`);
+    if (Number.isNaN(parsed.getTime())) {
+      return { ok: false, error: 'That is not a date the system can read.' };
+    }
+    const contract = await prisma.shipment.findFirst({
+      where: { id: shipmentId, companyId: user.activeCompany.id },
+      select: { purchaseContractId: true },
+    });
+    await markShipmentArrived({ companyId: user.activeCompany.id, shipmentId, userId: user.id, ataDate: parsed });
+
+    revalidatePath('/loading');
+    revalidatePath('/shipments');
+    revalidatePath(`/shipments/${shipmentId}`);
+    revalidatePath('/purchases');
+    if (contract) revalidatePath(`/purchases/${contract.purchaseContractId}`);
+    return { ok: true, id: shipmentId, message: 'Marked arrived.' };
+  } catch (error) {
+    return toState(error);
   }
 }
 

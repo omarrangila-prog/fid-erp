@@ -4,7 +4,8 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { PackageCheck } from 'lucide-react';
+import { PackageCheck, Anchor, Eye, Calculator } from 'lucide-react';
+import { RowActions } from '@/components/shared/row-actions';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -12,9 +13,12 @@ import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/
 import { ConfirmDialog } from '@/components/ui/confirm';
 import { Input } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
-import { SHIPMENT_STATUS_META } from '@/lib/constants';
+import { CONTAINER_STAGE_META, type ContainerStage } from '@/lib/container-stage';
 import { formatQuantityKg, todayInputValue } from '@/lib/format';
-import { markOrderArrivedAction } from '@/server/actions/trading-actions';
+import { markOrderArrivedAction, markContainerArrivedAction } from '@/server/actions/trading-actions';
+
+/** Fired by a row's "Receive goods"; the toolbar that owns the receipt sheet listens. */
+export const RECEIVE_GOODS_EVENT = 'fid:receive-goods';
 
 export type OrderShipmentRow = {
   shipmentId: string;
@@ -22,6 +26,7 @@ export type OrderShipmentRow = {
   batchOrdinal: number;
   batchesOnShipment: number;
   status: string;
+  stage: ContainerStage;
   arrived: boolean;
   received: boolean;
   itemName: string;
@@ -44,6 +49,8 @@ export type OrderSummary = {
   arrivedCount: number;
   receivedCount: number;
   containerCount: number;
+  arrivedContainers: number;
+  receivedContainers: number;
   totalKg: string;
   receivedKg: string;
   remainingKg: string;
@@ -65,13 +72,15 @@ const RECEIPT_LABEL = {
 } as const;
 
 /**
- * Every shipment on the order, on the order.
+ * Every container on the order, on the order.
  *
  * The client opens ICUL/FID/001 and wants to know, without opening anything
- * else: how many shipments, which container carries which coffee, which lot
- * and batch it became, how much, what it cost, whether it has arrived and
- * where it went. So that is the table. The totals underneath are the lines
- * added up — three containers of 20,000 KG are 60,000, never 180,000.
+ * else: how many containers, which one carries which coffee, which lot and
+ * batch it became, how much, what it cost, and whether it is pending loading,
+ * loaded, arrived or received — each on its own, because one container
+ * landing says nothing about the other four. So that is the table. The
+ * totals underneath are the rows added up — three containers of 20,000 KG
+ * are 60,000, never 180,000.
  *
  * "Mark all arrived" is for the day the whole order lands together. The
  * individual controls stay on each shipment, because they usually do not.
@@ -81,15 +90,29 @@ export function OrderShipments({
   summary,
   rows,
   canMarkArrived,
+  canReceive = false,
 }: {
   contractId: string;
   summary: OrderSummary;
   rows: OrderShipmentRow[];
   canMarkArrived: boolean;
+  canReceive?: boolean;
 }) {
   const router = useRouter();
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [ataDate, setAtaDate] = React.useState(todayInputValue());
+  // One container arriving on its own: the row's own control, never the
+  // order's, so nothing else is marked with it.
+  const [arrivingRow, setArrivingRow] = React.useState<OrderShipmentRow | null>(null);
+  const [rowAtaDate, setRowAtaDate] = React.useState(todayInputValue());
+
+  async function markRowArrived() {
+    if (!arrivingRow) return;
+    const result = await markContainerArrivedAction(arrivingRow.shipmentId, rowAtaDate);
+    if (!result || !result.ok) throw new Error(result?.error ?? 'The shipment could not be marked arrived.');
+    toast.success(`Shipment ${arrivingRow.ordinal} marked arrived. It can be received now.`);
+    router.refresh();
+  }
 
   const pending = summary.totalShipments - summary.arrivedCount;
 
@@ -109,12 +132,15 @@ export function OrderShipments({
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
         <div>
           <CardTitle>
-            {summary.totalShipments} {summary.totalShipments === 1 ? 'shipment' : 'shipments'} on this order
+            {summary.containerCount} {summary.containerCount === 1 ? 'container' : 'containers'} on this order
           </CardTitle>
           <CardDescription>
-            {summary.arrivedCount} of {summary.totalShipments} arrived · {summary.receivedCount} of{' '}
-            {summary.totalShipments} received · {summary.containerCount}{' '}
-            {summary.containerCount === 1 ? 'container' : 'containers'} · {summary.totalKg}
+            {summary.arrivedContainers} of {summary.containerCount} containers arrived ·{' '}
+            {summary.receivedContainers} of {summary.containerCount} received
+            {summary.totalShipments !== summary.containerCount
+              ? ` · ${summary.totalShipments} ${summary.totalShipments === 1 ? 'shipment' : 'shipments'}`
+              : ''}{' '}
+            · {summary.totalKg}
           </CardDescription>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -155,6 +181,7 @@ export function OrderShipments({
                 <TH>ETA</TH>
                 <TH>Status</TH>
                 <TH>Warehouse</TH>
+                <TH>Actions</TH>
               </TR>
             </THead>
             <TBody>
@@ -187,11 +214,33 @@ export function OrderShipments({
                   <TD numeric>{row.purchaseUsd}</TD>
                   <TD className="text-xs">{row.ataDate ?? row.etaDate ?? '—'}</TD>
                   <TD>
-                    <Badge tone={row.arrived ? 'success' : 'neutral'}>
-                      {SHIPMENT_STATUS_META[row.status]?.label ?? row.status}
-                    </Badge>
+                    <Badge tone={CONTAINER_STAGE_META[row.stage].tone}>{CONTAINER_STAGE_META[row.stage].label}</Badge>
                   </TD>
                   <TD className="text-xs text-ink-muted">{row.warehouseName ?? 'Not yet landed'}</TD>
+                  <TD>
+                    <RowActions
+                      inline={2}
+                      actions={[
+                        {
+                          label: 'Mark arrived',
+                          icon: Anchor,
+                          show: canMarkArrived && !row.arrived,
+                          onSelect: () => {
+                            setRowAtaDate(todayInputValue());
+                            setArrivingRow(row);
+                          },
+                        },
+                        {
+                          label: 'Receive goods',
+                          icon: PackageCheck,
+                          show: canReceive && row.arrived && !row.received,
+                          onSelect: () => window.dispatchEvent(new CustomEvent(RECEIVE_GOODS_EVENT)),
+                        },
+                        { label: 'View', icon: Eye, href: `/shipments/${row.shipmentId}` },
+                        { label: 'Costing', icon: Calculator, href: `/reports/shipment-cost?shipment=${row.shipmentId}` },
+                      ]}
+                    />
+                  </TD>
                 </TR>
               ))}
             </TBody>
@@ -201,7 +250,7 @@ export function OrderShipments({
                 <TD numeric>{summary.totalKg}</TD>
                 <TD numeric>{summary.receivedKg}</TD>
                 <TD numeric>{summary.totalPurchaseUsd}</TD>
-                <TD colSpan={3} className="text-xs text-ink-muted">
+                <TD colSpan={4} className="text-xs text-ink-muted">
                   {summary.remainingKg === formatQuantityKg(0) ? 'Everything landed' : `${summary.remainingKg} still to come`}
                 </TD>
               </tr>
@@ -209,6 +258,22 @@ export function OrderShipments({
           </Table>
         </TableWrap>
       </CardContent>
+
+      <ConfirmDialog
+        open={arrivingRow !== null}
+        onOpenChange={(open) => {
+          if (!open) setArrivingRow(null);
+        }}
+        title={arrivingRow ? `Mark shipment ${arrivingRow.ordinal}${arrivingRow.containerNumber ? ` (${arrivingRow.containerNumber})` : ''} as arrived?` : ''}
+        description="Only this one. The other containers on the order keep their own status."
+        confirmLabel="Mark arrived"
+        onConfirm={markRowArrived}
+        body={
+          <Field label="Arrival date" htmlFor="rowAta" required>
+            <Input id="rowAta" type="date" value={rowAtaDate} onChange={(e) => setRowAtaDate(e.target.value)} />
+          </Field>
+        }
+      />
 
       <ConfirmDialog
         open={confirmOpen}

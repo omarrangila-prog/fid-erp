@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, VISIBLE_DOCUMENT_STATUSES, SHIPMENT_STATUSES_LANDED } from '@/lib/constants';
+import { containerStage } from '@/lib/container-stage';
 import { prisma } from '@/lib/db';
 import { dec, toQuantity } from '@/lib/money';
 import { getPayables } from '@/lib/services/receivables';
@@ -32,6 +33,7 @@ export default async function PurchasesPage() {
             etaDate: true,
             ataDate: true,
             quantityKg: true,
+            containers: true,
             item: { select: { itemName: true } },
             containerList: { select: { containerNumber: true }, orderBy: { createdAt: 'asc' } },
             batches: {
@@ -57,6 +59,14 @@ export default async function PurchasesPage() {
   ]);
 
   const payableByContract = new Map(payables.map((p) => [p.contractId, p]));
+
+  const containersOn = (s: { containers: number; containerList: unknown[]; batches: Array<{ container: { containerNumber: string } | null }> }) =>
+    Math.max(
+      s.containerList.length,
+      new Set(s.batches.map((b) => b.container?.containerNumber).filter(Boolean)).size,
+      s.containers,
+      1,
+    );
 
   const rows: PurchaseRow[] = contracts.map((c) => {
     const quantityKg = c.lines.reduce((a, l) => a.plus(dec(l.quantityKg)), dec(0));
@@ -91,6 +101,13 @@ export default async function PurchasesPage() {
       shipmentStatus: c.shipments.length === 1 ? c.shipments[0].status : null,
       shipmentCount: c.shipments.length,
       arrivedCount: c.shipments.filter((s) => SHIPMENT_STATUSES_LANDED.includes(s.status)).length,
+      // Container-wise, the way the client counts. A shipment's containers
+      // are the numbered ones on it, the ones its batches sit in, or the
+      // count declared on the order — whichever knows most, never fewer than one.
+      containerCount: c.shipments.reduce((n, s) => n + containersOn(s), 0),
+      arrivedContainers: c.shipments
+        .filter((s) => SHIPMENT_STATUSES_LANDED.includes(s.status))
+        .reduce((n, s) => n + containersOn(s), 0),
       // One child row per batch: a shipment opened under the current rule
       // carries one, an older job may carry two coffees in three containers
       // on one shipment, and each still gets its own row.
@@ -111,6 +128,10 @@ export default async function PurchasesPage() {
             receivedLabel: formatQuantityKg(received),
             arrived: SHIPMENT_STATUSES_LANDED.includes(s.status),
             received: received.greaterThan(0),
+            stage: containerStage(
+              s.status,
+              batch ? received.greaterThan(0) && received.greaterThanOrEqualTo(dec(batch.orderedQuantityKg)) : false,
+            ),
             date: formatDate(s.ataDate ?? s.etaDate),
             warehouseNames: batch ? (warehouses.byBatch.get(batch.id) ?? '') : '',
           };

@@ -8,6 +8,7 @@ import {
   SHIPMENT_STATUSES_IN_TRANSIT,
   SHIPMENT_STATUSES_LANDED,
 } from '@/lib/constants';
+import { containerStage, type ContainerStage } from '@/lib/container-stage';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
 import { writeAudit } from '@/lib/services/audit';
 import type { ShipmentDocumentStatus, ShipmentStatus, SettlementStatus } from '@prisma/client';
@@ -783,6 +784,8 @@ export type OrderShipmentLine = {
   batchOrdinal: number;
   batchesOnShipment: number;
   status: string;
+  /** Pending loading → Loaded → Arrived → Received, for this container. */
+  stage: ContainerStage;
   arrived: boolean;
   itemName: string;
   containerNumber: string | null;
@@ -806,7 +809,13 @@ export type OrderOverview = {
   totalShipments: number;
   arrivedCount: number;
   receivedCount: number;
+  /**
+   * Container-wise, which is how the client counts: "3 of 5 containers
+   * arrived". One container arriving never counts the others.
+   */
   containerCount: number;
+  arrivedContainers: number;
+  receivedContainers: number;
   totalKg: Decimal;
   receivedKg: Decimal;
   remainingKg: Decimal;
@@ -871,12 +880,14 @@ export async function getOrderOverview(companyId: string, contractId: string): P
     return batches.map((batch, batchIndex) => {
       const orderedKg = toQuantity(batch ? dec(batch.orderedQuantityKg) : dec(0));
       const receivedKg = toQuantity(batch ? dec(batch.receivedQuantityKg) : dec(0));
+      const received = orderedKg.greaterThan(0) && receivedKg.greaterThanOrEqualTo(orderedKg);
       return {
         shipmentId: shipment.id,
         ordinal: index + 1,
         batchOrdinal: batchIndex + 1,
         batchesOnShipment: batches.length,
         status: shipment.status,
+        stage: containerStage(shipment.status, received),
         arrived,
         itemName: batch?.item.itemName ?? shipment.item.itemName,
         containerNumber: batch?.container?.containerNumber ?? null,
@@ -890,7 +901,7 @@ export async function getOrderOverview(companyId: string, contractId: string): P
         purchaseUsd: toMoney(batch ? dec(batch.purchaseCostUsd) : dec(0)),
         etaDate: shipment.etaDate,
         ataDate: shipment.ataDate,
-        received: orderedKg.greaterThan(0) && receivedKg.greaterThanOrEqualTo(orderedKg),
+        received,
       };
     });
   });
@@ -907,11 +918,18 @@ export async function getOrderOverview(companyId: string, contractId: string): P
   // batches sit in, or the count declared on the order — whichever knows most.
   // A job whose three containers were declared but not yet numbered is still
   // three containers.
-  const containerCount = contract.shipments.reduce((count, shipment) => {
+  const containersOn = (shipment: (typeof contract.shipments)[number]) => {
     const listed = shipment.containerList.length;
     const onBatches = new Set(shipment.batches.map((b) => b.container?.containerNumber).filter(Boolean)).size;
-    return count + Math.max(listed, onBatches, shipment.containers);
-  }, 0);
+    return Math.max(listed, onBatches, shipment.containers, 1);
+  };
+  const containerCount = contract.shipments.reduce((count, shipment) => count + containersOn(shipment), 0);
+  const arrivedContainers = contract.shipments
+    .filter((shipment) => SHIPMENT_STATUSES_LANDED.includes(shipment.status))
+    .reduce((count, shipment) => count + containersOn(shipment), 0);
+  const receivedContainers = contract.shipments
+    .filter((shipment) => shipments.filter((s) => s.shipmentId === shipment.id).every((s) => s.received))
+    .reduce((count, shipment) => count + containersOn(shipment), 0);
 
   const verdict = <T extends string>(count: number, none: T, some: T, all: T): T =>
     shipmentIds.length === 0 || count === 0 ? none : count === shipmentIds.length ? all : some;
@@ -924,6 +942,8 @@ export async function getOrderOverview(companyId: string, contractId: string): P
     arrivedCount,
     receivedCount,
     containerCount,
+    arrivedContainers,
+    receivedContainers,
     totalKg,
     receivedKg,
     remainingKg: toQuantity(totalKg.minus(receivedKg)),
@@ -959,40 +979,7 @@ export async function markOrderArrived(input: {
     const moved: string[] = [];
     for (const shipment of shipments) {
       if (SHIPMENT_STATUSES_LANDED.includes(shipment.status)) continue;
-
-      // A shipment nobody marked loaded is still on the contract. Arriving
-      // implies it sailed, so it is stepped through LOADED first, with the
-      // same data the sheet would have asked for.
-      if (shipment.status === 'CONTRACT_CREATED' || shipment.status === 'AWAITING_LOADING') {
-        await tx.shipment.update({
-          where: { id: shipment.id },
-          data: { status: 'LOADED', loadingDate: input.ataDate, etaDate: input.ataDate },
-        });
-        await tx.shipmentStatusHistory.create({
-          data: {
-            shipmentId: shipment.id,
-            fromStatus: shipment.status,
-            toStatus: 'LOADED',
-            changedById: input.userId,
-            notes: 'Marked arrived with the rest of the order; loaded on the same day.',
-          },
-        });
-      }
-
-      const before = await tx.shipment.findUniqueOrThrow({ where: { id: shipment.id }, select: { status: true } });
-      await tx.shipment.update({
-        where: { id: shipment.id },
-        data: { status: 'ARRIVED', ataDate: input.ataDate },
-      });
-      await tx.shipmentStatusHistory.create({
-        data: {
-          shipmentId: shipment.id,
-          fromStatus: before.status,
-          toStatus: 'ARRIVED',
-          changedById: input.userId,
-          notes: 'Marked arrived with the rest of the order.',
-        },
-      });
+      await arriveShipmentIn(tx, shipment, input.ataDate, input.userId, 'Marked arrived with the rest of the order');
       moved.push(shipment.shipmentNumber);
     }
 
@@ -1006,6 +993,73 @@ export async function markOrderArrived(input: {
     });
 
     return { marked: moved.length, total: shipments.length };
+  });
+}
+
+/**
+ * One shipment to Arrived, stepping through Loaded first if nobody marked it.
+ *
+ * Arriving implies it sailed, so a shipment still on the contract is loaded
+ * on the same day with the same data the sheet would have asked for, and
+ * both steps keep their own history line.
+ */
+async function arriveShipmentIn(
+  tx: Tx,
+  shipment: { id: string; status: string },
+  ataDate: Date,
+  userId: string,
+  note: string,
+): Promise<void> {
+  if (shipment.status === 'CONTRACT_CREATED' || shipment.status === 'AWAITING_LOADING') {
+    await tx.shipment.update({
+      where: { id: shipment.id },
+      data: { status: 'LOADED', loadingDate: ataDate, etaDate: ataDate },
+    });
+    await tx.shipmentStatusHistory.create({
+      data: {
+        shipmentId: shipment.id,
+        fromStatus: shipment.status,
+        toStatus: 'LOADED',
+        changedById: userId,
+        notes: `${note}; loaded on the same day.`,
+      },
+    });
+  }
+
+  const before = await tx.shipment.findUniqueOrThrow({ where: { id: shipment.id }, select: { status: true } });
+  await tx.shipment.update({ where: { id: shipment.id }, data: { status: 'ARRIVED', ataDate } });
+  await tx.shipmentStatusHistory.create({
+    data: { shipmentId: shipment.id, fromStatus: before.status, toStatus: 'ARRIVED', changedById: userId, notes: `${note}.` },
+  });
+}
+
+/**
+ * One container arrived, on its own.
+ *
+ * The row's own control on the order: this shipment and nothing else. A
+ * shipment nobody marked loaded is stepped through Loaded first, the same
+ * way "mark all arrived" does it.
+ */
+export async function markShipmentArrived(input: { companyId: string; shipmentId: string; userId: string; ataDate: Date }) {
+  return transaction(async (tx) => {
+    const shipment = await tx.shipment.findFirst({
+      where: { id: input.shipmentId, companyId: input.companyId },
+      select: { id: true, status: true, shipmentNumber: true, purchaseContractId: true },
+    });
+    if (!shipment) throw new NotFoundError('Shipment');
+    if (SHIPMENT_STATUSES_LANDED.includes(shipment.status)) return { changed: false };
+
+    await arriveShipmentIn(tx, shipment, input.ataDate, input.userId, 'Marked arrived from the order');
+    await writeAudit(tx, {
+      companyId: input.companyId,
+      userId: input.userId,
+      action: 'SHIPMENT_STATUS_CHANGED',
+      entityType: 'Shipment',
+      entityId: shipment.id,
+      before: { status: shipment.status },
+      after: { status: 'ARRIVED', ataDate: input.ataDate },
+    });
+    return { changed: true };
   });
 }
 
