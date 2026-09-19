@@ -140,6 +140,7 @@ export async function applyLandedCost(
       id: true,
       batchNumber: true,
       containerId: true,
+      shipmentId: true,
       itemId: true,
       orderedQuantityKg: true,
       receivedQuantityKg: true,
@@ -170,8 +171,15 @@ export async function applyLandedCost(
    * Within a line the split is still by quantity, because a line that carries
    * two batches of the same coffee in the same container really is one lot
    * divided in two.
+   *
+   * A container is known by its number when it has one, and by its shipment
+   * when it does not: every container on an order now travels as its own
+   * shipment, so two boxes of the same coffee that nobody has numbered yet
+   * are still two lines, not one — the split does not change when the
+   * numbers are typed in later.
    */
-  const lineKeyOf = (b: { containerId: string | null; itemId: string }) => `${b.containerId ?? 'no-container'}::${b.itemId}`;
+  const lineKeyOf = (b: { containerId: string | null; shipmentId: string; itemId: string }) =>
+    `${b.containerId ?? `shipment:${b.shipmentId}`}::${b.itemId}`;
   const lineKeys: string[] = [];
   for (const batch of locked) {
     const key = lineKeyOf(batch);

@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { prisma, resetDatabase, getContext, createMasters, utcDate } from '../helpers';
+import { prisma, resetDatabase, getContext, createMasters, getCashAccount, utcDate } from '../helpers';
+import { createExpense, postExpense } from '@/lib/services/expense';
 import { createPurchaseContract, postPurchaseContract } from '@/lib/services/purchase';
 import { createGoodsReceipt, postGoodsReceipt, receiveContainers } from '@/lib/services/goods-receipt';
 import { getReceiptStatus, splitContractLine, correctPurchaseContract, editContainer, addContainerToOrder, reversePurchaseContract } from '@/lib/services/purchase';
@@ -969,5 +970,54 @@ describe('approving an order divides its rows by container', () => {
     expect(overview.totalShipments).toBe(3);
     expect(overview.shipments.map((l) => Number(l.orderedKg)).sort((a, b) => a - b)).toEqual([20000, 20000, 20000]);
     expect(overview.shipments.filter((l) => l.containerNumber === 'NAMED-1')).toHaveLength(1);
+  }, 300_000);
+});
+
+describe('shared expenses on a divided order', () => {
+  /**
+   * The client's order: two containers of Screen 18 (nobody has typed their
+   * numbers yet) and one of Screen 12. Clearing and transport are booked once
+   * against the order and cost the same per container, so each of the three
+   * takes a third — the two unnumbered boxes are two lines, not one.
+   */
+  it("splits the job's local charges a third to each container", async () => {
+    const itemB = await prisma.coffeeItem.create({
+      data: { companyId, itemCode: 'SPLIT-12', itemName: 'Split Screen 12', coffeeType: 'ROBUSTA', originCountry: 'Uganda', defaultUnit: 'KG', bagWeightKg: '60' },
+    });
+    const contract = await createPurchaseContract(
+      {
+        companyId, vendorId: masters.vendor.id, contractDate: utcDate('2026-09-19'), currency: 'USD', rateToUsd: '1', rateLocalPerUsd: '9.60', freightAmount: '0',
+        contractReference: 'ICUL/FID/THIRDS', containers: 3,
+        lines: [
+          { itemId: masters.item.id, quantity: '40080', unit: 'KG', unitPrice: '4.329', bagWeightKg: '60' },
+          { itemId: itemB.id, quantity: '21000', unit: 'KG', unitPrice: '3.998', bagWeightKg: '60' },
+        ],
+      },
+      ctx.admin.id,
+    );
+    await postPurchaseContract({ id: contract.id, companyId, userId: ctx.admin.id });
+    const overview = await getOrderOverview(companyId, contract.id);
+    expect(overview.totalShipments).toBe(3);
+
+    const category = await prisma.expenseCategory.findFirstOrThrow({ where: { companyId, kind: 'SHIPMENT', status: 'ACTIVE' } });
+    const cash = await getCashAccount(companyId, 'MAD');
+    const expense = await createExpense(
+      {
+        companyId, expenseDate: utcDate('2026-09-20'), expenseCategoryId: category.id,
+        shipmentId: overview.shipments[0].shipmentId, purchaseContractId: contract.id,
+        currency: 'MAD', amount: '300000', rateToUsd: '9.60', rateLocalPerUsd: '9.60',
+        paymentMethod: 'BANK_TRANSFER', cashBankAccountId: cash.id, kind: 'SHIPMENT', capitaliseToLandedCost: true,
+        description: 'Clearing and transport for the whole order',
+      },
+      ctx.admin.id,
+    );
+    await postExpense({ id: expense.id, companyId, userId: ctx.admin.id });
+
+    const batches = await prisma.batch.findMany({ where: { purchaseContractId: contract.id }, select: { capitalisedCostUsd: true, orderedQuantityKg: true, item: { select: { itemName: true } } } });
+    const shares = batches.map((b) => Number(b.capitalisedCostUsd));
+    const total = shares.reduce((a, b) => a + b, 0);
+    // 300,000 MAD at 9.60 = 31,250 USD, a third each — not half to Screen 12.
+    expect(total).toBeCloseTo(31250, 1);
+    for (const share of shares) expect(share).toBeCloseTo(31250 / 3, 0);
   }, 300_000);
 });
