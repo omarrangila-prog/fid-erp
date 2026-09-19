@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { PackageCheck, Anchor, Eye, Calculator } from 'lucide-react';
+import { PackageCheck, Anchor, Eye, Calculator, Pencil, Undo2 } from 'lucide-react';
 import { RowActions } from '@/components/shared/row-actions';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -15,7 +15,8 @@ import { Input } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { CONTAINER_STAGE_META, type ContainerStage } from '@/lib/container-stage';
 import { formatQuantityKg, todayInputValue } from '@/lib/format';
-import { markOrderArrivedAction, markContainerArrivedAction } from '@/server/actions/trading-actions';
+import { markOrderArrivedAction, markContainerArrivedAction, undoLoadingAction, editContainerAction } from '@/server/actions/trading-actions';
+import { Textarea } from '@/components/ui/input';
 
 /** Fired by a row's "Receive goods"; the toolbar that owns the receipt sheet listens. */
 export const RECEIVE_GOODS_EVENT = 'fid:receive-goods';
@@ -105,6 +106,48 @@ export function OrderShipments({
   // order's, so nothing else is marked with it.
   const [arrivingRow, setArrivingRow] = React.useState<OrderShipmentRow | null>(null);
   const [rowAtaDate, setRowAtaDate] = React.useState(todayInputValue());
+  const [undoRow, setUndoRow] = React.useState<OrderShipmentRow | null>(null);
+  const [editRow, setEditRow] = React.useState<OrderShipmentRow | null>(null);
+  const [edit, setEdit] = React.useState({ quantityKg: '', containerNumber: '', lotNumber: '', batchNumber: '', reason: '' });
+  const [editBusy, setEditBusy] = React.useState(false);
+
+  async function undo() {
+    if (!undoRow) return;
+    const result = await undoLoadingAction(undoRow.shipmentId, '');
+    if (!result || !result.ok) throw new Error(result?.error ?? 'The loading could not be undone.');
+    toast.success(result.message ?? 'Back to pending loading.');
+    router.refresh();
+  }
+
+  function openEdit(row: OrderShipmentRow) {
+    setEdit({
+      quantityKg: row.orderedKg.replace(/[^\d.]/g, ''),
+      containerNumber: row.containerNumber ?? '',
+      lotNumber: row.lotNumber ?? '',
+      batchNumber: row.batchNumber ?? '',
+      reason: '',
+    });
+    setEditRow(row);
+  }
+
+  async function saveEdit() {
+    if (!editRow) return;
+    setEditBusy(true);
+    const result = await editContainerAction(
+      JSON.stringify({
+        shipmentId: editRow.shipmentId,
+        quantityKg: edit.quantityKg.trim() || undefined,
+        containerNumber: edit.containerNumber.trim() || undefined,
+        lotNumber: edit.lotNumber.trim() || undefined,
+        batchNumber: edit.batchNumber.trim() || undefined,
+        reason: edit.reason.trim() || undefined,
+      }),
+    );
+    setEditBusy(false);
+    if (!result.ok) throw new Error(result.error);
+    toast.success(`Shipment ${editRow.ordinal} corrected.`);
+    router.refresh();
+  }
 
   async function markRowArrived() {
     if (!arrivingRow) return;
@@ -231,6 +274,18 @@ export function OrderShipments({
                           },
                         },
                         {
+                          label: 'Undo loading',
+                          icon: Undo2,
+                          show: canMarkArrived && row.stage === 'LOADED',
+                          onSelect: () => setUndoRow(row),
+                        },
+                        {
+                          label: 'Edit',
+                          icon: Pencil,
+                          show: canMarkArrived && !row.received,
+                          onSelect: () => openEdit(row),
+                        },
+                        {
                           label: 'Receive goods',
                           icon: PackageCheck,
                           show: canReceive && row.arrived && !row.received,
@@ -258,6 +313,49 @@ export function OrderShipments({
           </Table>
         </TableWrap>
       </CardContent>
+
+      <ConfirmDialog
+        open={undoRow !== null}
+        onOpenChange={(open) => {
+          if (!open) setUndoRow(null);
+        }}
+        title={undoRow ? `Return shipment ${undoRow.ordinal} to Pending loading?` : ''}
+        description="So that you can edit its loading details. The shipping line, booking and dates are kept; nothing downstream exists yet, or this would be refused."
+        confirmLabel="Undo loading"
+        onConfirm={undo}
+      />
+
+      <ConfirmDialog
+        open={editRow !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditRow(null);
+        }}
+        title={editRow ? `Correct shipment ${editRow.ordinal}` : ''}
+        description="Kilograms, container, lot and batch on this container only. The supplier is owed the difference at the row's price; old and new values are kept."
+        confirmLabel={editBusy ? 'Saving…' : 'Save correction'}
+        onConfirm={saveEdit}
+        body={
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Quantity (KG)" htmlFor="editKg" required>
+                <Input id="editKg" inputMode="decimal" className="tnum text-right" value={edit.quantityKg} onChange={(e) => setEdit((p) => ({ ...p, quantityKg: e.target.value }))} />
+              </Field>
+              <Field label="Container number" htmlFor="editCtr">
+                <Input id="editCtr" className="font-mono" value={edit.containerNumber} onChange={(e) => setEdit((p) => ({ ...p, containerNumber: e.target.value }))} />
+              </Field>
+              <Field label="Lot number" htmlFor="editLot">
+                <Input id="editLot" value={edit.lotNumber} onChange={(e) => setEdit((p) => ({ ...p, lotNumber: e.target.value }))} />
+              </Field>
+              <Field label="Batch number" htmlFor="editBatch">
+                <Input id="editBatch" value={edit.batchNumber} onChange={(e) => setEdit((p) => ({ ...p, batchNumber: e.target.value }))} />
+              </Field>
+            </div>
+            <Field label="Reason" htmlFor="editReason" hint="Kept with the old and new values.">
+              <Textarea id="editReason" value={edit.reason} onChange={(e) => setEdit((p) => ({ ...p, reason: e.target.value }))} placeholder="Correction before final receipt" />
+            </Field>
+          </div>
+        }
+      />
 
       <ConfirmDialog
         open={arrivingRow !== null}

@@ -1097,3 +1097,71 @@ export function shipmentOrdinalLabel(entry: ShipmentOrdinal | undefined): string
   if (!entry) return '—';
   return entry.total > 1 ? `Shipment ${entry.ordinal} of ${entry.total}` : 'Shipment 1';
 }
+
+/**
+ * Why a shipment cannot simply be wound back, or null when it can.
+ *
+ * Once coffee from it is in a warehouse, sold, or carrying a posted cost,
+ * changing its history would move stock and money that other records rely
+ * on. The message says so, and what to do instead.
+ */
+export async function downstreamOn(tx: Tx, companyId: string, shipmentId: string): Promise<string | null> {
+  const [received, movements, expenses] = await Promise.all([
+    tx.batch.count({ where: { shipmentId, companyId, OR: [{ receivedQuantityKg: { gt: 0 } }, { soldQuantityKg: { gt: 0 } }, { allocatedQuantityKg: { gt: 0 } }] } }),
+    tx.inventoryTransaction.count({ where: { shipmentId, companyId } }),
+    tx.expense.count({ where: { shipmentId, companyId, status: 'POSTED' } }),
+  ]);
+  if (received > 0 || movements > 0) {
+    return 'This shipment has already created stock. It cannot be directly reverted without correcting those records: reverse the goods receipt first, or adjust the stock with a transfer or count.';
+  }
+  if (expenses > 0) {
+    return 'Posted expenses are costed against this shipment. Reverse those expenses first, or record the correction as a new expense.';
+  }
+  return null;
+}
+
+/**
+ * Undo "Loaded": back to Pending loading so the loading details can be
+ * corrected and the shipment marked loaded again. Only while nothing
+ * downstream exists; the shipping details are kept so they need not be
+ * typed twice.
+ */
+export async function undoLoading(input: { companyId: string; shipmentId: string; userId: string; reason?: string | null }) {
+  return transaction(async (tx) => {
+    const shipment = await tx.shipment.findFirst({
+      where: { id: input.shipmentId, companyId: input.companyId },
+      select: { id: true, status: true, shipmentNumber: true, purchaseContractId: true },
+    });
+    if (!shipment) throw new NotFoundError('Shipment');
+    if (!['LOADED', 'IN_TRANSIT', 'AWAITING_LOADING'].includes(shipment.status)) {
+      throw new BusinessRuleError(
+        SHIPMENT_STATUSES_LANDED.includes(shipment.status)
+          ? 'This shipment has arrived. Undo the arrival first (Mark loaded again from the shipment), then undo the loading.'
+          : 'This shipment is not marked loaded.',
+      );
+    }
+    const blocked = await downstreamOn(tx, input.companyId, shipment.id);
+    if (blocked) throw new BusinessRuleError(blocked);
+
+    await tx.shipment.update({ where: { id: shipment.id }, data: { status: 'CONTRACT_CREATED', loadingDate: null } });
+    await tx.shipmentStatusHistory.create({
+      data: {
+        shipmentId: shipment.id,
+        fromStatus: shipment.status,
+        toStatus: 'CONTRACT_CREATED',
+        changedById: input.userId,
+        notes: input.reason?.trim() ? `Loading undone: ${input.reason.trim()}` : 'Loading undone so the details can be corrected.',
+      },
+    });
+    await writeAudit(tx, {
+      companyId: input.companyId,
+      userId: input.userId,
+      action: 'SHIPMENT_LOADING_UNDONE',
+      entityType: 'Shipment',
+      entityId: shipment.id,
+      before: { status: shipment.status },
+      after: { status: 'CONTRACT_CREATED', reason: input.reason ?? null },
+    });
+    return { contractId: shipment.purchaseContractId };
+  });
+}

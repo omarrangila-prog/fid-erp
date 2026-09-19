@@ -1333,3 +1333,250 @@ export async function correctPurchaseContract(params: { id: string; companyId: s
 
   return copy;
 }
+
+export type EditContainerInput = {
+  companyId: string;
+  shipmentId: string;
+  userId: string;
+  quantityKg?: string | number | null;
+  bags?: number | null;
+  containerNumber?: string | null;
+  lotNumber?: string | null;
+  batchNumber?: string | null;
+  reason?: string | null;
+};
+
+/**
+ * Correct one container on an approved order before it is received.
+ *
+ * "Only container 3 has the wrong KG" should not mean re-entering five. The
+ * container's row — kilograms, bags, container number, lot, batch — is
+ * changed in place, and the money follows the kilograms at the row's own
+ * price: the supplier is owed more or less by exactly the difference, which
+ * is posted as its own entry against the order so the books say what
+ * happened and when. Old and new values, who and why, go to the audit log.
+ *
+ * Refused once the container has been received: by then its kilograms are
+ * stock, and stock is corrected by the receipt, a transfer or a count.
+ */
+export async function editContainer(input: EditContainerInput) {
+  return transaction(async (tx) => {
+    const shipment = await tx.shipment.findFirst({
+      where: { id: input.shipmentId, companyId: input.companyId },
+      include: {
+        purchaseContract: { include: { vendor: true, company: true } },
+        batches: { where: { status: 'ACTIVE' }, include: { lot: true, container: true } },
+      },
+    });
+    if (!shipment) throw new NotFoundError('Shipment');
+    const contract = shipment.purchaseContract;
+    if (contract.status !== 'POSTED') throw new BusinessRuleError('Edit the draft order directly.');
+    if (shipment.batches.length !== 1 || !shipment.purchaseContractLineId) {
+      throw new BusinessRuleError('This shipment carries several batches. Divide it into containers first, then edit each.');
+    }
+    const batch = shipment.batches[0];
+    if (dec(batch.receivedQuantityKg).greaterThan(0) || dec(batch.soldQuantityKg).greaterThan(0) || dec(batch.allocatedQuantityKg).greaterThan(0)) {
+      throw new BusinessRuleError('This container has already been received. Correct the stock with a transfer or count, or reverse the goods receipt first.');
+    }
+    const line = await tx.purchaseContractLine.findUniqueOrThrow({ where: { id: shipment.purchaseContractLineId } });
+
+    const before = {
+      quantityKg: dec(line.quantityKg).toString(),
+      bags: line.bags,
+      containerNumber: batch.container?.containerNumber ?? line.containerNumber ?? null,
+      lotNumber: batch.lot.lotNumber,
+      batchNumber: batch.batchNumber,
+    };
+
+    // --- kilograms, and the money that follows them ------------------------
+    const newKg = input.quantityKg !== undefined && input.quantityKg !== null && String(input.quantityKg).trim() !== ''
+      ? toQuantity(dec(input.quantityKg))
+      : dec(line.quantityKg);
+    if (newKg.lessThanOrEqualTo(0)) throw new BusinessRuleError('The quantity must be more than zero.');
+    const kgChanged = !newKg.equals(dec(line.quantityKg));
+    const newBags = input.bags ?? (kgChanged && dec(line.bagWeightKg).greaterThan(0) ? Number(newKg.dividedBy(line.bagWeightKg).toDecimalPlaces(0)) : line.bags);
+
+    if (kgChanged) {
+      const subtotal = toMoney(newKg.times(line.unitPriceKg));
+      const charges = dec(line.freightAllocated).plus(line.otherChargesAllocated);
+      const total = toMoney(subtotal.plus(charges));
+      const taxRate = dec(line.taxRatePct).dividedBy(100);
+      const tax = toMoney(subtotal.times(taxRate));
+      const deltaSubtotal = subtotal.minus(line.lineSubtotal);
+      const deltaTax = tax.minus(line.taxAmount);
+      const unitQuantity = line.unit === 'KG' ? newKg : line.unit === 'MT' ? newKg.dividedBy(1000) : dec(line.bagWeightKg).greaterThan(0) ? newKg.dividedBy(line.bagWeightKg) : newKg;
+      const taxUsd = toMoney(contract.currency === 'USD' ? tax : tax.dividedBy(contract.rateToUsd));
+
+      await tx.purchaseContractLine.update({
+        where: { id: line.id },
+        data: {
+          quantity: toQuantity(unitQuantity),
+          quantityKg: newKg,
+          bags: newBags,
+          lineSubtotal: subtotal,
+          lineTotal: total,
+          unitCostKg: newKg.greaterThan(0) ? toUnitCost(total.dividedBy(newKg)) : line.unitCostKg,
+          taxAmount: tax,
+          taxAmountUsd: taxUsd,
+        },
+      });
+
+      const toUsd = (amount: Decimal) => toMoney(contract.currency === 'USD' ? amount : amount.dividedBy(contract.rateToUsd));
+      const newSubtotal = dec(contract.subtotal).plus(deltaSubtotal);
+      const newTax = dec(contract.taxAmount).plus(deltaTax);
+      const newTotal = dec(contract.totalValue).plus(deltaSubtotal);
+      await tx.purchaseContract.update({
+        where: { id: contract.id },
+        data: {
+          subtotal: toMoney(newSubtotal),
+          taxAmount: toMoney(newTax),
+          taxAmountUsd: toUsd(newTax),
+          totalValue: toMoney(newTotal),
+          totalValueUsd: toUsd(newTotal),
+          totalBags: contract.totalBags - line.bags + newBags,
+        },
+      });
+
+      const unitCostUsd = dec(batch.unitCostUsd);
+      await tx.batch.update({
+        where: { id: batch.id },
+        data: {
+          orderedQuantityKg: newKg,
+          inTransitQuantityKg: newKg,
+          orderedBags: newBags,
+          purchaseCostUsd: toMoney(newKg.times(unitCostUsd)),
+        },
+      });
+      await tx.shipment.update({ where: { id: shipment.id }, data: { quantityKg: newKg, bags: newBags } });
+
+      // The supplier is owed the difference. Same accounts, same rates as
+      // the order's own posting, so a reversal of the order takes this back
+      // out with it.
+      if (!deltaSubtotal.isZero()) {
+        const payable = supplierGrossPayable({
+          netAmount: deltaSubtotal.abs(),
+          taxAmount: deltaTax.abs(),
+          netAmountUsd: toUsd(deltaSubtotal.abs()),
+          taxAmountUsd: toUsd(deltaTax.abs()),
+          vendorCountry: contract.vendor.country,
+          companyCountry: contract.company.country,
+        });
+        const taxOnSupplier = payable.taxOnSupplierInvoice && !deltaTax.isZero();
+        const up = deltaSubtotal.greaterThan(0);
+        await postJournalEntry(tx, {
+          companyId: input.companyId,
+          entryDate: new Date(),
+          description: `${contract.contractReference}: container corrected ${before.quantityKg} → ${newKg.toString()} KG${input.reason?.trim() ? ` — ${input.reason.trim()}` : ''}`,
+          sourceType: 'PURCHASE_CONTRACT',
+          sourceId: contract.id,
+          createdById: input.userId,
+          localCurrency: contract.company.localCurrency,
+          rateLocalPerUsd: contract.rateLocalPerUsd,
+          lines: [
+            {
+              accountKey: ACCOUNT_KEYS.INVENTORY_IN_TRANSIT,
+              direction: up ? 'DEBIT' : 'CREDIT',
+              currency: contract.currency,
+              amount: deltaSubtotal.abs(),
+              rateToUsd: contract.rateToUsd,
+              description: up ? 'More coffee on the order, in transit' : 'Less coffee on the order, in transit',
+              purchaseContractId: contract.id,
+              vendorId: contract.vendorId,
+              shipmentId: shipment.id,
+            },
+            ...(taxOnSupplier
+              ? [
+                  {
+                    accountKey: ACCOUNT_KEYS.VAT_INPUT,
+                    direction: (up ? 'DEBIT' : 'CREDIT') as 'DEBIT' | 'CREDIT',
+                    currency: contract.currency,
+                    amount: deltaTax.abs(),
+                    rateToUsd: contract.rateToUsd,
+                    description: `Input tax on the correction`,
+                    purchaseContractId: contract.id,
+                  },
+                ]
+              : []),
+            {
+              accountKey: ACCOUNT_KEYS.ACCOUNTS_PAYABLE,
+              direction: up ? 'CREDIT' : 'DEBIT',
+              currency: contract.currency,
+              amount: payable.amount,
+              rateToUsd: contract.rateToUsd,
+              description: `Payable to ${contract.vendor.vendorName} corrected`,
+              vendorId: contract.vendorId,
+              purchaseContractId: contract.id,
+              shipmentId: shipment.id,
+            },
+          ],
+        });
+      }
+    } else if (input.bags !== undefined && input.bags !== null && input.bags !== line.bags) {
+      await tx.purchaseContractLine.update({ where: { id: line.id }, data: { bags: newBags } });
+      await tx.batch.update({ where: { id: batch.id }, data: { orderedBags: newBags } });
+      await tx.shipment.update({ where: { id: shipment.id }, data: { bags: newBags } });
+      await tx.purchaseContract.update({ where: { id: contract.id }, data: { totalBags: contract.totalBags - line.bags + newBags } });
+    }
+
+    // --- identity: container, lot, batch -------------------------------------
+    const containerNumber = input.containerNumber?.trim();
+    if (containerNumber && containerNumber !== before.containerNumber) {
+      const existing = await tx.container.findFirst({ where: { companyId: input.companyId, containerNumber }, select: { id: true, shipmentId: true } });
+      if (existing && existing.shipmentId && existing.shipmentId !== shipment.id) {
+        throw new BusinessRuleError(`Container ${containerNumber} is already on another shipment.`);
+      }
+      const containerId = existing
+        ? (await tx.container.update({ where: { id: existing.id }, data: { shipmentId: shipment.id, purchaseContractId: contract.id, netWeightKg: newKg, bags: newBags }, select: { id: true } })).id
+        : batch.containerId
+          ? (await tx.container.update({ where: { id: batch.containerId }, data: { containerNumber, netWeightKg: newKg, bags: newBags }, select: { id: true } })).id
+          : (await tx.container.create({ data: { companyId: input.companyId, containerNumber, purchaseContractId: contract.id, shipmentId: shipment.id, netWeightKg: newKg, bags: newBags }, select: { id: true } })).id;
+      await tx.batch.update({ where: { id: batch.id }, data: { containerId } });
+      await tx.purchaseContractLine.update({ where: { id: line.id }, data: { containerNumber } });
+    } else if (kgChanged && batch.containerId) {
+      await tx.container.update({ where: { id: batch.containerId }, data: { netWeightKg: newKg, bags: newBags } });
+    }
+
+    const lotNumber = input.lotNumber?.trim();
+    const batchNumber = input.batchNumber?.trim();
+    if ((lotNumber && lotNumber !== before.lotNumber) || (batchNumber && batchNumber !== before.batchNumber)) {
+      const nextLot = lotNumber || before.lotNumber;
+      const nextBatch = batchNumber || (lotNumber ? lotNumber : before.batchNumber);
+      let lotId = batch.lotId;
+      if (nextLot !== before.lotNumber) {
+        const sharedLot = await tx.batch.count({ where: { lotId: batch.lotId, NOT: { id: batch.id } } });
+        if (sharedLot === 0) {
+          await tx.lot.update({ where: { id: batch.lotId }, data: { lotNumber: nextLot } });
+        } else {
+          lotId = (
+            (await tx.lot.findFirst({ where: { companyId: input.companyId, lotNumber: nextLot }, select: { id: true } })) ??
+            (await tx.lot.create({ data: { companyId: input.companyId, lotNumber: nextLot, itemId: batch.itemId, purchaseContractId: contract.id }, select: { id: true } }))
+          ).id;
+        }
+      }
+      if (nextBatch !== before.batchNumber) {
+        const clash = await tx.batch.findFirst({ where: { companyId: input.companyId, batchNumber: nextBatch, NOT: { id: batch.id } }, select: { id: true } });
+        if (clash) throw new BusinessRuleError(`Batch ${nextBatch} already exists.`);
+      }
+      await tx.batch.update({ where: { id: batch.id }, data: { lotId, batchNumber: nextBatch, traceabilityPending: false } });
+      await tx.purchaseContractLine.update({ where: { id: line.id }, data: { lotNumber: nextLot, batchNumber: nextBatch } });
+    }
+
+    const after = {
+      quantityKg: newKg.toString(),
+      bags: newBags,
+      containerNumber: containerNumber || before.containerNumber,
+      lotNumber: lotNumber || before.lotNumber,
+      batchNumber: batchNumber || (lotNumber ? lotNumber : before.batchNumber),
+    };
+    await writeAudit(tx, {
+      companyId: input.companyId,
+      userId: input.userId,
+      action: 'CONTAINER_CORRECTED',
+      entityType: 'Shipment',
+      entityId: shipment.id,
+      before,
+      after: { ...after, reason: input.reason?.trim() || null },
+    });
+    return { before, after, contractId: contract.id };
+  });
+}

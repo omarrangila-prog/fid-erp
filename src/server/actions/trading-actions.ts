@@ -12,6 +12,7 @@ import {
   goodsReceiptSchema,
   receiveContainersSchema,
   splitContractLineSchema,
+  editContainerSchema,
   salesInvoiceSchema,
   stockTransferSchema,
   shipmentStatusSchema,
@@ -28,6 +29,7 @@ import {
   deleteDraftPurchaseContract,
   splitContractLine,
   correctPurchaseContract,
+  editContainer,
 } from '@/lib/services/purchase';
 import {
   createGoodsReceipt,
@@ -61,6 +63,7 @@ import {
   getEtaHistory,
   markOrderArrived,
   markShipmentArrived,
+  undoLoading,
 } from '@/lib/services/shipment';
 import { fail, ok, type ActionResult } from '@/server/actions/action-utils';
 
@@ -504,6 +507,39 @@ export async function correctPurchaseContractAction(id: string, reason: string):
     revalidatePath('/loading');
     revalidatePath('/dashboard');
     return ok({ draftId: draft.id });
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+/** Back from Loaded to Pending loading, so the loading details can be fixed. */
+export async function undoLoadingAction(shipmentId: string, reason: string): Promise<DocFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.SHIPMENTS_UPDATE);
+    const result = await undoLoading({ companyId: user.activeCompany.id, shipmentId, userId: user.id, reason });
+    revalidatePath('/loading');
+    revalidatePath('/shipments');
+    revalidatePath(`/shipments/${shipmentId}`);
+    revalidatePath('/purchases');
+    revalidatePath(`/purchases/${result.contractId}`);
+    return { ok: true, id: shipmentId, message: 'Back to pending loading. Correct the details and mark it loaded again.' };
+  } catch (error) {
+    return toState(error);
+  }
+}
+
+/** Correct one unreceived container: kilograms, bags, container, lot, batch. */
+export async function editContainerAction(payload: string): Promise<ActionResult<{ contractId: string }>> {
+  try {
+    const user = await requirePermission(PERMISSIONS.PURCHASES_APPROVE);
+    const input = editContainerSchema.parse(parseJson(payload));
+    const result = await editContainer({ companyId: user.activeCompany.id, userId: user.id, ...input });
+    revalidatePath('/loading');
+    revalidatePath('/shipments');
+    revalidatePath(`/shipments/${input.shipmentId}`);
+    revalidatePath('/purchases');
+    revalidatePath(`/purchases/${result.contractId}`);
+    return ok({ contractId: result.contractId });
   } catch (error) {
     return fail(error);
   }

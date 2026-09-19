@@ -2,7 +2,11 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Ship, Users, Anchor, PackageCheck, FileText, Boxes, CalendarClock, Calculator } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+import { Ship, Users, Anchor, PackageCheck, FileText, Boxes, CalendarClock, Calculator, Undo2 } from 'lucide-react';
+import { ConfirmDialog } from '@/components/ui/confirm';
+import { undoLoadingAction } from '@/server/actions/trading-actions';
 import { RowActions } from '@/components/shared/row-actions';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
@@ -236,6 +240,8 @@ export function LoadingSheet({
   const [receivingRow, setReceivingRow] = React.useState<LoadingRow | null>(null);
   const [documentsRow, setDocumentsRow] = React.useState<LoadingRow | null>(null);
   const [containersRow, setContainersRow] = React.useState<LoadingRow | null>(null);
+  const [undoRow, setUndoRow] = React.useState<LoadingRow | null>(null);
+  const router = useRouter();
 
   const contract: DataColumn<LoadingRow> = {
     id: 'contract',
@@ -349,6 +355,12 @@ export function LoadingSheet({
               icon: Anchor,
               show: canUpdate && sailing,
               onSelect: () => setArrivingRow(r),
+            },
+            {
+              label: 'Undo loading',
+              icon: Undo2,
+              show: canUpdate && sailing,
+              onSelect: () => setUndoRow(r),
             },
             {
               label: 'Receive PO',
@@ -740,6 +752,23 @@ export function LoadingSheet({
           onClose={() => setEditingEta(null)}
         />
       ) : null}
+
+      <ConfirmDialog
+          open={undoRow !== null}
+          onOpenChange={(open) => {
+            if (!open) setUndoRow(null);
+          }}
+          title="Return this shipment to Pending loading?"
+          description="So that you can edit its loading details and mark it loaded again. The shipping line, booking and dates are kept. Refused once the coffee is in stock."
+          confirmLabel="Undo loading"
+          onConfirm={async () => {
+            if (!undoRow) return;
+            const result = await undoLoadingAction(undoRow.shipmentId, '');
+            if (!result || !result.ok) throw new Error(result?.error ?? 'The loading could not be undone.');
+            toast.success(result.message ?? 'Back to pending loading.');
+            router.refresh();
+          }}
+        />
 
       {arrivingRow ? (
         <ArrivedDialog

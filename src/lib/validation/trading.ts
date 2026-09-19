@@ -110,6 +110,17 @@ export const goodsReceiptSchema = z.object({
   lines: z.array(goodsReceiptLineSchema).min(1, 'Add at least one line to receive.'),
 });
 
+/** One container corrected on an approved order, before it is received. */
+export const editContainerSchema = z.object({
+  shipmentId: cuid,
+  quantityKg: optionalDecimalString('Quantity'),
+  bags: positiveInt('Bags').optional(),
+  containerNumber: optionalText(40),
+  lotNumber: optionalText(60),
+  batchNumber: optionalText(60),
+  reason: optionalText(300),
+});
+
 /** One ordered line divided into containers, on an approved order. */
 export const splitContractLineSchema = z.object({
   purchaseContractId: cuid,

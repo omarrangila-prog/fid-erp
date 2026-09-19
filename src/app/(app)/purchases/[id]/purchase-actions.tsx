@@ -22,6 +22,7 @@ export function PurchaseActions({
   canReverse,
   canReceive,
   fullyReceived,
+  anyReceived = false,
   onReceive,
 }: {
   id: string;
@@ -32,6 +33,8 @@ export function PurchaseActions({
   canReverse: boolean;
   canReceive: boolean;
   fullyReceived: boolean;
+  /** Some coffee is already in stock, so the order is corrected container by container instead. */
+  anyReceived?: boolean;
   onReceive: () => void;
 }) {
   const router = useRouter();
@@ -82,6 +85,14 @@ export function PurchaseActions({
 
       {status === 'POSTED' ? (
         <>
+          {canReverse && !anyReceived ? (
+            <Button variant="outline" asChild>
+              <Link href={`/purchases/${id}/correct`}>
+                <Pencil />
+                Edit order
+              </Link>
+            </Button>
+          ) : null}
           {canReverse ? (
             <Button variant="outline" onClick={() => setConfirm('reverse')} disabled={busy}>
               <Trash2 />

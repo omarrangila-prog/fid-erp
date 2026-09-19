@@ -268,6 +268,7 @@ export function PurchasesClient({
           actions={[
             viewAction(`/purchases/${r.id}`),
             editAction(`/purchases/${r.id}/edit`, canEdit && r.status === 'DRAFT'),
+            { label: 'Edit order', href: `/purchases/${r.id}/correct`, icon: 'edit', show: canEdit && r.status === 'POSTED' && r.receivedPct === 0 },
             { label: 'Loading sheet', href: '/loading', icon: Ship },
             { label: 'Shipment', href: r.shipmentId ? `/shipments/${r.shipmentId}` : '/shipments', icon: Ship, show: Boolean(r.shipmentId) },
             {

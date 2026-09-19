@@ -138,6 +138,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
               receive: can(user, PERMISSIONS.PURCHASES_APPROVE),
             }}
             fullyReceived={fullyReceived}
+            anyReceived={receiptStatus.some((r) => Number(r.receivedKg) > 0)}
             batches={receiptStatus.map((r) => ({
               batchId: r.batchId,
               batchNumber: r.batchNumber,

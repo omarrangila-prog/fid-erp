@@ -12,6 +12,7 @@ export function PurchaseDetailToolbar({
   status,
   permissions,
   fullyReceived,
+  anyReceived = false,
   batches,
   warehouses,
   defaultWarehouseId,
@@ -27,6 +28,7 @@ export function PurchaseDetailToolbar({
     receive: boolean;
   };
   fullyReceived: boolean;
+  anyReceived?: boolean;
   batches: ReceivableBatch[];
   warehouses: Array<{ id: string; name: string; code: string }>;
   defaultWarehouseId: string | null;
@@ -53,6 +55,7 @@ export function PurchaseDetailToolbar({
         canReverse={permissions.reverse}
         canReceive={permissions.receive && warehouses.length > 0}
         fullyReceived={fullyReceived}
+        anyReceived={anyReceived}
         onReceive={() => setReceiving(true)}
       />
 

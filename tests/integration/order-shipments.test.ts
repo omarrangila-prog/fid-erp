@@ -2,9 +2,9 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { prisma, resetDatabase, getContext, createMasters, utcDate } from '../helpers';
 import { createPurchaseContract, postPurchaseContract } from '@/lib/services/purchase';
 import { createGoodsReceipt, postGoodsReceipt, receiveContainers } from '@/lib/services/goods-receipt';
-import { getReceiptStatus, splitContractLine, correctPurchaseContract } from '@/lib/services/purchase';
+import { getReceiptStatus, splitContractLine, correctPurchaseContract, editContainer } from '@/lib/services/purchase';
 import { transaction } from '@/lib/db';
-import { changeShipmentStatus, getOrderOverview, markOrderArrived } from '@/lib/services/shipment';
+import { changeShipmentStatus, getOrderOverview, markOrderArrived, undoLoading } from '@/lib/services/shipment';
 import { getBatchCostings } from '@/lib/services/landed-cost';
 import { reconcile } from '@/lib/services/reconciliation';
 import { dec } from '@/lib/money';
@@ -759,5 +759,79 @@ describe('receiving a little more than was ordered', () => {
     expect(dec(movement.quantityKg).times(movement.unitCost).toFixed(2)).toBe('80000.00');
     const overview = await getOrderOverview(companyId, contract.id);
     expect(overview.receipt).toBe('FULLY_RECEIVED');
+  }, 300_000);
+});
+
+describe('correcting a mistake without deleting anything', () => {
+  const freshOrder = async (reference: string) => {
+    const contract = await createPurchaseContract(
+      {
+        companyId, vendorId: masters.vendor.id, contractDate: utcDate('2026-09-01'), currency: 'USD', rateToUsd: '1', rateLocalPerUsd: '9.85', freightAmount: '0',
+        contractReference: reference, containers: 2,
+        lines: [
+          { itemId: masters.item.id, quantity: '20000', unit: 'KG', unitPrice: '4.00', bagWeightKg: '60', containerNumber: `${reference.replace(/\W/g, '')}-1` },
+          { itemId: masters.item.id, quantity: '20000', unit: 'KG', unitPrice: '4.00', bagWeightKg: '60', containerNumber: `${reference.replace(/\W/g, '')}-2` },
+        ],
+      },
+      ctx.admin.id,
+    );
+    await postPurchaseContract({ id: contract.id, companyId, userId: ctx.admin.id });
+    return contract;
+  };
+
+  it('undoes Loaded, lets the KG be corrected, and marks it loaded again', async () => {
+    const contract = await freshOrder('ICUL/FID/UNDO');
+    let overview = await getOrderOverview(companyId, contract.id);
+    const first = overview.shipments[0];
+    await changeShipmentStatus({ shipmentId: first.shipmentId, companyId, userId: ctx.admin.id, toStatus: 'LOADED', loadingDate: utcDate('2026-09-05'), etaDate: utcDate('2026-09-20'), shippingLineId: masters.shippingLine.id });
+    overview = await getOrderOverview(companyId, contract.id);
+    expect(overview.shipments[0].stage).toBe('LOADED');
+
+    await undoLoading({ companyId, shipmentId: first.shipmentId, userId: ctx.admin.id, reason: 'KG was wrong' });
+    overview = await getOrderOverview(companyId, contract.id);
+    expect(overview.shipments[0].stage).toBe('PENDING_LOADING');
+    // The other container was not touched.
+    expect(overview.shipments[1].stage).toBe('PENDING_LOADING');
+
+    // 20,000 → 19,500: the row, the batch, the order and the payable follow.
+    const payableBefore = await prisma.journalLine.aggregate({ where: { purchaseContractId: contract.id, account: { systemKey: 'ACCOUNTS_PAYABLE' } }, _sum: { creditUsd: true, debitUsd: true } });
+    const result = await editContainer({ companyId, shipmentId: first.shipmentId, userId: ctx.admin.id, quantityKg: '19500', reason: 'Correction before final receipt' });
+    expect(result.before.quantityKg).toBe('20000');
+    expect(result.after.quantityKg).toBe('19500');
+
+    overview = await getOrderOverview(companyId, contract.id);
+    expect(Number(overview.shipments[0].orderedKg)).toBe(19500);
+    expect(Number(overview.totalKg)).toBe(39500);
+    const order = await prisma.purchaseContract.findUniqueOrThrow({ where: { id: contract.id } });
+    expect(order.totalValue.toFixed(2)).toBe('158000.00');
+    const payableAfter = await prisma.journalLine.aggregate({ where: { purchaseContractId: contract.id, account: { systemKey: 'ACCOUNTS_PAYABLE' } }, _sum: { creditUsd: true, debitUsd: true } });
+    const owedBefore = dec(payableBefore._sum.creditUsd ?? 0).minus(payableBefore._sum.debitUsd ?? 0);
+    const owedAfter = dec(payableAfter._sum.creditUsd ?? 0).minus(payableAfter._sum.debitUsd ?? 0);
+    expect(owedBefore.minus(owedAfter).toFixed(2)).toBe('2000.00');
+
+    // Old value, new value, who, why — kept.
+    const audit = await prisma.auditLog.findFirst({ where: { action: 'CONTAINER_CORRECTED', entityId: first.shipmentId }, orderBy: { createdAt: 'desc' } });
+    expect(audit?.before).toMatchObject({ quantityKg: '20000' });
+    expect(audit?.after).toMatchObject({ quantityKg: '19500', reason: 'Correction before final receipt' });
+
+    // And it can be marked loaded again.
+    await changeShipmentStatus({ shipmentId: first.shipmentId, companyId, userId: ctx.admin.id, toStatus: 'LOADED', loadingDate: utcDate('2026-09-06'), etaDate: utcDate('2026-09-21'), shippingLineId: masters.shippingLine.id });
+    overview = await getOrderOverview(companyId, contract.id);
+    expect(overview.shipments[0].stage).toBe('LOADED');
+  }, 300_000);
+
+  it('refuses to undo or edit a container that is already stock', async () => {
+    const contract = await freshOrder('ICUL/FID/UNDO-2');
+    await markOrderArrived({ companyId, contractId: contract.id, userId: ctx.admin.id, ataDate: utcDate('2026-09-10') });
+    const status = await transaction((tx) => getReceiptStatus(tx, contract.id));
+    await receiveContainers({ companyId, purchaseContractId: contract.id, receiptDate: utcDate('2026-09-11'), receivedById: ctx.admin.id, lines: [{ batchId: status[0].batchId, quantityKg: '20000', lotNumber: 'LOT-U1', warehouseId: masters.warehouses[0].id }] });
+    const overview = await getOrderOverview(companyId, contract.id);
+    await expect(undoLoading({ companyId, shipmentId: overview.shipments[0].shipmentId, userId: ctx.admin.id })).rejects.toThrow(/arrived|already created stock/);
+    await expect(editContainer({ companyId, shipmentId: overview.shipments[0].shipmentId, userId: ctx.admin.id, quantityKg: '19000' })).rejects.toThrow(/already been received/);
+    // The unreceived one can still be corrected.
+    await editContainer({ companyId, shipmentId: overview.shipments[1].shipmentId, userId: ctx.admin.id, containerNumber: 'FIXED-2', lotNumber: 'LOT-U2' });
+    const after = await getOrderOverview(companyId, contract.id);
+    expect(after.shipments[1].containerNumber).toBe('FIXED-2');
+    expect(after.shipments[1].lotNumber).toBe('LOT-U2');
   }, 300_000);
 });
