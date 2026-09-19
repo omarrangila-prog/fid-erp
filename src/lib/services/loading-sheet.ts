@@ -74,6 +74,9 @@ export type LoadingSheetRow = {
   contractReference: string;
   /** FID's internal document number. Both are kept and both are searchable. */
   contractNumber: string;
+  /** "Shipment 2 of 3": this row's place on its order, by creation order. */
+  shipmentOrdinal: number;
+  shipmentsOnOrder: number;
 
   exporter: string;
   /** The FID company doing the importing; never typed, always the company. */
@@ -221,6 +224,15 @@ export async function getLoadingSheet(companyId: string): Promise<LoadingSheetRo
 
   const today = new Date();
 
+  // Shipments in the order they were opened, per order, so "Shipment 2 of 3"
+  // means the same thing here as it does on the purchase order.
+  const siblingsByContract = new Map<string, string[]>();
+  for (const shipment of [...shipments].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())) {
+    const list = siblingsByContract.get(shipment.purchaseContractId) ?? [];
+    list.push(shipment.id);
+    siblingsByContract.set(shipment.purchaseContractId, list);
+  }
+
   return shipments
     .filter((shipment) => shipment.batches.length > 0)
     .map((shipment) => {
@@ -336,6 +348,8 @@ export async function getLoadingSheet(companyId: string): Promise<LoadingSheetRo
             ? names[0]
             : `${names.length} customers`;
 
+      const siblings = siblingsByContract.get(shipment.purchaseContractId) ?? [];
+
       return {
         shipmentId: shipment.id,
         contractId: shipment.purchaseContract.id,
@@ -343,6 +357,8 @@ export async function getLoadingSheet(companyId: string): Promise<LoadingSheetRo
         contractDate: shipment.purchaseContract.contractDate,
         contractReference: shipment.purchaseContract.contractReference,
         contractNumber: shipment.purchaseContract.contractNumber,
+        shipmentOrdinal: siblings.indexOf(shipment.id) + 1,
+        shipmentsOnOrder: siblings.length,
 
         exporter: shipment.purchaseContract.vendor.vendorName,
         importer: company.name,

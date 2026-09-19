@@ -5,7 +5,6 @@ import {
   toMoney,
   toUnitCost,
   toQuantity,
-  sum,
 } from '@/lib/money';
 import { ACCOUNT_KEYS, DOC_TYPES } from '@/lib/constants';
 import { BusinessRuleError, ConflictError, NotFoundError } from '@/lib/errors';
@@ -824,11 +823,13 @@ export async function deleteDraftPurchaseContract(params: { id: string; companyI
 
 /** Outstanding quantity still to be received against a contract, per line. */
 export async function getReceiptStatus(tx: Tx, purchaseContractId: string) {
-  const shipment = await tx.shipment.findFirst({
+  // Every shipment on the order, not just the first: each carries its own
+  // containers and each may need the same repair.
+  const shipments = await tx.shipment.findMany({
     where: { purchaseContractId },
     select: { id: true, companyId: true },
   });
-  if (shipment) {
+  for (const shipment of shipments) {
     await repairSharedContainerAssignments(tx, shipment.companyId, shipment.id);
   }
 

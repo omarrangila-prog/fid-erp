@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { History, Ship, ArrowLeftRight } from 'lucide-react';
 import { RowActions, viewAction } from '@/components/shared/row-actions';
@@ -13,7 +14,7 @@ export type BatchRow = {
   itemName: string;
   origin: string;
   containerNumber: string | null;
-  shipmentNumber: string;
+  shipmentLabel: string;
   shipmentId: string;
   contractNumber: string;
   contractReference: string;
@@ -90,7 +91,9 @@ export function BatchesClient({
       cell: (r) => (
         <span className="block min-w-44">
           <span className="block font-mono text-xs font-medium">{r.contractReference || '—'}</span>
-          
+          <Link href={`/shipments/${r.shipmentId}`} className="block text-[11px] text-ink-subtle hover:text-gold-700">
+            {r.shipmentLabel}
+          </Link>
         </span>
       ),
     },
@@ -179,7 +182,7 @@ export function BatchesClient({
         { id: 'origin', label: 'Origin', value: (r) => r.origin },
       ]}
       searchValue={(r) =>
-        `${r.batchNumber} ${r.lotNumber} ${r.itemName} ${r.origin} ${r.containerNumber ?? ''} ${r.shipmentNumber} ${r.contractNumber} ${r.contractReference} ${r.warehouses}`
+        `${r.batchNumber} ${r.lotNumber} ${r.itemName} ${r.origin} ${r.containerNumber ?? ''} ${r.shipmentLabel} ${r.contractNumber} ${r.contractReference} ${r.warehouses}`
       }
       searchPlaceholder="Search batch, lot, container or shipment…"
       emptyAction={emptyAction}

@@ -57,12 +57,13 @@ test.describe('the loading sheet', () => {
     await expect(page.getByRole('columnheader', { name: 'S/No', exact: true })).toHaveCount(0);
   });
 
-  test('shows both the supplier reference and the FID number', async ({ page }) => {
+  test('shows the supplier reference, and never the FID number', async ({ page }) => {
     await page.goto('/loading');
-    // The trade scripts/e2e-fixture.ts puts in: the supplier's own reference
-    // and the FID number side by side.
+    // The trade scripts/e2e-fixture.ts puts in, named by the supplier's own
+    // reference. The FID-DXB-PO-… number stays in the database: it is the
+    // system's, not the trade's, and the client asked for it off the screen.
     await expect(page.getByText(/E2E-PO-DXB-1/).first()).toBeVisible();
-    await expect(page.getByText(/FID-DXB-PO-/).first()).toBeVisible();
+    await expect(page.getByText(/FID-DXB-PO-/)).toHaveCount(0);
   });
 
   test('fills in the consignee from the sale, and shows a derived payment position', async ({ page }) => {

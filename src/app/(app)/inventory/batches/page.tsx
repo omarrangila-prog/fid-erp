@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getBatchStock } from '@/lib/services/stock';
+import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
 import { formatMoney, formatQuantityKg } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { EmptyAction } from '@/components/shared/empty-action';
@@ -14,7 +15,10 @@ export default async function BatchesPage() {
   const user = await requirePageAccess(PERMISSIONS.INVENTORY_VIEW);
   const showValue = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
 
-  const batches = await getBatchStock({ companyId: user.activeCompany.id, includeEmpty: true });
+  const [batches, ordinals] = await Promise.all([
+    getBatchStock({ companyId: user.activeCompany.id, includeEmpty: true }),
+    getShipmentOrdinals(user.activeCompany.id),
+  ]);
 
   const rows: BatchRow[] = batches.map((b) => ({
     id: b.batchId,
@@ -23,7 +27,7 @@ export default async function BatchesPage() {
     itemName: b.itemName,
     origin: b.itemCode,
     containerNumber: b.containerNumber,
-    shipmentNumber: b.shipmentNumber,
+    shipmentLabel: shipmentOrdinalLabel(ordinals.get(b.shipmentId)),
     shipmentId: b.shipmentId,
     contractNumber: b.contractNumber,
     contractReference: b.contractReference,

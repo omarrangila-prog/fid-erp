@@ -26,6 +26,8 @@ export type GoodsReceiptRow = {
   lines: Array<{
     itemName: string;
     batchNumber: string;
+    lotNumber: string;
+    shipment: string;
     containerNumber: string;
     quantityLabel: string;
     bags: number;
@@ -134,8 +136,10 @@ export function GoodsReceiptsClient({
             <thead>
               <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
                 <th className="py-1.5 pr-3 font-medium">Item</th>
-                <th className="py-1.5 pr-3 font-medium">Batch</th>
+                <th className="py-1.5 pr-3 font-medium">Shipment</th>
                 <th className="py-1.5 pr-3 font-medium">Container</th>
+                <th className="py-1.5 pr-3 font-medium">Lot</th>
+                <th className="py-1.5 pr-3 font-medium">Batch</th>
                 <th className="py-1.5 pr-3 text-right font-medium">Received</th>
                 <th className="py-1.5 text-right font-medium">Bags</th>
               </tr>
@@ -144,8 +148,10 @@ export function GoodsReceiptsClient({
               {r.lines.map((line, i) => (
                 <tr key={`${line.batchNumber}-${i}`} className="border-b border-line/60 last:border-0">
                   <td className="py-1.5 pr-3 font-medium">{line.itemName}</td>
-                  <td className="py-1.5 pr-3">{line.batchNumber}</td>
+                  <td className="py-1.5 pr-3">{line.shipment}</td>
                   <td className="py-1.5 pr-3 font-mono text-xs">{line.containerNumber}</td>
+                  <td className="py-1.5 pr-3 font-mono text-xs">{line.lotNumber}</td>
+                  <td className="py-1.5 pr-3">{line.batchNumber}</td>
                   <td className="py-1.5 pr-3 text-right tabular-nums">{line.quantityLabel}</td>
                   <td className="py-1.5 text-right tabular-nums">{line.bags.toLocaleString()}</td>
                 </tr>
@@ -156,7 +162,7 @@ export function GoodsReceiptsClient({
       )}
       searchValue={(r) =>
         `${r.grnNumber} ${r.contractNumber} ${r.contractReference} ${r.vendorName} ${r.warehouseName} ${r.itemNames} ${r.lines
-          .map((l) => `${l.batchNumber} ${l.containerNumber}`)
+          .map((l) => `${l.batchNumber} ${l.containerNumber} ${l.lotNumber} ${l.shipment}`)
           .join(' ')}`
       }
       searchPlaceholder="Search by reference, receipt, supplier, batch or container…"

@@ -181,6 +181,8 @@ export async function getItemStock(companyId: string): Promise<ItemStockRow[]> {
 export type ShipmentStockRow = {
   shipmentId: string;
   shipmentNumber: string;
+  /** The supplier's contract reference — the name the client knows the order by. */
+  contractReference: string;
   status: string;
   etaDate: Date | null;
   itemName: string;
@@ -199,6 +201,7 @@ export async function getShipmentStock(companyId: string): Promise<ShipmentStock
     Array<{
       shipmentId: string;
       shipmentNumber: string;
+      contractReference: string;
       status: string;
       etaDate: Date | null;
       itemName: string;
@@ -212,7 +215,7 @@ export async function getShipmentStock(companyId: string): Promise<ShipmentStock
       stockValueUsd: string;
     }>
   >`
-    SELECT s."id" AS "shipmentId", s."shipmentNumber", s."status"::text AS status, s."etaDate",
+    SELECT s."id" AS "shipmentId", s."shipmentNumber", pc."contractReference", s."status"::text AS status, s."etaDate",
            i."itemName", v."vendorName", c."customerName",
            COALESCE((SELECT string_agg(DISTINCT w."name", ', ' ORDER BY w."name")
                        FROM inventory_balances ib
@@ -231,13 +234,14 @@ export async function getShipmentStock(companyId: string): Promise<ShipmentStock
     LEFT JOIN customers c ON c."id" = s."customerId"
     LEFT JOIN batches b ON b."shipmentId" = s."id"
     WHERE s."companyId" = ${companyId} AND pc."status" = 'POSTED'
-    GROUP BY s."id", s."shipmentNumber", s."status", s."etaDate", i."itemName", v."vendorName", c."customerName"
+    GROUP BY s."id", s."shipmentNumber", pc."contractReference", s."status", s."etaDate", i."itemName", v."vendorName", c."customerName"
     ORDER BY s."shipmentNumber" DESC
   `;
 
   return rows.map((row) => ({
     shipmentId: row.shipmentId,
     shipmentNumber: row.shipmentNumber,
+    contractReference: row.contractReference,
     status: row.status,
     etaDate: row.etaDate,
     itemName: row.itemName,

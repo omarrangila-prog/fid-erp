@@ -29,7 +29,8 @@ export type StockRow = {
     batchNumber: string;
     reference: string;
     contractNumber: string;
-    jobNumber: string;
+    shipment: string;
+    lotNumber: string;
     container: string;
     onHandLabel: string;
     availableLabel: string;
@@ -183,9 +184,10 @@ export function StockClient({
             <thead>
               <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
                 <th className="py-1.5 pr-3 font-medium">Reference</th>
-                <th className="py-1.5 pr-3 font-medium">Batch</th>
+                <th className="py-1.5 pr-3 font-medium">Shipment</th>
                 <th className="py-1.5 pr-3 font-medium">Container</th>
-                <th className="py-1.5 pr-3 font-medium">Job</th>
+                <th className="py-1.5 pr-3 font-medium">Lot</th>
+                <th className="py-1.5 pr-3 font-medium">Batch</th>
                 <th className="py-1.5 pr-3 text-right font-medium">On hand</th>
                 <th className="py-1.5 pr-3 text-right font-medium">Available</th>
                 <th className="py-1.5 text-right font-medium">Bags</th>
@@ -195,9 +197,10 @@ export function StockClient({
               {r.lots.map((lot, i) => (
                 <tr key={`${lot.batchNumber}-${i}`} className="border-b border-line/60 last:border-0">
                   <td className="py-1.5 pr-3 font-mono text-xs">{lot.reference}</td>
-                  <td className="py-1.5 pr-3">{lot.batchNumber}</td>
+                  <td className="py-1.5 pr-3">{lot.shipment}</td>
                   <td className="py-1.5 pr-3 font-mono text-xs">{lot.container}</td>
-                  
+                  <td className="py-1.5 pr-3 font-mono text-xs">{lot.lotNumber}</td>
+                  <td className="py-1.5 pr-3">{lot.batchNumber}</td>
                   <td className="py-1.5 pr-3 text-right tabular-nums">{lot.onHandLabel}</td>
                   <td className="py-1.5 pr-3 text-right tabular-nums">{lot.availableLabel}</td>
                   <td className="py-1.5 text-right tabular-nums">{lot.bags.toLocaleString()}</td>
@@ -209,7 +212,7 @@ export function StockClient({
       )}
       searchValue={(r) =>
         `${r.itemName} ${r.itemCode} ${r.origin} ${r.warehouse} ${r.lots
-          .map((l) => `${l.reference} ${l.batchNumber} ${l.container}`)
+          .map((l) => `${l.reference} ${l.batchNumber} ${l.container} ${l.lotNumber} ${l.shipment}`)
           .join(' ')}`
       }
       searchPlaceholder="Search coffee, warehouse, reference, batch or container…"

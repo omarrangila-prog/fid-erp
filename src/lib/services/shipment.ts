@@ -981,3 +981,38 @@ export async function markOrderArrived(input: {
     return { marked: moved.length, total: shipments.length };
   });
 }
+
+export type ShipmentOrdinal = { ordinal: number; total: number };
+
+/**
+ * "Shipment 2 of 3" for every shipment in the company, keyed by shipment id.
+ *
+ * Stock, batch and receipt screens name a shipment by its place on the order,
+ * because that is how the client refers to it. Computing it here, from all
+ * shipments, means shipment 3 is still "3 of 3" on a screen where 1 and 2
+ * happen not to appear.
+ */
+export async function getShipmentOrdinals(companyId: string): Promise<Map<string, ShipmentOrdinal>> {
+  const shipments = await prisma.shipment.findMany({
+    where: { companyId },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true, purchaseContractId: true },
+  });
+  const byContract = new Map<string, string[]>();
+  for (const shipment of shipments) {
+    const list = byContract.get(shipment.purchaseContractId) ?? [];
+    list.push(shipment.id);
+    byContract.set(shipment.purchaseContractId, list);
+  }
+  const result = new Map<string, ShipmentOrdinal>();
+  for (const ids of byContract.values()) {
+    ids.forEach((id, index) => result.set(id, { ordinal: index + 1, total: ids.length }));
+  }
+  return result;
+}
+
+/** "Shipment 2 of 3", or "Shipment 1" when the order has only one. */
+export function shipmentOrdinalLabel(entry: ShipmentOrdinal | undefined): string {
+  if (!entry) return '—';
+  return entry.total > 1 ? `Shipment ${entry.ordinal} of ${entry.total}` : 'Shipment 1';
+}

@@ -11,6 +11,22 @@ import { Button } from '@/components/ui/button';
 import { Badge, StatusBadge } from '@/components/ui/badge';
 import { TRANSACTION_STATUS_META } from '@/lib/constants';
 
+export type PurchaseShipmentRow = {
+  id: string;
+  ordinal: number;
+  status: string;
+  itemName: string;
+  containerNumber: string | null;
+  lotNumber: string | null;
+  batchNumber: string | null;
+  quantityLabel: string;
+  receivedLabel: string;
+  arrived: boolean;
+  received: boolean;
+  date: string;
+  warehouseNames: string;
+};
+
 export type PurchaseRow = {
   id: string;
   contractNumber: string;
@@ -29,15 +45,27 @@ export type PurchaseRow = {
   bags: number;
   containers: number;
   status: string;
-  jobNumber: string | null;
+  /** Set only when the order has exactly one shipment; otherwise the child rows carry them. */
   shipmentId: string | null;
   shipmentStatus: string | null;
+  shipmentCount: number;
+  arrivedCount: number;
+  shipments: PurchaseShipmentRow[];
   receivedPct: number;
   receivedLabel: string;
   outstandingLabel: string;
   outstandingUsd: number;
   warehouseNames: string;
 };
+
+/** "2 of 3 arrived" — the order's arrival in the client's own words. */
+function arrivalLabel(r: PurchaseRow): string {
+  if (r.shipmentCount === 0) return '';
+  if (r.shipmentCount === 1 && r.shipmentStatus) return SHIPMENT_STATUS_META[r.shipmentStatus]?.label ?? r.shipmentStatus;
+  if (r.arrivedCount === r.shipmentCount) return 'Fully arrived';
+  if (r.arrivedCount === 0) return 'Not arrived';
+  return `${r.arrivedCount} of ${r.shipmentCount} arrived`;
+}
 
 export function PurchasesClient({
   rows,
@@ -196,15 +224,31 @@ export function PurchasesClient({
     {
       // Where the consignment is, without opening the order to find out.
       id: 'loading',
-      header: 'Loading',
+      header: 'Arrival',
       mobile: 'badge',
-      sortValue: (r) => r.shipmentStatus ?? '',
-      exportValue: (r) => (r.shipmentStatus ? (SHIPMENT_STATUS_META[r.shipmentStatus]?.label ?? r.shipmentStatus) : ''),
+      sortValue: (r) => (r.shipmentCount ? r.arrivedCount / r.shipmentCount : -1),
+      exportValue: (r) => arrivalLabel(r),
       cell: (r) => {
-        if (!r.shipmentStatus) return <span className="text-ink-subtle">—</span>;
-        const meta = SHIPMENT_STATUS_META[r.shipmentStatus];
-        return <Badge tone={meta?.tone ?? 'neutral'}>{meta?.label ?? r.shipmentStatus}</Badge>;
+        if (r.shipmentCount === 0) return <span className="text-ink-subtle">—</span>;
+        if (r.shipmentCount === 1 && r.shipmentStatus) {
+          const meta = SHIPMENT_STATUS_META[r.shipmentStatus];
+          return <Badge tone={meta?.tone ?? 'neutral'}>{meta?.label ?? r.shipmentStatus}</Badge>;
+        }
+        return (
+          <Badge tone={r.arrivedCount === r.shipmentCount ? 'success' : r.arrivedCount > 0 ? 'warning' : 'neutral'}>
+            {arrivalLabel(r)}
+          </Badge>
+        );
       },
+    },
+    {
+      id: 'shipments',
+      header: 'Shipments',
+      numeric: true,
+      hideable: true,
+      sortValue: (r) => r.shipmentCount,
+      exportValue: (r) => String(r.shipmentCount),
+      cell: (r) => (r.shipmentCount ? r.shipmentCount : <span className="text-ink-subtle">—</span>),
     },
     {
       id: 'actions',
@@ -240,13 +284,63 @@ export function PurchasesClient({
       { id: 'status', label: 'Status', value: (r) => r.status },
       { id: 'supplier', label: 'Supplier', value: (r) => r.vendorName },
       { id: 'currency', label: 'Currency', value: (r) => r.currency },
-      { id: 'loading', label: 'Loading', value: (r) => r.shipmentStatus },
+      { id: 'loading', label: 'Arrival', value: (r) => arrivalLabel(r) || null },
       ]}
+      expandedContent={(r) =>
+        r.shipments.length === 0 ? (
+          <p className="px-3 py-2 text-xs text-ink-muted">No shipments yet — approve the contract to open them.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <p className="mb-2 text-xs text-ink-muted">
+              {r.shipments.length === 1 ? 'The one shipment on this order' : `The ${r.shipments.length} shipments on this order`}
+            </p>
+            <table className="w-full min-w-[40rem] text-sm">
+              <thead>
+                <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
+                  <th className="py-1.5 pr-3 font-medium">Shipment</th>
+                  <th className="py-1.5 pr-3 font-medium">Container</th>
+                  <th className="py-1.5 pr-3 font-medium">Item</th>
+                  <th className="py-1.5 pr-3 font-medium">Lot</th>
+                  <th className="py-1.5 pr-3 font-medium">Batch</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">KG</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">Received</th>
+                  <th className="py-1.5 pr-3 font-medium">Status</th>
+                  <th className="py-1.5 font-medium">Warehouse</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.shipments.map((s) => {
+                  const meta = SHIPMENT_STATUS_META[s.status];
+                  return (
+                    <tr key={s.id} className="border-b border-line/60 last:border-0">
+                      <td className="py-1.5 pr-3 font-medium">
+                        <Link href={`/shipments/${s.id}`} className="text-forest-800 hover:text-gold-700">
+                          Shipment {s.ordinal}
+                        </Link>
+                      </td>
+                      <td className="py-1.5 pr-3 font-mono text-xs">{s.containerNumber ?? '—'}</td>
+                      <td className="py-1.5 pr-3">{s.itemName}</td>
+                      <td className="py-1.5 pr-3 font-mono text-xs">{s.lotNumber ?? '—'}</td>
+                      <td className="py-1.5 pr-3">{s.batchNumber ?? '—'}</td>
+                      <td className="py-1.5 pr-3 text-right tabular-nums">{s.quantityLabel}</td>
+                      <td className="py-1.5 pr-3 text-right tabular-nums">{s.receivedLabel}</td>
+                      <td className="py-1.5 pr-3">
+                        <Badge tone={meta?.tone ?? 'neutral'}>{meta?.label ?? s.status}</Badge>
+                      </td>
+                      <td className="py-1.5 text-xs text-ink-muted">{s.warehouseNames || (s.arrived ? 'Not yet received' : '—')}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
       columns={columns}
       getRowId={(r) => r.id}
       rowHref={(r) => `/purchases/${r.id}`}
       searchValue={(r) =>
-        `${r.contractNumber} ${r.contractReference} ${r.supplierContractNo ?? ''} ${r.vendorName} ${r.itemNames} ${r.jobNumber ?? ''} ${r.warehouseNames}`
+        `${r.contractNumber} ${r.contractReference} ${r.supplierContractNo ?? ''} ${r.vendorName} ${r.itemNames} ${r.warehouseNames} ${r.shipments.map((s) => `${s.containerNumber ?? ''} ${s.lotNumber ?? ''} ${s.batchNumber ?? ''}`).join(' ')}`
       }
       searchPlaceholder="Search by contract, reference, supplier or coffee…"
       emptyTitle="No purchase contracts yet"

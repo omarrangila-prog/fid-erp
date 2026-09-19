@@ -4,7 +4,7 @@ import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { dec } from '@/lib/money';
 import { formatQuantityKg, formatDate, daysUntil, formatMoney } from '@/lib/format';
-import { getShipmentSettlement } from '@/lib/services/shipment';
+import { getShipmentSettlement, getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
 import { getShipmentCostingIndex, getBatchCostings } from '@/lib/services/landed-cost';
 import { getWarehouseLabels } from '@/lib/services/stock';
 import { PageHeader } from '@/components/shared/page-header';
@@ -19,7 +19,7 @@ export default async function ShipmentsPage() {
   const companyId = user.activeCompany.id;
 
   const showCost = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
-  const [shipments, warehouses, costing] = await Promise.all([
+  const [shipments, warehouses, costing, ordinals] = await Promise.all([
     prisma.shipment.findMany({
       where: { companyId, purchaseContract: { status: 'POSTED' } },
       orderBy: [{ etaDate: 'asc' }, { shipmentNumber: 'desc' }],
@@ -34,6 +34,7 @@ export default async function ShipmentsPage() {
     }),
     getWarehouseLabels(companyId),
     showCost ? getShipmentCostingIndex(companyId) : Promise.resolve(new Map()),
+    getShipmentOrdinals(companyId),
   ]);
 
   const rows: ShipmentRow[] = await Promise.all(
@@ -63,6 +64,9 @@ export default async function ShipmentsPage() {
         id: s.id,
         shipmentNumber: s.shipmentNumber,
         jobNumber: s.jobNumber,
+        shipmentLabel: shipmentOrdinalLabel(ordinals.get(s.id)),
+        shipmentOrdinal: ordinals.get(s.id)?.ordinal ?? 0,
+        shipmentsOnOrder: ordinals.get(s.id)?.total ?? 0,
         contractNumber: s.purchaseContract.contractNumber,
         contractReference: s.purchaseContract.contractReference,
         vendorName: s.vendor.vendorName,

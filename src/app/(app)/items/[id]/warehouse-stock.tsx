@@ -10,7 +10,8 @@ export type WarehouseLot = {
   batchNumber: string;
   containerNumber: string;
   reference: string;
-  jobNumber: string;
+  shipment: string;
+  lotNumber: string;
   onHandLabel: string;
   availableLabel: string;
   availableKg: number;
@@ -104,6 +105,7 @@ export function WarehouseStockPanel({ warehouses }: { warehouses: WarehouseStock
               <thead>
                 <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
                   <th className="px-4 py-2 font-medium">Container</th>
+                  <th className="px-4 py-2 font-medium">Lot</th>
                   <th className="px-4 py-2 font-medium">Batch</th>
                   <th className="px-4 py-2 font-medium">Reference</th>
                   <th className="px-4 py-2 text-right font-medium">On hand</th>
@@ -115,6 +117,7 @@ export function WarehouseStockPanel({ warehouses }: { warehouses: WarehouseStock
                 {selected.lots.map((lot) => (
                   <tr key={lot.batchId} className="border-b border-line/60 last:border-0">
                     <td className="px-4 py-2 font-mono text-xs">{lot.containerNumber}</td>
+                    <td className="px-4 py-2 font-mono text-xs">{lot.lotNumber}</td>
                     <td className="px-4 py-2">
                       <Link
                         href={`/inventory/batches/${lot.batchId}`}
@@ -122,9 +125,11 @@ export function WarehouseStockPanel({ warehouses }: { warehouses: WarehouseStock
                       >
                         {lot.batchNumber}
                       </Link>
-                      
                     </td>
-                    <td className="px-4 py-2 font-mono text-xs text-ink-muted">{lot.reference}</td>
+                    <td className="px-4 py-2 font-mono text-xs text-ink-muted">
+                      {lot.reference}
+                      <span className="block text-[11px] text-ink-subtle">{lot.shipment}</span>
+                    </td>
                     <td className="px-4 py-2 text-right tabular-nums">{lot.onHandLabel}</td>
                     <td className="px-4 py-2 text-right font-semibold tabular-nums text-forest-800">
                       {lot.availableLabel}

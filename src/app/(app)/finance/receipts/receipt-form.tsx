@@ -20,6 +20,7 @@ import { saveReceiptAction, postReceiptAction } from '@/server/actions/finance-a
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { accountsFor } from '@/lib/cash-account-choice';
 import { AddAgentDialog } from '@/app/(app)/finance/receipts/add-agent';
+import { shortDocumentNumber } from '@/lib/short-number';
 
 /**
  * Customer receipt.
@@ -587,7 +588,7 @@ export function ReceiptForm({
               customerInvoices.map((invoice) => (
                 <div key={invoice.id} className="flex items-center justify-between gap-3 rounded-lg border border-line p-3">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-ink">{invoice.invoiceNumber}</p>
+                    <p className="truncate text-sm font-medium text-ink">{shortDocumentNumber(invoice.invoiceNumber)}</p>
                     <p className="text-xs text-ink-subtle">
                       {formatDate(invoice.invoiceDate)} · {formatMoney(invoice.outstanding, invoice.currency)} outstanding
                     </p>

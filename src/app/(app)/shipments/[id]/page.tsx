@@ -10,6 +10,7 @@ import {
   DOCUMENT_STATUS_META,
   SETTLEMENT_STATUS_META,
   INCOTERM_LABELS,
+  SHIPMENT_STATUSES_LANDED,
 } from '@/lib/constants';
 import { prisma, transaction } from '@/lib/db';
 import { getShipmentSettlement } from '@/lib/services/shipment';
@@ -44,7 +45,17 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
   const shipment = await prisma.shipment.findFirst({
     where: { id, companyId },
     include: {
-      purchaseContract: { select: { id: true, contractNumber: true, contractReference: true, currency: true } },
+      purchaseContract: {
+        select: {
+          id: true,
+          contractNumber: true,
+          contractReference: true,
+          currency: true,
+          // Every shipment on the same order, so this one knows it is "2 of 3"
+          // and the reader can step to its siblings without going back.
+          shipments: { orderBy: { createdAt: 'asc' }, select: { id: true, status: true } },
+        },
+      },
       vendor: { select: { id: true, vendorName: true } },
       customer: { select: { id: true, customerName: true } },
       item: { select: { itemName: true, originCountry: true, grade: true } },
@@ -92,11 +103,15 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
 
   const costing = await getBatchCostings({ companyId, shipmentId: shipment.id });
 
+  const siblings = shipment.purchaseContract.shipments;
+  const ordinal = siblings.findIndex((s) => s.id === shipment.id) + 1;
+  const orderLabel = siblings.length > 1 ? `Shipment ${ordinal} of ${siblings.length}` : null;
+
   return (
     <div className="space-y-6">
       <PageHeader
-        title={shipment.purchaseContract.contractReference}
-        description={`${shipment.item.itemName} · ${shipment.vendor.vendorName}`}
+        title={orderLabel ? `${shipment.purchaseContract.contractReference} — ${orderLabel}` : shipment.purchaseContract.contractReference}
+        description={`${shipment.item.itemName} · ${shipment.vendor.vendorName}${orderLabel ? ` · one of ${siblings.length} shipments on this order` : ''}`}
         breadcrumbs={[{ label: 'Trading' }, { label: 'Shipments', href: '/shipments' }, { label: shipment.purchaseContract.contractReference }]}
         meta={
           <>
@@ -106,6 +121,21 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
             <Link href={`/purchases/${shipment.purchaseContract.id}`}>
               <Badge tone="info">{shipment.purchaseContract.contractReference}</Badge>
             </Link>
+            {siblings.length > 1
+              ? siblings.map((sibling, index) =>
+                  sibling.id === shipment.id ? (
+                    <Badge key={sibling.id} tone="progress">
+                      Shipment {index + 1}
+                    </Badge>
+                  ) : (
+                    <Link key={sibling.id} href={`/shipments/${sibling.id}`}>
+                      <Badge tone={SHIPMENT_STATUSES_LANDED.includes(sibling.status) ? 'success' : 'neutral'}>
+                        Shipment {index + 1}
+                      </Badge>
+                    </Link>
+                  ),
+                )
+              : null}
           </>
         }
         actions={

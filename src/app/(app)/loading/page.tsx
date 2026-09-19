@@ -70,6 +70,8 @@ export default async function LoadingPage() {
       contractDateSort: row.contractDate.getTime(),
       contractNumber: row.contractNumber,
       contractReference: row.contractReference,
+      shipmentOrdinal: row.shipmentOrdinal,
+      shipmentsOnOrder: row.shipmentsOnOrder,
       exporter: row.exporter,
       importer: row.importer,
       consignee: row.consignee,

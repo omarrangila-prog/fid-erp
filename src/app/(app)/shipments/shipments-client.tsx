@@ -11,6 +11,10 @@ export type ShipmentRow = {
   id: string;
   shipmentNumber: string;
   jobNumber: string;
+  /** "Shipment 2 of 3" — its place on the order. */
+  shipmentLabel: string;
+  shipmentOrdinal: number;
+  shipmentsOnOrder: number;
   contractNumber: string;
   contractReference: string;
   vendorName: string;
@@ -69,13 +73,16 @@ export function ShipmentsClient({
   const columns: DataColumn<ShipmentRow>[] = [
     {
       id: 'number',
-      header: 'Reference',
+      header: 'Shipment',
       mobile: 'title',
-      sortValue: (r) => r.shipmentNumber,
+      sortValue: (r) => `${r.contractReference} ${String(r.shipmentOrdinal).padStart(3, '0')}`,
+      exportValue: (r) => r.shipmentLabel,
       cell: (r) => (
-        <span>
-          
-          
+        <span className="block min-w-28">
+          <span className="block font-medium">{r.shipmentLabel}</span>
+          {r.shipmentsOnOrder > 1 ? (
+            <span className="block text-[11px] text-ink-subtle">of order {r.contractReference}</span>
+          ) : null}
         </span>
       ),
     },
@@ -316,7 +323,7 @@ export function ShipmentsClient({
       getRowId={(r) => r.id}
       rowHref={(r) => `/shipments/${r.id}`}
       searchValue={(r) =>
-        `${r.shipmentNumber} ${r.jobNumber} ${r.contractNumber} ${r.contractReference} ${r.vendorName} ${r.itemName} ${r.bookingNumber ?? ''} ${r.billOfLading ?? ''} ${r.vesselName ?? ''} ${r.warehouseNames}`
+        `${r.shipmentNumber} ${r.jobNumber} ${r.shipmentLabel} ${r.contractNumber} ${r.contractReference} ${r.vendorName} ${r.itemName} ${r.bookingNumber ?? ''} ${r.billOfLading ?? ''} ${r.vesselName ?? ''} ${r.warehouseNames}`
       }
       searchPlaceholder="Search by reference, shipment, job, booking, B/L or vessel…"
       emptyAction={emptyAction}

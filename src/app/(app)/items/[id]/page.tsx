@@ -14,6 +14,7 @@ import {
 import { prisma } from '@/lib/db';
 import { dec } from '@/lib/money';
 import { getBatchStock, getItemWarehouseStock } from '@/lib/services/stock';
+import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
 import {
   WarehouseStockPanel,
   type WarehouseStock,
@@ -49,14 +50,17 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
       shipments: {
         orderBy: { createdAt: 'desc' },
         take: 20,
-        include: { vendor: { select: { vendorName: true } } },
+        include: {
+          vendor: { select: { vendorName: true } },
+          purchaseContract: { select: { id: true, contractReference: true } },
+        },
       },
     },
   });
 
   if (!item) notFound();
 
-  const [batches, warehouseStock, balances] = await Promise.all([
+  const [batches, warehouseStock, balances, ordinals] = await Promise.all([
     getBatchStock({ companyId, itemId: id, includeEmpty: true }),
     getItemWarehouseStock(companyId, id),
     /*
@@ -77,11 +81,13 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
             batchNumber: true,
             container: { select: { containerNumber: true } },
             purchaseContract: { select: { contractReference: true } },
-            shipment: { select: { jobNumber: true } },
+            shipmentId: true,
+            lot: { select: { lotNumber: true } },
           },
         },
       },
     }),
+    getShipmentOrdinals(companyId),
   ]);
 
   // Grouped by warehouse, largest first, so the busiest store leads.
@@ -102,7 +108,8 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
       batchNumber: balance.batch.batchNumber,
       containerNumber: balance.batch.container?.containerNumber ?? '—',
       reference: balance.batch.purchaseContract?.contractReference ?? '—',
-      jobNumber: balance.batch.shipment?.jobNumber ?? '—',
+      shipment: shipmentOrdinalLabel(ordinals.get(balance.batch.shipmentId)),
+      lotNumber: balance.batch.lot?.lotNumber ?? '—',
       onHandLabel: formatQuantityKg(balance.onHandKg),
       availableLabel: formatQuantityKg(balance.availableKg),
       availableKg: Number(balance.availableKg),
@@ -272,8 +279,11 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
                 <THead>
                   <TR className="hover:bg-transparent">
                     <TH>Batch</TH>
-                    <TH>Warehouse</TH>
+                    <TH>Lot</TH>
+                    <TH>Reference</TH>
                     <TH>Shipment</TH>
+                    <TH>Container</TH>
+                    <TH>Warehouse</TH>
                     <TH numeric>Received</TH>
                     <TH numeric>Sold</TH>
                     <TH numeric>Reserved</TH>
@@ -293,8 +303,15 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
                           {batch.batchNumber}
                         </Link>
                       </TD>
-                      <TD>{batch.warehouseNames || '—'}</TD>
                       <TD className="font-mono text-xs">{batch.lotNumber}</TD>
+                      <TD className="font-mono text-xs">{batch.contractReference || '—'}</TD>
+                      <TD>
+                        <Link href={`/shipments/${batch.shipmentId}`} className="text-forest-800 hover:text-gold-700">
+                          {shipmentOrdinalLabel(ordinals.get(batch.shipmentId))}
+                        </Link>
+                      </TD>
+                      <TD className="font-mono text-xs">{batch.containerNumber ?? '—'}</TD>
+                      <TD>{batch.warehouseNames || '—'}</TD>
                       <TD numeric>{formatQuantityKg(batch.receivedKg)}</TD>
                       <TD numeric>{formatQuantityKg(batch.soldKg)}</TD>
                       <TD numeric>{formatQuantityKg(batch.allocatedKg)}</TD>
@@ -358,8 +375,9 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
                     <TR key={shipment.id}>
                       <TD>
                         <Link href={`/shipments/${shipment.id}`} className="font-medium text-forest-800 hover:text-gold-700">
-                          {shipment.shipmentNumber}
+                          {shipment.purchaseContract.contractReference}
                         </Link>
+                        <span className="block text-xs text-ink-subtle">{shipmentOrdinalLabel(ordinals.get(shipment.id))}</span>
                       </TD>
                       <TD>{shipment.vendor.vendorName}</TD>
                       <TD numeric>{formatQuantityKg(shipment.quantityKg)}</TD>

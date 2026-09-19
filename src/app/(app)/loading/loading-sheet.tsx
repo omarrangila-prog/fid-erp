@@ -63,6 +63,8 @@ export type LoadingRow = {
   contractDateSort: number;
   contractNumber: string;
   contractReference: string;
+  shipmentOrdinal: number;
+  shipmentsOnOrder: number;
   exporter: string;
   importer: string;
   consignee: string | null;
@@ -166,6 +168,7 @@ function receivableBatches(row: LoadingRow): ReceivableBatch[] {
     .map((line) => ({
       batchId: line.batchId,
       batchNumber: line.batchNumber,
+      shipmentOrdinal: row.shipmentOrdinal,
       itemName: line.itemName,
       lotNumber: line.lotNumber,
       containerNumber: line.containerNumber,
@@ -224,7 +227,8 @@ export function LoadingSheet({
     header: 'Contract date & ref',
     mobile: 'title',
     sortValue: (r) => r.contractDateSort,
-    exportValue: (r) => `${r.contractDate} ${r.contractReference}`,
+    exportValue: (r) =>
+      `${r.contractDate} ${r.contractReference}${r.shipmentsOnOrder > 1 ? ` (shipment ${r.shipmentOrdinal} of ${r.shipmentsOnOrder})` : ''}`,
     cell: (r) => (
       <span className="block min-w-40">
         <Link href={`/purchases/${r.contractId}`} className="font-medium text-forest-700 hover:underline">
@@ -232,6 +236,7 @@ export function LoadingSheet({
         </Link>
         <span className="block text-xs text-ink-subtle">
           {r.contractDate}
+          {r.shipmentsOnOrder > 1 ? ` · Shipment ${r.shipmentOrdinal} of ${r.shipmentsOnOrder}` : ''}
         </span>
       </span>
     ),

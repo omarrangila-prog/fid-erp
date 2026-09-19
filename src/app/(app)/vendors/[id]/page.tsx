@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { BookText, Plus } from 'lucide-react';
 import { requirePageAccess, can } from '@/lib/auth/guards';
-import { PERMISSIONS, TRANSACTION_STATUS_META, SHIPMENT_STATUS_META, PAYMENT_METHOD_LABELS } from '@/lib/constants';
+import { PERMISSIONS, TRANSACTION_STATUS_META, SHIPMENT_STATUS_META, PAYMENT_METHOD_LABELS, SHIPMENT_STATUSES_LANDED } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { dec } from '@/lib/money';
 import { getPayables } from '@/lib/services/receivables';
@@ -16,6 +16,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent, TabCount } from '@/components
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/feedback';
 import { StatCard, DetailRow } from '@/components/shared/stat-card';
+import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,7 +39,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
         orderBy: { contractDate: 'desc' },
         include: {
           lines: { select: { quantityKg: true, item: { select: { itemName: true } } } },
-          shipments: { select: { id: true, shipmentNumber: true, jobNumber: true } },
+          shipments: { select: { id: true, status: true } },
         },
       },
       payments: { orderBy: { paymentDate: 'desc' }, include: { cashBankAccount: { select: { name: true } } } },
@@ -54,7 +55,10 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
 
   if (!vendor) notFound();
 
-  const payables = await getPayables({ companyId, vendorId: id, onlyOutstanding: true });
+  const [payables, ordinals] = await Promise.all([
+    getPayables({ companyId, vendorId: id, onlyOutstanding: true }),
+    getShipmentOrdinals(companyId),
+  ]);
   const outstandingUsd = payables.reduce((a, p) => a.plus(p.outstandingAmountUsd), dec(0));
 
   const posted = vendor.purchaseContracts.filter((c) => c.status === 'POSTED');
@@ -186,7 +190,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
                     <TH>Contract</TH>
                     <TH>Date</TH>
                     <TH>Coffee</TH>
-                    <TH>Job</TH>
+                    <TH>Shipments</TH>
                     <TH numeric>Quantity</TH>
                     {showCost ? <TH numeric>Value</TH> : null}
                     <TH>Status</TH>
@@ -203,7 +207,11 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
                       </TD>
                       <TD>{formatDate(contract.contractDate)}</TD>
                       <TD>{[...new Set(contract.lines.map((l) => l.item.itemName))].join(', ') || '—'}</TD>
-                      <TD>{contract.shipments[0]?.jobNumber ?? '—'}</TD>
+                      <TD>
+                        {contract.shipments.length === 0
+                          ? '—'
+                          : `${contract.shipments.filter((s) => SHIPMENT_STATUSES_LANDED.includes(s.status)).length} of ${contract.shipments.length} arrived`}
+                      </TD>
                       <TD numeric>
                         {formatQuantityKg(contract.lines.reduce((a, l) => a.plus(dec(l.quantityKg)), dec(0)))}
                       </TD>
@@ -311,8 +319,8 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
               <Table>
                 <THead>
                   <TR className="hover:bg-transparent">
+                    <TH>Reference</TH>
                     <TH>Shipment</TH>
-                    <TH>Job</TH>
                     <TH>Coffee</TH>
                     <TH numeric>Quantity</TH>
                     <TH>ETA</TH>
@@ -324,10 +332,10 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
                     <TR key={shipment.id}>
                       <TD>
                         <Link href={`/shipments/${shipment.id}`} className="font-medium text-forest-800 hover:text-gold-700">
-                          {shipment.shipmentNumber}
+                          {shipment.purchaseContract?.contractReference ?? '—'}
                         </Link>
                       </TD>
-                      <TD className="font-mono text-xs">{shipment.purchaseContract?.contractReference ?? '—'}</TD>
+                      <TD className="text-xs text-ink-muted">{shipmentOrdinalLabel(ordinals.get(shipment.id))}</TD>
                       <TD>{shipment.item.itemName}</TD>
                       <TD numeric>{formatQuantityKg(shipment.quantityKg)}</TD>
                       <TD>{formatDate(shipment.etaDate)}</TD>

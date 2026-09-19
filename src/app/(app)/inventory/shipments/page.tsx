@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, SHIPMENT_STATUS_META } from '@/lib/constants';
 import { getShipmentStock } from '@/lib/services/stock';
+import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
 import { formatMoney, formatQuantityKg, formatDate } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { StatusBadge } from '@/components/ui/badge';
@@ -16,7 +17,10 @@ export const dynamic = 'force-dynamic';
 export default async function ShipmentStockPage() {
   const user = await requirePageAccess(PERMISSIONS.INVENTORY_VIEW);
   const showValue = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
-  const rows = await getShipmentStock(user.activeCompany.id);
+  const [rows, ordinals] = await Promise.all([
+    getShipmentStock(user.activeCompany.id),
+    getShipmentOrdinals(user.activeCompany.id),
+  ]);
 
   const totals = rows.reduce(
     (acc, r) => ({
@@ -62,8 +66,9 @@ export default async function ShipmentStockPage() {
                 <TR key={r.shipmentId}>
                   <TD>
                     <Link href={`/shipments/${r.shipmentId}`} className="font-medium text-forest-800 hover:text-gold-700">
-                      {r.shipmentNumber}
+                      {r.contractReference}
                     </Link>
+                    <span className="block text-xs text-ink-subtle">{shipmentOrdinalLabel(ordinals.get(r.shipmentId))}</span>
                   </TD>
                   <TD>{r.itemName}</TD>
                   <TD>{r.warehouseNames || '—'}</TD>

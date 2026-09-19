@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
-import { PERMISSIONS, VISIBLE_DOCUMENT_STATUSES } from '@/lib/constants';
+import { PERMISSIONS, VISIBLE_DOCUMENT_STATUSES, SHIPMENT_STATUSES_LANDED } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { dec, toQuantity } from '@/lib/money';
 import { getPayables } from '@/lib/services/receivables';
@@ -24,7 +24,28 @@ export default async function PurchasesPage() {
       include: {
         vendor: { select: { vendorName: true } },
         lines: { select: { quantityKg: true, bags: true, item: { select: { itemName: true } } } },
-        shipments: { select: { id: true, jobNumber: true, status: true, etaDate: true } },
+        shipments: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            status: true,
+            etaDate: true,
+            ataDate: true,
+            quantityKg: true,
+            item: { select: { itemName: true } },
+            containerList: { select: { containerNumber: true }, orderBy: { createdAt: 'asc' } },
+            batches: {
+              select: {
+                id: true,
+                batchNumber: true,
+                orderedQuantityKg: true,
+                receivedQuantityKg: true,
+                container: { select: { containerNumber: true } },
+                lot: { select: { lotNumber: true } },
+              },
+            },
+          },
+        },
         batches: { select: { orderedQuantityKg: true, receivedQuantityKg: true } },
       },
     }),
@@ -63,9 +84,29 @@ export default async function PurchasesPage() {
       bags,
       containers: c.containers,
       status: c.status,
-      jobNumber: c.shipments[0]?.jobNumber ?? null,
-      shipmentId: c.shipments[0]?.id ?? null,
-      shipmentStatus: c.shipments[0]?.status ?? null,
+      shipmentId: c.shipments.length === 1 ? c.shipments[0].id : null,
+      shipmentStatus: c.shipments.length === 1 ? c.shipments[0].status : null,
+      shipmentCount: c.shipments.length,
+      arrivedCount: c.shipments.filter((s) => SHIPMENT_STATUSES_LANDED.includes(s.status)).length,
+      shipments: c.shipments.map((s, index) => {
+        const batch = s.batches[0];
+        const received = s.batches.reduce((a, b) => a.plus(dec(b.receivedQuantityKg)), dec(0));
+        return {
+          id: s.id,
+          ordinal: index + 1,
+          status: s.status,
+          itemName: s.item?.itemName ?? '—',
+          containerNumber: batch?.container?.containerNumber ?? s.containerList[0]?.containerNumber ?? null,
+          lotNumber: batch?.lot?.lotNumber ?? null,
+          batchNumber: batch?.batchNumber ?? null,
+          quantityLabel: formatQuantityKg(s.quantityKg),
+          receivedLabel: formatQuantityKg(received),
+          arrived: SHIPMENT_STATUSES_LANDED.includes(s.status),
+          received: received.greaterThan(0),
+          date: formatDate(s.ataDate ?? s.etaDate),
+          warehouseNames: batch ? (warehouses.byBatch.get(batch.id) ?? '') : '',
+        };
+      }),
       receivedPct,
       receivedLabel: c.status === 'POSTED' ? `${receivedPct}%` : '—',
       outstandingUsd,

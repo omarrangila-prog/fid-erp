@@ -130,9 +130,12 @@ describe('no system-issued code reaches the screen', () => {
       const lines = readFileSync(file, 'utf8').split('\n');
       lines.forEach((line, index) => {
         // A key or a search term is not something anybody reads. A search
-        // template often spans several lines, so look back a little.
+        // template often spans several lines, so look back a little for
+        // those; a key only exempts its own line, or the row's key would
+        // excuse the three cells under it.
         const context = lines.slice(Math.max(0, index - 3), index + 1).join('\n');
-        if (/\bkey=|keywords|searchText|searchValue/.test(context)) return;
+        if (/keywords|searchText|searchValue/.test(context)) return;
+        if (/\bkey=/.test(line)) return;
         for (const { pattern, why } of FORBIDDEN) {
           if (pattern.test(line)) {
             offences.push(`${file}:${index + 1} ${why}\n    ${line.trim()}`);

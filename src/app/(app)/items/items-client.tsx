@@ -52,7 +52,8 @@ export type ItemRow = {
     reference: string;
     batchNumber: string;
     container: string;
-    jobNumber: string;
+    shipment: string;
+    lotNumber: string;
     warehouseName: string;
     onHandLabel: string;
     availableLabel: string;
@@ -424,9 +425,10 @@ export function ItemsClient({
                 <thead>
                   <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
                     <th className="py-1.5 pr-3 font-medium">Reference</th>
-                    <th className="py-1.5 pr-3 font-medium">Batch</th>
+                    <th className="py-1.5 pr-3 font-medium">Shipment</th>
                     <th className="py-1.5 pr-3 font-medium">Container</th>
-                    <th className="py-1.5 pr-3 font-medium">Job</th>
+                    <th className="py-1.5 pr-3 font-medium">Lot</th>
+                    <th className="py-1.5 pr-3 font-medium">Batch</th>
                     <th className="py-1.5 pr-3 font-medium">Warehouse</th>
                     <th className="py-1.5 pr-3 text-right font-medium">On hand</th>
                     <th className="py-1.5 pr-3 text-right font-medium">Available</th>
@@ -437,9 +439,10 @@ export function ItemsClient({
                   {r.lots.map((lot, i) => (
                     <tr key={`${lot.batchNumber}-${i}`} className="border-b border-line/60 last:border-0">
                       <td className="py-1.5 pr-3 font-mono text-xs">{lot.reference}</td>
-                      <td className="py-1.5 pr-3">{lot.batchNumber}</td>
+                      <td className="py-1.5 pr-3">{lot.shipment}</td>
                       <td className="py-1.5 pr-3 font-mono text-xs">{lot.container}</td>
-                      
+                      <td className="py-1.5 pr-3 font-mono text-xs">{lot.lotNumber}</td>
+                      <td className="py-1.5 pr-3">{lot.batchNumber}</td>
                       <td className="py-1.5 pr-3">{lot.warehouseName}</td>
                       <td className="py-1.5 pr-3 text-right tabular-nums">{lot.onHandLabel}</td>
                       <td className="py-1.5 pr-3 text-right tabular-nums">{lot.availableLabel}</td>
@@ -452,7 +455,7 @@ export function ItemsClient({
           )
         }
         searchValue={(r) =>
-          `${r.itemName} ${r.itemCode} ${r.originCountry} ${r.region ?? ''} ${r.grade ?? ''} ${r.variety ?? ''} ${r.cropYear ?? ''} ${r.screenSize ?? ''} ${r.warehouses.map((w) => w.warehouseName).join(' ')} ${r.lots.map((l) => `${l.reference} ${l.batchNumber} ${l.container} ${l.jobNumber}`).join(' ')}`
+          `${r.itemName} ${r.itemCode} ${r.originCountry} ${r.region ?? ''} ${r.grade ?? ''} ${r.variety ?? ''} ${r.cropYear ?? ''} ${r.screenSize ?? ''} ${r.warehouses.map((w) => w.warehouseName).join(' ')} ${r.lots.map((l) => `${l.reference} ${l.batchNumber} ${l.container} ${l.lotNumber} ${l.shipment}`).join(' ')}`
         }
         searchPlaceholder="Search by name, origin, grade, reference, batch or container…"
         emptyTitle="No items yet"

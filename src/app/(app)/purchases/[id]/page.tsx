@@ -5,7 +5,7 @@ import { DocumentJournal } from '@/components/shared/document-journal';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requirePageAccess, can } from '@/lib/auth/guards';
-import { PERMISSIONS, TRANSACTION_STATUS_META, INCOTERM_LABELS, SHIPMENT_STATUS_META } from '@/lib/constants';
+import { PERMISSIONS, TRANSACTION_STATUS_META, INCOTERM_LABELS } from '@/lib/constants';
 import { prisma, transaction } from '@/lib/db';
 import { dec } from '@/lib/money';
 import { getReceiptStatus } from '@/lib/services/purchase';
@@ -22,6 +22,8 @@ import { AttachmentPanel } from '@/components/attachments/attachment-panel';
 import { loadAttachments } from '@/components/attachments/load';
 import { PurchaseDetailToolbar } from '@/app/(app)/purchases/[id]/detail-toolbar';
 import { getWarehouseLabels } from '@/lib/services/stock';
+import { getOrderOverview } from '@/lib/services/shipment';
+import { OrderShipments } from '@/app/(app)/purchases/[id]/order-shipments';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,7 +63,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
     ? await loadAttachments(user.activeCompany.id, 'PurchaseContract', contract.id)
     : [];
 
-  const [receiptStatus, outstanding, warehouses, warehouseLabels] = await Promise.all([
+  const [receiptStatus, outstanding, warehouses, warehouseLabels, order] = await Promise.all([
     transaction((tx) => getReceiptStatus(tx, contract.id)),
     contract.status === 'POSTED'
       ? transaction((tx) => getContractOutstanding(tx, contract.id))
@@ -72,6 +74,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
       select: { id: true, name: true, code: true, isDefault: true },
     }),
     getWarehouseLabels(companyId),
+    contract.shipments.length > 0 ? getOrderOverview(companyId, contract.id) : Promise.resolve(null),
   ]);
 
   const warehouseByLineId = new Map(
@@ -80,7 +83,6 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
   const totalOrdered = receiptStatus.reduce((a, r) => a.plus(r.orderedKg), dec(0));
   const totalReceived = receiptStatus.reduce((a, r) => a.plus(r.receivedKg), dec(0));
   const fullyReceived = totalOrdered.greaterThan(0) && totalReceived.greaterThanOrEqualTo(totalOrdered);
-  const job = contract.shipments[0];
   const supplierPayable = supplierGrossPayable({
     netAmount: contract.totalValue,
     taxAmount: contract.taxAmount,
@@ -109,10 +111,10 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
             <StatusBadge status={contract.status} meta={TRANSACTION_STATUS_META} />
             <Badge tone="neutral">{contract.currency}</Badge>
             <Badge tone="neutral">{INCOTERM_LABELS[contract.incoterm]?.split(' — ')[0] ?? contract.incoterm}</Badge>
-            {job ? (
-              <Link href={`/shipments/${job.id}`}>
-                <Badge tone="info">{contract.contractReference}</Badge>
-              </Link>
+            {order ? (
+              <Badge tone={order.arrival === 'FULLY_ARRIVED' ? 'success' : order.arrival === 'PARTIALLY_ARRIVED' ? 'warning' : 'info'}>
+                {order.arrivedCount} of {order.totalShipments} arrived
+              </Badge>
             ) : null}
           </>
         }
@@ -132,6 +134,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
             batches={receiptStatus.map((r) => ({
               batchId: r.batchId,
               batchNumber: r.batchNumber,
+              shipmentOrdinal: r.lineNumber,
               itemName: r.itemName,
               lotNumber: r.lotNumber,
               containerNumber: r.containerNumber,
@@ -323,30 +326,81 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
             </CardContent>
           </Card>
 
-          {job ? (
+          {order ? (
             <Card>
               <CardHeader>
-                <CardTitle>Job</CardTitle>
-                <CardDescription>Costs and sales roll up to this job.</CardDescription>
+                <CardTitle>Order status</CardTitle>
+                <CardDescription>Costs and sales roll up to this order.</CardDescription>
               </CardHeader>
               <CardContent>
                 <dl>
-                  <DetailRow label="Job number">
-                    <Link href={`/shipments/${job.id}`} className="text-gold-700 hover:underline">
-                      {contract.contractReference}
-                    </Link>
+                  <DetailRow label="Shipments">{order.totalShipments}</DetailRow>
+                  <DetailRow label="Arrived">
+                    {order.arrivedCount} of {order.totalShipments}
                   </DetailRow>
-                  <DetailRow label="Shipment">{contract.contractReference}</DetailRow>
-                  <DetailRow label="Status">
-                    <StatusBadge status={job.status} meta={SHIPMENT_STATUS_META} />
+                  <DetailRow label="Received">
+                    {order.receivedCount} of {order.totalShipments}
                   </DetailRow>
-                  <DetailRow label="ETA">{formatDate(job.etaDate)}</DetailRow>
+                  <DetailRow label="Containers">{order.containerCount}</DetailRow>
+                  <DetailRow label="Total quantity">{formatQuantityKg(order.totalKg)}</DetailRow>
+                  {showCost ? (
+                    <DetailRow label="Purchase value">{formatMoney(order.totalPurchaseUsd, 'USD')}</DetailRow>
+                  ) : null}
+                  <DetailRow label="Arrival">
+                    <Badge tone={order.arrival === 'FULLY_ARRIVED' ? 'success' : order.arrival === 'PARTIALLY_ARRIVED' ? 'warning' : 'neutral'}>
+                      {order.arrival === 'FULLY_ARRIVED' ? 'Fully arrived' : order.arrival === 'PARTIALLY_ARRIVED' ? 'Partially arrived' : 'Not arrived'}
+                    </Badge>
+                  </DetailRow>
+                  <DetailRow label="Receipt">
+                    <Badge tone={order.receipt === 'FULLY_RECEIVED' ? 'success' : order.receipt === 'PARTIALLY_RECEIVED' ? 'warning' : 'neutral'}>
+                      {order.receipt === 'FULLY_RECEIVED' ? 'Fully received' : order.receipt === 'PARTIALLY_RECEIVED' ? 'Partially received' : 'Not received'}
+                    </Badge>
+                  </DetailRow>
                 </dl>
               </CardContent>
             </Card>
           ) : null}
         </div>
       </div>
+
+      {order ? (
+        <OrderShipments
+          contractId={contract.id}
+          canMarkArrived={can(user, PERMISSIONS.SHIPMENTS_UPDATE)}
+          summary={{
+            reference: order.reference,
+            totalShipments: order.totalShipments,
+            arrivedCount: order.arrivedCount,
+            receivedCount: order.receivedCount,
+            containerCount: order.containerCount,
+            totalKg: formatQuantityKg(order.totalKg),
+            receivedKg: formatQuantityKg(order.receivedKg),
+            remainingKg: formatQuantityKg(order.remainingKg),
+            totalPurchaseUsd: showCost ? formatMoney(order.totalPurchaseUsd, 'USD') : '—',
+            arrival: order.arrival,
+            receipt: order.receipt,
+          }}
+          rows={order.shipments.map((line) => ({
+            shipmentId: line.shipmentId,
+            ordinal: line.ordinal,
+            status: line.status,
+            arrived: line.arrived,
+            received: line.received,
+            itemName: line.itemName,
+            containerNumber: line.containerNumber,
+            lotNumber: line.lotNumber,
+            batchNumber: line.batchNumber,
+            batchId: line.batchId,
+            warehouseName: line.warehouseName,
+            orderedKg: formatQuantityKg(line.orderedKg),
+            receivedKg: formatQuantityKg(line.receivedKg),
+            availableKg: formatQuantityKg(line.availableKg),
+            purchaseUsd: showCost ? formatMoney(line.purchaseUsd, 'USD') : '—',
+            etaDate: line.etaDate ? formatDate(line.etaDate) : null,
+            ataDate: line.ataDate ? formatDate(line.ataDate) : null,
+          }))}
+        />
+      ) : null}
 
       {contract.status === 'POSTED' ? (
         <Card>
@@ -407,10 +461,8 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                 {contract.goodsReceipts.map((grn) => (
                   <div key={grn.id} className="flex items-center justify-between gap-3 text-sm">
                     <span>
-                      <span className="font-medium text-ink">{grn.grnNumber}</span>
-                      <span className="ml-2 text-xs text-ink-subtle">
-                        {formatDate(grn.receiptDate)} · {grn.warehouse.name}
-                      </span>
+                      <span className="font-medium text-ink">Received {formatDate(grn.receiptDate)}</span>
+                      <span className="ml-2 text-xs text-ink-subtle">{grn.warehouse.name}</span>
                     </span>
                     <span className="flex items-center gap-2">
                       <span className="tnum text-xs text-ink-muted">

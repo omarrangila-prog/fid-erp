@@ -3,6 +3,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getItemStock, getWarehouseStockByItem } from '@/lib/services/stock';
+import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
 import { formatQuantityKg, formatDate } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { ItemsClient, type ItemRow } from '@/app/(app)/items/items-client';
@@ -20,7 +21,7 @@ export default async function ItemsPage({
   const user = await requirePageAccess(PERMISSIONS.ITEMS_VIEW);
   const companyId = user.activeCompany.id;
 
-  const [items, stock, warehouseStock, traffic, balances] = await Promise.all([
+  const [items, stock, warehouseStock, traffic, balances, ordinals] = await Promise.all([
     prisma.coffeeItem.findMany({ where: { companyId }, orderBy: { itemName: 'asc' } }),
     getItemStock(companyId),
     getWarehouseStockByItem(companyId),
@@ -54,11 +55,13 @@ export default async function ItemsPage({
             batchNumber: true,
             container: { select: { containerNumber: true } },
             purchaseContract: { select: { contractReference: true } },
-            shipment: { select: { jobNumber: true } },
+            shipmentId: true,
+            lot: { select: { lotNumber: true } },
           },
         },
       },
     }),
+    getShipmentOrdinals(companyId),
   ]);
 
   const lotsByItem = new Map<string, ItemRow['lots']>();
@@ -68,7 +71,8 @@ export default async function ItemsPage({
       reference: balance.batch.purchaseContract?.contractReference ?? '—',
       batchNumber: balance.batch.batchNumber,
       container: balance.batch.container?.containerNumber ?? '—',
-      jobNumber: balance.batch.shipment?.jobNumber ?? '—',
+      shipment: shipmentOrdinalLabel(ordinals.get(balance.batch.shipmentId)),
+      lotNumber: balance.batch.lot?.lotNumber ?? '—',
       warehouseName: balance.warehouse.name,
       onHandLabel: formatQuantityKg(balance.onHandKg),
       availableLabel: formatQuantityKg(balance.availableKg),

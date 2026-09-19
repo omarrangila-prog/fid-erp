@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
+import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
 import { dec } from '@/lib/money';
 import { formatDate, formatQuantityKg } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
@@ -17,6 +18,7 @@ export default async function GoodsReceiptsPage() {
   const user = await requirePageAccess(PERMISSIONS.INVENTORY_VIEW);
   const companyId = user.activeCompany.id;
 
+  const ordinals = await getShipmentOrdinals(companyId);
   const receipts = await prisma.goodsReceipt.findMany({
     where: { companyId },
     orderBy: [{ receiptDate: 'desc' }, { grnNumber: 'desc' }],
@@ -32,7 +34,12 @@ export default async function GoodsReceiptsPage() {
           item: { select: { itemName: true } },
           // What actually came off the container, batch by batch.
           batch: {
-            select: { batchNumber: true, container: { select: { containerNumber: true } } },
+            select: {
+              batchNumber: true,
+              shipmentId: true,
+              lot: { select: { lotNumber: true } },
+              container: { select: { containerNumber: true } },
+            },
           },
         },
       },
@@ -60,6 +67,8 @@ export default async function GoodsReceiptsPage() {
       lines: r.lines.map((l) => ({
         itemName: l.item.itemName,
         batchNumber: l.batch?.batchNumber ?? '—',
+        lotNumber: l.batch?.lot?.lotNumber ?? '—',
+        shipment: l.batch ? shipmentOrdinalLabel(ordinals.get(l.batch.shipmentId)) : '—',
         containerNumber: l.batch?.container?.containerNumber ?? '—',
         quantityLabel: formatQuantityKg(l.quantityKg),
         bags: l.bags,

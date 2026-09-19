@@ -6,6 +6,7 @@ import { prisma } from '@/lib/db';
 import { dec, toMoney, toQuantity } from '@/lib/money';
 import { formatMoney, formatQuantityKg } from '@/lib/format';
 import { getWarehouseStock } from '@/lib/services/dashboard';
+import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
 import { PageHeader } from '@/components/shared/page-header';
 import { StatCard } from '@/components/shared/stat-card';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -22,7 +23,7 @@ export default async function InventoryPage() {
   const companyId = user.activeCompany.id;
   const showValue = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
 
-  const [balances, warehouses, warehouseStock, inTransit] = await Promise.all([
+  const [balances, warehouses, warehouseStock, inTransit, ordinals] = await Promise.all([
     prisma.inventoryBalance.findMany({
       where: { companyId },
       include: {
@@ -37,7 +38,8 @@ export default async function InventoryPage() {
             batchNumber: true,
             container: { select: { containerNumber: true } },
             purchaseContract: { select: { contractReference: true, contractNumber: true } },
-            shipment: { select: { jobNumber: true } },
+            shipmentId: true,
+            lot: { select: { lotNumber: true } },
           },
         },
       },
@@ -52,6 +54,7 @@ export default async function InventoryPage() {
       where: { companyId, status: 'ACTIVE' },
       _sum: { inTransitQuantityKg: true },
     }),
+    getShipmentOrdinals(companyId),
   ]);
 
   // Aggregate to one row per coffee per warehouse.
@@ -69,7 +72,8 @@ export default async function InventoryPage() {
       batchNumber: balance.batch.batchNumber,
       reference: balance.batch.purchaseContract?.contractReference ?? '—',
       contractNumber: balance.batch.purchaseContract?.contractNumber ?? '—',
-      jobNumber: balance.batch.shipment?.jobNumber ?? '—',
+      shipment: shipmentOrdinalLabel(ordinals.get(balance.batch.shipmentId)),
+      lotNumber: balance.batch.lot?.lotNumber ?? '—',
       container: balance.batch.container?.containerNumber ?? '—',
       onHandLabel: formatQuantityKg(onHand),
       availableLabel: formatQuantityKg(available),

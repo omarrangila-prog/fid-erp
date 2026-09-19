@@ -54,8 +54,9 @@ import {
   updateShipmentEta,
   saveShipmentContainers,
   getEtaHistory,
+  markOrderArrived,
 } from '@/lib/services/shipment';
-import { fail, type ActionResult } from '@/server/actions/action-utils';
+import { fail, ok, type ActionResult } from '@/server/actions/action-utils';
 
 /**
  * Trading actions.
@@ -444,6 +445,40 @@ export async function getShipmentEtaHistoryAction(shipmentId: string): Promise<
   } catch (error) {
     const failed = fail(error);
     return { ok: false, error: failed.ok ? 'The ETA history could not be read.' : failed.error };
+  }
+}
+
+/**
+ * Mark every shipment on an order arrived at once.
+ *
+ * For the day the whole order lands together. Shipments that already arrived
+ * are left alone, so pressing it twice is harmless.
+ */
+export async function markOrderArrivedAction(
+  contractId: string,
+  ataDate: string,
+): Promise<ActionResult<{ marked: number; total: number }>> {
+  try {
+    const user = await requirePermission(PERMISSIONS.SHIPMENTS_UPDATE);
+    const parsed = new Date(`${ataDate}T00:00:00.000Z`);
+    if (Number.isNaN(parsed.getTime())) {
+      return fail('That is not a date the system can read.');
+    }
+
+    const result = await markOrderArrived({
+      companyId: user.activeCompany.id,
+      contractId,
+      userId: user.id,
+      ataDate: parsed,
+    });
+
+    revalidatePath('/loading');
+    revalidatePath('/shipments');
+    revalidatePath('/purchases');
+    revalidatePath(`/purchases/${contractId}`);
+    return ok(result);
+  } catch (error) {
+    return fail(error);
   }
 }
 

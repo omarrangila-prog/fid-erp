@@ -17,6 +17,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent, TabCount } from '@/components
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/feedback';
 import { StatCard, DetailRow } from '@/components/shared/stat-card';
+import { shortDocumentNumber } from '@/lib/short-number';
+import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,7 +65,10 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
 
   if (!customer) notFound();
 
-  const receivables = await getReceivables({ companyId, customerId: id, onlyOutstanding: true });
+  const [receivables, ordinals] = await Promise.all([
+    getReceivables({ companyId, customerId: id, onlyOutstanding: true }),
+    getShipmentOrdinals(companyId),
+  ]);
   const outstandingUsd = receivables.reduce((a, r) => a.plus(r.outstandingAmountUsd), dec(0));
   const outstandingOwn = receivables.reduce((a, r) => a.plus(r.outstandingAmount), dec(0));
 
@@ -238,7 +243,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                     <TR key={invoice.id}>
                       <TD>
                         <Link href={`/sales/${invoice.id}`} className="font-medium text-forest-800 hover:text-gold-700">
-                          {invoice.invoiceNumber}
+                          {shortDocumentNumber(invoice.invoiceNumber)}
                         </Link>
                       </TD>
                       <TD>{formatDate(invoice.invoiceDate)}</TD>
@@ -334,7 +339,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                     <TR key={row.invoiceId}>
                       <TD>
                         <Link href={`/sales/${row.invoiceId}`} className="font-medium text-forest-800 hover:text-gold-700">
-                          {row.invoiceNumber}
+                          {shortDocumentNumber(row.invoiceNumber)}
                         </Link>
                       </TD>
                       <TD>{formatDate(row.dueDate)}</TD>
@@ -364,8 +369,8 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
               <Table>
                 <THead>
                   <TR className="hover:bg-transparent">
+                    <TH>Reference</TH>
                     <TH>Shipment</TH>
-                    <TH>Job</TH>
                     <TH>Coffee</TH>
                     <TH numeric>Quantity</TH>
                     <TH>ETA</TH>
@@ -377,10 +382,10 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                     <TR key={shipment.id}>
                       <TD>
                         <Link href={`/shipments/${shipment.id}`} className="font-medium text-forest-800 hover:text-gold-700">
-                          {shipment.shipmentNumber}
+                          {shipment.purchaseContract?.contractReference ?? '—'}
                         </Link>
                       </TD>
-                      <TD className="font-mono text-xs">{shipment.purchaseContract?.contractReference ?? '—'}</TD>
+                      <TD className="text-xs text-ink-muted">{shipmentOrdinalLabel(ordinals.get(shipment.id))}</TD>
                       <TD>{shipment.item.itemName}</TD>
                       <TD numeric>{formatQuantityKg(shipment.quantityKg)}</TD>
                       <TD>{formatDate(shipment.etaDate)}</TD>

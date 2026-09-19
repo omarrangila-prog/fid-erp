@@ -15,6 +15,8 @@ import { todayInputValue } from '@/lib/format';
 export type ReceivableBatch = {
   batchId: string;
   batchNumber: string;
+  /** "Shipment 2" — which shipment on the order this batch sails in. */
+  shipmentOrdinal: number;
   itemName: string;
   lotNumber: string;
   containerNumber: string | null;
@@ -285,7 +287,11 @@ function GoodsReceiptDialogBody({
             return (
               <div key={batch.batchId} className="space-y-3 rounded-lg border border-line p-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-ink">{batch.itemName}</p>
+                  <p className="truncate text-sm font-medium text-ink">
+                    {batches.length > 1 ? `Shipment ${batch.shipmentOrdinal} · ` : ''}
+                    {batch.itemName}
+                    {batch.containerNumber ? <span className="font-mono text-xs text-ink-muted"> · {batch.containerNumber}</span> : null}
+                  </p>
                   <p className="tnum mt-0.5 text-xs text-ink-muted">
                     Ordered {Number(batch.orderedKg).toLocaleString()} KG · already received{' '}
                     {Number(batch.receivedKg).toLocaleString()} KG · outstanding{' '}

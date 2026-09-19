@@ -14,6 +14,7 @@ import { Metric, MetricGrid, DetailRow } from '@/components/shared/stat-card';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { StatusBadge, Badge } from '@/components/ui/badge';
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
+import { shortDocumentNumber } from '@/lib/short-number';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,7 +37,13 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
       lot: true,
       container: true,
       shipment: {
-        select: { id: true, shipmentNumber: true, jobNumber: true, status: true, etaDate: true, vesselName: true },
+        select: {
+          id: true,
+          status: true,
+          etaDate: true,
+          vesselName: true,
+          purchaseContract: { select: { shipments: { orderBy: { createdAt: 'asc' }, select: { id: true } } } },
+        },
       },
       purchaseContract: {
         select: {
@@ -61,6 +68,13 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
   });
 
   if (!batch) notFound();
+
+  const siblings = batch.shipment.purchaseContract.shipments;
+  const shipmentOrdinal = siblings.findIndex((s) => s.id === batch.shipment.id) + 1;
+  const shipmentLabel =
+    siblings.length > 1
+      ? `${batch.purchaseContract.contractReference} — Shipment ${shipmentOrdinal} of ${siblings.length}`
+      : batch.purchaseContract.contractReference;
 
   const [locations, movements] = await Promise.all([
     getBatchLocations(companyId, batch.id),
@@ -208,7 +222,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               <DetailRow label="Contract date">{formatDate(batch.purchaseContract.contractDate)}</DetailRow>
               <DetailRow label="Shipment">
                 <Link href={`/shipments/${batch.shipment.id}`} className="text-gold-700 hover:underline">
-                  {batch.purchaseContract.contractReference}
+                  {shipmentLabel}
                 </Link>
               </DetailRow>
               <DetailRow label="Shipment status">
@@ -251,7 +265,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
                     <TR key={line.id}>
                       <TD>
                         <Link href={`/sales/${line.salesInvoice.id}`} className="font-medium text-forest-800 hover:text-gold-700">
-                          {line.salesInvoice.invoiceNumber}
+                          {shortDocumentNumber(line.salesInvoice.invoiceNumber)}
                         </Link>
                       </TD>
                       <TD>{line.salesInvoice.customer.customerName}</TD>
