@@ -198,16 +198,16 @@ function GoodsReceiptDialogBody({
       return;
     }
 
-    // The containers of one batch cannot come to more than the batch has left.
+    // The weighbridge may say a little more than the contract; a lot more
+    // is a typo. The same tenth the server allows.
     for (const batch of batches) {
       const claimed = entered
         .filter((l) => l.batchId === batch.batchId)
         .reduce((sum, l) => sum + Number(l.quantityKg), 0);
-      if (claimed > Number(batch.outstandingKg) + 0.0005) {
+      const allowance = Number(batch.orderedKg) * 0.1;
+      if (claimed > Number(batch.outstandingKg) + allowance + 0.0005) {
         setError(
-          `${batch.itemName}: ${claimed.toLocaleString()} KG entered but only ${Number(
-            batch.outstandingKg,
-          ).toLocaleString()} KG is still to be received.`,
+          `${batch.itemName}: ${claimed.toLocaleString()} KG entered, but ${Number(batch.outstandingKg).toLocaleString()} KG is still to be received and at most ${Math.round(allowance).toLocaleString()} KG more than ordered can be accepted. Check the weight, or correct the order first.`,
         );
         return;
       }
@@ -328,8 +328,11 @@ function GoodsReceiptDialogBody({
             const batch = byId.get(line.batchId);
             if (!batch) return null;
             const siblings = lines.filter((l) => l.batchId === line.batchId);
-            const claimed = siblings.reduce((sum, l) => sum + (Number(l.quantityKg) || 0), 0);
-            const over = claimed > Number(batch.outstandingKg) + 0.0005;
+            const claimed = siblings.filter((l) => l.selected).reduce((sum, l) => sum + (Number(l.quantityKg) || 0), 0);
+            const excess = claimed - Number(batch.outstandingKg);
+            const allowance = Number(batch.orderedKg) * 0.1;
+            const over = excess > 0.0005;
+            const tooFar = excess > allowance + 0.0005;
             const perContainer = Number(batch.orderedKg) / Math.max(1, batch.containerNumbers.length);
 
             return (
@@ -370,10 +373,11 @@ function GoodsReceiptDialogBody({
                   </Badge>
                 </div>
 
-                {over ? (
-                  <p className="tnum text-xs font-medium text-red-700">
-                    {claimed.toLocaleString()} KG entered for {batch.itemName}, which is more than the{' '}
-                    {Number(batch.outstandingKg).toLocaleString()} KG it has left.
+                {over && line.key === siblings[siblings.length - 1].key ? (
+                  <p className={`tnum text-xs ${tooFar ? 'font-medium text-red-700' : 'text-amber-800'}`}>
+                    {tooFar
+                      ? `${claimed.toLocaleString()} KG entered for ${batch.itemName}; ${Number(batch.outstandingKg).toLocaleString()} KG is still to be received and at most ${Math.round(allowance).toLocaleString()} KG more than ordered can be accepted.`
+                      : `${claimed.toLocaleString()} KG entered for ${batch.itemName} — ${Math.round(excess).toLocaleString()} KG more than the ${Number(batch.outstandingKg).toLocaleString()} KG ordered. The extra is received at no extra cost; the supplier is owed the contract value.`}
                   </p>
                 ) : null}
 

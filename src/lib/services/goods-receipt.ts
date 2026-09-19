@@ -409,11 +409,7 @@ async function resolveLines(tx: Tx, input: GoodsReceiptInput): Promise<ResolvedG
     const outstanding = toQuantity(
       dec(batch.orderedQuantityKg).minus(dec(batch.receivedQuantityKg)).minus(claimedKg.get(batch.id) ?? 0),
     );
-    if (quantityKg.greaterThan(outstanding)) {
-      throw new BusinessRuleError(
-        `Batch ${batch.batchNumber}: only ${outstanding.toFixed(3)} KG is still to be received, but ${quantityKg.toFixed(3)} KG was entered.`,
-      );
-    }
+    assertWithinOverReceipt(batch.batchNumber, dec(batch.orderedQuantityKg), outstanding, quantityKg);
     claimedKg.set(batch.id, (claimedKg.get(batch.id) ?? new Decimal(0)).plus(quantityKg));
 
     resolved.push({
@@ -441,6 +437,22 @@ async function resolveLines(tx: Tx, input: GoodsReceiptInput): Promise<ResolvedG
 }
 
 /** The receipt, inside a transaction somebody else opened. */
+/**
+ * Up to a tenth more than ordered may be received — a weighbridge reading
+ * is never the contract figure to the kilogram. Beyond that it is almost
+ * certainly a typo, and the message says what would be needed instead.
+ */
+const OVER_RECEIPT_TOLERANCE = new Decimal('0.10');
+
+function assertWithinOverReceipt(batchNumber: string, orderedKg: Decimal, outstandingKg: Decimal, quantityKg: Decimal) {
+  if (quantityKg.lessThanOrEqualTo(outstandingKg)) return;
+  const allowance = toQuantity(orderedKg.times(OVER_RECEIPT_TOLERANCE));
+  if (quantityKg.minus(outstandingKg).lessThanOrEqualTo(allowance)) return;
+  throw new BusinessRuleError(
+    `Batch ${batchNumber}: ${outstandingKg.toFixed(3)} KG is still to be received and up to ${allowance.toFixed(3)} KG more than ordered can be accepted, but ${quantityKg.toFixed(3)} KG was entered. Check the weight, or correct the order first.`,
+  );
+}
+
 export async function createGoodsReceiptIn(tx: Tx, input: GoodsReceiptInput, userId: string) {
   const contract = await tx.purchaseContract.findFirst({
     where: { id: input.purchaseContractId, companyId: input.companyId },
@@ -579,16 +591,26 @@ export async function postGoodsReceiptIn(tx: Tx, params: { id: string; companyId
         .minus(dec(batch.receivedQuantityKg))
         .minus(claimedKg.get(line.batchId) ?? 0),
     );
-    if (dec(line.quantityKg).greaterThan(outstanding)) {
-      throw new BusinessRuleError(
-        `Batch ${batch.batchNumber} now has only ${outstanding.toFixed(3)} KG outstanding, which is less than the ${dec(line.quantityKg).toFixed(3)} KG on this receipt.`,
-      );
-    }
+    assertWithinOverReceipt(batch.batchNumber, dec(batch.orderedQuantityKg), outstanding, dec(line.quantityKg));
     claimedKg.set(line.batchId, (claimedKg.get(line.batchId) ?? new Decimal(0)).plus(line.quantityKg));
 
-    const unitCostUsd = dec(batch.landedUnitCostUsd).greaterThan(0)
+    /*
+     * The weighbridge, not the contract, says how much coffee came in.
+     *
+     * When more lands than was ordered, the supplier is still owed the
+     * contract value and no more, so the extra kilograms carry no extra
+     * cost: the value moved out of Inventory in Transit is capped at what
+     * that batch still has there, and the receipt's unit cost is that value
+     * spread over everything received. Inventory ends up holding exactly
+     * the purchase value, and in-transit ends at zero rather than below it.
+     */
+    const batchUnitCost = dec(batch.landedUnitCostUsd).greaterThan(0)
       ? dec(batch.landedUnitCostUsd)
       : dec(batch.unitCostUsd);
+    const quantity = dec(line.quantityKg);
+    const unitCostUsd = quantity.greaterThan(outstanding)
+      ? toUnitCost(Decimal.max(outstanding, 0).times(batchUnitCost).dividedBy(quantity))
+      : batchUnitCost;
 
     await receiveStock(tx, {
       companyId: params.companyId,

@@ -110,6 +110,15 @@ export const goodsReceiptSchema = z.object({
   lines: z.array(goodsReceiptLineSchema).min(1, 'Add at least one line to receive.'),
 });
 
+/** One ordered line divided into containers, on an approved order. */
+export const splitContractLineSchema = z.object({
+  purchaseContractId: cuid,
+  lineId: cuid,
+  parts: z
+    .array(z.object({ quantityKg: decimalString('Quantity'), containerNumber: optionalText(40) }))
+    .min(2, 'Split into at least two containers.'),
+});
+
 /**
  * Receiving container by container: each row names its own warehouse, so
  * three containers landing together can go to two stores in one operation.

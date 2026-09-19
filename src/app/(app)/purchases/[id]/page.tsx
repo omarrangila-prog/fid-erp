@@ -24,6 +24,7 @@ import { PurchaseDetailToolbar } from '@/app/(app)/purchases/[id]/detail-toolbar
 import { getWarehouseLabels } from '@/lib/services/stock';
 import { getOrderOverview } from '@/lib/services/shipment';
 import { OrderShipments } from '@/app/(app)/purchases/[id]/order-shipments';
+import { SplitLineDialog, SplitRowButton } from '@/app/(app)/purchases/[id]/split-line-dialog';
 
 export const dynamic = 'force-dynamic';
 
@@ -211,9 +212,25 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Containers ordered</CardTitle>
-            <CardDescription>What the supplier sold, container by container — each with its own lot and batch, received and sold separately.</CardDescription>
+          <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Containers ordered</CardTitle>
+              <CardDescription>What the supplier sold, container by container — each with its own lot and batch, received and sold separately.</CardDescription>
+            </div>
+            <SplitLineDialog
+              contractId={contract.id}
+              contractReference={contract.contractReference}
+              canSplit={contract.status === 'POSTED' && can(user, PERMISSIONS.PURCHASES_APPROVE)}
+              canCorrect={contract.status === 'POSTED' && can(user, PERMISSIONS.PURCHASES_APPROVE) && receiptStatus.every((r) => Number(r.receivedKg) === 0)}
+              lines={contract.lines.map((line) => ({
+                id: line.id,
+                lineNumber: line.lineNumber,
+                itemName: line.item.itemName,
+                quantityKg: line.quantityKg.toString(),
+                containerNumber: line.containerNumber,
+                splittable: receiptStatus.filter((r) => r.lineId === line.id).every((r) => Number(r.receivedKg) === 0),
+              }))}
+            />
           </CardHeader>
           <CardContent className="px-0 pb-0">
             <TableWrap className="rounded-none border-0 border-t">
@@ -234,6 +251,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                         <TH numeric>Cost / KG</TH>
                       </>
                     ) : null}
+                    {contract.status === 'POSTED' && can(user, PERMISSIONS.PURCHASES_APPROVE) ? <TH /> : null}
                   </TR>
                 </THead>
                 <TBody>
@@ -268,6 +286,13 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                             {formatMoney(line.unitCostKg, contract.currency)}
                           </TD>
                         </>
+                      ) : null}
+                      {contract.status === 'POSTED' && can(user, PERMISSIONS.PURCHASES_APPROVE) ? (
+                        <TD>
+                          {receiptStatus.filter((r) => r.lineId === line.id).every((r) => Number(r.receivedKg) === 0) ? (
+                            <SplitRowButton lineId={line.id} />
+                          ) : null}
+                        </TD>
                       ) : null}
                     </TR>
                   ))}

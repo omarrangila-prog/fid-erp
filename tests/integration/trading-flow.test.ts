@@ -230,7 +230,8 @@ describe('Flow 2 — goods receipt lands the coffee in a warehouse', () => {
     expect(after.find((r) => r.batchNumber === 'B002')!.outstandingKg.toString()).toBe('0');
   });
 
-  it('refuses to receive more than was ordered', async () => {
+  it('refuses to receive well over what was ordered', async () => {
+    // A tenth over is the weighbridge; a quarter over is a typo.
     await expect(
       createGoodsReceipt(
         {
@@ -239,11 +240,11 @@ describe('Flow 2 — goods receipt lands the coffee in a warehouse', () => {
           warehouseId: warehouseA.id,
           receiptDate: utcDate('2026-02-26'),
           receivedById: ctx.admin.id,
-          lines: [{ batchId: batches[1].id, quantityKg: '100' }],
+          lines: [{ batchId: batches[1].id, quantityKg: '5000' }],
         },
         ctx.admin.id,
       ),
-    ).rejects.toThrow(/only 0.000 KG is still to be received/);
+    ).rejects.toThrow(/0.000 KG is still to be received and up to .* more than ordered/);
   });
 
   it('moves the value from Inventory in Transit into Inventory', async () => {

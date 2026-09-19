@@ -11,6 +11,7 @@ import {
   purchaseContractSchema,
   goodsReceiptSchema,
   receiveContainersSchema,
+  splitContractLineSchema,
   salesInvoiceSchema,
   stockTransferSchema,
   shipmentStatusSchema,
@@ -25,6 +26,8 @@ import {
   postPurchaseContract,
   reversePurchaseContract,
   deleteDraftPurchaseContract,
+  splitContractLine,
+  correctPurchaseContract,
 } from '@/lib/services/purchase';
 import {
   createGoodsReceipt,
@@ -480,6 +483,53 @@ export async function markOrderArrivedAction(
     revalidatePath('/purchases');
     revalidatePath(`/purchases/${contractId}`);
     return ok(result);
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+/** Reverse an approved order and open an editable draft copy of it. */
+export async function correctPurchaseContractAction(id: string, reason: string): Promise<ActionResult<{ draftId: string }>> {
+  try {
+    const user = await requirePermission(PERMISSIONS.PURCHASES_REVERSE);
+    assertPermission(user, PERMISSIONS.PURCHASES_CREATE);
+    const draft = await correctPurchaseContract({
+      id,
+      companyId: user.activeCompany.id,
+      userId: user.id,
+      reason: reason.trim() || 'Corrected and re-entered',
+    });
+    revalidatePath('/purchases');
+    revalidatePath(`/purchases/${id}`);
+    revalidatePath('/loading');
+    revalidatePath('/dashboard');
+    return ok({ draftId: draft.id });
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+/**
+ * Divide one ordered line into containers after approval. The books do not
+ * move; the containers get their own rows so each can arrive and be received
+ * on its own.
+ */
+export async function splitContractLineAction(payload: string): Promise<ActionResult<{ containers: number }>> {
+  try {
+    const user = await requirePermission(PERMISSIONS.PURCHASES_APPROVE);
+    const input = splitContractLineSchema.parse(parseJson(payload));
+    const created = await splitContractLine({
+      companyId: user.activeCompany.id,
+      contractId: input.purchaseContractId,
+      lineId: input.lineId,
+      userId: user.id,
+      parts: input.parts,
+    });
+    revalidatePath('/loading');
+    revalidatePath('/shipments');
+    revalidatePath('/purchases');
+    revalidatePath(`/purchases/${input.purchaseContractId}`);
+    return ok({ containers: created.length });
   } catch (error) {
     return fail(error);
   }

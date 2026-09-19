@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { prisma, resetDatabase, getContext, createMasters, utcDate } from '../helpers';
 import { createPurchaseContract, postPurchaseContract } from '@/lib/services/purchase';
 import { createGoodsReceipt, postGoodsReceipt, receiveContainers } from '@/lib/services/goods-receipt';
-import { getReceiptStatus } from '@/lib/services/purchase';
+import { getReceiptStatus, splitContractLine, correctPurchaseContract } from '@/lib/services/purchase';
 import { transaction } from '@/lib/db';
 import { changeShipmentStatus, getOrderOverview, markOrderArrived } from '@/lib/services/shipment';
 import { getBatchCostings } from '@/lib/services/landed-cost';
@@ -607,5 +607,157 @@ describe('receiving container by container', () => {
     expect(overview.receivedContainers).toBe(0);
     const balances = await prisma.inventoryBalance.count({ where: { batch: { purchaseContractId: contract.id } } });
     expect(balances).toBe(0);
+  }, 300_000);
+});
+
+describe('dividing an approved order into containers', () => {
+  it('turns one 40,080 KG row into two containers without moving the books', async () => {
+    const contract = await createPurchaseContract(
+      {
+        companyId,
+        vendorId: masters.vendor.id,
+        contractDate: utcDate('2026-08-01'),
+        currency: 'USD',
+        rateToUsd: '1',
+        rateLocalPerUsd: '9.85',
+        freightAmount: '0',
+        contractReference: 'ICUL/FID/DIVIDE',
+        containers: 3,
+        lines: [
+          { itemId: masters.item.id, quantity: '40080', unit: 'KG', unitPrice: '4.329', bagWeightKg: '60' },
+          { itemId: masters.item.id, quantity: '21000', unit: 'KG', unitPrice: '3.998', bagWeightKg: '60' },
+        ],
+      },
+      ctx.admin.id,
+    );
+    await postPurchaseContract({ id: contract.id, companyId, userId: ctx.admin.id });
+    const before = await prisma.purchaseContract.findUniqueOrThrow({
+      where: { id: contract.id },
+      select: { totalValue: true, totalValueUsd: true, lines: { select: { id: true, lineNumber: true } } },
+    });
+    const journalBefore = await prisma.journalLine.count({ where: { journalEntry: { sourceId: contract.id } } });
+
+    const firstLine = before.lines.find((l) => l.lineNumber === 1)!;
+    const parts = await splitContractLine({
+      companyId,
+      contractId: contract.id,
+      lineId: firstLine.id,
+      userId: ctx.admin.id,
+      parts: [
+        { quantityKg: '20040', containerNumber: 'SUDU1701982' },
+        { quantityKg: '20040', containerNumber: 'HASU1001190' },
+      ],
+    });
+    expect(parts).toHaveLength(2);
+
+    const overview = await getOrderOverview(companyId, contract.id);
+    expect(overview.totalShipments).toBe(3);
+    expect(overview.containerCount).toBe(3);
+    expect(overview.shipments.map((l) => Number(l.orderedKg))).toEqual([20040, 21000, 20040]);
+    expect(overview.shipments.map((l) => l.containerNumber)).toEqual(['SUDU1701982', null, 'HASU1001190']);
+    expect(Number(overview.totalKg)).toBe(61080);
+
+    // The money is the line divided, to the cent.
+    const lines = await prisma.purchaseContractLine.findMany({ where: { purchaseContractId: contract.id }, orderBy: { lineNumber: 'asc' } });
+    const goods = lines.reduce((a, l) => a.plus(l.lineSubtotal), dec(0));
+    expect(goods.toFixed(4)).toBe(dec('40080').times('4.329').plus(dec('21000').times('3.998')).toFixed(4));
+    const after = await prisma.purchaseContract.findUniqueOrThrow({ where: { id: contract.id }, select: { totalValue: true, totalValueUsd: true } });
+    expect(after.totalValue.toString()).toBe(before.totalValue.toString());
+    expect(after.totalValueUsd.toString()).toBe(before.totalValueUsd.toString());
+    expect(await prisma.journalLine.count({ where: { journalEntry: { sourceId: contract.id } } })).toBe(journalBefore);
+
+    const batches = await prisma.batch.findMany({ where: { purchaseContractId: contract.id }, select: { purchaseCostUsd: true, orderedQuantityKg: true } });
+    const purchase = batches.reduce((a, b) => a.plus(b.purchaseCostUsd), dec(0));
+    expect(purchase.toFixed(2)).toBe(dec('40080').times('4.329').plus(dec('21000').times('3.998')).toFixed(2));
+
+    // Each container now arrives on its own.
+    await changeShipmentStatus({ shipmentId: overview.shipments[2].shipmentId, companyId, userId: ctx.admin.id, toStatus: 'LOADED', loadingDate: utcDate('2026-08-05'), etaDate: utcDate('2026-08-20'), shippingLineId: masters.shippingLine.id });
+    await changeShipmentStatus({ shipmentId: overview.shipments[2].shipmentId, companyId, userId: ctx.admin.id, toStatus: 'ARRIVED', ataDate: utcDate('2026-08-21') });
+    const later = await getOrderOverview(companyId, contract.id);
+    expect(later.arrivedContainers).toBe(1);
+    expect(later.shipments.map((l) => l.stage)).toEqual(['PENDING_LOADING', 'PENDING_LOADING', 'ARRIVED']);
+  }, 300_000);
+
+  it('refuses once the row has been received', async () => {
+    const contract = await createPurchaseContract(
+      {
+        companyId, vendorId: masters.vendor.id, contractDate: utcDate('2026-08-01'), currency: 'USD', rateToUsd: '1', rateLocalPerUsd: '9.85', freightAmount: '0',
+        contractReference: 'ICUL/FID/DIVIDE-2',
+        lines: [{ itemId: masters.item.id, quantity: '20000', unit: 'KG', unitPrice: '4.00', bagWeightKg: '60', lotNumber: 'LOT-D2' }],
+      },
+      ctx.admin.id,
+    );
+    await postPurchaseContract({ id: contract.id, companyId, userId: ctx.admin.id });
+    const status = await transaction((tx) => getReceiptStatus(tx, contract.id));
+    await receiveContainers({ companyId, purchaseContractId: contract.id, receiptDate: utcDate('2026-08-10'), receivedById: ctx.admin.id, lines: [{ batchId: status[0].batchId, quantityKg: '20000', warehouseId: masters.warehouses[0].id }] });
+    await expect(
+      splitContractLine({ companyId, contractId: contract.id, lineId: status[0].lineId, userId: ctx.admin.id, parts: [{ quantityKg: '10000' }, { quantityKg: '10000' }] }),
+    ).rejects.toThrow(/already been received/);
+  }, 300_000);
+});
+
+describe('correcting an approved order', () => {
+  it('reverses it and opens a draft copy under the same reference', async () => {
+    const contract = await createPurchaseContract(
+      {
+        companyId, vendorId: masters.vendor.id, contractDate: utcDate('2026-08-01'), currency: 'USD', rateToUsd: '1', rateLocalPerUsd: '9.85', freightAmount: '0',
+        contractReference: 'ICUL/FID/CORRECT', containers: 2,
+        lines: [
+          { itemId: masters.item.id, quantity: '20000', unit: 'KG', unitPrice: '4.00', bagWeightKg: '60', containerNumber: 'CORR-1' },
+          { itemId: masters.item.id, quantity: '20000', unit: 'KG', unitPrice: '4.00', bagWeightKg: '60', containerNumber: 'CORR-2' },
+        ],
+      },
+      ctx.admin.id,
+    );
+    await postPurchaseContract({ id: contract.id, companyId, userId: ctx.admin.id });
+
+    const draft = await correctPurchaseContract({ id: contract.id, companyId, userId: ctx.admin.id, reason: 'Third container missing' });
+    const original = await prisma.purchaseContract.findUniqueOrThrow({ where: { id: contract.id }, select: { status: true } });
+    expect(original.status).toBe('REVERSED');
+    expect(draft.status).toBe('DRAFT');
+    expect(draft.contractReference).toBe('ICUL/FID/CORRECT');
+    expect(draft.lines).toHaveLength(2);
+    expect(draft.lines.map((l) => l.containerNumber)).toEqual(['CORR-1', 'CORR-2']);
+
+    // The reversal is in the books, and the copy can be approved again.
+    const reversal = await prisma.journalEntry.count({ where: { sourceId: contract.id } });
+    expect(reversal).toBe(2);
+    await postPurchaseContract({ id: draft.id, companyId, userId: ctx.admin.id });
+    const overview = await getOrderOverview(companyId, draft.id);
+    expect(overview.containerCount).toBe(2);
+  }, 300_000);
+});
+
+describe('receiving a little more than was ordered', () => {
+  it('accepts the weighbridge figure up to a tenth over, at no extra cost', async () => {
+    const contract = await createPurchaseContract(
+      {
+        companyId, vendorId: masters.vendor.id, contractDate: utcDate('2026-08-01'), currency: 'USD', rateToUsd: '1', rateLocalPerUsd: '9.85', freightAmount: '0',
+        contractReference: 'ICUL/FID/OVER',
+        lines: [{ itemId: masters.item.id, quantity: '20000', unit: 'KG', unitPrice: '4.00', bagWeightKg: '60', lotNumber: 'LOT-OVER' }],
+      },
+      ctx.admin.id,
+    );
+    await postPurchaseContract({ id: contract.id, companyId, userId: ctx.admin.id });
+    const status = await transaction((tx) => getReceiptStatus(tx, contract.id));
+
+    // 25% over is a typo, and is refused with the allowance spelled out.
+    await expect(
+      receiveContainers({ companyId, purchaseContractId: contract.id, receiptDate: utcDate('2026-08-10'), receivedById: ctx.admin.id, lines: [{ batchId: status[0].batchId, quantityKg: '25000', warehouseId: masters.warehouses[0].id }] }),
+    ).rejects.toThrow(/more than ordered/);
+
+    // 5% over is the weighbridge, and goes through.
+    await receiveContainers({ companyId, purchaseContractId: contract.id, receiptDate: utcDate('2026-08-10'), receivedById: ctx.admin.id, lines: [{ batchId: status[0].batchId, quantityKg: '21000', warehouseId: masters.warehouses[0].id }] });
+
+    const batch = await prisma.batch.findUniqueOrThrow({ where: { id: status[0].batchId } });
+    expect(Number(batch.receivedQuantityKg)).toBe(21000);
+    expect(Number(batch.inTransitQuantityKg)).toBe(0);
+    expect(Number(batch.availableQuantityKg)).toBe(21000);
+
+    // Inventory holds exactly the purchase value — 80,000 — not 84,000.
+    const movement = await prisma.inventoryTransaction.findFirstOrThrow({ where: { batchId: batch.id, transactionType: 'RECEIPT' } });
+    expect(dec(movement.quantityKg).times(movement.unitCost).toFixed(2)).toBe('80000.00');
+    const overview = await getOrderOverview(companyId, contract.id);
+    expect(overview.receipt).toBe('FULLY_RECEIVED');
   }, 300_000);
 });
