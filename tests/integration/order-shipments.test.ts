@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { prisma, resetDatabase, getContext, createMasters, utcDate } from '../helpers';
 import { createPurchaseContract, postPurchaseContract } from '@/lib/services/purchase';
 import { createGoodsReceipt, postGoodsReceipt, receiveContainers } from '@/lib/services/goods-receipt';
-import { getReceiptStatus, splitContractLine, correctPurchaseContract, editContainer, addContainerToOrder } from '@/lib/services/purchase';
+import { getReceiptStatus, splitContractLine, correctPurchaseContract, editContainer, addContainerToOrder, reversePurchaseContract } from '@/lib/services/purchase';
 import { transaction } from '@/lib/db';
 import { changeShipmentStatus, getOrderOverview, markOrderArrived, undoLoading } from '@/lib/services/shipment';
 import { getBatchCostings } from '@/lib/services/landed-cost';
@@ -880,5 +880,33 @@ describe('adding a container to an approved order', () => {
     const after = await getOrderOverview(companyId, contract.id);
     expect(after.receivedContainers).toBe(1);
     expect(after.shipments[3].stage).toBe('RECEIVED');
+  }, 300_000);
+});
+
+describe('a reversed order gives its reference back', () => {
+  it('lets the same reference be entered again after a reversal', async () => {
+    const make = () =>
+      createPurchaseContract(
+        {
+          companyId, vendorId: masters.vendor.id, contractDate: utcDate('2026-09-01'), currency: 'USD', rateToUsd: '1', rateLocalPerUsd: '9.85', freightAmount: '0',
+          contractReference: 'ICUL/FID/AGAIN', containers: 1,
+          lines: [{ itemId: masters.item.id, quantity: '20000', unit: 'KG', unitPrice: '4.00', bagWeightKg: '60' }],
+        },
+        ctx.admin.id,
+      );
+    const first = await make();
+    await postPurchaseContract({ id: first.id, companyId, userId: ctx.admin.id });
+    await expect(make()).rejects.toThrow(/already used/);
+
+    await reversePurchaseContract({ id: first.id, companyId, userId: ctx.admin.id, reason: 'Entered wrongly' });
+    const gone = await prisma.purchaseContract.findUniqueOrThrow({ where: { id: first.id }, select: { contractReference: true, status: true } });
+    expect(gone.status).toBe('REVERSED');
+    expect(gone.contractReference).toMatch(/^ICUL\/FID\/AGAIN \(reversed /);
+
+    const second = await make();
+    expect(second.contractReference).toBe('ICUL/FID/AGAIN');
+    await postPurchaseContract({ id: second.id, companyId, userId: ctx.admin.id });
+    const overview = await getOrderOverview(companyId, second.id);
+    expect(overview.containerCount).toBe(1);
   }, 300_000);
 });

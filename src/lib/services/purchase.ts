@@ -51,6 +51,17 @@ export {
   type PurchaseContractInput,
 } from '@/lib/calc/purchase';
 
+/**
+ * "ICUL/FID/002 (reversed 19 Sep 2026 14:05)" — what a reversed order's
+ * reference becomes, so the real reference is free to use again and the
+ * reversed record still says which trade it was.
+ */
+export function reversedReference(reference: string, at: Date): string {
+  const base = reference.replace(/ \(reversed .*\)$/, '');
+  const stamp = at.toISOString().slice(0, 16).replace('T', ' ');
+  return `${base} (reversed ${stamp})`;
+}
+
 async function assertReferenceIsFree(tx: Tx, companyId: string, reference: string, excludeId?: string) {
   const existing = await tx.purchaseContract.findFirst({
     where: { companyId, contractReference: reference, ...(excludeId ? { NOT: { id: excludeId } } : {}) },
@@ -797,9 +808,17 @@ export async function reversePurchaseContract(params: {
       });
     }
 
+    // The reference belongs to the trade, not to this record: once the
+    // record is reversed, the same reference must be free for the order
+    // entered in its place. The reversed record keeps a marked-up form.
     const reversed = await tx.purchaseContract.update({
       where: { id: contract.id },
-      data: { status: 'REVERSED', reversedAt: reversalDate, reversalReason: params.reason },
+      data: {
+        status: 'REVERSED',
+        reversedAt: reversalDate,
+        reversalReason: params.reason,
+        contractReference: reversedReference(contract.contractReference, reversalDate),
+      },
     });
 
     await writeAudit(tx, {
@@ -1270,16 +1289,6 @@ export async function correctPurchaseContract(params: { id: string; companyId: s
   });
 
   await reversePurchaseContract({ id: params.id, companyId: params.companyId, userId: params.userId, reason: params.reason });
-
-  // The reference belongs to the trade, and the trade now lives on the copy.
-  // The reversed record keeps a marked-up form of it so the two can never be
-  // confused, and the copy takes the real one.
-  await transaction((tx) =>
-    tx.purchaseContract.update({
-      where: { id: params.id },
-      data: { contractReference: `${original.contractReference} (reversed, was ${original.contractNumber})` },
-    }),
-  );
 
   const copy = await createPurchaseContract(
     {
