@@ -76,10 +76,30 @@ export async function applyLandedCost(
 ): Promise<LandedCostResult> {
   const amountUsd = toMoney(params.amountUsd);
 
+  /*
+   * A common cost belongs to the whole order.
+   *
+   * One purchase order now holds one shipment per container, so "the
+   * shipment" a clearing invoice is booked against is one of several that
+   * sailed under the same contract. The client's costing rule is that local
+   * charges belong to the job as a whole and are divided between its
+   * item/container lines — and the job, to them, is the order. So unless a
+   * container or a batch is named, the cost is spread across every line of
+   * every shipment on the order, not only the one it happened to be filed
+   * under. Name the container and it stays on that container.
+   */
+  const anchor = await tx.shipment.findFirst({
+    where: { id: params.shipmentId, companyId: params.companyId },
+    select: { purchaseContractId: true },
+  });
+  if (!anchor) throw new BusinessRuleError('That shipment does not exist in this company.');
+
+  // A named container or batch is specific enough on its own; the order is
+  // the boundary either way, so a container from another order cannot be hit.
   const batches = await tx.batch.findMany({
     where: {
       companyId: params.companyId,
-      shipmentId: params.shipmentId,
+      purchaseContractId: anchor.purchaseContractId,
       status: 'ACTIVE',
       ...(params.batchId ? { id: params.batchId } : {}),
       ...(params.containerId && !params.batchId ? { containerId: params.containerId } : {}),
@@ -709,6 +729,8 @@ export async function getBatchCostings(params: {
   companyId: string;
   batchIds?: string[];
   shipmentId?: string;
+  /** Every shipment on one order — the view the client calls "the shipment". */
+  purchaseContractId?: string;
   itemId?: string;
 }): Promise<BatchCosting[]> {
   const company = await prisma.company.findUniqueOrThrow({
@@ -722,6 +744,7 @@ export async function getBatchCostings(params: {
       companyId: params.companyId,
       ...(params.batchIds ? { id: { in: params.batchIds } } : {}),
       ...(params.shipmentId ? { shipmentId: params.shipmentId } : {}),
+      ...(params.purchaseContractId ? { purchaseContractId: params.purchaseContractId } : {}),
       ...(params.itemId ? { itemId: params.itemId } : {}),
     },
     select: {

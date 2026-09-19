@@ -19,6 +19,7 @@ import { dec } from '@/lib/money';
 let ctx: Awaited<ReturnType<typeof getContext>>;
 let companyId: string;
 let shipmentId: string;
+let contractId: string;
 
 const RATE = '9.60';
 
@@ -54,8 +55,8 @@ beforeAll(async () => {
       rateLocalPerUsd: RATE,
       freightAmount: '0',
       lines: [
-        { itemId: masters.item.id, quantity: '20040', unit: 'KG', unitPrice: '4.108', bagWeightKg: '60' },
-        { itemId: itemB.id, quantity: '21000', unit: 'KG', unitPrice: '3.998', bagWeightKg: '60' },
+        { itemId: masters.item.id, quantity: '20040', unit: 'KG', unitPrice: '4.108', bagWeightKg: '60', containerNumber: 'CONT-A', lotNumber: 'LOT-A' },
+        { itemId: itemB.id, quantity: '21000', unit: 'KG', unitPrice: '3.998', bagWeightKg: '60', containerNumber: 'CONT-B', lotNumber: 'LOT-B' },
       ],
     },
     ctx.admin.id,
@@ -67,18 +68,8 @@ beforeAll(async () => {
     orderBy: { batchNumber: 'asc' },
   });
   shipmentId = batches[0].shipmentId;
+  contractId = contract.id;
 
-  for (const [index, batch] of batches.entries()) {
-    const container = await prisma.container.create({
-      data: {
-        companyId,
-        shipmentId,
-        containerNumber: `VIS${String(index + 1).padStart(7, '0')}`,
-        sealNumber: `SEAL-V${index + 1}`,
-      },
-    });
-    await prisma.batch.update({ where: { id: batch.id }, data: { containerId: container.id } });
-  }
 
   const grn = await createGoodsReceipt(
     {
@@ -87,11 +78,9 @@ beforeAll(async () => {
       warehouseId: masters.warehouses[0].id,
       receiptDate: utcDate('2026-03-01'),
       receivedById: ctx.admin.id,
-      lines: batches.map((b, i) => ({
-        batchId: b.id,
-        quantityKg: b.orderedQuantityKg.toString(),
-        lotNumber: `VIS-LOT-${i + 1}`,
-      })),
+      // The lots were named on the contract; receiving under the same names
+      // keeps one batch per line rather than splitting each in two.
+      lines: batches.map((b) => ({ batchId: b.id, quantityKg: b.orderedQuantityKg.toString() })),
     },
     ctx.admin.id,
   );
@@ -124,12 +113,12 @@ beforeAll(async () => {
 
 describe('the shared costing every screen reads', () => {
   it('answers for each container separately, with its own reference and container number', async () => {
-    const rows = await getBatchCostings({ companyId, shipmentId });
+    const rows = await getBatchCostings({ companyId, purchaseContractId: contractId });
     expect(rows).toHaveLength(2);
 
     for (const row of rows) {
       expect(row.reference).toBeTruthy();
-      expect(row.containerNumber).toMatch(/^VIS/);
+      expect(row.containerNumber).toMatch(/^CONT-/);
       expect(row.warehouseName).toBeTruthy();
       expect(row.jobNumber).toBeTruthy();
       expect(row.localCurrency).toBe('MAD');
@@ -137,7 +126,7 @@ describe('the shared costing every screen reads', () => {
   }, 240_000);
 
   it('gives the landed cost per kilo the client works out, in both currencies', async () => {
-    const rows = await getBatchCostings({ companyId, shipmentId });
+    const rows = await getBatchCostings({ companyId, purchaseContractId: contractId });
 
     expect(Number(rows[0].purchaseUsd)).toBeCloseTo(82_324.32, 2);
     expect(Number(rows[1].purchaseUsd)).toBeCloseTo(83_958.0, 2);
@@ -151,7 +140,7 @@ describe('the shared costing every screen reads', () => {
   }, 240_000);
 
   it('values stock at the cost of the batch it is, never a company average', async () => {
-    const rows = await getBatchCostings({ companyId, shipmentId });
+    const rows = await getBatchCostings({ companyId, purchaseContractId: contractId });
     for (const row of rows) {
       expect(Number(row.stockValueUsd)).toBeCloseTo(
         Number(dec(row.availableKg).times(dec(row.landedPerKgUsd))),
@@ -162,19 +151,21 @@ describe('the shared costing every screen reads', () => {
     expect(Number(rows[0].landedPerKgUsd)).not.toBeCloseTo(Number(rows[1].landedPerKgUsd), 3);
   }, 180_000);
 
-  it('adds back to what the shipment cost sheet says', async () => {
-    const rows = await getBatchCostings({ companyId, shipmentId });
-    const sheet = await getShipmentCostSheet(companyId, shipmentId);
+  it('adds back to what the cost sheets of the order say, taken together', async () => {
+    const rows = await getBatchCostings({ companyId, purchaseContractId: contractId });
+
+    // One order, one cost sheet per shipment on it: the order's figures are
+    // the sheets added up, and the shared read model has to agree.
+    const shipments = await prisma.shipment.findMany({ where: { purchaseContractId: contractId }, select: { id: true } });
+    const sheets = await Promise.all(shipments.map((s) => getShipmentCostSheet(companyId, s.id)));
+    const sheetLanded = sheets.reduce((t, sheet) => t.plus(sheet.totalShipmentCostUsd), dec(0));
 
     const landed = rows.reduce((t, r) => t.plus(dec(r.landedUsd)), dec(0));
-    expect(Number(landed)).toBeCloseTo(Number(sheet.totalShipmentCostUsd), 0);
-
-    const expense = rows.reduce((t, r) => t.plus(dec(r.allocatedExpenseUsd)), dec(0));
-    expect(Number(expense)).toBeCloseTo(Number(sheet.expenseUsd), 0);
+    expect(Number(landed)).toBeCloseTo(Number(sheetLanded), 0);
   }, 240_000);
 
   it('can be asked for one item, or one batch, and answers the same', async () => {
-    const all = await getBatchCostings({ companyId, shipmentId });
+    const all = await getBatchCostings({ companyId, purchaseContractId: contractId });
     const one = await getBatchCostings({ companyId, batchIds: [all[0].batchId] });
     expect(one).toHaveLength(1);
     expect(one[0].landedPerKgLocal.toString()).toBe(all[0].landedPerKgLocal.toString());

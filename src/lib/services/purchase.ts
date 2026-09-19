@@ -437,49 +437,80 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
     const company = await getCompanyContext(tx, params.companyId);
     const postedAt = new Date();
 
-    // --- 2: the job / shipment record --------------------------------------
-    const shipmentNumber = await nextReference(tx, { companyId: params.companyId, docType: DOC_TYPES.SHIPMENT });
-    const jobNumber = await nextReference(tx, { companyId: params.companyId, docType: DOC_TYPES.JOB });
-
-    const totalQuantityKg = toQuantity(sum(contract.lines.map((l) => l.quantityKg)));
-    const totalBags = contract.lines.reduce((acc, l) => acc + l.bags, 0);
-
-    const shipment = await tx.shipment.create({
-      data: {
-        companyId: params.companyId,
-        shipmentNumber,
-        jobNumber,
-        purchaseContractId: contract.id,
-        vendorId: contract.vendorId,
-        itemId: contract.lines[0].itemId,
-        quantityKg: totalQuantityKg,
-        bags: totalBags,
-        containers: contract.containers,
-        origin: contract.origin,
-        destination: contract.destination,
-        portOfLoading: contract.portOfLoading,
-        incoterm: contract.incoterm,
-        status: 'CONTRACT_CREATED',
-        documentStatus: 'DRAFT_PENDING',
-        createdById: params.userId,
-      },
-    });
-
-    await tx.shipmentStatusHistory.create({
-      data: {
-        shipmentId: shipment.id,
-        fromStatus: null,
-        toStatus: 'CONTRACT_CREATED',
-        changedById: params.userId,
-        notes: `Job opened automatically from purchase contract ${contract.contractNumber}.`,
-      },
-    });
-
-    // --- 3, 4 & 5: lots, containers and costed batches ---------------------
+    /*
+     * --- 2: one shipment per line ------------------------------------------
+     *
+     * One purchase order is not one shipment. A single contract routinely
+     * covers three containers of three coffees that sail on different
+     * vessels, arrive on different days and go to different warehouses. One
+     * job record for the lot could only say "arrived" once, and said it as
+     * soon as the first container landed.
+     *
+     * So each line becomes a shipment of its own — its own item, its own
+     * quantity, its own container, lot and batch, its own arrival — and the
+     * contract is the parent that holds them. The order's own reference is
+     * what ties them together on every screen.
+     */
     const lotCache = new Map<string, string>();
     const containerCache = new Map<string, string>();
+    const opened: Array<{ id: string; shipmentNumber: string; jobNumber: string }> = [];
 
-    for (const line of contract.lines) {
+    /*
+     * How many containers each shipment carries.
+     *
+     * A line that names its container carries one. When the lines do not,
+     * the count entered on the contract is shared out across them — two
+     * containers over two lines is one each, three over two is two and one —
+     * so the order's total is always the shipments' added up and never the
+     * header figure repeated on every row.
+     */
+    const named = contract.lines.filter((l) => l.containerNumber).length;
+    const unnamed = contract.lines.length - named;
+    const spare = Math.max(0, contract.containers - named);
+    const containersFor = (line: (typeof contract.lines)[number], index: number) => {
+      if (line.containerNumber) return 1;
+      const unnamedBefore = contract.lines.slice(0, index).filter((l) => !l.containerNumber).length;
+      const share = Math.floor(spare / Math.max(unnamed, 1)) + (unnamedBefore < spare % Math.max(unnamed, 1) ? 1 : 0);
+      return share;
+    };
+
+    for (const [lineIndex, line] of contract.lines.entries()) {
+      const shipmentNumber = await nextReference(tx, { companyId: params.companyId, docType: DOC_TYPES.SHIPMENT });
+      const jobNumber = await nextReference(tx, { companyId: params.companyId, docType: DOC_TYPES.JOB });
+
+      const shipment = await tx.shipment.create({
+        data: {
+          companyId: params.companyId,
+          shipmentNumber,
+          jobNumber,
+          purchaseContractId: contract.id,
+          purchaseContractLineId: line.id,
+          vendorId: contract.vendorId,
+          itemId: line.itemId,
+          quantityKg: line.quantityKg,
+          bags: line.bags,
+          containers: containersFor(line, lineIndex),
+          origin: contract.origin,
+          destination: contract.destination,
+          portOfLoading: contract.portOfLoading,
+          incoterm: contract.incoterm,
+          status: 'CONTRACT_CREATED',
+          documentStatus: 'DRAFT_PENDING',
+          createdById: params.userId,
+        },
+      });
+
+      await tx.shipmentStatusHistory.create({
+        data: {
+          shipmentId: shipment.id,
+          fromStatus: null,
+          toStatus: 'CONTRACT_CREATED',
+          changedById: params.userId,
+          notes: `Opened from line ${line.lineNumber} of ${contract.contractReference}.`,
+        },
+      });
+      opened.push({ id: shipment.id, shipmentNumber, jobNumber });
+
       /**
        * The contract may not name the coffee yet.
        *
@@ -619,7 +650,7 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
           description: 'Coffee purchased, in transit',
           purchaseContractId: contract.id,
           vendorId: contract.vendorId,
-          shipmentId: shipment.id,
+          ...(opened.length === 1 ? { shipmentId: opened[0].id } : {}),
         },
         ...(taxOnSupplier
           ? [
@@ -643,7 +674,7 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
           description: `Payable to ${contract.vendor.vendorName}`,
           vendorId: contract.vendorId,
           purchaseContractId: contract.id,
-          shipmentId: shipment.id,
+          ...(opened.length === 1 ? { shipmentId: opened[0].id } : {}),
         },
       ],
     });
@@ -666,8 +697,7 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
         status: 'POSTED',
         totalValue: contract.totalValue,
         currency: contract.currency,
-        jobNumber,
-        shipmentNumber,
+        shipments: opened.map((o) => o.shipmentNumber),
         batchesCreated: contract.lines.length,
       },
     });

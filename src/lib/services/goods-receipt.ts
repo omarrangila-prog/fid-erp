@@ -64,6 +64,8 @@ type ResolvedGrnLine = {
   itemId: string;
   containerId: string | null;
   contractLineId: string;
+  /** The shipment this batch sailed on — its own, now that a contract may hold several. */
+  shipmentId: string;
   batchNumber: string;
   lotNumber: string | null;
   containerNumber: string | null;
@@ -381,6 +383,7 @@ async function resolveLines(tx: Tx, input: GoodsReceiptInput): Promise<ResolvedG
         itemId: true,
         containerId: true,
         purchaseContractLineId: true,
+        shipmentId: true,
         orderedQuantityKg: true,
         receivedQuantityKg: true,
         landedUnitCostUsd: true,
@@ -419,6 +422,7 @@ async function resolveLines(tx: Tx, input: GoodsReceiptInput): Promise<ResolvedG
       itemId: batch.itemId,
       containerId: batch.containerId,
       contractLineId: batch.purchaseContractLineId,
+      shipmentId: batch.shipmentId,
       batchNumber: batch.batchNumber,
       // Recorded on the receipt line as well as the batch, so the document
       // still says what arrived even if the batch is later merged or renamed.
@@ -469,7 +473,16 @@ export async function createGoodsReceipt(input: GoodsReceiptInput, userId: strin
         grnNumber,
         receiptDate: input.receiptDate,
         purchaseContractId: contract.id,
-        shipmentId: contract.shipments[0]?.id ?? null,
+        /*
+         * A contract may hold several shipments now, and a receipt may land
+         * coffee from more than one of them. The header names a shipment only
+         * when every batch received came off the same one; each batch keeps
+         * its own shipment regardless, so nothing is lost either way.
+         */
+        shipmentId: (() => {
+          const ids = new Set(lines.map((l) => l.shipmentId).filter(Boolean));
+          return ids.size === 1 ? [...ids][0] : null;
+        })(),
         vendorId: contract.vendorId,
         warehouseId: input.warehouseId,
         reference: input.reference ?? null,

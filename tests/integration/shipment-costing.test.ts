@@ -25,8 +25,8 @@ import { dec } from '@/lib/money';
 let ctx: Awaited<ReturnType<typeof getContext>>;
 let companyId: string;
 let shipmentId: string;
+let contractId: string;
 let containerA: string;
-let containerB: string;
 
 const RATE = '9.60';
 const EXPENSES_MAD = '473941.22';
@@ -65,8 +65,8 @@ beforeAll(async () => {
       rateLocalPerUsd: RATE,
       freightAmount: '0',
       lines: [
-        { itemId: masters.item.id, quantity: '20040', unit: 'KG', unitPrice: '4.108', bagWeightKg: '60' },
-        { itemId: itemB.id, quantity: '21000', unit: 'KG', unitPrice: '3.998', bagWeightKg: '60' },
+        { itemId: masters.item.id, quantity: '20040', unit: 'KG', unitPrice: '4.108', bagWeightKg: '60', containerNumber: 'CONT-A', lotNumber: 'LOT-A' },
+        { itemId: itemB.id, quantity: '21000', unit: 'KG', unitPrice: '3.998', bagWeightKg: '60', containerNumber: 'CONT-B', lotNumber: 'LOT-B' },
       ],
     },
     ctx.admin.id,
@@ -79,22 +79,9 @@ beforeAll(async () => {
   });
   expect(batches).toHaveLength(2);
   shipmentId = batches[0].shipmentId;
+  contractId = contract.id;
+  containerA = (await prisma.container.findFirstOrThrow({ where: { companyId, containerNumber: 'CONT-A' } })).id;
 
-  // Each batch into its own container.
-  const made = [];
-  for (const [index, batch] of batches.entries()) {
-    const container = await prisma.container.create({
-      data: {
-        companyId,
-        shipmentId,
-        containerNumber: `COST${String(index + 1).padStart(7, '0')}`,
-        sealNumber: `SEAL-${index + 1}`,
-      },
-    });
-    await prisma.batch.update({ where: { id: batch.id }, data: { containerId: container.id } });
-    made.push(container.id);
-  }
-  [containerA, containerB] = made;
 
   const grn = await createGoodsReceipt(
     {
@@ -103,11 +90,9 @@ beforeAll(async () => {
       warehouseId: masters.warehouses[0].id,
       receiptDate: utcDate('2026-03-01'),
       receivedById: ctx.admin.id,
-      lines: batches.map((b, i) => ({
-        batchId: b.id,
-        quantityKg: b.orderedQuantityKg.toString(),
-        lotNumber: `COST-LOT-${i + 1}`,
-      })),
+      // The lots were named on the contract; receiving under the same names
+      // keeps one batch per line rather than splitting each in two.
+      lines: batches.map((b) => ({ batchId: b.id, quantityKg: b.orderedQuantityKg.toString() })),
     },
     ctx.admin.id,
   );
@@ -143,7 +128,7 @@ beforeAll(async () => {
 async function lines() {
   const sheet = await getShipmentCostSheet(companyId, shipmentId);
   const batches = await prisma.batch.findMany({
-    where: { shipmentId },
+    where: { purchaseContractId: contractId },
     orderBy: { batchNumber: 'asc' },
     select: {
       id: true,
@@ -225,11 +210,17 @@ describe('the common local charges are split between the lines, not the kilogram
     expect(Number(sheet.expenseUsd)).toBeCloseTo(49_368.88, 0);
   }, 180_000);
 
-  it('adds up to the shipment total the client expects', async () => {
-    const { sheet } = await lines();
-    expect(Number(sheet.goodsUsd)).toBeCloseTo(166_282.32, 1);
-    expect(Number(sheet.orderedKg)).toBeCloseTo(41_040, 0);
-    expect(Number(sheet.totalShipmentCostUsd)).toBeCloseTo(166_282.32 + 49_368.88, 0);
+  it('adds up to the order total the client expects', async () => {
+    // Each shipment carries one container now, so the order's total is the
+    // shipments' cost sheets added together — and nothing is counted twice.
+    const shipments = await prisma.shipment.findMany({ where: { purchaseContractId: contractId }, select: { id: true } });
+    const sheets = await Promise.all(shipments.map((s) => getShipmentCostSheet(companyId, s.id)));
+    const goods = sheets.reduce((t, sheet) => t.plus(sheet.goodsUsd), dec(0));
+    const kg = sheets.reduce((t, sheet) => t.plus(sheet.orderedKg), dec(0));
+    const landed = sheets.reduce((t, sheet) => t.plus(sheet.totalShipmentCostUsd), dec(0));
+    expect(Number(goods)).toBeCloseTo(166_282.32, 1);
+    expect(Number(kg)).toBeCloseTo(41_040, 0);
+    expect(Number(landed)).toBeCloseTo(166_282.32 + 49_368.88, 0);
   }, 180_000);
 
   it('leaves the books reconciling', async () => {
@@ -241,7 +232,7 @@ describe('the common local charges are split between the lines, not the kilogram
 describe('a cost booked against one container only', () => {
   it('stays on that container', async () => {
     const before = await prisma.batch.findMany({
-      where: { shipmentId },
+      where: { purchaseContractId: contractId },
       orderBy: { batchNumber: 'asc' },
       select: { id: true, containerId: true, capitalisedCostUsd: true },
     });
@@ -272,7 +263,7 @@ describe('a cost booked against one container only', () => {
     await postExpense({ id: expense.id, companyId, userId: ctx.admin.id });
 
     const after = await prisma.batch.findMany({
-      where: { shipmentId },
+      where: { purchaseContractId: contractId },
       orderBy: { batchNumber: 'asc' },
       select: { id: true, containerId: true, capitalisedCostUsd: true },
     });
@@ -283,6 +274,5 @@ describe('a cost booked against one container only', () => {
     // MAD 9,600 at 9.60 is USD 1,000, all of it on container one.
     expect(Number(movedA)).toBeCloseTo(1000, 1);
     expect(Number(movedB)).toBeCloseTo(0, 2);
-    void containerB;
   }, 300_000);
 });

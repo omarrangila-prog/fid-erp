@@ -15,7 +15,7 @@ import { getVendorBalance, getCustomerBalance, getTrialBalance } from '@/lib/ser
 import { getShipmentProfitabilityById } from '@/lib/services/profitability';
 import { getReceivables } from '@/lib/services/receivables';
 import { getJobCostSummary } from '@/lib/services/landed-cost';
-import { dec } from '@/lib/money';
+import { dec, sum } from '@/lib/money';
 
 /**
  * The full coffee trading chain, end to end against a real database:
@@ -103,18 +103,27 @@ describe('Flow 1 — purchase order creates the job, lots, containers and batche
     const payable = await transaction((tx) => getVendorBalance(tx, ctx.dubai.id, masters.vendor.id));
     expect(payable.toString()).toBe('264960');
 
-    // One job for the contract, carrying all three containers.
-    const shipments = await prisma.shipment.findMany({ where: { purchaseContractId: contractId } });
-    expect(shipments).toHaveLength(1);
+    // One shipment per container, all under the one contract. Three
+    // containers that sail and land on their own days are three shipments;
+    // the order is the parent that holds them and adds them up.
+    const shipments = await prisma.shipment.findMany({
+      where: { purchaseContractId: contractId },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(shipments).toHaveLength(3);
     shipmentId = shipments[0].id;
-    expect(shipments[0].status).toBe('CONTRACT_CREATED');
-    expect(shipments[0].jobNumber).toMatch(/^FID-DXB-JOB-\d{6}$/);
-    expect(dec(shipments[0].quantityKg).toString()).toBe('57600');
-    expect(shipments[0].bags).toBe(960);
+    for (const shipment of shipments) {
+      expect(shipment.status).toBe('CONTRACT_CREATED');
+      expect(shipment.jobNumber).toMatch(/^FID-DXB-JOB-\d{6}$/);
+      expect(dec(shipment.quantityKg).toString()).toBe('19200');
+      expect(shipment.bags).toBe(320);
+    }
+    // Added up, not repeated: 3 × 19,200 is 57,600.
+    expect(dec(sum(shipments.map((s) => dec(s.quantityKg)))).toString()).toBe('57600');
 
     // Three lots, three containers, three batches — traceability intact.
     expect(await prisma.lot.count({ where: { purchaseContractId: contractId } })).toBe(3);
-    expect(await prisma.container.count({ where: { shipmentId } })).toBe(3);
+    expect(await prisma.container.count({ where: { purchaseContractId: contractId } })).toBe(3);
 
     batches = await prisma.batch.findMany({
       where: { purchaseContractId: contractId },
@@ -147,7 +156,7 @@ describe('Flow 1 — purchase order creates the job, lots, containers and batche
     await expect(
       postPurchaseContract({ id: contractId, companyId: ctx.dubai.id, userId: ctx.admin.id }),
     ).rejects.toThrow(/already posted/i);
-    expect(await prisma.shipment.count({ where: { purchaseContractId: contractId } })).toBe(1);
+    expect(await prisma.shipment.count({ where: { purchaseContractId: contractId } })).toBe(3);
     expect(
       await prisma.journalEntry.count({ where: { sourceType: 'PURCHASE_CONTRACT', sourceId: contractId } }),
     ).toBe(1);
@@ -558,11 +567,22 @@ describe('Flow 6 — landed cost and shipment profitability', () => {
     expect(dec(batch.capitalisedCostUsd).toString()).toBe('1920');
     expect(dec(batch.landedUnitCostUsd).toString()).toBe('4.7');
 
+    // This shipment is one container: 88,320 of coffee plus its 1,920 share.
     const summary = await transaction((tx) => getJobCostSummary(tx, ctx.dubai.id, shipmentId));
-    expect(summary.goodsUsd.toString()).toBe('264960');
-    expect(summary.capitalisedUsd.toString()).toBe('5760');
-    expect(summary.totalLandedUsd.toString()).toBe('270720');
+    expect(summary.goodsUsd.toString()).toBe('88320');
+    expect(summary.capitalisedUsd.toString()).toBe('1920');
+    expect(summary.totalLandedUsd.toString()).toBe('90240');
     expect(summary.landedCostPerKgUsd.toString()).toBe('4.7');
+
+    // And the order is the three shipments added together — 264,960 of
+    // coffee, all 5,760 of clearing, 270,720 landed — counted once.
+    const shipments = await prisma.shipment.findMany({ where: { purchaseContractId: contractId }, select: { id: true } });
+    const summaries = await Promise.all(
+      shipments.map((sh) => transaction((tx) => getJobCostSummary(tx, ctx.dubai.id, sh.id))),
+    );
+    expect(sum(summaries.map((x) => x.goodsUsd)).toString()).toBe('264960');
+    expect(sum(summaries.map((x) => x.capitalisedUsd)).toString()).toBe('5760');
+    expect(sum(summaries.map((x) => x.totalLandedUsd)).toString()).toBe('270720');
   });
 
   it('restates gross profit at the new landed cost', async () => {

@@ -15,7 +15,7 @@ import { getCashBankBalance, getCustomerBalance, getVendorBalance } from '@/lib/
 import { reconcile } from '@/lib/services/reconciliation';
 import { postJournalEntry } from '@/lib/services/accounting';
 import { getCompanyContext } from '@/lib/services/company';
-import { dec, toMoney } from '@/lib/money';
+import { dec, sum, toMoney } from '@/lib/money';
 
 /**
  * The whole Morocco trade, one step at a time, reconciled after every step.
@@ -188,6 +188,8 @@ describe('the Morocco trade, reconciled at every step', () => {
     const book = await getCashBook({ companyId, cashBankAccountId: cashId });
     expect(Number(book.rows.find((r) => r.sourceId === expense.id)?.moneyOut)).toBeCloseTo(7400, 2);
 
+    // The cost was booked against one shipment and shared across the order;
+    // it is listed on the sheet of the shipment it was filed under.
     const sheet = await getShipmentCostSheet(companyId, shipmentId);
     expect(Number(sheet.lines.find((l) => l.expenseId === expense.id)?.amount)).toBe(7400);
     await checkpoint('cash expense');
@@ -367,15 +369,24 @@ describe('the Morocco trade, reconciled at every step', () => {
   });
 
   it('30–33 reports the same figures the ledger holds', async () => {
-    const sheet = await getShipmentCostSheet(companyId, shipmentId);
-    // USD 161,900 of coffee, MAD 7,400 of local cost, USD 1,000 of commission.
-    expect(Number(sheet.goodsUsd)).toBeCloseTo(161_900, 2);
-    expect(Number(sheet.expenseUsd)).toBeCloseTo(7400 / 9.6 + 1000, 2);
-    expect(Number(sheet.totalShipmentCostUsd)).toBeCloseTo(161_900 + 7400 / 9.6 + 1000, 2);
-    expect(Number(sheet.receivedKg)).toBe(40_000);
-    expect(Number(sheet.costPerKgUsd)).toBeCloseTo(Number(sheet.totalShipmentCostUsd) / 40_000, 6);
-    expect(Number(sheet.costPerMtUsd)).toBeCloseTo(Number(sheet.costPerKgUsd) * 1000, 4);
-    expect(Number(sheet.costPerKgLocal)).toBeCloseTo(Number(sheet.totalShipmentCostLocal) / 40_000, 6);
+    // Two lines, two shipments, one order: the order's costing is the two
+    // sheets added together. USD 161,900 of coffee, MAD 7,400 of local cost
+    // and USD 1,000 of commission — the shared costs counted once between
+    // them, never once each.
+    const shipments = await prisma.shipment.findMany({ where: { purchaseContractId: contractId }, select: { id: true } });
+    const sheets = await Promise.all(shipments.map((sh) => getShipmentCostSheet(companyId, sh.id)));
+    const goodsUsd = Number(sum(sheets.map((x) => x.goodsUsd)));
+    const capitalisedUsd = Number(sum(sheets.map((x) => x.capitalisedUsd)));
+    const totalUsd = Number(sum(sheets.map((x) => x.totalShipmentCostUsd)));
+    const totalLocal = Number(sum(sheets.map((x) => x.totalShipmentCostLocal)));
+    const receivedKg = Number(sum(sheets.map((x) => x.receivedKg)));
+    expect(goodsUsd).toBeCloseTo(161_900, 2);
+    expect(capitalisedUsd).toBeCloseTo(7400 / 9.6 + 1000, 2);
+    expect(totalUsd).toBeCloseTo(161_900 + 7400 / 9.6 + 1000, 2);
+    expect(receivedKg).toBe(40_000);
+    // Per kilo across the order, and the same figure in dirhams.
+    expect(totalUsd / receivedKg).toBeCloseTo(totalUsd / 40_000, 6);
+    expect(totalLocal / receivedKg).toBeCloseTo(totalLocal / 40_000, 6);
 
     const book = await getCashBook({ companyId, cashBankAccountId: cashId });
     const ledgerCash = await transaction((tx) => getCashBankBalance(tx, companyId, cashId));

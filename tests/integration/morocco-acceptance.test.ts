@@ -11,6 +11,7 @@ import {
   markShipmentLoaded,
   changeDocumentStatus,
   changeShipmentStatus,
+  markOrderArrived,
   updateShipmentEta,
   getEtaHistory,
 } from '@/lib/services/shipment';
@@ -25,7 +26,7 @@ import { reconcile } from '@/lib/services/reconciliation';
 import { buildCsv, buildWorkbook } from '@/lib/services/workbook';
 import { getShipmentProfitability } from '@/lib/services/profitability';
 import { DOCUMENT_STATUS_META } from '@/lib/constants';
-import { dec } from '@/lib/money';
+import { dec, sum } from '@/lib/money';
 
 /**
  * Point-by-point Morocco acceptance.
@@ -41,6 +42,7 @@ let companyId: string;
 let itemBId: string;
 let contractId: string;
 let shipmentId: string;
+let shipmentIds: string[] = [];
 let batchAId: string;
 let batchBId: string;
 let invoiceId: string;
@@ -136,18 +138,24 @@ describe('2 — one PO, multiple items, container total is not duplicated', () =
     expect(contract.containers).toBe(2);
   });
 
-  it('approving it creates one loading-sheet row, not one per item', async () => {
+  it('approving it creates one loading-sheet row per shipment, added up once', async () => {
     await postPurchaseContract({ id: contractId, companyId, userId: ctx.admin.id });
 
+    // One order, two containers, two shipments: two rows whose containers and
+    // kilograms add to the order's — never the order's total on every row.
     const rows = (await getLoadingSheet(companyId)).filter((r) => r.contractId === contractId);
-    expect(rows).toHaveLength(1);
-    expect(rows[0].lines).toHaveLength(2);
-    expect(rows[0].containers).toBe(2);
-    expect(rows[0].importer).toBe(ctx.morocco.name);
-    expect(rows[0].exporter).toBe(masters.vendor.vendorName);
-    expect(dec(rows[0].quantityKg).toString()).toBe('60000');
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.lines).toHaveLength(1);
+      expect(row.containers).toBe(1);
+      expect(row.importer).toBe(ctx.morocco.name);
+      expect(row.exporter).toBe(masters.vendor.vendorName);
+    }
+    expect(rows.reduce((t, r) => t + r.containers, 0)).toBe(2);
+    expect(dec(sum(rows.map((r) => dec(r.quantityKg)))).toString()).toBe('60000');
 
     shipmentId = rows[0].shipmentId;
+    shipmentIds = rows.map((r) => r.shipmentId);
   });
 });
 
@@ -162,37 +170,42 @@ describe('3 — separate container numbers', () => {
   });
 
   it('assigns a distinct number to each container', async () => {
-    await markShipmentLoaded(
-      {
-        companyId,
-        shipmentId,
-        loadingDate: utcDate('2026-02-01'),
-        etaDate: utcDate('2026-03-10'),
-        shippingLineId: masters.shippingLine.id,
-        bookingNumber: 'BK-ACC-1',
-        billOfLading: 'BL-ACC-1',
-        portOfLoading: 'Santos',
-        portOfDischarge: 'Casablanca',
-        containerNumbers: ['MSCU1111111', 'MSCU2222222'],
-      },
-      ctx.admin.id,
-    );
+    // Each shipment on the order is one container: loaded on its own, with
+    // its own number, the way containers really sail.
+    const numbers = ['MSCU1111111', 'MSCU2222222'];
+    for (const [index, id] of shipmentIds.entries()) {
+      await markShipmentLoaded(
+        {
+          companyId,
+          shipmentId: id,
+          loadingDate: utcDate('2026-02-01'),
+          etaDate: utcDate('2026-03-10'),
+          shippingLineId: masters.shippingLine.id,
+          bookingNumber: `BK-ACC-${index + 1}`,
+          billOfLading: `BL-ACC-${index + 1}`,
+          portOfLoading: 'Santos',
+          portOfDischarge: 'Casablanca',
+          containerNumbers: [numbers[index]],
+        },
+        ctx.admin.id,
+      );
+    }
 
     const containers = await prisma.container.findMany({
-      where: { shipmentId },
+      where: { purchaseContractId: contractId },
       orderBy: { containerNumber: 'asc' },
     });
-    expect(containers.map((c) => c.containerNumber)).toEqual(['MSCU1111111', 'MSCU2222222']);
+    expect(containers.map((c) => c.containerNumber)).toEqual(numbers);
 
     const batches = await prisma.batch.findMany({
-      where: { shipmentId },
+      where: { purchaseContractId: contractId },
       include: { container: true },
       orderBy: { createdAt: 'asc' },
     });
     expect(new Set(batches.map((b) => b.container?.containerNumber)).size).toBe(2);
 
-    const row = (await getLoadingSheet(companyId)).find((r) => r.shipmentId === shipmentId)!;
-    expect(row.containerNumbers.sort()).toEqual(['MSCU1111111', 'MSCU2222222']);
+    const rows = (await getLoadingSheet(companyId)).filter((r) => r.contractId === contractId);
+    expect(rows.flatMap((r) => r.containerNumbers).sort()).toEqual(numbers);
   });
 });
 
@@ -247,16 +260,13 @@ describe('4 — document status works independently of cargo', () => {
 
 describe('5 — Arrived then Receive PO per container, batch and warehouse', () => {
   it('marks arrived then receives each container into a named warehouse', async () => {
-    await changeShipmentStatus({
-      shipmentId,
-      companyId,
-      userId: ctx.admin.id,
-      toStatus: 'ARRIVED',
-      ataDate: utcDate('2026-03-22'),
-    });
+    // Both containers landed together: one action marks every shipment on
+    // the order arrived, each keeping its own history line.
+    const marked = await markOrderArrived({ companyId, contractId, userId: ctx.admin.id, ataDate: utcDate('2026-03-22') });
+    expect(marked).toEqual({ marked: 2, total: 2 });
 
     const batches = await prisma.batch.findMany({
-      where: { shipmentId },
+      where: { purchaseContractId: contractId },
       orderBy: { orderedQuantityKg: 'desc' },
     });
     expect(batches).toHaveLength(2);
@@ -307,7 +317,7 @@ describe('5 — Arrived then Receive PO per container, batch and warehouse', () 
     await postGoodsReceipt({ id: second.id, companyId, userId: ctx.admin.id });
 
     const received = await prisma.batch.findMany({
-      where: { shipmentId, batchNumber: { in: ['BATCH-A', 'BATCH-B'] } },
+      where: { purchaseContractId: contractId, batchNumber: { in: ['BATCH-A', 'BATCH-B'] } },
       include: { container: true },
       orderBy: { batchNumber: 'asc' },
     });
@@ -321,7 +331,7 @@ describe('5 — Arrived then Receive PO per container, batch and warehouse', () 
 
 describe('6 — inventory KG matches received stock', () => {
   it('shows 60,000 KG on hand across the two warehouses and blocks a sale beyond it', async () => {
-    const stock = await getBatchStock({ companyId, shipmentId, includeEmpty: true });
+    const stock = await getBatchStock({ companyId, purchaseContractId: contractId, includeEmpty: true });
     const received = stock.filter((row) => Number(row.receivedKg) > 0);
     const totalReceived = received.reduce((sum, row) => sum.plus(row.receivedKg), dec(0));
     const totalAvailable = received.reduce((sum, row) => sum.plus(row.availableKg), dec(0));
@@ -640,12 +650,17 @@ describe('14 — shipment costing and paid vs unpaid expenses', () => {
     );
     await postExpense({ id: dinner.id, companyId, userId: ctx.admin.id });
 
-    const sheet = await getShipmentCostSheet(companyId, shipmentId);
-    expect(Number(sheet.goodsUsd)).toBeCloseTo(269_000, 2);
-    expect(Number(sheet.expenseUsd)).toBeCloseTo(1_200, 2);
-    expect(sheet.lines).toHaveLength(2);
-    expect(sheet.lines.every((line) => line.category !== 'Food / Meals')).toBe(true);
-    expect(Number(sheet.revenueUsd)).toBeGreaterThan(0);
+    // The order is two shipments now; its costing is their sheets added up.
+    // The clearing charge, booked once, is shared between the two containers
+    // and appears once — the staff dinner is a running cost and appears on
+    // neither.
+    const sheets = await Promise.all(shipmentIds.map((id) => getShipmentCostSheet(companyId, id)));
+    expect(Number(sum(sheets.map((x) => x.goodsUsd)))).toBeCloseTo(269_000, 2);
+    expect(Number(sum(sheets.map((x) => x.capitalisedUsd)))).toBeCloseTo(1_200, 2);
+    const allLines = sheets.flatMap((x) => x.lines);
+    expect(allLines).toHaveLength(2);
+    expect(allLines.every((line) => line.category !== 'Food / Meals')).toBe(true);
+    expect(Number(sum(sheets.map((x) => x.revenueUsd)))).toBeGreaterThan(0);
   });
 });
 
@@ -831,7 +846,10 @@ describe('17 — a shipment expense can land on one container and batch', () => 
     expect(Number(afterA.capitalisedCostUsd) - Number(beforeA.capitalisedCostUsd)).toBeCloseTo(100, 2);
     expect(Number(afterB.capitalisedCostUsd)).toBeCloseTo(Number(beforeB.capitalisedCostUsd), 2);
 
-    const sheet = await getShipmentCostSheet(companyId, shipmentId);
+    // The cost is filed under the shipment that actually carries BATCH-A,
+    // whichever shipment the form happened to be opened from.
+    const carrier = await prisma.batch.findUniqueOrThrow({ where: { id: batchAId }, select: { shipmentId: true } });
+    const sheet = await getShipmentCostSheet(companyId, carrier.shipmentId);
     const line = sheet.lines.find((row) => row.expenseId === targeted.id);
     expect(line?.batchNumber).toBe('BATCH-A');
     expect(line?.containerNumber).toBe('MSCU1111111');

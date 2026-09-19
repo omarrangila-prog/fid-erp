@@ -38,6 +38,7 @@ let masters: Awaited<ReturnType<typeof createMasters>>;
 let companyId: string;
 let contractId: string;
 let shipmentId: string;
+let shipmentIds: string[] = [];
 let batchAId: string;
 let warehouseA: { id: string; name: string };
 
@@ -113,15 +114,24 @@ describe('rule 3 — approving a PO creates the loading sheet entry', () => {
     await postPurchaseContract({ id: contractId, companyId, userId: ctx.admin.id });
 
     const rows = (await getLoadingSheet(companyId)).filter((r) => r.contractId === contractId);
-    // One shipment, two coffees, two containers total — not 2 + 2 = 4.
-    expect(rows).toHaveLength(1);
-    expect(rows[0].lines).toHaveLength(2);
-    expect(rows[0].containers).toBe(2);
-    expect(rows[0].importer).toBe(ctx.morocco.name);
-    expect(rows[0].exporter).toBe(masters.vendor.vendorName);
+    // Two coffees in two containers are two shipments under one order — each
+    // its own row, and the order's totals are the rows added up, not one row
+    // repeated: 1 + 1 containers, not 2 + 2.
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.lines).toHaveLength(1);
+      expect(row.containers).toBe(1);
+      expect(row.importer).toBe(ctx.morocco.name);
+      expect(row.exporter).toBe(masters.vendor.vendorName);
+    }
+    expect(rows.reduce((t, r) => t + r.containers, 0)).toBe(2);
 
-    const shipment = await prisma.shipment.findFirstOrThrow({ where: { purchaseContractId: contractId } });
-    shipmentId = shipment.id;
+    shipmentId = rows[0].shipmentId;
+    // In the order the lines were entered, which is the order the loading
+    // sheet does not promise.
+    shipmentIds = (
+      await prisma.shipment.findMany({ where: { purchaseContractId: contractId }, orderBy: { createdAt: 'asc' }, select: { id: true } })
+    ).map((sh) => sh.id);
   });
 });
 
@@ -151,41 +161,51 @@ describe('rule 4 — a shipment cannot be marked loaded without the shipping det
   });
 
   it('accepts once the line and the arrival are given, with three containers', async () => {
-    await markShipmentLoaded(
-      {
-        companyId,
-        shipmentId,
-        loadingDate: utcDate('2026-02-01'),
-        etaDate: utcDate('2026-03-05'),
-        shippingLineId: masters.shippingLine.id,
-        bookingNumber: 'ABC12345',
-        containerNumbers: ['MSCU1234567', 'MSCU2345678', 'MSCU3456789'],
-      },
-      ctx.admin.id,
-    );
+    // The client's example: one booking, three containers, on an order of
+    // two lines. The 40,000 KG line fills two containers and the 20,000 KG
+    // line one — each shipment loaded with its own numbers.
+    const byLine = [
+      { shipmentId: shipmentIds[0], containerNumbers: ['MSCU1234567', 'MSCU2345678'] },
+      { shipmentId: shipmentIds[1], containerNumbers: ['MSCU3456789'] },
+    ];
+    for (const load of byLine) {
+      await markShipmentLoaded(
+        {
+          companyId,
+          shipmentId: load.shipmentId,
+          loadingDate: utcDate('2026-02-01'),
+          etaDate: utcDate('2026-03-05'),
+          shippingLineId: masters.shippingLine.id,
+          bookingNumber: 'ABC12345',
+          containerNumbers: load.containerNumbers,
+        },
+        ctx.admin.id,
+      );
+    }
 
-    const shipment = await prisma.shipment.findUniqueOrThrow({ where: { id: shipmentId } });
-    expect(shipment.status).toBe('LOADED');
-    // One booking, three containers — the client's own example.
-    expect(shipment.containers).toBeGreaterThanOrEqual(3);
+    for (const id of shipmentIds) {
+      const shipment = await prisma.shipment.findUniqueOrThrow({ where: { id } });
+      expect(shipment.status).toBe('LOADED');
+    }
 
-    const containers = await prisma.container.findMany({ where: { shipmentId } });
+    // Three containers on the order, added up across its shipments.
+    const containers = await prisma.container.findMany({ where: { purchaseContractId: contractId } });
     expect(containers.map((c) => c.containerNumber).sort()).toEqual([
       'MSCU1234567',
       'MSCU2345678',
       'MSCU3456789',
     ]);
 
+    // Each batch sits in a container of its own shipment.
     const batches = await prisma.batch.findMany({
-      where: { shipmentId },
+      where: { purchaseContractId: contractId },
       include: { container: true },
       orderBy: [{ createdAt: 'asc' }, { batchNumber: 'asc' }],
     });
     const numbers = batches.map((b) => b.container?.containerNumber);
     expect(numbers).toHaveLength(2);
     expect(numbers[0]).toBe('MSCU1234567');
-    expect(numbers[1]).toBe('MSCU2345678');
-    expect(new Set(numbers).size).toBe(2);
+    expect(numbers[1]).toBe('MSCU3456789');
   });
 });
 
@@ -272,10 +292,15 @@ describe('rule 6 — inventory is warehouse-wise and batch-wise', () => {
 
     const labels = await getWarehouseLabels(companyId);
     expect(labels.byContract.get(contractId)).toBe(warehouseA.name);
-    expect(labels.byShipment.get(shipmentId)).toBe(warehouseA.name);
+    // The shipment that landed is the one carrying BATCH-A; the other line
+    // is still at sea and rightly has no warehouse yet.
+    const landed = await prisma.batch.findUniqueOrThrow({ where: { id: batchAId }, select: { shipmentId: true } });
+    expect(labels.byShipment.get(landed.shipmentId)).toBe(warehouseA.name);
     expect(labels.byBatch.get(batchAId)).toBe(warehouseA.name);
 
-    const sheet = (await getLoadingSheet(companyId)).find((row) => row.contractId === contractId);
+    // The loading sheet has a row per shipment; the one that landed names
+    // its warehouse, the one still at sea does not.
+    const sheet = (await getLoadingSheet(companyId)).find((row) => row.shipmentId === landed.shipmentId);
     expect(sheet?.warehouseNames).toBe(warehouseA.name);
     expect(
       sheet?.lines

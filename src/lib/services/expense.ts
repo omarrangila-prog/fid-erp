@@ -161,26 +161,37 @@ async function validateReferences(tx: Tx, input: ExpenseInput) {
     throw new BusinessRuleError('A general company expense does not belong to a container or a batch.');
   }
 
+  /*
+   * A container or batch may sit on a sister shipment of the same order.
+   *
+   * One order now holds one shipment per container, so the container a cost
+   * belongs to is often not on the shipment the form happened to be opened
+   * from. The order is the boundary that matters: a container from another
+   * order is refused, one from the same order is accepted and the expense is
+   * filed under the shipment that actually carries it.
+   */
   if (input.containerId) {
     const container = await tx.container.findFirst({
       where: { id: input.containerId, companyId: input.companyId },
-      select: { id: true, shipmentId: true, containerNumber: true },
+      select: { id: true, shipmentId: true, purchaseContractId: true, containerNumber: true },
     });
     if (!container) throw new NotFoundError('Container');
-    if (container.shipmentId !== input.shipmentId) {
-      throw new BusinessRuleError(`${container.containerNumber} does not belong to this shipment.`);
+    if (container.purchaseContractId !== input.purchaseContractId) {
+      throw new BusinessRuleError(`${container.containerNumber} does not belong to this order.`);
     }
+    if (container.shipmentId) input.shipmentId = container.shipmentId;
   }
 
   if (input.batchId) {
     const batch = await tx.batch.findFirst({
       where: { id: input.batchId, companyId: input.companyId },
-      select: { id: true, shipmentId: true, containerId: true, batchNumber: true },
+      select: { id: true, shipmentId: true, purchaseContractId: true, containerId: true, batchNumber: true },
     });
     if (!batch) throw new NotFoundError('Batch');
-    if (batch.shipmentId !== input.shipmentId) {
-      throw new BusinessRuleError(`${batch.batchNumber} does not belong to this shipment.`);
+    if (batch.purchaseContractId !== input.purchaseContractId) {
+      throw new BusinessRuleError(`${batch.batchNumber} does not belong to this order.`);
     }
+    input.shipmentId = batch.shipmentId;
     if (input.containerId && batch.containerId && batch.containerId !== input.containerId) {
       throw new BusinessRuleError(`${batch.batchNumber} is not in that container.`);
     }

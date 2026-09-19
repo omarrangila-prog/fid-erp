@@ -1,11 +1,12 @@
 import type { Tx } from '@/lib/db';
 import { transaction, prisma } from '@/lib/db';
-import { Decimal, dec, toMoney } from '@/lib/money';
+import { Decimal, dec, sum, toMoney, toQuantity } from '@/lib/money';
 import {
   SHIPMENT_STATUS_TRANSITIONS,
   SHIPMENT_STATUS_REQUIREMENTS,
   SHIPMENT_STATUS_META,
   SHIPMENT_STATUSES_IN_TRANSIT,
+  SHIPMENT_STATUSES_LANDED,
 } from '@/lib/constants';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
 import { writeAudit } from '@/lib/services/audit';
@@ -759,5 +760,224 @@ export async function saveShipmentContainers(
     });
 
     return shipment;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// A purchase order as the parent of its shipments
+// ---------------------------------------------------------------------------
+
+export type OrderArrival = 'NOT_ARRIVED' | 'PARTIALLY_ARRIVED' | 'FULLY_ARRIVED';
+export type OrderReceipt = 'NOT_RECEIVED' | 'PARTIALLY_RECEIVED' | 'FULLY_RECEIVED';
+
+export type OrderShipmentLine = {
+  shipmentId: string;
+  /** "Shipment 1", by position on the order — the way the client refers to it. */
+  ordinal: number;
+  status: string;
+  arrived: boolean;
+  itemName: string;
+  containerNumber: string | null;
+  lotNumber: string | null;
+  batchNumber: string | null;
+  batchId: string | null;
+  warehouseName: string | null;
+  orderedKg: Decimal;
+  receivedKg: Decimal;
+  availableKg: Decimal;
+  purchaseUsd: Decimal;
+  etaDate: Date | null;
+  ataDate: Date | null;
+  received: boolean;
+};
+
+export type OrderOverview = {
+  contractId: string;
+  reference: string;
+  shipments: OrderShipmentLine[];
+  totalShipments: number;
+  arrivedCount: number;
+  receivedCount: number;
+  containerCount: number;
+  totalKg: Decimal;
+  receivedKg: Decimal;
+  remainingKg: Decimal;
+  totalPurchaseUsd: Decimal;
+  arrival: OrderArrival;
+  receipt: OrderReceipt;
+};
+
+/**
+ * One order, every shipment under it, and what that adds up to.
+ *
+ * A contract routinely covers three containers that arrive on three days.
+ * The order is "fully arrived" only when the last of them lands, and it says
+ * "2 of 3 arrived" until then — the mistake this guards against is the whole
+ * order reading arrived as soon as the first container does.
+ *
+ * Every total here is a sum over the lines, never a figure repeated per line:
+ * three containers of 20,000 KG are 60,000 KG, not 180,000.
+ */
+export async function getOrderOverview(companyId: string, contractId: string): Promise<OrderOverview> {
+  const contract = await prisma.purchaseContract.findFirstOrThrow({
+    where: { id: contractId, companyId },
+    select: {
+      id: true,
+      contractReference: true,
+      shipments: {
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          status: true,
+          etaDate: true,
+          ataDate: true,
+          item: { select: { itemName: true } },
+          batches: {
+            orderBy: { batchNumber: 'asc' },
+            select: {
+              id: true,
+              batchNumber: true,
+              orderedQuantityKg: true,
+              receivedQuantityKg: true,
+              availableQuantityKg: true,
+              purchaseCostUsd: true,
+              lot: { select: { lotNumber: true } },
+              container: { select: { containerNumber: true } },
+              warehouse: { select: { name: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const shipments: OrderShipmentLine[] = contract.shipments.map((shipment, index) => {
+    // A shipment carries one line's coffee; an older job may carry several
+    // batches, in which case they are summed and the first names the lot.
+    const first = shipment.batches[0];
+    const orderedKg = toQuantity(sum(shipment.batches.map((b) => dec(b.orderedQuantityKg))));
+    const receivedKg = toQuantity(sum(shipment.batches.map((b) => dec(b.receivedQuantityKg))));
+    const availableKg = toQuantity(sum(shipment.batches.map((b) => dec(b.availableQuantityKg))));
+    const arrived = SHIPMENT_STATUSES_LANDED.includes(shipment.status);
+
+    return {
+      shipmentId: shipment.id,
+      ordinal: index + 1,
+      status: shipment.status,
+      arrived,
+      itemName: shipment.item.itemName,
+      containerNumber: first?.container?.containerNumber ?? null,
+      lotNumber: first?.lot?.lotNumber ?? null,
+      batchNumber: first?.batchNumber ?? null,
+      batchId: first?.id ?? null,
+      warehouseName: first?.warehouse?.name ?? null,
+      orderedKg,
+      receivedKg,
+      availableKg,
+      purchaseUsd: toMoney(sum(shipment.batches.map((b) => dec(b.purchaseCostUsd)))),
+      etaDate: shipment.etaDate,
+      ataDate: shipment.ataDate,
+      received: orderedKg.greaterThan(0) && receivedKg.greaterThanOrEqualTo(orderedKg),
+    };
+  });
+
+  const arrivedCount = shipments.filter((s) => s.arrived).length;
+  const receivedCount = shipments.filter((s) => s.received).length;
+  const totalKg = toQuantity(sum(shipments.map((s) => s.orderedKg)));
+  const receivedKg = toQuantity(sum(shipments.map((s) => s.receivedKg)));
+
+  const verdict = <T extends string>(count: number, none: T, some: T, all: T): T =>
+    shipments.length === 0 || count === 0 ? none : count === shipments.length ? all : some;
+
+  return {
+    contractId: contract.id,
+    reference: contract.contractReference,
+    shipments,
+    totalShipments: shipments.length,
+    arrivedCount,
+    receivedCount,
+    containerCount: new Set(shipments.map((s) => s.containerNumber).filter(Boolean)).size,
+    totalKg,
+    receivedKg,
+    remainingKg: toQuantity(totalKg.minus(receivedKg)),
+    totalPurchaseUsd: toMoney(sum(shipments.map((s) => s.purchaseUsd))),
+    arrival: verdict(arrivedCount, 'NOT_ARRIVED', 'PARTIALLY_ARRIVED', 'FULLY_ARRIVED'),
+    receipt: verdict(receivedCount, 'NOT_RECEIVED', 'PARTIALLY_RECEIVED', 'FULLY_RECEIVED'),
+  };
+}
+
+/**
+ * Every shipment on the order arrived together.
+ *
+ * Each one is moved through the same status change the sheet uses, one at a
+ * time inside one transaction — so either all of them arrive or none do, and
+ * every one keeps its own history line. Shipments already arrived are left
+ * alone rather than refused, because "mark all arrived" on an order where two
+ * of three already are is a reasonable thing to click.
+ */
+export async function markOrderArrived(input: {
+  companyId: string;
+  contractId: string;
+  userId: string;
+  ataDate: Date;
+}) {
+  return transaction(async (tx) => {
+    const shipments = await tx.shipment.findMany({
+      where: { purchaseContractId: input.contractId, companyId: input.companyId },
+      select: { id: true, status: true, shipmentNumber: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (shipments.length === 0) throw new NotFoundError('Shipments on this order');
+
+    const moved: string[] = [];
+    for (const shipment of shipments) {
+      if (SHIPMENT_STATUSES_LANDED.includes(shipment.status)) continue;
+
+      // A shipment nobody marked loaded is still on the contract. Arriving
+      // implies it sailed, so it is stepped through LOADED first, with the
+      // same data the sheet would have asked for.
+      if (shipment.status === 'CONTRACT_CREATED' || shipment.status === 'AWAITING_LOADING') {
+        await tx.shipment.update({
+          where: { id: shipment.id },
+          data: { status: 'LOADED', loadingDate: input.ataDate, etaDate: input.ataDate },
+        });
+        await tx.shipmentStatusHistory.create({
+          data: {
+            shipmentId: shipment.id,
+            fromStatus: shipment.status,
+            toStatus: 'LOADED',
+            changedById: input.userId,
+            notes: 'Marked arrived with the rest of the order; loaded on the same day.',
+          },
+        });
+      }
+
+      const before = await tx.shipment.findUniqueOrThrow({ where: { id: shipment.id }, select: { status: true } });
+      await tx.shipment.update({
+        where: { id: shipment.id },
+        data: { status: 'ARRIVED', ataDate: input.ataDate },
+      });
+      await tx.shipmentStatusHistory.create({
+        data: {
+          shipmentId: shipment.id,
+          fromStatus: before.status,
+          toStatus: 'ARRIVED',
+          changedById: input.userId,
+          notes: 'Marked arrived with the rest of the order.',
+        },
+      });
+      moved.push(shipment.shipmentNumber);
+    }
+
+    await writeAudit(tx, {
+      companyId: input.companyId,
+      userId: input.userId,
+      action: 'ORDER_MARKED_ARRIVED',
+      entityType: 'PurchaseContract',
+      entityId: input.contractId,
+      after: { shipmentsMarked: moved.length, of: shipments.length, ataDate: input.ataDate },
+    });
+
+    return { marked: moved.length, total: shipments.length };
   });
 }
