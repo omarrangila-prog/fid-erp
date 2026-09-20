@@ -187,21 +187,40 @@ export async function getShipmentProfitability(params: {
       -- Landed cost of what actually sold, at each batch's current landed rate.
       COALESCE((SELECT SUM(b."soldQuantityKg" * b."landedUnitCostUsd")
                   FROM batches b WHERE b."shipmentId" = s."id"), 0)::text AS "allocatedLandedCostUsd",
-      (COALESCE((SELECT SUM(si."subtotalUsd") FROM sales_invoices si
-                  WHERE si."shipmentId" = s."id" AND si."status" = 'POSTED'), 0)
-       - COALESCE((SELECT SUM(cn."subtotalAmountUsd") FROM credit_notes cn
-                    WHERE cn."companyId" = s."companyId" AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'
-                      AND (
-                        EXISTS (
-                          SELECT 1 FROM sales_invoices si3
-                          WHERE si3."id" = cn."salesInvoiceId" AND si3."shipmentId" = s."id"
-                        )
-                        OR EXISTS (
-                          SELECT 1 FROM credit_note_lines cnl
-                          JOIN batches b3 ON b3."id" = cnl."batchId"
-                          WHERE cnl."creditNoteId" = cn."id" AND b3."shipmentId" = s."id"
-                        )
-                      )), 0))::text AS "salesRevenueUsd",
+      /*
+       * Revenue follows the coffee, not the invoice header.
+       *
+       * One invoice routinely sells from two shipments of the same order, and
+       * its header can name only one of them. Attributing revenue by the
+       * header while cost of sales follows each line's batch left shipments
+       * showing a cost with no sale against it, and the shipment results
+       * stopped adding up to the company's. Both now walk the same path:
+       * line to batch to shipment.
+       */
+      (COALESCE((SELECT SUM(sil."lineTotalUsd")
+                   FROM sales_invoice_lines sil
+                   JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
+                   JOIN batches b4 ON b4."id" = sil."batchId"
+                  WHERE b4."shipmentId" = s."id" AND si."status" = 'POSTED'), 0)
+       - COALESCE((SELECT SUM(cnl."lineTotalUsd")
+                     FROM credit_note_lines cnl
+                     JOIN credit_notes cn ON cn."id" = cnl."creditNoteId"
+                     JOIN batches b3 ON b3."id" = cnl."batchId"
+                    WHERE b3."shipmentId" = s."id" AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'), 0)
+       -- A credit for an allowance names no coffee, so it is shared over the
+       -- shipments of the invoice it credits, in proportion to what each sold
+       -- on that invoice. Without this the allowance would leave the shipment
+       -- results while staying in the company's.
+       - COALESCE((SELECT SUM(cnl."lineTotalUsd" * (SELECT COALESCE(SUM(sil2."lineTotalUsd"), 0) FROM sales_invoice_lines sil2
+                            JOIN batches b7 ON b7."id" = sil2."batchId"
+                           WHERE sil2."salesInvoiceId" = cn."salesInvoiceId" AND b7."shipmentId" = s."id")
+                         / NULLIF((SELECT SUM(sil3."lineTotalUsd") FROM sales_invoice_lines sil3
+                                    WHERE sil3."salesInvoiceId" = cn."salesInvoiceId"), 0))
+                     FROM credit_note_lines cnl
+                     JOIN credit_notes cn ON cn."id" = cnl."creditNoteId"
+                    WHERE cnl."batchId" IS NULL AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'
+                      AND cn."companyId" = s."companyId" AND cn."salesInvoiceId" IS NOT NULL), 0)
+      )::text AS "salesRevenueUsd",
       -- Only period costs. Capitalised costs already sit inside landed cost.
       COALESCE((SELECT SUM(e."amountUsd") FROM expenses e
                  WHERE e."shipmentId" = s."id" AND e."status" = 'POSTED'
@@ -210,27 +229,27 @@ export async function getShipmentProfitability(params: {
                   FROM batches b WHERE b."shipmentId" = s."id"), 0)::text AS "goodsCostLocal",
       COALESCE((SELECT SUM(b."soldQuantityKg" * b."landedUnitCostUsd" * pc."rateLocalPerUsd")
                   FROM batches b WHERE b."shipmentId" = s."id"), 0)::text AS "allocatedLandedCostLocal",
-      (COALESCE((SELECT SUM(
-                   CASE WHEN si."currency" = co."localCurrency" THEN si."subtotal"
-                        ELSE si."subtotalUsd" * si."rateLocalPerUsd" END)
-                   FROM sales_invoices si
-                  WHERE si."shipmentId" = s."id" AND si."status" = 'POSTED'), 0)
-       - COALESCE((SELECT SUM(
-                     CASE WHEN cn."currency" = co."localCurrency" THEN cn."subtotalAmount"
-                          ELSE cn."subtotalAmountUsd" * cn."rateLocalPerUsd" END)
-                     FROM credit_notes cn
-                    WHERE cn."companyId" = s."companyId" AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'
-                      AND (
-                        EXISTS (
-                          SELECT 1 FROM sales_invoices si4
-                          WHERE si4."id" = cn."salesInvoiceId" AND si4."shipmentId" = s."id"
-                        )
-                        OR EXISTS (
-                          SELECT 1 FROM credit_note_lines cnl2
-                          JOIN batches b4 ON b4."id" = cnl2."batchId"
-                          WHERE cnl2."creditNoteId" = cn."id" AND b4."shipmentId" = s."id"
-                        )
-                      )), 0))::text AS "salesRevenueLocal",
+      -- The same path in the company's own currency, at each invoice's rate.
+      (COALESCE((SELECT SUM(sil."lineTotalUsd" * si."rateLocalPerUsd")
+                   FROM sales_invoice_lines sil
+                   JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
+                   JOIN batches b5 ON b5."id" = sil."batchId"
+                  WHERE b5."shipmentId" = s."id" AND si."status" = 'POSTED'), 0)
+       - COALESCE((SELECT SUM(cnl."lineTotalUsd" * cn."rateLocalPerUsd")
+                     FROM credit_note_lines cnl
+                     JOIN credit_notes cn ON cn."id" = cnl."creditNoteId"
+                     JOIN batches b6 ON b6."id" = cnl."batchId"
+                    WHERE b6."shipmentId" = s."id" AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'), 0)
+       - COALESCE((SELECT SUM(cnl."lineTotalUsd" * cn."rateLocalPerUsd" * (SELECT COALESCE(SUM(sil2."lineTotalUsd"), 0) FROM sales_invoice_lines sil2
+                            JOIN batches b7 ON b7."id" = sil2."batchId"
+                           WHERE sil2."salesInvoiceId" = cn."salesInvoiceId" AND b7."shipmentId" = s."id")
+                         / NULLIF((SELECT SUM(sil3."lineTotalUsd") FROM sales_invoice_lines sil3
+                                    WHERE sil3."salesInvoiceId" = cn."salesInvoiceId"), 0))
+                     FROM credit_note_lines cnl
+                     JOIN credit_notes cn ON cn."id" = cnl."creditNoteId"
+                    WHERE cnl."batchId" IS NULL AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'
+                      AND cn."companyId" = s."companyId" AND cn."salesInvoiceId" IS NOT NULL), 0)
+      )::text AS "salesRevenueLocal",
       COALESCE((SELECT SUM(e."amountLocal") FROM expenses e
                  WHERE e."shipmentId" = s."id" AND e."status" = 'POSTED'
                    AND e."capitaliseToLandedCost" = false), 0)::text AS "otherCostsLocal"

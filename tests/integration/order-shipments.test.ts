@@ -3,6 +3,9 @@ import { prisma, resetDatabase, getContext, createMasters, getCashAccount, utcDa
 import { createExpense, postExpense } from '@/lib/services/expense';
 import { createPurchaseContract, postPurchaseContract } from '@/lib/services/purchase';
 import { createGoodsReceipt, postGoodsReceipt, receiveContainers } from '@/lib/services/goods-receipt';
+import { createSalesInvoice, postSalesInvoice } from '@/lib/services/sales';
+import { getShipmentProfitability } from '@/lib/services/profitability';
+import { getProfitAndLoss } from '@/lib/services/reports';
 import { getReceiptStatus, splitContractLine, correctPurchaseContract, editContainer, addContainerToOrder, reversePurchaseContract } from '@/lib/services/purchase';
 import { transaction } from '@/lib/db';
 import { changeShipmentStatus, getOrderOverview, markOrderArrived, undoLoading } from '@/lib/services/shipment';
@@ -1024,5 +1027,76 @@ describe('shared expenses on a divided order', () => {
     expect(screen12).toBeCloseTo(15625, 0);
     expect(screen18).toHaveLength(2);
     for (const share of screen18) expect(share).toBeCloseTo(7812.5, 0);
+  }, 300_000);
+});
+
+describe('shipment results add up to the company result', () => {
+  /**
+   * The client's requirements are explicit: shipment P&L is a management view
+   * and the company P&L is the statutory one, but both read the same
+   * transactions and must reconcile. Revenue used to be attributed by the
+   * invoice header's shipment while cost of sales followed each line's batch,
+   * so an invoice selling two shipments of one order put all the revenue on
+   * one of them and the shipments stopped adding up to the company.
+   */
+  it('attributes revenue to the shipment that sold the coffee, line by line', async () => {
+    const contract = await createPurchaseContract(
+      {
+        companyId, vendorId: masters.vendor.id, contractDate: utcDate('2026-10-01'), currency: 'USD', rateToUsd: '1', rateLocalPerUsd: '9.85', freightAmount: '0',
+        contractReference: 'ICUL/FID/RECONCILE', containers: 2,
+        lines: [
+          { itemId: masters.item.id, quantity: '10000', unit: 'KG', unitPrice: '4.00', bagWeightKg: '60', containerNumber: 'REC-1', lotNumber: 'LOT-R1' },
+          { itemId: masters.item.id, quantity: '10000', unit: 'KG', unitPrice: '4.00', bagWeightKg: '60', containerNumber: 'REC-2', lotNumber: 'LOT-R2' },
+        ],
+      },
+      ctx.admin.id,
+    );
+    await postPurchaseContract({ id: contract.id, companyId, userId: ctx.admin.id });
+    await markOrderArrived({ companyId, contractId: contract.id, userId: ctx.admin.id, ataDate: utcDate('2026-10-05') });
+    const status = await transaction((tx) => getReceiptStatus(tx, contract.id));
+    await receiveContainers({
+      companyId, purchaseContractId: contract.id, receiptDate: utcDate('2026-10-06'), receivedById: ctx.admin.id,
+      lines: status.map((r) => ({ batchId: r.batchId, quantityKg: '10000', warehouseId: masters.warehouses[0].id })),
+    });
+
+    // One invoice that sells from BOTH shipments of the order.
+    const overview = await getOrderOverview(companyId, contract.id);
+    const invoice = await createSalesInvoice(
+      {
+        companyId,
+        invoiceDate: utcDate('2026-10-10'),
+        customerId: masters.customer.id,
+        currency: 'USD',
+        rateToUsd: '1',
+        rateLocalPerUsd: '9.85',
+        lines: overview.shipments.map((line) => ({
+          batchId: line.batchId!,
+          warehouseId: masters.warehouses[0].id,
+          quantity: '5000',
+          unit: 'KG' as const,
+          unitPrice: '6.00',
+        })),
+      },
+      ctx.admin.id,
+    );
+    await postSalesInvoice({ id: invoice.id, companyId, userId: ctx.admin.id });
+
+    const profits = await getShipmentProfitability({ companyId });
+    const mine = profits.filter((p) => p.contractReference === 'ICUL/FID/RECONCILE');
+    expect(mine).toHaveLength(2);
+    // USD 30,000 each, not 60,000 on one and nothing on the other.
+    for (const p of mine) {
+      expect(Number(p.salesRevenueUsd)).toBeCloseTo(30_000, 2);
+      expect(Number(p.allocatedLandedCostUsd)).toBeCloseTo(20_000, 2);
+      expect(Number(p.grossProfitUsd)).toBeCloseTo(10_000, 2);
+    }
+
+    // And every shipment's revenue and cost adds up to the company's.
+    const all = await getShipmentProfitability({ companyId });
+    const pnl = await getProfitAndLoss({ companyId, from: new Date('2000-01-01'), to: new Date('2100-01-01') });
+    const shipmentRevenue = all.reduce((a, p) => a.plus(p.salesRevenueUsd), dec(0));
+    const shipmentCogs = all.reduce((a, p) => a.plus(p.allocatedLandedCostUsd), dec(0));
+    expect(Number(shipmentRevenue)).toBeCloseTo(Number(pnl.totals.revenueUsd), 2);
+    expect(Number(shipmentCogs)).toBeCloseTo(Number(pnl.totals.costOfSalesUsd), 2);
   }, 300_000);
 });
