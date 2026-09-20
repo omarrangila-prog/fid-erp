@@ -538,6 +538,7 @@ const REPORTS: Record<string, Report> = {
             'Purchased (KG)', 'Received (KG)', 'Sold (KG)', 'Remaining (KG)',
             'Purchase cost (USD)', 'Direct expenses (USD)', 'Landed cost (USD)',
             `Purchase cost (${local})`, `Direct expenses (${local})`, `Landed cost (${local})`,
+            'Closing stock (KG)', 'Closing stock value (USD)',
             'Revenue (USD)', 'Cost of goods sold (USD)', 'Gross profit (USD)', 'Other costs (USD)', 'Net profit (USD)',
             `Revenue (${local})`, `Cost of goods sold (${local})`, `Gross profit (${local})`, `Net profit (${local})`,
           ],
@@ -557,7 +558,10 @@ const REPORTS: Record<string, Report> = {
             { header: `Direct expenses (${local})`, value: (r) => Number(r.capitalisedCostLocal), type: 'money' as const },
             { header: `Landed cost (${local})`, value: (r) => Number(r.totalLandedCostLocal), type: 'money' as const },
             { header: `Landed cost per KG (${local})`, value: (r) => Number(r.landedCostPerKgLocal), type: 'money' as const },
+            { header: 'Closing stock (KG)', value: (r) => Number(r.onHandQuantityKg), type: 'quantity' as const },
+            { header: 'Closing stock value (USD)', value: (r) => Number(r.closingStockValueUsd), type: 'money' as const },
             { header: 'Revenue (USD)', value: (r) => Number(r.salesRevenueUsd), type: 'money' as const },
+            { header: 'Average selling price (USD/KG)', value: (r) => Number(r.averageSellingPriceUsd), type: 'money' as const },
             { header: 'Cost of goods sold (USD)', value: (r) => Number(r.allocatedLandedCostUsd), type: 'money' as const },
             { header: 'Gross profit (USD)', value: (r) => Number(r.grossProfitUsd), type: 'money' as const },
             { header: 'Other costs (USD)', value: (r) => Number(r.otherCostsUsd), type: 'money' as const },
@@ -709,8 +713,10 @@ const REPORTS: Record<string, Report> = {
       const t = pnl.totals;
 
       const rows: StatementRow[] = [
-        ...pnlSection('Revenue', pnl.revenue, { usd: t.revenueUsd, local: t.revenueLocal }),
-        ...pnlSection('Cost of sales', pnl.costOfSales, { usd: t.costOfSalesUsd, local: t.costOfSalesLocal }),
+        // The headings the statement on screen uses, so the file and the
+        // screen read as one report rather than two namings of it.
+        ...pnlSection('Income', pnl.revenue, { usd: t.revenueUsd, local: t.revenueLocal }),
+        ...pnlSection('Cost of goods sold', pnl.costOfSales, { usd: t.costOfSalesUsd, local: t.costOfSalesLocal }),
         {
           kind: 'total',
           label: 'Gross profit',
@@ -718,14 +724,14 @@ const REPORTS: Record<string, Report> = {
         },
         { kind: 'note', label: `Gross margin ${Number(pnl.grossMarginPct).toFixed(1)}% of revenue` },
         { kind: 'spacer' },
-        ...pnlSection('Operating expenses', pnl.operatingExpenses, {
+        ...pnlSection('Expenses', pnl.operatingExpenses, {
           usd: t.operatingExpensesUsd,
           local: t.operatingExpensesLocal,
         }),
       ];
 
       if (pnl.otherItems.length > 0) {
-        rows.push(...pnlSection('Other income and charges', pnl.otherItems, { usd: t.otherUsd, local: t.otherLocal }));
+        rows.push(...pnlSection('Other income and expenses', pnl.otherItems, { usd: t.otherUsd, local: t.otherLocal }));
       }
 
       rows.push(

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { getShipmentProfitability, type ShipmentProfitability } from '@/lib/services/profitability';
+import { getShipmentProfitability, getShipmentExpensesByCategory, type ShipmentProfitability } from '@/lib/services/profitability';
 import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
 import { Decimal, dec, sum } from '@/lib/money';
 import { formatMoney, formatQuantityKg, formatPercent } from '@/lib/format';
@@ -23,9 +23,23 @@ export async function ProfitabilityStatement({
   /** Narrow the columns to one order's shipments. */
   contractId?: string;
 }) {
-  const [all, ordinals] = await Promise.all([getShipmentProfitability({ companyId }), getShipmentOrdinals(companyId)]);
+  const [all, ordinals, expensesByShipment] = await Promise.all([
+    getShipmentProfitability({ companyId }),
+    getShipmentOrdinals(companyId),
+    getShipmentExpensesByCategory({ companyId }),
+  ]);
   const rows = (contractId ? all.filter((r) => r.contractId === contractId) : all).slice().reverse();
   const hasOverhead = rows.some((r) => !r.allocatedOverheadUsd.isZero());
+
+  // Every direct-cost category booked to any of these shipments, each its own
+  // line — freight, clearing, transport — so the total is not one opaque sum.
+  const categories = [
+    ...new Set(
+      rows.flatMap((r) => (expensesByShipment.get(r.shipmentId) ?? []).filter((e) => e.capitalised).map((e) => e.category)),
+    ),
+  ].sort();
+  const categoryAmount = (shipmentId: string, category: string) =>
+    dec((expensesByShipment.get(shipmentId) ?? []).find((e) => e.capitalised && e.category === category)?.amountUsd ?? 0);
 
   type Measure = {
     key: string;
@@ -44,10 +58,20 @@ export async function ProfitabilityStatement({
     { key: 'purchasedKg', label: 'Purchased', of: (r) => r.purchaseQuantityKg, kind: 'kg', group: 'Quantity' },
     { key: 'receivedKg', label: 'Received', of: (r) => r.receivedQuantityKg, kind: 'kg' },
     { key: 'soldKg', label: 'Sold', of: (r) => r.soldQuantityKg, kind: 'kg' },
-    { key: 'remainingKg', label: 'Remaining in stock', of: (r) => r.remainingQuantityKg, kind: 'kg' },
+    { key: 'remainingKg', label: 'Remaining (purchased less sold)', of: (r) => r.remainingQuantityKg, kind: 'kg' },
+    { key: 'onHandKg', label: 'On hand in the warehouses', of: (r) => r.onHandQuantityKg, kind: 'kg' },
+    { key: 'closingValue', label: 'Closing stock value', of: (r) => r.closingStockValueUsd, kind: 'usd' },
 
     { key: 'purchaseUsd', label: 'Purchase cost', of: (r) => r.goodsCostUsd, kind: 'usd', group: 'Landed cost' },
-    { key: 'directUsd', label: 'Direct shipment expenses', of: (r) => r.capitalisedCostUsd, kind: 'usd' },
+    ...categories.map(
+      (category): Measure => ({
+        key: `cat-${category}`,
+        label: `  ${category}`,
+        of: (r) => categoryAmount(r.shipmentId, category),
+        kind: 'usd',
+      }),
+    ),
+    { key: 'directUsd', label: 'Total direct shipment expenses', of: (r) => r.capitalisedCostUsd, kind: 'usd', emphasis: 'strong' },
     { key: 'landedUsd', label: 'Total landed cost', of: (r) => r.totalLandedCostUsd, kind: 'usd', emphasis: 'strong' },
     { key: 'purchaseLocal', label: `Purchase cost (${local})`, of: (r) => r.goodsCostLocal, kind: 'local' },
     { key: 'directLocal', label: `Direct shipment expenses (${local})`, of: (r) => r.capitalisedCostLocal, kind: 'local' },
@@ -68,6 +92,13 @@ export async function ProfitabilityStatement({
     },
 
     { key: 'revenueUsd', label: 'Sales revenue', of: (r) => r.salesRevenueUsd, kind: 'usd', group: 'Result on what has sold' },
+    {
+      key: 'avgPrice',
+      label: 'Average selling price per KG',
+      of: (r) => r.averageSellingPriceUsd,
+      kind: 'unitUsd',
+      total: (t) => ratio(t.get('revenueUsd')!, t.get('soldKg')!),
+    },
     { key: 'cogsUsd', label: 'Cost of goods sold', of: (r) => r.allocatedLandedCostUsd, kind: 'usd' },
     { key: 'grossUsd', label: 'Gross profit', of: (r) => r.grossProfitUsd, kind: 'usd', emphasis: 'strong', tone: 'profit' },
     { key: 'otherUsd', label: 'Other shipment costs', of: (r) => r.otherCostsUsd, kind: 'usd' },

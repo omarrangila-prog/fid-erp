@@ -818,6 +818,18 @@ export const EXPENSE_CATEGORY_SEEDS: Array<{
   { code: 'GENTRANS', name: 'General Transport', kind: 'GENERAL', capitalise: false },
   { code: 'WAREHOUSE', name: 'Warehouse Rent', kind: 'GENERAL', capitalise: false },
   { code: 'MISC', name: 'Other Administrative Expense', kind: 'GENERAL', capitalise: false },
+
+  /*
+   * Appended rather than filed with the other direct costs above.
+   *
+   * The GL code each category gets is its position among the capitalising
+   * seeds, so inserting one in the middle would renumber every category after
+   * it and hand a newly provisioned company an account that already belongs to
+   * something else. Added at the end, the existing codes never move.
+   */
+  { code: 'FUMIGATION', name: 'Fumigation', kind: 'SHIPMENT', capitalise: true },
+  { code: 'DEMURRAGE', name: 'Demurrage', kind: 'SHIPMENT', capitalise: true },
+  { code: 'DETENTION', name: 'Detention', kind: 'SHIPMENT', capitalise: true },
 ];
 
 /** System account keys referenced by the posting engine. */

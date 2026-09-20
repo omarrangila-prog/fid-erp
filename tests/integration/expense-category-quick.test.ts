@@ -22,12 +22,14 @@ describe('quickCreateExpenseCategory', () => {
     const created = await quickCreateExpenseCategory({
       companyId: ctx.morocco.id,
       userId: ctx.admin.id,
-      name: 'Fumigation',
-      description: 'Phytosanitary treatment at origin',
+      // A name the standard chart does not already carry, so this stays a
+      // test of quick-create rather than of the duplicate guard.
+      name: 'Phytosanitary treatment',
+      description: 'Treatment certificate at origin',
       kind: 'SHIPMENT',
     });
 
-    expect(created.code).toBe('FUMIGATION');
+    expect(created.code).toBe('PHYTOSANITARY_TREATMENT');
     expect(created.kind).toBe('SHIPMENT');
     expect(created.capitaliseByDefault).toBe(true);
 

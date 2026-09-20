@@ -4,6 +4,7 @@ import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getShipmentCostSheet } from '@/lib/services/landed-cost';
+import { getShipmentExpensesByCategory } from '@/lib/services/profitability';
 import { formatMoney, formatDate, formatQuantityKg } from '@/lib/format';
 import { dec } from '@/lib/money';
 import { cn } from '@/lib/utils';
@@ -54,6 +55,11 @@ export default async function ShipmentCostPage({
   const selectedId = shipment && shipments.some((s) => s.id === shipment) ? shipment : shipments[0]?.id;
   const selected = shipments.find((s) => s.id === selectedId);
   const sheet = selectedId ? await getShipmentCostSheet(companyId, selectedId) : null;
+  // The same costs summed by the category they were booked to, so freight,
+  // clearing and transport each show as their own figure rather than one sum.
+  const byCategory = selectedId
+    ? ((await getShipmentExpensesByCategory({ companyId, shipmentId: selectedId })).get(selectedId) ?? [])
+    : [];
 
   return (
     <div className="space-y-6">
@@ -199,6 +205,35 @@ export default async function ShipmentCostPage({
                             </TR>
                           ))
                         )}
+                      </TBody>
+                      <TBody>
+                        {byCategory.length > 0 ? (
+                          <>
+                            <TR className="bg-surface-sunken/40 hover:bg-surface-sunken/40">
+                              <TD colSpan={9} className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+                                By category
+                              </TD>
+                            </TR>
+                            {byCategory.map((row) => (
+                              <TR key={`${row.category}-${row.capitalised}`}>
+                                <TD />
+                                <TD className="font-medium">{row.category}</TD>
+                                <TD className="text-xs text-ink-muted">
+                                  {row.count} {row.count === 1 ? 'entry' : 'entries'}
+                                </TD>
+                                <TD colSpan={2} />
+                                <TD numeric>{formatMoney(row.amountUsd, 'USD')}</TD>
+                                <TD numeric>{formatMoney(row.amountLocal, sheet.localCurrency)}</TD>
+                                <TD>
+                                  <Badge tone={row.capitalised ? 'success' : 'neutral'}>
+                                    {row.capitalised ? 'Yes' : 'No — a running cost'}
+                                  </Badge>
+                                </TD>
+                                <TD />
+                              </TR>
+                            ))}
+                          </>
+                        ) : null}
                       </TBody>
                       <TFoot>
                         <tr>

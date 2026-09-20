@@ -1,6 +1,6 @@
 import { getOverheadByShipment } from '@/lib/services/overhead-allocation';
 import { prisma } from '@/lib/db';
-import { Decimal, toMoney, toQuantity, toUnitCost, percentage } from '@/lib/money';
+import { Decimal, dec, toMoney, toQuantity, toUnitCost, percentage } from '@/lib/money';
 
 /**
  * ProfitabilityService.
@@ -48,6 +48,11 @@ export type ShipmentProfitability = {
   /** Landed cost of the coffee that has actually been sold. */
   allocatedLandedCostUsd: Decimal;
   salesRevenueUsd: Decimal;
+  /** Sales value over the kilograms sold — what a kilogram actually fetched. */
+  averageSellingPriceUsd: Decimal;
+  /** What is left on the shelf, at the batch's landed cost — the same basis the valuation and the balance sheet use. */
+  onHandQuantityKg: Decimal;
+  closingStockValueUsd: Decimal;
   grossProfitUsd: Decimal;
   /** Period costs booked to the job but not capitalised into stock. */
   otherCostsUsd: Decimal;
@@ -71,6 +76,8 @@ export type ShipmentProfitability = {
   landedCostPerKgLocal: Decimal;
   allocatedLandedCostLocal: Decimal;
   salesRevenueLocal: Decimal;
+  averageSellingPriceLocal: Decimal;
+  closingStockValueLocal: Decimal;
   otherCostsLocal: Decimal;
   grossProfitLocal: Decimal;
   netProfitLocal: Decimal;
@@ -97,6 +104,8 @@ type RawRow = {
   allocatedLandedCostUsd: string;
   salesRevenueUsd: string;
   otherCostsUsd: string;
+  onHandKg: string;
+  closingStockValueUsd: string;
   goodsCostLocal: string;
   capitalisedCostLocal: string;
   allocatedLandedCostLocal: string;
@@ -105,6 +114,8 @@ type RawRow = {
 };
 
 function shape(row: RawRow): ShipmentProfitability {
+  // The order's own rate, the one the goods and their costs were converted at.
+  const rateLocalPerUsd = dec(row.goodsCostUsd).isZero() ? dec(1) : dec(row.goodsCostLocal).dividedBy(row.goodsCostUsd);
   const purchaseQuantityKg = toQuantity(row.orderedKg);
   const soldQuantityKg = toQuantity(row.soldKg);
   const goodsCostUsd = toMoney(row.goodsCostUsd);
@@ -112,6 +123,8 @@ function shape(row: RawRow): ShipmentProfitability {
   const totalLandedCostUsd = toMoney(goodsCostUsd.plus(capitalisedCostUsd));
   const allocatedLandedCostUsd = toMoney(row.allocatedLandedCostUsd);
   const salesRevenueUsd = toMoney(row.salesRevenueUsd);
+  const onHandQuantityKg = toQuantity(row.onHandKg);
+  const closingStockValueUsd = toMoney(row.closingStockValueUsd);
   const otherCostsUsd = toMoney(row.otherCostsUsd);
   const grossProfitUsd = toMoney(salesRevenueUsd.minus(allocatedLandedCostUsd));
   const netProfitUsd = toMoney(grossProfitUsd.minus(otherCostsUsd));
@@ -148,6 +161,11 @@ function shape(row: RawRow): ShipmentProfitability {
       : new Decimal(0),
     allocatedLandedCostUsd,
     salesRevenueUsd,
+    averageSellingPriceUsd: soldQuantityKg.greaterThan(0)
+      ? toUnitCost(salesRevenueUsd.dividedBy(soldQuantityKg))
+      : new Decimal(0),
+    onHandQuantityKg,
+    closingStockValueUsd,
     grossProfitUsd,
     otherCostsUsd,
     netProfitUsd,
@@ -166,6 +184,10 @@ function shape(row: RawRow): ShipmentProfitability {
       : new Decimal(0),
     allocatedLandedCostLocal,
     salesRevenueLocal,
+    averageSellingPriceLocal: soldQuantityKg.greaterThan(0)
+      ? toUnitCost(salesRevenueLocal.dividedBy(soldQuantityKg))
+      : new Decimal(0),
+    closingStockValueLocal: toMoney(closingStockValueUsd.times(rateLocalPerUsd)),
     otherCostsLocal,
     grossProfitLocal,
     netProfitLocal,
@@ -237,6 +259,15 @@ export async function getShipmentProfitability(params: {
       COALESCE((SELECT SUM(e."amountUsd") FROM expenses e
                  WHERE e."shipmentId" = s."id" AND e."status" = 'POSTED'
                    AND e."capitaliseToLandedCost" = false), 0)::text AS "otherCostsUsd",
+      -- What is still on the shelf, and what it is carried at. The same
+      -- basis as the inventory valuation, so a shipment's remaining stock and
+      -- the company's inventory asset are one figure read two ways.
+      COALESCE((SELECT SUM(ib."onHandKg") FROM batches b
+                  JOIN inventory_balances ib ON ib."batchId" = b."id"
+                 WHERE b."shipmentId" = s."id"), 0)::text AS "onHandKg",
+      COALESCE((SELECT SUM(ib."onHandKg" * b."landedUnitCostUsd") FROM batches b
+                  JOIN inventory_balances ib ON ib."batchId" = b."id"
+                 WHERE b."shipmentId" = s."id"), 0)::text AS "closingStockValueUsd",
       COALESCE((SELECT SUM(b."purchaseCostUsd" * pc."rateLocalPerUsd")
                   FROM batches b WHERE b."shipmentId" = s."id"), 0)::text AS "goodsCostLocal",
       COALESCE((SELECT SUM(b."capitalisedCostUsd" * pc."rateLocalPerUsd")
@@ -297,6 +328,66 @@ export async function getShipmentProfitability(params: {
       profitAfterOverheadUsd: toMoney(shaped.netProfitUsd.minus(allocatedOverheadUsd)),
     };
   });
+}
+
+/**
+ * Direct shipment costs summed by category — freight, clearing, transport —
+ * for the shipment costing report the client's requirements set out. Only
+ * posted expenses, and each one counted once, under the category it was
+ * booked to.
+ */
+export type ShipmentExpenseCategory = {
+  shipmentId: string;
+  category: string;
+  capitalised: boolean;
+  amountUsd: Decimal;
+  amountLocal: Decimal;
+  count: number;
+};
+
+export async function getShipmentExpensesByCategory(params: {
+  companyId: string;
+  shipmentId?: string;
+}): Promise<Map<string, ShipmentExpenseCategory[]>> {
+  const rows = await prisma.expense.findMany({
+    where: {
+      companyId: params.companyId,
+      status: 'POSTED',
+      shipmentId: params.shipmentId ? params.shipmentId : { not: null },
+    },
+    select: {
+      shipmentId: true,
+      amountUsd: true,
+      amountLocal: true,
+      capitaliseToLandedCost: true,
+      expenseCategory: { select: { name: true } },
+    },
+  });
+
+  const byShipment = new Map<string, ShipmentExpenseCategory[]>();
+  for (const row of rows) {
+    if (!row.shipmentId) continue;
+    const list = byShipment.get(row.shipmentId) ?? [];
+    const key = `${row.expenseCategory.name}:${row.capitaliseToLandedCost}`;
+    const existing = list.find((l) => `${l.category}:${l.capitalised}` === key);
+    if (existing) {
+      existing.amountUsd = toMoney(existing.amountUsd.plus(row.amountUsd));
+      existing.amountLocal = toMoney(existing.amountLocal.plus(row.amountLocal));
+      existing.count += 1;
+    } else {
+      list.push({
+        shipmentId: row.shipmentId,
+        category: row.expenseCategory.name,
+        capitalised: row.capitaliseToLandedCost,
+        amountUsd: toMoney(row.amountUsd),
+        amountLocal: toMoney(row.amountLocal),
+        count: 1,
+      });
+    }
+    byShipment.set(row.shipmentId, list);
+  }
+  for (const list of byShipment.values()) list.sort((a, b) => a.category.localeCompare(b.category));
+  return byShipment;
 }
 
 export async function getShipmentProfitabilityById(
