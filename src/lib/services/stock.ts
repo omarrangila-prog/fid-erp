@@ -992,7 +992,9 @@ export async function getInventoryValuation(companyId: string): Promise<Inventor
 
   return rows.map((row) => {
     const onHandKg = toQuantity(row.onHandKg);
-    const landedUnitCostUsd = toMoney(row.landedUnitCostUsd);
+    // The unit cost keeps its four places: rounding it to cents before
+    // multiplying by twelve tonnes left the shelf a quarter off the ledger.
+    const landedUnitCostUsd = toUnitCost(row.landedUnitCostUsd);
     return {
       warehouseId: row.warehouseId,
       warehouseName: row.warehouseName,
@@ -1302,7 +1304,9 @@ export async function getInventoryValuationDetail(params: { companyId: string; f
       const landed = latestLanded.get(g.batchId)!;
       const carried = toMoney(landed.onHandKg.times(landed.unitCost));
       const adjustment = toMoney(carried.minus(g.runningValue));
-      if (adjustment.isZero() || landed.onHandKg.isZero()) continue;
+      // A batch sold out carries nothing: whatever the movements leave behind
+      // is the true-up that went to cost of sales, and is shown leaving.
+      if (adjustment.isZero()) continue;
       const lastMovement = g.movements.at(-1)?.date ?? params.from ?? new Date();
       const expenseDate = landed.shipmentId ? lateCostDate.get(landed.shipmentId) : undefined;
       const date = expenseDate && expenseDate > lastMovement ? expenseDate : lastMovement;
@@ -1312,7 +1316,7 @@ export async function getInventoryValuationDetail(params: { companyId: string; f
           id: `${g.batchId}:landed-cost`,
           date,
           type: 'LANDED_COST_ADJUSTMENT',
-          referenceType: 'Expense',
+          referenceType: 'LandedCost',
           referenceId: '',
           warehouseName: null,
           quantityKg: new Decimal(0),
