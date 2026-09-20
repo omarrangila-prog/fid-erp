@@ -102,7 +102,21 @@ export function ReportsClient({ reports }: { reports: ReportEntry[] }) {
 
   const starred = matches.filter((r) => favourites.has(r.href));
   const everyday = matches.filter((r) => r.pinned && !favourites.has(r.href));
-  const categories = [...new Set(matches.map((r) => r.category))];
+  // The order an accountant expects: the statements first, then the
+  // business's own dimension, then who owes and is owed, then the rest.
+  const ORDER = [
+    'Business overview',
+    'Shipment & profitability',
+    'Sales & customers',
+    'Purchases & suppliers',
+    'Inventory',
+    'Cash & bank',
+    'Agents',
+    'Accounting',
+  ];
+  const categories = [...new Set(matches.map((r) => r.category))].sort(
+    (a, b) => (ORDER.indexOf(a) === -1 ? 99 : ORDER.indexOf(a)) - (ORDER.indexOf(b) === -1 ? 99 : ORDER.indexOf(b)),
+  );
 
   function tile(report: ReportEntry) {
     const isFavourite = favourites.has(report.href);

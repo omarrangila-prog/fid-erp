@@ -333,12 +333,15 @@ export async function getProfitAndLoss(params: {
 
 export type BalanceSheetSection = { title: string; lines: PnlLine[]; totalUsd: Decimal; totalLocal: Decimal };
 
+/** A line on the statement, with the sub-heading it sits under — current or non-current. */
+export type BalanceSheetLine = PnlLine & { group: string };
+
 export async function getBalanceSheet(params: { companyId: string; asOf: Date }) {
   const rows = await accountBalances({ companyId: params.companyId, to: params.asOf });
 
-  const assets: PnlLine[] = [];
-  const liabilities: PnlLine[] = [];
-  const equity: PnlLine[] = [];
+  const assets: BalanceSheetLine[] = [];
+  const liabilities: BalanceSheetLine[] = [];
+  const equity: BalanceSheetLine[] = [];
   let retainedThisPeriodUsd = new Decimal(0);
   let retainedThisPeriodLocal = new Decimal(0);
 
@@ -356,12 +359,22 @@ export async function getBalanceSheet(params: { companyId: string; asOf: Date })
 
     if (debitMinusCreditUsd.isZero() && debitMinusCreditLocal.isZero()) continue;
 
-    const line: PnlLine = {
+    const line: BalanceSheetLine = {
       accountId: row.accountId,
       code: row.code,
       name: row.name,
       amountUsd: toMoney(row.type === 'ASSET' ? debitMinusCreditUsd : debitMinusCreditUsd.negated()),
       amountLocal: toMoney(row.type === 'ASSET' ? debitMinusCreditLocal : debitMinusCreditLocal.negated()),
+      group:
+        row.reportGroup === 'NON_CURRENT_ASSET'
+          ? 'Fixed assets'
+          : row.reportGroup === 'NON_CURRENT_LIABILITY'
+            ? 'Long-term liabilities'
+            : row.type === 'ASSET'
+              ? 'Current assets'
+              : row.type === 'LIABILITY'
+                ? 'Current liabilities'
+                : 'Equity',
     };
 
     if (row.type === 'ASSET') assets.push(line);
@@ -376,9 +389,10 @@ export async function getBalanceSheet(params: { companyId: string; asOf: Date })
     name: 'Current Period Result',
     amountUsd: toMoney(retainedThisPeriodUsd),
     amountLocal: toMoney(retainedThisPeriodLocal),
+    group: 'Equity',
   });
 
-  const section = (title: string, lines: PnlLine[]): BalanceSheetSection => ({
+  const section = (title: string, lines: BalanceSheetLine[]) => ({
     title,
     lines,
     totalUsd: toMoney(lines.reduce((a, l) => a.plus(l.amountUsd), new Decimal(0))),
@@ -1342,4 +1356,72 @@ export async function getPurchaseRegister(params: {
       status: outstanding.lessThanOrEqualTo(0) ? 'Paid' : settled.greaterThan(0) ? 'Part paid' : 'Unpaid',
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Statements by column: months, quarters, years, and period comparison
+// ---------------------------------------------------------------------------
+
+export type StatementColumnsBy = 'total' | 'month' | 'quarter' | 'year';
+export type StatementCompare = 'none' | 'previous' | 'year';
+
+export type StatementColumn = { label: string; from: Date; to: Date };
+
+/** Split a period into the columns a reader asked for — never more than 60. */
+export function statementColumns(from: Date, to: Date, by: StatementColumnsBy): StatementColumn[] {
+  if (by === 'total') return [{ label: 'Total', from, to }];
+  const columns: StatementColumn[] = [];
+  let cursor = new Date(Date.UTC(from.getUTCFullYear(), by === 'year' ? 0 : by === 'quarter' ? Math.floor(from.getUTCMonth() / 3) * 3 : from.getUTCMonth(), 1));
+  const months = by === 'year' ? 12 : by === 'quarter' ? 3 : 1;
+  while (cursor <= to && columns.length < 60) {
+    const end = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + months, 0));
+    const label =
+      by === 'year'
+        ? String(cursor.getUTCFullYear())
+        : by === 'quarter'
+          ? `Q${Math.floor(cursor.getUTCMonth() / 3) + 1} ${cursor.getUTCFullYear()}`
+          : cursor.toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+    columns.push({ label, from: cursor < from ? from : cursor, to: end > to ? to : end });
+    cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + months, 1));
+  }
+  return columns;
+}
+
+/** The period to compare with: the one just before of the same length, or the same dates a year earlier. */
+export function comparisonPeriod(from: Date, to: Date, compare: StatementCompare): { from: Date; to: Date } | null {
+  if (compare === 'none') return null;
+  if (compare === 'year') {
+    return {
+      from: new Date(Date.UTC(from.getUTCFullYear() - 1, from.getUTCMonth(), from.getUTCDate())),
+      to: new Date(Date.UTC(to.getUTCFullYear() - 1, to.getUTCMonth(), to.getUTCDate())),
+    };
+  }
+  const span = to.getTime() - from.getTime() + 86_400_000;
+  const previousTo = new Date(from.getTime() - 86_400_000);
+  return { from: new Date(previousTo.getTime() - span + 86_400_000), to: previousTo };
+}
+
+/**
+ * The profit and loss laid out in columns: one per month, quarter or year,
+ * with a total, and optionally the comparison period beside it. Each column
+ * is the ordinary statement for its own dates, so the total column is the
+ * plain report and every other one is a slice of it.
+ */
+export async function getProfitAndLossByColumns(params: {
+  companyId: string;
+  from: Date;
+  to: Date;
+  columnsBy: StatementColumnsBy;
+  compare: StatementCompare;
+}) {
+  const columns = statementColumns(params.from, params.to, params.columnsBy);
+  const previous = comparisonPeriod(params.from, params.to, params.compare);
+  const [byColumn, total, before] = await Promise.all([
+    params.columnsBy === 'total'
+      ? Promise.resolve([] as ProfitAndLoss[])
+      : Promise.all(columns.map((c) => getProfitAndLoss({ companyId: params.companyId, from: c.from, to: c.to }))),
+    getProfitAndLoss({ companyId: params.companyId, from: params.from, to: params.to }),
+    previous ? getProfitAndLoss({ companyId: params.companyId, from: previous.from, to: previous.to }) : Promise.resolve(null),
+  ]);
+  return { columns, byColumn, total, previous, before };
 }

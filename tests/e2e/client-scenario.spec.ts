@@ -318,12 +318,19 @@ test('the reports agree with one another and open for any period', async ({ page
     console.log(`  ${path} opens`);
   }
 
-  // Every period the client asks for, on the report they ask it of.
+  // Every period the client asks for, on the report they ask it of — in the
+  // one "Report period" control a QuickBooks user reaches for.
   await page.goto('/reports/profit-loss', { waitUntil: 'domcontentloaded' });
-  for (const label of ['Today', 'Yesterday', 'Last 7 days', 'This month', 'Everything']) {
-    await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible({ timeout: 20_000 });
+  const period = page.getByLabel(/Report period/);
+  await expect(period).toBeVisible({ timeout: 20_000 });
+  const offered = await period.locator('option').allTextContents();
+  for (const label of ['Today', 'Yesterday', 'Last 7 days', 'This week', 'Last week', 'This month', 'Last month', 'This quarter', 'Last quarter', 'Year to date', 'This year', 'Last year', 'All dates']) {
+    expect(offered).toContain(label);
   }
-  console.log('  every quick period is offered');
+  // Choosing one rewrites the address, so the period can be sent to somebody.
+  await period.selectOption('lastMonth');
+  await page.waitForURL(/from=\d{4}-\d{2}-01/, { timeout: 20_000 });
+  console.log(`  every quick period is offered (${offered.length - 1})`);
 });
 
 test('the shipment cost report splits the shared charges between the lines', async ({ page }) => {
@@ -568,8 +575,11 @@ test('the statements lead with the figures they exist to give', async ({ page })
 
   for (const [path, expected] of [
     ['/reports/trial-balance', ['Total debit', 'Total credit', 'Difference']],
-    ['/reports/profit-loss', ['Revenue', 'Cost of sales', 'Gross profit', 'Expenses', 'Net profit']],
-    ['/reports/balance-sheet', ['Total assets', 'Total liabilities', 'Total equity', 'Liabilities + equity']],
+    // The statement is laid out the way an accountant expects: Income, Cost
+    // of goods sold, Gross profit, Expenses, Net profit — collapsible, with
+    // a total row under each section.
+    ['/reports/profit-loss', ['Income', 'Total income', 'Cost of goods sold', 'Gross profit', 'Expenses', 'Total expenses', 'Net profit']],
+    ['/reports/balance-sheet', ['Current assets', 'Total assets', 'Total liabilities', 'Total equity', 'Total liabilities and equity']],
   ] as const) {
     await page.goto(path, { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle', { timeout: 6_000 }).catch(() => undefined);
@@ -584,6 +594,37 @@ test('the statements lead with the figures they exist to give', async ({ page })
   await page.goto('/reports/trial-balance', { waitUntil: 'domcontentloaded' });
   await expect(page.getByText(/^Balanced$|Attention required/).first()).toBeVisible({ timeout: 30_000 });
   console.log('  the trial balance says whether it balances');
+});
+
+test('the profit and loss reads like the statement the client is used to', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/reports/profit-loss?from=2026-01-01&to=2026-12-31', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('heading', { name: /^Profit and Loss$/ })).toBeVisible({ timeout: 30_000 });
+
+  // Sections collapse to their total row, and stay collapsed on return.
+  const income = page.getByRole('button', { name: /^Income$/ });
+  await expect(income).toHaveAttribute('aria-expanded', 'true');
+  await income.click();
+  await expect(income).toHaveAttribute('aria-expanded', 'false');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('button', { name: /^Income$/ })).toHaveAttribute('aria-expanded', 'false', { timeout: 30_000 });
+  await page.getByRole('button', { name: /^Income$/ }).click();
+
+  // Columns by month, and a comparison with the previous period.
+  await page.getByRole('combobox', { name: 'Display columns by' }).selectOption('month');
+  await page.waitForURL(/columns=month/);
+  await expect(page.getByRole('columnheader', { name: /Jan 2026/ })).toBeVisible({ timeout: 30_000 });
+  const compare = page.getByRole('combobox', { name: 'Compare' });
+  await expect(compare).toBeVisible({ timeout: 30_000 });
+  await compare.selectOption('previous');
+  await page.waitForURL(/compare=previous/);
+  await expect(page.getByRole('columnheader', { name: /Previous period/ })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('columnheader', { name: /% change/ })).toBeVisible();
+
+  // Every account line drills into its transactions.
+  const drill = page.locator('main table tbody a[href*="/reports/general-ledger?account="]').first();
+  await expect(drill).toBeVisible();
+  console.log('  statement: collapsible sections remembered, columns by month, previous-period comparison, drilldown');
 });
 
 test('who the loan is with is chosen from the ledgers, not typed', async ({ page }) => {

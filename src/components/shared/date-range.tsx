@@ -16,12 +16,15 @@ const PRESETS = [
   ['last2', 'Last 2 days'],
   ['last7', 'Last 7 days'],
   ['week', 'This week'],
+  ['lastWeek', 'Last week'],
   ['month', 'This month'],
   ['lastMonth', 'Last month'],
   ['quarter', 'This quarter'],
+  ['lastQuarter', 'Last quarter'],
   ['ytd', 'Year to date'],
   ['year', 'This year'],
-  ['all', 'Everything'],
+  ['lastYear', 'Last year'],
+  ['all', 'All dates'],
 ] as const;
 
 type PresetKind = (typeof PRESETS)[number][0];
@@ -87,6 +90,12 @@ export function DateRangePicker({
         start = daysAgo(weekday);
         break;
       }
+      case 'lastWeek': {
+        const weekday = (today.getUTCDay() + 6) % 7;
+        start = daysAgo(weekday + 7);
+        end = daysAgo(weekday + 1);
+        break;
+      }
       case 'month':
         start = new Date(Date.UTC(year, month, 1));
         end = new Date(Date.UTC(year, month + 1, 0));
@@ -101,9 +110,19 @@ export function DateRangePicker({
         end = new Date(Date.UTC(year, q * 3 + 3, 0));
         break;
       }
+      case 'lastQuarter': {
+        const q = Math.floor(month / 3) - 1;
+        start = new Date(Date.UTC(year, q * 3, 1));
+        end = new Date(Date.UTC(year, q * 3 + 3, 0));
+        break;
+      }
       case 'year':
         start = new Date(Date.UTC(year, 0, 1));
         end = new Date(Date.UTC(year, 11, 31));
+        break;
+      case 'lastYear':
+        start = new Date(Date.UTC(year - 1, 0, 1));
+        end = new Date(Date.UTC(year - 1, 11, 31));
         break;
       case 'ytd':
         start = new Date(Date.UTC(year, 0, 1));
@@ -134,13 +153,23 @@ export function DateRangePicker({
         Apply
       </Button>
       {presets ? (
-        <div className="flex flex-wrap gap-1">
-          {PRESETS.map(([kind, label]) => (
-            <Button key={kind} variant="ghost" size="sm" onClick={() => preset(kind)}>
-              {label}
-            </Button>
-          ))}
-        </div>
+        <Field label="Report period" htmlFor="reportPeriod" className="w-44">
+          <select
+            id="reportPeriod"
+            className="h-10 w-full rounded-lg border border-line-strong bg-surface px-3 text-sm"
+            defaultValue=""
+            onChange={(e) => {
+              if (e.target.value) preset(e.target.value as PresetKind);
+            }}
+          >
+            <option value="">Custom</option>
+            {PRESETS.map(([kind, label]) => (
+              <option key={kind} value={kind}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </Field>
       ) : null}
     </div>
   );

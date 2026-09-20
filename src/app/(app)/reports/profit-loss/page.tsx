@@ -1,20 +1,25 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { ReportSummary } from '@/components/shared/report-summary';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
-import { getProfitAndLoss } from '@/lib/services/reports';
+import { getProfitAndLossByColumns, type PnlLine, type ProfitAndLoss } from '@/lib/services/reports';
 import { formatMoney, formatDate, formatPercent } from '@/lib/format';
+import { Decimal, dec } from '@/lib/money';
 import { PageHeader } from '@/components/shared/page-header';
 import { DateRangePicker } from '@/components/shared/date-range';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
+import { Card, CardContent } from '@/components/ui/card';
 import { PrintButton } from '@/components/shared/print-button';
 import { exportHref } from '@/components/shared/excel-link';
 import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
-import type { PnlLine } from '@/lib/services/reports';
-import type { Decimal } from '@/lib/money';
+import {
+  Statement,
+  StatementControls,
+  StatementHeader,
+  FavouriteStar,
+  type StatementCell,
+  type StatementLine,
+  type StatementSectionData,
+} from '@/components/reports/report-statement';
 
 export const metadata: Metadata = { title: 'Profit & Loss' };
 export const dynamic = 'force-dynamic';
@@ -23,188 +28,164 @@ function startOfYear() {
   return new Date(Date.UTC(new Date().getUTCFullYear(), 0, 1));
 }
 
+/**
+ * The profit and loss statement, read the way an accountant reads one.
+ *
+ * Income, cost of sales, gross profit, expenses, net profit — in that order,
+ * as an indented statement rather than a row of cards. Columns are the
+ * period, or its months, quarters or years, and optionally the period before
+ * with the change and its percentage. Every account line opens the
+ * transactions that make it up. Sections collapse and stay collapsed.
+ */
 export default async function ProfitLossPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; columns?: string; compare?: string; zero?: string }>;
 }) {
-  const { from, to } = await searchParams;
+  const query = await searchParams;
   const user = await requirePageAccess(PERMISSIONS.ACCOUNTING_VIEW);
   const local = user.activeCompany.localCurrency;
 
-  const fromDate = from ? new Date(`${from}T00:00:00.000Z`) : startOfYear();
-  const toDate = to ? new Date(`${to}T00:00:00.000Z`) : new Date();
+  const fromDate = query.from ? new Date(`${query.from}T00:00:00.000Z`) : startOfYear();
+  const toDate = query.to ? new Date(`${query.to}T00:00:00.000Z`) : new Date();
+  const columnsBy = (['month', 'quarter', 'year'].includes(query.columns ?? '') ? query.columns : 'total') as 'total' | 'month' | 'quarter' | 'year';
+  const compare = (['previous', 'year'].includes(query.compare ?? '') ? query.compare : 'none') as 'none' | 'previous' | 'year';
+  const showZero = query.zero === '1';
 
-  /*
-   * The same statement for the period immediately before, of the same
-   * length, so "this month against last month" and "this quarter against
-   * the previous" are read side by side without anybody working out dates.
-   */
-  const spanMs = toDate.getTime() - fromDate.getTime() + 86_400_000;
-  const previousTo = new Date(fromDate.getTime() - 86_400_000);
-  const previousFrom = new Date(previousTo.getTime() - spanMs + 86_400_000);
+  const report = await getProfitAndLossByColumns({ companyId: user.activeCompany.id, from: fromDate, to: toDate, columnsBy, compare });
+  const { total, before, previous } = report;
+  const from = fromDate.toISOString().slice(0, 10);
+  const to = toDate.toISOString().slice(0, 10);
 
-  const [pnl, previous] = await Promise.all([
-    getProfitAndLoss({ companyId: user.activeCompany.id, from: fromDate, to: toDate }),
-    getProfitAndLoss({ companyId: user.activeCompany.id, from: previousFrom, to: previousTo }),
-  ]);
+  // --- Columns across the top ---------------------------------------------
+  const periodColumns = columnsBy === 'total' ? [] : report.columns.map((c) => c.label);
+  const columns = [
+    ...periodColumns,
+    columnsBy === 'total' ? 'Total' : 'Total',
+    ...(before ? [compare === 'year' ? 'Previous year' : 'Previous period', 'Change', '% change'] : []),
+  ];
 
-  /** "+12.5%" against the previous period, or nothing when there is no base to compare with. */
-  const change = (now: Decimal, before: Decimal) => {
-    if (before.isZero()) return now.isZero() ? 'no change' : 'new this period';
-    const pct = now.minus(before).dividedBy(before.abs()).times(100);
-    return `${pct.greaterThanOrEqualTo(0) ? '+' : ''}${pct.toFixed(1)}% vs ${formatMoney(before, 'USD')}`;
+  const money = (value: Decimal, muted = false): StatementCell => ({ value: formatMoney(value, 'USD'), muted });
+  const changeCells = (now: Decimal, then: Decimal): StatementCell[] => {
+    const delta = now.minus(then);
+    const pct = then.isZero() ? null : delta.dividedBy(then.abs()).times(100);
+    return [
+      money(then, true),
+      { value: formatMoney(delta, 'USD'), tone: delta.isNegative() ? 'negative' : delta.isZero() ? undefined : 'positive' },
+      { value: pct === null ? (delta.isZero() ? '—' : 'new') : `${pct.greaterThanOrEqualTo(0) ? '+' : ''}${pct.toFixed(1)}%`, muted: true },
+    ];
   };
 
-  const section = (title: string, lines: PnlLine[], totalUsd: string, totalLocal: string, emphasis?: boolean) => (
-    <>
-      <TR className="bg-forest-50/40 hover:bg-forest-50/40">
-        <TD colSpan={3} className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-          {title}
-        </TD>
-      </TR>
-      {lines.length === 0 ? (
-        <TR>
-          <TD colSpan={3} className="text-xs text-ink-subtle">
-            Nothing in this period.
-          </TD>
-        </TR>
-      ) : (
-        lines.map((line) => (
-          <TR key={line.code}>
-            <TD>
-              {/* Every figure on the statement opens the transactions behind
-                  it, for the same period. A total nobody can take apart is a
-                  total nobody can check. */}
-              <Link
-                href={`/reports/general-ledger?account=${line.accountId}&from=${fromDate
-                  .toISOString()
-                  .slice(0, 10)}&to=${toDate.toISOString().slice(0, 10)}`}
-                className="text-forest-800 hover:text-gold-700 hover:underline"
-              >
-{line.name}
-              </Link>
-            </TD>
-            <TD numeric>{formatMoney(line.amountUsd, 'USD')}</TD>
-            <TD numeric className="text-ink-muted">
-              {formatMoney(line.amountLocal, local)}
-            </TD>
-          </TR>
-        ))
-      )}
-      <TR className={emphasis ? 'border-t-2 border-line-strong font-semibold' : 'font-medium'}>
-        <TD>Total {title.toLowerCase()}</TD>
-        <TD numeric>{totalUsd}</TD>
-        <TD numeric className="text-ink-muted">{totalLocal}</TD>
-      </TR>
-    </>
-  );
+  /** One statement section from the matching group on each column's statement. */
+  const section = (key: string, title: string, pick: (p: ProfitAndLoss) => PnlLine[], totalOf: (p: ProfitAndLoss) => Decimal, totalLabel: string): StatementSectionData => {
+    // Union of accounts across every column, in the order the total statement lists them.
+    const ordered = new Map<string, PnlLine>();
+    for (const line of pick(total)) ordered.set(line.accountId, line);
+    for (const col of report.byColumn) for (const line of pick(col)) if (!ordered.has(line.accountId)) ordered.set(line.accountId, line);
+    if (before) for (const line of pick(before)) if (!ordered.has(line.accountId)) ordered.set(line.accountId, line);
+
+    const amountIn = (p: ProfitAndLoss | null, accountId: string) =>
+      dec(p ? (pick(p).find((l) => l.accountId === accountId)?.amountUsd ?? 0) : 0);
+
+    const lines: StatementLine[] = [...ordered.values()]
+      .filter((line) => showZero || !amountIn(total, line.accountId).isZero() || (before ? !amountIn(before, line.accountId).isZero() : false))
+      .map((line) => ({
+        key: line.accountId,
+        label: line.name,
+        href: `/reports/general-ledger?account=${line.accountId}&from=${from}&to=${to}`,
+        cells: [
+          ...report.byColumn.map((col) => money(amountIn(col, line.accountId))),
+          money(amountIn(total, line.accountId)),
+          ...(before ? changeCells(amountIn(total, line.accountId), amountIn(before, line.accountId)) : []),
+        ],
+      }));
+
+    return {
+      key,
+      title,
+      lines,
+      total: {
+        label: totalLabel,
+        cells: [
+          ...report.byColumn.map((col) => money(totalOf(col))),
+          money(totalOf(total)),
+          ...(before ? changeCells(totalOf(total), totalOf(before)) : []),
+        ],
+      },
+    };
+  };
+
+  const sections: StatementSectionData[] = [
+    section('income', 'Income', (p) => p.revenue, (p) => p.totals.revenueUsd, 'Total income'),
+    section('cogs', 'Cost of goods sold', (p) => p.costOfSales, (p) => p.totals.costOfSalesUsd, 'Total cost of goods sold'),
+    section('expenses', 'Expenses', (p) => p.operatingExpenses, (p) => p.totals.operatingExpensesUsd, 'Total expenses'),
+    ...(total.otherItems.length > 0 || (before?.otherItems.length ?? 0) > 0
+      ? [section('other', 'Other income and expenses', (p) => p.otherItems, (p) => p.totals.otherUsd, 'Total other')]
+      : []),
+  ];
+
+  const grand = (label: string, of: (p: ProfitAndLoss) => Decimal, after: string, emphasis: 'strong' | 'final') => ({
+    after,
+    label,
+    emphasis,
+    cells: [
+      ...report.byColumn.map((col) => money(of(col))),
+      money(of(total)),
+      ...(before ? changeCells(of(total), of(before)) : []),
+    ],
+  });
+
+  const periodLabel = `${formatDate(fromDate)} – ${formatDate(toDate)}`;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Profit & Loss"
-        description={`${user.activeCompany.name} · ${formatDate(fromDate)} to ${formatDate(toDate)}`}
+        description="Income, cost of sales, expenses and what is left — for any period, any way you want the columns."
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Profit & Loss' }]}
         actions={
           <>
+            <FavouriteStar href="/reports/profit-loss" label="Profit & Loss" />
             <ExportLinks href={exportHref('profit-loss', { from, to })} />
             <PrintButton />
           </>
         }
       />
-      <PrintHeader
-        title="Profit & Loss"
-        companyName={user.activeCompany.name}
-        country={user.activeCompany.country}
-      />
+      <PrintHeader title="Profit and Loss" companyName={user.activeCompany.name} country={user.activeCompany.country} />
 
-      <DateRangePicker defaultFrom={fromDate.toISOString().slice(0, 10)} defaultTo={toDate.toISOString().slice(0, 10)} />
-
-      {/* Revenue, what it cost, what was left — read in that order, the way
-          the statement below is read. */}
-      <ReportSummary
-        figures={[
-          {
-            label: 'Revenue',
-            value: formatMoney(pnl.totals.revenueUsd, 'USD'),
-            hint: change(pnl.totals.revenueUsd, previous.totals.revenueUsd),
-          },
-          {
-            label: 'Cost of sales',
-            value: formatMoney(pnl.totals.costOfSalesUsd, 'USD'),
-            hint: change(pnl.totals.costOfSalesUsd, previous.totals.costOfSalesUsd),
-          },
-          {
-            label: 'Gross profit',
-            value: formatMoney(pnl.totals.grossProfitUsd, 'USD'),
-            hint: `${formatPercent(pnl.grossMarginPct)} margin · ${change(pnl.totals.grossProfitUsd, previous.totals.grossProfitUsd)}`,
-          },
-          {
-            label: 'Expenses',
-            value: formatMoney(pnl.totals.operatingExpensesUsd, 'USD'),
-            hint: change(pnl.totals.operatingExpensesUsd, previous.totals.operatingExpensesUsd),
-          },
-          {
-            label: 'Net profit',
-            value: formatMoney(pnl.totals.netProfitUsd, 'USD'),
-            hint: `${formatMoney(pnl.totals.netProfitLocal, local)} · ${change(pnl.totals.netProfitUsd, previous.totals.netProfitUsd)}`,
-            lead: true,
-            tone: pnl.totals.netProfitUsd.greaterThanOrEqualTo(0) ? 'positive' : 'negative',
-          },
-        ]}
-      />
-      <p className="text-xs text-ink-muted">
-        Compared with the previous period of the same length: {formatDate(previousFrom)} to {formatDate(previousTo)}.
-      </p>
+      <div className="flex flex-wrap items-end gap-3 print:hidden">
+        <DateRangePicker defaultFrom={from} defaultTo={to} />
+        <StatementControls columnsBy={columnsBy} compare={compare} showZero={showZero} />
+      </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Statement</CardTitle>
-          <CardDescription>
-            Shown in USD and in {local}. Both columns come from the same journal lines, each translated at the rate
-            its voucher was posted at.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="px-0 pb-0">
-          <TableWrap className="rounded-none border-0 border-t">
-            <Table>
-              <THead>
-                <TR className="hover:bg-transparent">
-                  <TH>Account</TH>
-                  <TH numeric>USD</TH>
-                  <TH numeric>{local}</TH>
-                </TR>
-              </THead>
-              <TBody>
-                {section('Revenue', pnl.revenue, formatMoney(pnl.totals.revenueUsd, 'USD'), formatMoney(pnl.totals.revenueLocal, local))}
-                {section('Cost of sales', pnl.costOfSales, formatMoney(pnl.totals.costOfSalesUsd, 'USD'), formatMoney(pnl.totals.costOfSalesLocal, local))}
-
-                <TR className="border-t-2 border-line-strong bg-gold-50/50 font-semibold hover:bg-gold-50/50">
-                  <TD>
-                    Gross profit
-                    <span className="ml-2 text-xs font-normal text-ink-muted">{formatPercent(pnl.grossMarginPct)}</span>
-                  </TD>
-                  <TD numeric>{formatMoney(pnl.totals.grossProfitUsd, 'USD')}</TD>
-                  <TD numeric className="text-ink-muted">{formatMoney(pnl.totals.grossProfitLocal, local)}</TD>
-                </TR>
-
-                {section('Operating expenses', pnl.operatingExpenses, formatMoney(pnl.totals.operatingExpensesUsd, 'USD'), formatMoney(pnl.totals.operatingExpensesLocal, local))}
-                {pnl.otherItems.length > 0
-                  ? section('Other income and costs', pnl.otherItems, formatMoney(pnl.totals.otherUsd, 'USD'), formatMoney(pnl.totals.otherLocal, local))
-                  : null}
-
-                <TR className="border-t-2 border-line-strong bg-forest-50 font-semibold hover:bg-forest-50">
-                  <TD>
-                    Net profit
-                    <span className="ml-2 text-xs font-normal text-ink-muted">{formatPercent(pnl.netMarginPct)}</span>
-                  </TD>
-                  <TD numeric>{formatMoney(pnl.totals.netProfitUsd, 'USD')}</TD>
-                  <TD numeric className="text-ink-muted">{formatMoney(pnl.totals.netProfitLocal, local)}</TD>
-                </TR>
-              </TBody>
-            </Table>
-          </TableWrap>
+        <CardContent className="px-2 pb-4 pt-2 sm:px-4">
+          <StatementHeader
+            company={user.activeCompany.name}
+            title="Profit and Loss"
+            period={periodLabel}
+            meta={
+              previous ? (
+                <p className="text-xs text-ink-subtle">
+                  Compared with {formatDate(previous.from)} – {formatDate(previous.to)}
+                </p>
+              ) : null
+            }
+          />
+          <Statement
+            report="profit-loss"
+            columns={columns}
+            sections={sections}
+            grandTotals={[
+              grand('Gross profit', (p) => p.totals.grossProfitUsd, 'cogs', 'strong'),
+              grand('Net profit', (p) => p.totals.netProfitUsd, sections[sections.length - 1].key, 'final'),
+            ]}
+          />
+          <p className="mt-3 px-3 text-xs text-ink-subtle">
+            Gross margin {formatPercent(total.grossMarginPct)} · net margin {formatPercent(total.netMarginPct)} · in {local}: net{' '}
+            {formatMoney(total.totals.netProfitLocal, local)}. Every figure comes from posted journal lines; click an account to
+            see them.
+          </p>
         </CardContent>
       </Card>
     </div>
