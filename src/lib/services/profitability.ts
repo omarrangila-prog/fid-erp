@@ -65,6 +65,10 @@ export type ShipmentProfitability = {
   profitAfterOverheadUsd: Decimal;
   /** Purchase USD converted at the contract rate, plus local costs. */
   goodsCostLocal: Decimal;
+  /** Direct shipment costs in the company's currency, at the contract rate — the same rate COGS uses. */
+  capitalisedCostLocal: Decimal;
+  totalLandedCostLocal: Decimal;
+  landedCostPerKgLocal: Decimal;
   allocatedLandedCostLocal: Decimal;
   salesRevenueLocal: Decimal;
   otherCostsLocal: Decimal;
@@ -94,6 +98,7 @@ type RawRow = {
   salesRevenueUsd: string;
   otherCostsUsd: string;
   goodsCostLocal: string;
+  capitalisedCostLocal: string;
   allocatedLandedCostLocal: string;
   salesRevenueLocal: string;
   otherCostsLocal: string;
@@ -111,6 +116,8 @@ function shape(row: RawRow): ShipmentProfitability {
   const grossProfitUsd = toMoney(salesRevenueUsd.minus(allocatedLandedCostUsd));
   const netProfitUsd = toMoney(grossProfitUsd.minus(otherCostsUsd));
   const goodsCostLocal = toMoney(row.goodsCostLocal);
+  const capitalisedCostLocal = toMoney(row.capitalisedCostLocal);
+  const totalLandedCostLocal = toMoney(goodsCostLocal.plus(capitalisedCostLocal));
   const allocatedLandedCostLocal = toMoney(row.allocatedLandedCostLocal);
   const salesRevenueLocal = toMoney(row.salesRevenueLocal);
   const otherCostsLocal = toMoney(row.otherCostsLocal);
@@ -152,6 +159,11 @@ function shape(row: RawRow): ShipmentProfitability {
     grossMarginPct: percentage(grossProfitUsd, salesRevenueUsd),
     netMarginPct: percentage(netProfitUsd, salesRevenueUsd),
     goodsCostLocal,
+    capitalisedCostLocal,
+    totalLandedCostLocal,
+    landedCostPerKgLocal: purchaseQuantityKg.greaterThan(0)
+      ? toUnitCost(totalLandedCostLocal.dividedBy(purchaseQuantityKg))
+      : new Decimal(0),
     allocatedLandedCostLocal,
     salesRevenueLocal,
     otherCostsLocal,
@@ -227,6 +239,8 @@ export async function getShipmentProfitability(params: {
                    AND e."capitaliseToLandedCost" = false), 0)::text AS "otherCostsUsd",
       COALESCE((SELECT SUM(b."purchaseCostUsd" * pc."rateLocalPerUsd")
                   FROM batches b WHERE b."shipmentId" = s."id"), 0)::text AS "goodsCostLocal",
+      COALESCE((SELECT SUM(b."capitalisedCostUsd" * pc."rateLocalPerUsd")
+                  FROM batches b WHERE b."shipmentId" = s."id"), 0)::text AS "capitalisedCostLocal",
       COALESCE((SELECT SUM(b."soldQuantityKg" * b."landedUnitCostUsd" * pc."rateLocalPerUsd")
                   FROM batches b WHERE b."shipmentId" = s."id"), 0)::text AS "allocatedLandedCostLocal",
       -- The same path in the company's own currency, at each invoice's rate.

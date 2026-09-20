@@ -8,6 +8,8 @@ import { formatMoney, formatDate, titleCase } from '@/lib/format';
 import { dec, sum } from '@/lib/money';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/shared/page-header';
+import { CustomizePanel } from '@/components/reports/customize-panel';
+import { FavouriteStar } from '@/components/reports/report-statement';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/feedback';
@@ -66,7 +68,13 @@ export default async function CashBookPage({
         title="Cash Book & Bank Book"
         description="Every movement through one drawer or account, the way a bank statement reads it: in, out, and what was left."
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Cash Book' }]}
-        actions={<PrintButton />}
+        actions={
+          <>
+            <FavouriteStar href="/reports/cash-book" label="Cash Book & Bank Book" />
+            <CustomizePanel report="Cash Book" fields={['period']} />
+            <PrintButton />
+          </>
+        }
       />
       <PrintHeader
         title="Cash Book & Bank Book"

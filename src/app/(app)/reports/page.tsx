@@ -3,6 +3,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, type PermissionCode } from '@/lib/constants';
 import { PageHeader } from '@/components/shared/page-header';
 import { ReportsClient, type ReportEntry } from '@/app/(app)/reports/reports-client';
+import { listSavedReports } from '@/lib/services/saved-reports';
 
 export const metadata: Metadata = { title: 'Reports' };
 export const dynamic = 'force-dynamic';
@@ -40,9 +41,15 @@ const CATALOGUE: Catalogued[] = [
   { href: '/inventory', title: 'Inventory Summary', category: 'Inventory', pinned: true,
     description: 'Stock on hand by coffee and warehouse, with available and reserved quantities.',
     keywords: 'stock summary on hand available kg bags', permission: PERMISSIONS.INVENTORY_VIEW },
-  { href: '/reports/inventory-valuation', title: 'Inventory Valuation', category: 'Inventory', pinned: false,
+  { href: '/reports/inventory-valuation?view=summary', title: 'Inventory Valuation Summary', category: 'Inventory', pinned: false,
+    description: 'Each coffee on hand, its average landed cost and asset value, adding up to the inventory on the balance sheet.',
+    keywords: 'inventory valuation summary stock value asset average cost', permission: PERMISSIONS.INVENTORY_VIEW },
+  { href: '/reports/inventory-valuation', title: 'Inventory Valuation by Warehouse', category: 'Inventory', pinned: false,
     description: 'On-hand stock at each batch\'s landed cost, by warehouse.',
     keywords: 'inventory valuation stock value landed cost warehouse batch', permission: PERMISSIONS.INVENTORY_VIEW },
+  { href: '/reports/inventory-valuation?view=detail', title: 'Inventory Valuation Detail', category: 'Inventory', pinned: false,
+    description: 'Every movement that changed a batch\'s quantity or value, with the quantity and value after each.',
+    keywords: 'inventory valuation detail movements batch rate cost on hand', permission: PERMISSIONS.INVENTORY_VIEW },
   { href: '/inventory/batches', title: 'Warehouse & Batch Stock', category: 'Inventory', pinned: true,
     description: 'Every batch and lot, where it sits and what remains of it.',
     keywords: 'batch lot container warehouse traceability', permission: PERMISSIONS.INVENTORY_VIEW },
@@ -52,6 +59,9 @@ const CATALOGUE: Catalogued[] = [
   { href: '/reports/analytics', title: 'Analysis', category: 'Shipment & profitability', pinned: true,
     description: 'Pivot revenue, profit and margin by customer, coffee, batch, container or shipment.',
     keywords: 'analysis pivot breakdown slice dice power bi dashboard margin', permission: PERMISSIONS.PROFITS_VIEW },
+  { href: '/profitability?view=statement', title: 'Shipment Profitability Statement', category: 'Shipment & profitability', pinned: true,
+    description: 'One column per shipment: purchase, direct expenses, landed cost, sold and remaining, revenue, cost of sales, profit and margin.',
+    keywords: 'profitability statement column per shipment container landed cost margin', permission: PERMISSIONS.PROFITS_VIEW },
   { href: '/profitability', title: 'Shipment Profitability', category: 'Shipment & profitability', pinned: true,
     description: 'Margin per job, contract, customer, coffee, batch and container, in USD and local currency.',
     keywords: 'profit margin per kg landed cost job contract mad', permission: PERMISSIONS.PROFITS_VIEW },
@@ -173,6 +183,21 @@ const CATALOGUE: Catalogued[] = [
   { href: '/reports/expenses', title: 'Expense Report', category: 'Purchases & suppliers', pinned: false,
     description: 'Costs by category, by job or by month.',
     keywords: 'expenses category job cost overhead', permission: PERMISSIONS.EXPENSES_VIEW },
+  { href: '/reports/sales-by?by=customer', title: 'Sales by Customer', category: 'Sales & customers', pinned: true,
+    description: 'Sales, cost and gross profit per customer, each row opening into its invoice lines.',
+    keywords: 'sales customer summary detail revenue margin', permission: PERMISSIONS.SALES_VIEW },
+  { href: '/reports/sales-by?by=item', title: 'Sales by Item', category: 'Sales & customers', pinned: false,
+    description: 'Quantity sold, sales, COGS and gross profit per coffee.',
+    keywords: 'sales item product coffee summary detail margin', permission: PERMISSIONS.SALES_VIEW },
+  { href: '/reports/sales-by?by=shipment', title: 'Sales by Shipment', category: 'Shipment & profitability', pinned: false,
+    description: 'What each shipment sold, and what it earned.',
+    keywords: 'sales shipment container batch warehouse', permission: PERMISSIONS.SALES_VIEW },
+  { href: '/reports/balances', title: 'Customer Balance Summary', category: 'Sales & customers', pinned: false,
+    description: 'One line per customer: what they owe. Click through to the ledger.',
+    keywords: 'customer balance summary owed outstanding', permission: PERMISSIONS.ACCOUNTING_VIEW },
+  { href: '/reports/balances?side=suppliers', title: 'Supplier Balance Summary', category: 'Purchases & suppliers', pinned: false,
+    description: 'One line per supplier: what we owe them.',
+    keywords: 'supplier vendor balance summary owed outstanding', permission: PERMISSIONS.ACCOUNTING_VIEW },
   { href: '/reports/ageing', title: 'A/R Ageing Summary & Detail', category: 'Sales & customers', pinned: true,
     description: 'Who owes what, by how long — Current, 1–30, 31–60, 61–90, 90+ — each row opening into its invoices.',
     keywords: 'ageing aging receivable customer overdue bucket collections outstanding', permission: PERMISSIONS.ACCOUNTING_VIEW },
@@ -195,6 +220,7 @@ const CATALOGUE: Catalogued[] = [
 
 export default async function ReportsPage() {
   const user = await requirePageAccess(PERMISSIONS.REPORTS_VIEW);
+  const saved = await listSavedReports(user.activeCompany.id, user.id);
 
   const reports: ReportEntry[] = CATALOGUE.filter((entry) => can(user, entry.permission)).map((entry) => ({
     href: entry.href,
@@ -212,7 +238,7 @@ export default async function ReportsPage() {
         description="Every figure is calculated from posted transactions. Nothing here is a stored summary."
         breadcrumbs={[{ label: 'Reports' }]}
       />
-      <ReportsClient reports={reports} />
+      <ReportsClient reports={reports} saved={saved} />
     </div>
   );
 }

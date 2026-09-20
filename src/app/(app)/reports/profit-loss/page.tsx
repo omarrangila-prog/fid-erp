@@ -20,6 +20,7 @@ import {
   type StatementLine,
   type StatementSectionData,
 } from '@/components/reports/report-statement';
+import { CustomizePanel } from '@/components/reports/customize-panel';
 
 export const metadata: Metadata = { title: 'Profit & Loss' };
 export const dynamic = 'force-dynamic';
@@ -146,6 +147,7 @@ export default async function ProfitLossPage({
         actions={
           <>
             <FavouriteStar href="/reports/profit-loss" label="Profit & Loss" />
+            <CustomizePanel report="Profit & Loss" fields={['period', 'columns', 'compare', 'zero']} />
             <ExportLinks href={exportHref('profit-loss', { from, to })} />
             <PrintButton />
           </>

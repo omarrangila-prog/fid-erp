@@ -20,6 +20,7 @@ import {
   type StatementCell,
   type StatementSectionData,
 } from '@/components/reports/report-statement';
+import { CustomizePanel } from '@/components/reports/customize-panel';
 
 export const metadata: Metadata = { title: 'Balance Sheet' };
 export const dynamic = 'force-dynamic';
@@ -138,6 +139,7 @@ export default async function BalanceSheetPage({
         actions={
           <>
             <FavouriteStar href="/reports/balance-sheet" label="Balance Sheet" />
+            <CustomizePanel report="Balance Sheet" fields={['asOf', 'compare', 'zero']} />
             <ExportLinks href={exportHref('balance-sheet', { asOf })} />
             <PrintButton />
           </>

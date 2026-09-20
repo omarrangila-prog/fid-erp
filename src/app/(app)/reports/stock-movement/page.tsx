@@ -6,6 +6,8 @@ import { dec } from '@/lib/money';
 import { formatMoney, formatQuantityKg } from '@/lib/format';
 import { getStockMovementSummary } from '@/lib/services/stock';
 import { PageHeader } from '@/components/shared/page-header';
+import { CustomizePanel } from '@/components/reports/customize-panel';
+import { FavouriteStar } from '@/components/reports/report-statement';
 import { ReportSummary } from '@/components/shared/report-summary';
 import { DateRangePicker } from '@/components/shared/date-range';
 import { PrintButton } from '@/components/shared/print-button';
@@ -67,7 +69,13 @@ export default async function StockMovementPage({
         title="Daily Stock Movement"
         description="What was on the shelf when the period opened, everything that moved, and what is there now."
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Daily Stock Movement' }]}
-        actions={<PrintButton />}
+        actions={
+          <>
+            <FavouriteStar href="/reports/stock-movement" label="Daily Stock Movement" />
+            <CustomizePanel report="Daily Stock Movement" fields={['period']} />
+            <PrintButton />
+          </>
+        }
       />
       <PrintHeader title="Daily Stock Movement" companyName={user.activeCompany.name} country={user.activeCompany.country} />
 

@@ -24,11 +24,14 @@ import { PrintButton } from '@/components/shared/print-button';
 import { exportHref } from '@/components/shared/excel-link';
 import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
+import { ProfitabilityStatement } from './statement-view';
+import { FavouriteStar } from '@/components/reports/report-statement';
 
 export const metadata: Metadata = { title: 'Profitability' };
 export const dynamic = 'force-dynamic';
 
 const VIEWS = [
+  { key: 'statement', label: 'Statement' },
   { key: 'shipment', label: 'By job' },
   { key: 'contract', label: 'By contract' },
   { key: 'customer', label: 'By customer' },
@@ -38,8 +41,8 @@ const VIEWS = [
   { key: 'month', label: 'By month' },
 ] as const;
 
-export default async function ProfitabilityPage({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
-  const { view } = await searchParams;
+export default async function ProfitabilityPage({ searchParams }: { searchParams: Promise<{ view?: string; contract?: string }> }) {
+  const { view, contract } = await searchParams;
   const user = await requirePageAccess(PERMISSIONS.PROFITS_VIEW);
   const companyId = user.activeCompany.id;
   const local = user.activeCompany.localCurrency;
@@ -55,6 +58,7 @@ export default async function ProfitabilityPage({ searchParams }: { searchParams
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Profitability' }]}
         actions={
           <>
+            <FavouriteStar href="/profitability" label="Shipment Profitability" />
             <ExportLinks href={exportHref('profitability', { view: active })} />
             <PrintButton />
           </>
@@ -110,10 +114,11 @@ export default async function ProfitabilityPage({ searchParams }: { searchParams
         ))}
       </div>
 
+      {active === 'statement' ? <ProfitabilityStatement companyId={companyId} local={local} contractId={contract} /> : null}
       {active === 'shipment' ? <ShipmentTable companyId={companyId} local={local} lead="job" /> : null}
       {active === 'contract' ? <ShipmentTable companyId={companyId} local={local} lead="contract" /> : null}
       {active === 'month' ? <MonthlyTable companyId={companyId} /> : null}
-      {active !== 'shipment' && active !== 'contract' && active !== 'month' ? (
+      {active !== 'statement' && active !== 'shipment' && active !== 'contract' && active !== 'month' ? (
         <BreakdownTable companyId={companyId} kind={active} />
       ) : null}
     </div>

@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db';
-import { Decimal, dec, toMoney, toQuantity } from '@/lib/money';
+import { Decimal, dec, toMoney, toQuantity, toUnitCost } from '@/lib/money';
 
 /**
  * Stock query service. All figures are read from the batch cache, which the
@@ -1124,4 +1124,209 @@ export async function getStockMovementSummary(params: {
         !row.transfersOutKg.isZero() ||
         !row.adjustmentsKg.isZero(),
     );
+}
+
+// ---------------------------------------------------------------------------
+// Inventory valuation, summary by item and detail by movement
+// ---------------------------------------------------------------------------
+
+export type ValuationSummaryRow = {
+  itemId: string;
+  itemName: string;
+  onHandKg: Decimal;
+  /** Value ÷ quantity: the average landed cost of what is on the shelf. */
+  averageCostUsd: Decimal;
+  assetValueUsd: Decimal;
+  batches: number;
+};
+
+/** Item · quantity · average landed cost · asset value — the concise view. */
+export async function getInventoryValuationSummary(companyId: string): Promise<ValuationSummaryRow[]> {
+  const lines = await getInventoryValuation(companyId);
+  const byItem = new Map<string, ValuationSummaryRow & { batchIds: Set<string> }>();
+  for (const line of lines) {
+    const row =
+      byItem.get(line.itemId) ??
+      { itemId: line.itemId, itemName: line.itemName, onHandKg: new Decimal(0), averageCostUsd: new Decimal(0), assetValueUsd: new Decimal(0), batches: 0, batchIds: new Set<string>() };
+    row.onHandKg = row.onHandKg.plus(line.onHandKg);
+    row.assetValueUsd = row.assetValueUsd.plus(line.valueUsd);
+    row.batchIds.add(line.batchId);
+    byItem.set(line.itemId, row);
+  }
+  return [...byItem.values()]
+    .map(({ batchIds, ...row }) => ({
+      ...row,
+      batches: batchIds.size,
+      onHandKg: toQuantity(row.onHandKg),
+      assetValueUsd: toMoney(row.assetValueUsd),
+      averageCostUsd: row.onHandKg.greaterThan(0) ? toUnitCost(row.assetValueUsd.dividedBy(row.onHandKg)) : new Decimal(0),
+    }))
+    .filter((row) => !row.onHandKg.isZero() || !row.assetValueUsd.isZero())
+    .sort((a, b) => a.itemName.localeCompare(b.itemName));
+}
+
+export type ValuationDetailMovement = {
+  id: string;
+  date: Date;
+  type: string;
+  referenceType: string;
+  referenceId: string;
+  warehouseName: string | null;
+  quantityKg: Decimal;
+  unitCostUsd: Decimal;
+  costUsd: Decimal;
+  onHandAfterKg: Decimal;
+  valueAfterUsd: Decimal;
+};
+
+export type ValuationDetailGroup = {
+  itemId: string;
+  itemName: string;
+  batchId: string;
+  batchNumber: string;
+  lotNumber: string;
+  containerNumber: string | null;
+  shipmentReference: string | null;
+  movements: ValuationDetailMovement[];
+  closingKg: Decimal;
+  closingValueUsd: Decimal;
+};
+
+/**
+ * Every movement that changed quantity or value, batch by batch, with the
+ * quantity on hand and asset value after each — the detail behind the
+ * summary. Reservations are not movements and are left out.
+ */
+export async function getInventoryValuationDetail(params: { companyId: string; from?: Date; to?: Date }): Promise<ValuationDetailGroup[]> {
+  const rows = await prisma.inventoryTransaction.findMany({
+    where: {
+      companyId: params.companyId,
+      transactionType: { notIn: ['RESERVATION', 'RESERVATION_RELEASE'] },
+      ...(params.to ? { transactionDate: { lte: params.to } } : {}),
+    },
+    orderBy: [{ batchId: 'asc' }, { transactionDate: 'asc' }, { createdAt: 'asc' }],
+    select: {
+      id: true,
+      transactionDate: true,
+      transactionType: true,
+      referenceType: true,
+      referenceId: true,
+      quantityKg: true,
+      unitCost: true,
+      warehouse: { select: { name: true } },
+      batch: {
+        select: {
+          id: true,
+          batchNumber: true,
+          itemId: true,
+          landedUnitCostUsd: true,
+          shipmentId: true,
+          item: { select: { itemName: true } },
+          lot: { select: { lotNumber: true } },
+          container: { select: { containerNumber: true } },
+          shipment: { select: { purchaseContract: { select: { contractReference: true } } } },
+        },
+      },
+    },
+  });
+
+  /*
+   * A cost capitalised after the coffee landed — a late clearing invoice, a
+   * freight bill that came in a month on — raises the value of what is on
+   * the shelf without moving a kilogram, so it has no stock movement of its
+   * own. It is shown as a cost adjustment on the batch, dated by the latest
+   * such expense on its shipment, so the value after the last line is the
+   * value the balance sheet carries.
+   */
+  const lateCosts = await prisma.expense.groupBy({
+    by: ['shipmentId'],
+    where: {
+      companyId: params.companyId,
+      status: 'POSTED',
+      capitaliseToLandedCost: true,
+      shipmentId: { not: null },
+      ...(params.to ? { expenseDate: { lte: params.to } } : {}),
+    },
+    _max: { expenseDate: true },
+  });
+  const lateCostDate = new Map(lateCosts.map((e) => [e.shipmentId as string, e._max.expenseDate as Date]));
+  const latestLanded = new Map<string, { onHandKg: Decimal; unitCost: Decimal; shipmentId: string | null }>();
+
+  const groups = new Map<string, ValuationDetailGroup & { runningKg: Decimal; runningValue: Decimal }>();
+  for (const row of rows) {
+    const g =
+      groups.get(row.batch.id) ??
+      {
+        itemId: row.batch.itemId,
+        itemName: row.batch.item.itemName,
+        batchId: row.batch.id,
+        batchNumber: row.batch.batchNumber,
+        lotNumber: row.batch.lot.lotNumber,
+        containerNumber: row.batch.container?.containerNumber ?? null,
+        shipmentReference: row.batch.shipment?.purchaseContract.contractReference ?? null,
+        movements: [],
+        closingKg: new Decimal(0),
+        closingValueUsd: new Decimal(0),
+        runningKg: new Decimal(0),
+        runningValue: new Decimal(0),
+      };
+    const qty = dec(row.quantityKg);
+    const cost = toMoney(qty.times(row.unitCost));
+    g.runningKg = g.runningKg.plus(qty);
+    g.runningValue = g.runningValue.plus(cost);
+    // Movements before the period are folded into the opening position; the
+    // ones inside it are listed.
+    if (!params.from || row.transactionDate >= params.from) {
+      g.movements.push({
+        id: row.id,
+        date: row.transactionDate,
+        type: row.transactionType,
+        referenceType: row.referenceType,
+        referenceId: row.referenceId,
+        warehouseName: row.warehouse?.name ?? null,
+        quantityKg: toQuantity(qty),
+        unitCostUsd: toUnitCost(row.unitCost),
+        costUsd: cost,
+        onHandAfterKg: toQuantity(g.runningKg),
+        valueAfterUsd: toMoney(g.runningValue),
+      });
+    }
+    groups.set(row.batch.id, g);
+    latestLanded.set(row.batch.id, { onHandKg: g.runningKg, unitCost: dec(row.batch.landedUnitCostUsd), shipmentId: row.batch.shipmentId });
+  }
+
+  // Close each batch at on hand × its landed unit cost — the valuation basis —
+  // and show the difference from the movements as the cost adjustment it is.
+  if (!params.to) {
+    for (const g of groups.values()) {
+      const landed = latestLanded.get(g.batchId)!;
+      const carried = toMoney(landed.onHandKg.times(landed.unitCost));
+      const adjustment = toMoney(carried.minus(g.runningValue));
+      if (adjustment.isZero() || landed.onHandKg.isZero()) continue;
+      const lastMovement = g.movements.at(-1)?.date ?? params.from ?? new Date();
+      const expenseDate = landed.shipmentId ? lateCostDate.get(landed.shipmentId) : undefined;
+      const date = expenseDate && expenseDate > lastMovement ? expenseDate : lastMovement;
+      g.runningValue = carried;
+      if (!params.from || date >= params.from) {
+        g.movements.push({
+          id: `${g.batchId}:landed-cost`,
+          date,
+          type: 'LANDED_COST_ADJUSTMENT',
+          referenceType: 'Expense',
+          referenceId: '',
+          warehouseName: null,
+          quantityKg: new Decimal(0),
+          unitCostUsd: new Decimal(0),
+          costUsd: adjustment,
+          onHandAfterKg: toQuantity(g.runningKg),
+          valueAfterUsd: carried,
+        });
+      }
+    }
+  }
+
+  return [...groups.values()]
+    .map(({ runningKg, runningValue, ...g }) => ({ ...g, closingKg: toQuantity(runningKg), closingValueUsd: toMoney(runningValue) }))
+    .filter((g) => g.movements.length > 0 || !g.closingKg.isZero())
+    .sort((a, b) => a.itemName.localeCompare(b.itemName) || a.batchNumber.localeCompare(b.batchNumber));
 }

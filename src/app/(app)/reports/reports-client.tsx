@@ -2,7 +2,11 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Search, Star, X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Search, Star, X, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { removeSavedReportAction } from '@/server/actions/report-actions';
+import type { SavedReport } from '@/lib/services/saved-reports';
 import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -67,6 +71,28 @@ function writeFavourites(next: ReadonlySet<string>) {
   for (const listener of listeners) listener();
 }
 
+/** "Profit & Loss · Jan 1 – Mar 31 · by month · compared with previous period", from the saved address. */
+function describeHref(href: string): string {
+  const [path, query = ''] = href.split('?');
+  const params = new URLSearchParams(query);
+  const name = path
+    .replace(/^\/reports\//, '')
+    .replace(/^\//, '')
+    .split('/')
+    .pop()!
+    .replace(/-/g, ' ');
+  const parts = [name.charAt(0).toUpperCase() + name.slice(1)];
+  if (params.get('from') || params.get('to')) parts.push(`${params.get('from') ?? '…'} – ${params.get('to') ?? '…'}`);
+  if (params.get('asOf')) parts.push(`as at ${params.get('asOf')}`);
+  if (params.get('columns')) parts.push(`by ${params.get('columns')}`);
+  if (params.get('compare')) parts.push(params.get('compare') === 'year' ? 'vs previous year' : 'vs previous period');
+  for (const key of ['by', 'side', 'view', 'account', 'currency', 'warehouse', 'customer', 'vendor', 'agent', 'shipment', 'accountType']) {
+    const value = params.get(key);
+    if (value && value !== 'all') parts.push(`${key} ${value.length > 12 ? 'chosen' : value}`);
+  }
+  return parts.join(' · ');
+}
+
 /**
  * The reports index.
  *
@@ -76,8 +102,21 @@ function writeFavourites(next: ReadonlySet<string>) {
  * they change nothing about the reports themselves, so they do not belong in
  * the database.
  */
-export function ReportsClient({ reports }: { reports: ReportEntry[] }) {
+export function ReportsClient({ reports, saved = [] }: { reports: ReportEntry[]; saved?: SavedReport[] }) {
+  const router = useRouter();
   const [query, setQuery] = React.useState('');
+  const [removing, startRemoving] = React.useTransition();
+
+  /** Saved custom reports belong to the person, so they go when asked and nowhere else. */
+  function removeSaved(report: SavedReport) {
+    startRemoving(async () => {
+      const result = await removeSavedReportAction(report.id);
+      if (result.ok) {
+        toast.success(`Removed “${report.name}”.`);
+        router.refresh();
+      } else toast.error(result.error);
+    });
+  }
   const favourites = React.useSyncExternalStore(subscribe, readFavourites, () => EMPTY);
 
   function toggleFavourite(href: string) {
@@ -101,6 +140,7 @@ export function ReportsClient({ reports }: { reports: ReportEntry[] }) {
   );
 
   const starred = matches.filter((r) => favourites.has(r.href));
+  const savedMatches = trimmed.length === 0 ? saved : saved.filter((r) => `${r.name} ${r.href}`.toLowerCase().includes(trimmed));
   const everyday = matches.filter((r) => r.pinned && !favourites.has(r.href));
   // The order an accountant expects: the statements first, then the
   // business's own dimension, then who owes and is owed, then the rest.
@@ -165,7 +205,38 @@ export function ReportsClient({ reports }: { reports: ReportEntry[] }) {
         ) : null}
       </div>
 
-      {matches.length === 0 ? (
+      {savedMatches.length > 0 ? (
+        <section className="space-y-3" data-testid="saved-reports">
+          <div>
+            <h2 className="text-sm font-semibold text-ink">My custom reports</h2>
+            <p className="text-xs text-ink-muted">Reports you saved with their period, columns and filters. Open any report, choose Customize, and save it here.</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {savedMatches.map((report) => (
+              <div key={report.id} className="relative">
+                <Link href={report.href} className="block h-full">
+                  <Card className="h-full p-4 pr-11 transition-colors hover:border-forest-300 hover:bg-forest-50/40">
+                    <p className="text-sm font-semibold text-ink">{report.name}</p>
+                    <p className="mt-1 truncate text-xs leading-relaxed text-ink-muted">{describeHref(report.href)}</p>
+                    <p className="mt-2 text-[11px] uppercase tracking-wide text-ink-subtle">Custom report</p>
+                  </Card>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => removeSaved(report)}
+                  disabled={removing}
+                  aria-label={`Remove ${report.name}`}
+                  className="absolute right-2 top-2 rounded-md p-1.5 text-ink-subtle transition-colors hover:bg-red-50 hover:text-red-700 [@media(pointer:coarse)]:p-2.5"
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {matches.length === 0 && savedMatches.length === 0 ? (
         <EmptyState
           title={`No report matches “${query}”`}
           description="Try the name of a statement, a ledger, or what you are trying to find out."

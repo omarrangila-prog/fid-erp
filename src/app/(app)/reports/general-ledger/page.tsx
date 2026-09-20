@@ -4,7 +4,7 @@ import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getGeneralLedger, getGeneralLedgerByAccount } from '@/lib/services/reports';
 import { LedgerGroups } from '@/app/(app)/reports/general-ledger/ledger-groups';
-import { StatementHeader } from '@/components/reports/report-statement';
+import { StatementHeader, FavouriteStar } from '@/components/reports/report-statement';
 import {
   resolveLedgerViewCurrency,
   pickCashBankCurrency,
@@ -13,6 +13,8 @@ import {
 } from '@/lib/ledger-currency';
 import { formatMoney, formatDate, titleCase } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
+import { CustomizePanel } from '@/components/reports/customize-panel';
+import { PrintButton } from '@/components/shared/print-button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/feedback';
@@ -96,7 +98,10 @@ export default async function GeneralLedgerPage({
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'General Ledger' }]}
         actions={
           <>
+            <FavouriteStar href="/reports/general-ledger?account=all" label="General Ledger" />
+            <CustomizePanel report="General Ledger" fields={['period']} />
             <ExportLinks href={exportHref('general-ledger', { account: selectedId, from, to, currency: selectedCurrency })} />
+            <PrintButton />
           </>
         }
       />

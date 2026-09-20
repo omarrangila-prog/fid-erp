@@ -1,9 +1,10 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { LIVE_ENTRY_SQL, LIVE_ENTRY_WHERE } from '@/lib/services/journal-visibility';
-import { Decimal, dec, sum, toMoney, toQuantity } from '@/lib/money';
+import { Decimal, dec, sum, toMoney, toQuantity, toUnitCost } from '@/lib/money';
 import { REPORT_GROUPS, ACCOUNT_KEYS } from '@/lib/constants';
 import { getCompanyContext } from '@/lib/services/company';
+import { getReceivables, getPayables } from '@/lib/services/receivables';
 import { resolveLedgerViewCurrency, pickCashBankCurrency } from '@/lib/ledger-currency';
 import type { Tx } from '@/lib/db';
 
@@ -1567,4 +1568,159 @@ export async function getGeneralLedgerByAccount(params: {
     });
   }
   return groups;
+}
+
+// ---------------------------------------------------------------------------
+// Sales by customer / item / shipment / warehouse / batch
+// ---------------------------------------------------------------------------
+
+export type SalesDimension = 'customer' | 'item' | 'shipment' | 'warehouse' | 'batch';
+
+export type SalesByRow = {
+  key: string;
+  label: string;
+  /** Where the label links: the customer's ledger, the item, the shipment… */
+  href: string | null;
+  invoices: number;
+  quantityKg: Decimal;
+  revenueUsd: Decimal;
+  costUsd: Decimal;
+  grossProfitUsd: Decimal;
+  marginPct: Decimal;
+  /** The invoice lines behind the row, for the detail view. */
+  detail: Array<{
+    invoiceId: string;
+    invoiceLabel: string;
+    invoiceDate: Date;
+    customerName: string;
+    itemName: string;
+    warehouseName: string | null;
+    batchNumber: string | null;
+    shipmentReference: string | null;
+    quantityKg: Decimal;
+    unitPriceUsd: Decimal;
+    revenueUsd: Decimal;
+    costUsd: Decimal;
+  }>;
+};
+
+/**
+ * Sales summarised by whichever dimension the reader picks, from posted
+ * invoice lines — the same lines the profit and loss and the shipment
+ * results are read from, so the totals agree with both. Each row carries
+ * its lines, so the summary and the detail are one report at two depths.
+ */
+export async function getSalesBy(params: { companyId: string; from: Date; to: Date; by: SalesDimension }): Promise<SalesByRow[]> {
+  const lines = await prisma.salesInvoiceLine.findMany({
+    where: { salesInvoice: { companyId: params.companyId, status: 'POSTED', invoiceDate: { gte: params.from, lte: params.to } } },
+    select: {
+      id: true,
+      quantityKg: true,
+      lineTotalUsd: true,
+      costTotalUsd: true,
+      salesInvoice: { select: { id: true, invoiceNumber: true, invoiceDate: true, customer: { select: { id: true, customerName: true } } } },
+      item: { select: { id: true, itemName: true } },
+      warehouse: { select: { id: true, name: true } },
+      batch: {
+        select: {
+          id: true,
+          batchNumber: true,
+          shipment: { select: { id: true, purchaseContract: { select: { contractReference: true } } } },
+        },
+      },
+    },
+    orderBy: [{ salesInvoice: { invoiceDate: 'asc' } }, { id: 'asc' }],
+  });
+
+  const keyOf = (line: (typeof lines)[number]): { key: string; label: string; href: string | null } => {
+    switch (params.by) {
+      case 'customer':
+        return { key: line.salesInvoice.customer.id, label: line.salesInvoice.customer.customerName, href: `/ledgers/customers/${line.salesInvoice.customer.id}` };
+      case 'item':
+        return { key: line.item.id, label: line.item.itemName, href: `/items/${line.item.id}` };
+      case 'shipment':
+        return line.batch?.shipment
+          ? { key: line.batch.shipment.id, label: line.batch.shipment.purchaseContract.contractReference, href: `/shipments/${line.batch.shipment.id}` }
+          : { key: 'none', label: 'No shipment', href: null };
+      case 'warehouse':
+        return line.warehouse ? { key: line.warehouse.id, label: line.warehouse.name, href: null } : { key: 'none', label: 'No warehouse', href: null };
+      case 'batch':
+        return line.batch ? { key: line.batch.id, label: line.batch.batchNumber, href: `/inventory/batches/${line.batch.id}` } : { key: 'none', label: 'No batch', href: null };
+    }
+  };
+
+  const rows = new Map<string, SalesByRow & { invoiceIds: Set<string> }>();
+  for (const line of lines) {
+    const { key, label, href } = keyOf(line);
+    const row =
+      rows.get(key) ??
+      { key, label, href, invoices: 0, quantityKg: new Decimal(0), revenueUsd: new Decimal(0), costUsd: new Decimal(0), grossProfitUsd: new Decimal(0), marginPct: new Decimal(0), detail: [], invoiceIds: new Set<string>() };
+    row.invoiceIds.add(line.salesInvoice.id);
+    row.quantityKg = row.quantityKg.plus(line.quantityKg);
+    row.revenueUsd = row.revenueUsd.plus(line.lineTotalUsd);
+    row.costUsd = row.costUsd.plus(line.costTotalUsd);
+    row.detail.push({
+      invoiceId: line.salesInvoice.id,
+      invoiceLabel: `INV ${Number(line.salesInvoice.invoiceNumber.match(/(\d+)\s*$/)?.[1] ?? line.salesInvoice.invoiceNumber)}`,
+      invoiceDate: line.salesInvoice.invoiceDate,
+      customerName: line.salesInvoice.customer.customerName,
+      itemName: line.item.itemName,
+      warehouseName: line.warehouse?.name ?? null,
+      batchNumber: line.batch?.batchNumber ?? null,
+      shipmentReference: line.batch?.shipment?.purchaseContract.contractReference ?? null,
+      quantityKg: toQuantity(line.quantityKg),
+      unitPriceUsd: dec(line.quantityKg).greaterThan(0) ? toUnitCost(dec(line.lineTotalUsd).dividedBy(line.quantityKg)) : new Decimal(0),
+      revenueUsd: toMoney(line.lineTotalUsd),
+      costUsd: toMoney(line.costTotalUsd),
+    });
+    rows.set(key, row);
+  }
+
+  return [...rows.values()]
+    .map(({ invoiceIds, ...row }) => {
+      const gross = toMoney(row.revenueUsd.minus(row.costUsd));
+      return {
+        ...row,
+        invoices: invoiceIds.size,
+        quantityKg: toQuantity(row.quantityKg),
+        revenueUsd: toMoney(row.revenueUsd),
+        costUsd: toMoney(row.costUsd),
+        grossProfitUsd: gross,
+        marginPct: row.revenueUsd.isZero() ? new Decimal(0) : gross.dividedBy(row.revenueUsd).times(100).toDecimalPlaces(2),
+      };
+    })
+    .sort((a, b) => b.revenueUsd.comparedTo(a.revenueUsd));
+}
+
+// ---------------------------------------------------------------------------
+// Customer and supplier balance summary
+// ---------------------------------------------------------------------------
+
+export type PartyBalanceRow = { partyId: string; partyName: string; currency: string; balance: Decimal; balanceUsd: Decimal; href: string };
+
+/** What each customer owes, one line each, per currency — the totals the ledgers show. */
+export async function getCustomerBalances(companyId: string): Promise<PartyBalanceRow[]> {
+  const rows = await getReceivables({ companyId, onlyOutstanding: true });
+  return partyBalances(rows.map((r) => ({ id: r.customerId, name: r.customerName, currency: r.currency, amount: r.outstandingAmount, usd: r.outstandingAmountUsd })), (id) => `/ledgers/customers/${id}`);
+}
+
+/** What the company owes each supplier, one line each, per currency. */
+export async function getVendorBalances(companyId: string): Promise<PartyBalanceRow[]> {
+  const rows = await getPayables({ companyId, onlyOutstanding: true });
+  return partyBalances(rows.map((r) => ({ id: r.vendorId, name: r.vendorName, currency: r.currency, amount: r.outstandingAmount, usd: r.outstandingAmountUsd })), (id) => `/ledgers/vendors/${id}`);
+}
+
+function partyBalances(items: Array<{ id: string; name: string; currency: string; amount: Decimal; usd: Decimal }>, href: (id: string) => string): PartyBalanceRow[] {
+  const by = new Map<string, PartyBalanceRow>();
+  for (const item of items) {
+    const key = `${item.id}:${item.currency}`;
+    const row = by.get(key) ?? { partyId: item.id, partyName: item.name, currency: item.currency, balance: new Decimal(0), balanceUsd: new Decimal(0), href: href(item.id) };
+    row.balance = row.balance.plus(item.amount);
+    row.balanceUsd = row.balanceUsd.plus(item.usd);
+    by.set(key, row);
+  }
+  return [...by.values()]
+    .map((r) => ({ ...r, balance: toMoney(r.balance), balanceUsd: toMoney(r.balanceUsd) }))
+    .filter((r) => !r.balance.isZero())
+    .sort((a, b) => a.partyName.localeCompare(b.partyName) || a.currency.localeCompare(b.currency));
 }

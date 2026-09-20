@@ -526,6 +526,53 @@ const REPORTS: Record<string, Report> = {
       const rows = await getShipmentProfitability({ companyId });
       const local = user.activeCompany.localCurrency;
       const byContract = view === 'contract';
+
+      // The statement layout: every measure the screen lays out, one shipment per row.
+      if (view === 'statement') {
+        return buildWorkbook({
+          companyName: user.activeCompany.name,
+          title: 'Shipment Profitability Statement',
+          subtitle: `Net profit USD ${Number(summary.netProfitUsd).toFixed(2)}`,
+          rows: rows.slice().reverse(),
+          totals: [
+            'Purchased (KG)', 'Received (KG)', 'Sold (KG)', 'Remaining (KG)',
+            'Purchase cost (USD)', 'Direct expenses (USD)', 'Landed cost (USD)',
+            `Purchase cost (${local})`, `Direct expenses (${local})`, `Landed cost (${local})`,
+            'Revenue (USD)', 'Cost of goods sold (USD)', 'Gross profit (USD)', 'Other costs (USD)', 'Net profit (USD)',
+            `Revenue (${local})`, `Cost of goods sold (${local})`, `Gross profit (${local})`, `Net profit (${local})`,
+          ],
+          columns: [
+            { header: 'Contract ref', value: (r) => r.contractReference, width: 22 },
+            { header: 'Coffee', value: (r) => r.itemName, width: 28 },
+            { header: 'Status', value: (r) => r.status },
+            { header: 'Purchased (KG)', value: (r) => Number(r.purchaseQuantityKg), type: 'quantity' as const },
+            { header: 'Received (KG)', value: (r) => Number(r.receivedQuantityKg), type: 'quantity' as const },
+            { header: 'Sold (KG)', value: (r) => Number(r.soldQuantityKg), type: 'quantity' as const },
+            { header: 'Remaining (KG)', value: (r) => Number(r.remainingQuantityKg), type: 'quantity' as const },
+            { header: 'Purchase cost (USD)', value: (r) => Number(r.goodsCostUsd), type: 'money' as const },
+            { header: 'Direct expenses (USD)', value: (r) => Number(r.capitalisedCostUsd), type: 'money' as const },
+            { header: 'Landed cost (USD)', value: (r) => Number(r.totalLandedCostUsd), type: 'money' as const },
+            { header: 'Landed cost per KG (USD)', value: (r) => Number(r.landedCostPerKgUsd), type: 'money' as const },
+            { header: `Purchase cost (${local})`, value: (r) => Number(r.goodsCostLocal), type: 'money' as const },
+            { header: `Direct expenses (${local})`, value: (r) => Number(r.capitalisedCostLocal), type: 'money' as const },
+            { header: `Landed cost (${local})`, value: (r) => Number(r.totalLandedCostLocal), type: 'money' as const },
+            { header: `Landed cost per KG (${local})`, value: (r) => Number(r.landedCostPerKgLocal), type: 'money' as const },
+            { header: 'Revenue (USD)', value: (r) => Number(r.salesRevenueUsd), type: 'money' as const },
+            { header: 'Cost of goods sold (USD)', value: (r) => Number(r.allocatedLandedCostUsd), type: 'money' as const },
+            { header: 'Gross profit (USD)', value: (r) => Number(r.grossProfitUsd), type: 'money' as const },
+            { header: 'Other costs (USD)', value: (r) => Number(r.otherCostsUsd), type: 'money' as const },
+            { header: 'Net profit (USD)', value: (r) => Number(r.netProfitUsd), type: 'money' as const },
+            { header: `Revenue (${local})`, value: (r) => Number(r.salesRevenueLocal), type: 'money' as const },
+            { header: `Cost of goods sold (${local})`, value: (r) => Number(r.allocatedLandedCostLocal), type: 'money' as const },
+            { header: `Gross profit (${local})`, value: (r) => Number(r.grossProfitLocal), type: 'money' as const },
+            { header: `Net profit (${local})`, value: (r) => Number(r.netProfitLocal), type: 'money' as const },
+            { header: 'Gross margin', value: (r) => Number(r.grossMarginPct) / 100, type: 'percent' as const },
+            { header: 'Net margin', value: (r) => Number(r.netMarginPct) / 100, type: 'percent' as const },
+            { header: 'Profit per KG (USD)', value: (r) => Number(r.profitPerKgUsd), type: 'money' as const },
+          ],
+        });
+      }
+
       return buildWorkbook({
         companyName: user.activeCompany.name,
         title: 'Profitability',

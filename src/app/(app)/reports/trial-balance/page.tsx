@@ -7,6 +7,8 @@ import { prisma } from '@/lib/db';
 import { getTrialBalanceReport } from '@/lib/services/reports';
 import { formatMoney, formatDate, titleCase } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
+import { CustomizePanel } from '@/components/reports/customize-panel';
+import { FavouriteStar } from '@/components/reports/report-statement';
 import { DateRangePicker } from '@/components/shared/date-range';
 import { TrialBalanceFilters } from '@/app/(app)/reports/trial-balance/filters';
 import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
@@ -103,6 +105,8 @@ export default async function TrialBalancePage({
         }
         actions={
           <>
+            <FavouriteStar href="/reports/trial-balance" label="Trial Balance" />
+            <CustomizePanel report="Trial Balance" fields={['period']} />
             <ExportLinks href={exportHref('trial-balance', { asOf: asOfDate.toISOString().slice(0, 10) })} />
             <PrintButton />
           </>
