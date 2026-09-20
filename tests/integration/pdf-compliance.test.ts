@@ -20,6 +20,7 @@ import {
   getSalesBy,
   getCustomerBalances,
   getVendorBalances,
+  getGeneralLedgerByAccount,
 } from '@/lib/services/reports';
 import { getReceivables, getPayables, getReceivablesAgeing, getPayablesAgeing } from '@/lib/services/receivables';
 import { getInventoryValuation, getInventoryValuationSummary, getStockMovementSummary } from '@/lib/services/stock';
@@ -424,6 +425,52 @@ describe('§13 — what the system must refuse', () => {
     ).rejects.toThrow();
     expect(await prisma.journalEntry.count({ where: { companyId } })).toBe(before);
     expect(await prisma.journalEntry.count({ where: { companyId, description: 'Deliberately unbalanced' } })).toBe(0);
+  }, 300_000);
+
+  it('8.12–8.15 a journal entry keeps its date, its narration, its lines and its author', async () => {
+    // Two expense heads, so no cash drawer's currency is involved.
+    const accounts = await prisma.account.findMany({
+      where: { companyId, status: 'ACTIVE', type: 'EXPENSE', children: { none: {} }, cashBankAccounts: { none: {} } },
+      take: 2,
+      orderBy: { code: 'asc' },
+    });
+    const entry = await transaction(async (tx) => {
+      const company = await getCompanyContext(tx, companyId);
+      return postJournalEntry(tx, {
+        companyId,
+        entryDate: utcDate('2026-06-28'),
+        description: 'Accrue June warehouse rent',
+        sourceType: 'MANUAL',
+        sourceId: `JV-REF-${Date.now()}`,
+        createdById: ctx.admin.id,
+        localCurrency: company.localCurrency,
+        rateLocalPerUsd: '10',
+        lines: [
+          { accountId: accounts[0].id, direction: 'DEBIT', currency: 'MAD', amount: '1000', rateToUsd: '10', description: 'Rent for June' },
+          { accountId: accounts[1].id, direction: 'CREDIT', currency: 'MAD', amount: '1000', rateToUsd: '10' },
+        ],
+      });
+    });
+
+    const saved = await prisma.journalEntry.findUniqueOrThrow({
+      where: { id: entry.id },
+      include: { lines: { orderBy: { lineNumber: 'asc' } }, createdBy: { select: { id: true } } },
+    });
+    expect(saved.entryDate.toISOString().slice(0, 10)).toBe('2026-06-28');
+    expect(saved.description).toBe('Accrue June warehouse rent');
+    expect(saved.createdBy.id).toBe(ctx.admin.id);
+    // The entry's own reference, and the document it came from.
+    expect(saved.entryNumber).toBeTruthy();
+    expect(saved.sourceType).toBe('MANUAL');
+    expect(saved.sourceId).toBeTruthy();
+    expect(saved.lines[0].description).toBe('Rent for June');
+    expect(Number(saved.lines[0].debit)).toBe(1000);
+    expect(Number(saved.lines[1].credit)).toBe(1000);
+
+    // And it reads back on the general ledger under that narration.
+    const ledger = await getGeneralLedgerByAccount({ companyId, from: ALL_FROM, to: ALL_TO });
+    const line = ledger.flatMap((group) => group.lines).find((l) => l.description === 'Rent for June');
+    expect(line, 'the entry reaches the general ledger').toBeTruthy();
   }, 300_000);
 
   it('13.3 posting the same document twice does not post it twice', async () => {

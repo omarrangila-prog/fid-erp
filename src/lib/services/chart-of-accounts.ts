@@ -155,7 +155,88 @@ const STANDARD_ACCOUNTS: AccountSeed[] = [
     reportGroup: REPORT_GROUPS.CURRENT_LIABILITY,
     systemKey: ACCOUNT_KEYS.CHEQUES_ISSUED,
   },
+  /*
+   * The heads a balance sheet is expected to carry even when nothing has been
+   * booked to them yet: what the company has paid in advance or put down as a
+   * deposit, what it owns beyond its stock, and what it owes that is neither a
+   * supplier nor a loan. They are ordinary postable accounts with no system
+   * key, so a bookkeeper can use them straight away and the statement groups
+   * them where they belong.
+   */
+  {
+    code: '1400',
+    name: 'Prepayments',
+    type: 'ASSET',
+    reportGroup: REPORT_GROUPS.CURRENT_ASSET,
+  },
+  {
+    code: '1450',
+    name: 'Deposits Paid',
+    type: 'ASSET',
+    reportGroup: REPORT_GROUPS.CURRENT_ASSET,
+  },
+  {
+    code: '1500',
+    name: 'Other Receivables & Advances',
+    type: 'ASSET',
+    reportGroup: REPORT_GROUPS.CURRENT_ASSET,
+  },
+  {
+    code: '1800',
+    name: 'Fixed Assets — Cost',
+    type: 'ASSET',
+    reportGroup: REPORT_GROUPS.NON_CURRENT_ASSET,
+  },
+  {
+    code: '1850',
+    // A contra asset: it carries a credit balance and reduces the assets above.
+    name: 'Accumulated Depreciation',
+    type: 'ASSET',
+    reportGroup: REPORT_GROUPS.NON_CURRENT_ASSET,
+  },
+  {
+    code: '1900',
+    name: 'Other Assets',
+    type: 'ASSET',
+    reportGroup: REPORT_GROUPS.NON_CURRENT_ASSET,
+  },
+  {
+    code: '2300',
+    name: 'Other Payables',
+    type: 'LIABILITY',
+    reportGroup: REPORT_GROUPS.CURRENT_LIABILITY,
+  },
+  {
+    code: '2400',
+    name: 'Related Party Balances',
+    type: 'LIABILITY',
+    reportGroup: REPORT_GROUPS.CURRENT_LIABILITY,
+  },
+  {
+    code: '2500',
+    name: 'Long-Term Loans',
+    type: 'LIABILITY',
+    reportGroup: REPORT_GROUPS.NON_CURRENT_LIABILITY,
+  },
   // --- Equity --------------------------------------------------------------
+  {
+    code: '3050',
+    name: 'Share Capital',
+    type: 'EQUITY',
+    reportGroup: REPORT_GROUPS.EQUITY,
+  },
+  {
+    code: '3060',
+    name: "Owner's Current Account",
+    type: 'EQUITY',
+    reportGroup: REPORT_GROUPS.EQUITY,
+  },
+  {
+    code: '3200',
+    name: 'Other Reserves',
+    type: 'EQUITY',
+    reportGroup: REPORT_GROUPS.EQUITY,
+  },
   {
     code: '3000',
     name: 'Opening Balance Equity',
@@ -485,9 +566,13 @@ export async function provisionCompany(tx: Tx, companyId: string): Promise<void>
 
 /** Where a new account of each kind starts looking for a free number. */
 const SERIES_FOR_TYPE: Record<AccountType, number> = {
-  ASSET: 1600,
-  LIABILITY: 2300,
-  EQUITY: 3200,
+  // Above the standard heads, including the balance-sheet heads seeded at
+  // 14xx–19xx, 23xx–25xx and 30xx–32xx, so a user-created account never
+  // lands on one. Accounts already numbered in those ranges keep their code;
+  // the search below simply steps past anything taken.
+  ASSET: 1950,
+  LIABILITY: 2600,
+  EQUITY: 3300,
   INCOME: 4200,
   EXPENSE: 6200,
 };

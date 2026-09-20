@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
-import { getChartOfAccounts } from '@/lib/services/chart-of-accounts';
+import { getChartOfAccounts, ensureChartOfAccounts } from '@/lib/services/chart-of-accounts';
+import { transaction } from '@/lib/db';
 import { ledgerHref, resolveLedgerViewCurrency } from '@/lib/ledger-currency';
 import { getRateDefaults } from '@/lib/services/exchange-rate';
 import { formatMoney } from '@/lib/format';
@@ -32,6 +33,14 @@ function cashBankLabel(accountType: string) {
 export default async function ChartOfAccountsPage() {
   const user = await requirePageAccess(PERMISSIONS.ACCOUNTING_VIEW);
   const canPost = can(user, PERMISSIONS.ACCOUNTING_POST);
+  /*
+   * Bring in any standard head this company predates — prepayments, fixed
+   * assets, share capital. It adds what is missing by code and touches
+   * nothing that exists, including heads an administrator has deactivated,
+   * so a company provisioned last year has the same chart as one opened
+   * today without anybody running a script.
+   */
+  await transaction((tx) => ensureChartOfAccounts(tx, user.activeCompany.id));
   const [{ sections, localCurrency }, rates] = await Promise.all([
     getChartOfAccounts(user.activeCompany.id, user.activeCompany.localCurrency),
     getRateDefaults(user.activeCompany.id),
