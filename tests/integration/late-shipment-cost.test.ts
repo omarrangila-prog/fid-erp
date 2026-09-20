@@ -269,3 +269,63 @@ describe('a shipment cost capitalised while half the containers are still at sea
     expect(await failedChecks()).toEqual([]);
   });
 });
+
+describe('a late cost when the documents sold less than the batch says', () => {
+  /**
+   * The live books drifted by USD 41.83 this way: the true-up was sized from
+   * the batch's own sold quantity but written onto the sales invoices, so
+   * whatever no invoice could absorb was left sitting in cost of sales with
+   * nothing behind it — the ledger and the margin reports then disagreed for
+   * ever. Whatever the documents cannot carry must stay in inventory.
+   */
+  it('never moves more into cost of sales than the invoices absorb', async () => {
+    const batch = await prisma.batch.findFirstOrThrow({ where: { companyId, status: 'ACTIVE' }, orderBy: { batchNumber: 'asc' } });
+
+    // The batch believes more was sold than any invoice line records — the
+    // shape a correction elsewhere can leave behind.
+    const documentKg = await prisma.salesInvoiceLine.aggregate({
+      where: { batchId: batch.id, salesInvoice: { companyId, status: 'POSTED' } },
+      _sum: { quantityKg: true },
+    });
+    await prisma.batch.update({
+      where: { id: batch.id },
+      data: { soldQuantityKg: dec(documentKg._sum.quantityKg ?? 0).plus(500) },
+    });
+
+    const cogsBefore = await control('COST_OF_GOODS_SOLD');
+    const inventoryBefore = await control('INVENTORY');
+    const invoicesBefore = await prisma.salesInvoice.aggregate({ where: { companyId, status: 'POSTED' }, _sum: { costOfGoodsUsd: true } });
+
+    const category = await capitalisingCategory();
+    const expense = await createExpense(
+      {
+        companyId,
+        expenseDate: utcDate('2026-06-01'),
+        expenseCategoryId: category.id,
+        shipmentId,
+        currency: 'MAD',
+        amount: '10000',
+        rateToUsd: '10',
+        rateLocalPerUsd: '10',
+        paymentMethod: 'CASH',
+        kind: 'SHIPMENT',
+        capitaliseToLandedCost: true,
+        description: 'Late charge after a correction',
+      },
+      ctx.admin.id,
+    );
+    await postExpense({ id: expense.id, companyId, userId: ctx.admin.id });
+
+    // What the ledger moved into cost of sales equals what the invoices took.
+    const cogsMoved = (await control('COST_OF_GOODS_SOLD')).minus(cogsBefore);
+    const invoicesAfter = await prisma.salesInvoice.aggregate({ where: { companyId, status: 'POSTED' }, _sum: { costOfGoodsUsd: true } });
+    const documentsTook = dec(invoicesAfter._sum.costOfGoodsUsd ?? 0).minus(dec(invoicesBefore._sum.costOfGoodsUsd ?? 0));
+    expect(cogsMoved.toFixed(4)).toBe(toMoney(documentsTook).toFixed(4));
+
+    // The rest of the charge stayed with the coffee, not in thin air.
+    const inventoryMoved = (await control('INVENTORY')).minus(inventoryBefore);
+    expect(cogsMoved.plus(inventoryMoved).toFixed(2)).toBe('1000.00');
+
+    expect(await failedChecks()).toEqual([]);
+  }, 300_000);
+});

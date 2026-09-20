@@ -343,3 +343,17 @@ export const ledgerOpeningSchema = z.object({
   rateToUsd: decimalString('Exchange rate'),
   rateLocalPerUsd: decimalString('Local exchange rate'),
 });
+
+/**
+ * A management allocation of overheads. The dates bound the general expenses
+ * being shared; the shipments carry the shares.
+ */
+export const allocateOverheadsSchema = z.object({
+  from: dateString('From date'),
+  to: dateString('To date'),
+  basis: z.enum(['QUANTITY', 'SALES_VALUE', 'PERCENTAGE', 'EQUAL']),
+  shipments: z
+    .array(z.object({ shipmentId: cuid, percentage: optionalDecimalString('Percentage') }))
+    .min(1, 'Choose at least one shipment.'),
+  notes: optionalText(300),
+});

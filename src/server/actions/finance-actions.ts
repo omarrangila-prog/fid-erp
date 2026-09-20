@@ -35,6 +35,8 @@ import { postRevaluation } from '@/lib/services/revaluation';
 import { postJournalEntry } from '@/lib/services/accounting';
 import { postCashBankTransfer, postIntercompanyLoan } from '@/lib/services/cash-transfer';
 import { postLoan } from '@/lib/services/loan';
+import { allocateOverheads, withdrawOverheadAllocation } from '@/lib/services/overhead-allocation';
+import { allocateOverheadsSchema } from '@/lib/validation/finance';
 import {
   createRecurringFromExpense,
   generateFromRecurring,
@@ -43,7 +45,7 @@ import {
 import { dateString, optionalDateString, requiredText } from '@/lib/validation/common';
 import { getCompanyContext } from '@/lib/services/company';
 import { transaction } from '@/lib/db';
-import { fail, type ActionResult } from '@/server/actions/action-utils';
+import { fail, ok, type ActionResult } from '@/server/actions/action-utils';
 import type { DocFormState } from '@/server/actions/trading-actions';
 
 /**
@@ -607,5 +609,49 @@ export async function postRevaluationAction(payload: string): Promise<DocFormSta
     return { ok: true, id: entry.id, message: 'Revaluation posted.' };
   } catch (error) {
     return toState(error);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Overhead allocation (management view; nothing posts to the ledger)
+// ---------------------------------------------------------------------------
+
+/**
+ * Share a period's general expenses across shipments for management
+ * reporting. The expenses stay exactly where they are on the company profit
+ * and loss; this records a view beside them.
+ */
+export async function allocateOverheadsAction(payload: string): Promise<ActionResult<{ shipments: number }>> {
+  try {
+    const user = await requirePermission(PERMISSIONS.ACCOUNTING_POST);
+    const input = allocateOverheadsSchema.parse(parseJson(payload));
+    const allocation = await allocateOverheads({
+      companyId: user.activeCompany.id,
+      userId: user.id,
+      from: input.from,
+      to: input.to,
+      basis: input.basis,
+      shipments: input.shipments,
+      notes: input.notes,
+    });
+    revalidatePath('/reports/overhead-allocation');
+    revalidatePath('/reports/analytics');
+    revalidatePath('/profitability');
+    return ok({ shipments: allocation.lines.length });
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+/** Withdraw an allocation. The expenses are untouched; only the view goes. */
+export async function withdrawOverheadAllocationAction(id: string): Promise<ActionResult<undefined>> {
+  try {
+    const user = await requirePermission(PERMISSIONS.ACCOUNTING_POST);
+    await withdrawOverheadAllocation({ companyId: user.activeCompany.id, id, userId: user.id });
+    revalidatePath('/reports/overhead-allocation');
+    revalidatePath('/profitability');
+    return ok(undefined);
+  } catch (error) {
+    return fail(error);
   }
 }

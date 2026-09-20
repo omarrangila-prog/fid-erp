@@ -101,7 +101,11 @@ export default async function TrialBalancePage({ searchParams }: { searchParams:
       <Card>
         <CardHeader>
           <CardTitle>Account balances</CardTitle>
-          <CardDescription>Only accounts with a balance are listed.</CardDescription>
+          <CardDescription>
+            {trial.hasOpening
+              ? 'Where each account stood when the period opened, what moved through it, and where it stands now. Only accounts with a balance or a movement are listed.'
+              : 'From the first entry to the date chosen, so the opening is nil and the movement is the whole history. Only accounts with a balance are listed.'}
+          </CardDescription>
         </CardHeader>
         <CardContent className="px-0 pb-0">
           <TableWrap className="rounded-none border-0 border-t">
@@ -110,8 +114,16 @@ export default async function TrialBalancePage({ searchParams }: { searchParams:
                 <TR className="hover:bg-transparent">
                   <TH>Account</TH>
                   <TH>Type</TH>
-                  <TH numeric>Debit USD</TH>
-                  <TH numeric>Credit USD</TH>
+                  {trial.hasOpening ? (
+                    <>
+                      <TH numeric>Opening debit</TH>
+                      <TH numeric>Opening credit</TH>
+                      <TH numeric>Debit movement</TH>
+                      <TH numeric>Credit movement</TH>
+                    </>
+                  ) : null}
+                  <TH numeric>{trial.hasOpening ? 'Closing debit' : 'Debit USD'}</TH>
+                  <TH numeric>{trial.hasOpening ? 'Closing credit' : 'Credit USD'}</TH>
                   <TH numeric>Debit {local}</TH>
                   <TH numeric>Credit {local}</TH>
                 </TR>
@@ -128,6 +140,18 @@ export default async function TrialBalancePage({ searchParams }: { searchParams:
                       </Link>
                     </TD>
                     <TD className="text-xs">{titleCase(row.type)}</TD>
+                    {trial.hasOpening ? (
+                      <>
+                        <TD numeric className="text-ink-muted">
+                          {row.openingDebitUsd.greaterThan(0) ? formatMoney(row.openingDebitUsd, 'USD') : '—'}
+                        </TD>
+                        <TD numeric className="text-ink-muted">
+                          {row.openingCreditUsd.greaterThan(0) ? formatMoney(row.openingCreditUsd, 'USD') : '—'}
+                        </TD>
+                        <TD numeric>{row.periodDebitUsd.greaterThan(0) ? formatMoney(row.periodDebitUsd, 'USD') : '—'}</TD>
+                        <TD numeric>{row.periodCreditUsd.greaterThan(0) ? formatMoney(row.periodCreditUsd, 'USD') : '—'}</TD>
+                      </>
+                    ) : null}
                     <TD numeric>{row.debitUsd.greaterThan(0) ? formatMoney(row.debitUsd, 'USD') : '—'}</TD>
                     <TD numeric>{row.creditUsd.greaterThan(0) ? formatMoney(row.creditUsd, 'USD') : '—'}</TD>
                     <TD numeric className="text-ink-muted">
@@ -142,6 +166,14 @@ export default async function TrialBalancePage({ searchParams }: { searchParams:
               <TFoot>
                 <tr>
                   <TD colSpan={2}>Total</TD>
+                  {trial.hasOpening ? (
+                    <>
+                      <TD numeric>{formatMoney(trial.totals.openingDebitUsd, 'USD')}</TD>
+                      <TD numeric>{formatMoney(trial.totals.openingCreditUsd, 'USD')}</TD>
+                      <TD numeric>{formatMoney(trial.totals.periodDebitUsd, 'USD')}</TD>
+                      <TD numeric>{formatMoney(trial.totals.periodCreditUsd, 'USD')}</TD>
+                    </>
+                  ) : null}
                   <TD numeric>{formatMoney(trial.totals.debitUsd, 'USD')}</TD>
                   <TD numeric>{formatMoney(trial.totals.creditUsd, 'USD')}</TD>
                   <TD numeric>{formatMoney(trial.totals.debitLocal, local)}</TD>

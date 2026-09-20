@@ -1,3 +1,4 @@
+import { getOverheadByShipment } from '@/lib/services/overhead-allocation';
 import { prisma } from '@/lib/db';
 import { Decimal, toMoney, toQuantity, toUnitCost, percentage } from '@/lib/money';
 
@@ -54,6 +55,14 @@ export type ShipmentProfitability = {
   profitPerKgUsd: Decimal;
   grossMarginPct: Decimal;
   netMarginPct: Decimal;
+  /**
+   * This shipment's share of company overheads, when management has chosen to
+   * allocate them. It is a management figure only: it is not in the ledger,
+   * not in the company profit and loss, and not in `netProfitUsd`.
+   */
+  allocatedOverheadUsd: Decimal;
+  /** Net profit after that management share — the "fully absorbed" view. */
+  profitAfterOverheadUsd: Decimal;
   /** Purchase USD converted at the contract rate, plus local costs. */
   goodsCostLocal: Decimal;
   allocatedLandedCostLocal: Decimal;
@@ -138,6 +147,8 @@ function shape(row: RawRow): ShipmentProfitability {
     profitPerKgUsd: soldQuantityKg.greaterThan(0)
       ? toUnitCost(netProfitUsd.dividedBy(soldQuantityKg))
       : new Decimal(0),
+    allocatedOverheadUsd: new Decimal(0),
+    profitAfterOverheadUsd: netProfitUsd,
     grossMarginPct: percentage(grossProfitUsd, salesRevenueUsd),
     netMarginPct: percentage(netProfitUsd, salesRevenueUsd),
     goodsCostLocal,
@@ -235,7 +246,24 @@ export async function getShipmentProfitability(params: {
       AND (${params.to ?? null}::date IS NULL OR pc."contractDate" <= ${params.to ?? null}::date)
     ORDER BY s."shipmentNumber" DESC
   `;
-  return rows.map(shape);
+
+  /*
+   * The management overhead share, attached beside the accounting figures.
+   *
+   * The statutory result is untouched: these amounts live in their own table
+   * and never reach a journal. They answer "what did this shipment cost once
+   * its share of the office is counted?", which the accounts alone cannot.
+   */
+  const overheads = await getOverheadByShipment({ companyId: params.companyId, from: params.from, to: params.to });
+  return rows.map((row) => {
+    const shaped = shape(row);
+    const allocatedOverheadUsd = toMoney(overheads.get(row.shipmentId) ?? new Decimal(0));
+    return {
+      ...shaped,
+      allocatedOverheadUsd,
+      profitAfterOverheadUsd: toMoney(shaped.netProfitUsd.minus(allocatedOverheadUsd)),
+    };
+  });
 }
 
 export async function getShipmentProfitabilityById(

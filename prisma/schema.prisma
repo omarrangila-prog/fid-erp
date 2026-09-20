@@ -308,6 +308,7 @@ model Company {
   recurringExpenses   RecurringExpense[]
   defaultForUsers     User[]                 @relation("UserDefaultCompany")
   agentSettlements    AgentSettlement[]
+  overheadAllocations OverheadAllocation[]
 
   @@index([status])
   @@map("companies")
@@ -370,6 +371,7 @@ model User {
   taxReturnsCreated       TaxReturn[]                     @relation("TaxReturnCreatedBy")
   taxReturnsFiled         TaxReturn[]                     @relation("TaxReturnFiledBy")
   agentSettlementsCreated AgentSettlement[]               @relation("AgentSettlementCreatedBy")
+  overheadAllocations     OverheadAllocation[]
 
   @@index([isActive])
   @@map("users")
@@ -1022,27 +1024,28 @@ model Shipment {
   createdAt              DateTime               @default(now())
   updatedAt              DateTime               @updatedAt
 
-  company          Company                         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  purchaseContract PurchaseContract                @relation(fields: [purchaseContractId], references: [id])
-  contractLine     PurchaseContractLine?           @relation(fields: [purchaseContractLineId], references: [id])
-  vendor           Vendor                          @relation(fields: [vendorId], references: [id])
-  customer         Customer?                       @relation(fields: [customerId], references: [id])
-  item             CoffeeItem                      @relation(fields: [itemId], references: [id])
-  shippingLine     ShippingLine?                   @relation(fields: [shippingLineId], references: [id])
-  createdBy        User                            @relation("ShipmentCreatedBy", fields: [createdById], references: [id])
-  updatedBy        User?                           @relation("ShipmentUpdatedBy", fields: [updatedById], references: [id])
-  statusHistory    ShipmentStatusHistory[]
-  docStatusHistory ShipmentDocumentStatusHistory[]
-  batches          Batch[]
-  containerList    Container[]
-  goodsReceipts    GoodsReceipt[]
-  inventoryTxns    InventoryTransaction[]
-  invoiceLines     SalesInvoiceLine[]
-  salesInvoices    SalesInvoice[]
-  receipts         Receipt[]
-  payments         Payment[]
-  expenses         Expense[]
-  journalLines     JournalLine[]
+  company                 Company                         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  purchaseContract        PurchaseContract                @relation(fields: [purchaseContractId], references: [id])
+  contractLine            PurchaseContractLine?           @relation(fields: [purchaseContractLineId], references: [id])
+  vendor                  Vendor                          @relation(fields: [vendorId], references: [id])
+  customer                Customer?                       @relation(fields: [customerId], references: [id])
+  item                    CoffeeItem                      @relation(fields: [itemId], references: [id])
+  shippingLine            ShippingLine?                   @relation(fields: [shippingLineId], references: [id])
+  createdBy               User                            @relation("ShipmentCreatedBy", fields: [createdById], references: [id])
+  updatedBy               User?                           @relation("ShipmentUpdatedBy", fields: [updatedById], references: [id])
+  statusHistory           ShipmentStatusHistory[]
+  docStatusHistory        ShipmentDocumentStatusHistory[]
+  batches                 Batch[]
+  containerList           Container[]
+  goodsReceipts           GoodsReceipt[]
+  inventoryTxns           InventoryTransaction[]
+  invoiceLines            SalesInvoiceLine[]
+  salesInvoices           SalesInvoice[]
+  receipts                Receipt[]
+  payments                Payment[]
+  expenses                Expense[]
+  journalLines            JournalLine[]
+  overheadAllocationLines OverheadAllocationLine[]
 
   @@unique([companyId, shipmentNumber])
   @@unique([companyId, jobNumber])
@@ -1552,7 +1555,7 @@ model Payment {
   updatedAt         DateTime          @updatedAt
 
   company         Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  vendor          Vendor?              @relation(fields: [vendorId], references: [id])
+  vendor          Vendor?             @relation(fields: [vendorId], references: [id])
   cashBankAccount CashBankAccount?    @relation(fields: [cashBankAccountId], references: [id])
   cheque          Cheque?
   shipment        Shipment?           @relation(fields: [shipmentId], references: [id])
@@ -1589,6 +1592,9 @@ model PaymentAllocation {
 
 model Expense {
   id                     String            @id @default(cuid())
+  /// Set when a management overhead allocation has included this expense.
+  /// The expense itself is unchanged: this only records that it was counted.
+  overheadAllocationId   String?
   companyId              String
   expenseNumber          String
   expenseDate            DateTime          @db.Date
@@ -1636,19 +1642,20 @@ model Expense {
   createdAt              DateTime          @default(now())
   updatedAt              DateTime          @updatedAt
 
-  company          Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  expenseCategory  ExpenseCategory     @relation(fields: [expenseCategoryId], references: [id])
-  shipment         Shipment?           @relation(fields: [shipmentId], references: [id])
-  purchaseContract PurchaseContract?   @relation(fields: [purchaseContractId], references: [id])
-  container        Container?          @relation(fields: [containerId], references: [id])
-  batch            Batch?              @relation(fields: [batchId], references: [id])
-  vendor           Vendor?             @relation(fields: [vendorId], references: [id])
-  agent            Agent?              @relation(fields: [agentId], references: [id])
-  payableToAgent   Agent?              @relation("ExpensePayableToAgent", fields: [payableToAgentId], references: [id])
-  cashBankAccount  CashBankAccount?    @relation(fields: [cashBankAccountId], references: [id])
-  taxCode          TaxCode?            @relation(fields: [taxCodeId], references: [id])
-  createdBy        User                @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
-  allocations      PaymentAllocation[]
+  company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  expenseCategory    ExpenseCategory     @relation(fields: [expenseCategoryId], references: [id])
+  shipment           Shipment?           @relation(fields: [shipmentId], references: [id])
+  purchaseContract   PurchaseContract?   @relation(fields: [purchaseContractId], references: [id])
+  container          Container?          @relation(fields: [containerId], references: [id])
+  batch              Batch?              @relation(fields: [batchId], references: [id])
+  vendor             Vendor?             @relation(fields: [vendorId], references: [id])
+  agent              Agent?              @relation(fields: [agentId], references: [id])
+  payableToAgent     Agent?              @relation("ExpensePayableToAgent", fields: [payableToAgentId], references: [id])
+  cashBankAccount    CashBankAccount?    @relation(fields: [cashBankAccountId], references: [id])
+  taxCode            TaxCode?            @relation(fields: [taxCodeId], references: [id])
+  createdBy          User                @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
+  allocations        PaymentAllocation[]
+  overheadAllocation OverheadAllocation? @relation("OverheadAllocationExpenses", fields: [overheadAllocationId], references: [id])
 
   @@unique([companyId, expenseNumber])
   @@index([companyId, status])
@@ -2298,4 +2305,71 @@ model Port {
   @@unique([companyId, code])
   @@index([companyId, status])
   @@map("ports")
+}
+
+/// A management allocation of general/overhead expenses across shipments.
+///
+/// Overheads belong to the company, not to any one consignment: rent and
+/// salaries are earned by the business as a whole. Management still wants to
+/// know what a shipment "really" cost once its share of the office is counted,
+/// so this records that view **beside** the accounts rather than inside them.
+///
+/// Nothing here posts to the general ledger. The original general expense
+/// stays exactly where it was, on the company profit and loss, and the
+/// official statements are unaffected — which is what the client asked for.
+model OverheadAllocation {
+  id          String                   @id @default(cuid())
+  companyId   String
+  /// What the allocation covers, and the basis it was shared on.
+  fromDate    DateTime                 @db.Date
+  toDate      DateTime                 @db.Date
+  basis       OverheadAllocationBasis
+  /// The overhead total shared out, in USD and in the company's currency.
+  amountUsd   Decimal                  @db.Decimal(18, 4)
+  amountLocal Decimal                  @db.Decimal(18, 4)
+  notes       String?
+  createdById String
+  createdAt   DateTime                 @default(now())
+  /// Superseded by a later allocation for the same period, or withdrawn.
+  status      OverheadAllocationStatus @default(ACTIVE)
+
+  company   Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy User                     @relation(fields: [createdById], references: [id])
+  lines     OverheadAllocationLine[]
+  expenses  Expense[]                @relation("OverheadAllocationExpenses")
+
+  @@index([companyId, status])
+  @@index([companyId, fromDate, toDate])
+  @@map("overhead_allocations")
+}
+
+/// One shipment's share of an overhead allocation.
+model OverheadAllocationLine {
+  id           String  @id @default(cuid())
+  allocationId String
+  shipmentId   String
+  /// The weight this share was derived from — kilograms, sales value or a
+  /// percentage — kept so the arithmetic can be read back.
+  weight       Decimal @db.Decimal(18, 4)
+  amountUsd    Decimal @db.Decimal(18, 4)
+  amountLocal  Decimal @db.Decimal(18, 4)
+
+  allocation OverheadAllocation @relation(fields: [allocationId], references: [id], onDelete: Cascade)
+  shipment   Shipment           @relation(fields: [shipmentId], references: [id])
+
+  @@unique([allocationId, shipmentId])
+  @@index([shipmentId])
+  @@map("overhead_allocation_lines")
+}
+
+enum OverheadAllocationBasis {
+  QUANTITY
+  SALES_VALUE
+  PERCENTAGE
+  EQUAL
+}
+
+enum OverheadAllocationStatus {
+  ACTIVE
+  WITHDRAWN
 }

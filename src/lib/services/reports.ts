@@ -63,20 +63,57 @@ export type TrialBalanceRow = {
   code: string;
   name: string;
   type: string;
+  /** Closing balance, split into the column it belongs in. */
   debitUsd: Decimal;
   creditUsd: Decimal;
   debitLocal: Decimal;
   creditLocal: Decimal;
+  /** Where the account stood the day the period opened. */
+  openingDebitUsd: Decimal;
+  openingCreditUsd: Decimal;
+  /** What moved through it during the period, gross — not netted. */
+  periodDebitUsd: Decimal;
+  periodCreditUsd: Decimal;
 };
 
+/**
+ * The trial balance, as an accountant expects to read it.
+ *
+ * Four figures per account: where it stood when the period opened, what moved
+ * through it in debits and in credits, and where it stands now. A period
+ * report that shows only the net movement cannot be tied to last month's
+ * closing balance, which is the first thing anybody checks.
+ *
+ * With no `from`, the opening is zero and the movement is the whole history —
+ * the "from day one" view, where closing and movement are the same thing.
+ */
 export async function getTrialBalanceReport(params: { companyId: string; from?: Date; to?: Date }) {
-  const rows = await accountBalances(params);
+  const [closingRows, openingRows, movementRows] = await Promise.all([
+    accountBalances({ companyId: params.companyId, to: params.to }),
+    params.from
+      ? accountBalances({ companyId: params.companyId, to: dayBefore(params.from) })
+      : Promise.resolve([] as LedgerBalanceRow[]),
+    accountBalances({ companyId: params.companyId, from: params.from, to: params.to }),
+  ]);
+
+  const openingBy = new Map(openingRows.map((r) => [r.accountId, r]));
+  const movementBy = new Map(movementRows.map((r) => [r.accountId, r]));
   const shaped: TrialBalanceRow[] = [];
 
-  for (const row of rows) {
+  for (const row of closingRows) {
     const netUsd = dec(row.debitUsd).minus(dec(row.creditUsd));
     const netLocal = dec(row.debitLocal).minus(dec(row.creditLocal));
-    if (netUsd.isZero() && netLocal.isZero()) continue;
+
+    const opening = openingBy.get(row.accountId);
+    const openingNet = opening ? dec(opening.debitUsd).minus(dec(opening.creditUsd)) : new Decimal(0);
+    const movement = movementBy.get(row.accountId);
+    const periodDebit = movement ? dec(movement.debitUsd) : new Decimal(0);
+    const periodCredit = movement ? dec(movement.creditUsd) : new Decimal(0);
+
+    // An account that neither holds a balance nor moved is not on the report.
+    if (netUsd.isZero() && netLocal.isZero() && openingNet.isZero() && periodDebit.isZero() && periodCredit.isZero()) {
+      continue;
+    }
 
     shaped.push({
       accountId: row.accountId,
@@ -87,6 +124,10 @@ export async function getTrialBalanceReport(params: { companyId: string; from?: 
       creditUsd: netUsd.lessThan(0) ? toMoney(netUsd.abs()) : new Decimal(0),
       debitLocal: netLocal.greaterThan(0) ? toMoney(netLocal) : new Decimal(0),
       creditLocal: netLocal.lessThan(0) ? toMoney(netLocal.abs()) : new Decimal(0),
+      openingDebitUsd: openingNet.greaterThan(0) ? toMoney(openingNet) : new Decimal(0),
+      openingCreditUsd: openingNet.lessThan(0) ? toMoney(openingNet.abs()) : new Decimal(0),
+      periodDebitUsd: toMoney(periodDebit),
+      periodCreditUsd: toMoney(periodCredit),
     });
   }
 
@@ -96,8 +137,21 @@ export async function getTrialBalanceReport(params: { companyId: string; from?: 
       creditUsd: acc.creditUsd.plus(r.creditUsd),
       debitLocal: acc.debitLocal.plus(r.debitLocal),
       creditLocal: acc.creditLocal.plus(r.creditLocal),
+      openingDebitUsd: acc.openingDebitUsd.plus(r.openingDebitUsd),
+      openingCreditUsd: acc.openingCreditUsd.plus(r.openingCreditUsd),
+      periodDebitUsd: acc.periodDebitUsd.plus(r.periodDebitUsd),
+      periodCreditUsd: acc.periodCreditUsd.plus(r.periodCreditUsd),
     }),
-    { debitUsd: new Decimal(0), creditUsd: new Decimal(0), debitLocal: new Decimal(0), creditLocal: new Decimal(0) },
+    {
+      debitUsd: new Decimal(0),
+      creditUsd: new Decimal(0),
+      debitLocal: new Decimal(0),
+      creditLocal: new Decimal(0),
+      openingDebitUsd: new Decimal(0),
+      openingCreditUsd: new Decimal(0),
+      periodDebitUsd: new Decimal(0),
+      periodCreditUsd: new Decimal(0),
+    },
   );
 
   return {
@@ -107,9 +161,22 @@ export async function getTrialBalanceReport(params: { companyId: string; from?: 
       creditUsd: toMoney(totals.creditUsd),
       debitLocal: toMoney(totals.debitLocal),
       creditLocal: toMoney(totals.creditLocal),
+      openingDebitUsd: toMoney(totals.openingDebitUsd),
+      openingCreditUsd: toMoney(totals.openingCreditUsd),
+      periodDebitUsd: toMoney(totals.periodDebitUsd),
+      periodCreditUsd: toMoney(totals.periodCreditUsd),
     },
+    differenceUsd: toMoney(totals.debitUsd.minus(totals.creditUsd)),
     isBalanced: toMoney(totals.debitUsd).equals(toMoney(totals.creditUsd)),
+    hasOpening: Boolean(params.from),
   };
+}
+
+/** The day before a period starts, for reading its opening balances. */
+function dayBefore(date: Date): Date {
+  const previous = new Date(date);
+  previous.setUTCDate(previous.getUTCDate() - 1);
+  return previous;
 }
 
 // ---------------------------------------------------------------------------

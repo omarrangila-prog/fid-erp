@@ -200,8 +200,20 @@ export async function applyLandedCost(
     if (allocatedUsd.isZero()) continue;
 
     const orderedKg = dec(batch.orderedQuantityKg);
-    const soldKg = dec(batch.soldQuantityKg);
     const receivedKg = dec(batch.receivedQuantityKg);
+    /*
+     * How much of this batch has been sold *by a document that can carry the
+     * cost*.
+     *
+     * The true-up is written onto the sales invoice lines that sold the
+     * coffee, so it can only be as large as those lines. Taking the quantity
+     * from the batch's own cache instead let the general ledger move more
+     * into cost of sales than any invoice absorbed, and the difference sat in
+     * COGS with nothing behind it — the ledger and the margin reports then
+     * disagreed for ever. Whatever the documents cannot carry stays in
+     * inventory, where the coffee still is.
+     */
+    const soldKg = Decimal.min(await documentSoldKg(tx, params.companyId, batch.id), dec(batch.soldQuantityKg));
 
     // Three destinations, in proportion to kilograms: what has been sold goes
     // to cost of sales, what is still on the water stays in transit, and the
@@ -254,6 +266,25 @@ export async function applyLandedCost(
     totalInTransitUsd: toMoney(sum(allocations.map((a) => a.inTransitUsd))),
     allInTransit: batches.every((b) => dec(b.receivedQuantityKg).lessThanOrEqualTo(0)),
   };
+}
+
+/**
+ * The net quantity of a batch sold by posted documents: invoices less credit
+ * notes. This is the only quantity whose cost can be restated, because the
+ * restatement is written onto those documents.
+ */
+async function documentSoldKg(tx: Tx, companyId: string, batchId: string): Promise<Decimal> {
+  const [invoiced, credited] = await Promise.all([
+    tx.salesInvoiceLine.aggregate({
+      where: { batchId, salesInvoice: { companyId, status: 'POSTED' } },
+      _sum: { quantityKg: true },
+    }),
+    tx.creditNoteLine.aggregate({
+      where: { batchId, creditNote: { companyId, status: 'POSTED', type: 'CUSTOMER' } },
+      _sum: { quantityKg: true },
+    }),
+  ]);
+  return Decimal.max(dec(invoiced._sum.quantityKg ?? 0).minus(dec(credited._sum.quantityKg ?? 0)), 0);
 }
 
 /**
