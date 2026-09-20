@@ -2,7 +2,9 @@ import type { Metadata } from 'next';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
-import { getGeneralLedger } from '@/lib/services/reports';
+import { getGeneralLedger, getGeneralLedgerByAccount } from '@/lib/services/reports';
+import { LedgerGroups } from '@/app/(app)/reports/general-ledger/ledger-groups';
+import { StatementHeader } from '@/components/reports/report-statement';
 import {
   resolveLedgerViewCurrency,
   pickCashBankCurrency,
@@ -58,13 +60,23 @@ export default async function GeneralLedgerPage({
     }),
   }));
 
-  const selectedId = account && accounts.some((a) => a.id === account) ? account : accounts[0]?.id;
+  // "all" is the printed ledger: every account with activity, one after the other.
+  const wholeBook = account === 'all';
+  const selectedId = wholeBook ? undefined : account && accounts.some((a) => a.id === account) ? account : accounts[0]?.id;
   const selected = accounts.find((row) => row.id === selectedId);
   const selectedCurrency = resolveLedgerViewCurrency({
     requested: currency,
     accountCurrency: selected?.currency,
     cashBankCurrency: pickCashBankCurrency(selected?.cashBankAccounts, selected?.currency ?? currency),
   });
+
+  const groups = wholeBook
+    ? await getGeneralLedgerByAccount({
+        companyId,
+        from: from ? new Date(`${from}T00:00:00.000Z`) : undefined,
+        to: to ? new Date(`${to}T00:00:00.000Z`) : undefined,
+      })
+    : null;
 
   const ledger = selectedId
     ? await getGeneralLedger({
@@ -96,13 +108,52 @@ export default async function GeneralLedgerPage({
 
       <AccountPicker
         accounts={pickerAccounts}
-        selectedId={selectedId ?? ''}
+        selectedId={wholeBook ? 'all' : (selectedId ?? '')}
         from={from ?? ''}
         to={to ?? ''}
         currency={selectedCurrency}
       />
 
-      {!ledger ? (
+      {groups ? (
+        groups.length === 0 ? (
+          <EmptyState title="Nothing posted in this period" description="No account moved between these dates." />
+        ) : (
+          <Card>
+            <CardContent className="px-2 pb-4 pt-2 sm:px-4">
+              <StatementHeader
+                company={user.activeCompany.name}
+                title="General Ledger"
+                period={from || to ? `${from ? formatDate(new Date(`${from}T00:00:00.000Z`)) : 'Start'} – ${to ? formatDate(new Date(`${to}T00:00:00.000Z`)) : 'Today'}` : 'All dates'}
+                meta={<p className="text-xs text-ink-subtle">{groups.length} accounts with activity · every line at its USD value</p>}
+              />
+              <LedgerGroups
+                groups={groups.map((g) => ({
+                  accountId: g.accountId,
+                  name: g.name,
+                  type: g.type,
+                  opening: formatMoney(g.openingUsd, 'USD'),
+                  closing: formatMoney(g.closingUsd, 'USD'),
+                  debit: formatMoney(g.debitUsd, 'USD'),
+                  credit: formatMoney(g.creditUsd, 'USD'),
+                  lines: g.lines.map((l) => ({
+                    entryId: l.entryId,
+                    date: formatDate(l.entryDate),
+                    type: titleCase(l.sourceType.replaceAll('_', ' ')),
+                    sourceType: l.sourceType,
+                    sourceId: l.sourceId,
+                    reference: l.reference ?? '',
+                    party: l.party ?? '',
+                    description: l.description,
+                    debit: l.debitUsd.isZero() ? '—' : formatMoney(l.debitUsd, 'USD'),
+                    credit: l.creditUsd.isZero() ? '—' : formatMoney(l.creditUsd, 'USD'),
+                    balance: formatMoney(l.balanceUsd, 'USD'),
+                  })),
+                }))}
+              />
+            </CardContent>
+          </Card>
+        )
+      ) : !ledger ? (
         <EmptyState title="No accounts yet" description="The chart of accounts is created when a company is set up." />
       ) : (
         <>

@@ -571,3 +571,146 @@ export async function getUnappliedCreditsByParty(companyId: string) {
   }
   return byParty;
 }
+
+// ---------------------------------------------------------------------------
+// Ageing summary: one row per party, one column per bucket
+// ---------------------------------------------------------------------------
+
+export const AGEING_BUCKETS: AgeingBucket[] = ['CURRENT', 'D1_30', 'D31_60', 'D61_90', 'D90_PLUS'];
+
+export type AgeingDetailLine = {
+  documentId: string;
+  documentLabel: string;
+  documentDate: Date;
+  dueDate: Date | null;
+  daysOverdue: number;
+  currency: string;
+  originalAmount: Decimal;
+  paidAmount: Decimal;
+  outstandingAmount: Decimal;
+  outstandingUsd: Decimal;
+  bucket: AgeingBucket;
+  href: string;
+};
+
+export type AgeingSummaryRow = {
+  partyId: string;
+  partyName: string;
+  /** The currency the party's ledger is kept in; the columns are in it. */
+  currency: string;
+  byBucket: Record<AgeingBucket, Decimal>;
+  total: Decimal;
+  totalUsd: Decimal;
+  lines: AgeingDetailLine[];
+  ledgerHref: string;
+};
+
+function daysOverdue(dueDate: Date | null): number {
+  if (!dueDate) return 0;
+  const today = new Date();
+  const due = Date.UTC(dueDate.getUTCFullYear(), dueDate.getUTCMonth(), dueDate.getUTCDate());
+  const now = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  return Math.max(0, Math.floor((now - due) / 86_400_000));
+}
+
+/**
+ * The ageing report the way an accountant reads it: a row per customer, a
+ * column per bucket, a total; each row opens into its invoices. Every figure
+ * is the same one the customer's ledger shows — this is a view of the
+ * receivables, not another calculation of them.
+ */
+export async function getReceivablesAgeing(companyId: string): Promise<AgeingSummaryRow[]> {
+  const rows = await getReceivables({ companyId, onlyOutstanding: true });
+  return summarise(
+    rows.map((r) => ({
+      partyId: r.customerId,
+      partyName: r.customerName,
+      currency: r.partyCurrency,
+      line: {
+        documentId: r.invoiceId,
+        documentLabel: shortNumber(r.invoiceNumber, 'INV'),
+        documentDate: r.invoiceDate,
+        dueDate: r.dueDate,
+        daysOverdue: daysOverdue(r.dueDate),
+        currency: r.currency,
+        originalAmount: r.originalAmount,
+        paidAmount: r.paidAmount,
+        outstandingAmount: r.outstandingAmount,
+        outstandingUsd: r.outstandingAmountUsd,
+        bucket: r.bucket,
+        href: r.invoiceId.startsWith('opening') ? `/ledgers/customers/${r.customerId}` : `/sales/${r.invoiceId}`,
+      },
+    })),
+    (id) => `/ledgers/customers/${id}`,
+  );
+}
+
+/** The same, for what the company owes its suppliers. */
+export async function getPayablesAgeing(companyId: string): Promise<AgeingSummaryRow[]> {
+  const rows = await getPayables({ companyId, onlyOutstanding: true });
+  return summarise(
+    rows.map((r) => ({
+      partyId: r.vendorId,
+      partyName: r.vendorName,
+      currency: r.partyCurrency,
+      line: {
+        documentId: r.contractId,
+        documentLabel: r.contractReference,
+        documentDate: r.contractDate,
+        dueDate: r.dueDate,
+        daysOverdue: daysOverdue(r.dueDate),
+        currency: r.currency,
+        originalAmount: r.purchaseValue,
+        paidAmount: r.paidAmount,
+        outstandingAmount: r.outstandingAmount,
+        outstandingUsd: r.outstandingAmountUsd,
+        bucket: r.bucket,
+        href: r.contractId.startsWith('opening') ? `/ledgers/vendors/${r.vendorId}` : `/purchases/${r.contractId}`,
+      },
+    })),
+    (id) => `/ledgers/vendors/${id}`,
+  );
+}
+
+function shortNumber(fullNumber: string, prefix: string): string {
+  const trailing = fullNumber.match(/(\d+)\s*$/);
+  return trailing ? `${prefix} ${Number(trailing[1])}` : fullNumber;
+}
+
+function summarise(
+  items: Array<{ partyId: string; partyName: string; currency: string; line: AgeingDetailLine }>,
+  ledgerHref: (partyId: string) => string,
+): AgeingSummaryRow[] {
+  const byParty = new Map<string, AgeingSummaryRow>();
+  for (const item of items) {
+    // A party dealing in two currencies is two rows: dirhams and dollars are
+    // never added into one figure.
+    const key = `${item.partyId}:${item.line.currency}`;
+    const row =
+      byParty.get(key) ??
+      {
+        partyId: item.partyId,
+        partyName: item.partyName,
+        currency: item.line.currency,
+        byBucket: { CURRENT: new Decimal(0), D1_30: new Decimal(0), D31_60: new Decimal(0), D61_90: new Decimal(0), D90_PLUS: new Decimal(0) },
+        total: new Decimal(0),
+        totalUsd: new Decimal(0),
+        lines: [],
+        ledgerHref: ledgerHref(item.partyId),
+      };
+    row.byBucket[item.line.bucket] = row.byBucket[item.line.bucket].plus(item.line.outstandingAmount);
+    row.total = row.total.plus(item.line.outstandingAmount);
+    row.totalUsd = row.totalUsd.plus(item.line.outstandingUsd);
+    row.lines.push(item.line);
+    byParty.set(key, row);
+  }
+  return [...byParty.values()]
+    .map((row) => ({
+      ...row,
+      byBucket: Object.fromEntries(AGEING_BUCKETS.map((b) => [b, toMoney(row.byBucket[b])])) as Record<AgeingBucket, Decimal>,
+      total: toMoney(row.total),
+      totalUsd: toMoney(row.totalUsd),
+      lines: row.lines.sort((a, b) => a.documentDate.getTime() - b.documentDate.getTime()),
+    }))
+    .sort((a, b) => a.partyName.localeCompare(b.partyName) || a.currency.localeCompare(b.currency));
+}

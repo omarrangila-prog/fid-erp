@@ -1425,3 +1425,146 @@ export async function getProfitAndLossByColumns(params: {
   ]);
   return { columns, byColumn, total, previous, before };
 }
+
+// ---------------------------------------------------------------------------
+// General ledger, every account at once
+// ---------------------------------------------------------------------------
+
+export type LedgerGroupLine = {
+  entryId: string;
+  entryDate: Date;
+  sourceType: string;
+  sourceId: string;
+  reference: string | null;
+  party: string | null;
+  description: string;
+  debitUsd: Decimal;
+  creditUsd: Decimal;
+  balanceUsd: Decimal;
+};
+
+export type LedgerGroup = {
+  accountId: string;
+  name: string;
+  type: string;
+  openingUsd: Decimal;
+  lines: LedgerGroupLine[];
+  debitUsd: Decimal;
+  creditUsd: Decimal;
+  closingUsd: Decimal;
+};
+
+/**
+ * The general ledger the way it is printed: account by account, each with
+ * its opening balance, its lines in date order with a running balance, and
+ * its closing balance — in accounting order (assets, liabilities, equity,
+ * income, expenses), not alphabetical. Two queries for the whole book,
+ * however many accounts: one for the openings, one for the period's lines.
+ */
+export async function getGeneralLedgerByAccount(params: {
+  companyId: string;
+  from?: Date;
+  to?: Date;
+  filters?: LedgerFilters;
+}): Promise<LedgerGroup[]> {
+  const f = params.filters ?? {};
+  const accounts = await prisma.account.findMany({
+    where: { companyId: params.companyId, ...(f.accountType ? { type: f.accountType as never } : {}) },
+    orderBy: { code: 'asc' },
+    select: { id: true, name: true, type: true },
+  });
+
+  const openings = params.from
+    ? await prisma.$queryRaw<Array<{ accountId: string; net: string }>>`
+        SELECT jl."accountId", COALESCE(SUM(jl."debitUsd" - jl."creditUsd"), 0)::text AS net
+        FROM journal_lines jl
+        JOIN journal_entries je ON je."id" = jl."journalEntryId"
+        WHERE je."companyId" = ${params.companyId} AND ${LIVE_ENTRY_SQL}
+          AND je."entryDate" < ${params.from}::date
+          AND (${f.customerId ?? null}::text IS NULL OR jl."customerId" = ${f.customerId ?? null})
+          AND (${f.vendorId ?? null}::text IS NULL OR jl."vendorId" = ${f.vendorId ?? null})
+          AND (${f.shipmentId ?? null}::text IS NULL OR jl."shipmentId" = ${f.shipmentId ?? null})
+          AND (${f.currency ?? null}::text IS NULL OR jl."currency" = ${f.currency ?? null})
+        GROUP BY jl."accountId"
+      `
+    : [];
+
+  const lines = await prisma.$queryRaw<
+    Array<{
+      accountId: string;
+      entryId: string;
+      entryDate: Date;
+      sourceType: string;
+      sourceId: string;
+      reference: string | null;
+      party: string | null;
+      description: string;
+      debitUsd: string;
+      creditUsd: string;
+    }>
+  >`
+    SELECT jl."accountId", je."id" AS "entryId", je."entryDate", je."sourceType"::text AS "sourceType", je."sourceId",
+           NULL::text AS "reference", COALESCE(c."customerName", v."vendorName", ag."agentName") AS party,
+           COALESCE(NULLIF(jl."description", ''), je."description") AS description,
+           jl."debitUsd"::text AS "debitUsd", jl."creditUsd"::text AS "creditUsd"
+    FROM journal_lines jl
+    JOIN journal_entries je ON je."id" = jl."journalEntryId"
+    LEFT JOIN customers c ON c."id" = jl."customerId"
+    LEFT JOIN vendors v ON v."id" = jl."vendorId"
+    LEFT JOIN agents ag ON ag."id" = jl."agentId"
+    WHERE je."companyId" = ${params.companyId} AND ${LIVE_ENTRY_SQL}
+      AND (${params.from ?? null}::date IS NULL OR je."entryDate" >= ${params.from ?? null}::date)
+      AND (${params.to ?? null}::date IS NULL OR je."entryDate" <= ${params.to ?? null}::date)
+      AND (${f.customerId ?? null}::text IS NULL OR jl."customerId" = ${f.customerId ?? null})
+      AND (${f.vendorId ?? null}::text IS NULL OR jl."vendorId" = ${f.vendorId ?? null})
+      AND (${f.shipmentId ?? null}::text IS NULL OR jl."shipmentId" = ${f.shipmentId ?? null})
+      AND (${f.currency ?? null}::text IS NULL OR jl."currency" = ${f.currency ?? null})
+    ORDER BY je."entryDate", je."createdAt", jl."id"
+  `;
+
+  const openingBy = new Map(openings.map((o) => [o.accountId, dec(o.net)]));
+  const linesBy = new Map<string, typeof lines>();
+  for (const line of lines) linesBy.set(line.accountId, [...(linesBy.get(line.accountId) ?? []), line]);
+
+  const groups: LedgerGroup[] = [];
+  for (const account of accounts) {
+    const opening = openingBy.get(account.id) ?? new Decimal(0);
+    const own = linesBy.get(account.id) ?? [];
+    if (opening.isZero() && own.length === 0) continue;
+
+    let running = opening;
+    let debit = new Decimal(0);
+    let credit = new Decimal(0);
+    const shaped: LedgerGroupLine[] = own.map((line) => {
+      const d = dec(line.debitUsd);
+      const c = dec(line.creditUsd);
+      running = running.plus(d).minus(c);
+      debit = debit.plus(d);
+      credit = credit.plus(c);
+      return {
+        entryId: line.entryId,
+        entryDate: line.entryDate,
+        sourceType: line.sourceType,
+        sourceId: line.sourceId,
+        reference: line.reference,
+        party: line.party,
+        description: line.description,
+        debitUsd: toMoney(d),
+        creditUsd: toMoney(c),
+        balanceUsd: toMoney(running),
+      };
+    });
+
+    groups.push({
+      accountId: account.id,
+      name: account.name,
+      type: account.type,
+      openingUsd: toMoney(opening),
+      lines: shaped,
+      debitUsd: toMoney(debit),
+      creditUsd: toMoney(credit),
+      closingUsd: toMoney(running),
+    });
+  }
+  return groups;
+}

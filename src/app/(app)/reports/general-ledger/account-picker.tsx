@@ -35,6 +35,7 @@ export function AccountPicker({
   function apply() {
     const params = new URLSearchParams();
     if (account) params.set('account', account);
+    else params.set('account', 'all');
     if (fromDate) params.set('from', fromDate);
     if (toDate) params.set('to', toDate);
     if (ccy) params.set('currency', ccy);
@@ -45,12 +46,16 @@ export function AccountPicker({
     <div className="flex flex-wrap items-end gap-2">
       <Field label="Account" className="min-w-64 flex-1">
         <Combobox
-          options={accounts.map((a) => ({
-            value: a.id,
-            label: a.name,
-            hint: a.type.toLowerCase(),
-            keywords: a.code,
-          }))}
+          options={[
+            // The whole book, account by account — the printed general ledger.
+            { value: 'all', label: 'All accounts', hint: 'every account with activity, grouped', keywords: 'all every book' },
+            ...accounts.map((a) => ({
+              value: a.id,
+              label: a.name,
+              hint: a.type.toLowerCase(),
+              keywords: a.code,
+            })),
+          ]}
           value={account}
           onChange={chooseAccount}
           placeholder="Choose an account…"

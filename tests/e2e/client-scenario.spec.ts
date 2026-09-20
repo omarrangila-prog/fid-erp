@@ -627,6 +627,41 @@ test('the profit and loss reads like the statement the client is used to', async
   console.log('  statement: collapsible sections remembered, columns by month, previous-period comparison, drilldown');
 });
 
+test('the ledger prints account by account, and the ageing opens into its invoices', async ({ page }) => {
+  await signIn(page);
+
+  // The whole book, grouped: opening, lines, running balance, closing.
+  await page.goto('/reports/general-ledger?account=all', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('heading', { name: /^General Ledger$/ }).last()).toBeVisible({ timeout: 45_000 });
+  const groups = page.locator('main section');
+  await expect(groups.first()).toBeVisible();
+  const count = await groups.count();
+  expect(count).toBeGreaterThan(1);
+  await expect(groups.first().getByText(/Opening balance/)).toBeVisible();
+  await expect(groups.first().getByText(/Closing balance/)).toBeVisible();
+  // Collapse one; it stays collapsed after a reload.
+  await groups.first().getByRole('button').first().click();
+  await expect(groups.first().getByText(/Opening balance/)).toHaveCount(0);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.locator('main section').first().getByText(/Opening balance/)).toHaveCount(0, { timeout: 45_000 });
+  console.log(`  general ledger: ${count} accounts, grouped, collapsible`);
+
+  // Ageing: a matrix of customers by bucket, each row opening into its invoices.
+  await page.goto('/reports/ageing', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('heading', { name: /Accounts Receivable Ageing/ }).first()).toBeVisible({ timeout: 45_000 });
+  for (const bucket of ['Current', '1–30 Days', '31–60 Days', '61–90 Days', '90+ Days', 'Total']) {
+    await expect(page.getByRole('columnheader', { name: bucket })).toBeVisible();
+  }
+  const opener = page.getByRole('button', { name: /Show .*documents/ }).first();
+  if (await opener.count()) {
+    await opener.click();
+    await expect(page.getByRole('columnheader', { name: /Days overdue/ })).toBeVisible();
+    console.log('  ageing: matrix with bucket columns, rows open into invoices');
+  } else {
+    console.log('  ageing: nothing outstanding in this database');
+  }
+});
+
 test('who the loan is with is chosen from the ledgers, not typed', async ({ page }) => {
   await signIn(page);
   await page.goto('/finance/loans/new', { waitUntil: 'domcontentloaded' });
