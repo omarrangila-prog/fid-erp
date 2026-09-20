@@ -7,7 +7,9 @@ import { prisma } from '@/lib/db';
 import { getTrialBalanceReport } from '@/lib/services/reports';
 import { formatMoney, formatDate, titleCase } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
-import { AsOfPicker } from '@/components/shared/date-range';
+import { DateRangePicker } from '@/components/shared/date-range';
+import { TrialBalanceFilters } from '@/app/(app)/reports/trial-balance/filters';
+import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -21,14 +23,57 @@ import { dec } from '@/lib/money';
 export const metadata: Metadata = { title: 'Trial Balance' };
 export const dynamic = 'force-dynamic';
 
-export default async function TrialBalancePage({ searchParams }: { searchParams: Promise<{ asOf?: string }> }) {
-  const { asOf } = await searchParams;
+export default async function TrialBalancePage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    asOf?: string;
+    from?: string;
+    to?: string;
+    type?: string;
+    currency?: string;
+    customer?: string;
+    vendor?: string;
+    warehouse?: string;
+    shipment?: string;
+  }>;
+}) {
+  const query = await searchParams;
   const user = await requirePageAccess(PERMISSIONS.ACCOUNTING_VIEW);
   const local = user.activeCompany.localCurrency;
+  const companyId = user.activeCompany.id;
 
-  const asOfDate = asOf ? new Date(`${asOf}T00:00:00.000Z`) : new Date();
+  // "As at" is the closing date; a start date turns on opening and movement.
+  const asOfDate = query.to
+    ? new Date(`${query.to}T00:00:00.000Z`)
+    : query.asOf
+      ? new Date(`${query.asOf}T00:00:00.000Z`)
+      : new Date();
+  const fromDate = query.from ? new Date(`${query.from}T00:00:00.000Z`) : undefined;
+  const filters = {
+    accountType: query.type || null,
+    currency: query.currency || null,
+    customerId: query.customer || null,
+    vendorId: query.vendor || null,
+    warehouseId: query.warehouse || null,
+    shipmentId: query.shipment || null,
+  };
+  const filtered = Object.values(filters).some(Boolean);
+
+  const [customers, vendors, shipments, warehouses, ordinals] = await Promise.all([
+    prisma.customer.findMany({ where: { companyId, status: 'ACTIVE' }, orderBy: { customerName: 'asc' }, select: { id: true, customerName: true } }),
+    prisma.vendor.findMany({ where: { companyId, status: 'ACTIVE' }, orderBy: { vendorName: 'asc' }, select: { id: true, vendorName: true } }),
+    prisma.shipment.findMany({
+      where: { companyId, purchaseContract: { status: 'POSTED' } },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, purchaseContract: { select: { contractReference: true } } },
+    }),
+    prisma.warehouse.findMany({ where: { companyId, status: 'ACTIVE' }, orderBy: { name: 'asc' }, select: { id: true, name: true } }),
+    getShipmentOrdinals(companyId),
+  ]);
+
   const [trial, accountCurrencies] = await Promise.all([
-    getTrialBalanceReport({ companyId: user.activeCompany.id, to: asOfDate }),
+    getTrialBalanceReport({ companyId, from: fromDate, to: asOfDate, filters }),
     prisma.account.findMany({
       where: { companyId: user.activeCompany.id },
       select: {
@@ -58,7 +103,7 @@ export default async function TrialBalancePage({ searchParams }: { searchParams:
         }
         actions={
           <>
-            <ExportLinks href={exportHref('trial-balance', { asOf })} />
+            <ExportLinks href={exportHref('trial-balance', { asOf: asOfDate.toISOString().slice(0, 10) })} />
             <PrintButton />
           </>
         }
@@ -69,7 +114,26 @@ export default async function TrialBalancePage({ searchParams }: { searchParams:
         country={user.activeCompany.country}
       />
 
-      <AsOfPicker defaultDate={asOfDate.toISOString().slice(0, 10)} />
+      <DateRangePicker
+        defaultFrom={(fromDate ?? new Date(Date.UTC(asOfDate.getUTCFullYear(), asOfDate.getUTCMonth(), 1))).toISOString().slice(0, 10)}
+        defaultTo={asOfDate.toISOString().slice(0, 10)}
+      />
+      <TrialBalanceFilters
+        customers={customers.map((c) => ({ value: c.id, label: c.customerName }))}
+        vendors={vendors.map((v) => ({ value: v.id, label: v.vendorName }))}
+        shipments={shipments.map((s) => ({
+          value: s.id,
+          label: `${s.purchaseContract.contractReference} · ${shipmentOrdinalLabel(ordinals.get(s.id))}`,
+        }))}
+        warehouses={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+        currencies={[...new Set(['USD', local, 'AED', 'MAD'])]}
+      />
+      {filtered ? (
+        <p className="text-xs text-ink-muted">
+          Narrowed to the lines that match the filters above. A narrowed trial balance need not balance on its own —
+          the other side of a customer&rsquo;s entries sits on accounts that are not theirs.
+        </p>
+      ) : null}
 
       {/* The three figures the report exists to give, and the verdict. An
           imbalance is never hidden: it is the only thing a trial balance is

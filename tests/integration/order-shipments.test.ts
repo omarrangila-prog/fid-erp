@@ -1100,3 +1100,21 @@ describe('shipment results add up to the company result', () => {
     expect(Number(shipmentCogs)).toBeCloseTo(Number(pnl.totals.costOfSalesUsd), 2);
   }, 300_000);
 });
+
+describe('daily stock movement', () => {
+  it('opens with what was there, lists what moved, and closes to what is there now', async () => {
+    const { getStockMovementSummary } = await import('@/lib/services/stock');
+    const rows = await getStockMovementSummary({ companyId, from: utcDate('2026-10-06'), to: utcDate('2026-10-31') });
+    const mine = rows.filter((r) => r.warehouseId === masters.warehouses[0].id);
+    expect(mine.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const movements = row.receiptsKg.plus(row.transfersInKg).plus(row.transfersOutKg).plus(row.salesKg).plus(row.adjustmentsKg);
+      // Opening plus movements equals closing on every row — or the report is wrong and says so.
+      expect(row.openingKg.plus(movements).toFixed(3)).toBe(row.closingKg.toFixed(3));
+    }
+    // The RECONCILE order received 20,000 KG on 6 Oct and sold 10,000 by invoice on 10 Oct.
+    const total = rows.reduce((a, r) => ({ received: a.received.plus(r.receiptsKg), sold: a.sold.plus(r.salesKg) }), { received: dec(0), sold: dec(0) });
+    expect(Number(total.received)).toBeGreaterThanOrEqual(20000);
+    expect(Number(total.sold)).toBeLessThanOrEqual(-10000);
+  }, 300_000);
+});

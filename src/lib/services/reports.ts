@@ -31,11 +31,24 @@ type LedgerBalanceRow = {
   creditLocal: string;
 };
 
+/** The narrowing a trial balance can be read under — a party, a job, a currency, a kind of account. */
+export type LedgerFilters = {
+  customerId?: string | null;
+  vendorId?: string | null;
+  agentId?: string | null;
+  shipmentId?: string | null;
+  warehouseId?: string | null;
+  currency?: string | null;
+  accountType?: string | null;
+};
+
 async function accountBalances(params: {
   companyId: string;
   from?: Date | null;
   to?: Date | null;
+  filters?: LedgerFilters;
 }): Promise<LedgerBalanceRow[]> {
+  const f = params.filters ?? {};
   return prisma.$queryRaw<LedgerBalanceRow[]>`
     SELECT a."id" AS "accountId", a."code", a."name", a."type"::text AS type, a."reportGroup",
            COALESCE(SUM(jl."debitUsd"), 0)::text    AS "debitUsd",
@@ -44,10 +57,22 @@ async function accountBalances(params: {
            COALESCE(SUM(jl."creditLocal"), 0)::text AS "creditLocal"
     FROM accounts a
     LEFT JOIN journal_lines jl ON jl."accountId" = a."id"
+      AND (${f.customerId ?? null}::text IS NULL OR jl."customerId" = ${f.customerId ?? null})
+      AND (${f.vendorId ?? null}::text IS NULL OR jl."vendorId" = ${f.vendorId ?? null})
+      AND (${f.agentId ?? null}::text IS NULL OR jl."agentId" = ${f.agentId ?? null})
+      AND (${f.shipmentId ?? null}::text IS NULL OR jl."shipmentId" = ${f.shipmentId ?? null})
+      AND (${f.currency ?? null}::text IS NULL OR jl."currency" = ${f.currency ?? null})
+      -- A warehouse is not on a journal line; it is on the stock movement the
+      -- line was written for, so the filter walks through that.
+      AND (${f.warehouseId ?? null}::text IS NULL OR EXISTS (
+            SELECT 1 FROM inventory_transactions it
+             WHERE it."warehouseId" = ${f.warehouseId ?? null}
+               AND it."referenceId" = (SELECT je2."sourceId" FROM journal_entries je2 WHERE je2."id" = jl."journalEntryId")))
     LEFT JOIN journal_entries je ON je."id" = jl."journalEntryId" AND ${LIVE_ENTRY_SQL}
       AND (${params.from ?? null}::date IS NULL OR je."entryDate" >= ${params.from ?? null}::date)
       AND (${params.to ?? null}::date IS NULL OR je."entryDate" <= ${params.to ?? null}::date)
     WHERE a."companyId" = ${params.companyId}
+      AND (${f.accountType ?? null}::text IS NULL OR a."type"::text = ${f.accountType ?? null})
       AND (jl."id" IS NULL OR je."id" IS NOT NULL)
     GROUP BY a."id", a."code", a."name", a."type", a."reportGroup"
     ORDER BY a."code"
@@ -87,13 +112,13 @@ export type TrialBalanceRow = {
  * With no `from`, the opening is zero and the movement is the whole history —
  * the "from day one" view, where closing and movement are the same thing.
  */
-export async function getTrialBalanceReport(params: { companyId: string; from?: Date; to?: Date }) {
+export async function getTrialBalanceReport(params: { companyId: string; from?: Date; to?: Date; filters?: LedgerFilters }) {
   const [closingRows, openingRows, movementRows] = await Promise.all([
-    accountBalances({ companyId: params.companyId, to: params.to }),
+    accountBalances({ companyId: params.companyId, to: params.to, filters: params.filters }),
     params.from
-      ? accountBalances({ companyId: params.companyId, to: dayBefore(params.from) })
+      ? accountBalances({ companyId: params.companyId, to: dayBefore(params.from), filters: params.filters })
       : Promise.resolve([] as LedgerBalanceRow[]),
-    accountBalances({ companyId: params.companyId, from: params.from, to: params.to }),
+    accountBalances({ companyId: params.companyId, from: params.from, to: params.to, filters: params.filters }),
   ]);
 
   const openingBy = new Map(openingRows.map((r) => [r.accountId, r]));

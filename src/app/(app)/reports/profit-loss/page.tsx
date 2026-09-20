@@ -14,6 +14,7 @@ import { exportHref } from '@/components/shared/excel-link';
 import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
 import type { PnlLine } from '@/lib/services/reports';
+import type { Decimal } from '@/lib/money';
 
 export const metadata: Metadata = { title: 'Profit & Loss' };
 export const dynamic = 'force-dynamic';
@@ -34,7 +35,26 @@ export default async function ProfitLossPage({
   const fromDate = from ? new Date(`${from}T00:00:00.000Z`) : startOfYear();
   const toDate = to ? new Date(`${to}T00:00:00.000Z`) : new Date();
 
-  const pnl = await getProfitAndLoss({ companyId: user.activeCompany.id, from: fromDate, to: toDate });
+  /*
+   * The same statement for the period immediately before, of the same
+   * length, so "this month against last month" and "this quarter against
+   * the previous" are read side by side without anybody working out dates.
+   */
+  const spanMs = toDate.getTime() - fromDate.getTime() + 86_400_000;
+  const previousTo = new Date(fromDate.getTime() - 86_400_000);
+  const previousFrom = new Date(previousTo.getTime() - spanMs + 86_400_000);
+
+  const [pnl, previous] = await Promise.all([
+    getProfitAndLoss({ companyId: user.activeCompany.id, from: fromDate, to: toDate }),
+    getProfitAndLoss({ companyId: user.activeCompany.id, from: previousFrom, to: previousTo }),
+  ]);
+
+  /** "+12.5%" against the previous period, or nothing when there is no base to compare with. */
+  const change = (now: Decimal, before: Decimal) => {
+    if (before.isZero()) return now.isZero() ? 'no change' : 'new this period';
+    const pct = now.minus(before).dividedBy(before.abs()).times(100);
+    return `${pct.greaterThanOrEqualTo(0) ? '+' : ''}${pct.toFixed(1)}% vs ${formatMoney(before, 'USD')}`;
+  };
 
   const section = (title: string, lines: PnlLine[], totalUsd: string, totalLocal: string, emphasis?: boolean) => (
     <>
@@ -108,32 +128,35 @@ export default async function ProfitLossPage({
           {
             label: 'Revenue',
             value: formatMoney(pnl.totals.revenueUsd, 'USD'),
-            hint: formatMoney(pnl.totals.revenueLocal, local),
+            hint: change(pnl.totals.revenueUsd, previous.totals.revenueUsd),
           },
           {
             label: 'Cost of sales',
             value: formatMoney(pnl.totals.costOfSalesUsd, 'USD'),
-            hint: formatMoney(pnl.totals.costOfSalesLocal, local),
+            hint: change(pnl.totals.costOfSalesUsd, previous.totals.costOfSalesUsd),
           },
           {
             label: 'Gross profit',
             value: formatMoney(pnl.totals.grossProfitUsd, 'USD'),
-            hint: formatPercent(pnl.grossMarginPct),
+            hint: `${formatPercent(pnl.grossMarginPct)} margin · ${change(pnl.totals.grossProfitUsd, previous.totals.grossProfitUsd)}`,
           },
           {
             label: 'Expenses',
             value: formatMoney(pnl.totals.operatingExpensesUsd, 'USD'),
-            hint: formatMoney(pnl.totals.operatingExpensesLocal, local),
+            hint: change(pnl.totals.operatingExpensesUsd, previous.totals.operatingExpensesUsd),
           },
           {
             label: 'Net profit',
             value: formatMoney(pnl.totals.netProfitUsd, 'USD'),
-            hint: formatMoney(pnl.totals.netProfitLocal, local),
+            hint: `${formatMoney(pnl.totals.netProfitLocal, local)} · ${change(pnl.totals.netProfitUsd, previous.totals.netProfitUsd)}`,
             lead: true,
             tone: pnl.totals.netProfitUsd.greaterThanOrEqualTo(0) ? 'positive' : 'negative',
           },
         ]}
       />
+      <p className="text-xs text-ink-muted">
+        Compared with the previous period of the same length: {formatDate(previousFrom)} to {formatDate(previousTo)}.
+      </p>
 
       <Card>
         <CardHeader>

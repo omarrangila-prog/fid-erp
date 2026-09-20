@@ -1011,3 +1011,117 @@ export async function getInventoryValuation(companyId: string): Promise<Inventor
   });
 }
 
+
+export type StockMovementSummaryRow = {
+  itemId: string;
+  itemName: string;
+  warehouseId: string | null;
+  warehouseName: string;
+  openingKg: Decimal;
+  receiptsKg: Decimal;
+  transfersInKg: Decimal;
+  transfersOutKg: Decimal;
+  salesKg: Decimal;
+  adjustmentsKg: Decimal;
+  closingKg: Decimal;
+  closingValueUsd: Decimal;
+};
+
+/**
+ * Opening stock, what moved, closing stock — for a day or any range.
+ *
+ * The warehouse keeper's question is not "what happened" but "does what I
+ * have agree with what the system says I should have". So the report opens
+ * with the balance carried in, lists the movements in the categories that
+ * actually occur — received, transferred in, transferred out, sold,
+ * adjusted — and closes with the balance carried out. Opening plus movements
+ * equals closing, or the figures are wrong and it shows.
+ *
+ * Reservations are deliberately left out: reserving coffee for a draft
+ * invoice does not move it, and counting it here would make the closing
+ * balance disagree with the shelf.
+ */
+export async function getStockMovementSummary(params: {
+  companyId: string;
+  from: Date;
+  to: Date;
+  warehouseId?: string;
+  itemId?: string;
+}): Promise<StockMovementSummaryRow[]> {
+  const rows = await prisma.$queryRaw<
+    Array<{
+      itemId: string;
+      itemName: string;
+      warehouseId: string | null;
+      warehouseName: string | null;
+      openingKg: string;
+      receiptsKg: string;
+      transfersInKg: string;
+      transfersOutKg: string;
+      salesKg: string;
+      adjustmentsKg: string;
+      closingKg: string;
+      closingValueUsd: string;
+    }>
+  >`
+    SELECT it."itemId", ci."itemName", it."warehouseId", w."name" AS "warehouseName",
+           COALESCE(SUM(CASE WHEN it."transactionDate" < ${params.from}::date
+                             THEN it."quantityKg" ELSE 0 END), 0)::text AS "openingKg",
+           COALESCE(SUM(CASE WHEN it."transactionDate" BETWEEN ${params.from}::date AND ${params.to}::date
+                              AND it."transactionType" IN ('RECEIPT', 'OPENING')
+                             THEN it."quantityKg" ELSE 0 END), 0)::text AS "receiptsKg",
+           COALESCE(SUM(CASE WHEN it."transactionDate" BETWEEN ${params.from}::date AND ${params.to}::date
+                              AND it."transactionType" = 'TRANSFER_IN'
+                             THEN it."quantityKg" ELSE 0 END), 0)::text AS "transfersInKg",
+           COALESCE(SUM(CASE WHEN it."transactionDate" BETWEEN ${params.from}::date AND ${params.to}::date
+                              AND it."transactionType" = 'TRANSFER_OUT'
+                             THEN it."quantityKg" ELSE 0 END), 0)::text AS "transfersOutKg",
+           COALESCE(SUM(CASE WHEN it."transactionDate" BETWEEN ${params.from}::date AND ${params.to}::date
+                              AND it."transactionType" = 'SALE'
+                             THEN it."quantityKg" ELSE 0 END), 0)::text AS "salesKg",
+           COALESCE(SUM(CASE WHEN it."transactionDate" BETWEEN ${params.from}::date AND ${params.to}::date
+                              AND it."transactionType" IN ('ADJUSTMENT_IN', 'ADJUSTMENT_OUT', 'REVERSAL')
+                             THEN it."quantityKg" ELSE 0 END), 0)::text AS "adjustmentsKg",
+           COALESCE(SUM(CASE WHEN it."transactionDate" <= ${params.to}::date
+                             THEN it."quantityKg" ELSE 0 END), 0)::text AS "closingKg",
+           COALESCE(SUM(CASE WHEN it."transactionDate" <= ${params.to}::date
+                             THEN it."quantityKg" * it."unitCost" ELSE 0 END), 0)::text AS "closingValueUsd"
+      FROM inventory_transactions it
+      JOIN coffee_items ci ON ci."id" = it."itemId"
+      LEFT JOIN warehouses w ON w."id" = it."warehouseId"
+     WHERE it."companyId" = ${params.companyId}
+       -- Reserving coffee for a draft invoice does not move it off the shelf.
+       AND it."transactionType" NOT IN ('RESERVATION', 'RESERVATION_RELEASE')
+       AND it."transactionDate" <= ${params.to}::date
+       AND (${params.warehouseId ?? null}::text IS NULL OR it."warehouseId" = ${params.warehouseId ?? null})
+       AND (${params.itemId ?? null}::text IS NULL OR it."itemId" = ${params.itemId ?? null})
+     GROUP BY it."itemId", ci."itemName", it."warehouseId", w."name"
+     ORDER BY ci."itemName", w."name"
+  `;
+
+  return rows
+    .map((row) => ({
+      itemId: row.itemId,
+      itemName: row.itemName,
+      warehouseId: row.warehouseId,
+      warehouseName: row.warehouseName ?? 'Not in a warehouse',
+      openingKg: toQuantity(row.openingKg),
+      receiptsKg: toQuantity(row.receiptsKg),
+      transfersInKg: toQuantity(row.transfersInKg),
+      transfersOutKg: toQuantity(row.transfersOutKg),
+      salesKg: toQuantity(row.salesKg),
+      adjustmentsKg: toQuantity(row.adjustmentsKg),
+      closingKg: toQuantity(row.closingKg),
+      closingValueUsd: toMoney(row.closingValueUsd),
+    }))
+    .filter(
+      (row) =>
+        !row.openingKg.isZero() ||
+        !row.closingKg.isZero() ||
+        !row.receiptsKg.isZero() ||
+        !row.salesKg.isZero() ||
+        !row.transfersInKg.isZero() ||
+        !row.transfersOutKg.isZero() ||
+        !row.adjustmentsKg.isZero(),
+    );
+}
