@@ -66,6 +66,12 @@ export type ReceiptInput = {
   reference?: string | null;
   description?: string | null;
   allocations?: ReceiptAllocationInput[];
+  /**
+   * The user's explicit choice to keep money not applied to an invoice on the
+   * customer's account as an advance. Without it, a receipt must be applied
+   * in full: the difference is never turned into an advance on its own.
+   */
+  keepRemainderAsAdvance?: boolean;
 };
 
 /** Outstanding on one invoice, in the invoice currency and in USD. */
@@ -116,6 +122,7 @@ async function buildAllocations(
     receiptCurrency: string;
     receiptRateToUsd: Decimal;
     allocations: ReceiptAllocationInput[];
+    keepRemainderAsAdvance?: boolean;
   },
 ) {
   const rows: Array<{ salesInvoiceId: string; amount: Decimal; amountUsd: Decimal; currency: string }> = [];
@@ -168,6 +175,27 @@ async function buildAllocations(
   if (settledInVoucher.greaterThan(params.receiptAmount.plus('0.005'))) {
     throw new BusinessRuleError(
       `Allocations total ${params.receiptCurrency} ${settledInVoucher.toFixed(2)} but the receipt is only ${params.receiptCurrency} ${params.receiptAmount.toFixed(2)}.`,
+    );
+  }
+
+  /*
+   * Money received but not applied to an invoice becomes an advance on the
+   * customer's account — but only when the user says so.
+   *
+   * It used to happen on its own. Record Payment opened on Invoice 15 with
+   * both "Amount received" and the allocation at the full MAD 126,000; the
+   * allocation was lowered to the MAD 80,000 actually paid and the amount was
+   * left alone. The receipt then put MAD 126,000 into Cash in Hand and booked
+   * MAD 46,000 as an advance nobody had paid, and the customer's ledger read
+   * zero while the invoice still showed MAD 46,000 due. An outstanding balance
+   * is not a payment; nothing may be invented to clear it.
+   */
+  const remainder = toMoney(params.receiptAmount.minus(settledInVoucher));
+  if (remainder.greaterThan('0.005') && !params.keepRemainderAsAdvance) {
+    throw new BusinessRuleError(
+      rows.length === 0
+        ? `This receipt of ${params.receiptCurrency} ${params.receiptAmount.toFixed(2)} is not applied to any invoice. Apply it to the invoices it pays, or choose to keep it on the customer's account as an advance.`
+        : `${params.receiptCurrency} ${params.receiptAmount.toFixed(2)} received but only ${params.receiptCurrency} ${settledInVoucher.toFixed(2)} applied to invoices. Enter the amount actually received, or choose to keep the other ${params.receiptCurrency} ${remainder.toFixed(2)} on the customer's account as an advance.`,
     );
   }
 
@@ -449,6 +477,7 @@ export async function createReceiptIn(tx: Tx, input: ReceiptInput, userId: strin
     receiptCurrency: amounts.currency,
     receiptRateToUsd: amounts.rateToUsd,
     allocations: input.allocations ?? [],
+    keepRemainderAsAdvance: input.keepRemainderAsAdvance,
   });
 
   const receiptNumber = await nextReference(tx, {
@@ -532,6 +561,7 @@ export async function updateReceipt(id: string, input: ReceiptInput, userId: str
       receiptCurrency: amounts.currency,
       receiptRateToUsd: amounts.rateToUsd,
       allocations: input.allocations ?? [],
+      keepRemainderAsAdvance: input.keepRemainderAsAdvance,
     });
 
     await tx.receiptAllocation.deleteMany({ where: { receiptId: id } });

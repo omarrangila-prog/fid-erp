@@ -10,7 +10,7 @@ import {
 import { ACCOUNT_KEYS } from '@/lib/constants';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
 import { allocateSalesInvoiceNumber, retireSalesInvoiceNumber } from '@/lib/services/numbering';
-import { postJournalEntry, reverseJournalEntry, type JournalLineInput } from '@/lib/services/accounting';
+import { getSystemAccount, postJournalEntry, reverseJournalEntry, type JournalLineInput } from '@/lib/services/accounting';
 import { consumeStock, releaseReservations, reserveStock, returnStock } from '@/lib/services/inventory';
 import { getCompanyContext } from '@/lib/services/company';
 import { computeSalesLine } from '@/lib/calc/sales';
@@ -608,6 +608,61 @@ async function reverseExclusiveReceipts(
   }
 }
 
+/**
+ * Cost that reached a sale after it was posted, returned with the coffee.
+ *
+ * When freight or clearing lands after coffee has been sold, its share for the
+ * sold kilograms goes straight to cost of sales (in the expense's own entry)
+ * and is written onto the invoice lines. Reversing the invoice's journal gives
+ * back only the cost it was first posted at, so on an edit or a deletion the
+ * later share stayed in cost of sales while the coffee came back to stock —
+ * and a re-posted invoice then charged it a second time. That left the
+ * inventory account short and cost of sales long by the same amount (USD
+ * 25.04 on Invoice 1 after its correction).
+ *
+ * So once the journal is reversed, the difference between what the lines now
+ * carry and what the journal took is moved back too: Dr Inventory, Cr Cost of
+ * sales. Its own source, so it can never be mistaken for the sale's posting.
+ */
+async function returnLaterCostWithTheCoffee(
+  tx: Tx,
+  params: {
+    companyId: string;
+    invoice: { id: string; invoiceNumber: string };
+    reversal: { lines: Array<{ accountId: string; debitUsd: Decimal; creditUsd: Decimal; rateLocalPerUsd: Decimal }> };
+    userId: string;
+    date: Date;
+  },
+) {
+  const cogs = await getSystemAccount(tx, params.companyId, ACCOUNT_KEYS.COST_OF_GOODS_SOLD);
+  const postedCost = params.reversal.lines
+    .filter((l) => l.accountId === cogs.id)
+    .reduce((sum, l) => sum.plus(dec(l.creditUsd)).minus(dec(l.debitUsd)), new Decimal(0));
+  const lines = await tx.salesInvoiceLine.findMany({
+    where: { salesInvoiceId: params.invoice.id },
+    select: { costTotalUsd: true },
+  });
+  const carriedCost = lines.reduce((sum, l) => sum.plus(dec(l.costTotalUsd)), new Decimal(0));
+  const later = toMoney(carriedCost.minus(postedCost));
+  if (later.abs().lessThanOrEqualTo('0.005')) return;
+
+  const company = await getCompanyContext(tx, params.companyId);
+  await postJournalEntry(tx, {
+    companyId: params.companyId,
+    entryDate: params.date,
+    description: `Later shipment cost on ${params.invoice.invoiceNumber} returned to stock with the coffee`,
+    sourceType: 'INVENTORY_ADJUSTMENT',
+    sourceId: `sale-later-cost:${params.invoice.id}:${Date.now()}`,
+    createdById: params.userId,
+    localCurrency: company.localCurrency,
+    rateLocalPerUsd: params.reversal.lines[0]?.rateLocalPerUsd ?? 1,
+    lines: [
+      { accountKey: ACCOUNT_KEYS.INVENTORY, direction: later.isPositive() ? 'DEBIT' : 'CREDIT', currency: 'USD', amount: later.abs(), rateToUsd: '1', salesInvoiceId: params.invoice.id },
+      { accountKey: ACCOUNT_KEYS.COST_OF_GOODS_SOLD, direction: later.isPositive() ? 'CREDIT' : 'DEBIT', currency: 'USD', amount: later.abs(), rateToUsd: '1', salesInvoiceId: params.invoice.id },
+    ],
+  });
+}
+
 async function unwindPostedSale(
   tx: Tx,
   params: {
@@ -640,13 +695,20 @@ async function unwindPostedSale(
     });
   }
 
-  await reverseJournalEntry(tx, {
+  const reversal = await reverseJournalEntry(tx, {
     companyId: params.companyId,
     sourceType: 'SALES_INVOICE',
     sourceId: params.invoice.id,
     createdById: params.userId,
     entryDate: reversalDate,
     reason: params.reason,
+  });
+  await returnLaterCostWithTheCoffee(tx, {
+    companyId: params.companyId,
+    invoice: params.invoice,
+    reversal,
+    userId: params.userId,
+    date: reversalDate,
   });
 }
 
@@ -971,13 +1033,20 @@ async function reverseSalesInvoiceIn(
     });
   }
 
-  await reverseJournalEntry(tx, {
+  const reversal = await reverseJournalEntry(tx, {
     companyId: params.companyId,
     sourceType: 'SALES_INVOICE',
     sourceId: invoice.id,
     createdById: params.userId,
     entryDate: reversalDate,
     reason: params.reason,
+  });
+  await returnLaterCostWithTheCoffee(tx, {
+    companyId: params.companyId,
+    invoice,
+    reversal,
+    userId: params.userId,
+    date: reversalDate,
   });
 
   const reversed = await tx.salesInvoice.update({

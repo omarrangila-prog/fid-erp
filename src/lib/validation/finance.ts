@@ -52,6 +52,8 @@ export const receiptSchema = z
     allocations: z
       .array(z.object({ salesInvoiceId: cuid, amount: decimalString('Allocation') }))
       .default([]),
+    /** Ticked by the user: keep what is not applied to an invoice as an advance. */
+    keepRemainderAsAdvance: z.boolean().optional(),
   })
   .refine(
     (v) => v.currency === 'USD' || Number(v.rateToUsd) > 0 || Number(v.usdEquivalent) > 0,

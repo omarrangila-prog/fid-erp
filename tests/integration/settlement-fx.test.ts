@@ -196,6 +196,8 @@ describe('a MAD invoice paid in MAD after the rate moved', () => {
         paymentMethod: 'CASH',
         cashBankAccountId: cash.id,
         allocations: [{ salesInvoiceId: invoice.id, amount: '60000' }],
+        // The other MAD 10,000 was genuinely received, and the user keeps it as an advance.
+        keepRemainderAsAdvance: true,
       },
       ctx.admin.id,
     );

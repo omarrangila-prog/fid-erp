@@ -88,6 +88,7 @@ describe('closing an accounting period', () => {
         companyId: ctx.dubai.id, receiptDate: utcDate('2026-02-15'), customerId: masters.customer.id,
         currency: 'USD', amount: '100', rateToUsd: '1', rateLocalPerUsd: '3.6725',
         paymentMethod: 'BANK_TRANSFER', cashBankAccountId: bank.id,
+        keepRemainderAsAdvance: true,
       },
       ctx.admin.id,
     );

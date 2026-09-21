@@ -103,9 +103,24 @@ export function ReceiptForm({
     agentId: null as string | null,
   });
 
-  const [allocations, setAllocations] = React.useState<Record<string, string>>(
+  const [allocations, setAllocationsState] = React.useState<Record<string, string>>(
     preselected ? { [preselected.id]: preselected.outstanding } : {},
   );
+  /*
+   * "Amount received" follows what is applied to invoices until the user
+   * types it themselves. Lowering Invoice 15's allocation to the MAD 80,000
+   * actually paid used to leave the amount at the full MAD 126,000, and the
+   * other MAD 46,000 was booked as an advance nobody had paid.
+   */
+  const [amountTyped, setAmountTyped] = React.useState(false);
+  const [keepRemainderAsAdvance, setKeepRemainderAsAdvance] = React.useState(false);
+  function setAllocations(next: Record<string, string>) {
+    setAllocationsState(next);
+    if (!amountTyped) {
+      const applied = sum(Object.values(next).filter(Boolean).map((v) => tryDec(v)));
+      setForm((prev) => ({ ...prev, amount: applied.greaterThan(0) ? applied.toString() : prev.amount }));
+    }
+  }
   const [entryMode, setEntryMode] = React.useState<'rate' | 'usd'>('rate');
 
   const customerInvoices = React.useMemo(
@@ -153,6 +168,11 @@ export function ReceiptForm({
   }, [form.amount, form.usdEquivalent, entryMode, isForeign]);
 
   const allocatedTotal = sum(Object.values(allocations).filter(Boolean).map((v) => tryDec(v)));
+  // Received but not applied: only ever an advance when the user says so.
+  const remainder = (() => {
+    const received = tryDec(form.amount);
+    return received.greaterThan(allocatedTotal) ? received.minus(allocatedTotal) : dec(0);
+  })();
 
   function submit(andPost: boolean) {
     setError(null);
@@ -208,6 +228,7 @@ export function ReceiptForm({
       allocations: Object.entries(allocations)
         .filter(([, amount]) => amount && Number(amount) > 0)
         .map(([salesInvoiceId, amount]) => ({ salesInvoiceId, amount })),
+      keepRemainderAsAdvance: remainder.greaterThan('0.005') ? keepRemainderAsAdvance : undefined,
     };
 
     start(async () => {
@@ -327,7 +348,10 @@ export function ReceiptForm({
             <MoneyInput
               currency={form.currency}
               value={form.amount}
-              onChange={(e) => setForm({ ...form, amount: e.target.value })}
+              onChange={(e) => {
+                setAmountTyped(true);
+                setForm({ ...form, amount: e.target.value });
+              }}
             />
           </Field>
 
@@ -611,6 +635,24 @@ export function ReceiptForm({
                 Applied: <span className="tnum font-semibold text-ink">{allocatedTotal.toString()}</span> ·
                 Receipt worth <span className="tnum font-semibold text-ink">{formatMoney(amountUsd, 'USD')}</span>
               </p>
+            ) : null}
+
+            {remainder.greaterThan('0.005') ? (
+              <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm" role="alert">
+                <p className="text-amber-900">
+                  <strong>{formatMoney(remainder, form.currency)}</strong> of this receipt is not applied to any invoice. If
+                  that money was not actually received, lower <em>Amount received</em> to what was.
+                </p>
+                <label className="flex items-center gap-2 text-amber-900">
+                  <input
+                    type="checkbox"
+                    className="size-4 accent-gold-600"
+                    checked={keepRemainderAsAdvance}
+                    onChange={(e) => setKeepRemainderAsAdvance(e.target.checked)}
+                  />
+                  It was received — keep {formatMoney(remainder, form.currency)} on the customer&rsquo;s account as an advance
+                </label>
+              </div>
             ) : null}
           </CardContent>
         </Card>

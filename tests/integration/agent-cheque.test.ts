@@ -378,6 +378,8 @@ describe('a cheque whose bank we were never told', () => {
         paymentMethod: 'AGENT_COLLECTION',
         agentId,
         cheque: { chequeNumber: 'CHQ-NOBANK', chequeDate: utcDate('2026-03-25') },
+        // Not applied to an invoice, and recorded that way on purpose.
+        keepRemainderAsAdvance: true,
       },
       ctx.admin.id,
     );

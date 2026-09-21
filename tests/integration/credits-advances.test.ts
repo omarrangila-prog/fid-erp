@@ -73,7 +73,9 @@ describe('customer advances', () => {
         companyId: ctx.dubai.id, receiptDate: utcDate('2026-02-05'), customerId: masters.customer.id,
         currency: 'USD', amount: '15000', rateToUsd: '1', rateLocalPerUsd: '3.6725',
         paymentMethod: 'BANK_TRANSFER', cashBankAccountId: bank.id,
-        // Deliberately no allocations: money arrived before it was applied.
+        // Deliberately no allocations: money arrived before it was applied,
+        // and the user says so — an advance is never assumed.
+        keepRemainderAsAdvance: true,
       },
       ctx.admin.id,
     );
