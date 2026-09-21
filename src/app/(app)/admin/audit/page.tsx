@@ -36,7 +36,15 @@ const PAGE_SIZE = 100;
  * default, because an audit log that hides records by default is not one; one
  * click separates what people did to the books from who came and went.
  */
-const ACCESS_ACTIONS = ['USER_LOGIN', 'USER_LOGOUT', 'PIN_LOGIN', 'PIN_LOCKED'];
+/*
+ * Access events: who came in, and which set of books they opened.
+ *
+ * Switching company is the same kind of event as signing in — it says where
+ * somebody was, not what they changed — and it happens often enough that
+ * leaving it among the document changes filled page one with it, which is the
+ * very thing this split exists to prevent.
+ */
+const ACCESS_ACTIONS = ['USER_LOGIN', 'USER_LOGOUT', 'PIN_LOGIN', 'PIN_LOCKED', 'COMPANY_SWITCHED'];
 
 const VIEWS = [
   { key: 'all', label: 'Everything' },

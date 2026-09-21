@@ -136,6 +136,9 @@ test('every report that shows figures can be taken away as a spreadsheet', async
     await page.goto(href, { waitUntil: 'domcontentloaded' });
     await page.locator('main').first().waitFor({ timeout: 45_000 });
     const excel = page.getByRole('link', { name: /^Excel$/ }).first();
+    // The page header paints a moment after the shell on a heavy report, and
+    // this suite runs on a busy machine; look for the link, do not glance.
+    await excel.waitFor({ state: 'attached', timeout: 20_000 }).catch(() => undefined);
     if ((await excel.count()) === 0) {
       const heading = (await page.locator('main h1, main h2').first().textContent().catch(() => '')) ?? '';
       missing.push(`${href} → no Excel link (page showed: ${heading.trim().slice(0, 80)})`);
