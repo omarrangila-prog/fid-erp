@@ -505,6 +505,8 @@ export async function reverseJournalEntry(
     createdById: string;
     entryDate: Date;
     reason: string;
+    /** Reverse this exact entry of the source rather than its latest one. */
+    entryId?: string;
   },
 ) {
   const original = await tx.journalEntry.findFirst({
@@ -512,6 +514,7 @@ export async function reverseJournalEntry(
       companyId: params.companyId,
       sourceType: params.sourceType,
       sourceId: params.sourceId,
+      ...(params.entryId ? { id: params.entryId } : {}),
       status: 'POSTED',
       isReversal: false,
       // Only an entry that has not already been reversed is a candidate, which
