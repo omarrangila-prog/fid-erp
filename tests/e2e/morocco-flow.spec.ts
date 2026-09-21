@@ -332,8 +332,8 @@ test('§2 the Morocco loading sheet has no consignee column', async ({ page }) =
 
   // Morocco imports under its own name and sells the container on afterwards,
   // so there is no consignee to name. Dubai's sheet keeps the column.
-  await expect(page.getByRole('columnheader', { name: 'Consignee' })).toHaveCount(0);
-  await expect(page.getByRole('columnheader', { name: /Exporter/i })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: /Consignee|Sold to/ })).toHaveCount(0);
+  await expect(page.getByRole('columnheader', { name: /Supplier/i })).toBeVisible();
 });
 
 test('§11 the sale asks for the warehouse before the stock', async ({ page }) => {

@@ -41,9 +41,10 @@ test.describe('the loading sheet', () => {
   test('is a table with the columns the paper sheet has', async ({ page }) => {
     await page.goto('/loading');
 
+    // One parent row per order: reference, supplier, items, containers, total, status, ETA.
     for (const header of [
-      'Contract date & ref', 'Exporter', 'Consignee',
-      'Items description', 'Qty', 'Status', 'Containers', 'ETA', 'Documents',
+      'ICUL/FID Reference', 'Supplier', 'Sold to',
+      'Items', 'Containers', 'Total KG', 'Status', 'ETA', 'Documents',
     ]) {
       await expect(
         page.getByRole('columnheader', { name: header, exact: true }),
@@ -75,7 +76,16 @@ test.describe('the loading sheet', () => {
 
   test('drills from a shipment into the customers it was sold to', async ({ page }) => {
     await page.goto('/loading');
-    await page.getByRole('button', { name: /View sales/ }).first().click();
+    // Open the order that was sold, then its container's actions.
+    const sold = page.getByRole('row').filter({ hasText: /E2E Roastery Dubai/ }).first();
+    await sold.getByRole('button', { name: /Show detail/i }).click();
+    const line = page.getByTestId('order-lines').locator('tbody tr').first();
+    const direct = line.getByRole('button', { name: /View sales/ });
+    if (await direct.count()) await direct.click();
+    else {
+      await line.getByRole('button', { name: /More actions/i }).click();
+      await page.getByRole('menuitem', { name: /View sales/ }).click();
+    }
     await expect(page.getByRole('dialog')).toBeVisible();
     await expect(page.getByRole('dialog')).toContainText(/purchased\..*sold,.*still available/i);
     await expect(page.getByRole('columnheader', { name: 'Customer' })).toBeVisible();
@@ -98,12 +108,11 @@ test.describe('the loading sheet', () => {
 
     await page.goto('/loading');
     for (const header of [
-      'Contract Ref',
-      'Exporter',
-      'Importer',
-      'Item',
-      'Qty',
+      'ICUL/FID Reference',
+      'Supplier',
+      'Items',
       'Containers',
+      'Total KG',
       'Status',
       'Shipping line',
       'Booking / B/L',
@@ -114,7 +123,7 @@ test.describe('the loading sheet', () => {
         `the Morocco sheet should have a ${header} column`,
       ).toBeVisible();
     }
-    await expect(page.getByRole('columnheader', { name: 'Exporter', exact: true })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Supplier', exact: true })).toBeVisible();
 
     /*
      * And no consignee, which is the half of the split that matters.

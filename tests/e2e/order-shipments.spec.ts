@@ -66,18 +66,27 @@ function containerRow(page: Page, containerNumber: string) {
 }
 
 /** The row on the loading sheet for one shipment of this order. */
-function sheetRow(page: Page, ordinal: number) {
-  return page
-    .getByRole('row')
-    .filter({ hasText: REFERENCE })
-    .filter({ hasText: new RegExp(`Shipment ${ordinal} of 3`) })
-    .first();
+/**
+ * The loading sheet shows one parent row per order; its containers are the
+ * lines inside it. Open the order, then find the container's line.
+ */
+async function openOrderOnSheet(page: Page) {
+  const parent = page.getByRole('row').filter({ hasText: REFERENCE }).first();
+  await expect(parent).toBeVisible({ timeout: 30_000 });
+  const toggle = parent.getByRole('button', { name: /Show detail/i });
+  if (await toggle.count()) await toggle.click();
+  await expect(page.getByTestId('order-lines').first()).toBeVisible({ timeout: 15_000 });
+}
+
+function sheetRow(page: Page, ordinal: number, of = 3) {
+  return page.getByTestId('order-lines').locator('tr').filter({ hasText: new RegExp(`Shipment ${ordinal} of ${of}`) }).first();
 }
 
 /** Mark one shipment loaded then arrived, the way the loading sheet does it. */
 async function landShipment(page: Page, ordinal: number) {
   await page.goto('/loading', { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => undefined);
+  await openOrderOnSheet(page);
 
   const row = sheetRow(page, ordinal);
   await expect(row).toBeVisible({ timeout: 30_000 });
@@ -92,6 +101,7 @@ async function landShipment(page: Page, ordinal: number) {
   await expect(page.getByLabel(/loading date/i)).toHaveCount(0, { timeout: 30_000 });
 
   await page.waitForLoadState('networkidle').catch(() => undefined);
+  if ((await page.getByTestId('order-lines').count()) === 0) await openOrderOnSheet(page);
   const loaded = sheetRow(page, ordinal);
   await expect(loaded).toContainText(/Loaded/i, { timeout: 30_000 });
 
@@ -162,6 +172,32 @@ test('one purchase order is entered with three containers, lots and batches', as
   expect(main).toMatch(/60,000/);
   expect(main).not.toMatch(/180,000/);
   console.log(`  order ${REFERENCE} saved with 3 shipments`);
+});
+
+test('each container on the order takes its own ETA, and the order row summarises them', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/loading', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+  await openOrderOnSheet(page);
+
+  const dates = ['2026-09-22', '2026-09-25', '2026-09-28'];
+  for (const [index, date] of dates.entries()) {
+    const line = sheetRow(page, index + 1);
+    await line.getByRole('button', { name: /Set ETA|Sept|Change the expected arrival/i }).first().click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByLabel('ETA').fill(date);
+    await dialog.getByRole('button', { name: /^Save/ }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 30_000 });
+    if ((await page.getByTestId('order-lines').count()) === 0) await openOrderOnSheet(page);
+  }
+
+  // Each saved on its own line.
+  await expect(sheetRow(page, 1)).toContainText('22 Sept 2026', { timeout: 30_000 });
+  await expect(sheetRow(page, 2)).toContainText('25 Sept 2026');
+  await expect(sheetRow(page, 3)).toContainText('28 Sept 2026');
+  // The parent row shows the spread rather than one date.
+  await expect(page.getByRole('row').filter({ hasText: REFERENCE }).first()).toContainText(/22–28 Sept 2026/);
+  console.log('  three containers, three ETAs, summarised as 22–28 Sept on the order');
 });
 
 test('the first shipment lands and the order reads 1 of 3 arrived', async ({ page }) => {
@@ -350,9 +386,11 @@ test('stock, batches, items and the loading sheet each show three lines under th
   expect(shipmentsText).toMatch(/Shipment 2 of 3/);
   expect(shipmentsText).toMatch(/Shipment 3 of 3/);
 
-  // Loading sheet: the same, with the reference on each.
+  // Loading sheet: one parent row for the order, its three containers inside it.
   await page.goto('/loading', { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => undefined);
+  await expect(page.getByRole('row').filter({ hasText: REFERENCE })).toHaveCount(1, { timeout: 30_000 });
+  await openOrderOnSheet(page);
   for (const ordinal of [1, 2, 3]) await expect(sheetRow(page, ordinal)).toBeVisible({ timeout: 30_000 });
 
   // Purchase list: the parent row says arrived, and opens into its children.
@@ -393,7 +431,8 @@ test('a mistake is corrected in place: add a container, undo loading, fix the KG
 
   // It is marked loaded, by mistake, from the loading sheet …
   await page.goto('/loading', { waitUntil: 'domcontentloaded' });
-  const sheetRowFour = page.getByRole('row').filter({ hasText: REFERENCE }).filter({ hasText: /Shipment 4 of 4/ }).first();
+  await openOrderOnSheet(page);
+  const sheetRowFour = sheetRow(page, 4, 4);
   await expect(sheetRowFour).toBeVisible({ timeout: 30_000 });
   await sheetRowFour.getByRole('button', { name: /Mark loaded/i }).first().click();
   await page.getByLabel(/estimated arrival/i).fill('2026-09-25');
