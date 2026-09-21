@@ -8,6 +8,7 @@ import {
   BookPlus,
   Boxes,
   Building2,
+  Calculator,
   CircleDollarSign,
   ClipboardCheck,
   ClipboardList,
@@ -78,17 +79,35 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    // The order of the job: buy it, watch it ship, receive it, sell it.
-    label: 'Trading',
+    label: 'Sales',
+    icon: ShoppingCart,
+    items: [
+      { label: 'Invoices', href: '/sales', icon: ShoppingCart, permissions: [PERMISSIONS.SALES_VIEW] },
+      { label: 'Customers', href: '/customers', icon: Users, permissions: [PERMISSIONS.CUSTOMERS_VIEW] },
+      { label: 'Payments Received', href: '/finance/receipts', icon: ArrowDownToLine, permissions: [PERMISSIONS.RECEIPTS_VIEW] },
+      { label: 'Credit Notes', href: '/sales/credit-notes', icon: FileMinus, permissions: [PERMISSIONS.CREDIT_NOTES_VIEW] },
+      { label: 'Receivables', href: '/finance/receivables', icon: CircleDollarSign, permissions: [PERMISSIONS.RECEIVABLES_VIEW] },
+    ],
+  },
+  {
+    label: 'Purchases',
+    icon: FileText,
+    items: [
+      { label: 'Purchase Orders', href: '/purchases', icon: FileText, permissions: [PERMISSIONS.PURCHASES_VIEW] },
+      { label: 'Suppliers', href: '/vendors', icon: Factory, permissions: [PERMISSIONS.VENDORS_VIEW] },
+      { label: 'Goods Receipts', href: '/goods-receipts', icon: PackageCheck, permissions: [PERMISSIONS.INVENTORY_VIEW] },
+      { label: 'Payments Made', href: '/finance/payments', icon: ArrowUpFromLine, permissions: [PERMISSIONS.PAYMENTS_VIEW] },
+      { label: 'Payables', href: '/finance/payables', icon: HandCoins, permissions: [PERMISSIONS.PAYABLES_VIEW] },
+    ],
+  },
+  {
+    label: 'Shipments',
     icon: Ship,
     items: [
-      { label: 'Items', href: '/items', icon: Coffee, permissions: [PERMISSIONS.ITEMS_VIEW] },
-      { label: 'Purchase Orders', href: '/purchases', icon: FileText, permissions: [PERMISSIONS.PURCHASES_VIEW] },
       { label: 'Loading Sheet', href: '/loading', icon: ClipboardList, permissions: [PERMISSIONS.SHIPMENTS_VIEW] },
-      { label: 'Purchase Receipts', href: '/goods-receipts', icon: PackageCheck, permissions: [PERMISSIONS.INVENTORY_VIEW] },
-      { label: 'Sales Invoices', href: '/sales', icon: ShoppingCart, permissions: [PERMISSIONS.SALES_VIEW] },
       { label: 'Shipments', href: '/shipments', icon: Ship, permissions: [PERMISSIONS.SHIPMENTS_VIEW] },
-      { label: 'Credit Notes', href: '/sales/credit-notes', icon: FileMinus, permissions: [PERMISSIONS.CREDIT_NOTES_VIEW] },
+      { label: 'Shipment Costing', href: '/reports/shipment-cost', icon: Calculator, permissions: [PERMISSIONS.SHIPMENTS_VIEW] },
+      { label: 'Shipment Expenses', href: '/finance/expenses', icon: Receipt, permissions: [PERMISSIONS.EXPENSES_VIEW] },
     ],
   },
   {
@@ -96,8 +115,10 @@ export const NAV_GROUPS: NavGroup[] = [
     icon: Boxes,
     items: [
       { label: 'Stock on Hand', href: '/inventory', icon: Boxes, permissions: [PERMISSIONS.INVENTORY_VIEW] },
+      { label: 'Items', href: '/items', icon: Coffee, permissions: [PERMISSIONS.ITEMS_VIEW] },
       { label: 'Batches', href: '/inventory/batches', icon: Layers, permissions: [PERMISSIONS.INVENTORY_VIEW] },
-      { label: 'Warehouse Transfers', href: '/inventory/transfers', icon: ArrowLeftRight, permissions: [PERMISSIONS.INVENTORY_VIEW] },
+      { label: 'Warehouses', href: '/warehouses', icon: Warehouse, permissions: [PERMISSIONS.WAREHOUSES_VIEW] },
+      { label: 'Transfer Orders', href: '/inventory/transfers', icon: ArrowLeftRight, permissions: [PERMISSIONS.INVENTORY_VIEW] },
       { label: 'Stock Movements', href: '/inventory/movements', icon: History, permissions: [PERMISSIONS.INVENTORY_VIEW] },
       { label: 'Stock Counts', href: '/inventory/stock-counts', icon: ClipboardCheck, permissions: [PERMISSIONS.STOCK_COUNT_VIEW] },
     ],
@@ -106,31 +127,24 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Money',
     icon: Wallet,
     items: [
-      { label: 'Payments Received', href: '/finance/receipts', icon: ArrowDownToLine, permissions: [PERMISSIONS.RECEIPTS_VIEW] },
-      { label: 'Payments Made', href: '/finance/payments', icon: ArrowUpFromLine, permissions: [PERMISSIONS.PAYMENTS_VIEW] },
-      { label: 'Expenses', href: '/finance/expenses', icon: Receipt, permissions: [PERMISSIONS.EXPENSES_VIEW] },
-      { label: 'Agent Commission', href: '/finance/agent-commission', icon: HandCoins, permissions: [PERMISSIONS.EXPENSES_VIEW] },
+      { label: 'Cash & Bank', href: '/finance/cash-bank', icon: Wallet, permissions: [PERMISSIONS.CASHBANK_VIEW] },
       { label: 'Cheques', href: '/finance/cheques', icon: FileCheck, permissions: [PERMISSIONS.CHEQUES_VIEW] },
-      { label: 'Cash & Bank Accounts', href: '/finance/cash-bank', icon: Wallet, permissions: [PERMISSIONS.CASHBANK_VIEW] },
-      { label: 'Receivables', href: '/finance/receivables', icon: CircleDollarSign, permissions: [PERMISSIONS.RECEIVABLES_VIEW] },
-      { label: 'Payables', href: '/finance/payables', icon: HandCoins, permissions: [PERMISSIONS.PAYABLES_VIEW] },
+      { label: 'Agent Commission', href: '/finance/agent-commission', icon: HandCoins, permissions: [PERMISSIONS.EXPENSES_VIEW] },
     ],
   },
   {
     label: 'Accounting',
     icon: BookOpen,
     items: [
+      { label: 'Guided Journal', href: '/accounting/journal/new', icon: BookPlus, permissions: [PERMISSIONS.ACCOUNTING_POST] },
+      { label: 'General Journal', href: '/reports/journal', icon: LineChart, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
       { label: 'Chart of Accounts', href: '/accounting/chart', icon: BookOpen, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
-      { label: 'Journal Entries', href: '/reports/journal', icon: LineChart, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
+      // One place for every ledger: customers, suppliers, agents, banks, loans, accounts.
+      { label: 'Ledgers', href: '/ledgers', icon: Users, permissions: [PERMISSIONS.LEDGERS_VIEW] },
       { label: 'General Ledger', href: '/reports/general-ledger', icon: BookOpen, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
-      { label: 'Customer Ledgers', href: '/ledgers/customers', icon: Users, permissions: [PERMISSIONS.LEDGERS_VIEW] },
-      { label: 'Supplier Ledgers', href: '/ledgers/vendors', icon: Factory, permissions: [PERMISSIONS.LEDGERS_VIEW] },
-      { label: 'Agent Ledgers', href: '/ledgers/agents', icon: HandCoins, permissions: [PERMISSIONS.LEDGERS_VIEW] },
     ],
   },
   {
-    // One entry, because /reports is a real index with a description against
-    // every report — a better place to choose one than a list of bare names.
     label: 'Reports',
     icon: BarChart3,
     items: [
@@ -138,14 +152,11 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    // Set up once, edited rarely. Together, and out of the way.
+    // Set up once, edited rarely.
     label: 'Master Data',
     icon: Users,
     items: [
-      { label: 'Customers', href: '/customers', icon: Users, permissions: [PERMISSIONS.CUSTOMERS_VIEW] },
-      { label: 'Suppliers', href: '/vendors', icon: Factory, permissions: [PERMISSIONS.VENDORS_VIEW] },
       { label: 'Agents', href: '/agents', icon: UserCog, permissions: [PERMISSIONS.AGENTS_VIEW] },
-      { label: 'Warehouses', href: '/warehouses', icon: Warehouse, permissions: [PERMISSIONS.WAREHOUSES_VIEW] },
       { label: 'Expense Categories', href: '/expense-categories', icon: Tags, permissions: [PERMISSIONS.EXPENSE_CATEGORIES_VIEW] },
       { label: 'Shipping Lines', href: '/shipping-lines', icon: Ship, permissions: [PERMISSIONS.SHIPPING_LINES_VIEW] },
       { label: 'Ports', href: '/ports', icon: Anchor, permissions: [PERMISSIONS.PORTS_VIEW] },

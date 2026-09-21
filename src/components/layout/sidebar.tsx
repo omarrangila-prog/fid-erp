@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import * as Popover from '@radix-ui/react-popover';
-import { ChevronRight, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react';
+import { PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NAV_GROUPS, filterNav, type NavGroup } from '@/components/layout/nav-config';
 
@@ -14,10 +14,9 @@ import { NAV_GROUPS, filterNav, type NavGroup } from '@/components/layout/nav-co
  * server/client boundary. It is a convenience filter only — every route also
  * checks the same permission server-side.
  *
- * Groups behave as dropdowns: forty screens in one unbroken list is a lot to
- * scan when you only ever use six of them. Which groups you leave open is
- * remembered, because re-opening the same two sections after every reload is
- * the kind of small tax that makes software feel hostile.
+ * Every section is open and every link visible: the client did not want to
+ * open Sales or Accounting just to reach their screens. Section headings are
+ * quiet labels, rows are compact, and the list scrolls.
  *
  * Collapsing the rail switches to one icon per *group*, not per screen. The
  * earlier version kept every item icon, which made the collapsed rail taller
@@ -28,67 +27,11 @@ import { NAV_GROUPS, filterNav, type NavGroup } from '@/components/layout/nav-co
  */
 
 const SIDEBAR_COOKIE = 'fid_sidebar';
-const OPEN_GROUPS_KEY = 'fid.nav.openGroups';
 
 function rememberWidth(collapsed: boolean) {
   // A cookie rather than localStorage so the server renders the right width on
   // the first paint — no flash of the wrong layout on every navigation.
   document.cookie = `${SIDEBAR_COOKIE}=${collapsed ? 'collapsed' : 'expanded'};path=/;max-age=31536000;samesite=lax`;
-}
-
-/**
- * Which groups are open, read straight from localStorage.
- *
- * `useSyncExternalStore` rather than an effect that copies storage into state:
- * the server has no localStorage, so the first client render has to agree with
- * the server's, and setting state in an effect to correct it afterwards costs a
- * second render on every navigation. This reads the real value at render time
- * on the client and the server-safe empty set on the server.
- */
-const NO_GROUPS: readonly string[] = [];
-const listeners = new Set<() => void>();
-
-let cachedRaw: string | null = null;
-let cachedValue: readonly string[] = NO_GROUPS;
-
-function readOpenGroups(): readonly string[] {
-  let raw: string | null = null;
-  try {
-    raw = window.localStorage.getItem(OPEN_GROUPS_KEY);
-  } catch {
-    // A blocked or full localStorage must not take the navigation down with it.
-    return NO_GROUPS;
-  }
-  // The snapshot has to be referentially stable or React re-renders forever.
-  if (raw === cachedRaw) return cachedValue;
-  cachedRaw = raw;
-  try {
-    const parsed = raw ? JSON.parse(raw) : null;
-    cachedValue = Array.isArray(parsed)
-      ? parsed.filter((entry): entry is string => typeof entry === 'string')
-      : NO_GROUPS;
-  } catch {
-    cachedValue = NO_GROUPS;
-  }
-  return cachedValue;
-}
-
-function subscribeOpenGroups(listener: () => void) {
-  listeners.add(listener);
-  window.addEventListener('storage', listener);
-  return () => {
-    listeners.delete(listener);
-    window.removeEventListener('storage', listener);
-  };
-}
-
-function writeOpenGroups(next: readonly string[]) {
-  try {
-    window.localStorage.setItem(OPEN_GROUPS_KEY, JSON.stringify(next));
-  } catch {
-    // Remembering is a convenience; failing to remember is not an error.
-  }
-  for (const listener of listeners) listener();
 }
 
 /** Longest-prefix match, so /inventory does not light up on /inventory/batches. */
@@ -108,12 +51,15 @@ function NavLink({
   icon: Icon,
   active,
   onNavigate,
+  compact = false,
 }: {
   href: string;
   label: string;
   icon: NavGroup['items'][number]['icon'];
   active: boolean;
   onNavigate?: () => void;
+  /** Tighter rows, for the always-open list. */
+  compact?: boolean;
 }) {
   return (
     <Link
@@ -121,7 +67,8 @@ function NavLink({
       onClick={onNavigate}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'relative flex items-center gap-2.5 rounded-lg py-2 pl-5 pr-3 text-sm transition-colors',
+        'relative flex items-center gap-2.5 rounded-lg pl-3 pr-3 text-sm transition-colors',
+        compact ? 'py-1.5 [@media(pointer:coarse)]:py-2.5' : 'py-2 pl-5',
         active ? 'bg-forest-800 font-medium text-white' : 'text-forest-200 hover:bg-forest-800/60 hover:text-white',
       )}
     >
@@ -132,7 +79,7 @@ function NavLink({
   );
 }
 
-/** The full-width navigation: accordion groups, one open section at a time or several. */
+/** The full-width navigation: every section open, its links always visible. */
 function ExpandedNav({
   groups,
   activeHref,
@@ -142,20 +89,6 @@ function ExpandedNav({
   activeHref: string | undefined;
   onNavigate?: () => void;
 }) {
-  const openGroups = React.useSyncExternalStore(subscribeOpenGroups, readOpenGroups, () => NO_GROUPS);
-
-  /**
-   * One section open at a time.
-   *
-   * Any number could be open before, and they stayed open, so a sidebar of
-   * eight sections became a scrolling list of everything the application does.
-   * Opening one now closes the rest, which keeps the rail the length of one
-   * section however long you have been using it — the way every accounting
-   * package the client compares this to behaves.
-   */
-  function toggleGroup(label: string) {
-    writeOpenGroups(openGroups.includes(label) ? [] : [label]);
-  }
 
   /*
    * Type what you want rather than remember which section it lives in.
@@ -201,35 +134,25 @@ function ExpandedNav({
         <p className="px-2.5 py-3 text-xs text-forest-300">Nothing matches “{query.trim()}”.</p>
       ) : null}
 
+      {/*
+        Every section open, always. The client asked not to have to open Sales
+        or Accounting to reach their screens, so the headings are quiet labels
+        rather than buttons, and the rows are compact enough for the whole list
+        to scroll comfortably.
+      */}
       {shown.map((group) => {
         const holdsActive = group.items.some((item) => item.href === activeHref);
-        // The section you are working in is always open, so the rail shows
-        // where you are without you having to hunt for it.
-        const isOpen = Boolean(needle) || holdsActive || openGroups.includes(group.label);
-        const bodyId = `nav-group-${group.label.replace(/\s+/g, '-').toLowerCase()}`;
-
         return (
-          <div key={group.label} className="pb-2">
-            <button
-              type="button"
-              onClick={() => toggleGroup(group.label)}
-              aria-expanded={isOpen}
-              aria-controls={bodyId}
+          <div key={group.label} className="pb-1.5">
+            <p
               className={cn(
-                'flex w-full items-center gap-1.5 rounded-md px-2.5 py-2 text-[11px] font-semibold uppercase tracking-wider transition-colors',
-                holdsActive ? 'text-gold-300' : 'text-forest-300 hover:bg-forest-800/60 hover:text-forest-100',
+                'px-2.5 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wider',
+                holdsActive ? 'text-gold-300' : 'text-forest-400',
               )}
             >
-              <ChevronRight className={cn('size-3.5 shrink-0 transition-transform', isOpen && 'rotate-90')} aria-hidden />
-              <span className="flex-1 truncate text-left">{group.label}</span>
-              {!isOpen ? (
-                <span className="tnum rounded-full bg-forest-800 px-1.5 text-[11px] font-medium text-forest-300">
-                  {group.items.length}
-                </span>
-              ) : null}
-            </button>
-
-            <ul id={bodyId} className={cn('space-y-0.5', !isOpen && 'hidden')}>
+              {group.label}
+            </p>
+            <ul className="space-y-px">
               {group.items.map((item) => (
                 <li key={item.href}>
                   <NavLink
@@ -238,6 +161,7 @@ function ExpandedNav({
                     icon={item.icon}
                     active={item.href === activeHref}
                     onNavigate={onNavigate}
+                    compact
                   />
                 </li>
               ))}

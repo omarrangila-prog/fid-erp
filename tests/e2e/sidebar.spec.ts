@@ -117,27 +117,35 @@ test.describe('sidebar', () => {
      * `nothing is stranded` proves every screen is reachable from somewhere,
      * so this only needs to pin what belongs in the rail itself.
      */
+    // Every section open: each link is visible without clicking any heading.
     for (const [group, label, href] of [
-      ['Trading', 'Items', '/items'],
-      ['Trading', 'Purchase Orders', '/purchases'],
-      ['Trading', 'Loading Sheet', '/loading'],
-      ['Trading', 'Purchase Receipts', '/goods-receipts'],
-      ['Trading', 'Credit Notes', '/sales/credit-notes'],
-      ['Inventory', 'Stock Counts', '/inventory/stock-counts'],
-      ['Money', 'Payments Received', '/finance/receipts'],
+      ['Sales', 'Invoices', '/sales'],
+      ['Sales', 'Customers', '/customers'],
+      ['Sales', 'Payments Received', '/finance/receipts'],
+      ['Sales', 'Credit Notes', '/sales/credit-notes'],
+      ['Purchases', 'Purchase Orders', '/purchases'],
+      ['Purchases', 'Suppliers', '/vendors'],
+      ['Purchases', 'Goods Receipts', '/goods-receipts'],
+      ['Shipments', 'Loading Sheet', '/loading'],
+      ['Shipments', 'Shipment Costing', '/reports/shipment-cost'],
+      ['Inventory', 'Stock on Hand', '/inventory'],
+      ['Inventory', 'Items', '/items'],
+      ['Inventory', 'Warehouses', '/warehouses'],
+      ['Inventory', 'Transfer Orders', '/inventory/transfers'],
       ['Money', 'Cheques', '/finance/cheques'],
-      ['Accounting', 'Agent Ledgers', '/ledgers/agents'],
+      ['Accounting', 'Chart of Accounts', '/accounting/chart'],
+      ['Accounting', 'Ledgers', '/ledgers'],
       ['Reports', 'All Reports', '/reports'],
       ['Master Data', 'Agents', '/agents'],
       ['Administration', 'Backups', '/admin/backups'],
-      ['Administration', 'Tax Settings', '/settings/tax'],
     ] as const) {
-      const heading = page.getByRole('button', { name: new RegExp(`^${group}\\b`) });
-      if ((await heading.getAttribute('aria-expanded')) === 'false') await heading.click();
-
-      const link = page.getByRole('link', { name: label, exact: true });
-      await expect(link, `${label} should be in the ${group} group`).toBeVisible();
+      const nav = page.getByRole('navigation', { name: 'Main' });
+      await expect(nav.getByText(group, { exact: true }).first(), `${group} heading`).toBeVisible();
+      const link = nav.getByRole('link', { name: label, exact: true });
+      await expect(link, `${label} should be visible under ${group}`).toBeVisible();
       await expect(link).toHaveAttribute('href', href);
     }
+    // No section is a dropdown any more.
+    await expect(page.getByRole('navigation', { name: 'Main' }).locator('button[aria-expanded]')).toHaveCount(0);
   });
 });

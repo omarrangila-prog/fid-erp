@@ -552,18 +552,18 @@ test('the menu can be searched instead of remembered', async ({ page }) => {
   const search = page.getByLabel('Search the menu');
   await expect(search).toBeVisible({ timeout: 30_000 });
 
-  // "ledger" should find all of them, whichever section they live in.
+  // "ledger" finds the ledgers, whichever section they live in.
   await search.fill('ledger');
   const nav = page.getByRole('navigation', { name: 'Main' });
   const links = await nav.getByRole('link').allTextContents();
   console.log(`  "ledger" finds: ${links.join(' | ')}`);
   expect(links.length).toBeGreaterThan(1);
-  expect(links.join(' ')).toMatch(/Customer Ledgers/i);
+  expect(links.join(' ')).toMatch(/Ledgers/);
 
   await search.fill('invoice');
   const invoiceLinks = await nav.getByRole('link').allTextContents();
   console.log(`  "invoice" finds: ${invoiceLinks.join(' | ')}`);
-  expect(invoiceLinks.join(' ')).toMatch(/Sales Invoices/i);
+  expect(invoiceLinks.join(' ')).toMatch(/Invoices/i);
 
   await search.fill('zzzz');
   await expect(page.getByText(/Nothing matches/i)).toBeVisible();
