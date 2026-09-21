@@ -366,6 +366,8 @@ export type SellableStockRow = {
   warehouseCode: string;
   shipmentId: string;
   shipmentNumber: string;
+  /** The ICUL/FID order this stock was bought on — its origin, carried through the batch. */
+  contractReference: string;
   availableKg: Decimal;
   bagWeightKg: Decimal;
   landedUnitCostUsd: Decimal;
@@ -384,6 +386,7 @@ export async function getSellableStock(companyId: string): Promise<SellableStock
            ci."id" AS "itemId", ci."itemName", ci."itemCode", ci."originCountry", ci."grade",
            c."containerNumber", w."name" AS "warehouseName", w."code" AS "warehouseCode",
            s."id" AS "shipmentId", s."shipmentNumber",
+           pc."contractReference",
            ib."availableKg"::text        AS "availableKg",
            b."bagWeightKg"::text         AS "bagWeightKg",
            b."landedUnitCostUsd"::text   AS "landedUnitCostUsd"
@@ -393,6 +396,7 @@ export async function getSellableStock(companyId: string): Promise<SellableStock
     JOIN coffee_items ci ON ci."id" = b."itemId"
     JOIN warehouses w ON w."id" = ib."warehouseId"
     JOIN shipments s ON s."id" = b."shipmentId"
+    JOIN purchase_contracts pc ON pc."id" = b."purchaseContractId"
     LEFT JOIN containers c ON c."id" = b."containerId"
     WHERE ib."companyId" = ${companyId}
       AND b."status" = 'ACTIVE'
@@ -415,6 +419,7 @@ export async function getSellableStock(companyId: string): Promise<SellableStock
     warehouseCode: String(row.warehouseCode),
     shipmentId: String(row.shipmentId),
     shipmentNumber: String(row.shipmentNumber),
+    contractReference: String(row.contractReference ?? ''),
     availableKg: toQuantity(String(row.availableKg)),
     bagWeightKg: toQuantity(String(row.bagWeightKg)),
     landedUnitCostUsd: toMoney(String(row.landedUnitCostUsd)),

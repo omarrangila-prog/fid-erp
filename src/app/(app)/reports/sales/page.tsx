@@ -14,6 +14,9 @@ import { ExportLinks } from '@/components/shared/export-links';
 import { exportHref } from '@/components/shared/excel-link';
 import { PrintHeader } from '@/components/shared/print-header';
 import { DateRangePicker } from '@/components/shared/date-range';
+import { Input } from '@/components/ui/input';
+import { shortDocumentNumber } from '@/lib/short-number';
+import { Button } from '@/components/ui/button';
 
 export const metadata: Metadata = { title: 'Sales Report' };
 export const dynamic = 'force-dynamic';
@@ -30,15 +33,16 @@ export const dynamic = 'force-dynamic';
 export default async function SalesReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; ref?: string }>;
 }) {
-  const { from, to } = await searchParams;
+  const { from, to, ref } = await searchParams;
   const user = await requirePageAccess(PERMISSIONS.REPORTS_VIEW);
 
   const rows = await getSalesRegister({
     companyId: user.activeCompany.id,
     from: from ? new Date(`${from}T00:00:00.000Z`) : undefined,
     to: to ? new Date(`${to}T23:59:59.999Z`) : undefined,
+    reference: ref,
   });
 
   const totalUsd = sum(rows.map((r) => dec(r.totalUsd)));
@@ -57,12 +61,29 @@ export default async function SalesReportPage({
         title="Sales Report"
         description="Every sale in the period, what it cost, what it earned and what is still owed on it."
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Sales' }]}
-        actions={<ExportLinks href={exportHref('sales-register', { from, to })} />}
+        actions={<ExportLinks href={exportHref('sales-register', { from, to, ref })} />}
       />
       <PrintHeader title="Sales Report" companyName={user.activeCompany.name} country={user.activeCompany.country} />
 
-      <div className="print:hidden">
+      <div className="space-y-3 print:hidden">
         <DateRangePicker defaultFrom={from ?? ''} defaultTo={to ?? ''} />
+        {/* A plain form, so the filter lives in the URL like the dates do. */}
+        <form method="get" className="flex flex-wrap items-end gap-2">
+          {from ? <input type="hidden" name="from" value={from} /> : null}
+          {to ? <input type="hidden" name="to" value={to} /> : null}
+          <label className="flex flex-col gap-1 text-xs text-ink-muted">
+            ICUL/FID reference
+            <Input name="ref" defaultValue={ref ?? ''} placeholder="e.g. ICUL/FID/002" className="w-56" />
+          </label>
+          <Button type="submit" variant="outline" size="sm">
+            Filter
+          </Button>
+          {ref ? (
+            <Link href={`/reports/sales?${new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) }).toString()}`} className="text-sm text-forest-800 hover:text-gold-700">
+              Show every reference
+            </Link>
+          ) : null}
+        </form>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -104,7 +125,7 @@ export default async function SalesReportPage({
                     <TH>Date</TH>
                     <TH>Invoice</TH>
                     <TH>Customer</TH>
-                    <TH>Job</TH>
+                    <TH>ICUL/FID Ref</TH>
                     <TH numeric>KG</TH>
                     <TH numeric>Total</TH>
                     <TH numeric>Paid</TH>
@@ -121,7 +142,7 @@ export default async function SalesReportPage({
                           href={`/sales/${row.invoiceId}`}
                           className="font-medium text-forest-800 hover:text-gold-700"
                         >
-                          {row.invoiceNumber}
+                          {shortDocumentNumber(row.invoiceNumber)}
                         </Link>
                       </TD>
                       <TD>
@@ -132,7 +153,13 @@ export default async function SalesReportPage({
                           {row.customerName}
                         </Link>
                       </TD>
-                      <TD className="text-xs text-ink-muted">{row.jobNumber ?? '—'}</TD>
+                      <TD className="text-xs">
+                        {row.references.length === 0
+                          ? '—'
+                          : row.references.length <= 2
+                            ? row.references.join(', ')
+                            : `Multiple references (${row.references.length})`}
+                      </TD>
                       <TD numeric>{formatQuantityKg(row.quantityKg)}</TD>
                       <TD numeric>{formatMoney(row.total, row.currency)}</TD>
                       <TD numeric>{formatMoney(row.settled, row.currency)}</TD>

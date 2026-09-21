@@ -37,8 +37,11 @@ export type SaleRow = {
   items: string;
   itemCount: number;
   jobNumber: string | null;
-  /** The client's own ICUL/FID reference for the job. */
+  /** The ICUL/FID order(s) the invoice's stock came from, summarised from its lines. */
   reference: string | null;
+  references: string[];
+  /** Each line with its own source, for the expanded view. */
+  lineSources: Array<{ reference: string; itemName: string; batchNumber: string; warehouseName: string; quantityLabel: string }>;
   shipmentId: string | null;
   warehouseNames: string;
 };
@@ -80,11 +83,11 @@ export function SalesClient({
     },
     {
       id: 'order',
-      header: 'Order no.',
+      header: 'ICUL/FID Ref',
       mobile: 'meta',
       sortValue: (r) => r.reference ?? '',
-      exportValue: (r) => r.reference ?? '',
-      cell: (r) => <span className="font-mono text-xs text-ink-muted">{r.reference ?? '—'}</span>,
+      exportValue: (r) => r.references.join(', '),
+      cell: (r) => <span className="text-xs font-medium text-forest-800">{r.reference ?? '—'}</span>,
     },
     {
       id: 'customer',
@@ -259,7 +262,33 @@ export function SalesClient({
       columns={columns}
       getRowId={(r) => r.id}
       rowHref={(r) => `/sales/${r.id}`}
-      searchValue={(r) => `${r.invoiceNumber} ${r.customerName} ${r.jobNumber ?? ''} ${r.warehouseNames}`}
+      searchValue={(r) => `${r.invoiceNumber} ${r.customerName} ${r.jobNumber ?? ''} ${r.warehouseNames} ${r.references.join(' ')} ${r.items}`}
+      expandedContent={(r) =>
+        r.lineSources.length > 1 || r.references.length > 1 ? (
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-ink-muted">
+                <th className="py-1 pr-3 font-medium">ICUL/FID Reference</th>
+                <th className="py-1 pr-3 font-medium">Item</th>
+                <th className="py-1 pr-3 font-medium">Batch</th>
+                <th className="py-1 pr-3 font-medium">Warehouse</th>
+                <th className="py-1 text-right font-medium">Quantity</th>
+              </tr>
+            </thead>
+            <tbody>
+              {r.lineSources.map((line, i) => (
+                <tr key={i} className="border-t border-line/60">
+                  <td className="py-1 pr-3 font-medium text-forest-800">{line.reference}</td>
+                  <td className="py-1 pr-3">{line.itemName}</td>
+                  <td className="py-1 pr-3">{line.batchNumber}</td>
+                  <td className="py-1 pr-3">{line.warehouseName}</td>
+                  <td className="tnum py-1 text-right">{line.quantityLabel}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : null
+      }
       searchPlaceholder="Search by invoice, customer or job…"
       emptyTitle="No sales invoices yet"
       emptyDescription="Sell coffee from a batch in a warehouse. Posting raises the receivable and relieves the stock."

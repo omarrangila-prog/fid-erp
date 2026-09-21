@@ -43,6 +43,8 @@ export type StockOption = ComboOption & {
   itemId: string;
   warehouseName: string;
   shipmentId: string;
+  /** The ICUL/FID order the batch was bought on. */
+  contractReference?: string;
 };
 
 type LineState = {
@@ -648,7 +650,8 @@ export function SaleForm({
                       <option value="">{line.itemId ? 'Choose…' : 'Choose the coffee first'}</option>
                       {batchesIn(lineWarehouse, line.itemId).map((batch) => (
                         <option key={batch.value} value={batch.value}>
-                          {batch.batchNumber} — {Number(batch.availableKg).toLocaleString()} KG available
+                          {batch.batchNumber}
+                          {batch.contractReference ? ` · ${batch.contractReference}` : ''} — {Number(batch.availableKg).toLocaleString('en-US')} KG available
                         </option>
                       ))}
                     </Select>

@@ -12,6 +12,14 @@ import { SalesClient, type SaleRow } from '@/app/(app)/sales/sales-client';
 export const metadata: Metadata = { title: 'Sales' };
 export const dynamic = 'force-dynamic';
 
+/** One reference, two named, or "Multiple references" — the header summary of the lines. */
+function summariseReferences(refs: Array<string | null>): string | null {
+  const distinct = [...new Set(refs.filter((r): r is string => Boolean(r)))];
+  if (distinct.length === 0) return null;
+  if (distinct.length <= 2) return distinct.join(', ');
+  return `Multiple references (${distinct.length})`;
+}
+
 export default async function SalesPage() {
   const user = await requirePageAccess(PERMISSIONS.SALES_VIEW);
   const companyId = user.activeCompany.id;
@@ -30,7 +38,16 @@ export default async function SalesPage() {
           },
         },
         createdBy: { select: { name: true } },
-        lines: { select: { quantityKg: true, item: { select: { itemName: true } } } },
+        lines: {
+          orderBy: { lineNumber: 'asc' },
+          select: {
+            quantityKg: true,
+            item: { select: { itemName: true } },
+            // The stock's origin, line by line: one invoice can sell from several orders.
+            batch: { select: { batchNumber: true, purchaseContract: { select: { contractReference: true } } } },
+            warehouse: { select: { name: true } },
+          },
+        },
       },
     }),
     getReceivables({ companyId }),
@@ -69,7 +86,16 @@ export default async function SalesPage() {
       items: [...new Set(inv.lines.map((l) => l.item.itemName))].join(', '),
       itemCount: new Set(inv.lines.map((l) => l.item.itemName)).size,
       jobNumber: inv.shipment?.jobNumber ?? null,
-      reference: inv.shipment?.purchaseContract?.contractReference ?? null,
+      // Derived from each line's batch, never from the invoice header alone.
+      reference: summariseReferences(inv.lines.map((l) => l.batch?.purchaseContract?.contractReference ?? null)) ?? inv.shipment?.purchaseContract?.contractReference ?? null,
+      references: [...new Set(inv.lines.map((l) => l.batch?.purchaseContract?.contractReference).filter((r): r is string => Boolean(r)))],
+      lineSources: inv.lines.map((l) => ({
+        reference: l.batch?.purchaseContract?.contractReference ?? '—',
+        itemName: l.item.itemName,
+        batchNumber: l.batch?.batchNumber ?? '—',
+        warehouseName: l.warehouse?.name ?? '—',
+        quantityLabel: formatQuantityKg(l.quantityKg),
+      })),
       shipmentId: inv.shipment?.id ?? null,
       warehouseNames: warehouses.byInvoice.get(inv.id) ?? '',
     };

@@ -1,3 +1,4 @@
+import { shortDocumentNumber } from '@/lib/short-number';
 import { NextResponse } from 'next/server';
 import { requirePermission, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
@@ -815,7 +816,8 @@ const REPORTS: Record<string, Report> = {
     build: async (user, query) => {
       const from = dateParam(query, 'from');
       const to = dateParam(query, 'to');
-      const rows = await getSalesRegister({ companyId: user.activeCompany.id, from, to });
+      const reference = query.get('ref') ?? undefined;
+      const rows = await getSalesRegister({ companyId: user.activeCompany.id, from, to, reference });
 
       return buildWorkbook({
         companyName: user.activeCompany.name,
@@ -825,7 +827,9 @@ const REPORTS: Record<string, Report> = {
         totals: ['Total USD', 'Cost USD', 'Gross profit USD'],
         columns: [
           { header: 'Date', value: (r) => r.invoiceDate, type: 'date' },
+          { header: 'Invoice', value: (r) => shortDocumentNumber(r.invoiceNumber) },
           { header: 'Customer', value: (r) => r.customerName, width: 30 },
+          { header: 'ICUL/FID Ref', value: (r) => r.references.join(', '), width: 24 },
           { header: 'KG', value: (r) => Number(r.quantityKg), type: 'quantity' },
           { header: 'Currency', value: (r) => r.currency },
           { header: 'Total', value: (r) => Number(r.total), type: 'money' },
@@ -1420,6 +1424,7 @@ const REPORTS: Record<string, Report> = {
           { header: 'Date', value: (r) => r.invoiceDate, type: 'date' },
           { header: 'Customer', value: (r) => r.customerName, width: 28 },
           { header: 'Coffee', value: (r) => r.itemName, width: 28 },
+          { header: 'ICUL/FID Ref', value: (r) => r.contractReference },
           { header: 'Batch', value: (r) => r.batchNumber },
           { header: 'Warehouse', value: (r) => r.warehouseName ?? '' },
           { header: 'Quantity (KG)', value: (r) => Number(r.quantityKg), type: 'quantity' },

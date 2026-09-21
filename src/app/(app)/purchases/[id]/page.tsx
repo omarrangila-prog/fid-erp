@@ -131,6 +131,15 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
           </>
         }
         actions={
+          <>
+          {contract.status === 'POSTED' ? (
+            <Link
+              href={`/trace?ref=${encodeURIComponent(contract.contractReference)}`}
+              className="inline-flex h-8 items-center rounded-md border border-line-strong px-3 text-xs font-medium text-ink hover:border-forest-300 hover:bg-forest-50"
+            >
+              Trace this reference
+            </Link>
+          ) : null}
           <PurchaseDetailToolbar
             id={contract.id}
             contractLabel={contract.contractReference}
@@ -162,6 +171,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
             warehouses={warehouses.map((w) => ({ id: w.id, name: w.name, code: w.code }))}
             defaultWarehouseId={warehouses.find((w) => w.isDefault)?.id ?? warehouses[0]?.id ?? null}
           />
+          </>
         }
       />
 

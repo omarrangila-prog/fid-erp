@@ -95,6 +95,7 @@ export default async function CogsReportPage({
                     <TH>Invoice</TH>
                     <TH>Customer</TH>
                     <TH>Coffee</TH>
+                    <TH>ICUL/FID Ref</TH>
                     <TH>Batch</TH>
                     <TH>Warehouse</TH>
                     <TH numeric>KG</TH>
@@ -117,6 +118,7 @@ export default async function CogsReportPage({
                       </TD>
                       <TD>{row.customerName}</TD>
                       <TD>{row.itemName}</TD>
+                      <TD className="text-xs font-medium text-forest-800">{row.contractReference}</TD>
                       <TD className="font-mono text-xs">{row.batchNumber}</TD>
                       <TD className="text-ink-muted">{row.warehouseName ?? '—'}</TD>
                       <TD numeric>{formatQuantityKg(row.quantityKg)}</TD>
@@ -130,7 +132,7 @@ export default async function CogsReportPage({
                 </TBody>
                 <TFoot>
                   <tr>
-                    <TD colSpan={6}>Total</TD>
+                    <TD colSpan={7}>Total</TD>
                     <TD numeric>{formatQuantityKg(qty)}</TD>
                     <TD numeric>{formatMoney(revenue, 'USD')}</TD>
                     <TD numeric>{formatMoney(cogs, 'USD')}</TD>

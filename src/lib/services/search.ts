@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db';
 import { PERMISSIONS, VISIBLE_DOCUMENT_STATUSES, type PermissionCode } from '@/lib/constants';
+import { transferNumberLabel } from '@/lib/transfer-number';
 
 /**
  * Global search.
@@ -79,10 +80,47 @@ export async function globalSearch(params: {
     results.push(
       ...rows.map((r) => ({
         id: r.id,
-        type: 'Purchase Contract',
-        title: r.contractNumber,
-        subtitle: `${r.contractReference} · ${r.vendor.vendorName}`,
+        type: 'Purchase Order',
+        // The business reference leads; the system's own number is not shown.
+        title: r.contractReference,
+        subtitle: r.vendor.vendorName,
         href: `/purchases/${r.id}`,
+      })),
+      // And the whole life of that stock, on one page.
+      ...(can(PERMISSIONS.INVENTORY_VIEW)
+        ? rows.map((r) => ({
+            id: `trace:${r.id}`,
+            type: 'Trace',
+            title: `Trace ${r.contractReference}`,
+            subtitle: 'Containers, batches, warehouses, transfers and customers',
+            href: `/trace?ref=${encodeURIComponent(r.contractReference)}`,
+          }))
+        : []),
+    );
+  }
+
+  if (can(PERMISSIONS.INVENTORY_VIEW)) {
+    // Transfers by their WTO number, or by the ICUL/FID reference of what they moved.
+    const sequence = /^\s*wto-?0*(\d+)\s*$/i.exec(q)?.[1];
+    const transfers = await prisma.stockTransfer.findMany({
+      where: {
+        companyId: params.companyId,
+        OR: [
+          { transferNumber: contains },
+          ...(sequence ? [{ transferNumber: { endsWith: `-${sequence.padStart(3, '0')}` } }, { transferNumber: { endsWith: sequence.padStart(6, '0') } }] : []),
+          { lines: { some: { batch: { purchaseContract: { contractReference: contains } } } } },
+        ],
+      },
+      take: limit,
+      select: { id: true, transferNumber: true, fromWarehouse: { select: { name: true } }, toWarehouse: { select: { name: true } } },
+    });
+    results.push(
+      ...transfers.map((t) => ({
+        id: t.id,
+        type: 'Warehouse Transfer',
+        title: transferNumberLabel(t.transferNumber),
+        subtitle: `${t.fromWarehouse.name} → ${t.toWarehouse.name}`,
+        href: `/inventory/transfers/${t.id}`,
       })),
     );
   }

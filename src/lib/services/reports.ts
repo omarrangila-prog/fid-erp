@@ -1144,6 +1144,8 @@ export type SalesRegisterRow = {
   customerName: string;
   shipmentId: string | null;
   jobNumber: string | null;
+  /** The ICUL/FID orders the invoice's stock came from, taken from its lines. */
+  references: string[];
   currency: string;
   quantityKg: Decimal;
   subtotal: Decimal;
@@ -1171,12 +1173,17 @@ export async function getSalesRegister(params: {
   from?: Date;
   to?: Date;
   customerId?: string;
+  /** Only invoices with a line sold from an order whose ICUL/FID reference contains this. */
+  reference?: string;
 }): Promise<SalesRegisterRow[]> {
   const invoices = await prisma.salesInvoice.findMany({
     where: {
       companyId: params.companyId,
       status: 'POSTED',
       ...(params.customerId ? { customerId: params.customerId } : {}),
+      ...(params.reference?.trim()
+        ? { lines: { some: { batch: { purchaseContract: { contractReference: { contains: params.reference.trim(), mode: 'insensitive' as const } } } } } }
+        : {}),
       ...(params.from || params.to
         ? {
             invoiceDate: {
@@ -1189,7 +1196,7 @@ export async function getSalesRegister(params: {
     include: {
       customer: { select: { id: true, customerName: true } },
       shipment: { select: { id: true, jobNumber: true } },
-      lines: { select: { quantityKg: true } },
+      lines: { select: { quantityKg: true, batch: { select: { purchaseContract: { select: { contractReference: true } } } } } },
     },
     orderBy: [{ invoiceDate: 'desc' }, { invoiceNumber: 'desc' }],
   });
@@ -1236,6 +1243,7 @@ export async function getSalesRegister(params: {
       customerName: invoice.customer.customerName,
       shipmentId: invoice.shipment?.id ?? null,
       jobNumber: invoice.shipment?.jobNumber ?? null,
+      references: [...new Set(invoice.lines.map((l) => l.batch?.purchaseContract?.contractReference).filter((r): r is string => Boolean(r)))],
       currency: invoice.currency,
       quantityKg: toMoney(sum(invoice.lines.map((l) => dec(l.quantityKg)))),
       subtotal: toMoney(invoice.subtotal),

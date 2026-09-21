@@ -46,7 +46,12 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
               purchaseContract: { select: { contractReference: true } },
             },
           },
-          lines: { select: { quantityKg: true } },
+          lines: {
+            select: {
+              quantityKg: true,
+              batch: { select: { purchaseContract: { select: { contractReference: true } } } },
+            },
+          },
         },
       },
       receipts: {
@@ -232,7 +237,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                     <TH>Invoice</TH>
                     <TH>Date</TH>
                     <TH>Due</TH>
-                    <TH>Shipment</TH>
+                    <TH>ICUL/FID Ref</TH>
                     <TH numeric>Quantity</TH>
                     <TH numeric>Amount</TH>
                     <TH>Status</TH>
@@ -249,13 +254,32 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                       <TD>{formatDate(invoice.invoiceDate)}</TD>
                       <TD>{formatDate(invoice.dueDate)}</TD>
                       <TD>
-                        {invoice.shipment ? (
-                          <Link href={`/shipments/${invoice.shipment.id}`} className="text-forest-800 hover:text-gold-700">
-                            {invoice.shipment.purchaseContract?.contractReference ?? '—'}
-                          </Link>
-                        ) : (
-                          '—'
-                        )}
+                        {(() => {
+                          // Read from the lines — a warehouse sale has no shipment, but every
+                          // line still came from one order's stock.
+                          const refs = [
+                            ...new Set(
+                              [
+                                ...invoice.lines.map((l) => l.batch?.purchaseContract?.contractReference),
+                                invoice.shipment?.purchaseContract?.contractReference,
+                              ].filter((r): r is string => Boolean(r)),
+                            ),
+                          ];
+                          if (refs.length === 0) return '—';
+                          return (
+                            <span className="flex flex-wrap gap-x-2">
+                              {refs.map((ref) => (
+                                <Link
+                                  key={ref}
+                                  href={`/trace?ref=${encodeURIComponent(ref)}`}
+                                  className="text-forest-800 hover:text-gold-700"
+                                >
+                                  {ref}
+                                </Link>
+                              ))}
+                            </span>
+                          );
+                        })()}
                       </TD>
                       <TD numeric>
                         {formatQuantityKg(invoice.lines.reduce((a, l) => a.plus(dec(l.quantityKg)), dec(0)))}

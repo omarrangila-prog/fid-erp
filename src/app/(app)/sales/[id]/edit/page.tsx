@@ -53,8 +53,9 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
   const stockOptions: StockOption[] = stock.map((s) => ({
     value: `${s.batchId}:${s.warehouseId}`,
     label: `${s.batchNumber} · ${s.itemName}`,
-    hint: `${s.warehouseName} · ${formatQuantityKg(s.availableKg)} available · Lot ${s.lotNumber}`,
-    keywords: `${s.itemCode} ${s.originCountry} ${s.lotNumber} ${s.warehouseCode}`,
+    hint: `${s.contractReference} · ${s.warehouseName} · ${formatQuantityKg(s.availableKg)} available · Lot ${s.lotNumber}`,
+    keywords: `${s.contractReference} ${s.itemCode} ${s.originCountry} ${s.lotNumber} ${s.warehouseCode}`,
+    contractReference: s.contractReference,
     batchId: s.batchId,
     warehouseId: s.warehouseId,
     batchNumber: s.batchNumber,

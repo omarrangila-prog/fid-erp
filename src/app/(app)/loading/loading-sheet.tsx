@@ -593,6 +593,7 @@ export function LoadingSheet({
             actions={[
               { label: 'Purchase order', href: `/purchases/${g.contractId}`, icon: FileText },
               { label: 'Receive goods', href: `/purchases/${g.contractId}`, icon: PackageCheck, overflowOnly: true },
+              { label: 'Trace this reference', href: `/trace?ref=${encodeURIComponent(g.contractReference)}`, icon: Boxes, overflowOnly: true },
             ]}
           />
         ),

@@ -651,6 +651,8 @@ export type CogsLine = {
   customerName: string;
   itemName: string;
   batchNumber: string;
+  /** The ICUL/FID order the sold stock came from. */
+  contractReference: string;
   warehouseName: string | null;
   quantityKg: Decimal;
   revenueUsd: Decimal;
@@ -669,6 +671,7 @@ export async function getCogsReport(params: { companyId: string; from?: Date; to
       customerName: string;
       itemName: string;
       batchNumber: string;
+      contractReference: string | null;
       warehouseName: string | null;
       quantityKg: string;
       revenueUsd: string;
@@ -678,7 +681,9 @@ export async function getCogsReport(params: { companyId: string; from?: Date; to
   >`
     SELECT * FROM (
       SELECT si."id" AS "invoiceId", si."invoiceNumber", si."invoiceDate",
-             c."customerName", ci."itemName", b."batchNumber", w."name" AS "warehouseName",
+             c."customerName", ci."itemName", b."batchNumber",
+             (SELECT pc."contractReference" FROM purchase_contracts pc WHERE pc."id" = b."purchaseContractId") AS "contractReference",
+             w."name" AS "warehouseName",
              sil."quantityKg"::text AS "quantityKg",
              sil."lineTotalUsd"::text AS "revenueUsd",
              sil."costTotalUsd"::text AS "cogsUsd",
@@ -697,6 +702,7 @@ export async function getCogsReport(params: { companyId: string; from?: Date; to
              c."customerName",
              COALESCE(ci."itemName", 'Credit note') AS "itemName",
              COALESCE(b."batchNumber", '—') AS "batchNumber",
+             (SELECT pc."contractReference" FROM purchase_contracts pc WHERE pc."id" = b."purchaseContractId") AS "contractReference",
              w."name" AS "warehouseName",
              (-cnl."quantityKg")::text AS "quantityKg",
              (-cnl."lineTotalUsd")::text AS "revenueUsd",
@@ -726,6 +732,7 @@ export async function getCogsReport(params: { companyId: string; from?: Date; to
       customerName: row.customerName,
       itemName: row.itemName,
       batchNumber: row.batchNumber,
+      contractReference: row.contractReference ?? '—',
       warehouseName: row.warehouseName,
       quantityKg: toQuantity(row.quantityKg),
       revenueUsd,
