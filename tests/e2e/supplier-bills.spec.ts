@@ -85,7 +85,11 @@ test('an unpaid cost is booked with nobody named, and paid later from cash', asy
   await page.waitForURL(/\/finance\/payments\/new/, { waitUntil: 'domcontentloaded' });
   const pay = page.getByRole('main');
   await expect(pay.getByRole('combobox', { name: /supplier/i })).toHaveCount(0);
-  await expect(pay.getByLabel(/settles/i)).toHaveValue(/FID-MA-EV-/);
+  // The field names the cost being settled in words — the category or the
+  // description — rather than the system's own voucher number.
+  const settles = pay.getByLabel(/settles/i);
+  await expect(settles).toHaveAttribute('readonly', '');
+  await expect(settles).not.toHaveValue('');
   await expect(pay.getByLabel(/^Amount/).first()).toHaveValue('4000');
 
   await pay.getByLabel(/payment method/i).selectOption('CASH');
@@ -99,7 +103,7 @@ test('a posted document shows the journal entry it wrote', async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto('/sales', { waitUntil: 'domcontentloaded' });
 
-  const first = page.getByRole('main').getByRole('link', { name: /FID-MA-SI-/ }).first();
+  const first = page.getByRole('main').getByRole('link', { name: /INV\s*\d+/ }).first();
   await expect(first).toBeVisible({ timeout: 30_000 });
   await first.click();
   await page.waitForURL(/\/sales\/[\w-]+/, { waitUntil: 'domcontentloaded' });
@@ -146,9 +150,10 @@ test('one payment split across three categories posts three expenses', async ({ 
   await expect
     .poll(async () => countExpenses(page), { timeout: 30_000 })
     .toBe(before + 3);
-  const newest = page.getByRole('main').getByRole('row').filter({ hasText: /FID-MA-EV-/ });
-  for (let i = 0; i < 3; i += 1) {
-    await expect(newest.nth(i)).toContainText(/Posted/);
+  // The three newest rows are the ones just posted; each says so.
+  const rows = page.getByRole('main').getByRole('table').getByRole('row');
+  for (let i = 1; i <= 3; i += 1) {
+    await expect(rows.nth(i)).toContainText(/Posted/i);
   }
 });
 
@@ -159,5 +164,7 @@ async function countExpenses(page: Page) {
   // The table or the empty state, whichever this company has — not the
   // moment before either has painted.
   await expect(main.getByRole('table').or(main.getByText(/no expenses/i)).first()).toBeVisible({ timeout: 30_000 });
-  return main.getByRole('row').filter({ hasText: /FID-MA-EV-/ }).count();
+  // Every data row of the list: the voucher number is no longer printed, so
+  // the rows themselves are what there is to count.
+  return main.getByRole('table').getByRole('row').count();
 }

@@ -6,6 +6,8 @@ import { dec } from '@/lib/money';
 import { formatMoney, formatQuantityKg } from '@/lib/format';
 import { getStockMovementSummary } from '@/lib/services/stock';
 import { PageHeader } from '@/components/shared/page-header';
+import { ExportLinks } from '@/components/shared/export-links';
+import { exportHref } from '@/components/shared/excel-link';
 import { CustomizePanel } from '@/components/reports/customize-panel';
 import { FavouriteStar } from '@/components/reports/report-statement';
 import { ReportSummary } from '@/components/shared/report-summary';
@@ -72,6 +74,14 @@ export default async function StockMovementPage({
         actions={
           <>
             <FavouriteStar href="/reports/stock-movement" label="Daily Stock Movement" />
+            <ExportLinks
+              href={exportHref('stock-movement', {
+                from: from.toISOString().slice(0, 10),
+                to: to.toISOString().slice(0, 10),
+                ...(params.warehouse ? { warehouse: params.warehouse } : {}),
+              })}
+              print={false}
+            />
             <CustomizePanel report="Daily Stock Movement" fields={['period']} />
             <PrintButton />
           </>

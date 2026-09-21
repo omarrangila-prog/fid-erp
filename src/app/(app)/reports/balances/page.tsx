@@ -6,6 +6,8 @@ import { formatDate, formatMoney } from '@/lib/format';
 import { Decimal } from '@/lib/money';
 import { getCustomerBalances, getVendorBalances } from '@/lib/services/reports';
 import { PageHeader } from '@/components/shared/page-header';
+import { ExportLinks } from '@/components/shared/export-links';
+import { exportHref } from '@/components/shared/excel-link';
 import { PrintButton } from '@/components/shared/print-button';
 import { PrintHeader } from '@/components/shared/print-header';
 import { Card, CardContent } from '@/components/ui/card';
@@ -38,6 +40,7 @@ export default async function BalancesPage({ searchParams }: { searchParams: Pro
         actions={
           <>
             <FavouriteStar href={suppliers ? '/reports/balances?side=suppliers' : '/reports/balances'} label={title} />
+            <ExportLinks href={exportHref('balances', suppliers ? { side: 'suppliers' } : {})} print={false} />
             <PrintButton />
           </>
         }

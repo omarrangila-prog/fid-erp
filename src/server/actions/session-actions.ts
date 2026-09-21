@@ -89,8 +89,17 @@ export async function loginAction(
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
 
   const requestHeaders = await headers();
+  /*
+   * Signing in belongs to the person, not to a company.
+   *
+   * Filing it under whichever company the session happened to open left the
+   * other company's access view empty, so a security review looking at Dubai
+   * could not see that anyone had signed in at all. Recorded without a
+   * company, it shows on every company's access view, which is what "no
+   * sign-in is hidden" has to mean.
+   */
   await recordAudit({
-    companyId: activeCompanyId,
+    companyId: null,
     userId: user.id,
     action: 'USER_LOGIN',
     entityType: 'User',
@@ -112,7 +121,7 @@ export async function logoutAction(): Promise<void> {
   const user = await requireUser().catch(() => null);
   if (user) {
     await recordAudit({
-      companyId: user.activeCompany.id,
+      companyId: null,
       userId: user.id,
       action: 'USER_LOGOUT',
       entityType: 'User',

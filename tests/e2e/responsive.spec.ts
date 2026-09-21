@@ -93,9 +93,19 @@ test.describe('no horizontal overflow at any supported width', () => {
   }
 });
 
+/*
+ * A phone, not a narrow window.
+ *
+ * The 44px minimum on a row action is applied under `@media (pointer: coarse)`,
+ * because a mouse hits a 26px control comfortably and a finger does not.
+ * Measuring it in a desktop browser resized to 375px therefore measures the
+ * wrong thing; these tests emulate a touch device so the rules that apply on a
+ * phone are the rules under test.
+ */
 test.describe('mobile ergonomics', () => {
+  test.use({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true });
+
   test('tap targets are large enough at 375px', async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 812 });
     await signIn(page);
 
     for (const path of ['/dashboard', '/purchases', '/sales']) {

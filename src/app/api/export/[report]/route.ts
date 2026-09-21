@@ -12,8 +12,15 @@ import {
   type StatementRow,
 } from '@/lib/services/workbook';
 import { getLoadingSheet } from '@/lib/services/loading-sheet';
-import { getReceivables, getPayables } from '@/lib/services/receivables';
-import { getBatchStock, getStockAgeing, getInventoryValuation } from '@/lib/services/stock';
+import {
+  getReceivables,
+  getPayables,
+  getReceivablesAgeing,
+  getPayablesAgeing,
+  AGEING_BUCKETS,
+  AGEING_LABELS,
+} from '@/lib/services/receivables';
+import { getBatchStock, getStockAgeing, getInventoryValuation, getStockMovementSummary } from '@/lib/services/stock';
 import {
   getTrialBalanceReport,
   getProfitAndLoss,
@@ -26,10 +33,15 @@ import {
   getForexGainLoss,
   getSalesRegister,
   getPurchaseRegister,
+  getSalesBy,
+  getCustomerBalances,
+  getVendorBalances,
+  type SalesDimension,
   type ExpenseGrouping,
   type PnlLine,
 } from '@/lib/services/reports';
 import { getAgentCommissionRegister } from '@/lib/services/agent-commission';
+import { getShipmentCostSheet } from '@/lib/services/landed-cost';
 import { getTaxReturn } from '@/lib/services/tax-return';
 import { reconcile } from '@/lib/services/reconciliation';
 import { getCustomerLedger, getVendorLedger, ledgerKindToSourceType, resolvePartyLedgerQuery } from '@/lib/services/ledger';
@@ -606,6 +618,192 @@ const REPORTS: Record<string, Report> = {
           { header: 'Per KG (USD)', value: (r) => Number(r.profitPerKgUsd), type: 'money' as const },
           { header: `Per KG (${local})`, value: (r) => Number(r.profitPerKgLocal), type: 'money' as const },
           { header: 'Margin', value: (r) => Number(r.netMarginPct) / 100, type: 'percent' as const },
+        ],
+      });
+    },
+  },
+
+  /*
+   * The ageing matrix, one row per party and currency with a column per
+   * bucket — the same rows the screen shows, so a file and the screen state
+   * the same debt.
+   */
+  ageing: {
+    title: 'Ageing',
+    permission: PERMISSIONS.ACCOUNTING_VIEW,
+    build: async (user, query) => {
+      const payables = query.get('side') === 'payables';
+      const rows = payables ? await getPayablesAgeing(user.activeCompany.id) : await getReceivablesAgeing(user.activeCompany.id);
+      return buildWorkbook({
+        companyName: user.activeCompany.name,
+        title: payables ? 'Accounts Payable Ageing' : 'Accounts Receivable Ageing',
+        subtitle: `As at ${asDay(new Date())}`,
+        rows,
+        totals: [...AGEING_BUCKETS.map((b) => AGEING_LABELS[b]), 'Total', 'Total (USD)'],
+        columns: [
+          { header: payables ? 'Supplier' : 'Customer', value: (r) => r.partyName, width: 32 },
+          { header: 'Currency', value: (r) => r.currency },
+          ...AGEING_BUCKETS.map((bucket) => ({
+            header: AGEING_LABELS[bucket],
+            value: (r: (typeof rows)[number]) => Number(r.byBucket[bucket]),
+            type: 'money' as const,
+          })),
+          { header: 'Total', value: (r) => Number(r.total), type: 'money' as const },
+          { header: 'Total (USD)', value: (r) => Number(r.totalUsd), type: 'money' as const },
+          { header: 'Documents', value: (r) => r.lines.length, type: 'integer' as const },
+        ],
+      });
+    },
+  },
+
+  /** The documents behind the ageing, one row each. */
+  'ageing-detail': {
+    title: 'Ageing Detail',
+    permission: PERMISSIONS.ACCOUNTING_VIEW,
+    build: async (user, query) => {
+      const payables = query.get('side') === 'payables';
+      const parties = payables ? await getPayablesAgeing(user.activeCompany.id) : await getReceivablesAgeing(user.activeCompany.id);
+      const rows = parties.flatMap((party) => party.lines.map((line) => ({ party, line })));
+      return buildWorkbook({
+        companyName: user.activeCompany.name,
+        title: payables ? 'Accounts Payable Ageing — Detail' : 'Accounts Receivable Ageing — Detail',
+        subtitle: `As at ${asDay(new Date())}`,
+        rows,
+        totals: ['Outstanding', 'Outstanding (USD)'],
+        columns: [
+          { header: payables ? 'Supplier' : 'Customer', value: (r) => r.party.partyName, width: 32 },
+          { header: payables ? 'Order' : 'Invoice', value: (r) => r.line.documentLabel, width: 22 },
+          { header: 'Date', value: (r) => r.line.documentDate, type: 'date' as const },
+          { header: 'Due', value: (r) => r.line.dueDate, type: 'date' as const },
+          { header: 'Days overdue', value: (r) => r.line.daysOverdue, type: 'integer' as const },
+          { header: 'Bucket', value: (r) => AGEING_LABELS[r.line.bucket] },
+          { header: 'Currency', value: (r) => r.line.currency },
+          { header: 'Original', value: (r) => Number(r.line.originalAmount), type: 'money' as const },
+          { header: 'Paid', value: (r) => Number(r.line.paidAmount), type: 'money' as const },
+          { header: 'Outstanding', value: (r) => Number(r.line.outstandingAmount), type: 'money' as const },
+          { header: 'Outstanding (USD)', value: (r) => Number(r.line.outstandingUsd), type: 'money' as const },
+        ],
+      });
+    },
+  },
+
+  /** What each customer or supplier owes, one line per party and currency. */
+  balances: {
+    title: 'Balances',
+    permission: PERMISSIONS.ACCOUNTING_VIEW,
+    build: async (user, query) => {
+      const suppliers = query.get('side') === 'suppliers';
+      const rows = suppliers ? await getVendorBalances(user.activeCompany.id) : await getCustomerBalances(user.activeCompany.id);
+      return buildWorkbook({
+        companyName: user.activeCompany.name,
+        title: suppliers ? 'Supplier Balances' : 'Customer Balances',
+        subtitle: `As at ${asDay(new Date())}`,
+        rows,
+        totals: ['Balance (USD)'],
+        columns: [
+          { header: suppliers ? 'Supplier' : 'Customer', value: (r) => r.partyName, width: 32 },
+          { header: 'Currency', value: (r) => r.currency },
+          { header: 'Balance', value: (r) => Number(r.balance), type: 'money' as const },
+          { header: 'Balance (USD)', value: (r) => Number(r.balanceUsd), type: 'money' as const },
+        ],
+      });
+    },
+  },
+
+  /** Sales summarised by whichever dimension the screen was showing. */
+  'sales-by': {
+    title: 'Sales By',
+    permission: PERMISSIONS.REPORTS_VIEW,
+    build: async (user, query) => {
+      const by = (['customer', 'item', 'shipment', 'warehouse', 'batch'].includes(query.get('by') ?? '')
+        ? query.get('by')
+        : 'customer') as SalesDimension;
+      const from = dateParam(query, 'from') ?? startOfYear();
+      const to = dateParam(query, 'to') ?? new Date();
+      const rows = await getSalesBy({ companyId: user.activeCompany.id, from, to, by });
+      const titles: Record<SalesDimension, string> = {
+        customer: 'Sales by Customer',
+        item: 'Sales by Coffee',
+        shipment: 'Sales by Shipment',
+        warehouse: 'Sales by Warehouse',
+        batch: 'Sales by Batch',
+      };
+      return buildWorkbook({
+        companyName: user.activeCompany.name,
+        title: titles[by],
+        subtitle: period(from, to),
+        rows,
+        totals: ['Quantity (KG)', 'Revenue (USD)', 'Cost (USD)', 'Gross profit (USD)'],
+        columns: [
+          { header: titles[by].replace('Sales by ', ''), value: (r) => r.label, width: 32 },
+          { header: 'Invoices', value: (r) => r.invoices, type: 'integer' as const },
+          { header: 'Quantity (KG)', value: (r) => Number(r.quantityKg), type: 'quantity' as const },
+          { header: 'Revenue (USD)', value: (r) => Number(r.revenueUsd), type: 'money' as const },
+          { header: 'Cost (USD)', value: (r) => Number(r.costUsd), type: 'money' as const },
+          { header: 'Gross profit (USD)', value: (r) => Number(r.grossProfitUsd), type: 'money' as const },
+          { header: 'Margin', value: (r) => Number(r.marginPct) / 100, type: 'percent' as const },
+        ],
+      });
+    },
+  },
+
+  /** Opening stock, what moved, closing stock — for a day or any range. */
+  'stock-movement': {
+    title: 'Daily Stock Movement',
+    permission: PERMISSIONS.INVENTORY_VIEW,
+    build: async (user, query) => {
+      const from = dateParam(query, 'from') ?? startOfYear();
+      const to = dateParam(query, 'to') ?? new Date();
+      const warehouseId = query.get('warehouse') || undefined;
+      const rows = await getStockMovementSummary({ companyId: user.activeCompany.id, from, to, warehouseId });
+      return buildWorkbook({
+        companyName: user.activeCompany.name,
+        title: 'Daily Stock Movement',
+        subtitle: period(from, to),
+        rows,
+        totals: ['Opening (KG)', 'Received (KG)', 'Transferred in (KG)', 'Transferred out (KG)', 'Sold (KG)', 'Adjustments (KG)', 'Closing (KG)', 'Closing value (USD)'],
+        columns: [
+          { header: 'Coffee', value: (r) => r.itemName, width: 32 },
+          { header: 'Warehouse', value: (r) => r.warehouseName, width: 24 },
+          { header: 'Opening (KG)', value: (r) => Number(r.openingKg), type: 'quantity' as const },
+          { header: 'Received (KG)', value: (r) => Number(r.receiptsKg), type: 'quantity' as const },
+          { header: 'Transferred in (KG)', value: (r) => Number(r.transfersInKg), type: 'quantity' as const },
+          { header: 'Transferred out (KG)', value: (r) => Number(r.transfersOutKg), type: 'quantity' as const },
+          { header: 'Sold (KG)', value: (r) => Number(r.salesKg), type: 'quantity' as const },
+          { header: 'Adjustments (KG)', value: (r) => Number(r.adjustmentsKg), type: 'quantity' as const },
+          { header: 'Closing (KG)', value: (r) => Number(r.closingKg), type: 'quantity' as const },
+          { header: 'Closing value (USD)', value: (r) => Number(r.closingValueUsd), type: 'money' as const },
+        ],
+      });
+    },
+  },
+
+  /** One shipment's cost sheet: the coffee, then every charge booked to it. */
+  'shipment-cost': {
+    title: 'Shipment Cost',
+    permission: PERMISSIONS.PURCHASE_COST_VIEW,
+    build: async (user, query) => {
+      const shipmentId = query.get('shipment');
+      if (!shipmentId) throw new NotFoundError('Shipment');
+      const sheet = await getShipmentCostSheet(user.activeCompany.id, shipmentId);
+      if (!sheet) throw new NotFoundError('Shipment');
+      return buildWorkbook({
+        companyName: user.activeCompany.name,
+        title: 'Shipment Cost Report',
+        subtitle: sheet.contractReference,
+        rows: sheet.lines,
+        totals: ['Amount (USD)', `Amount (${sheet.localCurrency})`],
+        columns: [
+          { header: 'Date', value: (r) => r.expenseDate, type: 'date' as const },
+          { header: 'Category', value: (r) => r.category, width: 28 },
+          { header: 'Description', value: (r) => r.description ?? '', width: 32 },
+          { header: 'Container', value: (r) => r.containerNumber ?? '' },
+          { header: 'Currency', value: (r) => r.currency },
+          { header: 'Amount', value: (r) => Number(r.amount), type: 'money' as const },
+          { header: 'Amount (USD)', value: (r) => Number(r.amountUsd), type: 'money' as const },
+          { header: `Amount (${sheet.localCurrency})`, value: (r) => Number(r.amountLocal), type: 'money' as const },
+          { header: 'In the coffee?', value: (r) => (r.capitalised ? 'Yes' : 'No — a running cost') },
+          { header: 'Paid', value: (r) => (r.paid ? (r.paidFrom ?? 'Paid') : 'Owed') },
         ],
       });
     },

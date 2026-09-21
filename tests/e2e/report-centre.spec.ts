@@ -116,6 +116,46 @@ test('the saved report is in the centre, opens the same way, and can be removed'
   console.log('  saved report: listed under My custom reports, opened, removed');
 });
 
+test('every report that shows figures can be taken away as a spreadsheet', async ({ page }) => {
+  await signIn(page);
+  const reports: Array<[string, string]> = [
+    ['/reports/ageing', 'Accounts Receivable Ageing'],
+    ['/reports/ageing?side=payables', 'Accounts Payable Ageing'],
+    ['/reports/balances', 'Customer Balances'],
+    ['/reports/balances?side=suppliers', 'Supplier Balances'],
+    ['/reports/sales-by?by=customer', 'Sales by Customer'],
+    ['/reports/sales-by?by=item', 'Sales by Coffee'],
+    ['/reports/stock-movement', 'Daily Stock Movement'],
+    ['/reports/shipment-cost', 'Shipment Cost Report'],
+    ['/reports/inventory-valuation', 'Inventory Valuation'],
+    ['/profitability?view=statement', 'Profitability'],
+  ];
+
+  const missing: string[] = [];
+  for (const [href, expected] of reports) {
+    await page.goto(href, { waitUntil: 'domcontentloaded' });
+    await page.locator('main').first().waitFor({ timeout: 45_000 });
+    const excel = page.getByRole('link', { name: /^Excel$/ }).first();
+    if ((await excel.count()) === 0) {
+      const heading = (await page.locator('main h1, main h2').first().textContent().catch(() => '')) ?? '';
+      missing.push(`${href} → no Excel link (page showed: ${heading.trim().slice(0, 80)})`);
+      continue;
+    }
+    const link = (await excel.getAttribute('href'))!;
+    // The CSV is read back out of the same workbook, so one request proves both.
+    const csv = await page.request.get(`${link}${link.includes('?') ? '&' : '?'}format=csv`);
+    if (csv.status() !== 200) {
+      missing.push(`${href} → HTTP ${csv.status()}`);
+      continue;
+    }
+    const text = await csv.text();
+    if (!text.includes('FID Trading International')) missing.push(`${href} → no company name in the file`);
+    if (!new RegExp(expected.split(' ')[0], 'i').test(text)) missing.push(`${href} → file does not name ${expected}`);
+  }
+  console.log(`  exports: ${reports.length - missing.length} of ${reports.length} reports downloaded with the company name on them`);
+  expect(missing, missing.join('\n')).toEqual([]);
+});
+
 test('inventory valuation reads as a summary, by warehouse, and in detail', async ({ page }) => {
   await signIn(page);
   await page.goto('/reports/inventory-valuation?view=summary', { waitUntil: 'domcontentloaded' });
@@ -150,7 +190,22 @@ test('shipment profitability lays out one column per shipment with a total', asy
   const table = page.getByTestId('profitability-statement');
   await expect(table).toBeVisible();
   await expect(table.getByRole('columnheader', { name: /^Total$/ })).toBeVisible();
-  for (const measure of ['Purchased', 'Purchase cost', 'Direct shipment expenses', 'Total landed cost', 'Landed cost per KG', 'Sold', 'Remaining in stock', 'Sales revenue', 'Cost of goods sold', 'Gross profit', 'Net profit', 'Gross margin']) {
+  for (const measure of [
+    'Purchased',
+    'Purchase cost',
+    'Total direct shipment expenses',
+    'Total landed cost',
+    'Landed cost per KG',
+    'Sold',
+    'On hand in the warehouses',
+    'Closing stock value',
+    'Sales revenue',
+    'Average selling price per KG',
+    'Cost of goods sold',
+    'Gross profit',
+    'Net profit',
+    'Gross margin',
+  ]) {
     await expect(table.locator('td').filter({ hasText: new RegExp(`${measure}$`) }).first()).toBeVisible();
   }
   const shipments = (await table.getByRole('columnheader').count()) - 2;

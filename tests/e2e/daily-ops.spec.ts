@@ -81,7 +81,9 @@ test('Add Customer from the invoice is selected immediately', async ({ page }) =
 
 test('the sales list keeps Cancel / Delete on an Actions menu', async ({ page }) => {
   await page.goto('/sales', { waitUntil: 'domcontentloaded' });
-  const row = page.getByRole('row').filter({ hasText: /FID-MA-SI-/ }).first();
+  // The list prints the number the way people say it — "INV 1" — not the
+  // system's own FID-MA-SI-000001.
+  const row = page.getByRole('row').filter({ hasText: /INV\s*\d+/ }).first();
 
   // View and Edit are on the row itself; anything destructive is one deliberate
   // click further in, behind the shared row-actions menu.
@@ -130,7 +132,7 @@ test('a posted credit invoice can be deleted from the invoice page, and leaves e
   await expect(page.getByRole('main')).not.toContainText(/does not balance|does not match/i);
 
   const invoiceUrl = page.url();
-  const invoiceNumber = (await page.getByRole('heading', { name: /FID-MA-SI-/ }).first().textContent()) ?? '';
+  const invoiceNumber = (await page.getByRole('heading', { name: /INV\s*\d+/ }).first().textContent()) ?? '';
   await page.getByRole('button', { name: /^Delete invoice$/ }).click();
   const confirm = page.getByRole('dialog');
   await confirm.getByLabel(/why is this invoice being deleted/i).fill('Entered in error during daily test');

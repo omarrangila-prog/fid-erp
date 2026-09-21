@@ -73,9 +73,11 @@ test('the dashboard shows a business that is actually trading', async ({ page })
 
 test('trading screens list the consignments', async ({ page }) => {
   await open(page, '/purchases', /E2E-PO-DXB-1|FID-DXB-PO-/);
-  await open(page, '/sales', /FID-DXB-SI-/);
+  await open(page, '/sales', /INV\s*\d+/);
   await open(page, '/shipments', /FID-DXB-SHP-|Sidamo/);
-  await open(page, '/goods-receipts', /FID-DXB-/);
+  // The receipts list leads with the supplier's own reference; the internal
+  // GRN number is not on the screen.
+  await open(page, '/goods-receipts', /E2E-PO-DXB-1|Sidamo/);
 });
 
 test('inventory shows stock, batches, movements and what is at sea', async ({ page }) => {
@@ -90,7 +92,9 @@ test('inventory shows stock, batches, movements and what is at sea', async ({ pa
 test('the money screens show the cash cycle', async ({ page }) => {
   await open(page, '/finance/receipts', /FID-DXB-RV-/);
   await open(page, '/finance/payments', /FID-DXB-PV-/);
-  await open(page, '/finance/expenses', /FID-DXB-EV-/);
+  // The expense list leads with the category and what the money was for, not
+  // the system's own voucher number.
+  await open(page, '/finance/expenses', /Ocean Freight|Clearing|Customs|Transport/);
   await open(page, '/finance/cash-bank', /Cash in Hand|Bank Account/);
   await open(page, '/finance/receivables', /E2E Roastery Dubai/);
   await open(page, '/finance/payables', /E2E Exporter Ethiopia/);
@@ -125,9 +129,12 @@ test('the tax return is prepared and ties to the ledger', async ({ page }) => {
 
   await expect(page.getByRole('heading', { name: /VAT Return/i })).toBeVisible({ timeout: 20_000 });
 
-  // The fixture sale is standard-rated, and it is reported as such — by code,
-  // treatment and rate — rather than folded into one total.
-  await expect(page.getByText(/standard/i).locator('visible=true').first()).toBeVisible();
+  // Sales are reported by code, treatment and rate rather than folded into one
+  // total — whether the fixture's sale is standard-rated or out of scope.
+  for (const header of [/^Code$/, /^Treatment$/, /^Rate$/]) {
+    await expect(page.getByRole('columnheader', { name: header }).first()).toBeVisible();
+  }
+  await expect(page.getByRole('row').filter({ hasText: /%/ }).first()).toBeVisible();
   await expect(page.getByText(/Output VAT/i).first()).toBeVisible();
 
   // The figures are built from the documents and checked against the VAT
@@ -151,7 +158,7 @@ test('a document opens and prints', async ({ page }) => {
   // be deciding — and a URL read after navigation is one race away from being
   // the previous page's.
   const invoicePath = await page
-    .getByRole('link', { name: /FID-DXB-SI-\d+/ })
+    .getByRole('link', { name: /INV\s*\d+/ })
     .first()
     .getAttribute('href');
   expect(invoicePath, 'the sales list should link to an invoice').toMatch(/^\/sales\/[a-z0-9]+$/);

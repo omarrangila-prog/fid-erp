@@ -89,8 +89,8 @@ test('after a posted invoice is deleted, no screen says "reversed" and the invoi
   await form.getByRole('button', { name: /^Save invoice$/ }).click();
   await page.waitForURL(/\/sales\/(?!new)[\w-]+$/, { waitUntil: 'domcontentloaded', timeout: 40_000 });
 
-  const invoiceNumber = (await page.getByRole('heading', { name: /FID-MA-SI-/ }).first().textContent())?.trim() ?? '';
-  expect(invoiceNumber).toMatch(/FID-MA-SI-/);
+  const invoiceNumber = (await page.getByRole('heading', { name: /INV\s*\d+/ }).first().textContent())?.trim() ?? '';
+  expect(invoiceNumber).toMatch(/INV\s*\d+/);
 
   await page.getByRole('button', { name: /^Delete invoice$/ }).click();
   const confirm = page.getByRole('dialog');

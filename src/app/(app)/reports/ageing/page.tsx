@@ -11,6 +11,8 @@ import {
   type AgeingSummaryRow,
 } from '@/lib/services/receivables';
 import { PageHeader } from '@/components/shared/page-header';
+import { ExportLinks } from '@/components/shared/export-links';
+import { exportHref } from '@/components/shared/excel-link';
 import { PrintButton } from '@/components/shared/print-button';
 import { PrintHeader } from '@/components/shared/print-header';
 import { Card, CardContent } from '@/components/ui/card';
@@ -64,6 +66,8 @@ export default async function AgeingPage({ searchParams }: { searchParams: Promi
         actions={
           <>
             <FavouriteStar href={href} label={title} />
+            <ExportLinks href={exportHref('ageing', payables ? { side: 'payables' } : {})} print={false} />
+            <ExportLinks href={exportHref('ageing-detail', payables ? { side: 'payables' } : {})} print={false} />
             <PrintButton />
           </>
         }

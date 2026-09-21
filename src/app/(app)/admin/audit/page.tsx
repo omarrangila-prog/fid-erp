@@ -59,10 +59,18 @@ export default async function AuditPage({
   const page = Number.isFinite(requested) && requested > 0 ? Math.floor(requested) - 1 : 0;
   const view: ViewKey = VIEWS.some((v) => v.key === query.view) ? (query.view as ViewKey) : 'all';
 
+  /*
+   * Company data stays with its company; access events belong to the person
+   * and are recorded without one, so they appear here whichever company is
+   * open. Nothing financial is company-less, so this cannot leak one
+   * company's figures into the other's trail.
+   */
   const where = {
-    companyId: user.activeCompany.id,
-    ...(view === 'documents' ? { action: { notIn: ACCESS_ACTIONS as never } } : {}),
-    ...(view === 'access' ? { action: { in: ACCESS_ACTIONS as never } } : {}),
+    ...(view === 'access'
+      ? { OR: [{ companyId: user.activeCompany.id }, { companyId: null }], action: { in: ACCESS_ACTIONS as never } }
+      : view === 'documents'
+        ? { companyId: user.activeCompany.id, action: { notIn: ACCESS_ACTIONS as never } }
+        : { OR: [{ companyId: user.activeCompany.id }, { companyId: null }] }),
   };
 
   const total = await prisma.auditLog.count({ where });

@@ -14,6 +14,9 @@ import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/feedback';
 import { PrintButton } from '@/components/shared/print-button';
+import { exportHref } from '@/components/shared/excel-link';
+import { ExportLinks } from '@/components/shared/export-links';
+import { FavouriteStar } from '@/components/reports/report-statement';
 import { PrintHeader } from '@/components/shared/print-header';
 
 export const metadata: Metadata = { title: 'Shipment Cost Report' };
@@ -67,7 +70,13 @@ export default async function ShipmentCostPage({
         title="Shipment Cost Report"
         description="What one job of coffee cost once freight, clearing and every other charge is in — per kilo, in both currencies."
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Shipment Cost' }]}
-        actions={<PrintButton />}
+        actions={
+          <>
+            <FavouriteStar href="/reports/shipment-cost" label="Shipment Cost Report" />
+            {selectedId ? <ExportLinks href={exportHref('shipment-cost', { shipment: selectedId })} print={false} /> : null}
+            <PrintButton />
+          </>
+        }
       />
       <PrintHeader
         title="Shipment Cost Report"
