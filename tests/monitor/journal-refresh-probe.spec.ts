@@ -44,10 +44,33 @@ test('a refreshed journal voucher is either honestly empty or honestly full', as
   const main = page.getByRole('main');
   await expect(main).toBeVisible({ timeout: 30_000 });
 
-  await main.getByLabel(/description/i).fill('Refresh probe — never posted');
+  /*
+   * The screen opens by asking what happened; the free-form voucher this probe
+   * is about is one button on. Production is served from Tokyo and the click
+   * can land before React has hydrated, in which case nothing happens — so
+   * press it until the form is actually open.
+   */
+  const openAdvanced = async () => {
+    const advanced = main.getByRole('button', { name: /advanced journal entry/i });
+    const box = main.getByLabel(/description/i);
+    // Either the voucher is already open, or the chooser is on screen and the
+    // button has to be pressed — and on a cold page neither has rendered yet,
+    // so this keeps looking rather than deciding on the first glance.
+    await expect(async () => {
+      if (await box.count()) return;
+      if (await advanced.count()) await advanced.click();
+      await expect(box).toBeVisible({ timeout: 5_000 });
+    }).toPass({ timeout: 120_000 });
+  };
+  await openAdvanced();
+  const descriptionBox = main.getByLabel(/description/i);
+
+  await descriptionBox.fill('Refresh probe — never posted');
   await main.getByLabel(/line 1 amount/i).fill('123.45');
   await main.getByRole('combobox', { name: /line 1 account/i }).click();
-  await page.getByRole('listbox').getByRole('option').first().click();
+  // The list leads with a heading rendered as a disabled option; take the
+  // first account that can actually be chosen.
+  await page.getByRole('listbox').locator('[role="option"]:not([disabled])').first().click();
 
   const accountBefore = await main.getByRole('combobox', { name: /line 1 account/i }).innerText();
   console.log('\nbefore refresh');
@@ -57,6 +80,9 @@ test('a refreshed journal voucher is either honestly empty or honestly full', as
 
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(main).toBeVisible({ timeout: 30_000 });
+  // A refresh returns to the chooser; the voucher underneath is what this
+  // probe is about, so open it again and read what it kept.
+  await openAdvanced();
   await page.waitForTimeout(2_000);
 
   const description = await main.getByLabel(/description/i).inputValue();

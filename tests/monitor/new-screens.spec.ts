@@ -123,7 +123,8 @@ test('a profit and loss figure opens what is behind it', async ({ page }) => {
 
   // Every period a trader asks for is one click.
   const body = (await page.locator('body').textContent()) ?? '';
-  for (const label of ['Today', 'Yesterday', 'Last 7 days', 'This month', 'Everything']) {
+  // The period picker's own wording: "All dates" is the whole history.
+  for (const label of ['Today', 'Yesterday', 'Last 7 days', 'This month', 'All dates']) {
     expect(body, label).toContain(label);
   }
 
