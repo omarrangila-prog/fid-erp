@@ -340,7 +340,7 @@ test('§11 the sale asks for the warehouse before the stock', async ({ page }) =
   await page.goto('/sales/new', { waitUntil: 'domcontentloaded' });
   const form = page.getByRole('main');
 
-  const warehouse = form.getByLabel(/^Warehouse/);
+  const warehouse = form.locator('#warehouseId');
   const coffee = form.getByRole('combobox', { name: /Coffee on item 1/ });
   const batch = form.getByLabel(/Batch on item 1/);
 

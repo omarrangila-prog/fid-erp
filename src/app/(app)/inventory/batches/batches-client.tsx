@@ -1,5 +1,6 @@
 'use client';
 
+import { formatBags } from '@/lib/bags';
 import * as React from 'react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { History, Ship, ArrowLeftRight } from 'lucide-react';
@@ -109,7 +110,7 @@ export function BatchesClient({
       exportType: 'quantity',
       cell: (r) => <span className="font-medium">{r.availableLabel}</span>,
     },
-    { id: 'bags', header: 'Bags', numeric: true, hideable: true, defaultHidden: true, exportValue: (r) => r.bags, exportType: 'integer', cell: (r) => r.bags.toLocaleString() },
+    { id: 'bags', header: 'Bags', numeric: true, hideable: true, defaultHidden: true, exportValue: (r) => r.bags, exportType: 'number', cell: (r) => formatBags(r.bags) },
     ...(showValue
       ? [
           {

@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
-import { prisma } from '@/lib/db';
+import { prisma, transaction } from '@/lib/db';
+import { suggestStockTransferNumber } from '@/lib/services/numbering';
 import { getSellableStock } from '@/lib/services/stock';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrerequisiteGate, anyMissing, type Prerequisite } from '@/components/shared/prerequisite-gate';
@@ -14,13 +15,14 @@ export default async function NewTransferPage() {
   const user = await requirePageAccess(PERMISSIONS.INVENTORY_TRANSFER);
   const companyId = user.activeCompany.id;
 
-  const [warehouses, stock] = await Promise.all([
+  const [warehouses, stock, nextNumber] = await Promise.all([
     prisma.warehouse.findMany({
       where: { companyId, status: 'ACTIVE' },
       orderBy: { name: 'asc' },
       select: { id: true, name: true },
     }),
     getSellableStock(companyId),
+    transaction((tx) => suggestStockTransferNumber(tx, companyId)),
   ]);
 
   const prerequisites: Prerequisite[] = [
@@ -83,6 +85,7 @@ export default async function NewTransferPage() {
       <TransferForm
         warehouses={warehouses}
         stock={transferStock}
+        nextNumber={nextNumber}
         canCreateWarehouse={can(user, PERMISSIONS.WAREHOUSES_MANAGE)}
       />
     </div>

@@ -2,9 +2,10 @@ import { transaction } from '@/lib/db';
 import type { Tx } from '@/lib/db';
 import { Decimal, dec, toQuantity, sum } from '@/lib/money';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
-import { nextReference } from '@/lib/services/numbering';
+import { allocateStockTransferNumber } from '@/lib/services/numbering';
 import { reserveStock, releaseReservations, transferStock } from '@/lib/services/inventory';
 import { writeAudit } from '@/lib/services/audit';
+import { wholeBagsForKg } from '@/lib/bags';
 
 /**
  * StockTransferService — moving coffee between warehouses.
@@ -71,7 +72,7 @@ async function resolveLines(tx: Tx, input: StockTransferInput) {
     const line = input.lines[i];
     const batch = await tx.batch.findFirst({
       where: { id: line.batchId, companyId: input.companyId },
-      select: { id: true, batchNumber: true, itemId: true, containerId: true, status: true },
+      select: { id: true, batchNumber: true, itemId: true, containerId: true, status: true, bagWeightKg: true },
     });
     if (!batch) throw new NotFoundError(`Batch on line ${i + 1}`);
     if (batch.status !== 'ACTIVE') {
@@ -100,7 +101,14 @@ async function resolveLines(tx: Tx, input: StockTransferInput) {
       itemId: batch.itemId,
       containerId: batch.containerId,
       quantityKg,
-      bags: line.bags ?? 0,
+      /*
+       * The bags that travel with the kilograms. The form sends weight only,
+       * and a missing count used to be recorded as zero — so 360 KG reached
+       * the destination with no bags while the sale out of it took six, and
+       * the warehouse showed −6. The count now follows the weight at the
+       * batch's bag weight, the same rule a sales invoice uses.
+       */
+      bags: line.bags ?? wholeBagsForKg(quantityKg, batch.bagWeightKg),
       notes: line.notes ?? null,
     });
   }
@@ -125,7 +133,8 @@ export async function createStockTransfer(input: StockTransferInput, userId: str
     }
 
     const lines = await resolveLines(tx, input);
-    const transferNumber = await nextReference(tx, { companyId: input.companyId, docType: 'ST' });
+    // WTO-001, WTO-002 … issued here, on the server, under a lock — never by the form.
+    const transferNumber = await allocateStockTransferNumber(tx, input.companyId);
 
     const transfer = await tx.stockTransfer.create({
       data: {

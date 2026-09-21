@@ -226,7 +226,9 @@ export async function getWarehouseStock(companyId: string) {
     SELECT w."id" AS "warehouseId", w."code", w."name",
            COALESCE(SUM(ib."onHandKg"), 0)::text    AS "onHandKg",
            COALESCE(SUM(ib."availableKg"), 0)::text AS "availableKg",
-           COALESCE(SUM(ib."bags"), 0)::text        AS bags,
+           -- Bags follow the KG at each batch's bag weight, never a separate
+           -- count that can fall below zero while coffee is still there.
+           COALESCE(SUM(ib."onHandKg" / NULLIF(b."bagWeightKg", 0)), 0)::text AS bags,
            COALESCE(SUM(ib."onHandKg" * b."landedUnitCostUsd"), 0)::text AS "valueUsd"
     FROM warehouses w
     LEFT JOIN inventory_balances ib ON ib."warehouseId" = w."id"
@@ -242,7 +244,7 @@ export async function getWarehouseStock(companyId: string) {
     name: r.name,
     onHandKg: toQuantity(r.onHandKg),
     availableKg: toQuantity(r.availableKg),
-    bags: Number(r.bags),
+    bags: Number(dec(r.bags).toDecimalPlaces(2)),
     valueUsd: toMoney(r.valueUsd),
   }));
 }

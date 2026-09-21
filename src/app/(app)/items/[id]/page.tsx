@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { bagsForKg, addBags } from '@/lib/bags';
 import { CostingTable } from '@/components/shared/costing-table';
 import { getBatchCostings } from '@/lib/services/landed-cost';
 import Link from 'next/link';
@@ -74,11 +75,11 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
         batchId: true,
         onHandKg: true,
         availableKg: true,
-        bags: true,
         warehouse: { select: { id: true, name: true } },
         batch: {
           select: {
             batchNumber: true,
+            bagWeightKg: true,
             container: { select: { containerNumber: true } },
             purchaseContract: { select: { contractReference: true } },
             shipmentId: true,
@@ -102,7 +103,9 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
       lots: [],
     };
     entry.totalKg += Number(balance.onHandKg);
-    entry.bags += balance.bags;
+    // Bags follow the kilograms at the batch's bag weight (src/lib/bags.ts).
+    const bags = bagsForKg(balance.onHandKg, balance.batch.bagWeightKg);
+    entry.bags = addBags(entry.bags, bags);
     entry.lots.push({
       batchId: balance.batchId,
       batchNumber: balance.batch.batchNumber,
@@ -113,7 +116,7 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
       onHandLabel: formatQuantityKg(balance.onHandKg),
       availableLabel: formatQuantityKg(balance.availableKg),
       availableKg: Number(balance.availableKg),
-      bags: balance.bags,
+      bags,
     });
     byWarehouse.set(balance.warehouse.id, entry);
   }

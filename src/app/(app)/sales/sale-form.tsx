@@ -25,9 +25,12 @@ import { InvoiceDeleteButton, canCancelSalesInvoice } from '@/app/(app)/sales/[i
 /**
  * Sales invoice entry.
  *
- * Warehouse is chosen once at the top. Every line then picks coffee and batch
- * from that warehouse. Two empty rows are shown so a second coffee does not
- * require an extra click; a blank second row is simply ignored on save.
+ * Every item picks its own warehouse, then coffee and batch from that
+ * warehouse — one invoice can sell Screen 18 out of IPSEN and Screen 12 out
+ * of Ridwan. The warehouse at the top is only the starting point for new
+ * items, so the usual case of one warehouse is still a single choice. Two
+ * empty rows are shown so a second coffee does not require an extra click;
+ * a blank second row is simply ignored on save.
  */
 
 export type StockOption = ComboOption & {
@@ -44,6 +47,8 @@ export type StockOption = ComboOption & {
 
 type LineState = {
   key: string;
+  /** Where this item leaves from; each line can differ. */
+  warehouseId: string;
   itemId: string;
   stockKey: string | null;
   quantity: string;
@@ -67,11 +72,12 @@ export type SaleFormDefaults = {
   reference?: string;
   notes?: string;
   warehouseId?: string;
-  lines?: Array<Omit<LineState, 'key' | 'itemId'> & { itemId?: string; warehouseId?: string }>;
+  lines?: Array<Omit<LineState, 'key' | 'itemId' | 'warehouseId'> & { itemId?: string; warehouseId?: string }>;
 };
 
-const newLine = (taxCodeId = ''): LineState => ({
+const newLine = (taxCodeId = '', warehouseId = ''): LineState => ({
   key: Math.random().toString(36).slice(2),
+  warehouseId,
   itemId: '',
   stockKey: null,
   quantity: '',
@@ -80,9 +86,9 @@ const newLine = (taxCodeId = ''): LineState => ({
   taxCodeId,
 });
 
-function atLeastTwo(lines: LineState[], taxCodeId: string): LineState[] {
+function atLeastTwo(lines: LineState[], taxCodeId: string, warehouseId: string): LineState[] {
   if (lines.length >= 2) return lines;
-  return [...lines, ...Array.from({ length: 2 - lines.length }, () => newLine(taxCodeId))];
+  return [...lines, ...Array.from({ length: 2 - lines.length }, () => newLine(taxCodeId, warehouseId))];
 }
 
 export function SaleForm({
@@ -173,6 +179,7 @@ export function SaleForm({
             const option = stock.find((o) => o.value === line.stockKey);
             return {
               key: `line-${index}`,
+              warehouseId: option?.warehouseId ?? line.warehouseId ?? initialWarehouseId,
               itemId: option?.itemId ?? line.itemId ?? '',
               stockKey: line.stockKey ?? null,
               quantity: line.quantity,
@@ -181,8 +188,9 @@ export function SaleForm({
               taxCodeId: line.taxCodeId || defaultTaxCodeId,
             };
           })
-        : [newLine(defaultTaxCodeId)],
+        : [newLine(defaultTaxCodeId, initialWarehouseId)],
       defaultTaxCodeId,
+      initialWarehouseId,
     ),
   );
 
@@ -210,9 +218,21 @@ export function SaleForm({
     setLines((prev) => prev.map((line) => (line.key === key ? { ...line, ...patch } : line)));
   }
 
+  /**
+   * The default warehouse. Items not yet filled in follow it; an item whose
+   * coffee is already chosen keeps its own warehouse, so changing the default
+   * never undoes work on another line.
+   */
   function changeWarehouse(warehouseId: string) {
     setHeader((prev) => ({ ...prev, warehouseId }));
-    setLines((prev) => prev.map((line) => ({ ...line, itemId: '', stockKey: null })));
+    setLines((prev) =>
+      prev.map((line) => (line.itemId || line.stockKey ? line : { ...line, warehouseId, itemId: '', stockKey: null })),
+    );
+  }
+
+  /** One item moved to another warehouse: its coffee and batch are chosen again from there. */
+  function changeLineWarehouse(key: string, warehouseId: string) {
+    setLine(key, { warehouseId, itemId: '', stockKey: null });
   }
 
   const stockByKey = React.useMemo(() => new Map(stock.map((s) => [s.value, s])), [stock]);
@@ -287,8 +307,6 @@ export function SaleForm({
   }, [computed, rateFor, taxEnabled]);
 
   const hasOverdraw = computed.some((c) => c.over);
-  const warehouseId = header.warehouseId;
-  const itemOptions = itemsIn(warehouseId).map((item) => ({ value: item.id, label: item.name }));
 
   function submit() {
     setError(null);
@@ -498,10 +516,10 @@ export function SaleForm({
           </Field>
 
           <Field
-            label="Warehouse"
+            label="Default warehouse"
             htmlFor="warehouseId"
             required
-            hint="Every item on this invoice leaves this warehouse."
+            hint="New items start from here. Each item can be sold from a different warehouse on its own line."
             className="lg:col-span-2"
           >
             <Select
@@ -559,7 +577,7 @@ export function SaleForm({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setLines((prev) => [...prev, newLine(defaultTaxCodeId)])}
+            onClick={() => setLines((prev) => [...prev, newLine(defaultTaxCodeId, header.warehouseId)])}
           >
             <Plus />
             Add item
@@ -569,13 +587,9 @@ export function SaleForm({
           {fieldIssues.lines ? <p className="text-xs font-medium text-red-600">{fieldIssues.lines}</p> : null}
 
           {computed.map(({ line, option, math, over }, index) => {
-            const available = option
-              ? formatQuantityKg(option.availableKg)
-              : line.itemId
-                ? '—'
-                : warehouseId
-                  ? '—'
-                  : '—';
+            const available = option ? formatQuantityKg(option.availableKg) : '—';
+            const lineWarehouse = line.warehouseId;
+            const itemOptions = itemsIn(lineWarehouse).map((item) => ({ value: item.id, label: item.name }));
             return (
               <div key={line.key} className="space-y-3 border-b border-line pb-5 last:border-b-0 last:pb-0">
                 <div className="flex items-center justify-between">
@@ -595,6 +609,21 @@ export function SaleForm({
                 </div>
 
                 <div className="grid gap-3 lg:grid-cols-12">
+                  <Field label="Warehouse" required className="lg:col-span-3">
+                    <Select
+                      value={lineWarehouse}
+                      onChange={(e) => changeLineWarehouse(line.key, e.target.value)}
+                      aria-label={`Warehouse on item ${index + 1}`}
+                    >
+                      <option value="">Choose…</option>
+                      {warehousesWithStock.map((warehouse) => (
+                        <option key={warehouse.id} value={warehouse.id}>
+                          {warehouse.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+
                   <Field label="Item" required className="lg:col-span-4">
                     <Combobox
                       wrap
@@ -602,9 +631,9 @@ export function SaleForm({
                       options={itemOptions}
                       value={line.itemId || null}
                       onChange={(value) => setLine(line.key, { itemId: value ?? '', stockKey: null })}
-                      placeholder={warehouseId ? 'Choose coffee…' : 'Choose a warehouse first'}
+                      placeholder={lineWarehouse ? 'Choose coffee…' : 'Choose a warehouse first'}
                       emptyText="No coffee in this warehouse"
-                      disabled={!warehouseId}
+                      disabled={!lineWarehouse}
                       aria-label={`Coffee on item ${index + 1}`}
                     />
                   </Field>
@@ -617,7 +646,7 @@ export function SaleForm({
                       aria-label={`Batch on item ${index + 1}`}
                     >
                       <option value="">{line.itemId ? 'Choose…' : 'Choose the coffee first'}</option>
-                      {batchesIn(warehouseId, line.itemId).map((batch) => (
+                      {batchesIn(lineWarehouse, line.itemId).map((batch) => (
                         <option key={batch.value} value={batch.value}>
                           {batch.batchNumber} — {Number(batch.availableKg).toLocaleString()} KG available
                         </option>

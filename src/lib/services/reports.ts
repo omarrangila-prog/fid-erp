@@ -540,7 +540,8 @@ export async function getFinancialPosition(params: { companyId: string; asOf?: D
                  WHERE b."companyId" = ${params.companyId} AND b."status" = 'ACTIVE'), 0)::text AS "availableKg",
       COALESCE((SELECT SUM(b."inTransitQuantityKg") FROM batches b
                  WHERE b."companyId" = ${params.companyId} AND b."status" = 'ACTIVE'), 0)::text AS "inTransitKg",
-      COALESCE((SELECT SUM(ib."bags") FROM inventory_balances ib
+      COALESCE((SELECT SUM(ib."onHandKg" / NULLIF(b."bagWeightKg", 0)) FROM inventory_balances ib
+                 JOIN batches b ON b."id" = ib."batchId"
                  WHERE ib."companyId" = ${params.companyId}), 0)::text AS bags,
       COALESCE((SELECT SUM(c."amountUsd") FROM cheques c
                  WHERE c."companyId" = ${params.companyId} AND c."direction" = 'INBOUND'
@@ -565,7 +566,7 @@ export async function getFinancialPosition(params: { companyId: string; asOf?: D
     inTransitValueUsd: toMoney(t?.inTransitUsd ?? 0),
     availableKg: toQuantity(t?.availableKg ?? 0),
     inTransitKg: toQuantity(t?.inTransitKg ?? 0),
-    bags: Number(t?.bags ?? 0),
+    bags: Number(dec(t?.bags ?? 0).toDecimalPlaces(2)),
     chequesOnHandUsd: toMoney(t?.chequesOnHandUsd ?? 0),
   };
 }

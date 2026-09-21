@@ -1,3 +1,4 @@
+import { formatBags } from '@/lib/bags';
 import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
@@ -70,7 +71,7 @@ export default async function WarehousesPage() {
         location: w.location,
         port: w.port,
         stock: s ? formatQuantityKg(s.onHandKg) : '0 KG',
-        bags: s ? s.bags.toLocaleString() : '0',
+        bags: s ? formatBags(s.bags) : '0',
         value: showValue && s ? formatMoney(s.valueUsd, 'USD') : '—',
         status: w.status === 'ACTIVE' ? (w.isDefault ? 'Default' : 'Active') : 'Inactive',
       },

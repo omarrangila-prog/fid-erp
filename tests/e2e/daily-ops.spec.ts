@@ -107,7 +107,7 @@ test('a posted credit invoice can be deleted from the invoice page, and leaves e
   await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 20_000 });
 
   const form = page.getByRole('main');
-  const warehouse = form.getByLabel(/^Warehouse/);
+  const warehouse = form.locator('#warehouseId');
   const options = await warehouse.locator('option').count();
   if (options <= 1) {
     test.skip(true, 'No warehouse holds sellable stock in this company.');

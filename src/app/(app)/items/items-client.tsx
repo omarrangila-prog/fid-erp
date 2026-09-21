@@ -1,5 +1,6 @@
 'use client';
 
+import { formatBags } from '@/lib/bags';
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -446,7 +447,7 @@ export function ItemsClient({
                       <td className="py-1.5 pr-3">{lot.warehouseName}</td>
                       <td className="py-1.5 pr-3 text-right tabular-nums">{lot.onHandLabel}</td>
                       <td className="py-1.5 pr-3 text-right tabular-nums">{lot.availableLabel}</td>
-                      <td className="py-1.5 text-right tabular-nums">{lot.bags.toLocaleString()}</td>
+                      <td className="py-1.5 text-right tabular-nums">{formatBags(lot.bags)}</td>
                     </tr>
                   ))}
                 </tbody>

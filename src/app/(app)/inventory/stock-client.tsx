@@ -1,5 +1,6 @@
 'use client';
 
+import { formatBags } from '@/lib/bags';
 import * as React from 'react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Layers, History, ShoppingCart, ArrowLeftRight } from 'lucide-react';
@@ -121,7 +122,7 @@ export function StockClient({
       sortValue: (r) => r.availableSort,
       cell: (r) => <span className="font-medium">{r.availableLabel}</span>,
     },
-    { id: 'bags', header: 'Bags', numeric: true, hideable: true, cell: (r) => r.bags.toLocaleString() },
+    { id: 'bags', header: 'Bags', numeric: true, hideable: true, cell: (r) => formatBags(r.bags) },
     ...(showValue
       ? [
           {
@@ -203,7 +204,7 @@ export function StockClient({
                   <td className="py-1.5 pr-3">{lot.batchNumber}</td>
                   <td className="py-1.5 pr-3 text-right tabular-nums">{lot.onHandLabel}</td>
                   <td className="py-1.5 pr-3 text-right tabular-nums">{lot.availableLabel}</td>
-                  <td className="py-1.5 text-right tabular-nums">{lot.bags.toLocaleString()}</td>
+                  <td className="py-1.5 text-right tabular-nums">{formatBags(lot.bags)}</td>
                 </tr>
               ))}
             </tbody>

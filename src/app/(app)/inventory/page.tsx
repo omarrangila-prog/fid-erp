@@ -6,6 +6,7 @@ import { prisma } from '@/lib/db';
 import { dec, toMoney, toQuantity } from '@/lib/money';
 import { formatMoney, formatQuantityKg } from '@/lib/format';
 import { getWarehouseStock } from '@/lib/services/dashboard';
+import { bagsForKg, addBags, formatBags } from '@/lib/bags';
 import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
 import { PageHeader } from '@/components/shared/page-header';
 import { StatCard } from '@/components/shared/stat-card';
@@ -35,6 +36,7 @@ export default async function InventoryPage() {
         batch: {
           select: {
             landedUnitCostUsd: true,
+            bagWeightKg: true,
             batchNumber: true,
             container: { select: { containerNumber: true } },
             purchaseContract: { select: { contractReference: true, contractNumber: true } },
@@ -66,6 +68,9 @@ export default async function InventoryPage() {
     const reserved = dec(balance.reservedKg);
     const available = dec(balance.availableKg);
     const value = toMoney(onHand.times(dec(balance.batch.landedUnitCostUsd)));
+    // Bags follow the kilograms at the batch's bag weight — never a separate
+    // count that can drift below zero while coffee is still on the shelf.
+    const bags = bagsForKg(onHand, balance.batch.bagWeightKg);
 
     // Every batch behind the row, so the breakdown can be opened in place.
     const lot = {
@@ -77,14 +82,14 @@ export default async function InventoryPage() {
       container: balance.batch.container?.containerNumber ?? '—',
       onHandLabel: formatQuantityKg(onHand),
       availableLabel: formatQuantityKg(available),
-      bags: balance.bags,
+      bags,
     };
 
     if (existing) {
       existing.lots.push(lot);
       existing.onHandSort += Number(onHand);
       existing.availableSort += Number(available);
-      existing.bags += balance.bags;
+      existing.bags = addBags(existing.bags, bags);
       existing.valueSort += Number(value);
       existing.onHandLabel = formatQuantityKg(existing.onHandSort);
       existing.availableLabel = formatQuantityKg(existing.availableSort);
@@ -109,7 +114,7 @@ export default async function InventoryPage() {
         availableLabel: formatQuantityKg(available),
         availableSort: Number(available),
         inTransitLabel: '—',
-        bags: balance.bags,
+        bags,
         valueLabel: formatMoney(value, 'USD'),
         valueSort: Number(value),
         // §24: what a kilo of this actually cost, beside how much there is.
@@ -123,7 +128,7 @@ export default async function InventoryPage() {
   const totalOnHand = rows.reduce((a, r) => a + r.onHandSort, 0);
   const totalAvailable = rows.reduce((a, r) => a + r.availableSort, 0);
   const totalValue = rows.reduce((a, r) => a + r.valueSort, 0);
-  const totalBags = rows.reduce((a, r) => a + r.bags, 0);
+  const totalBags = rows.reduce((a, r) => addBags(a, r.bags), 0);
   const inTransitKg = toQuantity(inTransit._sum.inTransitQuantityKg ?? 0);
 
   return (
@@ -157,7 +162,7 @@ export default async function InventoryPage() {
         <StatCard
           label="Available to sell"
           value={formatQuantityKg(totalAvailable)}
-          sublabel={`${totalBags.toLocaleString()} bags`}
+          sublabel={`${formatBags(totalBags)} bags`}
           icon={Package}
         />
         <StatCard
@@ -186,7 +191,7 @@ export default async function InventoryPage() {
                 <p className="truncate text-sm font-medium text-ink">{w.name}</p>
                 <p className="tnum mt-1 text-lg font-semibold text-forest-800">{formatQuantityKg(w.onHandKg)}</p>
                 <p className="text-xs text-ink-subtle">
-                  {w.bags.toLocaleString()} bags
+                  {formatBags(w.bags)} bags
                   {showValue ? ` · ${formatMoney(w.valueUsd, 'USD')}` : ''}
                 </p>
               </div>

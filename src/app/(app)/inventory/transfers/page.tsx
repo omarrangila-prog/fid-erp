@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
+import { transferNumberLabel, parseTransferSequence } from '@/lib/transfer-number';
 import { dec } from '@/lib/money';
 import { formatQuantityKg, formatDate, titleCase } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
@@ -31,7 +32,10 @@ export default async function TransfersPage() {
     const quantity = t.lines.reduce((a, l) => a.plus(dec(l.quantityKg)), dec(0));
     return {
       id: t.id,
-      transferNumber: t.transferNumber,
+      // WTO-004, whichever form the record was stored in (src/lib/transfer-number.ts).
+      transferLabel: transferNumberLabel(t.transferNumber),
+      transferSequence: parseTransferSequence(t.transferNumber) ?? 0,
+      storedNumber: t.transferNumber,
       transferDate: formatDate(t.transferDate),
       transferDateSort: t.transferDate.getTime(),
       fromWarehouse: t.fromWarehouse.name,

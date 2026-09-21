@@ -1,5 +1,6 @@
 'use client';
 
+import { formatBags } from '@/lib/bags';
 import * as React from 'react';
 import Link from 'next/link';
 import { Warehouse as WarehouseIcon } from 'lucide-react';
@@ -79,7 +80,7 @@ export function WarehouseStockPanel({ warehouses }: { warehouses: WarehouseStock
               <span className="text-lg font-semibold tabular-nums text-ink">{warehouse.totalLabel}</span>
               <span className="text-[11px] text-ink-subtle">
                 {warehouse.lots.length} {warehouse.lots.length === 1 ? 'batch' : 'batches'} ·{' '}
-                {warehouse.bags.toLocaleString()} bags
+                {formatBags(warehouse.bags)} bags
               </span>
             </button>
           );
@@ -134,7 +135,7 @@ export function WarehouseStockPanel({ warehouses }: { warehouses: WarehouseStock
                     <td className="px-4 py-2 text-right font-semibold tabular-nums text-forest-800">
                       {lot.availableLabel}
                     </td>
-                    <td className="px-4 py-2 text-right tabular-nums">{lot.bags.toLocaleString()}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{formatBags(lot.bags)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -42,7 +42,7 @@ export default async function BatchesPage() {
     soldSort: Number(b.soldKg),
     availableLabel: formatQuantityKg(b.availableKg),
     availableSort: Number(b.availableKg),
-    bags: 0,
+    bags: b.bags,
     landedCostLabel: formatMoney(b.unitCostUsd, 'USD'),
     landedCostSort: Number(b.unitCostUsd),
     valueLabel: formatMoney(b.stockValueUsd, 'USD'),

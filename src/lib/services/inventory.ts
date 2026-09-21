@@ -1,5 +1,6 @@
 import type { Tx } from '@/lib/db';
 import { Decimal, dec, toQuantity, toUnitCost, toMoney } from '@/lib/money';
+import { wholeBagsForKg } from '@/lib/bags';
 import { InsufficientStockError, BusinessRuleError, NotFoundError } from '@/lib/errors';
 import { getBooleanSetting, SETTING_KEYS } from '@/lib/services/settings';
 import type { InventoryTransactionType } from '@prisma/client';
@@ -99,15 +100,14 @@ export async function computeWarehouseBalance(
   warehouseId: string,
 ): Promise<WarehouseBalance> {
   const rows = await tx.$queryRaw<
-    Array<{ onHand: string | null; reserved: string | null; bags: string | null }>
+    Array<{ onHand: string | null; reserved: string | null; bagWeightKg: string | null }>
   >`
     SELECT
       COALESCE(SUM(CASE WHEN "transactionType" NOT IN ('RESERVATION','RESERVATION_RELEASE')
                         THEN "quantityKg" ELSE 0 END), 0)::text AS "onHand",
       COALESCE(SUM(CASE WHEN "transactionType" IN ('RESERVATION','RESERVATION_RELEASE')
                         THEN "quantityKg" ELSE 0 END), 0)::text AS reserved,
-      COALESCE(SUM(CASE WHEN "transactionType" NOT IN ('RESERVATION','RESERVATION_RELEASE')
-                        THEN "bags" ELSE 0 END), 0)::text AS bags
+      (SELECT "bagWeightKg"::text FROM batches WHERE "id" = ${batchId}) AS "bagWeightKg"
     FROM inventory_transactions
     WHERE "batchId" = ${batchId} AND "warehouseId" = ${warehouseId}
   `;
@@ -120,7 +120,10 @@ export async function computeWarehouseBalance(
     onHandKg,
     reservedKg,
     availableKg: toQuantity(onHandKg.minus(reservedKg)),
-    bags: Number(row?.bags ?? 0),
+    // The stored count is the whole-bag equivalent of what is on hand, so it
+    // can never fall below zero while the kilograms are positive. Screens
+    // show the exact figure from src/lib/bags.ts.
+    bags: wholeBagsForKg(onHandKg, row?.bagWeightKg ?? 0),
   };
 }
 

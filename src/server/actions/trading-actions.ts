@@ -747,7 +747,7 @@ export async function saveStockTransferAction(payload: string): Promise<DocFormS
     const transfer = await createStockTransfer({ companyId: user.activeCompany.id, ...input }, user.id);
 
     revalidatePath('/inventory/transfers');
-    return { ok: true, id: transfer.id, message: 'Transfer created.' };
+    return { ok: true, id: transfer.id, message: `Transfer ${transfer.transferNumber} created.` };
   } catch (error) {
     return toState(error);
   }

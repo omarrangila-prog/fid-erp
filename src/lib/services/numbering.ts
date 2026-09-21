@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Tx } from '@/lib/db';
 import { DOC_TYPES } from '@/lib/constants';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
+import { formatTransferNumber, parseTransferSequence } from '@/lib/transfer-number';
 
 /**
  * Concurrency-safe document numbering.
@@ -213,4 +214,52 @@ export async function retireSalesInvoiceNumber(
     data: { invoiceNumber: candidate },
   });
   return candidate;
+}
+
+// ---------------------------------------------------------------------------
+// Warehouse transfers — WTO-001, WTO-002, ...
+// ---------------------------------------------------------------------------
+
+const WTO = 'WTO';
+
+/**
+ * The sequence numbers already in use. A transfer on the list — draft,
+ * approved, on the road, received or cancelled — holds its number; a deleted
+ * draft is gone, and its number is issued again. A cancelled transfer keeps
+ * its number because it stays on the list and in the audit trail, and two
+ * documents must never answer to the same number.
+ */
+async function occupiedTransferSequences(tx: Tx, companyId: string): Promise<number[]> {
+  const rows = await tx.stockTransfer.findMany({ where: { companyId }, select: { transferNumber: true } });
+  return rows
+    .map((row) => parseTransferSequence(row.transferNumber))
+    .filter((n): n is number => n !== null);
+}
+
+/** The number the next transfer will be given, for the form to show. */
+export async function suggestStockTransferNumber(tx: Tx, companyId: string): Promise<string> {
+  return formatTransferNumber(nextSequenceNumber(await occupiedTransferSequences(tx, companyId)));
+}
+
+/**
+ * Issue the next transfer number, inside the transaction that saves it.
+ *
+ * The sequence row is locked first, so two people saving at the same moment
+ * are served one after the other and the second sees the first's number as
+ * taken. The unique index on (company, number) stands behind it.
+ */
+export async function allocateStockTransferNumber(tx: Tx, companyId: string): Promise<string> {
+  const prefix = await companyPrefix(tx, companyId);
+  await tx.$queryRaw`
+    INSERT INTO number_sequences ("id", "companyId", "docType", "year", "prefix", "lastNumber", "updatedAt")
+    VALUES (${randomUUID()}, ${companyId}, ${WTO}, ${SEQUENCE_YEAR}, ${prefix}, 0, now())
+    ON CONFLICT ("companyId", "docType", "year")
+    DO UPDATE SET "updatedAt" = now()
+    RETURNING "id"
+  `;
+
+  const transferNumber = formatTransferNumber(nextSequenceNumber(await occupiedTransferSequences(tx, companyId)));
+  const clash = await tx.stockTransfer.findFirst({ where: { companyId, transferNumber }, select: { id: true } });
+  if (clash) throw new BusinessRuleError(`Transfer number ${transferNumber} is already in use.`);
+  return transferNumber;
 }

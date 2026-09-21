@@ -1,3 +1,4 @@
+import { formatBags } from '@/lib/bags';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { requirePageAccess, can } from '@/lib/auth/guards';
@@ -130,7 +131,7 @@ export default async function FinancialPositionPage() {
               <div className="flex items-center justify-between gap-3 border-b border-line pb-3">
                 <span className="text-sm text-ink">
                   Available stock
-                  <span className="block text-xs text-ink-subtle">{position.bags.toLocaleString()} bags</span>
+                  <span className="block text-xs text-ink-subtle">{formatBags(position.bags)} bags</span>
                 </span>
                 <span className="text-right">
                   <span className="tnum block text-sm font-semibold">{formatQuantityKg(position.availableKg)}</span>
@@ -183,7 +184,7 @@ export default async function FinancialPositionPage() {
                       <TD className="font-medium">{w.name}</TD>
                       <TD numeric>{formatQuantityKg(w.onHandKg)}</TD>
                       <TD numeric>{formatQuantityKg(w.availableKg)}</TD>
-                      <TD numeric>{w.bags.toLocaleString()}</TD>
+                      <TD numeric>{formatBags(w.bags)}</TD>
                       {showValue ? <TD numeric>{formatMoney(w.valueUsd, 'USD')}</TD> : null}
                     </TR>
                   ))}

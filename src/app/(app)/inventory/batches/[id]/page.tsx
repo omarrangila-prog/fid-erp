@@ -1,3 +1,4 @@
+import { formatBags } from '@/lib/bags';
 import type { Metadata } from 'next';
 import { CostingSummary } from '@/components/shared/costing-table';
 import { getBatchCostings } from '@/lib/services/landed-cost';
@@ -167,7 +168,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-ink">{l.warehouseName}</p>
                     <p className="text-xs text-ink-subtle">
-                      {l.bags.toLocaleString()} bags
+                      {formatBags(l.bags)} bags
                       {l.reservedKg.greaterThan(0) ? ` · ${formatQuantityKg(l.reservedKg)} reserved` : ''}
                     </p>
                   </div>

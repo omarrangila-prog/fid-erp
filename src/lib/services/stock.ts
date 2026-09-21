@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db';
 import { Decimal, dec, toMoney, toQuantity, toUnitCost } from '@/lib/money';
+import { bagsForKg, addBags } from '@/lib/bags';
 
 /**
  * Stock query service. All figures are read from the batch cache, which the
@@ -40,6 +41,8 @@ export type BatchStockRow = {
   allocatedKg: Decimal;
   soldKg: Decimal;
   availableKg: Decimal;
+  /** Bags on the shelf: what is in the warehouses (available + allocated) at the batch's bag weight. */
+  bags: number;
   unitCostUsd: Decimal;
   stockValueUsd: Decimal;
   currency: string;
@@ -62,6 +65,7 @@ export async function getBatchStock(filters: StockFilters): Promise<BatchStockRo
            b."allocatedQuantityKg"::text AS "allocatedKg",
            b."soldQuantityKg"::text      AS "soldKg",
            b."availableQuantityKg"::text AS "availableKg",
+           b."bagWeightKg"::text         AS "bagWeightKg",
            b."unitCostUsd"::text         AS "unitCostUsd",
            i."id" AS "itemId", i."itemCode", i."itemName",
            s."id" AS "shipmentId", s."shipmentNumber", s."status"::text AS "shipmentStatus", s."etaDate",
@@ -108,6 +112,7 @@ export async function getBatchStock(filters: StockFilters): Promise<BatchStockRo
       vendorName: String(row.vendorName),
       receivedKg: toQuantity(String(row.receivedKg)),
       allocatedKg: toQuantity(String(row.allocatedKg)),
+      bags: bagsForKg(availableKg.plus(String(row.allocatedKg)), String(row.bagWeightKg)),
       soldKg: toQuantity(String(row.soldKg)),
       availableKg,
       unitCostUsd,
@@ -456,7 +461,8 @@ type WarehouseMovementRow = {
   containerNumber: string | null;
   onHandKg: string;
   reservedKg: string;
-  bags: string;
+  /** The batch's bag weight; bags are derived from it and the KG, never summed. */
+  bagWeightKg: string;
 };
 
 /**
@@ -481,8 +487,7 @@ async function loadWarehouseMovements(
                                THEN t."quantityKg" ELSE 0 END), 0)::text AS "onHandKg",
              COALESCE(SUM(CASE WHEN t."transactionType" IN ('RESERVATION','RESERVATION_RELEASE')
                                THEN t."quantityKg" ELSE 0 END), 0)::text AS "reservedKg",
-             COALESCE(SUM(CASE WHEN t."transactionType" NOT IN ('RESERVATION','RESERVATION_RELEASE')
-                               THEN t."bags" ELSE 0 END), 0)::text AS bags
+             b."bagWeightKg"::text AS "bagWeightKg"
       FROM inventory_transactions t
       JOIN warehouses w ON w."id" = t."warehouseId"
       JOIN batches b ON b."id" = t."batchId"
@@ -491,7 +496,7 @@ async function loadWarehouseMovements(
       WHERE t."companyId" = ${companyId}
         AND (${itemId ?? null}::text IS NULL OR b."itemId" = ${itemId ?? null})
       GROUP BY b."itemId", t."warehouseId", w."name", w."code", t."batchId",
-               b."batchNumber", l."lotNumber", ct."containerNumber"
+               b."batchNumber", l."lotNumber", ct."containerNumber", b."bagWeightKg"
     `,
     prisma.$queryRaw<WarehouseMovementRow[]>`
       SELECT ib."itemId",
@@ -504,7 +509,7 @@ async function loadWarehouseMovements(
              ct."containerNumber",
              ib."onHandKg"::text AS "onHandKg",
              ib."reservedKg"::text AS "reservedKg",
-             ib."bags"::text AS bags
+             b."bagWeightKg"::text AS "bagWeightKg"
       FROM inventory_balances ib
       JOIN warehouses w ON w."id" = ib."warehouseId"
       JOIN batches b ON b."id" = ib."batchId"
@@ -545,13 +550,13 @@ function applyMovementRow(group: ItemWarehouseGroup, row: WarehouseMovementRow) 
   const onHandKg = toQuantity(row.onHandKg);
   const reservedKg = toQuantity(row.reservedKg);
   const availableKg = toQuantity(onHandKg.minus(reservedKg));
-  const bags = Number(row.bags);
-  if (onHandKg.eq(0) && reservedKg.eq(0) && availableKg.eq(0) && bags === 0) return;
+  if (onHandKg.eq(0) && reservedKg.eq(0) && availableKg.eq(0)) return;
+  const bags = bagsForKg(onHandKg, row.bagWeightKg);
 
   group.onHandKg = toQuantity(group.onHandKg.plus(onHandKg));
   group.reservedKg = toQuantity(group.reservedKg.plus(reservedKg));
   group.availableKg = toQuantity(group.availableKg.plus(availableKg));
-  group.bags += bags;
+  group.bags = addBags(group.bags, bags);
   group.lines.push({
     batchId: row.batchId,
     batchNumber: row.batchNumber,
@@ -806,7 +811,10 @@ export async function getWarehouseLabels(companyId: string): Promise<{
 export async function getBatchLocations(companyId: string, batchId: string) {
   const rows = await prisma.inventoryBalance.findMany({
     where: { companyId, batchId },
-    include: { warehouse: { select: { id: true, name: true, code: true } } },
+    include: {
+      warehouse: { select: { id: true, name: true, code: true } },
+      batch: { select: { bagWeightKg: true } },
+    },
     orderBy: { warehouse: { name: 'asc' } },
   });
 
@@ -817,7 +825,7 @@ export async function getBatchLocations(companyId: string, batchId: string) {
     onHandKg: toQuantity(row.onHandKg),
     reservedKg: toQuantity(row.reservedKg),
     availableKg: toQuantity(row.availableKg),
-    bags: row.bags,
+    bags: bagsForKg(row.onHandKg, row.batch.bagWeightKg),
   }));
 }
 

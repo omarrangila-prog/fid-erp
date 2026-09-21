@@ -1,5 +1,6 @@
 'use client';
 
+import { formatBags } from '@/lib/bags';
 import * as React from 'react';
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
@@ -122,7 +123,7 @@ export function ItemWarehouseStock({
                               <span className="block truncate">{warehouse.warehouseName}</span>
                               {warehouse.bags > 0 || reserved > 0 ? (
                                 <span className="block text-xs font-normal text-ink-subtle">
-                                  {warehouse.bags > 0 ? `${warehouse.bags.toLocaleString()} bags` : null}
+                                  {warehouse.bags > 0 ? `${formatBags(warehouse.bags)} bags` : null}
                                   {reserved > 0
                                     ? `${warehouse.bags > 0 ? ' · ' : ''}${formatQuantityKg(warehouse.reservedKg)} reserved`
                                     : ''}

@@ -14,7 +14,11 @@ import type { BadgeTone } from '@/lib/constants';
 
 export type TransferRow = {
   id: string;
-  transferNumber: string;
+  /** WTO-004 — the business's own running number, not a system code. */
+  transferLabel: string;
+  transferSequence: number;
+  /** What the record holds, kept searchable for transfers raised before WTO numbering. */
+  storedNumber: string;
   transferDate: string;
   transferDateSort: number;
   fromWarehouse: string;
@@ -71,9 +75,16 @@ export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canM
   }
 
   const columns: DataColumn<TransferRow>[] = [
-    /* A transfer is known by where the coffee went and when, not by a
-       number the system issued to itself. */
-    { id: 'date', header: 'Date', mobile: 'title', sortValue: (r) => r.transferDateSort, cell: (r) => <span className="font-medium">{r.transferDate}</span> },
+    // WTO-001, WTO-002 … the business's own running number, issued in order.
+    {
+      id: 'number',
+      header: 'Transfer No.',
+      mobile: 'title',
+      sortValue: (r) => r.transferSequence,
+      exportValue: (r) => r.transferLabel,
+      cell: (r) => <span className="tnum font-medium">{r.transferLabel}</span>,
+    },
+    { id: 'date', header: 'Date', mobile: 'meta', sortValue: (r) => r.transferDateSort, cell: (r) => <span>{r.transferDate}</span> },
     {
       id: 'route',
       header: 'From → To',
@@ -161,7 +172,7 @@ export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canM
         data={rows}
         columns={columns}
         getRowId={(r) => r.id}
-        searchValue={(r) => `${r.transferNumber} ${r.fromWarehouse} ${r.toWarehouse}`}
+        searchValue={(r) => `${r.transferLabel} ${r.storedNumber} ${r.fromWarehouse} ${r.toWarehouse}`}
         searchPlaceholder="Search transfers…"
         emptyTitle="No transfers yet"
         emptyDescription="Move coffee between warehouses without changing how much the company owns."
@@ -191,7 +202,7 @@ export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canM
       <ConfirmDialog
         open={Boolean(cancelling)}
         onOpenChange={(open) => !open && setCancelling(null)}
-        title={`Cancel ${cancelling?.transferNumber ?? 'transfer'}?`}
+        title={`Cancel ${cancelling?.transferLabel ?? 'transfer'}?`}
         description="Any stock this transfer had reserved is released back to the source warehouse."
         confirmLabel="Cancel transfer"
         variant="danger"

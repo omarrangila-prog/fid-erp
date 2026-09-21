@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
+import { bagsForKg } from '@/lib/bags';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getItemStock, getWarehouseStockByItem } from '@/lib/services/stock';
@@ -48,11 +49,11 @@ export default async function ItemsPage({
         itemId: true,
         onHandKg: true,
         availableKg: true,
-        bags: true,
         warehouse: { select: { name: true } },
         batch: {
           select: {
             batchNumber: true,
+            bagWeightKg: true,
             container: { select: { containerNumber: true } },
             purchaseContract: { select: { contractReference: true } },
             shipmentId: true,
@@ -76,7 +77,8 @@ export default async function ItemsPage({
       warehouseName: balance.warehouse.name,
       onHandLabel: formatQuantityKg(balance.onHandKg),
       availableLabel: formatQuantityKg(balance.availableKg),
-      bags: balance.bags,
+      // Derived from the KG at the batch's bag weight; see src/lib/bags.ts.
+      bags: bagsForKg(balance.onHandKg, balance.batch.bagWeightKg),
     });
     lotsByItem.set(balance.itemId, list);
   }

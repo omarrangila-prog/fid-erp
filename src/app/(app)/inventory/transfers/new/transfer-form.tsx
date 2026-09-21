@@ -33,10 +33,13 @@ const newLine = (): LineState => ({ key: Math.random().toString(36).slice(2), ba
 export function TransferForm({
   warehouses,
   stock,
+  nextNumber,
   canCreateWarehouse = false,
 }: {
   warehouses: Array<{ id: string; name: string }>;
   stock: TransferStock[];
+  /** The number this transfer will be given — WTO-005 — issued by the server on save. */
+  nextNumber: string;
   canCreateWarehouse?: boolean;
 }) {
   const router = useRouter();
@@ -121,7 +124,7 @@ export function TransferForm({
     start(async () => {
       const result = await saveStockTransferAction(JSON.stringify(payload));
       if (result?.ok) {
-        toast.success('Transfer created. Approve it to reserve the stock.');
+        toast.success(`${result.message ?? 'Transfer created.'} Approve it to reserve the stock.`);
         opening();
         router.push('/inventory/transfers');
       } else {
@@ -193,6 +196,14 @@ export function TransferForm({
 
           <Field label="Transfer date" htmlFor="transferDate" required>
             <Input id="transferDate" type="date" value={transferDate} onChange={(e) => setDate(e.target.value)} />
+          </Field>
+
+          <Field
+            label="Transfer No."
+            htmlFor="transferNumber"
+            hint="Given automatically when you save. If someone saves a transfer first, this one takes the next number."
+          >
+            <Input id="transferNumber" value={nextNumber} readOnly className="tnum bg-surface-sunken font-medium" />
           </Field>
         </CardContent>
       </Card>
