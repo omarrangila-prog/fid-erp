@@ -107,7 +107,7 @@ test('a posted credit invoice can be deleted from the invoice page, and leaves e
   await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 20_000 });
 
   const form = page.getByRole('main');
-  const warehouse = form.locator('#warehouseId');
+  const warehouse = form.getByLabel('Warehouse on item 1', { exact: true });
   const options = await warehouse.locator('option').count();
   if (options <= 1) {
     test.skip(true, 'No warehouse holds sellable stock in this company.');
@@ -201,7 +201,7 @@ test('the journal offers USD and MAD and posts a balanced USD voucher', async ({
   await expect(currency.locator('option[value="MAD"]')).toHaveCount(1);
   await currency.selectOption('USD');
 
-  await page.getByLabel(/description/i).fill('Daily ops USD opening');
+  await page.locator('#jv-description').fill('Daily ops USD opening');
 
   // Named accounts, not "whatever is first in the list": the first entries are
   // cash and bank drawers, and a drawer holds one currency only — a USD amount
@@ -278,7 +278,7 @@ test('a plain MAD 7,400 shipment expense does not become 8,880', async ({ page }
   if (await rate.count()) {
     await rate.fill('9.6');
   }
-  await form.getByLabel(/^Description/).fill('Transport 7400 integrity');
+  await form.getByLabel(/^Memo/).fill('Transport 7400 integrity');
 
   const tax = form.locator('#expenseTax');
   if (await tax.count()) {
@@ -342,7 +342,7 @@ test('a plain MAD 7,400 shipment expense does not become 8,880', async ({ page }
   await next.getByLabel(/expense date/i).fill('2026-07-29');
   await next.locator('label').filter({ hasText: /already paid from cash/i }).click();
   await next.getByLabel(/^Amount/).fill('1000');
-  await next.getByLabel(/^Description/).fill('Second expense after 7400');
+  await next.getByLabel(/^Memo/).fill('Second expense after 7400');
   await next.getByRole('button', { name: /save and post/i }).click();
   await page.waitForURL(/\/finance\/expenses\/(?!new)[\w-]+/, { waitUntil: 'domcontentloaded', timeout: 40_000 });
   await expect(page.getByRole('main')).toContainText(/MAD 1,000/);

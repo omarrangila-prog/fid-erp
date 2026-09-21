@@ -19,6 +19,7 @@ import { preferZeroRateTax } from '@/lib/tax-default';
 import { saveSalesInvoiceAction, postSalesInvoiceAction } from '@/server/actions/trading-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { shortDocumentNumber } from '@/lib/short-number';
+import { bagsForKg, formatBags } from '@/lib/bags';
 import { AddCustomer } from '@/app/(app)/sales/add-customer';
 import { InvoiceDeleteButton, canCancelSalesInvoice } from '@/app/(app)/sales/[id]/sale-actions';
 
@@ -27,8 +28,9 @@ import { InvoiceDeleteButton, canCancelSalesInvoice } from '@/app/(app)/sales/[i
  *
  * Every item picks its own warehouse, then coffee and batch from that
  * warehouse — one invoice can sell Screen 18 out of IPSEN and Screen 12 out
- * of Ridwan. The warehouse at the top is only the starting point for new
- * items, so the usual case of one warehouse is still a single choice. Two
+ * of Ridwan. There is no invoice-wide warehouse to disagree with the lines:
+ * stock is checked and taken per line, from the warehouse that line names.
+ * When only one warehouse holds stock it is filled in on every line. Two
  * empty rows are shown so a second coffee does not require an extra click;
  * a blank second row is simply ignored on save.
  */
@@ -45,6 +47,8 @@ export type StockOption = ComboOption & {
   shipmentId: string;
   /** The ICUL/FID order the batch was bought on. */
   contractReference?: string;
+  lotNumber?: string;
+  containerNumber?: string | null;
 };
 
 type LineState = {
@@ -73,7 +77,6 @@ export type SaleFormDefaults = {
   cashBankAccountId?: string;
   reference?: string;
   notes?: string;
-  warehouseId?: string;
   lines?: Array<Omit<LineState, 'key' | 'itemId' | 'warehouseId'> & { itemId?: string; warehouseId?: string }>;
 };
 
@@ -149,14 +152,9 @@ export function SaleForm({
     return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [stock]);
 
-  const initialWarehouseId = (() => {
-    if (defaults?.warehouseId) return defaults.warehouseId;
-    const firstKey = defaults?.lines?.[0]?.stockKey;
-    const fromLine = firstKey ? stock.find((option) => option.value === firstKey)?.warehouseId : '';
-    if (fromLine) return fromLine;
-    if (warehousesWithStock.length === 1) return warehousesWithStock[0].id;
-    return '';
-  })();
+  // There is no invoice-wide warehouse: each item names the one it leaves.
+  // Only when a single warehouse holds stock is it filled in for the user.
+  const onlyWarehouseId = warehousesWithStock.length === 1 ? warehousesWithStock[0].id : '';
 
   const [header, setHeader] = React.useState({
     invoiceNumber: defaults?.invoiceNumber ?? '',
@@ -170,7 +168,6 @@ export function SaleForm({
     cashBankAccountId: defaults?.cashBankAccountId ?? '',
     reference: defaults?.reference ?? '',
     notes: defaults?.notes ?? '',
-    warehouseId: initialWarehouseId,
   });
   const isPosted = defaults?.status === 'POSTED';
 
@@ -181,7 +178,7 @@ export function SaleForm({
             const option = stock.find((o) => o.value === line.stockKey);
             return {
               key: `line-${index}`,
-              warehouseId: option?.warehouseId ?? line.warehouseId ?? initialWarehouseId,
+              warehouseId: option?.warehouseId ?? line.warehouseId ?? onlyWarehouseId,
               itemId: option?.itemId ?? line.itemId ?? '',
               stockKey: line.stockKey ?? null,
               quantity: line.quantity,
@@ -190,9 +187,9 @@ export function SaleForm({
               taxCodeId: line.taxCodeId || defaultTaxCodeId,
             };
           })
-        : [newLine(defaultTaxCodeId, initialWarehouseId)],
+        : [newLine(defaultTaxCodeId, onlyWarehouseId)],
       defaultTaxCodeId,
-      initialWarehouseId,
+      onlyWarehouseId,
     ),
   );
 
@@ -218,18 +215,6 @@ export function SaleForm({
 
   function setLine(key: string, patch: Partial<LineState>) {
     setLines((prev) => prev.map((line) => (line.key === key ? { ...line, ...patch } : line)));
-  }
-
-  /**
-   * The default warehouse. Items not yet filled in follow it; an item whose
-   * coffee is already chosen keeps its own warehouse, so changing the default
-   * never undoes work on another line.
-   */
-  function changeWarehouse(warehouseId: string) {
-    setHeader((prev) => ({ ...prev, warehouseId }));
-    setLines((prev) =>
-      prev.map((line) => (line.itemId || line.stockKey ? line : { ...line, warehouseId, itemId: '', stockKey: null })),
-    );
   }
 
   /** One item moved to another warehouse: its coffee and batch are chosen again from there. */
@@ -400,7 +385,7 @@ export function SaleForm({
       <Card>
         <CardHeader>
           <CardTitle>Invoice</CardTitle>
-          <CardDescription>Customer, dates, and the warehouse this invoice is issued from.</CardDescription>
+          <CardDescription>Customer and dates. Each item below chooses the warehouse it is sold from.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="lg:col-span-2">
@@ -517,27 +502,6 @@ export function SaleForm({
             />
           </Field>
 
-          <Field
-            label="Default warehouse"
-            htmlFor="warehouseId"
-            required
-            hint="New items start from here. Each item can be sold from a different warehouse on its own line."
-            className="lg:col-span-2"
-          >
-            <Select
-              id="warehouseId"
-              value={header.warehouseId}
-              onChange={(e) => changeWarehouse(e.target.value)}
-            >
-              <option value="">Choose…</option>
-              {warehousesWithStock.map((warehouse) => (
-                <option key={warehouse.id} value={warehouse.id}>
-                  {warehouse.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-
           <Field label="Currency" htmlFor="currency" hint="Defaults to the customer's ledger currency.">
             <Select
               id="currency"
@@ -564,6 +528,15 @@ export function SaleForm({
               placeholder="Customer PO number"
             />
           </Field>
+
+          <Field label="Memo" htmlFor="notes" className="sm:col-span-2 lg:col-span-4" hint="Shown on the invoice and on the customer's ledger.">
+            <Input
+              id="notes"
+              value={header.notes}
+              onChange={(e) => setHeader({ ...header, notes: e.target.value })}
+              placeholder="e.g. Screen 15 delivered to the customer's warehouse, 30 days"
+            />
+          </Field>
         </CardContent>
       </Card>
 
@@ -579,7 +552,7 @@ export function SaleForm({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setLines((prev) => [...prev, newLine(defaultTaxCodeId, header.warehouseId)])}
+            onClick={() => setLines((prev) => [...prev, newLine(defaultTaxCodeId, onlyWarehouseId)])}
           >
             <Plus />
             Add item
@@ -662,6 +635,30 @@ export function SaleForm({
                       {option ? formatQuantityKg(option.availableKg) : available}
                     </div>
                   </Field>
+
+                  {option ? (
+                    <dl
+                      className="flex flex-wrap gap-x-5 gap-y-1 rounded-lg bg-forest-50/60 px-3 py-2 text-xs lg:col-span-12"
+                      data-testid={`source-of-item-${index + 1}`}
+                    >
+                      {[
+                        ['Warehouse', option.warehouseName],
+                        ['ICUL/FID Ref', option.contractReference || '—'],
+                        ['Batch', option.batchNumber],
+                        ['Lot', option.lotNumber || '—'],
+                        ...(option.containerNumber ? [['Container', option.containerNumber]] : []),
+                        ['Available', formatQuantityKg(option.availableKg)],
+                        ...(Number(option.bagWeightKg) > 0
+                          ? [['Bags', formatBags(bagsForKg(option.availableKg, option.bagWeightKg))]]
+                          : []),
+                      ].map(([label, value]) => (
+                        <div key={label} className="flex gap-1">
+                          <dt className="text-ink-muted">{label}</dt>
+                          <dd className="font-medium text-ink">{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  ) : null}
 
                   <Field label="Quantity" required className="lg:col-span-3">
                     <div className="flex gap-2">

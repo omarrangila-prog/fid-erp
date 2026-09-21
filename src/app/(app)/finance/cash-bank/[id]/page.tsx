@@ -110,7 +110,7 @@ export default async function CashBookPage({ params }: { params: Promise<{ id: s
                   <TR className="hover:bg-transparent">
                     <TH>Date</TH>
                     <TH>Entry</TH>
-                    <TH>Description</TH>
+                    <TH>Memo</TH>
                     <TH>Counterparty</TH>
                     <TH numeric>In</TH>
                     <TH numeric>Out</TH>

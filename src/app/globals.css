@@ -707,6 +707,79 @@
   [data-print="only"] {
     display: block !important;
   }
+
+  /*
+   * A ledger on paper: compact, and never wider than the sheet.
+   *
+   * The client sends these to his bank and his accountant and wants fifty to
+   * eighty lines on a page. Rows are a few points high, the type is small
+   * but still a size an accountant reads all day, and nothing decorative
+   * stays: cards flatten, summary tiles go, and the row's action column is
+   * not printed. Fit to width (the default from the Print button) makes every
+   * table take the sheet's width and wrap inside it, so a column can never
+   * be cut off at the right edge.
+   */
+  main table {
+    font-size: 8pt;
+  }
+  main th,
+  main td {
+    padding: 1.5pt 3pt !important;
+    line-height: 1.25 !important;
+  }
+  main thead th {
+    font-size: 7.5pt !important;
+  }
+  html[data-print-scale='fit'] main table {
+    width: 100% !important;
+    table-layout: fixed !important;
+    min-width: 0 !important;
+  }
+  html[data-print-scale='fit'] main th,
+  html[data-print-scale='fit'] main td {
+    white-space: normal !important;
+    overflow-wrap: break-word !important;
+  }
+  html[data-print-scale='fit'] main th *,
+  html[data-print-scale='fit'] main td * {
+    min-width: 0 !important;
+    max-width: none !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+  }
+  /* Numbers stay on one line so a figure never breaks across two. */
+  html[data-print-scale='fit'] main td.tnum,
+  html[data-print-scale='fit'] main td[data-numeric],
+  html[data-print-scale='fit'] main td.text-right {
+    white-space: nowrap !important;
+  }
+  /* A row's View / More actions column is for the screen. */
+  main th[data-print='hide'],
+  main td[data-print='hide'] {
+    display: none !important;
+  }
+  /* Summary tiles and explanations above a ledger: the table is the record. */
+  main [data-print-drop],
+  main [data-print='drop'] {
+    display: none !important;
+  }
+  /* Cards flatten to the table inside them. */
+  main [class*='rounded-xl'],
+  main [class*='rounded-2xl'] {
+    border-radius: 0 !important;
+  }
+  main h1 {
+    font-size: 13pt;
+    margin: 0 0 2pt;
+  }
+  main p {
+    font-size: 8pt;
+  }
+  /* The masthead is the only header a printed ledger needs. */
+  [data-page-header] {
+    display: none !important;
+  }
 }
 
 /* Shown only on paper: who printed it, and when. */

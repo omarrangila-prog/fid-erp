@@ -1,4 +1,5 @@
 import { shortDocumentNumber } from '@/lib/short-number';
+import { getOrderCostSheets } from '@/lib/services/order-cost';
 import { NextResponse } from 'next/server';
 import { requirePermission, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
@@ -784,6 +785,31 @@ const REPORTS: Record<string, Report> = {
     title: 'Shipment Cost',
     permission: PERMISSIONS.PURCHASE_COST_VIEW,
     build: async (user, query) => {
+      // By order (every container of the shipment), or by one shipment record.
+      const orderId = query.get('order');
+      if (orderId) {
+        const sheet = (await getOrderCostSheets(user.activeCompany.id)).find((s) => s.contractId === orderId);
+        if (!sheet) throw new NotFoundError('Shipment');
+        return buildWorkbook({
+          companyName: user.activeCompany.name,
+          title: 'Shipment Costing',
+          subtitle: `${sheet.contractReference} · ${sheet.items.length} items · ${sheet.containers} containers · landed ${sheet.localCurrency} ${Number(sheet.landedLocal).toLocaleString('en-US', { minimumFractionDigits: 2 })} · profit ${sheet.localCurrency} ${Number(sheet.grossProfitLocal).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+          rows: sheet.expenses,
+          totals: ['Amount (USD)', `Amount (${sheet.localCurrency})`],
+          columns: [
+            { header: 'Date', value: (r) => r.expenseDate, type: 'date' as const },
+            { header: 'Category', value: (r) => r.category, width: 28 },
+            { header: 'Memo', value: (r) => r.memo ?? '', width: 32 },
+            { header: 'Container', value: (r) => r.containerNumber ?? '' },
+            { header: 'Currency', value: (r) => r.currency },
+            { header: 'Amount', value: (r) => Number(r.amount), type: 'money' as const },
+            { header: 'Amount (USD)', value: (r) => Number(r.amountUsd), type: 'money' as const },
+            { header: `Amount (${sheet.localCurrency})`, value: (r) => Number(r.amountLocal), type: 'money' as const },
+            { header: 'In the coffee?', value: (r) => (r.capitalised ? 'Yes' : 'No — a running cost') },
+            { header: 'Paid', value: (r) => (r.paid ? (r.paidFrom ?? 'Paid') : 'Owed') },
+          ],
+        });
+      }
       const shipmentId = query.get('shipment');
       if (!shipmentId) throw new NotFoundError('Shipment');
       const sheet = await getShipmentCostSheet(user.activeCompany.id, shipmentId);
@@ -797,7 +823,7 @@ const REPORTS: Record<string, Report> = {
         columns: [
           { header: 'Date', value: (r) => r.expenseDate, type: 'date' as const },
           { header: 'Category', value: (r) => r.category, width: 28 },
-          { header: 'Description', value: (r) => r.description ?? '', width: 32 },
+          { header: 'Memo', value: (r) => r.description ?? '', width: 32 },
           { header: 'Container', value: (r) => r.containerNumber ?? '' },
           { header: 'Currency', value: (r) => r.currency },
           { header: 'Amount', value: (r) => Number(r.amount), type: 'money' as const },
@@ -1074,7 +1100,7 @@ const REPORTS: Record<string, Report> = {
         columns: [
           { header: 'Date', value: (r) => r.entryDate, type: 'date' },
           { header: 'Source', value: (r) => r.sourceType.replace(/_/g, ' ') },
-          { header: 'Description', value: (r) => r.description, width: 40 },
+          { header: 'Memo', value: (r) => r.description, width: 40 },
           { header: 'Reference', value: (r) => r.reference ?? '', width: 28 },
           { header: 'Currency', value: (r) => r.currency, width: 10 },
           { header: 'Debit', value: (r) => Number(r.debit), type: 'money' },
@@ -1362,7 +1388,7 @@ const REPORTS: Record<string, Report> = {
         columns: [
           { header: 'Date', value: (r) => r.entryDate, type: 'date' },
           { header: 'Source', value: (r) => r.sourceType.replaceAll('_', ' ') },
-          { header: 'Description', value: (r) => r.description, width: 40 },
+          { header: 'Memo', value: (r) => r.description, width: 40 },
           { header: 'Currency', value: (r) => r.currency },
           { header: 'Loss USD', value: (r) => Number(r.debitUsd), type: 'money' },
           { header: 'Gain USD', value: (r) => Number(r.creditUsd), type: 'money' },
@@ -1482,7 +1508,7 @@ const REPORTS: Record<string, Report> = {
           { header: 'Date', value: (r) => r.entryDate, type: 'date' },
           { header: 'Type', value: (r) => r.sourceType.replaceAll('_', ' ') },
           { header: 'Reference', value: (r) => r.reference ?? '' },
-          { header: 'Description', value: (r) => r.description, width: 40 },
+          { header: 'Memo', value: (r) => r.description, width: 40 },
           { header: 'Debit', value: (r) => Number(r.debit), type: 'money' },
           { header: 'Credit', value: (r) => Number(r.credit), type: 'money' },
           { header: 'Balance', value: (r) => Number(r.balance), type: 'money' },
@@ -1514,7 +1540,7 @@ const REPORTS: Record<string, Report> = {
           { header: 'Date', value: (r) => r.entryDate, type: 'date' },
           { header: 'Type', value: (r) => r.sourceType.replaceAll('_', ' ') },
           { header: 'Reference', value: (r) => r.reference ?? '' },
-          { header: 'Description', value: (r) => r.description, width: 40 },
+          { header: 'Memo', value: (r) => r.description, width: 40 },
           { header: 'Debit', value: (r) => Number(r.debit), type: 'money' },
           { header: 'Credit', value: (r) => Number(r.credit), type: 'money' },
           { header: 'Balance', value: (r) => Number(r.balance), type: 'money' },

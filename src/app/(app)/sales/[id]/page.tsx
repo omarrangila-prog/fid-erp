@@ -208,10 +208,10 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                 <THead>
                   <TR className="hover:bg-transparent">
                     <TH>#</TH>
-                    <TH>Coffee</TH>
-                    <TH>Lot / Batch</TH>
-                    <TH>Source</TH>
+                    <TH>Item</TH>
                     <TH>Warehouse</TH>
+                    <TH>ICUL/FID Ref</TH>
+                    <TH>Lot / Batch</TH>
                     <TH numeric>Quantity</TH>
                     <TH numeric>Price</TH>
                     <TH numeric>Value</TH>
@@ -229,6 +229,19 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                           {line.item.grade ? ` · ${line.item.grade}` : ''}
                         </span>
                       </TD>
+                      <TD className="text-xs">{line.warehouse?.name ?? '—'}</TD>
+                      <TD>
+                        {line.batch.purchaseContract ? (
+                          <Link
+                            href={`/trace?ref=${encodeURIComponent(line.batch.purchaseContract.contractReference)}`}
+                            className="font-mono text-xs text-forest-800 hover:text-gold-700"
+                          >
+                            {line.batch.purchaseContract.contractReference}
+                          </Link>
+                        ) : (
+                          <span className="text-xs text-ink-subtle">—</span>
+                        )}
+                      </TD>
                       <TD>
                         <span className="block">{line.batch.lot.lotNumber}</span>
                         <span className="block text-xs text-ink-subtle">
@@ -236,21 +249,6 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                           {line.container ? ` · ${line.container.containerNumber}` : ''}
                         </span>
                       </TD>
-                      <TD>
-                        {line.batch.purchaseContract ? (
-                          <>
-                            <span className="block font-mono text-xs">
-                              {line.batch.purchaseContract.contractReference}
-                            </span>
-                            <span className="block text-xs text-ink-subtle">
-                              {line.batch.shipment?.jobNumber ?? line.batch.purchaseContract.contractNumber}
-                            </span>
-                          </>
-                        ) : (
-                          <span className="text-xs text-ink-subtle">—</span>
-                        )}
-                      </TD>
-                      <TD className="text-xs">{line.warehouse?.name ?? '—'}</TD>
                       <TD numeric>
                         {formatQuantityKg(line.quantityKg)}
                         <span className="block text-xs text-ink-subtle">{line.bags.toLocaleString()} bags</span>
@@ -349,6 +347,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
           </Card>
 
           <DocumentJournal
+            localCurrency={user.activeCompany.localCurrency}
             companyId={user.activeCompany.id}
             sourceType="SALES_INVOICE"
             sourceId={invoice.id}

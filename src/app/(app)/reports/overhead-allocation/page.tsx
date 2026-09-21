@@ -114,7 +114,7 @@ export default async function OverheadAllocationPage({
                 <TR className="hover:bg-transparent">
                   <TH>Date</TH>
                   <TH>Category</TH>
-                  <TH>Description</TH>
+                  <TH>Memo</TH>
                   <TH numeric>Amount</TH>
                   <TH numeric>USD</TH>
                   <TH>Allocated</TH>

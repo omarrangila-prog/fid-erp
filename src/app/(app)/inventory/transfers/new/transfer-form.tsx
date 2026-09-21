@@ -293,7 +293,7 @@ export function TransferForm({
 
       <Card>
         <CardContent className="pt-5">
-          <Field label="Notes" htmlFor="notes">
+          <Field label="Memo" htmlFor="notes">
             <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
           </Field>
         </CardContent>

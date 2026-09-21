@@ -103,7 +103,7 @@ test('14.1–14.4 a direct shipment expense raises the shipment landed cost and 
   await form.getByLabel(/^Amount/).fill('5000');
   const rate = form.getByLabel(/Rate \(MAD per 1 USD\)/);
   if (await rate.count()) await rate.fill('10');
-  await form.getByLabel(/^Description/).fill('Compliance clearing charge');
+  await form.getByLabel(/^Memo/).fill('Compliance clearing charge');
   await form.getByRole('button', { name: /save and post/i }).click();
   await page.waitForURL(/\/finance\/expenses\/(?!new)[\w-]+/, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await expect(page.getByRole('main')).toContainText(/MAD 5,000/);
@@ -116,6 +116,7 @@ test('14.1–14.4 a direct shipment expense raises the shipment landed cost and 
 
   // 14.4 the same expense is in the company books once: cash out, cost in.
   await page.goto('/reports/shipment-cost', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('shipment-costing-row').first().locator('summary').click({ timeout: 45_000 });
   await expect(page.getByRole('main')).toContainText(/By category/i, { timeout: 45_000 });
   console.log(`  direct expense: shipment landed cost +${(landedAfter - landedBefore).toFixed(2)} USD, booked once`);
 });
@@ -137,7 +138,7 @@ test('14.5–14.7 an overhead expense reaches the company P&L and attaches to no
   await form.getByLabel(/^Amount/).fill('9000');
   const rate = form.getByLabel(/Rate \(MAD per 1 USD\)/);
   if (await rate.count()) await rate.fill('10');
-  await form.getByLabel(/^Description/).fill('Compliance office rent');
+  await form.getByLabel(/^Memo/).fill('Compliance office rent');
   await form.getByRole('button', { name: /save and post/i }).click();
   await page.waitForURL(/\/finance\/expenses\/(?!new)[\w-]+/, { waitUntil: 'domcontentloaded', timeout: 60_000 });
 

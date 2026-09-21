@@ -92,7 +92,7 @@ test('an expense keeps everything typed while a category and a bank account are 
   // Type the voucher FIRST, so the quick creates have something to lose.
   await form.getByLabel(/expense date/i).fill('2026-08-03');
   await form.getByLabel(/^Amount/).fill('3175.50');
-  await form.getByLabel(/^Description/).fill('Moisture and density certificate');
+  await form.getByLabel(/^Memo/).fill('Moisture and density certificate');
 
   await quickCreate(
     page,
@@ -114,7 +114,7 @@ test('an expense keeps everything typed while a category and a bank account are 
 
   // Nothing typed before the two dialogs may have been lost.
   await expect(form.getByLabel(/^Amount/)).toHaveValue('3175.50');
-  await expect(form.getByLabel(/^Description/)).toHaveValue('Moisture and density certificate');
+  await expect(form.getByLabel(/^Memo/)).toHaveValue('Moisture and density certificate');
   await expect(form.getByLabel(/expense date/i)).toHaveValue('2026-08-03');
 
   // And the voucher still posts, from the account just opened.

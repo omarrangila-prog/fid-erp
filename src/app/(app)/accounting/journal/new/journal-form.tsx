@@ -20,6 +20,10 @@ import { AddJournalAccountDialog, type CreatedJournalAccount } from '@/app/(app)
 
 export type AccountOption = ComboOption & {
   accountType: string;
+  /** The ledger account a choice actually posts to, when it is not its own value (an agent). */
+  postsTo?: string;
+  /** The agent the line belongs to, so it lands on their ledger. */
+  agentId?: string;
   /** Currencies of the cash/bank drawers sitting on this account, if any. */
   drawerCurrencies?: string[];
 };
@@ -297,8 +301,11 @@ export function JournalForm({
           entryDate,
           description: description.trim(),
           rateLocalPerUsd: localRate,
-          lines: lines.map((line) => ({
-            accountId: line.accountId,
+          lines: lines.map((line) => {
+            const chosen = accountOptions.find((o) => o.value === line.accountId);
+            return {
+            accountId: chosen?.postsTo ?? line.accountId,
+            agentId: chosen?.agentId,
             direction: line.direction,
             // Each line in the currency it was actually written in.
             currency: line.currency,
@@ -306,7 +313,8 @@ export function JournalForm({
             rateToUsd: line.currency === 'USD' ? '1' : line.rateToUsd,
             description: line.description.trim() || undefined,
             customerId: customerId || undefined,
-          })),
+            };
+          }),
         }),
       );
 
@@ -419,7 +427,7 @@ export function JournalForm({
             </Field>
           </div>
           <div className="sm:col-span-2 lg:col-span-4">
-            <Field label="Description" htmlFor="jv-description" required hint="Why this entry exists — it appears on the journal report.">
+            <Field label="Memo" htmlFor="jv-description" required hint="Why this entry exists — it appears on the journal and on every ledger the entry touches.">
               <Input
                 id="jv-description"
                 value={description}

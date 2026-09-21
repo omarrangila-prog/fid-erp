@@ -2,8 +2,11 @@
 
 import * as React from 'react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { Layers, History } from 'lucide-react';
 import { RowActions, viewAction } from '@/components/shared/row-actions';
+import { reverseGoodsReceiptAction } from '@/server/actions/trading-actions';
 import { StatusBadge, Badge } from '@/components/ui/badge';
 import { TRANSACTION_STATUS_META } from '@/lib/constants';
 
@@ -39,11 +42,15 @@ export type GoodsReceiptRow = {
 export function GoodsReceiptsClient({
   rows,
   emptyAction,
+  canReverse = false,
 }: {
   rows: GoodsReceiptRow[];
   /** Rendered inside the empty state; built on the server so permissions are checked there. */
   emptyAction?: React.ReactNode;
+  /** May undo a posted receipt (takes the coffee back out of stock, with a reason). */
+  canReverse?: boolean;
 }) {
+  const router = useRouter();
   const columns: DataColumn<GoodsReceiptRow>[] = [
     /* The receipt number was the system's own. The reference column below
        carries the client's, and the whole row opens the receipt. */
@@ -110,12 +117,29 @@ export function GoodsReceiptsClient({
             { label: 'Batches', href: `/inventory/batches?q=${encodeURIComponent(r.grnNumber)}`, icon: Layers },
             { label: 'Stock movements', href: '/inventory/movements', icon: History, overflowOnly: true },
           ]}
+          destructive={{
+            status: r.status,
+            noun: 'goods receipt',
+            cancelLabel: 'Undo receipt',
+            show: canReverse && r.status === 'POSTED',
+            description:
+              'The coffee comes back out of the warehouse and the stock value is reversed. Refused if any of it has already been sold or transferred — reverse those first.',
+            run: async (reason) => {
+              const result = await reverseGoodsReceiptAction(r.id, reason ?? '');
+              if (result.ok) {
+                toast.success('Goods receipt undone. The stock has been taken back out.');
+                router.refresh();
+              }
+              return result;
+            },
+          }}
         />
       ),
     },
   ];
 
   return (
+    <>
     <DataTable
       prefsKey="goods-receipts"
       data={rows}
@@ -170,5 +194,6 @@ export function GoodsReceiptsClient({
       emptyTitle="No goods receipts yet"
       emptyDescription="Approve a purchase contract, then record a receipt when the containers arrive."
     />
+    </>
   );
 }

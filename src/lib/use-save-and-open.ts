@@ -29,11 +29,25 @@ export function useSaveAndOpen(): {
 } {
   const [pending, startTransition] = React.useTransition();
   const [opening, setOpening] = React.useState(false);
+  // A second click before the first save has finished — a double click, or a
+  // press while the button is still repainting as busy — is ignored here,
+  // synchronously, before React has had a chance to disable the button.
+  const running = React.useRef(false);
 
   return {
     busy: pending || opening,
     pending,
-    start: (work) => startTransition(work),
+    start: (work) => {
+      if (running.current) return;
+      running.current = true;
+      startTransition(async () => {
+        try {
+          await work();
+        } finally {
+          running.current = false;
+        }
+      });
+    },
     opening: () => setOpening(true),
   };
 }

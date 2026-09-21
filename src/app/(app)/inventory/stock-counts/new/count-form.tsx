@@ -114,7 +114,7 @@ export function StockCountForm({
             </Callout>
           ) : null}
 
-          <Field label="Notes" hint="Who is counting, which aisles, anything the reviewer should know.">
+          <Field label="Memo" hint="Who is counting, which aisles, anything the reviewer should know.">
             <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} maxLength={600} />
           </Field>
 

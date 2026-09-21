@@ -82,6 +82,8 @@ export default async function NewSalePage() {
     hint: `${s.contractReference} · ${s.warehouseName} · ${formatQuantityKg(s.availableKg)} available · Lot ${s.lotNumber}${s.containerNumber ? ` · ${s.containerNumber}` : ''}`,
     keywords: `${s.contractReference} ${s.itemCode} ${s.originCountry} ${s.lotNumber} ${s.containerNumber ?? ''} ${s.warehouseCode} ${s.shipmentNumber}`,
     contractReference: s.contractReference,
+    lotNumber: s.lotNumber,
+    containerNumber: s.containerNumber,
     batchId: s.batchId,
     warehouseId: s.warehouseId,
     batchNumber: s.batchNumber,

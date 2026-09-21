@@ -56,6 +56,8 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
     hint: `${s.contractReference} · ${s.warehouseName} · ${formatQuantityKg(s.availableKg)} available · Lot ${s.lotNumber}`,
     keywords: `${s.contractReference} ${s.itemCode} ${s.originCountry} ${s.lotNumber} ${s.warehouseCode}`,
     contractReference: s.contractReference,
+    lotNumber: s.lotNumber,
+    containerNumber: s.containerNumber,
     batchId: s.batchId,
     warehouseId: s.warehouseId,
     batchNumber: s.batchNumber,
@@ -154,7 +156,6 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
           cashBankAccountId: invoice.cashBankAccountId ?? '',
           reference: invoice.reference ?? '',
           notes: invoice.notes ?? '',
-          warehouseId: invoice.lines[0]?.warehouseId ?? undefined,
           lines: invoice.lines.map((l) => ({
             stockKey: `${l.batchId}:${l.warehouseId}`,
             quantity: l.quantity.toString(),

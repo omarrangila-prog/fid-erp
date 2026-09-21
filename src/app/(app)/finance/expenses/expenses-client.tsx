@@ -52,7 +52,7 @@ export function ExpensesClient({
     { id: 'date', header: 'Date', mobile: 'meta', sortValue: (r) => r.dateSort, exportValue: (r) => r.date, cell: (r) => r.date },
     {
       id: 'description',
-      header: 'Description',
+      header: 'Memo',
       mobile: 'meta',
       sortValue: (r) => r.description ?? '',
       exportValue: (r) => r.description ?? '',

@@ -230,7 +230,7 @@ function ReconciliationBody({
                         <TH>Cleared</TH>
                         <TH>Date</TH>
                         <TH>Entry</TH>
-                        <TH>Description</TH>
+                        <TH>Memo</TH>
                         <TH numeric>In</TH>
                         <TH numeric>Out</TH>
                       </TR>

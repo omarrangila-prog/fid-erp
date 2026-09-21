@@ -95,18 +95,19 @@ test('Stock on Hand shows bags that follow the kilograms, never negative', async
   console.log(`  ${checked} stock rows, no negative bag count`);
 });
 
-test('each invoice item chooses its own warehouse', async ({ page }) => {
+test('each invoice item chooses its own warehouse, with no warehouse on the header', async ({ page }) => {
   await page.goto('/sales/new', { waitUntil: 'domcontentloaded' });
   const first = page.getByLabel('Warehouse on item 1');
   const second = page.getByLabel('Warehouse on item 2');
   await expect(first).toBeVisible({ timeout: 45_000 });
   await expect(second).toBeVisible();
 
-  // The default at the top fills new items; each item can then differ.
+  // No invoice-wide warehouse to clash with the lines: each item names its own.
+  await expect(page.locator('#warehouseId')).toHaveCount(0);
+  await expect(page.getByText('Default warehouse')).toHaveCount(0);
   const offered = (await first.locator('option').allTextContents()).filter((o) => !/Choose/i.test(o));
   expect(offered.length).toBeGreaterThan(0);
-  await page.locator('#warehouseId').selectOption({ index: 1 });
-  await expect(first).toHaveValue(await page.locator('#warehouseId').inputValue());
+  await first.selectOption({ index: 1 });
 
   // Choose coffee on item 1, then move item 2 to another warehouse: item 1 keeps its choice.
   await page.getByRole('combobox', { name: /Coffee on item 1/ }).click();

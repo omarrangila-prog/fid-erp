@@ -79,7 +79,7 @@ test('after a posted invoice is deleted, no screen says "reversed" and the invoi
   await expect(page.getByRole('dialog')).toHaveCount(0, { timeout: 20_000 });
 
   const form = page.getByRole('main');
-  const warehouse = form.locator('#warehouseId');
+  const warehouse = form.getByLabel('Warehouse on item 1', { exact: true });
   if ((await warehouse.locator('option').count()) - 1 > 1) await warehouse.selectOption({ index: 1 });
   await form.getByRole('combobox', { name: /Coffee on item 1/ }).click();
   await page.getByRole('listbox').getByRole('option').first().click();

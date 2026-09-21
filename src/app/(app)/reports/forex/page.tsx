@@ -100,7 +100,7 @@ export default async function ForexGainLossPage({
                     <TH>Date</TH>
                     <TH>Voucher</TH>
                     <TH>Source</TH>
-                    <TH>Description</TH>
+                    <TH>Memo</TH>
                     <TH numeric>Loss USD</TH>
                     <TH numeric>Gain USD</TH>
                     <TH numeric>Loss {local}</TH>

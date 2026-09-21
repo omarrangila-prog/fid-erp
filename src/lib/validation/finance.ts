@@ -33,6 +33,8 @@ const chequeDetails = z.object({
 
 export const receiptSchema = z
   .object({
+    /** Issued once when the form opens; a second submit with it returns the first document. */
+    clientKey: z.string().regex(/^[A-Za-z0-9-]{8,64}$/).optional(),
     receiptDate: dateString('Receipt date'),
     customerId: cuid,
     currency: currencyCode,
@@ -80,6 +82,8 @@ export const receiptSchema = z
 
 export const paymentSchema = z
   .object({
+    /** Issued once when the form opens; a second submit with it returns the first document. */
+    clientKey: z.string().regex(/^[A-Za-z0-9-]{8,64}$/).optional(),
     paymentDate: dateString('Payment date'),
     /** Blank when the payment settles costs that were booked without a supplier. */
     vendorId: optionalCuid,
@@ -127,6 +131,8 @@ export const paymentSchema = z
   });
 
 export const expenseSchema = z.object({
+  /** Issued once when the form opens; a second submit with it returns the first document. */
+  clientKey: z.string().regex(/^[A-Za-z0-9-]{8,64}$/).optional(),
   expenseDate: dateString('Expense date'),
   expenseCategoryId: cuid,
   shipmentId: optionalCuid,
@@ -161,6 +167,8 @@ export const expenseSchema = z.object({
  * record could not be both.
  */
 export const splitExpenseSchema = z.object({
+  /** Issued once when the form opens; a second submit with it returns the first document. */
+  clientKey: z.string().regex(/^[A-Za-z0-9-]{8,64}$/).optional(),
   expenseDate: dateString('Expense date'),
   kind: z.enum(['SHIPMENT', 'GENERAL']),
   shipmentId: optionalCuid,
@@ -226,10 +234,14 @@ export const intercompanyLoanSchema = z
  */
 export const loanSchema = z
   .object({
+    /** Issued once when the form opens; a second submit with it returns the first document. */
+    clientKey: z.string().regex(/^[A-Za-z0-9-]{8,64}$/).optional(),
     loanDate: dateString('Loan date'),
-    direction: z.enum(['RECEIVED', 'GIVEN', 'REPAID']),
+    direction: z.enum(['RECEIVED', 'GIVEN', 'REPAID', 'RECOVERED']),
     counterpartyName: optionalText(120),
     loanAccountId: optionalCuid,
+    /** The loan is with one of the company's agents: their own loan account is used. */
+    agentId: optionalCuid,
     cashBankAccountId: cuid,
     currency: currencyCode,
     amount: decimalString('Amount'),
@@ -238,7 +250,7 @@ export const loanSchema = z
     reference: optionalText(60),
     description: optionalText(300),
   })
-  .refine((v) => Boolean(v.counterpartyName?.trim()) || Boolean(v.loanAccountId), {
+  .refine((v) => Boolean(v.counterpartyName?.trim()) || Boolean(v.loanAccountId) || Boolean(v.agentId), {
     message: 'Say who the loan is with.',
     path: ['counterpartyName'],
   });
@@ -272,6 +284,8 @@ export const journalVoucherSchema = z.object({
         description: optionalText(300),
         customerId: optionalCuid,
         vendorId: optionalCuid,
+        /** The agent the line belongs to: it then shows on that agent's ledger. */
+        agentId: optionalCuid,
         shipmentId: optionalCuid,
       }),
     )
@@ -311,6 +325,8 @@ export type ExpenseFormInput = z.infer<typeof expenseSchema>;
  * an account, which is the point of the agent clearing ledger.
  */
 export const agentSettlementSchema = z.object({
+  /** Issued once when the form opens; a second submit with it returns the first document. */
+  clientKey: z.string().regex(/^[A-Za-z0-9-]{8,64}$/).optional(),
   agentId: requiredChoice('Agent'),
   settlementDate: dateString('Date'),
   direction: z.enum(['COLLECTION', 'COMMISSION']),

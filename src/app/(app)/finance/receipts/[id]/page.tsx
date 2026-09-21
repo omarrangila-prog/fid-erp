@@ -257,6 +257,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
       </div>
 
       <DocumentJournal
+        localCurrency={user.activeCompany.localCurrency}
         companyId={user.activeCompany.id}
         sourceType="RECEIPT"
         sourceId={receipt.id}

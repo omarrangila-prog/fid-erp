@@ -682,7 +682,7 @@ export function CreditNoteForm({
             Saving does not post anything. You review the draft and post it as a separate step.
           </p>
 
-          <Field label="Notes" className="pt-2">
+          <Field label="Memo" className="pt-2">
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} maxLength={1000} />
           </Field>
         </CardContent>

@@ -44,7 +44,9 @@ import {
 } from '@/lib/services/recurring-expense';
 import { dateString, optionalDateString, requiredText } from '@/lib/validation/common';
 import { getCompanyContext } from '@/lib/services/company';
-import { transaction } from '@/lib/db';
+import { prisma, transaction } from '@/lib/db';
+import { onceForKey } from '@/lib/services/idempotency';
+import { businessNumber } from '@/lib/short-number';
 import { fail, ok, type ActionResult } from '@/server/actions/action-utils';
 import type { DocFormState } from '@/server/actions/trading-actions';
 
@@ -87,13 +89,22 @@ function revalidateAll(list: string[]) {
 export async function saveReceiptAction(id: string | null, payload: string): Promise<DocFormState> {
   try {
     const user = await requirePermission(PERMISSIONS.RECEIPTS_CREATE);
-    const input = receiptSchema.parse(parseJson(payload));
+    const { clientKey, ...input } = receiptSchema.parse(parseJson(payload));
     const data = { companyId: user.activeCompany.id, ...input, cheque: input.cheque ?? null };
 
-    const result = id ? await updateReceipt(id, data, user.id) : await createReceipt(data, user.id);
+    // A second submit of the same form returns the receipt the first created.
+    const result = id
+      ? { id: (await updateReceipt(id, data, user.id)).id, replayed: false }
+      : await onceForKey({ companyId: user.activeCompany.id, userId: user.id, scope: 'RECEIPT', key: clientKey }, () =>
+          createReceipt(data, user.id),
+        );
 
     revalidateAll(paths.receipts);
-    return { ok: true, id: result.id, message: id ? 'Receipt updated.' : 'Receipt created.' };
+    return {
+      ok: true,
+      id: result.id,
+      message: id ? 'Receipt updated.' : result.replayed ? 'Already saved — this receipt was recorded once.' : 'Receipt created.',
+    };
   } catch (error) {
     return toState(error);
   }
@@ -114,13 +125,17 @@ export async function saveReceiptAction(id: string | null, payload: string): Pro
 export async function recordAgentSettlementAction(payload: string): Promise<DocFormState> {
   try {
     const user = await requirePermission(PERMISSIONS.RECEIPTS_POST);
-    const input = agentSettlementSchema.parse(parseJson(payload));
+    const { clientKey, ...input } = agentSettlementSchema.parse(parseJson(payload));
 
-    const created = await createAgentSettlement(
-      { companyId: user.activeCompany.id, ...input },
-      user.id,
+    // Recorded and posted once, even if Record is pressed twice.
+    const created = await onceForKey(
+      { companyId: user.activeCompany.id, userId: user.id, scope: 'AGENT_SETTLEMENT', key: clientKey },
+      async () => {
+        const settlement = await createAgentSettlement({ companyId: user.activeCompany.id, ...input }, user.id);
+        await postAgentSettlement({ id: settlement.id, companyId: user.activeCompany.id, userId: user.id });
+        return settlement;
+      },
     );
-    await postAgentSettlement({ id: created.id, companyId: user.activeCompany.id, userId: user.id });
 
     revalidateAll(paths.receipts);
     revalidatePath('/agents');
@@ -178,13 +193,21 @@ export async function deleteReceiptAction(id: string): Promise<ActionResult<unde
 export async function savePaymentAction(id: string | null, payload: string): Promise<DocFormState> {
   try {
     const user = await requirePermission(PERMISSIONS.PAYMENTS_CREATE);
-    const input = paymentSchema.parse(parseJson(payload));
+    const { clientKey, ...input } = paymentSchema.parse(parseJson(payload));
     const data = { companyId: user.activeCompany.id, ...input, cheque: input.cheque ?? null };
 
-    const result = id ? await updatePayment(id, data, user.id) : await createPayment(data, user.id);
+    const result = id
+      ? { id: (await updatePayment(id, data, user.id)).id, replayed: false }
+      : await onceForKey({ companyId: user.activeCompany.id, userId: user.id, scope: 'PAYMENT', key: clientKey }, () =>
+          createPayment(data, user.id),
+        );
 
     revalidateAll(paths.payments);
-    return { ok: true, id: result.id, message: id ? 'Payment updated.' : 'Payment created.' };
+    return {
+      ok: true,
+      id: result.id,
+      message: id ? 'Payment updated.' : result.replayed ? 'Already saved — this payment was recorded once.' : 'Payment created.',
+    };
   } catch (error) {
     return toState(error);
   }
@@ -230,13 +253,21 @@ export async function deletePaymentAction(id: string): Promise<ActionResult<unde
 export async function saveExpenseAction(id: string | null, payload: string): Promise<DocFormState> {
   try {
     const user = await requirePermission(PERMISSIONS.EXPENSES_CREATE);
-    const input = expenseSchema.parse(parseJson(payload));
+    const { clientKey, ...input } = expenseSchema.parse(parseJson(payload));
     const data = { companyId: user.activeCompany.id, ...input };
 
-    const result = id ? await updateExpense(id, data, user.id) : await createExpense(data, user.id);
+    const result = id
+      ? { id: (await updateExpense(id, data, user.id)).id, replayed: false }
+      : await onceForKey({ companyId: user.activeCompany.id, userId: user.id, scope: 'EXPENSE', key: clientKey }, () =>
+          createExpense(data, user.id),
+        );
 
     revalidateAll(paths.expenses);
-    return { ok: true, id: result.id, message: id ? 'Expense updated.' : 'Expense created.' };
+    return {
+      ok: true,
+      id: result.id,
+      message: id ? 'Expense updated.' : result.replayed ? 'Already saved — this expense was recorded once.' : 'Expense created.',
+    };
   } catch (error) {
     return toState(error);
   }
@@ -264,12 +295,22 @@ export async function saveSplitExpenseAction(payload: string): Promise<ActionRes
     const user = await requirePermission(PERMISSIONS.EXPENSES_CREATE);
     const post = await requirePermission(PERMISSIONS.EXPENSES_POST);
     const companyId = user.activeCompany.id;
-    const input = splitExpenseSchema.parse(parseJson(payload));
+    const { clientKey, ...input } = splitExpenseSchema.parse(parseJson(payload));
 
     // One transaction for the whole split: nesting `transaction()` would open a
     // second connection rather than joining this one, so the services are
-    // called through their tx-body variants and share this `tx`.
-    const ids = await transaction(async (tx) => {
+    // called through their tx-body variants and share this `tx`. The split as
+    // a whole is recorded once per submission key.
+    const once = await onceForKey({ companyId, userId: user.id, scope: 'SPLIT_EXPENSE', key: clientKey }, async () => ({
+      id: (await splitNow()).join(','),
+    }));
+    const ids = once.id.split(',');
+
+    revalidateAll([...paths.expenses, '/shipments', '/finance/cash-bank']);
+    return { ok: true, data: { ids } };
+
+    async function splitNow() {
+      return transaction(async (tx) => {
       const created: string[] = [];
       for (const line of input.lines) {
         const expense = await createExpenseIn(
@@ -302,10 +343,8 @@ export async function saveSplitExpenseAction(payload: string): Promise<ActionRes
         created.push(expense.id);
       }
       return created;
-    }, 120_000);
-
-    revalidateAll([...paths.expenses, '/shipments', '/finance/cash-bank']);
-    return { ok: true, data: { ids } };
+      }, 120_000);
+    }
   } catch (error) {
     return fail(error);
   }
@@ -465,13 +504,14 @@ export async function postJournalVoucherAction(payload: string): Promise<DocForm
           description: line.description ?? undefined,
           customerId: line.customerId,
           vendorId: line.vendorId,
+          agentId: line.agentId,
           shipmentId: line.shipmentId,
         })),
       });
     });
 
-    revalidateAll(['/accounting/journal', '/reports', '/ledgers/customers', '/ledgers/vendors', '/dashboard']);
-    return { ok: true, id: entry.id, message: `Journal voucher ${entry.entryNumber} posted.` };
+    revalidateAll(['/accounting/journal', '/reports', '/ledgers', '/ledgers/customers', '/ledgers/vendors', '/agents', '/dashboard']);
+    return { ok: true, id: entry.id, message: `Journal voucher ${businessNumber(entry.entryNumber)} posted.` };
   } catch (error) {
     return toState(error);
   }
@@ -557,23 +597,31 @@ export async function postIntercompanyLoanAction(payload: string): Promise<DocFo
 export async function postLoanAction(payload: string): Promise<DocFormState> {
   try {
     const user = await requirePermission(PERMISSIONS.ACCOUNTING_POST);
-    const input = loanSchema.parse(parseJson(payload));
+    const { clientKey, ...input } = loanSchema.parse(parseJson(payload));
 
-    const result = await postLoan({
-      companyId: user.activeCompany.id,
-      userId: user.id,
-      loanDate: input.loanDate,
-      direction: input.direction,
-      counterpartyName: input.counterpartyName,
-      loanAccountId: input.loanAccountId,
-      cashBankAccountId: input.cashBankAccountId,
-      currency: input.currency,
-      amount: input.amount,
-      exchangeRate: input.exchangeRate,
-      bankAmount: input.bankAmount,
-      reference: input.reference,
-      description: input.description,
-    });
+    // One Post is one loan, even if the button is pressed twice.
+    const once = await onceForKey(
+      { companyId: user.activeCompany.id, userId: user.id, scope: 'LOAN', key: clientKey },
+      async () => {
+        const result = await postLoan({
+          companyId: user.activeCompany.id,
+          userId: user.id,
+          loanDate: input.loanDate,
+          direction: input.direction,
+          counterpartyName: input.counterpartyName,
+          loanAccountId: input.loanAccountId,
+          agentId: input.agentId,
+          cashBankAccountId: input.cashBankAccountId,
+          currency: input.currency,
+          amount: input.amount,
+          exchangeRate: input.exchangeRate,
+          bankAmount: input.bankAmount,
+          reference: input.reference,
+          description: input.description,
+        });
+        return result.entry;
+      },
+    );
 
     revalidateAll([
       '/finance/cash-bank',
@@ -582,11 +630,21 @@ export async function postLoanAction(payload: string): Promise<DocFormState> {
       '/accounting/chart',
       '/reports',
       '/dashboard',
+      '/agents',
+      '/ledgers',
     ]);
+    if (once.replayed) {
+      return { ok: true, id: once.id, message: 'Already posted — this loan was recorded once.' };
+    }
+    const posted = await prisma.journalEntry.findUniqueOrThrow({
+      where: { id: once.id },
+      select: { id: true, entryNumber: true, lines: { select: { account: { select: { name: true } } } } },
+    });
+    const loanLine = posted.lines.find((l) => /loan/i.test(l.account.name)) ?? posted.lines[posted.lines.length - 1];
     return {
       ok: true,
-      id: result.entry.id,
-      message: `${result.entry.entryNumber} posted to ${result.account.code} ${result.account.name}.`,
+      id: posted.id,
+      message: `${businessNumber(posted.entryNumber)} posted to ${loanLine?.account.name ?? 'the loan account'}.`,
     };
   } catch (error) {
     return toState(error);

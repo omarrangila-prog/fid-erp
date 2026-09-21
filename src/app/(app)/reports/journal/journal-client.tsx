@@ -86,7 +86,7 @@ export function JournalClient({
     },
     {
       id: 'description',
-      header: 'Description',
+      header: 'Memo',
       mobile: 'meta',
       sortValue: (r) => r.description,
       exportValue: (r) => r.description,
@@ -207,7 +207,7 @@ export function JournalClient({
             <THead>
               <TR className="hover:bg-transparent">
                 <TH>Account</TH>
-                <TH>Description</TH>
+                <TH>Memo</TH>
                 <TH>Currency</TH>
                 <TH numeric>Debit</TH>
                 <TH numeric>Credit</TH>

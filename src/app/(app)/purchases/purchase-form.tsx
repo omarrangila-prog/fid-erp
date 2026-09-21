@@ -756,7 +756,7 @@ export function PurchaseForm({
             </dl>
           </div>
 
-          <Field label="Notes" htmlFor="notes">
+          <Field label="Memo" htmlFor="notes">
             <Textarea id="notes" value={header.notes} onChange={(e) => setField('notes', e.target.value)} />
           </Field>
         </CardContent>

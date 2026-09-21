@@ -1,6 +1,15 @@
 import { prisma } from '@/lib/db';
 import { LIVE_ENTRY_TEXT } from '@/lib/services/journal-visibility';
 import { Decimal, dec, toMoney } from '@/lib/money';
+import {
+  COLLECTED_BY_SQL,
+  INVOICE_DOCUMENTS_SQL,
+  MEMO_SQL,
+  ORDER_DOCUMENTS_SQL,
+  ledgerTypeLabel,
+  parseDocuments,
+  type LedgerDocument,
+} from '@/lib/services/ledger-sql';
 
 /**
  * LedgerService — the dual-view customer and vendor ledgers.
@@ -79,6 +88,14 @@ export type LedgerRow = {
   debitLocal: Decimal;
   creditLocal: Decimal;
   shipmentNumber: string | null;
+  /** What was typed on the document behind the entry. */
+  memo: string | null;
+  /** The invoices (customer) or orders/expenses (supplier) this row belongs to. */
+  documents: LedgerDocument[];
+  /** "Invoice", "Partial Payment", "Payment", "Credit Note"… */
+  typeLabel: string;
+  /** The agent who collected a customer's payment, when one did. */
+  collectedBy: string | null;
   /** Running balance expressed in the currently selected view. */
   balance: Decimal;
 };
@@ -112,13 +129,16 @@ type RawLedgerRow = {
   creditLocal: string;
   reference: string | null;
   shipmentNumber: string | null;
+  memo: string | null;
+  documents: unknown;
+  collectedBy: string | null;
 };
 
 /**
  * Resolves the human-facing document number behind a journal entry. The join is
  * done in SQL so the ledger stays a single round trip.
  */
-const REFERENCE_SQL = `
+export const REFERENCE_SQL = `
   CASE je."sourceType"
     WHEN 'SALES_INVOICE'     THEN COALESCE(
       (SELECT si."invoiceNumber" FROM sales_invoices si WHERE si."id" = je."sourceId"),
@@ -132,6 +152,8 @@ const REFERENCE_SQL = `
     WHEN 'PURCHASE_CONTRACT' THEN (SELECT pc."contractNumber" FROM purchase_contracts pc WHERE pc."id"  = je."sourceId")
     WHEN 'PAYMENT'           THEN (SELECT p."paymentNumber"   FROM payments p            WHERE p."id"   = je."sourceId")
     WHEN 'EXPENSE'           THEN (SELECT e."expenseNumber"   FROM expenses e            WHERE e."id"   = je."sourceId")
+    WHEN 'AGENT_SETTLEMENT'  THEN (SELECT s."settlementNumber" FROM agent_settlements s  WHERE s."id"   = je."sourceId")
+    WHEN 'CREDIT_NOTE'       THEN (SELECT cn."creditNoteNumber" FROM credit_notes cn     WHERE cn."id"  = je."sourceId")
     ELSE je."entryNumber"
   END
 `;
@@ -203,7 +225,10 @@ async function buildLedger(params: {
            jl."debitUsd"::text AS "debitUsd", jl."creditUsd"::text AS "creditUsd",
            jl."debitLocal"::text AS "debitLocal", jl."creditLocal"::text AS "creditLocal",
            ${REFERENCE_SQL} AS reference,
-           (SELECT s."shipmentNumber" FROM shipments s WHERE s."id" = jl."shipmentId") AS "shipmentNumber"
+           (SELECT s."shipmentNumber" FROM shipments s WHERE s."id" = jl."shipmentId") AS "shipmentNumber",
+           ${MEMO_SQL} AS memo,
+           ${params.partyColumn === 'customerId' ? INVOICE_DOCUMENTS_SQL : ORDER_DOCUMENTS_SQL} AS documents,
+           ${COLLECTED_BY_SQL} AS "collectedBy"
     FROM journal_lines jl
     JOIN journal_entries je ON je."id" = jl."journalEntryId"
     JOIN accounts a ON a."id" = jl."accountId"
@@ -237,6 +262,10 @@ async function buildLedger(params: {
     running = toMoney(running.plus(movement));
     totalDebit = totalDebit.plus(debit);
     totalCredit = totalCredit.plus(credit);
+    const documents = parseDocuments(row.documents).map((d) => ({
+      ...d,
+      kind: d.kind ?? ('INVOICE' as const),
+    }));
 
     return {
       journalEntryId: row.journalEntryId,
@@ -255,6 +284,14 @@ async function buildLedger(params: {
       debitLocal: dec(row.debitLocal),
       creditLocal: dec(row.creditLocal),
       shipmentNumber: row.shipmentNumber,
+      memo: row.memo?.trim() || null,
+      documents,
+      typeLabel: ledgerTypeLabel({
+        sourceType: row.sourceType,
+        documents,
+        debit: dec(row.debit).greaterThan(0),
+      }),
+      collectedBy: row.collectedBy,
       balance: running,
     };
   });

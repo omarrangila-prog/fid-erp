@@ -4,7 +4,7 @@ import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getCashBook } from '@/lib/services/reports';
-import { formatMoney, formatDate, titleCase } from '@/lib/format';
+import { formatMoney, formatDate } from '@/lib/format';
 import { dec, sum } from '@/lib/money';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/shared/page-header';
@@ -17,6 +17,7 @@ import { PrintButton } from '@/components/shared/print-button';
 import { PrintHeader } from '@/components/shared/print-header';
 import { DateRangePicker } from '@/components/shared/date-range';
 import { JournalSourceActions } from '@/components/shared/journal-source-actions';
+import { MemoCell } from '@/components/shared/memo-cell';
 
 export const metadata: Metadata = { title: 'Cash Book & Bank Book' };
 export const dynamic = 'force-dynamic';
@@ -61,6 +62,12 @@ export default async function CashBookPage({
 
   const totalIn = book ? sum(book.rows.map((r) => dec(r.moneyIn))) : dec(0);
   const totalOut = book ? sum(book.rows.map((r) => dec(r.moneyOut))) : dec(0);
+  const isCash = book ? book.account.accountType === 'CASH' || book.account.accountType === 'PETTY_CASH' : true;
+  const bookName = book ? (isCash ? 'Cash in Hand Ledger' : 'Bank Ledger') : 'Cash Book & Bank Book';
+  const inLabel = isCash ? 'Cash In' : 'Money In';
+  const outLabel = isCash ? 'Cash Out' : 'Money Out';
+  const period =
+    from && to ? `Period: ${formatDate(from)} to ${formatDate(to)}` : from ? `From ${formatDate(from)}` : to ? `Up to ${formatDate(to)}` : 'All dates';
 
   return (
     <div className="space-y-6">
@@ -77,9 +84,10 @@ export default async function CashBookPage({
         }
       />
       <PrintHeader
-        title="Cash Book & Bank Book"
+        title={book ? `${bookName.toUpperCase()} — ${book.account.name}` : bookName}
         companyName={user.activeCompany.name}
         country={user.activeCompany.country}
+        period={book ? `${period} · Currency: ${book.account.currency}` : period}
       />
 
       {accounts.length === 0 ? (
@@ -121,7 +129,7 @@ export default async function CashBookPage({
 
           {book ? (
             <>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-print-drop>
                 <Card>
                   <CardContent className="pt-5">
                     <p className="text-xs text-ink-muted">Opening balance</p>
@@ -157,69 +165,65 @@ export default async function CashBookPage({
               </div>
 
               <Card>
-                <CardHeader>
+                <CardHeader data-print-drop>
                   <CardTitle>
-                    {book.account.name} · {book.account.currency}
+                    {bookName} · {book.account.name} · {book.account.currency}
                   </CardTitle>
                   <CardDescription>
-                    {titleCase(book.account.accountType)} account. Every line below is a posted journal entry, so
-                    this book and the general ledger can never disagree.
+                    {period}. Every line is a posted entry, so this book and the general ledger can never disagree.
+                    Click View on a line for its full detail.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="px-0 pb-0">
                   <TableWrap className="rounded-none border-0 border-t">
-                    <Table>
+                    <Table data-testid="cash-book">
                       <THead>
                         <TR className="hover:bg-transparent">
-                          <TH>Date</TH>
-                          <TH>Entry</TH>
-                          <TH>Description</TH>
-                          <TH>Who</TH>
-                          <TH>Source</TH>
-                          <TH numeric>In</TH>
-                          <TH numeric>Out</TH>
+                          <TH className="w-24">Date</TH>
+                          <TH className="w-24">Reference</TH>
+                          <TH>Memo</TH>
+                          <TH numeric>{inLabel}</TH>
+                          <TH numeric>{outLabel}</TH>
                           <TH numeric>Balance</TH>
-                          <TH className="text-right">Actions</TH>
+                          <TH className="w-20 text-right" data-print="hide">
+                            <span className="sr-only">Actions</span>
+                          </TH>
                         </TR>
                       </THead>
                       <TBody>
                         <TR className="bg-forest-50/40 hover:bg-forest-50/40">
-                          <TD colSpan={7} className="text-xs font-medium text-ink-muted">
-                            Opening balance
+                          <TD colSpan={5} className="text-xs font-medium text-ink-muted">
+                            Opening balance ({book.account.currency})
                           </TD>
                           <TD numeric className="font-semibold">
                             {formatMoney(book.openingBalance, book.account.currency)}
                           </TD>
-                          <TD />
+                          <TD data-print="hide" />
                         </TR>
                         {book.rows.length === 0 ? (
                           <TR>
-                            <TD colSpan={9} className="py-8 text-center text-xs text-ink-subtle">
+                            <TD colSpan={7} className="py-8 text-center text-xs text-ink-subtle">
                               Nothing moved through this account in the period chosen.
                             </TD>
                           </TR>
                         ) : (
                           book.rows.map((row, index) => (
                             <TR key={`${row.entryId}-${index}`}>
-                              <TD>{formatDate(row.entryDate)}</TD>
-                              <TD className="text-xs">{row.entryNumber}</TD>
-                              <TD>{row.description}</TD>
-                              <TD className="text-xs text-ink-muted">{row.counterparty ?? '—'}</TD>
-                              <TD className="text-xs">{titleCase(row.sourceType)}</TD>
+                              <TD className="whitespace-nowrap">{formatDate(row.entryDate)}</TD>
+                              <TD className="whitespace-nowrap text-xs">{row.reference}</TD>
+                              <TD>
+                                <MemoCell memo={row.memo} width="max-w-md" />
+                              </TD>
                               <TD numeric className="text-forest-800">
-                                {dec(row.moneyIn).greaterThan(0)
-                                  ? formatMoney(row.moneyIn, book.account.currency)
-                                  : '—'}
+                                {dec(row.moneyIn).greaterThan(0) ? formatMoney(row.moneyIn, book.account.currency) : '—'}
                               </TD>
                               <TD numeric>
-                                {dec(row.moneyOut).greaterThan(0)
-                                  ? formatMoney(row.moneyOut, book.account.currency)
-                                  : '—'}
+                                {dec(row.moneyOut).greaterThan(0) ? formatMoney(row.moneyOut, book.account.currency) : '—'}
                               </TD>
                               <TD numeric className="font-medium">
                                 {formatMoney(row.balance, book.account.currency)}
                               </TD>
-                              <TD>
+                              <TD data-print="hide">
                                 <JournalSourceActions
                                   sourceType={row.sourceType}
                                   sourceId={row.sourceId}
@@ -232,11 +236,16 @@ export default async function CashBookPage({
                       </TBody>
                       <TFoot>
                         <tr>
-                          <TD colSpan={5}>Closing balance</TD>
+                          <TD colSpan={3}>Total</TD>
                           <TD numeric>{formatMoney(totalIn, book.account.currency)}</TD>
                           <TD numeric>{formatMoney(totalOut, book.account.currency)}</TD>
-                          <TD numeric>{formatMoney(book.closingBalance, book.account.currency)}</TD>
                           <TD />
+                          <TD data-print="hide" />
+                        </tr>
+                        <tr>
+                          <TD colSpan={5}>Closing balance ({book.account.currency})</TD>
+                          <TD numeric>{formatMoney(book.closingBalance, book.account.currency)}</TD>
+                          <TD data-print="hide" />
                         </tr>
                       </TFoot>
                     </Table>

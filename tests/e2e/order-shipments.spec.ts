@@ -378,13 +378,23 @@ test('stock, batches, items and the loading sheet each show three lines under th
     expect(stockText).toContain(line.lot);
   }
 
-  // Shipments: three rows, each "Shipment n of 3" of this order.
+  // Shipments: ONE row for the order — its three containers are inside it,
+  // not three more rows.
   await page.goto('/shipments', { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => undefined);
+  const shipmentRow = page.locator('main table tbody tr').filter({ hasText: REFERENCE });
+  await expect(shipmentRow).toHaveCount(1, { timeout: 30_000 });
+  await expect(shipmentRow).toContainText(/3 containers/);
+  await expect(shipmentRow).not.toContainText(/\d of 3/);
+  await shipmentRow.getByRole('button', { name: 'Show detail' }).click();
+  const shipmentLines = page.getByTestId('shipment-lines').filter({ visible: true }).first();
+  await expect(shipmentLines).toBeVisible();
+  for (const line of LINES) {
+    await expect(shipmentLines).toContainText(line.container);
+    await expect(shipmentLines).toContainText(line.lot);
+  }
+  await expect(shipmentLines.locator('tbody tr')).toHaveCount(LINES.length);
   const shipmentsText = (await page.locator('main').textContent()) ?? '';
-  expect(shipmentsText).toMatch(/Shipment 1 of 3/);
-  expect(shipmentsText).toMatch(/Shipment 2 of 3/);
-  expect(shipmentsText).toMatch(/Shipment 3 of 3/);
 
   // Loading sheet: one parent row for the order, its three containers inside it.
   await page.goto('/loading', { waitUntil: 'domcontentloaded' });
@@ -409,6 +419,54 @@ test('stock, batches, items and the loading sheet each show three lines under th
     expect(text).not.toMatch(/FID-MA-(PO|SHP|JOB|GRN|SI)-\d{6}/);
   }
   console.log('  three shipments visible on batches, stock, shipments, loading sheet and the order list');
+});
+
+test('shipment costing shows one row per order, collapsed, with its containers inside', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/reports/shipment-cost', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+
+  const rows = page.getByTestId('shipment-costing-row');
+  await expect(rows.first()).toBeVisible({ timeout: 45_000 });
+
+  // The three-container order and the six-container order are one row each,
+  // and the count on the page counts orders, not containers or items.
+  const three = rows.filter({ hasText: REFERENCE });
+  const six = rows.filter({ hasText: `ICUL/FID/SIX-${STAMP}` });
+  await expect(three).toHaveCount(1);
+  await expect(six).toHaveCount(1);
+  const countText = (await page.getByTestId('shipment-count').textContent()) ?? '';
+  const total = Number(countText.match(/Total shipments:\s*(\d+)/)?.[1] ?? '0');
+  expect(total).toBe(await rows.count());
+  await expect(three).toContainText(/3 items|1 item/);
+  await expect(three).toContainText(/3 containers/);
+  await expect(six).toContainText(/6 containers/);
+
+  // Collapsed by default: the detail tables are not on the page until opened.
+  await expect(three.getByTestId('costing-lines')).toBeHidden();
+  await three.locator('summary').click();
+  const lines = three.getByTestId('costing-lines');
+  await expect(lines).toBeVisible();
+  await expect(lines.locator('tbody tr')).toHaveCount(3);
+  for (const line of LINES) {
+    await expect(lines).toContainText(line.container);
+    await expect(lines).toContainText(line.lot);
+  }
+  await expect(three.getByTestId('costing-summary')).toContainText(/Total landed cost/);
+  await expect(three.getByTestId('costing-summary')).toContainText(/Profit \/ loss/);
+
+  // Purchase cost is the order's own: 20,000 × 4.116 + 21,000 × 3.998 + 19,000 × 4.25.
+  const purchase = 20000 * 4.116 + 21000 * 3.998 + 19000 * 4.25;
+  const summaryText = (await three.getByTestId('costing-summary').textContent()) ?? '';
+  const coffeeUsd = summaryText.match(/Coffee, at the contract price[^U]*USD\s([\d,]+\.\d{2})/)?.[1];
+  expect(Number((coffeeUsd ?? '0').replace(/,/g, ''))).toBeCloseTo(purchase, 0);
+
+  // Collapse, then open the other: six lines there.
+  await three.locator('summary').click();
+  await expect(three.getByTestId('costing-lines')).toBeHidden();
+  await six.locator('summary').click();
+  await expect(six.getByTestId('costing-lines').locator('tbody tr')).toHaveCount(6);
+  console.log(`  costing: ${total} shipments on the page, ${await rows.count()} rows, 3 and 6 lines inside`);
 });
 
 test('a mistake is corrected in place: add a container, undo loading, fix the KG', async ({ page }) => {

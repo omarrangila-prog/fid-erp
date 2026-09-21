@@ -9,6 +9,7 @@ import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { advanceStockTransferAction, deleteStockTransferAction } from '@/server/actions/trading-actions';
+import { MemoCell } from '@/components/shared/memo-cell';
 import { RowActions, viewAction, editAction } from '@/components/shared/row-actions';
 import type { BadgeTone } from '@/lib/constants';
 
@@ -31,6 +32,7 @@ export type TransferRow = {
   requestedBy: string;
   approvedBy: string | null;
   receivedBy: string | null;
+  memo: string | null;
   lines: Array<{
     reference: string;
     itemName: string;
@@ -146,6 +148,13 @@ export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canM
           </span>
         </span>
       ),
+    },
+    {
+      id: 'memo',
+      header: 'Memo',
+      hideable: true,
+      exportValue: (r) => r.memo ?? '',
+      cell: (r) => <MemoCell memo={r.memo} />,
     },
     {
       id: 'people',

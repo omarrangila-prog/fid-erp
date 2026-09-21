@@ -2,9 +2,9 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import * as Popover from '@radix-ui/react-popover';
-import { PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react';
+import { ChevronRight, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { NAV_GROUPS, filterNav, type NavGroup } from '@/components/layout/nav-config';
 
@@ -14,9 +14,10 @@ import { NAV_GROUPS, filterNav, type NavGroup } from '@/components/layout/nav-co
  * server/client boundary. It is a convenience filter only — every route also
  * checks the same permission server-side.
  *
- * Every section is open and every link visible: the client did not want to
- * open Sales or Accounting just to reach their screens. Section headings are
- * quiet labels, rows are compact, and the list scrolls.
+ * Sections are dropdowns again, at the client's request: a heading opens and
+ * closes its screens, the section holding the page you are on opens by
+ * itself, and whatever you open or close is remembered. One level only —
+ * heading, then page — with compact rows and a scrolling list.
  *
  * Collapsing the rail switches to one icon per *group*, not per screen. The
  * earlier version kept every item icon, which made the collapsed rail taller
@@ -27,6 +28,68 @@ import { NAV_GROUPS, filterNav, type NavGroup } from '@/components/layout/nav-co
  */
 
 const SIDEBAR_COOKIE = 'fid_sidebar';
+const GROUP_STATE_KEY = 'fid.nav.groupState';
+
+/**
+ * Which sections the user has opened or closed, read straight from
+ * localStorage.
+ *
+ * `useSyncExternalStore` rather than an effect that copies storage into
+ * state: the server has no localStorage, so the first client render agrees
+ * with the server's (nothing chosen yet), and no second render is spent
+ * correcting it. A section nobody has touched follows the page: open when it
+ * holds the screen you are on, closed otherwise.
+ */
+type GroupState = Readonly<Record<string, boolean>>;
+const NO_STATE: GroupState = {};
+const listeners = new Set<() => void>();
+let cachedRaw: string | null = null;
+let cachedState: GroupState = NO_STATE;
+
+function readGroupState(): GroupState {
+  let raw: string | null = null;
+  try {
+    raw = window.localStorage.getItem(GROUP_STATE_KEY);
+  } catch {
+    // A blocked localStorage must not take the navigation down with it.
+    return NO_STATE;
+  }
+  // The snapshot has to be referentially stable or React re-renders forever.
+  if (raw === cachedRaw) return cachedState;
+  cachedRaw = raw;
+  try {
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    cachedState =
+      parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? Object.fromEntries(
+            Object.entries(parsed as Record<string, unknown>).filter(
+              (entry): entry is [string, boolean] => typeof entry[1] === 'boolean',
+            ),
+          )
+        : NO_STATE;
+  } catch {
+    cachedState = NO_STATE;
+  }
+  return cachedState;
+}
+
+function subscribeGroupState(listener: () => void) {
+  listeners.add(listener);
+  window.addEventListener('storage', listener);
+  return () => {
+    listeners.delete(listener);
+    window.removeEventListener('storage', listener);
+  };
+}
+
+function writeGroupState(next: GroupState) {
+  try {
+    window.localStorage.setItem(GROUP_STATE_KEY, JSON.stringify(next));
+  } catch {
+    // Remembering is a convenience; failing to remember is not an error.
+  }
+  for (const listener of listeners) listener();
+}
 
 function rememberWidth(collapsed: boolean) {
   // A cookie rather than localStorage so the server renders the right width on
@@ -34,15 +97,29 @@ function rememberWidth(collapsed: boolean) {
   document.cookie = `${SIDEBAR_COOKIE}=${collapsed ? 'collapsed' : 'expanded'};path=/;max-age=31536000;samesite=lax`;
 }
 
-/** Longest-prefix match, so /inventory does not light up on /inventory/batches. */
+/**
+ * Longest-prefix match, so /inventory does not light up on /inventory/batches.
+ *
+ * Two links can share a page and differ by filter — Shipment Expenses and
+ * General Expenses are both the expenses list — so a link carrying a query
+ * matches only when the current address carries the same values.
+ */
 function useActiveHref(groups: NavGroup[]) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const search = searchParams?.toString() ?? '';
   return React.useMemo(() => {
+    const current = new URLSearchParams(search);
     const candidates = groups.flatMap((group) => group.items.map((item) => item.href));
     return candidates
-      .filter((href) => pathname === href || pathname.startsWith(`${href}/`))
+      .filter((href) => {
+        const [path, query] = href.split('?');
+        if (!(pathname === path || pathname.startsWith(`${path}/`))) return false;
+        if (!query) return true;
+        return [...new URLSearchParams(query)].every(([key, value]) => current.get(key) === value);
+      })
       .sort((a, b) => b.length - a.length)[0];
-  }, [groups, pathname]);
+  }, [groups, pathname, search]);
 }
 
 function NavLink({
@@ -79,7 +156,7 @@ function NavLink({
   );
 }
 
-/** The full-width navigation: every section open, its links always visible. */
+/** The full-width navigation: one dropdown per section. */
 function ExpandedNav({
   groups,
   activeHref,
@@ -89,6 +166,7 @@ function ExpandedNav({
   activeHref: string | undefined;
   onNavigate?: () => void;
 }) {
+  const groupState = React.useSyncExternalStore(subscribeGroupState, readGroupState, () => NO_STATE);
 
   /*
    * Type what you want rather than remember which section it lives in.
@@ -134,25 +212,29 @@ function ExpandedNav({
         <p className="px-2.5 py-3 text-xs text-forest-300">Nothing matches “{query.trim()}”.</p>
       ) : null}
 
-      {/*
-        Every section open, always. The client asked not to have to open Sales
-        or Accounting to reach their screens, so the headings are quiet labels
-        rather than buttons, and the rows are compact enough for the whole list
-        to scroll comfortably.
-      */}
       {shown.map((group) => {
         const holdsActive = group.items.some((item) => item.href === activeHref);
+        // Searching opens everything that matches; otherwise the user's own
+        // choice wins, and a section never touched is open only when it
+        // holds the page you are on.
+        const isOpen = Boolean(needle) || (groupState[group.label] ?? holdsActive);
+        const bodyId = `nav-group-${group.label.replace(/\s+/g, '-').toLowerCase()}`;
         return (
-          <div key={group.label} className="pb-1.5">
-            <p
+          <div key={group.label} className="pb-1">
+            <button
+              type="button"
+              onClick={() => writeGroupState({ ...groupState, [group.label]: !isOpen })}
+              aria-expanded={isOpen}
+              aria-controls={bodyId}
               className={cn(
-                'px-2.5 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wider',
-                holdsActive ? 'text-gold-300' : 'text-forest-400',
+                'flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-colors',
+                holdsActive ? 'text-gold-300' : 'text-forest-300 hover:bg-forest-800/60 hover:text-forest-100',
               )}
             >
-              {group.label}
-            </p>
-            <ul className="space-y-px">
+              <ChevronRight className={cn('size-3.5 shrink-0 transition-transform', isOpen && 'rotate-90')} aria-hidden />
+              <span className="flex-1 truncate text-left">{group.label}</span>
+            </button>
+            <ul id={bodyId} className={cn('space-y-px', !isOpen && 'hidden')}>
               {group.items.map((item) => (
                 <li key={item.href}>
                   <NavLink

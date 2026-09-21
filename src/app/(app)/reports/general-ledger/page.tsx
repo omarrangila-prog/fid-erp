@@ -285,7 +285,7 @@ export default async function GeneralLedgerPage({
                   <TR className="hover:bg-transparent">
                     <TH>Date</TH>
                     <TH>Entry</TH>
-                    <TH>Description</TH>
+                    <TH>Memo</TH>
                     <TH>Source</TH>
                     {ledger.mixedCurrencies ? <TH>Currency</TH> : null}
                     <TH numeric>Debit</TH>

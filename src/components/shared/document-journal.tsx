@@ -2,6 +2,12 @@ import Link from 'next/link';
 import { getJournalForSource } from '@/lib/services/reports';
 import { dec } from '@/lib/money';
 import { formatMoney, formatDate } from '@/lib/format';
+import { businessNumber } from '@/lib/short-number';
+
+/** FID-MA-RV-000022 → PAY 22 inside a sentence, so no system number reaches the screen. */
+function shortenNumbers(text: string): string {
+  return text.replace(/\bFID-[A-Z]{2,3}-[A-Z]{2,4}-\d{4,}\b/g, (match) => businessNumber(match));
+}
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
@@ -23,7 +29,10 @@ export async function DocumentJournal({
   sourceType,
   sourceId,
   title = 'Journal',
+  localCurrency,
 }: {
+  /** The company's own currency: the totals are stated in it and in USD. */
+  localCurrency?: string;
   companyId: string;
   sourceType: string;
   sourceId: string;
@@ -50,14 +59,25 @@ export async function DocumentJournal({
         <CardTitle>{title}</CardTitle>
         <CardDescription>
           {entries.length === 1
-            ? 'The double entry this document wrote to the ledger.'
-            : `The ${entries.length} entries this document wrote to the ledger, oldest first.`}
+            ? 'The double entry this document wrote to the ledger. One transaction always has two sides — what was debited and what was credited — so the same amount appears on both; it is recorded once.'
+            : `The ${entries.length} entries this document wrote to the ledger, oldest first. Each has a debit side and a credit side for the same amount.`}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {entries.map((entry) => {
-          const debit = entry.lines.reduce((total, line) => total.plus(dec(line.debit)), dec(0));
-          const credit = entry.lines.reduce((total, line) => total.plus(dec(line.credit)), dec(0));
+          /*
+           * Totals in one currency at a time. Lines can be in different
+           * currencies — a MAD receipt settles a MAD invoice and books its
+           * exchange difference in USD — and adding a USD line's figure to
+           * MAD ones produced "MAD 46,121.62" on a MAD 46,000 receipt. Every
+           * line carries its value in the company's currency and in USD, and
+           * both of those balance, so those are what is totalled.
+           */
+          const local = localCurrency ?? entry.lines.find((l) => l.currency !== 'USD')?.currency ?? 'USD';
+          const debitLocal = entry.lines.reduce((total, line) => total.plus(dec(line.debitLocal)), dec(0));
+          const creditLocal = entry.lines.reduce((total, line) => total.plus(dec(line.creditLocal)), dec(0));
+          const debitUsd = entry.lines.reduce((total, line) => total.plus(dec(line.debitUsd)), dec(0));
+          const creditUsd = entry.lines.reduce((total, line) => total.plus(dec(line.creditUsd)), dec(0));
           return (
             <div key={entry.id} className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
@@ -65,12 +85,14 @@ export async function DocumentJournal({
                   href={`/reports/journal?q=${encodeURIComponent(entry.entryNumber)}`}
                   className="text-sm font-semibold text-forest-700 underline-offset-2 hover:underline"
                 >
-                  {entry.entryNumber}
+                  {businessNumber(entry.entryNumber)}
                 </Link>
                 <span className="text-xs text-ink-muted">{formatDate(entry.entryDate)}</span>
                 {entry.status !== 'POSTED' ? <Badge tone="neutral">{entry.status}</Badge> : null}
                 {entry.isReversal ? <Badge tone="warning">Deletion</Badge> : null}
-                <span className="text-xs text-ink-muted">{entry.description.replace(/^Reversal of/, 'Deletion of')}</span>
+                <span className="text-xs text-ink-muted">
+                  {shortenNumbers(entry.description.replace(/^Reversal of/, 'Deletion of'))}
+                </span>
               </div>
 
               <div className="overflow-x-auto">
@@ -90,12 +112,20 @@ export async function DocumentJournal({
                           
                           <span className="text-ink">{line.account.name}</span>
                         </td>
-                        <td className="py-1.5 pr-3 align-top text-xs text-ink-muted">{line.description ?? '—'}</td>
+                        <td className="py-1.5 pr-3 align-top text-xs text-ink-muted">
+                          {line.description ? shortenNumbers(line.description) : '—'}
+                        </td>
                         <td className="py-1.5 pr-3 text-right align-top tabular-nums">
                           {dec(line.debit).isZero() ? '—' : formatMoney(line.debit, line.currency)}
+                          {!dec(line.debit).isZero() && line.currency !== local && !dec(line.debitLocal).isZero() ? (
+                            <span className="block text-[11px] text-ink-subtle">{formatMoney(line.debitLocal, local)}</span>
+                          ) : null}
                         </td>
                         <td className="py-1.5 text-right align-top tabular-nums">
                           {dec(line.credit).isZero() ? '—' : formatMoney(line.credit, line.currency)}
+                          {!dec(line.credit).isZero() && line.currency !== local && !dec(line.creditLocal).isZero() ? (
+                            <span className="block text-[11px] text-ink-subtle">{formatMoney(line.creditLocal, local)}</span>
+                          ) : null}
                         </td>
                       </tr>
                     ))}
@@ -106,12 +136,21 @@ export async function DocumentJournal({
                         Total
                       </td>
                       <td className="py-1.5 pr-3 text-right tabular-nums">
-                        {formatMoney(debit, entry.lines[0]?.currency ?? 'USD')}
+                        {formatMoney(debitLocal, local)}
                       </td>
                       <td className="py-1.5 text-right tabular-nums">
-                        {formatMoney(credit, entry.lines[0]?.currency ?? 'USD')}
+                        {formatMoney(creditLocal, local)}
                       </td>
                     </tr>
+                    {local !== 'USD' ? (
+                      <tr className="text-xs text-ink-muted">
+                        <td className="py-1 pr-3" colSpan={2}>
+                          USD equivalent
+                        </td>
+                        <td className="py-1 pr-3 text-right tabular-nums">{formatMoney(debitUsd, 'USD')}</td>
+                        <td className="py-1 text-right tabular-nums">{formatMoney(creditUsd, 'USD')}</td>
+                      </tr>
+                    ) : null}
                   </tfoot>
                 </table>
               </div>

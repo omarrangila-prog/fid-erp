@@ -39,6 +39,7 @@ export default async function DebitNotePage({ params }: { params: Promise<{ id: 
       attachments={attachments}
       />
       <DocumentJournal
+        localCurrency={user.activeCompany.localCurrency}
         companyId={user.activeCompany.id}
         sourceType="CREDIT_NOTE"
         sourceId={detail.note.id}

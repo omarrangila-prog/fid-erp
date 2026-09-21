@@ -539,6 +539,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
 
       <div className="max-w-md">
         <DocumentJournal
+          localCurrency={user.activeCompany.localCurrency}
           companyId={user.activeCompany.id}
           sourceType="PURCHASE_CONTRACT"
           sourceId={contract.id}

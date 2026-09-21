@@ -81,7 +81,7 @@ test('the journal voucher refuses to post until debits equal credits', async ({ 
   const post = page.getByRole('button', { name: /post voucher/i });
   await expect(page.getByText(/not balanced/i)).toBeVisible();
 
-  await page.getByLabel(/description/i).fill('E2E balance check');
+  await page.locator('#jv-description').fill('E2E balance check');
 
   // Scoped to the open listbox: a bare option role also matches the native
   // <option> elements inside the currency select. Named rather than "first",

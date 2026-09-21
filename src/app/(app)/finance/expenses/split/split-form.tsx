@@ -18,6 +18,7 @@ import { accountsFor } from '@/lib/cash-account-choice';
 import { saveSplitExpenseAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import type { CategoryOption, ShipmentTrace } from '@/app/(app)/finance/expenses/expense-form';
+import { useClientKey } from '@/lib/use-client-key';
 
 /**
  * One payment, several cost categories.
@@ -74,6 +75,7 @@ export function SplitExpenseForm({
   canCreateCashBank?: boolean;
 }) {
   const router = useRouter();
+  const clientKey = useClientKey();
   const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
 
@@ -152,6 +154,7 @@ export function SplitExpenseForm({
     start(async () => {
       const result = await saveSplitExpenseAction(
         JSON.stringify({
+          clientKey: clientKey(),
           expenseDate: header.expenseDate,
           kind,
           shipmentId: kind === 'SHIPMENT' ? (header.shipmentId ?? '') : '',

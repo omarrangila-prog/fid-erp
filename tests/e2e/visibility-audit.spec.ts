@@ -31,42 +31,48 @@ const PAGES: Array<{ label: string; href: string; group: string }> = [
 
   { group: 'Sales', label: 'Invoices', href: '/sales' },
   { group: 'Sales', label: 'Customers', href: '/customers' },
+  { group: 'Sales', label: 'Customer Ledger', href: '/ledgers/customers' },
   { group: 'Sales', label: 'Payments Received', href: '/finance/receipts' },
   { group: 'Sales', label: 'Credit Notes', href: '/sales/credit-notes' },
   { group: 'Sales', label: 'Receivables', href: '/finance/receivables' },
 
   { group: 'Purchases', label: 'Purchase Orders', href: '/purchases' },
   { group: 'Purchases', label: 'Suppliers', href: '/vendors' },
+  { group: 'Purchases', label: 'Supplier Ledger', href: '/ledgers/vendors' },
   { group: 'Purchases', label: 'Goods Receipts', href: '/goods-receipts' },
   { group: 'Purchases', label: 'Payments Made', href: '/finance/payments' },
   { group: 'Purchases', label: 'Payables', href: '/finance/payables' },
 
   { group: 'Shipments', label: 'Loading Sheet', href: '/loading' },
   { group: 'Shipments', label: 'Shipments', href: '/shipments' },
-  { group: 'Shipments', label: 'Shipment Expenses', href: '/finance/expenses' },
+  { group: 'Shipments', label: 'Shipment Expenses', href: '/finance/expenses?kind=SHIPMENT' },
 
   { group: 'Inventory', label: 'Stock on Hand', href: '/inventory' },
   { group: 'Inventory', label: 'Items', href: '/items' },
-  { group: 'Inventory', label: 'Batches', href: '/inventory/batches' },
+  { group: 'Inventory', label: 'Batches / Containers', href: '/inventory/batches' },
   { group: 'Inventory', label: 'Warehouses', href: '/warehouses' },
-  { group: 'Inventory', label: 'Transfer Orders', href: '/inventory/transfers' },
+  { group: 'Inventory', label: 'Warehouse Transfers', href: '/inventory/transfers' },
   { group: 'Inventory', label: 'Stock Movements', href: '/inventory/movements' },
   { group: 'Inventory', label: 'Stock Counts', href: '/inventory/stock-counts' },
 
-  { group: 'Money', label: 'Cash & Bank', href: '/finance/cash-bank' },
-  { group: 'Money', label: 'Cheques', href: '/finance/cheques' },
-  { group: 'Money', label: 'Agent Commission', href: '/finance/agent-commission' },
+  { group: 'Cash & Bank', label: 'Cash & Bank Accounts', href: '/finance/cash-bank' },
+  { group: 'Cash & Bank', label: 'Cash Book', href: '/reports/cash-book' },
 
   { group: 'Accounting', label: 'General Journal', href: '/reports/journal' },
-  { group: 'Accounting', label: 'General Ledger', href: '/reports/general-ledger' },
+  { group: 'Accounting', label: 'General Ledgers', href: '/ledgers' },
   { group: 'Accounting', label: 'Chart of Accounts', href: '/accounting/chart' },
-  { group: 'Accounting', label: 'Ledgers', href: '/ledgers' },
+  { group: 'Accounting', label: 'General Expenses', href: '/finance/expenses?kind=GENERAL' },
 
-  { group: 'Master Data', label: 'Agents', href: '/agents' },
+  { group: 'Agents', label: 'Agents', href: '/agents' },
+  { group: 'Agents', label: 'Agent Balances', href: '/ledgers/agents' },
+  { group: 'Agents', label: 'Agent Commission', href: '/finance/agent-commission' },
+  { group: 'Agents', label: 'Cheques', href: '/finance/cheques' },
+
   { group: 'Master Data', label: 'Expense Categories', href: '/expense-categories' },
   { group: 'Master Data', label: 'Shipping Lines', href: '/shipping-lines' },
   { group: 'Master Data', label: 'Ports', href: '/ports' },
 
+  { group: 'Reports', label: 'General Ledger Report', href: '/reports/general-ledger' },
   { group: 'Reports', label: 'All Reports', href: '/reports' },
 ];
 

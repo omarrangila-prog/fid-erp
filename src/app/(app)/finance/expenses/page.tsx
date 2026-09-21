@@ -17,7 +17,14 @@ import { ExpensesClient, type ExpenseRow } from '@/app/(app)/finance/expenses/ex
 export const metadata: Metadata = { title: 'Expenses' };
 export const dynamic = 'force-dynamic';
 
-export default async function ExpensesPage() {
+export default async function ExpensesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ kind?: string }>;
+}) {
+  const { kind: kindParam } = await searchParams;
+  // Shipment Expenses and General Expenses are this one list, filtered.
+  const kind = kindParam === 'SHIPMENT' || kindParam === 'GENERAL' ? kindParam : undefined;
   const user = await requirePageAccess(PERMISSIONS.EXPENSES_VIEW);
   const companyId = user.activeCompany.id;
 
@@ -26,7 +33,7 @@ export default async function ExpensesPage() {
 
   const [expenses, warehouses, dueRecurring, settled] = await Promise.all([
     prisma.expense.findMany({
-      where: { companyId, status: { in: [...VISIBLE_DOCUMENT_STATUSES] } },
+      where: { companyId, status: { in: [...VISIBLE_DOCUMENT_STATUSES] }, ...(kind ? { kind } : {}) },
       orderBy: [{ expenseDate: 'desc' }, { expenseNumber: 'desc' }],
       include: {
         expenseCategory: { select: { name: true } },
@@ -95,9 +102,19 @@ export default async function ExpensesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Expenses"
-        description="Shipment and operating costs. Direct shipment costs are capitalised into the landed cost of the coffee."
-        breadcrumbs={[{ label: 'Finance' }, { label: 'Expenses' }]}
+        title={kind === 'SHIPMENT' ? 'Shipment Expenses' : kind === 'GENERAL' ? 'General Expenses' : 'Expenses'}
+        description={
+          kind === 'SHIPMENT'
+            ? 'Costs booked against a shipment. Direct costs are capitalised into the landed cost of its coffee.'
+            : kind === 'GENERAL'
+              ? 'Running costs of the business that belong to no shipment: rent, salaries, fuel, bank charges.'
+              : 'Shipment and operating costs. Direct shipment costs are capitalised into the landed cost of the coffee.'
+        }
+        breadcrumbs={[
+          { label: 'Finance' },
+          kind ? { label: 'Expenses', href: '/finance/expenses' } : { label: 'Expenses' },
+          ...(kind ? [{ label: kind === 'SHIPMENT' ? 'Shipment' : 'General' }] : []),
+        ]}
         actions={
           can(user, PERMISSIONS.EXPENSES_CREATE) ? (
             <div className="flex flex-wrap gap-2">

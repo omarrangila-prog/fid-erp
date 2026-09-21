@@ -75,7 +75,7 @@ const CATALOGUE: Catalogued[] = [
   { href: '/reports/purchases', title: 'Purchase Report', category: 'Purchases & suppliers', pinned: true,
     description: 'Every purchase in the period, how much has landed, and how much is still owed to the supplier.',
     keywords: 'purchase register contracts suppliers bought landed received', permission: PERMISSIONS.REPORTS_VIEW },
-  { href: '/reports/shipment-cost', title: 'Shipment Cost Report', category: 'Shipment & profitability', pinned: true,
+  { href: '/reports/shipment-cost', title: 'Shipment Costing', category: 'Shipment & profitability', pinned: true,
     description: 'What one job cost once freight, clearing and every other charge is in — per kilo, in both currencies.',
     keywords: 'shipment cost landed cost per kg freight clearing job costing', permission: PERMISSIONS.SHIPMENTS_VIEW },
   { href: '/reports/cash-book', title: 'Cash Book & Bank Book', category: 'Cash & bank', pinned: true,

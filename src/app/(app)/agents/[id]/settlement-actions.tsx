@@ -11,6 +11,7 @@ import { Field } from '@/components/ui/field';
 import { Callout } from '@/components/ui/feedback';
 import { recordAgentSettlementAction } from '@/server/actions/finance-actions';
 import { todayInputValue } from '@/lib/format';
+import { useClientKey } from '@/lib/use-client-key';
 
 type Account = { id: string; name: string; code: string; currency: string };
 
@@ -94,6 +95,7 @@ function SettlementSheet({
   onClose: () => void;
 }) {
   const router = useRouter();
+  const clientKey = useClientKey();
   const [pending, startTransition] = React.useTransition();
   const [error, setError] = React.useState<string | null>(null);
 
@@ -128,9 +130,10 @@ function SettlementSheet({
       return;
     }
 
+    if (pending) return;
     startTransition(async () => {
       const result = await recordAgentSettlementAction(
-        JSON.stringify({ agentId, direction, ...form }),
+        JSON.stringify({ clientKey: clientKey(), agentId, direction, ...form }),
       );
       if (!result?.ok) {
         setError(result?.error ?? 'This could not be recorded.');
@@ -238,7 +241,7 @@ function SettlementSheet({
           </Field>
         </div>
 
-        <Field label="Notes">
+        <Field label="Memo">
           <Textarea rows={2} value={form.notes} onChange={(e) => set({ notes: e.target.value })} />
         </Field>
 

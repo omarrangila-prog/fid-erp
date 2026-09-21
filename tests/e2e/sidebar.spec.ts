@@ -86,66 +86,70 @@ test.describe('sidebar', () => {
     expect(linkBox!.width).toBeGreaterThan(80);
   });
 
-  test('remembers which section was left open', async ({ page }) => {
-    const money = page.getByRole('button', { name: /^Money\b/ });
-    await money.click();
-    await expect(page.getByRole('link', { name: 'Payments Received', exact: true })).toBeVisible();
+  test('a section opens and closes, and is remembered', async ({ page }) => {
+    const nav = page.getByRole('navigation', { name: 'Main' });
+    const cashBank = nav.getByRole('button', { name: /^Cash & Bank\b/ });
+    const cashBook = nav.getByRole('link', { name: 'Cash Book', exact: true });
+
+    await expect(cashBank).toHaveAttribute('aria-expanded', 'false');
+    await expect(cashBook).toBeHidden();
+    await cashBank.click();
+    await expect(cashBank).toHaveAttribute('aria-expanded', 'true');
+    await expect(cashBook).toBeVisible();
 
     await page.reload();
-    await expect(page.getByRole('link', { name: 'Payments Received', exact: true })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Cash Book', exact: true })).toBeVisible();
+
+    await nav.getByRole('button', { name: /^Cash & Bank\b/ }).click();
+    await expect(nav.getByRole('link', { name: 'Cash Book', exact: true })).toBeHidden();
+    await page.reload();
+    await expect(nav.getByRole('link', { name: 'Cash Book', exact: true })).toBeHidden();
   });
 
-  test('opening one section closes the last', async ({ page }) => {
-    // Any number could be open at once, and they stayed open, so eight
-    // sections became a scrolling list of everything the application does.
-    await page.getByRole('button', { name: /^Money\b/ }).click();
-    await expect(page.getByRole('link', { name: 'Payments Received', exact: true })).toBeVisible();
+  test('the section holding the current page opens by itself', async ({ page }) => {
+    await page.goto('/ledgers/customers', { waitUntil: 'domcontentloaded' });
+    const nav = page.getByRole('navigation', { name: 'Main' });
+    await expect(nav.getByRole('button', { name: /^Sales\b/ })).toHaveAttribute('aria-expanded', 'true');
+    const link = nav.getByRole('link', { name: 'Customer Ledger', exact: true });
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute('aria-current', 'page');
 
-    await page.getByRole('button', { name: /^Inventory\b/ }).click();
-    await expect(page.getByRole('link', { name: 'Stock on Hand', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Payments Received', exact: true })).toHaveCount(0);
+    // Two links on one page, told apart by their filter.
+    await page.goto('/finance/expenses?kind=GENERAL', { waitUntil: 'domcontentloaded' });
+    await expect(nav.getByRole('link', { name: 'General Expenses', exact: true })).toHaveAttribute('aria-current', 'page');
   });
 
-  test('every new screen is reachable from the navigation', async ({ page }) => {
-    /*
-     * The rail carries the work, not everything the application can do.
-     *
-     * It went from fifty-two entries to forty-one: reports live behind the
-     * All Reports index, which describes each one, and master records sit
-     * together because they are set up once. Bank Reconciliation, Stock
-     * Ageing, Tax Return and the rest are on that index — the unit test
-     * `nothing is stranded` proves every screen is reachable from somewhere,
-     * so this only needs to pin what belongs in the rail itself.
-     */
-    // Every section open: each link is visible without clicking any heading.
+  test('every screen in the menu is one heading click away', async ({ page }) => {
+    const nav = page.getByRole('navigation', { name: 'Main' });
     for (const [group, label, href] of [
       ['Sales', 'Invoices', '/sales'],
       ['Sales', 'Customers', '/customers'],
+      ['Sales', 'Customer Ledger', '/ledgers/customers'],
       ['Sales', 'Payments Received', '/finance/receipts'],
       ['Sales', 'Credit Notes', '/sales/credit-notes'],
       ['Purchases', 'Purchase Orders', '/purchases'],
       ['Purchases', 'Suppliers', '/vendors'],
+      ['Purchases', 'Supplier Ledger', '/ledgers/vendors'],
       ['Purchases', 'Goods Receipts', '/goods-receipts'],
       ['Shipments', 'Loading Sheet', '/loading'],
       ['Shipments', 'Shipment Costing', '/reports/shipment-cost'],
       ['Inventory', 'Stock on Hand', '/inventory'],
-      ['Inventory', 'Items', '/items'],
-      ['Inventory', 'Warehouses', '/warehouses'],
-      ['Inventory', 'Transfer Orders', '/inventory/transfers'],
-      ['Money', 'Cheques', '/finance/cheques'],
+      ['Inventory', 'Warehouse Transfers', '/inventory/transfers'],
+      ['Cash & Bank', 'Cash Book', '/reports/cash-book'],
+      ['Accounting', 'General Journal', '/reports/journal'],
+      ['Accounting', 'General Ledgers', '/ledgers'],
       ['Accounting', 'Chart of Accounts', '/accounting/chart'],
-      ['Accounting', 'Ledgers', '/ledgers'],
+      ['Agents', 'Agents', '/agents'],
+      ['Agents', 'Cheques', '/finance/cheques'],
+      ['Reports', 'Trial Balance', '/reports/trial-balance'],
       ['Reports', 'All Reports', '/reports'],
-      ['Master Data', 'Agents', '/agents'],
       ['Administration', 'Backups', '/admin/backups'],
     ] as const) {
-      const nav = page.getByRole('navigation', { name: 'Main' });
-      await expect(nav.getByText(group, { exact: true }).first(), `${group} heading`).toBeVisible();
+      const heading = nav.getByRole('button', { name: new RegExp(`^${group.replace('&', '\\&')}\\b`) });
+      if ((await heading.getAttribute('aria-expanded')) !== 'true') await heading.click();
       const link = nav.getByRole('link', { name: label, exact: true });
       await expect(link, `${label} should be visible under ${group}`).toBeVisible();
       await expect(link).toHaveAttribute('href', href);
     }
-    // No section is a dropdown any more.
-    await expect(page.getByRole('navigation', { name: 'Main' }).locator('button[aria-expanded]')).toHaveCount(0);
   });
 });

@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { HandCoins, ArrowDownToLine, ArrowUpFromLine, Undo2 } from 'lucide-react';
+import { HandCoins, ArrowDownToLine, ArrowUpFromLine, Undo2, Redo2 } from 'lucide-react';
 import { FormError } from '@/components/shared/form-error';
 import { Button } from '@/components/ui/button';
 import { Input, MoneyInput, Select } from '@/components/ui/input';
@@ -16,6 +16,7 @@ import { dec, tryDec } from '@/lib/money';
 import { formatMoney, todayInputValue } from '@/lib/format';
 import { postLoanAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
+import { useClientKey } from '@/lib/use-client-key';
 
 type Account = { id: string; name: string; currency: string };
 type LoanAccount = { id: string; label: string; currency: string | null };
@@ -42,7 +43,16 @@ const DIRECTIONS = [
     blurb: 'Paying back money the business borrowed.',
     posts: 'The account goes down and what we owe them falls.',
   },
+  {
+    value: 'RECOVERED' as const,
+    icon: Redo2,
+    title: 'We were repaid',
+    blurb: 'Somebody paid back money the business lent them.',
+    posts: 'The account goes up and what they owe us falls.',
+  },
 ];
+
+type Direction = (typeof DIRECTIONS)[number]['value'];
 
 /**
  * A loan with anybody at all.
@@ -60,19 +70,27 @@ const DIRECTIONS = [
 export function LoanForm({
   accounts,
   loanAccounts,
+  agents = [],
   localCurrency,
   initialDirection,
+  initialAgentId,
 }: {
   accounts: Account[];
   loanAccounts: LoanAccount[];
+  /** The company's agents: a loan with one goes to their own loan account and their ledger. */
+  agents?: Array<{ id: string; name: string }>;
   localCurrency: string;
-  initialDirection: 'RECEIVED' | 'GIVEN' | 'REPAID';
+  initialDirection: Direction;
+  initialAgentId?: string;
 }) {
+  const clientKey = useClientKey();
+  const [partyType, setPartyType] = React.useState<'AGENT' | 'ACCOUNT'>(initialAgentId ? 'AGENT' : 'ACCOUNT');
+  const [agentId, setAgentId] = React.useState(initialAgentId ?? '');
   const router = useRouter();
   const { busy, start } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
 
-  const [direction, setDirection] = React.useState(initialDirection);
+  const [direction, setDirection] = React.useState<Direction>(initialDirection);
   const [loanAccountId, setLoanAccountId] = React.useState('');
   const [cashBankAccountId, setAccount] = React.useState(accounts[0]?.id ?? '');
   const [loanDate, setDate] = React.useState(todayInputValue());
@@ -99,13 +117,15 @@ export function LoanForm({
   }, [amount, exchangeRate, sameCurrency]);
 
   const chosen = DIRECTIONS.find((d) => d.value === direction)!;
-  const moneyIn = direction === 'RECEIVED';
-  const who = existing?.label ?? 'them';
+  const moneyIn = direction === 'RECEIVED' || direction === 'RECOVERED';
+  const agent = agents.find((a) => a.id === agentId);
+  const who = partyType === 'AGENT' ? (agent?.name ?? 'the agent') : (existing?.label ?? 'them');
 
   function submit() {
     setError(null);
     if (!cashBankAccountId) return setError('Choose the account the money moved through.');
-    if (!loanAccountId) return setError('Choose the account the loan is with.');
+    if (partyType === 'AGENT' && !agentId) return setError('Choose the agent.');
+    if (partyType === 'ACCOUNT' && !loanAccountId) return setError('Choose the account the loan is with.');
     if (tryDec(amount).lessThanOrEqualTo(0)) return setError('Enter the amount.');
     if (!sameCurrency && tryDec(exchangeRate).lessThanOrEqualTo(0)) {
       return setError(`Enter the rate used to turn ${currency} into ${bankCurrency}.`);
@@ -114,9 +134,11 @@ export function LoanForm({
     start(async () => {
       const result = await postLoanAction(
         JSON.stringify({
+          clientKey: clientKey(),
           loanDate,
           direction,
-          loanAccountId,
+          loanAccountId: partyType === 'ACCOUNT' ? loanAccountId : '',
+          agentId: partyType === 'AGENT' ? agentId : '',
           cashBankAccountId,
           currency,
           amount,
@@ -150,7 +172,7 @@ export function LoanForm({
           <CardTitle>What happened?</CardTitle>
           <CardDescription>The accounting is written for you once you choose.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-3">
+        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {DIRECTIONS.map((option) => {
             const Icon = option.icon;
             const active = option.value === direction;
@@ -192,8 +214,62 @@ export function LoanForm({
             * Pick them and every entry lands in their ledger; type somebody
             * new and the ledger is opened without losing the form.
             */}
+          {agents.length > 0 ? (
+            <div className="flex flex-wrap gap-1 sm:col-span-2" role="group" aria-label="Who the loan is with">
+              {(
+                [
+                  ['AGENT', 'An agent'],
+                  ['ACCOUNT', 'Another person or company'],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setPartyType(value)}
+                  aria-pressed={partyType === value}
+                  className={cn(
+                    'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                    partyType === value ? 'bg-forest-800 text-white' : 'border border-line text-ink-muted hover:text-ink',
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {partyType === 'AGENT' ? (
+            <Field
+              label="Agent"
+              htmlFor="loanAgent"
+              required
+              className="sm:col-span-2"
+              hint={
+                direction === 'RECEIVED' || direction === 'REPAID'
+                  ? 'Kept in “Loan from <agent>” and shown on the agent’s ledger.'
+                  : 'Kept in “Loan to <agent>” and shown on the agent’s ledger.'
+              }
+            >
+              <Select id="loanAgent" value={agentId} onChange={(e) => setAgentId(e.target.value)}>
+                <option value="">Choose…</option>
+                {agents.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          ) : (
           <Field
-            label={moneyIn ? 'Received from account' : direction === 'GIVEN' ? 'Lent to account' : 'Repaid to account'}
+            label={
+              direction === 'RECEIVED'
+                ? 'Received from account'
+                : direction === 'GIVEN'
+                  ? 'Lent to account'
+                  : direction === 'RECOVERED'
+                    ? 'Repaid by account'
+                    : 'Repaid to account'
+            }
             htmlFor="loanParty"
             required
             className="sm:col-span-2"
@@ -208,6 +284,7 @@ export function LoanForm({
               placeholder="Search or type a name…"
             />
           </Field>
+          )}
 
           <Field label={moneyIn ? 'Received into' : 'Paid from'} required>
             <Select

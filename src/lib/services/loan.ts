@@ -27,7 +27,14 @@ import { writeAudit } from '@/lib/services/audit';
  *
  *     RECEIVED   Dr Bank                Cr Loan from <lender>
  *     GIVEN      Dr Loan to <borrower>  Cr Bank
- *     REPAID     Dr Loan from <lender>  Cr Bank
+ *     REPAID     Dr Loan from <lender>  Cr Bank          (we pay our lender back)
+ *     RECOVERED  Dr Bank                Cr Loan to <borrower> (our borrower pays us back)
+ *
+ * With an agent the same four happen with a person the business already
+ * knows. The loan sits in the agent's own "Loan from <agent>" (a liability)
+ * or "Loan to <agent>" (an asset) account, and that line is tagged with the
+ * agent, so it appears once on the agent's ledger and once on the balance
+ * sheet — never as a second, unrelated balance.
  *
  * Where the money arrives in a different currency from the loan — USD 50,000
  * landing as MAD 461,000 at 9.22 — both facts are kept. The bank moves by what
@@ -36,7 +43,7 @@ import { writeAudit } from '@/lib/services/audit';
  * MAD 461,000" without either being inferred later from a rate that has moved.
  */
 
-export const LOAN_DIRECTIONS = ['RECEIVED', 'GIVEN', 'REPAID'] as const;
+export const LOAN_DIRECTIONS = ['RECEIVED', 'GIVEN', 'REPAID', 'RECOVERED'] as const;
 export type LoanDirection = (typeof LOAN_DIRECTIONS)[number];
 
 /** The series named loan and current accounts are opened in. */
@@ -89,7 +96,7 @@ export async function findOrCreateLoanAccount(
   // Money received is owed, so the account opens as a liability; money lent is
   // owed to us. Either way it is one running account that can go both ways,
   // and it holds no fixed currency because the same person may deal in both.
-  const borrowing = params.direction !== 'GIVEN';
+  const borrowing = params.direction === 'RECEIVED' || params.direction === 'REPAID';
   const created = await tx.account.create({
     data: {
       companyId: params.companyId,
@@ -115,6 +122,49 @@ export async function findOrCreateLoanAccount(
   return created;
 }
 
+/**
+ * An agent's loan account, one for each side: "Loan from <agent>" is money
+ * they lent the company (a liability), "Loan to <agent>" money the company
+ * lent them (an asset). Kept apart so the balance sheet shows both what is
+ * owed to the agent and what the agent owes, instead of one netted figure.
+ * Found by its exact name, and opened the first time it is needed.
+ */
+export async function findOrCreateAgentLoanAccount(
+  tx: Tx,
+  params: { companyId: string; userId: string; agentName: string; side: 'FROM' | 'TO' },
+) {
+  const name = `${params.side === 'FROM' ? 'Loan from' : 'Loan to'} ${params.agentName.trim()}`;
+  const type = params.side === 'FROM' ? 'LIABILITY' : 'ASSET';
+  const existing = await tx.account.findFirst({
+    where: { companyId: params.companyId, type, name: { equals: name, mode: 'insensitive' } },
+  });
+  if (existing) {
+    if (existing.status !== 'ACTIVE') throw new BusinessRuleError(`${existing.name} is inactive. Reactivate it in the chart of accounts.`);
+    return existing;
+  }
+  const created = await tx.account.create({
+    data: {
+      companyId: params.companyId,
+      code: await nextLoanCode(tx, params.companyId),
+      name,
+      type,
+      reportGroup: params.side === 'FROM' ? 'CURRENT_LIABILITY' : 'CURRENT_ASSET',
+      currency: null,
+      isSystem: false,
+      subledgerType: 'NONE',
+    },
+  });
+  await writeAudit(tx, {
+    companyId: params.companyId,
+    userId: params.userId,
+    action: 'LEDGER_ACCOUNT_CREATED',
+    entityType: 'Account',
+    entityId: created.id,
+    after: { code: created.code, name: created.name, openedFor: 'AGENT_LOAN', agent: params.agentName },
+  });
+  return created;
+}
+
 export type LoanInput = {
   companyId: string;
   userId: string;
@@ -122,8 +172,10 @@ export type LoanInput = {
   direction: LoanDirection;
   /** The other side: a name to find or open an account for… */
   counterpartyName?: string | null;
-  /** …or a ledger account already chosen. */
+  /** …or a ledger account already chosen… */
   loanAccountId?: string | null;
+  /** …or an agent, whose own loan account is used (and opened the first time). */
+  agentId?: string | null;
   /** The company's own account the money moved through. */
   cashBankAccountId: string;
   /** The currency the loan is struck in — often not the bank's. */
@@ -146,7 +198,7 @@ export async function postLoan(input: LoanInput) {
   if (amount.lessThanOrEqualTo(0)) {
     throw new BusinessRuleError('The loan amount must be greater than zero.');
   }
-  if (!input.counterpartyName?.trim() && !input.loanAccountId) {
+  if (!input.counterpartyName?.trim() && !input.loanAccountId && !input.agentId) {
     throw new BusinessRuleError('Say who the loan is with.');
   }
 
@@ -207,16 +259,34 @@ export async function postLoan(input: LoanInput) {
       throw new BusinessRuleError('The loan works out at nothing in USD. Check the amount and the rate.');
     }
 
-    const account = input.loanAccountId
-      ? await tx.account.findFirst({
-          where: { id: input.loanAccountId, companyId: input.companyId, status: 'ACTIVE' },
+    const agent = input.agentId
+      ? await tx.agent.findFirst({
+          where: { id: input.agentId, companyId: input.companyId },
+          select: { id: true, agentName: true, status: true },
         })
-      : await findOrCreateLoanAccount(tx, {
+      : null;
+    if (input.agentId && !agent) throw new NotFoundError('Agent');
+    if (agent && agent.status !== 'ACTIVE') throw new BusinessRuleError(`${agent.agentName} is inactive.`);
+
+    const account = agent
+      ? await findOrCreateAgentLoanAccount(tx, {
           companyId: input.companyId,
           userId: input.userId,
-          name: input.counterpartyName!,
-          direction: input.direction,
-        });
+          agentName: agent.agentName,
+          // Money the agent lent us, or we repay them: "Loan from"; money we
+          // lent them, or they repay us: "Loan to".
+          side: input.direction === 'RECEIVED' || input.direction === 'REPAID' ? 'FROM' : 'TO',
+        })
+      : input.loanAccountId
+        ? await tx.account.findFirst({
+            where: { id: input.loanAccountId, companyId: input.companyId, status: 'ACTIVE' },
+          })
+        : await findOrCreateLoanAccount(tx, {
+            companyId: input.companyId,
+            userId: input.userId,
+            name: input.counterpartyName!,
+            direction: input.direction,
+          });
     if (!account) throw new NotFoundError('Loan account');
     if (account.type !== 'ASSET' && account.type !== 'LIABILITY') {
       throw new BusinessRuleError(
@@ -258,7 +328,7 @@ export async function postLoan(input: LoanInput) {
           ? debtRateToUsd
           : await usdRate(localCode);
 
-    const counterparty = input.counterpartyName?.trim() || account.name;
+    const counterparty = agent?.agentName ?? (input.counterpartyName?.trim() || account.name);
     const note = input.reference?.trim() ? ` · ${input.reference.trim()}` : '';
     const memo = input.description?.trim();
     const headline =
@@ -266,10 +336,12 @@ export async function postLoan(input: LoanInput) {
         ? `Loan received from ${counterparty}`
         : input.direction === 'GIVEN'
           ? `Loan given to ${counterparty}`
-          : `Loan repaid to ${counterparty}`;
+          : input.direction === 'RECOVERED'
+            ? `Loan repaid by ${counterparty}`
+            : `Loan repaid to ${counterparty}`;
 
-    // Money in on a loan received; money out when giving or repaying one.
-    const moneyIn = input.direction === 'RECEIVED';
+    // Money in when we borrow or are repaid; out when we lend or repay.
+    const moneyIn = input.direction === 'RECEIVED' || input.direction === 'RECOVERED';
 
     const entry = await postJournalEntry(tx, {
       companyId: input.companyId,
@@ -300,7 +372,12 @@ export async function postLoan(input: LoanInput) {
               ? `Owed to ${counterparty}`
               : input.direction === 'GIVEN'
                 ? `Owed to us by ${counterparty}`
-                : `Repayment to ${counterparty}`,
+                : input.direction === 'RECOVERED'
+                  ? `Repaid by ${counterparty}`
+                  : `Repayment to ${counterparty}`,
+          // Only the loan line carries the agent: the bank line is the
+          // company's own money and would otherwise show twice on their ledger.
+          agentId: agent?.id ?? null,
         },
       ],
     });
@@ -318,6 +395,7 @@ export async function postLoan(input: LoanInput) {
         bank: `${bank.currency} ${moved.toFixed(2)} · ${bank.name}`,
         rate: rate.toString(),
         reference: input.reference ?? null,
+        agent: agent?.agentName ?? null,
       },
     });
 

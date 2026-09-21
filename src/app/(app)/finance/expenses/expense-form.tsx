@@ -21,6 +21,7 @@ import { AddExpenseCategoryDialog } from '@/app/(app)/finance/expenses/add-expen
 import { AddAgentDialog } from '@/app/(app)/finance/receipts/add-agent';
 import { MasterSelect } from '@/components/shared/master-select';
 import { cashBankCreateSpec } from '@/components/shared/master-specs';
+import { useClientKey } from '@/lib/use-client-key';
 
 export type CategoryOption = ComboOption & { capitaliseByDefault: boolean; kind: 'SHIPMENT' | 'GENERAL' };
 
@@ -96,6 +97,7 @@ export function ExpenseForm({
   canCreateCashBank?: boolean;
 }) {
   const router = useRouter();
+  const clientKey = useClientKey();
   const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
   const [fieldIssues, setFieldIssues] = React.useState<Record<string, string>>({});
@@ -208,6 +210,8 @@ export function ExpenseForm({
     const agentId = kind === 'SHIPMENT' && settlement === 'PAID' ? (form.agentId ?? '') : '';
 
     const payload = {
+      // New expenses only: one Save is one expense, however often it arrives.
+      clientKey: initial?.id ? undefined : clientKey(),
       expenseDate: form.expenseDate,
       expenseCategoryId: form.expenseCategoryId,
       shipmentId: kind === 'SHIPMENT' ? (form.shipmentId ?? '') : '',
@@ -729,8 +733,13 @@ export function ExpenseForm({
 
       <Card>
         <CardContent className="pt-5">
-          <Field label="Description">
-            <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          <Field label="Memo" hint="What the money was spent on — it shows on the expense list, the shipment costing and the cash book.">
+            <Textarea
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder="e.g. Clearing charges for ICUL/FID/002, paid at the port"
+              aria-label="Memo"
+            />
           </Field>
           {amountUsd.greaterThan(0) ? (
             <p className="mt-3 text-right text-xs text-ink-muted">

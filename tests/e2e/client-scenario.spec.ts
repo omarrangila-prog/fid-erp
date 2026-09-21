@@ -183,8 +183,8 @@ test('an invoice is raised warehouse first, and the warehouse drives the coffee'
   await page.goto('/sales/new', { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => undefined);
 
-  // §34: the warehouse is chosen once, at the top, before any line.
-  const warehouse = page.locator('#warehouseId');
+  // §34: the warehouse is chosen first on each line, before its coffee.
+  const warehouse = page.getByLabel('Warehouse on item 1', { exact: true });
   await expect(warehouse).toBeVisible({ timeout: 30_000 });
   const warehouseOptions = (await warehouse.locator('option').allTextContents()).filter((o) => !/Choose/i.test(o));
   console.log(`  warehouses offered: ${warehouseOptions.join(' | ')}`);
@@ -336,6 +336,7 @@ test('the reports agree with one another and open for any period', async ({ page
 test('the shipment cost report splits the shared charges between the lines', async ({ page }) => {
   await signIn(page);
   await page.goto('/reports/shipment-cost', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('shipment-costing-row').first().locator('summary').click({ timeout: 45_000 });
   await expect(page.getByText(/Cost per KG/i).first()).toBeVisible({ timeout: 45_000 });
 
   const main = (await page.locator('main').textContent()) ?? '';
@@ -438,7 +439,7 @@ test('a second cheque is taken by the agent, and bounces', async ({ page }) => {
   // Another invoice for the same customer, so there is something to bounce.
   await page.goto('/sales/new', { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined);
-  await page.locator('#warehouseId').selectOption({ index: 1 });
+  await page.getByLabel('Warehouse on item 1', { exact: true }).selectOption({ index: 1 });
   await page.getByRole('combobox', { name: /customer/i }).first().click();
   await page.keyboard.type(CUSTOMER.slice(0, 14));
   await page.getByRole('listbox').getByRole('option').first().click();
@@ -791,8 +792,8 @@ test('the sales list reads in the order the client asked for', async ({ page }) 
   const headers = (await page.locator('main table thead th').allTextContents()).map((h) => h.trim());
   console.log(`  columns: ${headers.join(' | ')}`);
 
-  // Date, invoice, order, customer, status, due, amount, balance, location.
-  const wanted = ['Date', 'Invoice #', 'Order no.', 'Customer', 'Status', 'Due', 'Value', 'Balance due', 'Location'];
+  // Date, invoice, ICUL/FID reference, customer, status, due, amount, balance, location.
+  const wanted = ['Date', 'Invoice #', 'ICUL/FID Ref', 'Customer', 'Status', 'Due', 'Value', 'Balance due', 'Location'];
   const positions = wanted.map((w) => headers.findIndex((h) => h.startsWith(w)));
   for (const [i, w] of wanted.entries()) {
     expect(positions[i], `${w} should be on the list`).toBeGreaterThan(-1);

@@ -1,6 +1,9 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
-import { LIVE_ENTRY_SQL, LIVE_ENTRY_WHERE } from '@/lib/services/journal-visibility';
+import { COLLECTED_BY_SQL, MEMO_SQL } from '@/lib/services/ledger-sql';
+import { REFERENCE_SQL } from '@/lib/services/ledger';
+import { businessNumber } from '@/lib/short-number';
+import { LIVE_ENTRY_SQL, LIVE_ENTRY_TEXT, LIVE_ENTRY_WHERE } from '@/lib/services/journal-visibility';
 import { Decimal, dec, sum, toMoney, toQuantity, toUnitCost } from '@/lib/money';
 import { REPORT_GROUPS, ACCOUNT_KEYS } from '@/lib/constants';
 import { getCompanyContext } from '@/lib/services/company';
@@ -760,6 +763,43 @@ export async function getGeneralLedger(params: {
 }
 
 /** Cash book / bank book: every movement through one cash or bank account. */
+function cashBookMemo(row: {
+  typed: string | null;
+  sourceType: string;
+  counterparty: string | null;
+  collectedBy: string | null;
+  moneyIn: boolean;
+  description: string;
+}): string {
+  const typed = row.typed?.trim();
+  const who = row.counterparty?.trim();
+  const collected = row.collectedBy ? ` (collected by ${row.collectedBy})` : '';
+  let built: string;
+  switch (row.sourceType) {
+    case 'RECEIPT':
+      built = who ? `Cash received from ${who}${collected}` : `Cash received${collected}`;
+      break;
+    case 'PAYMENT':
+      built = who ? `Paid to ${who}` : 'Payment made';
+      break;
+    case 'EXPENSE':
+      built = who ? `Expense paid to ${who}` : 'Expense paid';
+      break;
+    case 'AGENT_SETTLEMENT':
+      built = who ? (row.moneyIn ? `Received from agent ${who}` : `Paid to agent ${who}`) : row.moneyIn ? 'Received from agent' : 'Paid to agent';
+      break;
+    case 'CHEQUE':
+      built = who ? `Cheque from ${who}` : 'Cheque';
+      break;
+    case 'OPENING_BALANCE':
+      built = 'Opening balance';
+      break;
+    default:
+      built = row.description.replace(/\bFID-[A-Z]{2,3}-[A-Z]{2,4}-\d{4,}\b/g, (m) => businessNumber(m));
+  }
+  return typed ? (typed === built ? typed : `${typed}`) : built;
+}
+
 export async function getCashBook(params: {
   companyId: string;
   cashBankAccountId: string;
@@ -771,7 +811,22 @@ export async function getCashBook(params: {
     select: { id: true, code: true, name: true, currency: true, accountType: true, openingBalance: true },
   });
 
-  const rows = await prisma.$queryRaw<
+  // The balance the period opened with: the account's own opening figure plus
+  // everything that moved through it before the first day asked for. Without
+  // this a book run "for September" opened at the figure the account was
+  // created with, and every running balance in it was wrong.
+  const before = params.from
+    ? await prisma.$queryRaw<Array<{ net: string | null }>>`
+        SELECT SUM(jl."debit" - jl."credit")::text AS net
+        FROM journal_lines jl
+        JOIN journal_entries je ON je."id" = jl."journalEntryId"
+        WHERE je."companyId" = ${params.companyId} AND ${LIVE_ENTRY_SQL}
+          AND jl."cashBankAccountId" = ${params.cashBankAccountId}
+          AND je."entryDate" < ${params.from}::date
+      `
+    : [];
+
+  const rows = await prisma.$queryRawUnsafe<
     Array<{
       entryId: string;
       entryNumber: string;
@@ -782,28 +837,51 @@ export async function getCashBook(params: {
       debit: string;
       credit: string;
       counterparty: string | null;
+      reference: string | null;
+      memo: string | null;
+      collectedBy: string | null;
     }>
-  >`
+  >(
+    `
     SELECT je."id" AS "entryId", je."entryNumber", je."entryDate", je."description",
            je."sourceType"::text AS "sourceType", je."sourceId" AS "sourceId",
            jl."debit"::text AS debit, jl."credit"::text AS credit,
-           COALESCE(c."customerName", v."vendorName") AS counterparty
+           COALESCE(
+             c."customerName", v."vendorName", ag."agentName",
+             CASE je."sourceType"
+               WHEN 'RECEIPT' THEN (SELECT cu."customerName" FROM receipts r JOIN customers cu ON cu."id" = r."customerId" WHERE r."id" = je."sourceId")
+               WHEN 'PAYMENT' THEN (SELECT ve."vendorName" FROM payments p JOIN vendors ve ON ve."id" = p."vendorId" WHERE p."id" = je."sourceId")
+               WHEN 'EXPENSE' THEN (SELECT COALESCE(ve."vendorName", ag2."agentName") FROM expenses e LEFT JOIN vendors ve ON ve."id" = e."vendorId" LEFT JOIN agents ag2 ON ag2."id" = e."agentId" WHERE e."id" = je."sourceId")
+               WHEN 'AGENT_SETTLEMENT' THEN (SELECT ag3."agentName" FROM agent_settlements s JOIN agents ag3 ON ag3."id" = s."agentId" WHERE s."id" = je."sourceId")
+             END
+           ) AS counterparty,
+           ${REFERENCE_SQL} AS reference,
+           ${MEMO_SQL} AS memo,
+           ${COLLECTED_BY_SQL} AS "collectedBy"
     FROM journal_lines jl
     JOIN journal_entries je ON je."id" = jl."journalEntryId"
     LEFT JOIN customers c ON c."id" = jl."customerId"
     LEFT JOIN vendors v ON v."id" = jl."vendorId"
-    WHERE je."companyId" = ${params.companyId} AND ${LIVE_ENTRY_SQL}
-      AND jl."cashBankAccountId" = ${params.cashBankAccountId}
-      AND (${params.from ?? null}::date IS NULL OR je."entryDate" >= ${params.from ?? null}::date)
-      AND (${params.to ?? null}::date IS NULL OR je."entryDate" <= ${params.to ?? null}::date)
+    LEFT JOIN agents ag ON ag."id" = jl."agentId"
+    WHERE je."companyId" = $1 AND ${LIVE_ENTRY_TEXT}
+      AND jl."cashBankAccountId" = $2
+      AND ($3::date IS NULL OR je."entryDate" >= $3::date)
+      AND ($4::date IS NULL OR je."entryDate" <= $4::date)
     ORDER BY je."entryDate", je."entryNumber"
-  `;
+    `,
+    params.companyId,
+    params.cashBankAccountId,
+    params.from ?? null,
+    params.to ?? null,
+  );
 
-  let running = toMoney(account.openingBalance);
+  let running = toMoney(dec(account.openingBalance).plus(dec(before[0]?.net ?? 0)));
   const opening = running;
 
   const shaped = rows.map((row) => {
-    running = toMoney(running.plus(dec(row.debit)).minus(dec(row.credit)));
+    const moneyIn = dec(row.debit);
+    const moneyOut = dec(row.credit);
+    running = toMoney(running.plus(moneyIn).minus(moneyOut));
     return {
       entryId: row.entryId,
       entryNumber: row.entryNumber,
@@ -812,8 +890,24 @@ export async function getCashBook(params: {
       sourceType: row.sourceType,
       sourceId: row.sourceId,
       counterparty: row.counterparty,
-      moneyIn: dec(row.debit),
-      moneyOut: dec(row.credit),
+      /** The document's own number in the client's words: PAY 22, EXP 8, JV 86. */
+      reference: businessNumber(row.sourceType === 'MANUAL' || !row.reference ? row.entryNumber : row.reference),
+      /**
+       * What the person typed on the document; failing that, a sentence built
+       * from what the entry knows — who the money came from or went to —
+       * because "Cash received from BANI against INV 15" is what the client
+       * wants to read, not a source-type code.
+       */
+      memo: cashBookMemo({
+        typed: row.memo,
+        sourceType: row.sourceType,
+        counterparty: row.counterparty,
+        collectedBy: row.collectedBy,
+        moneyIn: moneyIn.greaterThan(0),
+        description: row.description,
+      }),
+      moneyIn,
+      moneyOut,
       balance: running,
     };
   });

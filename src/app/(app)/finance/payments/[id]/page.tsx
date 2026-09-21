@@ -208,6 +208,7 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
       </div>
 
       <DocumentJournal
+        localCurrency={user.activeCompany.localCurrency}
         companyId={user.activeCompany.id}
         sourceType="PAYMENT"
         sourceId={payment.id}

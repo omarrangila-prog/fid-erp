@@ -69,7 +69,7 @@ test('an unpaid cost is booked with nobody named, and paid later from cash', asy
 
   await form.getByLabel(/expense date/i).fill('2026-07-29');
   await form.getByLabel(/^Amount/).fill('4000');
-  await form.getByLabel(/^Description/).fill('Office rent, invoice to follow');
+  await form.getByLabel(/^Memo/).fill('Office rent, invoice to follow');
 
   await form.getByRole('button', { name: /save and post/i }).click();
   await page.waitForURL(/\/finance\/expenses\/(?!new)[\w-]+/, { waitUntil: 'domcontentloaded', timeout: 60_000 });

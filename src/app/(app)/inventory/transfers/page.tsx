@@ -73,6 +73,7 @@ export default async function TransfersPage() {
       requestedBy: t.requestedBy.name,
       approvedBy: t.approvedBy?.name ?? null,
       receivedBy: t.receivedBy?.name ?? null,
+      memo: t.notes ?? null,
     };
   });
 

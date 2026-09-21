@@ -305,7 +305,7 @@ test('§17 an agent can be added without leaving the receipt', async ({ page }) 
 test('§19 the agent ledger says how much is sitting with whom', async ({ page }) => {
   await page.goto('/ledgers/agents', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByRole('heading', { name: /Agent Ledgers/i }).first()).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Agent Balances/i }).first()).toBeVisible();
   await expect(page.getByRole('main')).toContainText(/Holding for us|No agents yet/i);
 });
 
@@ -340,7 +340,7 @@ test('§11 the sale asks for the warehouse before the stock', async ({ page }) =
   await page.goto('/sales/new', { waitUntil: 'domcontentloaded' });
   const form = page.getByRole('main');
 
-  const warehouse = form.locator('#warehouseId');
+  const warehouse = form.getByLabel('Warehouse on item 1', { exact: true });
   const coffee = form.getByRole('combobox', { name: /Coffee on item 1/ });
   const batch = form.getByLabel(/Batch on item 1/);
 

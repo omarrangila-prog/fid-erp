@@ -12,9 +12,9 @@ export const dynamic = 'force-dynamic';
 export default async function NewLoanPage({
   searchParams,
 }: {
-  searchParams: Promise<{ direction?: string }>;
+  searchParams: Promise<{ direction?: string; agent?: string }>;
 }) {
-  const { direction } = await searchParams;
+  const { direction, agent } = await searchParams;
   const user = await requirePageAccess(PERMISSIONS.ACCOUNTING_POST);
   const companyId = user.activeCompany.id;
 
@@ -42,11 +42,17 @@ export default async function NewLoanPage({
     select: { id: true, code: true, name: true, currency: true },
   });
 
+  const agents = await prisma.agent.findMany({
+    where: { companyId, status: 'ACTIVE' },
+    orderBy: { agentName: 'asc' },
+    select: { id: true, agentName: true },
+  });
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Loan"
-        description="Money lent to the business or by it — by a director, a friend, another company. It is never income or a cost."
+        description="Money lent to the business or by it — by an agent, a director, a friend, another company. It is never income or a cost."
         breadcrumbs={[{ label: 'Finance' }, { label: 'Cash & Bank', href: '/finance/cash-bank' }, { label: 'Loan' }]}
       />
 
@@ -62,9 +68,11 @@ export default async function NewLoanPage({
             label: a.name,
             currency: a.currency,
           }))}
+          agents={agents.map((a) => ({ id: a.id, name: a.agentName }))}
+          initialAgentId={agents.some((a) => a.id === agent) ? agent : undefined}
           localCurrency={user.activeCompany.localCurrency}
           initialDirection={
-            direction === 'GIVEN' || direction === 'REPAID' ? direction : 'RECEIVED'
+            direction === 'GIVEN' || direction === 'REPAID' || direction === 'RECOVERED' ? direction : 'RECEIVED'
           }
         />
       )}

@@ -461,7 +461,7 @@ function GoodsReceiptDialogBody({
           })}
         </div>
 
-        <Field label="Notes" htmlFor="grnNotes">
+        <Field label="Memo" htmlFor="grnNotes">
           <Textarea id="grnNotes" value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>
 

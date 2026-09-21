@@ -1,303 +1,389 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { ChevronRight } from 'lucide-react';
 import { requirePageAccess } from '@/lib/auth/guards';
-import { PERMISSIONS } from '@/lib/constants';
-import { prisma } from '@/lib/db';
-import { getShipmentCostSheet } from '@/lib/services/landed-cost';
-import { getShipmentExpensesByCategory } from '@/lib/services/profitability';
+import { PERMISSIONS, SHIPMENT_STATUS_META } from '@/lib/constants';
+import { getOrderCostSheets, type OrderCostSheet } from '@/lib/services/order-cost';
 import { formatMoney, formatDate, formatQuantityKg } from '@/lib/format';
-import { dec } from '@/lib/money';
+import { dec, sum } from '@/lib/money';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/shared/page-header';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
+import { Badge, StatusBadge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/feedback';
 import { PrintButton } from '@/components/shared/print-button';
 import { exportHref } from '@/components/shared/excel-link';
 import { ExportLinks } from '@/components/shared/export-links';
 import { FavouriteStar } from '@/components/reports/report-statement';
 import { PrintHeader } from '@/components/shared/print-header';
+import { MemoCell } from '@/components/shared/memo-cell';
+import { businessNumber } from '@/lib/short-number';
+import { OpenAllForPrint } from '@/app/(app)/reports/shipment-cost/open-for-print';
 
-export const metadata: Metadata = { title: 'Shipment Cost Report' };
+export const metadata: Metadata = { title: 'Shipment Costing' };
 export const dynamic = 'force-dynamic';
 
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
 /**
- * What one shipment of coffee actually cost, line by line.
+ * What each shipment of coffee cost and earned, one collapsed row per
+ * shipment.
  *
- * The contract price is only part of it: freight, clearing, offloading,
- * storage and commission all land on the same coffee, and the number that
- * matters to a trader is what a kilo ended up costing once all of it is in.
- * That figure is shown in dollars and in the company's own currency, because
- * the coffee is bought in one and sold in the other.
+ * A shipment is the order it was bought on — its ICUL/FID reference — with
+ * every container, item and batch under it. Two orders are two rows, however
+ * many containers each has. The row carries the figures a trader asks for
+ * first (kilos, costs added, landed cost, profit); opening it shows the
+ * containers, every expense, the split by category and the full costing.
  *
- * Every line here is a posted expense against this job. Nothing is estimated
- * and nothing is apportioned by guesswork — if a cost is not on this list, it
- * was not booked to this shipment.
+ * Every figure is a posted expense, a posted invoice line or a batch's own
+ * cost, summed once per order. Nothing is estimated or apportioned.
  */
 export default async function ShipmentCostPage({
   searchParams,
 }: {
-  searchParams: Promise<{ shipment?: string }>;
+  searchParams: Promise<{ open?: string; q?: string }>;
 }) {
-  const { shipment } = await searchParams;
+  const { open, q } = await searchParams;
   const user = await requirePageAccess(PERMISSIONS.SHIPMENTS_VIEW);
   const companyId = user.activeCompany.id;
+  const local = user.activeCompany.localCurrency;
 
-  const shipments = await prisma.shipment.findMany({
-    where: { companyId },
-    orderBy: [{ createdAt: 'desc' }],
-    select: {
-      id: true,
-      jobNumber: true,
-      status: true,
-      purchaseContract: { select: { contractReference: true, vendor: { select: { vendorName: true } } } },
-    },
-  });
+  const all = await getOrderCostSheets(companyId);
+  const needle = q?.trim().toLowerCase() ?? '';
+  const sheets = needle
+    ? all.filter((s) =>
+        [s.contractReference, s.vendorName, ...s.items, ...s.lines.map((l) => `${l.containerNumber ?? ''} ${l.lotNumber} ${l.batchNumber}`)]
+          .join(' ')
+          .toLowerCase()
+          .includes(needle),
+      )
+    : all;
 
-  const selectedId = shipment && shipments.some((s) => s.id === shipment) ? shipment : shipments[0]?.id;
-  const selected = shipments.find((s) => s.id === selectedId);
-  const sheet = selectedId ? await getShipmentCostSheet(companyId, selectedId) : null;
-  // The same costs summed by the category they were booked to, so freight,
-  // clearing and transport each show as their own figure rather than one sum.
-  const byCategory = selectedId
-    ? ((await getShipmentExpensesByCategory({ companyId, shipmentId: selectedId })).get(selectedId) ?? [])
-    : [];
+  const totals = {
+    landedUsd: sum(sheets.map((s) => s.landedUsd)),
+    landedLocal: sum(sheets.map((s) => s.landedLocal)),
+    expenseLocal: sum(sheets.map((s) => s.expenseLocal)),
+    profitUsd: sum(sheets.map((s) => s.grossProfitUsd)),
+    profitLocal: sum(sheets.map((s) => s.grossProfitLocal)),
+    kg: sum(sheets.map((s) => s.orderedKg)),
+  };
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Shipment Cost Report"
-        description="What one job of coffee cost once freight, clearing and every other charge is in — per kilo, in both currencies."
-        breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Shipment Cost' }]}
+        title="Shipment Costing"
+        description="One row per shipment. Open a row for its containers, every expense, the landed cost and what it earned."
+        breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Shipment Costing' }]}
         actions={
           <>
-            <FavouriteStar href="/reports/shipment-cost" label="Shipment Cost Report" />
-            {selectedId ? <ExportLinks href={exportHref('shipment-cost', { shipment: selectedId })} print={false} /> : null}
+            <FavouriteStar href="/reports/shipment-cost" label="Shipment Costing" />
             <PrintButton />
           </>
         }
       />
-      <PrintHeader
-        title="Shipment Cost Report"
-        companyName={user.activeCompany.name}
-        country={user.activeCompany.country}
-      />
+      <PrintHeader title="Shipment Costing" companyName={user.activeCompany.name} country={user.activeCompany.country} />
+      <OpenAllForPrint />
 
-      {shipments.length === 0 ? (
+      {all.length === 0 ? (
         <EmptyState
           title="No shipments yet"
-          description="A shipment is created when a purchase contract is posted. Its costs appear here as they are booked."
+          description="A shipment is opened when a purchase order is approved. Its costs appear here as they are booked."
         />
       ) : (
         <>
-          <div className="flex flex-wrap gap-2 print:hidden">
-            {shipments.map((s) => (
-              <Link
-                key={s.id}
-                href={`/reports/shipment-cost?shipment=${s.id}`}
-                className={cn(
-                  'rounded-xl border-2 px-3 py-2 text-sm transition-colors',
-                  s.id === selectedId
-                    ? 'border-forest-500 bg-forest-50/60 font-semibold text-ink'
-                    : 'border-line bg-surface text-ink-muted hover:border-forest-300',
-                )}
-              >
-                {s.jobNumber}
-                <span className="ml-1.5 text-xs text-ink-subtle">
-                  {s.purchaseContract?.vendor.vendorName ?? ''}
-                </span>
-              </Link>
+          <div className="flex flex-wrap items-end justify-between gap-3 print:hidden">
+            <p className="text-sm text-ink-muted" data-testid="shipment-count">
+              Total shipments: <span className="font-semibold text-ink">{all.length}</span>
+              {needle ? ` · ${sheets.length} matching` : ''}
+            </p>
+            <form method="get" className="flex items-center gap-2">
+              <input
+                type="search"
+                name="q"
+                defaultValue={q ?? ''}
+                placeholder="Search reference, item, container, lot…"
+                aria-label="Search shipments"
+                className="h-9 w-72 rounded-lg border border-line bg-surface px-3 text-sm"
+              />
+            </form>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 print:hidden">
+            {[
+              { label: 'Coffee bought', value: formatQuantityKg(totals.kg) },
+              { label: 'Costs added', value: formatMoney(totals.expenseLocal, local) },
+              { label: 'Total landed cost', value: formatMoney(totals.landedLocal, local), sub: formatMoney(totals.landedUsd, 'USD') },
+              { label: 'Gross profit', value: formatMoney(totals.profitLocal, local), sub: formatMoney(totals.profitUsd, 'USD') },
+            ].map((card) => (
+              <Card key={card.label}>
+                <CardContent className="pt-5">
+                  <p className="text-xs text-ink-muted">{card.label}</p>
+                  <p className="mt-1 text-lg font-semibold tabular-nums text-ink">{card.value}</p>
+                  {card.sub ? <p className="mt-0.5 text-[11px] text-ink-subtle">{card.sub}</p> : null}
+                </CardContent>
+              </Card>
             ))}
           </div>
 
-          {sheet ? (
-            <>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {[
-                  { label: 'Coffee', value: formatMoney(sheet.goodsUsd, 'USD'), sub: 'The contract price' },
-                  {
-                    label: 'Costs added',
-                    value: formatMoney(sheet.expenseUsd, 'USD'),
-                    sub: 'Freight, clearing, everything else',
-                  },
-                  {
-                    label: 'Total landed cost',
-                    value: formatMoney(sheet.totalShipmentCostUsd, 'USD'),
-                    sub: formatMoney(sheet.totalShipmentCostLocal, sheet.localCurrency),
-                  },
-                  {
-                    label: 'Cost per KG',
-                    value: formatMoney(sheet.costPerKgUsd, 'USD'),
-                    sub: `${formatMoney(sheet.costPerKgLocal, sheet.localCurrency)} per KG`,
-                  },
-                ].map((card) => (
-                  <Card key={card.label} className={card.label === 'Cost per KG' ? 'border-forest-300 bg-forest-50/40' : undefined}>
-                    <CardContent className="pt-5">
-                      <p className="text-xs text-ink-muted">{card.label}</p>
-                      <p className="mt-1 text-lg font-semibold tabular-nums text-ink">{card.value}</p>
-                      <p className="mt-0.5 text-[11px] text-ink-subtle">{card.sub}</p>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>
-                    {selected?.jobNumber} · {sheet.contractReference}
-                  </CardTitle>
-                  <CardDescription>
-                    {formatQuantityKg(sheet.receivedKg)} landed of {formatQuantityKg(sheet.orderedKg)} bought ·{' '}
-                    {formatQuantityKg(sheet.soldKg)} sold · {formatQuantityKg(sheet.remainingKg)} still in stock.
-                    Rate used for {sheet.localCurrency}: {dec(sheet.rateLocalPerUsd).toString()} per USD.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="px-0 pb-0">
-                  <TableWrap className="rounded-none border-0 border-t">
-                    <Table>
-                      <THead>
-                        <TR className="hover:bg-transparent">
-                          <TH>Date</TH>
-                          <TH>Cost</TH>
-                          <TH>Description</TH>
-                          <TH>Container</TH>
-                          <TH numeric>Amount</TH>
-                          <TH numeric>USD</TH>
-                          <TH numeric>{sheet.localCurrency}</TH>
-                          <TH>In the coffee?</TH>
-                          <TH>Paid</TH>
-                        </TR>
-                      </THead>
-                      <TBody>
-                        <TR className="bg-forest-50/40 hover:bg-forest-50/40">
-                          <TD colSpan={4} className="text-xs font-medium text-ink-muted">
-                            Coffee, at the contract price
-                          </TD>
-                          <TD />
-                          <TD numeric className="font-semibold">{formatMoney(sheet.goodsUsd, 'USD')}</TD>
-                          <TD numeric className="font-semibold">{formatMoney(sheet.goodsLocal, sheet.localCurrency)}</TD>
-                          <TD colSpan={2} />
-                        </TR>
-                        {sheet.lines.length === 0 ? (
-                          <TR>
-                            <TD colSpan={9} className="py-8 text-center text-xs text-ink-subtle">
-                              No costs have been booked against this job yet.
-                            </TD>
-                          </TR>
-                        ) : (
-                          sheet.lines.map((line) => (
-                            <TR key={line.expenseId}>
-                              <TD>{formatDate(line.expenseDate)}</TD>
-                              <TD>
-                                <Link
-                                  href={`/finance/expenses/${line.expenseId}`}
-                                  className="font-medium text-forest-800 hover:text-gold-700"
-                                >
-                                  {line.category}
-                                </Link>
-                                <span className="block text-xs text-ink-subtle">{line.expenseNumber}</span>
-                              </TD>
-                              <TD className="text-xs text-ink-muted">{line.description ?? '—'}</TD>
-                              <TD className="text-xs">{line.containerNumber ?? '—'}</TD>
-                              <TD numeric>{formatMoney(line.amount, line.currency)}</TD>
-                              <TD numeric>{formatMoney(line.amountUsd, 'USD')}</TD>
-                              <TD numeric>{formatMoney(line.amountLocal, sheet.localCurrency)}</TD>
-                              <TD>
-                                <Badge tone={line.capitalised ? 'success' : 'neutral'}>
-                                  {line.capitalised ? 'Yes' : 'No — a running cost'}
-                                </Badge>
-                              </TD>
-                              <TD className="text-xs text-ink-muted">
-                                {line.paid ? (line.paidFrom ?? 'Paid') : 'Owed'}
-                              </TD>
-                            </TR>
-                          ))
-                        )}
-                      </TBody>
-                      <TBody>
-                        {byCategory.length > 0 ? (
-                          <>
-                            <TR className="bg-surface-sunken/40 hover:bg-surface-sunken/40">
-                              <TD colSpan={9} className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
-                                By category
-                              </TD>
-                            </TR>
-                            {byCategory.map((row) => (
-                              <TR key={`${row.category}-${row.capitalised}`}>
-                                <TD />
-                                <TD className="font-medium">{row.category}</TD>
-                                <TD className="text-xs text-ink-muted">
-                                  {row.count} {row.count === 1 ? 'entry' : 'entries'}
-                                </TD>
-                                <TD colSpan={2} />
-                                <TD numeric>{formatMoney(row.amountUsd, 'USD')}</TD>
-                                <TD numeric>{formatMoney(row.amountLocal, sheet.localCurrency)}</TD>
-                                <TD>
-                                  <Badge tone={row.capitalised ? 'success' : 'neutral'}>
-                                    {row.capitalised ? 'Yes' : 'No — a running cost'}
-                                  </Badge>
-                                </TD>
-                                <TD />
-                              </TR>
-                            ))}
-                          </>
-                        ) : null}
-                      </TBody>
-                      <TFoot>
-                        <tr>
-                          <TD colSpan={5}>Total landed cost</TD>
-                          <TD numeric>{formatMoney(sheet.totalShipmentCostUsd, 'USD')}</TD>
-                          <TD numeric>{formatMoney(sheet.totalShipmentCostLocal, sheet.localCurrency)}</TD>
-                          <TD colSpan={2} />
-                        </tr>
-                      </TFoot>
-                    </Table>
-                  </TableWrap>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>What has been sold of it</CardTitle>
-                  <CardDescription>
-                    Profit is what the sales earned less the cost frozen on each line when the invoice was posted.
-                    The coffee still in stock is not counted either way until it sells.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <div>
-                    <p className="text-xs text-ink-muted">Sold</p>
-                    <p className="text-lg font-semibold tabular-nums text-ink">{formatQuantityKg(sheet.soldKg)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-ink-muted">Revenue</p>
-                    <p className="text-lg font-semibold tabular-nums text-ink">{formatMoney(sheet.revenueUsd, 'USD')}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-ink-muted">Cost of what sold</p>
-                    <p className="text-lg font-semibold tabular-nums text-ink">{formatMoney(sheet.cogsUsd, 'USD')}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-ink-muted">Gross profit</p>
-                    <p
-                      className={cn(
-                        'text-lg font-semibold tabular-nums',
-                        dec(sheet.grossProfitUsd).greaterThanOrEqualTo(0) ? 'text-gold-700' : 'text-red-600',
-                      )}
-                    >
-                      {formatMoney(sheet.grossProfitUsd, 'USD')}
-                    </p>
-                    <p className="mt-0.5 text-[11px] text-ink-subtle">
-                      {formatMoney(sheet.profitPerKgUsd, 'USD')} per KG · {dec(sheet.profitPct).toFixed(1)}%
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </>
-          ) : null}
+          <div className="space-y-3" data-testid="shipment-costing-list">
+            {sheets.map((sheet, index) => (
+              <OrderSection
+                key={sheet.contractId}
+                sheet={sheet}
+                ordinal={all.indexOf(sheet) + 1}
+                local={local}
+                defaultOpen={open === sheet.contractId || (Boolean(needle) && index === 0 && sheets.length === 1)}
+              />
+            ))}
+          </div>
         </>
       )}
     </div>
+  );
+}
+
+function OrderSection({
+  sheet,
+  ordinal,
+  local,
+  defaultOpen,
+}: {
+  sheet: OrderCostSheet;
+  ordinal: number;
+  local: string;
+  defaultOpen: boolean;
+}) {
+  const statuses = [...new Set(sheet.statuses)];
+  const profitTone = sheet.grossProfitLocal.greaterThanOrEqualTo(0) ? 'text-gold-700' : 'text-red-600';
+  return (
+    <details
+      className="group rounded-xl border border-line bg-surface shadow-card open:border-forest-300"
+      open={defaultOpen}
+      data-testid="shipment-costing-row"
+    >
+      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="size-4 shrink-0 text-ink-muted transition-transform group-open:rotate-90" aria-hidden />
+        <span className="min-w-[7rem]">
+          <span className="block text-sm font-semibold text-ink">Shipment {ordinal}</span>
+          <span className="block font-mono text-xs text-ink-muted">{sheet.contractReference}</span>
+        </span>
+        <span className="text-xs text-ink-muted">
+          {plural(sheet.items.length, 'item', 'items')} · {plural(sheet.containers, 'container', 'containers')}
+          <span className="block text-ink-subtle">{sheet.vendorName}</span>
+        </span>
+        <span className="tnum text-sm">
+          {formatQuantityKg(sheet.orderedKg)}
+          <span className="block text-[11px] text-ink-subtle">{formatQuantityKg(sheet.remainingKg)} in stock</span>
+        </span>
+        <span className="tnum text-sm">
+          <span className="block text-[11px] text-ink-subtle">Costs added</span>
+          {formatMoney(sheet.expenseLocal, local)}
+        </span>
+        <span className="tnum text-sm">
+          <span className="block text-[11px] text-ink-subtle">Total landed cost</span>
+          {formatMoney(sheet.landedLocal, local)}
+          <span className="block text-[11px] text-ink-subtle">{formatMoney(sheet.costPerKgLocal, local)} per KG</span>
+        </span>
+        <span className={cn('tnum text-sm font-semibold', profitTone)}>
+          <span className="block text-[11px] font-normal text-ink-subtle">Profit</span>
+          {formatMoney(sheet.grossProfitLocal, local)}
+          <span className="block text-[11px] font-normal text-ink-subtle">{dec(sheet.marginPct).toFixed(1)}% margin</span>
+        </span>
+        <span className="flex flex-wrap gap-1">
+          {statuses.map((s) => (
+            <StatusBadge key={s} status={s} meta={SHIPMENT_STATUS_META} />
+          ))}
+        </span>
+        <span className="ml-auto flex items-center gap-2 text-xs print:hidden">
+          <Link href={`/shipments/${sheet.firstShipmentId}`} className="rounded-md border border-line px-2.5 py-1 font-medium text-forest-800 hover:bg-forest-50">
+            View
+          </Link>
+          <ExportLinks href={exportHref('shipment-cost', { order: sheet.contractId })} print={false} />
+        </span>
+      </summary>
+
+      <div className="space-y-5 border-t border-line px-4 py-4">
+        <section>
+          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Items / containers</h3>
+          <TableWrap>
+            <Table data-testid="costing-lines">
+              <THead>
+                <TR className="hover:bg-transparent">
+                  <TH>Item</TH>
+                  <TH>Container</TH>
+                  <TH>Lot</TH>
+                  <TH>Batch</TH>
+                  <TH numeric>KG</TH>
+                  <TH numeric>Sold</TH>
+                  <TH>Warehouse</TH>
+                  <TH numeric>Purchase USD</TH>
+                  <TH numeric>Landed USD</TH>
+                  <TH numeric>Per KG</TH>
+                  <TH>Status</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {sheet.lines.map((line) => (
+                  <TR key={line.batchId}>
+                    <TD className="font-medium">{line.itemName}</TD>
+                    <TD className="font-mono text-xs">{line.containerNumber ?? '—'}</TD>
+                    <TD className="text-xs">{line.lotNumber}</TD>
+                    <TD className="text-xs">{line.batchNumber}</TD>
+                    <TD numeric>
+                      {formatQuantityKg(line.receivedKg.greaterThan(0) ? line.receivedKg : line.orderedKg)}
+                    </TD>
+                    <TD numeric className="text-xs">{formatQuantityKg(line.soldKg)}</TD>
+                    <TD className="text-xs">{line.warehouse ?? '—'}</TD>
+                    <TD numeric>{formatMoney(line.purchaseUsd, 'USD')}</TD>
+                    <TD numeric>{formatMoney(line.landedUsd, 'USD')}</TD>
+                    <TD numeric className="text-xs">{formatMoney(line.landedPerKgUsd, 'USD')}</TD>
+                    <TD>
+                      <StatusBadge status={line.status} meta={SHIPMENT_STATUS_META} />
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          </TableWrap>
+        </section>
+
+        <section>
+          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Direct expenses</h3>
+          {sheet.expenses.length === 0 ? (
+            <p className="text-xs text-ink-subtle">No costs have been booked against this shipment yet.</p>
+          ) : (
+            <TableWrap>
+              <Table data-testid="costing-expenses">
+                <THead>
+                  <TR className="hover:bg-transparent">
+                    <TH>Date</TH>
+                    <TH>Cost</TH>
+                    <TH>Memo</TH>
+                    <TH>Container</TH>
+                    <TH numeric>Amount</TH>
+                    <TH numeric>USD</TH>
+                    <TH numeric>{local}</TH>
+                    <TH>In the coffee?</TH>
+                    <TH>Paid</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {sheet.expenses.map((e) => (
+                    <TR key={e.expenseId}>
+                      <TD className="whitespace-nowrap">{formatDate(e.expenseDate)}</TD>
+                      <TD>
+                        <Link href={`/finance/expenses/${e.expenseId}`} className="font-medium text-forest-800 hover:text-gold-700">
+                          {e.category}
+                        </Link>
+                        <span className="block text-xs text-ink-subtle">{businessNumber(e.expenseNumber)}</span>
+                      </TD>
+                      <TD>
+                        <MemoCell memo={e.memo} />
+                      </TD>
+                      <TD className="font-mono text-xs">{e.containerNumber ?? '—'}</TD>
+                      <TD numeric>{formatMoney(e.amount, e.currency)}</TD>
+                      <TD numeric>{formatMoney(e.amountUsd, 'USD')}</TD>
+                      <TD numeric>{formatMoney(e.amountLocal, local)}</TD>
+                      <TD>
+                        <Badge tone={e.capitalised ? 'success' : 'neutral'}>{e.capitalised ? 'Yes' : 'No — a running cost'}</Badge>
+                      </TD>
+                      <TD className="text-xs text-ink-muted">{e.paid ? (e.paidFrom ?? 'Paid') : 'Owed'}</TD>
+                    </TR>
+                  ))}
+                </TBody>
+                {sheet.byCategory.length > 0 ? (
+                  <TBody>
+                    <TR className="bg-surface-sunken/40 hover:bg-surface-sunken/40">
+                      <TD colSpan={9} className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+                        By category
+                      </TD>
+                    </TR>
+                    {sheet.byCategory.map((row) => (
+                      <TR key={`${row.category}-${row.capitalised}`}>
+                        <TD />
+                        <TD className="font-medium">{row.category}</TD>
+                        <TD className="text-xs text-ink-muted">
+                          {row.count} {row.count === 1 ? 'entry' : 'entries'}
+                        </TD>
+                        <TD colSpan={2} />
+                        <TD numeric>{formatMoney(row.amountUsd, 'USD')}</TD>
+                        <TD numeric>{formatMoney(row.amountLocal, local)}</TD>
+                        <TD>
+                          <Badge tone={row.capitalised ? 'success' : 'neutral'}>{row.capitalised ? 'Yes' : 'No — a running cost'}</Badge>
+                        </TD>
+                        <TD />
+                      </TR>
+                    ))}
+                  </TBody>
+                ) : null}
+                <TFoot>
+                  <tr>
+                    <TD colSpan={5}>Total expenses</TD>
+                    <TD numeric>{formatMoney(sheet.expenseUsd, 'USD')}</TD>
+                    <TD numeric>{formatMoney(sheet.expenseLocal, local)}</TD>
+                    <TD colSpan={2} />
+                  </tr>
+                </TFoot>
+              </Table>
+            </TableWrap>
+          )}
+        </section>
+
+        <section>
+          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Costing</h3>
+          <TableWrap className="max-w-3xl">
+            <Table data-testid="costing-summary">
+              <THead>
+                <TR className="hover:bg-transparent">
+                  <TH />
+                  <TH numeric>{local}</TH>
+                  <TH numeric>USD</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {[
+                  ['Coffee, at the contract price', sheet.goodsLocal, sheet.goodsUsd],
+                  ['Costs added (direct expenses)', sheet.expenseLocal, sheet.expenseUsd],
+                  ['Total landed cost', sheet.landedLocal, sheet.landedUsd, 'bold'],
+                  ['Cost per KG', sheet.costPerKgLocal, sheet.costPerKgUsd],
+                  ['Cost per MT', sheet.costPerMtLocal, sheet.costPerMtUsd],
+                  ['Sales', sheet.revenueLocal, sheet.revenueUsd],
+                  ['Cost of what sold (COGS)', sheet.cogsLocal, sheet.cogsUsd],
+                  ['Profit / loss', sheet.grossProfitLocal, sheet.grossProfitUsd, 'profit'],
+                ].map(([label, localValue, usd, style]) => (
+                  <TR key={String(label)}>
+                    <TD className={cn(style ? 'font-semibold' : undefined, style === 'profit' ? profitTone : undefined)}>
+                      {String(label)}
+                    </TD>
+                    <TD numeric className={cn(style ? 'font-semibold' : undefined, style === 'profit' ? profitTone : undefined)}>
+                      {formatMoney(localValue as never, local)}
+                    </TD>
+                    <TD numeric className={cn('text-ink-muted', style ? 'font-semibold' : undefined)}>
+                      {formatMoney(usd as never, 'USD')}
+                    </TD>
+                  </TR>
+                ))}
+                <TR>
+                  <TD>Margin</TD>
+                  <TD numeric colSpan={2}>{dec(sheet.marginPct).toFixed(1)}%</TD>
+                </TR>
+                <TR>
+                  <TD>Remaining stock</TD>
+                  <TD numeric colSpan={2}>
+                    {formatQuantityKg(sheet.remainingKg)} · carried at {formatMoney(sheet.remainingValueUsd, 'USD')}
+                  </TD>
+                </TR>
+              </TBody>
+            </Table>
+          </TableWrap>
+          <p className="mt-2 text-[11px] text-ink-subtle">
+            {formatQuantityKg(sheet.receivedKg)} landed of {formatQuantityKg(sheet.orderedKg)} bought · rate used for {local}:{' '}
+            {dec(sheet.rateLocalPerUsd).toString()} per USD. Profit counts only what has been sold; stock still on hand is not
+            counted either way until it sells.
+          </p>
+        </section>
+      </div>
+    </details>
   );
 }

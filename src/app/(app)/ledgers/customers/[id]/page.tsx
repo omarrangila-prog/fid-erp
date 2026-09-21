@@ -97,7 +97,7 @@ export default async function CustomerLedgerPage({
         }
       />
 
-      <MetricGrid className="lg:grid-cols-4">
+      <MetricGrid className="lg:grid-cols-4" data-print-drop>
         <Metric
           label="Balance"
           value={formatMoney(ledger.closingBalance, ledger.viewCurrency)}

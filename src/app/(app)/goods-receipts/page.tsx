@@ -96,6 +96,7 @@ export default async function GoodsReceiptsPage() {
       </Callout>
 
       <GoodsReceiptsClient
+        canReverse={can(user, PERMISSIONS.PURCHASES_REVERSE)}
         rows={rows}
         emptyAction={
           can(user, PERMISSIONS.PURCHASES_VIEW) ? (

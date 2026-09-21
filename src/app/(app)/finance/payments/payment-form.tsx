@@ -19,6 +19,7 @@ import { formatMoney, formatDate, todayInputValue } from '@/lib/format';
 import { savePaymentAction, postPaymentAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { accountsFor } from '@/lib/cash-account-choice';
+import { useClientKey } from '@/lib/use-client-key';
 
 export type OpenContract = {
   /** A contract is the coffee; an expense is a cost the supplier billed. */
@@ -58,6 +59,7 @@ export function PaymentForm({
   canCreateCashBank?: boolean;
 }) {
   const router = useRouter();
+  const clientKey = useClientKey();
   const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
   const [fieldIssues, setFieldIssues] = React.useState<Record<string, string>>({});
@@ -118,6 +120,7 @@ export function PaymentForm({
     setFieldIssues({});
 
     const payload = {
+      clientKey: clientKey(),
       paymentDate: form.paymentDate,
       vendorId: accruedCost ? '' : (form.vendorId ?? ''),
       currency: form.currency,
@@ -364,8 +367,13 @@ export function PaymentForm({
 
       <Card>
         <CardContent className="pt-5">
-          <Field label="Description">
-            <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          <Field label="Memo" hint="What this payment was for — it follows the payment onto the supplier's ledger and the cash book.">
+            <Textarea
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder="e.g. Part payment on ICUL/FID/002, by bank transfer"
+              aria-label="Memo"
+            />
           </Field>
         </CardContent>
       </Card>

@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
-import { getAgentPositions } from '@/lib/services/agent-ledger';
+import { getAgentSummaries, type AgentLedgerSummary } from '@/lib/services/agent-account';
 import { formatMoney } from '@/lib/format';
 import { RowActions } from '@/components/shared/row-actions';
 import { PageHeader } from '@/components/shared/page-header';
@@ -11,7 +11,7 @@ import { PrintHeader } from '@/components/shared/print-header';
 import { Button } from '@/components/ui/button';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { Callout, EmptyState } from '@/components/ui/feedback';
-import { dec } from '@/lib/money';
+import { dec, type Decimal } from '@/lib/money';
 
 export const metadata: Metadata = { title: 'Agent Ledgers' };
 export const dynamic = 'force-dynamic';
@@ -27,17 +27,17 @@ export const dynamic = 'force-dynamic';
 export default async function AgentLedgersPage() {
   const user = await requirePageAccess(PERMISSIONS.LEDGERS_VIEW);
   const local = user.activeCompany.localCurrency;
-  const positions = await getAgentPositions(user.activeCompany.id);
+  const agents = await getAgentSummaries(user.activeCompany.id);
 
-  const holding = positions.reduce((sum, p) => sum.plus(p.holdingUsd), dec(0));
-  const commission = positions.reduce((sum, p) => sum.plus(p.commissionPayableUsd), dec(0));
+  const total = (pick: (s: AgentLedgerSummary) => Decimal) =>
+    agents.reduce((sum, a) => sum.plus(pick(a.summary)), dec(0));
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Agent Ledgers"
-        description="Money collected by agents and not yet handed over, and commission owed to them."
-        breadcrumbs={[{ label: 'Accounting' }, { label: 'Agent Ledgers' }]}
+        title="Agent Balances"
+        description={`What each agent holds for the company, is owed in commission, and has lent or borrowed — in ${local}.`}
+        breadcrumbs={[{ label: 'Agents' }, { label: 'Agent Balances' }]}
         actions={
           <>
             <Button asChild variant="outline" size="sm">
@@ -48,22 +48,22 @@ export default async function AgentLedgersPage() {
         }
       />
       <PrintHeader
-        title="Agent Ledgers"
+        title="Agent Balances"
         companyName={user.activeCompany.name}
         country={user.activeCompany.country}
       />
 
-      {positions.length === 0 ? (
+      {agents.length === 0 ? (
         <EmptyState
           title="No agents yet"
           description="An agent who collects from customers on the company's behalf will appear here with their balance."
         />
       ) : (
         <>
-          <Callout tone="info" title="These are two separate balances">
-            What an agent is holding is money the company owns and has not received. What it owes them in commission
-            is a cost already charged to the shipments. An agent can be on both sides at once, so they are never
-            offset against each other.
+          <Callout tone="info" title={`Every figure is in ${local}`}>
+            Each balance sits in its own account — money held for the company is an asset, commission and a loan from
+            the agent are liabilities — and is shown once. The net says who owes whom overall; its USD equivalent is
+            given beside it at the rate of each day.
           </Callout>
 
           <TableWrap>
@@ -71,37 +71,45 @@ export default async function AgentLedgersPage() {
               <THead>
                 <TR className="hover:bg-transparent">
                   <TH>Agent</TH>
-                  <TH numeric>Holding for us (USD)</TH>
-                  <TH numeric>Holding ({local})</TH>
-                  <TH numeric>Commission owed (USD)</TH>
-                  <TH numeric>Net (USD)</TH>
+                  <TH numeric>Holding for us</TH>
+                  <TH numeric>Commission owed</TH>
+                  <TH numeric>Loan from agent</TH>
+                  <TH numeric>Loan to agent</TH>
+                  <TH numeric>Net position</TH>
+                  <TH numeric>USD Eq.</TH>
                   <TH className="text-right">Actions</TH>
                 </TR>
               </THead>
               <TBody>
-                {positions.map((position) => (
-                  <TR key={position.agentId}>
+                {agents.map(({ agentId, agentName, summary }) => (
+                  <TR key={agentId}>
                     <TD>
-                      <Link
-                        href={`/agents/${position.agentId}`}
-                        className="font-medium text-forest-800 hover:text-gold-700"
-                      >
-                        {position.agentName}
+                      <Link href={`/agents/${agentId}`} className="font-medium text-forest-800 hover:text-gold-700">
+                        {agentName}
                       </Link>
                     </TD>
-                    <TD numeric className={dec(position.holdingUsd).greaterThan(0) ? 'font-semibold text-ink' : ''}>
-                      {formatMoney(position.holdingUsd, 'USD')}
+                    <TD numeric className={summary.holdingLocal.greaterThan(0) ? 'font-semibold text-ink' : ''}>
+                      {formatMoney(summary.holdingLocal, local)}
                     </TD>
-                    <TD numeric>{formatMoney(position.holdingLocal, local)}</TD>
-                    <TD numeric>{formatMoney(position.commissionPayableUsd, 'USD')}</TD>
-                    <TD numeric>{formatMoney(position.netUsd, 'USD')}</TD>
+                    <TD numeric>{formatMoney(summary.commissionLocal, local)}</TD>
+                    <TD numeric>{formatMoney(summary.loanFromAgentLocal, local)}</TD>
+                    <TD numeric>{formatMoney(summary.loanToAgentLocal, local)}</TD>
+                    <TD numeric className="font-medium">
+                      {formatMoney(summary.netLocal.abs(), local)}
+                      <span className="block text-[11px] font-normal text-ink-subtle">
+                        {summary.netLocal.isZero() ? 'settled' : summary.netLocal.isPositive() ? 'agent owes us' : 'we owe agent'}
+                      </span>
+                    </TD>
+                    <TD numeric className="text-xs text-ink-muted">
+                      {local === 'USD' ? '—' : formatMoney(summary.netUsd.abs(), 'USD')}
+                    </TD>
                     <TD className="text-right">
                       <RowActions
                         actions={[
-                          { label: 'Agent', href: `/agents/${position.agentId}`, icon: 'view' },
+                          { label: 'Open ledger', href: `/agents/${agentId}`, icon: 'view' },
                           {
                             label: 'Receive from agent',
-                            href: `/finance/agent-commission?agent=${position.agentId}`,
+                            href: `/agents/${agentId}`,
                             icon: 'moneyIn',
                           },
                         ]}
@@ -112,11 +120,16 @@ export default async function AgentLedgersPage() {
               </TBody>
               <TFoot>
                 <TR className="hover:bg-transparent">
-                  <TD colSpan={2}>Total</TD>
-                  <TD numeric>{formatMoney(holding, 'USD')}</TD>
+                  <TD>Total</TD>
+                  <TD numeric>{formatMoney(total((s) => s.holdingLocal), local)}</TD>
+                  <TD numeric>{formatMoney(total((s) => s.commissionLocal), local)}</TD>
+                  <TD numeric>{formatMoney(total((s) => s.loanFromAgentLocal), local)}</TD>
+                  <TD numeric>{formatMoney(total((s) => s.loanToAgentLocal), local)}</TD>
+                  <TD numeric>{formatMoney(total((s) => s.netLocal), local)}</TD>
+                  <TD numeric className="text-xs text-ink-muted">
+                    {local === 'USD' ? '—' : formatMoney(total((s) => s.netUsd), 'USD')}
+                  </TD>
                   <TD />
-                  <TD numeric>{formatMoney(commission, 'USD')}</TD>
-                  <TD numeric>{formatMoney(holding.minus(commission), 'USD')}</TD>
                 </TR>
               </TFoot>
             </Table>

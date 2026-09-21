@@ -21,6 +21,7 @@ import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { accountsFor } from '@/lib/cash-account-choice';
 import { AddAgentDialog } from '@/app/(app)/finance/receipts/add-agent';
 import { shortDocumentNumber } from '@/lib/short-number';
+import { useClientKey } from '@/lib/use-client-key';
 
 /**
  * Customer receipt.
@@ -68,6 +69,7 @@ export function ReceiptForm({
   canCreateCashBank?: boolean;
 }) {
   const router = useRouter();
+  const clientKey = useClientKey();
   const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
   const [fieldIssues, setFieldIssues] = React.useState<Record<string, string>>({});
@@ -202,6 +204,7 @@ export function ReceiptForm({
     } : null;
 
     const payload = {
+      clientKey: clientKey(),
       receiptDate: form.receiptDate,
       customerId: form.customerId,
       currency: form.currency,
@@ -660,8 +663,13 @@ export function ReceiptForm({
 
       <Card>
         <CardContent className="pt-5">
-          <Field label="Description">
-            <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          <Field label="Memo" hint="What happened, in your words — it follows the payment onto every ledger. e.g. “Cash collected by Ahmed against INV 15”.">
+            <Textarea
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder="e.g. Cash collected by Ahmed against INV 15"
+              aria-label="Memo"
+            />
           </Field>
         </CardContent>
       </Card>

@@ -3,15 +3,20 @@ import { notFound } from 'next/navigation';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
-import { getAgentPositions, getAgentStatement } from '@/lib/services/agent-ledger';
+import { getAgentPositions } from '@/lib/services/agent-ledger';
+import { getAgentLedger } from '@/lib/services/agent-account';
+import { businessNumber, shortDocumentNumber } from '@/lib/short-number';
+import { MemoCell } from '@/components/shared/memo-cell';
+import { JournalSourceActions } from '@/components/shared/journal-source-actions';
+import Link from 'next/link';
 import { getRateDefaults } from '@/lib/services/exchange-rate';
-import { formatMoney, formatDate, titleCase } from '@/lib/format';
+import { formatMoney, formatDate } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrintButton } from '@/components/shared/print-button';
 import { PrintHeader } from '@/components/shared/print-header';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { Callout, EmptyState } from '@/components/ui/feedback';
 import { AgentSettlementActions } from '@/app/(app)/agents/[id]/settlement-actions';
 
@@ -19,13 +24,13 @@ export const metadata: Metadata = { title: 'Agent Ledger' };
 export const dynamic = 'force-dynamic';
 
 /**
- * One agent's ledger.
+ * One agent's ledger, in the company's own currency.
  *
- * Two balances and the movements behind them. What the agent is holding —
- * money customers have paid him that has not reached the company — and what
- * the company owes him in commission. They are separate accounts and are
- * deliberately not netted: an agent can be holding the company's money while
- * the company owes him commission, and offsetting the two would hide both.
+ * Everything the agent does with the company's money in one statement —
+ * collections, cheques, settlements, commission, loans both ways and
+ * journals — with each balance still shown separately above it, because the
+ * accounts behind them are different: money the agent holds is an asset,
+ * commission and a loan from them are liabilities.
  */
 export default async function AgentLedgerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -38,9 +43,9 @@ export default async function AgentLedgerPage({ params }: { params: Promise<{ id
   });
   if (!agent) notFound();
 
-  const [positions, statement, accounts, rates] = await Promise.all([
+  const [positions, ledger, accounts, rates] = await Promise.all([
     getAgentPositions(companyId, id),
-    getAgentStatement({ companyId, agentId: id }),
+    getAgentLedger({ companyId, agentId: id }),
     prisma.cashBankAccount.findMany({
       where: { companyId, status: 'ACTIVE' },
       orderBy: [{ accountType: 'asc' }, { name: 'asc' }],
@@ -74,6 +79,11 @@ export default async function AgentLedgerPage({ params }: { params: Promise<{ id
                 commissionPayableUsd={position?.commissionPayableUsd.toString() ?? '0'}
               />
             ) : null}
+            {can(user, PERMISSIONS.ACCOUNTING_POST) ? (
+              <Button asChild variant="outline" size="sm">
+                <Link href={`/finance/loans/new?agent=${agent.id}`}>Loan with this agent</Link>
+              </Button>
+            ) : null}
             <PrintButton />
           </>
         }
@@ -84,96 +94,163 @@ export default async function AgentLedgerPage({ params }: { params: Promise<{ id
         country={user.activeCompany.country}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Holding for the company</CardTitle>
-            <CardDescription>
-              Collected from customers and not yet handed over. The customers are settled; this money is not yet in
-              the bank.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="tnum text-2xl font-semibold text-ink">
-              {formatMoney(position?.holdingUsd ?? 0, 'USD')}
-            </p>
-            <p className="tnum mt-1 text-xs text-ink-subtle">
-              {formatMoney(position?.holdingLocal ?? 0, local)}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Commission owed to them</CardTitle>
-            <CardDescription>
-              Agreed on shipments and not yet paid. Already counted as a cost of those shipments.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="tnum text-2xl font-semibold text-ink">
-              {formatMoney(position?.commissionPayableUsd ?? 0, 'USD')}
-            </p>
-            <p className="tnum mt-1 text-xs text-ink-subtle">
-              {formatMoney(position?.commissionPayableLocal ?? 0, local)}
-            </p>
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-print-drop>
+        {[
+          {
+            title: 'Holding for the company',
+            hint: 'Customers’ money and cheques collected and not yet handed over.',
+            value: ledger.summary.holdingLocal,
+          },
+          {
+            title: 'Commission owed to them',
+            hint: 'Agreed and not yet paid.',
+            value: ledger.summary.commissionLocal,
+          },
+          {
+            title: 'Loan from the agent',
+            hint: 'Lent to the company and not yet repaid.',
+            value: ledger.summary.loanFromAgentLocal,
+          },
+          {
+            title: 'Loan to the agent',
+            hint: 'Lent by the company and not yet returned.',
+            value: ledger.summary.loanToAgentLocal,
+          },
+        ].map((card) => (
+          <Card key={card.title}>
+            <CardHeader>
+              <CardTitle>{card.title}</CardTitle>
+              <CardDescription>{card.hint}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="tnum text-xl font-semibold text-ink">{formatMoney(card.value, local)}</p>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
-      <Callout tone="info" title="Why these are not netted">
-        An agent can be holding the company&rsquo;s money at the same time as the company owes them commission. They
-        are two separate balances with two different people waiting on them, and offsetting one against the other
-        would hide both.
+      <Callout
+        tone={ledger.summary.netLocal.isZero() ? 'info' : ledger.summary.netLocal.isPositive() ? 'warning' : 'info'}
+        title={
+          ledger.summary.netLocal.isZero()
+            ? 'Nothing outstanding either way'
+            : ledger.summary.netLocal.isPositive()
+              ? `${agent.agentName} owes the company ${formatMoney(ledger.summary.netLocal, local)}`
+              : `The company owes ${agent.agentName} ${formatMoney(ledger.summary.netLocal.abs(), local)}`
+        }
+      >
+        Kept in {local}, the currency the agent is paid and owed in. Equivalent{' '}
+        {formatMoney(ledger.summary.netUsd.abs(), 'USD')} at the rate of each day. The four balances above stay in their own accounts on the balance sheet — this is one
+        view of all of them.
       </Callout>
 
       <Card>
         <CardHeader>
-          <CardTitle>Movements</CardTitle>
-          <CardDescription>Every posting on this agent&rsquo;s two accounts, oldest first.</CardDescription>
+          <CardTitle>Agent ledger</CardTitle>
+          <CardDescription>
+            Every posting tagged to this agent, oldest first: collections, cheques, settlements, commission, loans and
+            journals. Debit means the agent owes the company more; credit means the company owes the agent more.
+          </CardDescription>
         </CardHeader>
         <CardContent className="px-0 pb-0">
-          {statement.length === 0 ? (
+          {ledger.rows.length === 0 ? (
             <div className="px-5 pb-5">
               <EmptyState
                 title="Nothing recorded against this agent yet"
-                description="A receipt collected by them, or a commission owed to them, will appear here."
+                description="A payment collected by them, a commission, a settlement or a loan will appear here."
               />
             </div>
           ) : (
             <TableWrap data-wide-sheet className="rounded-none border-0 border-t">
-              <Table>
+              <Table data-testid="agent-ledger">
                 <THead>
                   <TR className="hover:bg-transparent">
                     <TH>Date</TH>
-                    <TH>Entry</TH>
-                    <TH>What happened</TH>
+                    <TH>Reference</TH>
+                    <TH>Type</TH>
                     <TH>Customer</TH>
-                    <TH numeric>Debit USD</TH>
-                    <TH numeric>Credit USD</TH>
-                    <TH numeric>Holding USD</TH>
-                    <TH numeric>Commission owed USD</TH>
+                    <TH>Invoice</TH>
+                    <TH>Memo</TH>
+                    <TH>Currency</TH>
+                    <TH numeric>Debit</TH>
+                    <TH numeric>Credit</TH>
+                    <TH numeric>Balance {local}</TH>
+                    <TH numeric>USD Eq.</TH>
+                    <TH>Status</TH>
+                    <TH className="text-right" data-print="hide">Actions</TH>
                   </TR>
                 </THead>
                 <TBody>
-                  {statement.map((row, index) => (
-                    <TR key={`${row.entryNumber}-${index}`}>
-                      <TD className="whitespace-nowrap">{formatDate(row.entryDate)}</TD>
-                      <TD>{row.entryNumber}</TD>
-                      <TD>
-                        <span className="block">{row.description}</span>
-                        <Badge tone={row.account === 'CLEARING' ? 'info' : 'warning'}>
-                          {row.account === 'CLEARING' ? 'Collections' : 'Commission'}
-                        </Badge>
-                        <span className="ml-1 text-xs text-ink-subtle">{titleCase(row.sourceType)}</span>
-                      </TD>
-                      <TD>{row.customerName ?? '—'}</TD>
-                      <TD numeric>{formatMoney(row.debitUsd, 'USD')}</TD>
-                      <TD numeric>{formatMoney(row.creditUsd, 'USD')}</TD>
-                      <TD numeric className="font-medium">{formatMoney(row.holdingUsd, 'USD')}</TD>
-                      <TD numeric className="font-medium">{formatMoney(row.commissionPayableUsd, 'USD')}</TD>
-                    </TR>
-                  ))}
+                  {ledger.rows.map((row, index) => {
+                    const foreign = row.currency !== local;
+                    return (
+                      <TR key={`${row.journalEntryId}-${index}`}>
+                        <TD className="whitespace-nowrap">{formatDate(row.entryDate)}</TD>
+                        <TD className="whitespace-nowrap text-xs">
+                          {businessNumber(row.sourceType === 'MANUAL' || !row.reference ? row.entryNumber : row.reference)}
+                        </TD>
+                        <TD className="whitespace-nowrap text-xs font-medium" data-testid="agent-ledger-type">
+                          {row.typeLabel}
+                          <span className="block text-[11px] font-normal text-ink-subtle">{row.accountName}</span>
+                        </TD>
+                        <TD className="text-xs">{row.customerName ?? '—'}</TD>
+                        <TD className="whitespace-nowrap text-xs">
+                          {row.documents.length === 0
+                            ? '—'
+                            : row.documents.map((doc, i) => (
+                                <span key={doc.id}>
+                                  {i > 0 ? ', ' : ''}
+                                  <Link href={`/sales/${doc.id}`} className="font-medium text-forest-800 hover:text-gold-700">
+                                    {shortDocumentNumber(doc.number)}
+                                  </Link>
+                                </span>
+                              ))}
+                        </TD>
+                        <TD>
+                          <MemoCell memo={row.memo} />
+                        </TD>
+                        <TD className="text-xs">{row.currency}</TD>
+                        <TD numeric>
+                          {row.debit.greaterThan(0) ? (
+                            <>
+                              {formatMoney(row.debit, row.currency)}
+                              {foreign ? (
+                                <span className="block text-[11px] text-ink-subtle">{formatMoney(row.debitLocal, local)}</span>
+                              ) : null}
+                            </>
+                          ) : (
+                            '—'
+                          )}
+                        </TD>
+                        <TD numeric>
+                          {row.credit.greaterThan(0) ? (
+                            <>
+                              {formatMoney(row.credit, row.currency)}
+                              {foreign ? (
+                                <span className="block text-[11px] text-ink-subtle">{formatMoney(row.creditLocal, local)}</span>
+                              ) : null}
+                            </>
+                          ) : (
+                            '—'
+                          )}
+                        </TD>
+                        <TD numeric className="font-medium">
+                          {formatMoney(row.balanceLocal, local)}
+                        </TD>
+                        <TD numeric className="text-xs text-ink-muted">
+                          {row.currency === 'USD' ? '—' : formatMoney(row.usd, 'USD')}
+                        </TD>
+                        <TD className="whitespace-nowrap text-xs">{row.status}</TD>
+                        <TD data-print="hide">
+                          <JournalSourceActions
+                            sourceType={row.sourceType}
+                            sourceId={row.sourceId}
+                            entryNumber={row.entryNumber}
+                          />
+                        </TD>
+                      </TR>
+                    );
+                  })}
                 </TBody>
               </Table>
             </TableWrap>

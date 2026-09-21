@@ -18,3 +18,32 @@ export function shortDocumentNumber(fullNumber: string | null | undefined, prefi
   const sequence = String(Number(trailing[1]));
   return `${prefix} ${sequence}`;
 }
+
+/** The client's word for each kind of document, keyed by the code inside its stored number. */
+const BUSINESS_PREFIX: Record<string, string> = {
+  SI: 'INV',
+  RV: 'PAY',
+  PV: 'PMT',
+  EV: 'EXP',
+  JV: 'JV',
+  PO: 'PO',
+  PB: 'BILL',
+  CN: 'CN',
+  DN: 'DN',
+  AGS: 'SET',
+  GRN: 'GRN',
+  SC: 'COUNT',
+};
+
+/**
+ * Any stored document number in its short, readable form: FID-MA-RV-000021
+ * becomes PAY 21, FID-MA-JV-000086 becomes JV 86. A number that does not
+ * follow the stored pattern — something typed by hand — is shown as it is.
+ */
+export function businessNumber(fullNumber: string | null | undefined): string {
+  if (!fullNumber) return '—';
+  const match = fullNumber.match(/-([A-Z]{2,4})-(\d+)\s*$/);
+  if (!match) return fullNumber;
+  const prefix = BUSINESS_PREFIX[match[1]] ?? match[1];
+  return `${prefix} ${Number(match[2])}`;
+}

@@ -298,7 +298,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                     <TR className="hover:bg-transparent">
                       <TH>Date</TH>
                       <TH>Expense Category</TH>
-                      <TH>Description</TH>
+                      <TH>Memo</TH>
                       <TH>Original Currency</TH>
                       <TH numeric>Original Amount</TH>
                       <TH numeric>FX Rate</TH>

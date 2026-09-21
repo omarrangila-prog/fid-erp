@@ -126,7 +126,7 @@ test('every report that shows figures can be taken away as a spreadsheet', async
     ['/reports/sales-by?by=customer', 'Sales by Customer'],
     ['/reports/sales-by?by=item', 'Sales by Coffee'],
     ['/reports/stock-movement', 'Daily Stock Movement'],
-    ['/reports/shipment-cost', 'Shipment Cost Report'],
+    ['/reports/shipment-cost', 'Shipment Costing'],
     ['/reports/inventory-valuation', 'Inventory Valuation'],
     ['/profitability?view=statement', 'Profitability'],
   ];
