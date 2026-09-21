@@ -189,6 +189,9 @@ test('a purchase order can be raised from the screen, start to finish', async ({
 
   // --- A purchase order with the least the client can give ---------------
   await page.goto('/purchases/new', { waitUntil: 'domcontentloaded' });
+  // Let the form finish hydrating: an option list opened mid-hydration is
+  // re-rendered under the click and the click lands on a detached node.
+  await page.waitForLoadState('networkidle').catch(() => undefined);
   const form = page.getByRole('main');
 
   // By role and name: `getByLabel(/supplier/i)` also matches "Supplier

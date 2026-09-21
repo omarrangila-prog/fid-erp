@@ -177,6 +177,11 @@ export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canM
     {
       id: 'actions',
       header: 'Actions',
+      // Buttons and menus: never wrapped in the row's link (an <a> cannot hold a
+      // <button>, and the browser splitting them apart broke hydration).
+      mobile: 'action',
+      pin: 'right',
+      printHidden: true,
       cell: (r: TransferRow) => {
         const step = NEXT_STEP[r.state];
         return (

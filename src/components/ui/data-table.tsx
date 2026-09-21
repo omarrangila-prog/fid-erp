@@ -522,7 +522,7 @@ export function DataTable<T>({
                           )}
                           data-print={column.printHidden ? 'hide' : undefined}
                         >
-                          {href && column.mobile !== 'action' && !column.printHidden ? (
+                          {href && column.mobile !== 'action' && !column.printHidden && column.id !== 'actions' ? (
                             <Link
                               href={href}
                               className={cn(

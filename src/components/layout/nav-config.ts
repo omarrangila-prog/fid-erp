@@ -149,7 +149,9 @@ export const NAV_GROUPS: NavGroup[] = [
       // agents, loans, capital, income and expenses. Searchable by name.
       { label: 'General Ledgers', href: '/ledgers', icon: BookOpen, permissions: [PERMISSIONS.LEDGERS_VIEW] },
       { label: 'Chart of Accounts', href: '/accounting/chart', icon: Tags, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
-      { label: 'General Expenses', href: '/finance/expenses?kind=GENERAL', icon: Receipt, permissions: [PERMISSIONS.EXPENSES_VIEW] },
+      // Listed under Accounting for those who keep the books; a data-entry
+      // operator reaches the same list through Shipments → Shipment Expenses.
+      { label: 'General Expenses', href: '/finance/expenses?kind=GENERAL', icon: Receipt, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
     ],
   },
   {
