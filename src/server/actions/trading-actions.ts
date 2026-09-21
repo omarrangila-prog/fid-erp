@@ -49,6 +49,9 @@ import {
 } from '@/lib/services/sales';
 import {
   createStockTransfer,
+  updateDraftStockTransfer,
+  reverseReceivedStockTransfer,
+  correctReceivedStockTransfer,
   approveStockTransfer,
   dispatchStockTransfer,
   receiveStockTransfer,
@@ -771,6 +774,47 @@ export async function advanceStockTransferAction(
     revalidatePath('/inventory');
     revalidatePath('/dashboard');
     return { ok: true, data: undefined };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+/** Edit a draft transfer in place. */
+export async function updateStockTransferAction(id: string, payload: string): Promise<DocFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.INVENTORY_TRANSFER);
+    const input = stockTransferSchema.parse(parseJson(payload));
+    await updateDraftStockTransfer(id, { companyId: user.activeCompany.id, ...input }, user.id);
+    revalidatePath('/inventory/transfers');
+    revalidatePath(`/inventory/transfers/${id}`);
+    return { ok: true, id, message: 'Transfer updated.' };
+  } catch (error) {
+    return toState(error);
+  }
+}
+
+/** Move a received transfer's stock back, keeping its history. */
+export async function reverseStockTransferAction(id: string, reason: string): Promise<ActionResult<undefined>> {
+  try {
+    const user = await requirePermission(PERMISSIONS.INVENTORY_TRANSFER);
+    await reverseReceivedStockTransfer({ id, companyId: user.activeCompany.id, userId: user.id, reason });
+    revalidatePath('/inventory/transfers');
+    revalidatePath('/inventory');
+    revalidatePath(`/inventory/transfers/${id}`);
+    return { ok: true, data: undefined };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+/** Move a received transfer back and open a new draft copy to correct and receive again. */
+export async function correctStockTransferAction(id: string, reason: string): Promise<ActionResult<{ id: string }>> {
+  try {
+    const user = await requirePermission(PERMISSIONS.INVENTORY_TRANSFER);
+    const draft = await correctReceivedStockTransfer({ id, companyId: user.activeCompany.id, userId: user.id, reason });
+    revalidatePath('/inventory/transfers');
+    revalidatePath('/inventory');
+    return { ok: true, data: { id: draft.id } };
   } catch (error) {
     return fail(error);
   }

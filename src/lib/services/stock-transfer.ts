@@ -1,4 +1,4 @@
-import { transaction } from '@/lib/db';
+import { prisma, transaction } from '@/lib/db';
 import type { Tx } from '@/lib/db';
 import { Decimal, dec, toQuantity, sum } from '@/lib/money';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
@@ -380,6 +380,214 @@ export async function deleteDraftStockTransfer(params: { id: string; companyId: 
       before: { transferNumber: transfer.transferNumber },
     });
     await tx.stockTransfer.delete({ where: { id: params.id } });
+  });
+}
+
+/** One transfer, as the detail screen shows it: where from and to, and every line with its origin. */
+export async function getStockTransferDetail(companyId: string, id: string) {
+  const transfer = await prisma.stockTransfer.findFirst({
+    where: { id, companyId },
+    include: {
+      fromWarehouse: { select: { id: true, name: true } },
+      toWarehouse: { select: { id: true, name: true } },
+      requestedBy: { select: { name: true } },
+      approvedBy: { select: { name: true } },
+      receivedBy: { select: { name: true } },
+      lines: {
+        orderBy: { lineNumber: 'asc' },
+        include: {
+          item: { select: { id: true, itemName: true } },
+          container: { select: { containerNumber: true } },
+          batch: {
+            select: {
+              id: true,
+              batchNumber: true,
+              bagWeightKg: true,
+              lot: { select: { lotNumber: true } },
+              shipmentId: true,
+              purchaseContract: { select: { id: true, contractReference: true } },
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!transfer) throw new NotFoundError('Stock transfer');
+  return transfer;
+}
+
+/**
+ * Edit a transfer that has not moved anything yet. A draft reserves nothing
+ * and posts nothing, so its lines, warehouses, date and notes can simply be
+ * replaced; the number stays the same.
+ */
+export async function updateDraftStockTransfer(id: string, input: StockTransferInput, userId: string) {
+  return transaction(async (tx) => {
+    const existing = await tx.stockTransfer.findFirst({ where: { id, companyId: input.companyId } });
+    if (!existing) throw new NotFoundError('Stock transfer');
+    if (existing.workflowState !== 'DRAFT') {
+      throw new BusinessRuleError(
+        'Only a draft transfer can be edited in place. A received transfer is corrected instead, which moves the stock back and opens a new draft.',
+      );
+    }
+    if (input.fromWarehouseId === input.toWarehouseId) {
+      throw new BusinessRuleError('The source and destination warehouses must be different.');
+    }
+    const lines = await resolveLines(tx, input);
+
+    await tx.stockTransferLine.deleteMany({ where: { stockTransferId: id } });
+    const updated = await tx.stockTransfer.update({
+      where: { id },
+      data: {
+        transferDate: input.transferDate,
+        fromWarehouseId: input.fromWarehouseId,
+        toWarehouseId: input.toWarehouseId,
+        notes: input.notes ?? null,
+        lines: {
+          create: lines.map((l) => ({
+            lineNumber: l.lineNumber,
+            batchId: l.batchId,
+            itemId: l.itemId,
+            containerId: l.containerId,
+            quantityKg: l.quantityKg,
+            bags: l.bags,
+            notes: l.notes,
+          })),
+        },
+      },
+    });
+
+    await writeAudit(tx, {
+      companyId: input.companyId,
+      userId,
+      action: 'STOCK_TRANSFER_UPDATED',
+      entityType: 'StockTransfer',
+      entityId: id,
+      after: { transferNumber: existing.transferNumber, totalKg: sum(lines.map((l) => l.quantityKg)).toString() },
+    });
+    return updated;
+  });
+}
+
+/**
+ * Take back a transfer that has already moved stock.
+ *
+ * The movements it posted are never edited or deleted. Instead each line is
+ * moved back — out of the destination, into the source — as a matched pair,
+ * so out always equals in and the company total never changes. If coffee has
+ * since been sold or moved on from the destination, there is nothing to take
+ * back and the reversal is refused rather than driving stock negative.
+ */
+export async function reverseReceivedStockTransferIn(
+  tx: Tx,
+  params: { id: string; companyId: string; userId: string; reason: string },
+) {
+  const locked = await tx.$queryRaw<Array<{ id: string; workflowState: string }>>`
+    SELECT "id", "workflowState" FROM stock_transfers
+    WHERE "id" = ${params.id} AND "companyId" = ${params.companyId}
+    FOR UPDATE
+  `;
+  if (locked.length === 0) throw new NotFoundError('Stock transfer');
+  if (locked[0].workflowState !== 'RECEIVED') {
+    throw new BusinessRuleError('Only a received transfer is reversed. A draft is deleted; an approved one is cancelled.');
+  }
+  if (!params.reason.trim()) throw new BusinessRuleError('Say why the transfer is being reversed.');
+
+  const transfer = await tx.stockTransfer.findUniqueOrThrow({
+    where: { id: params.id },
+    include: { lines: true, fromWarehouse: true, toWarehouse: true },
+  });
+  const today = new Date();
+  for (const line of transfer.lines) {
+    await transferStock(tx, {
+      companyId: params.companyId,
+      batchId: line.batchId,
+      fromWarehouseId: transfer.toWarehouseId,
+      toWarehouseId: transfer.fromWarehouseId,
+      quantityKg: line.quantityKg,
+      bags: line.bags,
+      referenceType: 'STOCK_TRANSFER_REVERSAL',
+      referenceId: transfer.id,
+      transactionDate: today,
+      createdById: params.userId,
+      notes: `Reversal of ${transfer.transferNumber}: ${transfer.toWarehouse.name} → ${transfer.fromWarehouse.name}. ${params.reason}`,
+    });
+  }
+
+  const updated = await tx.stockTransfer.update({
+    where: { id: transfer.id },
+    data: {
+      workflowState: 'CANCELLED',
+      status: 'REVERSED',
+      cancelledAt: today,
+      notes: [transfer.notes, `Reversed: ${params.reason}`].filter(Boolean).join('\n'),
+    },
+  });
+
+  await writeAudit(tx, {
+    companyId: params.companyId,
+    userId: params.userId,
+    action: 'STOCK_TRANSFER_REVERSED',
+    entityType: 'StockTransfer',
+    entityId: transfer.id,
+    before: { workflowState: 'RECEIVED' },
+    after: { workflowState: 'CANCELLED', reason: params.reason },
+  });
+  return updated;
+}
+
+export async function reverseReceivedStockTransfer(params: { id: string; companyId: string; userId: string; reason: string }) {
+  return transaction((tx) => reverseReceivedStockTransferIn(tx, params));
+}
+
+/**
+ * Correct a received transfer: move its stock back, then open a new draft
+ * with the same lines for the user to change and receive again. The original
+ * stays on the list as reversed, with its number, so the history reads true.
+ */
+export async function correctReceivedStockTransfer(params: { id: string; companyId: string; userId: string; reason: string }) {
+  return transaction(async (tx) => {
+    const original = await tx.stockTransfer.findFirst({
+      where: { id: params.id, companyId: params.companyId },
+      include: { lines: true },
+    });
+    if (!original) throw new NotFoundError('Stock transfer');
+    await reverseReceivedStockTransferIn(tx, params);
+
+    const transferNumber = await allocateStockTransferNumber(tx, params.companyId);
+    const draft = await tx.stockTransfer.create({
+      data: {
+        companyId: params.companyId,
+        transferNumber,
+        transferDate: original.transferDate,
+        fromWarehouseId: original.fromWarehouseId,
+        toWarehouseId: original.toWarehouseId,
+        status: 'DRAFT',
+        workflowState: 'DRAFT',
+        notes: original.notes,
+        requestedById: params.userId,
+        lines: {
+          create: original.lines.map((l) => ({
+            lineNumber: l.lineNumber,
+            batchId: l.batchId,
+            itemId: l.itemId,
+            containerId: l.containerId,
+            quantityKg: l.quantityKg,
+            bags: l.bags,
+            notes: l.notes,
+          })),
+        },
+      },
+    });
+    await writeAudit(tx, {
+      companyId: params.companyId,
+      userId: params.userId,
+      action: 'STOCK_TRANSFER_CORRECTION_OPENED',
+      entityType: 'StockTransfer',
+      entityId: draft.id,
+      after: { transferNumber, replaces: original.transferNumber, reason: params.reason },
+    });
+    return draft;
   });
 }
 

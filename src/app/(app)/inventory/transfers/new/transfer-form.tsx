@@ -14,7 +14,7 @@ import { Combobox } from '@/components/ui/combobox';
 import { Callout, EmptyState } from '@/components/ui/feedback';
 import { tryDec, sum } from '@/lib/money';
 import { formatQuantityKg, todayInputValue } from '@/lib/format';
-import { saveStockTransferAction } from '@/server/actions/trading-actions';
+import { saveStockTransferAction, updateStockTransferAction } from '@/server/actions/trading-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 
 export type TransferStock = {
@@ -30,30 +30,46 @@ type LineState = { key: string; batchId: string | null; quantityKg: string };
 
 const newLine = (): LineState => ({ key: Math.random().toString(36).slice(2), batchId: null, quantityKg: '' });
 
+export type TransferDefaults = {
+  id: string;
+  transferDate: string;
+  fromWarehouseId: string;
+  toWarehouseId: string;
+  notes: string;
+  lines: Array<{ batchId: string; quantityKg: string }>;
+};
+
 export function TransferForm({
   warehouses,
   stock,
   nextNumber,
+  defaults,
   canCreateWarehouse = false,
 }: {
   warehouses: Array<{ id: string; name: string }>;
   stock: TransferStock[];
-  /** The number this transfer will be given — WTO-005 — issued by the server on save. */
+  /** The number this transfer has, or will be given — WTO-005 — issued by the server. */
   nextNumber: string;
+  /** A draft being edited: its values, and saving updates it in place. */
+  defaults?: TransferDefaults;
   canCreateWarehouse?: boolean;
 }) {
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
 
-  const [fromWarehouseId, setFrom] = React.useState(warehouses[0]?.id ?? '');
-  const [toWarehouseId, setTo] = React.useState(warehouses[1]?.id ?? '');
+  const [fromWarehouseId, setFrom] = React.useState(defaults?.fromWarehouseId ?? warehouses[0]?.id ?? '');
+  const [toWarehouseId, setTo] = React.useState(defaults?.toWarehouseId ?? warehouses[1]?.id ?? '');
   // A warehouse opened here joins the list at once, so the transfer can be
   // finished without a detour through Warehouses.
   const [extraWarehouses, setExtraWarehouses] = React.useState<Array<{ id: string; name: string }>>([]);
-  const [transferDate, setDate] = React.useState(todayInputValue());
-  const [notes, setNotes] = React.useState('');
-  const [lines, setLines] = React.useState<LineState[]>([newLine()]);
+  const [transferDate, setDate] = React.useState(defaults?.transferDate ?? todayInputValue());
+  const [notes, setNotes] = React.useState(defaults?.notes ?? '');
+  const [lines, setLines] = React.useState<LineState[]>(() =>
+    defaults?.lines.length
+      ? defaults.lines.map((l, i) => ({ key: `line-${i}`, batchId: l.batchId, quantityKg: l.quantityKg }))
+      : [newLine()],
+  );
 
   // Only stock actually sitting in the chosen source warehouse can move.
   const sourceStock = React.useMemo(
@@ -122,13 +138,15 @@ export function TransferForm({
     }
 
     start(async () => {
-      const result = await saveStockTransferAction(JSON.stringify(payload));
+      const result = defaults
+        ? await updateStockTransferAction(defaults.id, JSON.stringify(payload))
+        : await saveStockTransferAction(JSON.stringify(payload));
       if (result?.ok) {
-        toast.success(`${result.message ?? 'Transfer created.'} Approve it to reserve the stock.`);
+        toast.success(`${result.message ?? 'Transfer saved.'} Approve it to reserve the stock.`);
         opening();
-        router.push('/inventory/transfers');
+        router.push(defaults ? `/inventory/transfers/${defaults.id}` : '/inventory/transfers');
       } else {
-        setError(result?.error ?? 'The transfer could not be created.');
+        setError(result?.error ?? 'The transfer could not be saved.');
       }
     });
   }
@@ -304,7 +322,7 @@ export function TransferForm({
         {/* submit() names the problem — the same destination, or a line over
             what the batch holds. A button that cannot be pressed does not. */}
         <Button onClick={submit} loading={busy}>
-          Create transfer
+          {defaults ? 'Save changes' : 'Create transfer'}
         </Button>
       </div>
     </div>

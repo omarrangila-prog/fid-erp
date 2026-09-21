@@ -24,7 +24,22 @@ export default async function TransfersPage() {
       requestedBy: { select: { name: true } },
       approvedBy: { select: { name: true } },
       receivedBy: { select: { name: true } },
-      lines: { select: { quantityKg: true } },
+      lines: {
+        orderBy: { lineNumber: 'asc' },
+        select: {
+          quantityKg: true,
+          item: { select: { itemName: true } },
+          container: { select: { containerNumber: true } },
+          batch: {
+            select: {
+              id: true,
+              batchNumber: true,
+              lot: { select: { lotNumber: true } },
+              purchaseContract: { select: { contractReference: true } },
+            },
+          },
+        },
+      },
     },
   });
 
@@ -43,8 +58,18 @@ export default async function TransfersPage() {
       lineCount: t.lines.length,
       quantityLabel: formatQuantityKg(quantity),
       quantitySort: Number(quantity),
-      state: t.workflowState,
-      stateLabel: titleCase(t.workflowState),
+      state: t.status === 'REVERSED' ? 'REVERSED' : t.workflowState,
+      stateLabel: t.status === 'REVERSED' ? 'Reversed' : titleCase(t.workflowState),
+      // The stock's origin on every line, derived from the batch — never typed.
+      lines: t.lines.map((l) => ({
+        reference: l.batch.purchaseContract?.contractReference ?? '—',
+        itemName: l.item.itemName,
+        batchId: l.batch.id,
+        batchNumber: l.batch.batchNumber,
+        lotNumber: l.batch.lot?.lotNumber ?? '—',
+        containerNumber: l.container?.containerNumber ?? '—',
+        quantityLabel: formatQuantityKg(l.quantityKg),
+      })),
       requestedBy: t.requestedBy.name,
       approvedBy: t.approvedBy?.name ?? null,
       receivedBy: t.receivedBy?.name ?? null,

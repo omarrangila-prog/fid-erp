@@ -4,12 +4,12 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Plus, Check, Truck, PackageCheck, X } from 'lucide-react';
+import { Plus, Check, Truck, PackageCheck } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ConfirmDialog } from '@/components/ui/confirm';
 import { advanceStockTransferAction, deleteStockTransferAction } from '@/server/actions/trading-actions';
+import { RowActions, viewAction, editAction } from '@/components/shared/row-actions';
 import type { BadgeTone } from '@/lib/constants';
 
 export type TransferRow = {
@@ -31,6 +31,15 @@ export type TransferRow = {
   requestedBy: string;
   approvedBy: string | null;
   receivedBy: string | null;
+  lines: Array<{
+    reference: string;
+    itemName: string;
+    batchId: string;
+    batchNumber: string;
+    lotNumber: string;
+    containerNumber: string;
+    quantityLabel: string;
+  }>;
 };
 
 const STATE_TONES: Record<string, BadgeTone> = {
@@ -39,7 +48,14 @@ const STATE_TONES: Record<string, BadgeTone> = {
   IN_TRANSIT: 'progress',
   RECEIVED: 'success',
   CANCELLED: 'danger',
+  REVERSED: 'danger',
 };
+
+/** One value, or "Multiple" when the lines differ. */
+function summary(values: string[]) {
+  const distinct = [...new Set(values)];
+  return distinct.length <= 1 ? (distinct[0] ?? '—') : distinct.length === 2 ? distinct.join(', ') : `Multiple (${distinct.length})`;
+}
 
 /** The next step available from each state, and what it is called. */
 const NEXT_STEP: Record<string, { to: 'APPROVED' | 'IN_TRANSIT' | 'RECEIVED'; label: string; icon: typeof Check }> = {
@@ -51,7 +67,6 @@ const NEXT_STEP: Record<string, { to: 'APPROVED' | 'IN_TRANSIT' | 'RECEIVED'; la
 export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canManage: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = React.useState<string | null>(null);
-  const [cancelling, setCancelling] = React.useState<TransferRow | null>(null);
 
   async function advance(row: TransferRow, to: 'APPROVED' | 'IN_TRANSIT' | 'RECEIVED') {
     setBusy(row.id);
@@ -85,6 +100,27 @@ export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canM
       cell: (r) => <span className="tnum font-medium">{r.transferLabel}</span>,
     },
     { id: 'date', header: 'Date', mobile: 'meta', sortValue: (r) => r.transferDateSort, cell: (r) => <span>{r.transferDate}</span> },
+    {
+      // The ICUL/FID order the stock was bought on — the business reference, in the table, not only inside.
+      id: 'reference',
+      header: 'ICUL/FID Reference',
+      sortValue: (r) => summary(r.lines.map((l) => l.reference)),
+      exportValue: (r) => r.lines.map((l) => l.reference).join(', '),
+      cell: (r) => <span className="font-medium text-forest-800">{summary(r.lines.map((l) => l.reference))}</span>,
+    },
+    {
+      id: 'item',
+      header: 'Item · Batch · Container',
+      exportValue: (r) => r.lines.map((l) => `${l.itemName} ${l.batchNumber} ${l.containerNumber}`).join('; '),
+      cell: (r) => (
+        <span className="block min-w-44 text-xs">
+          <span className="block text-sm text-ink">{summary(r.lines.map((l) => l.itemName))}</span>
+          <span className="block text-ink-subtle">
+            {summary(r.lines.map((l) => l.batchNumber))} · {summary(r.lines.map((l) => l.containerNumber))}
+          </span>
+        </span>
+      ),
+    },
     {
       id: 'route',
       header: 'From → To',
@@ -129,40 +165,45 @@ export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canM
       sortValue: (r) => r.state,
       cell: (r) => <Badge tone={STATE_TONES[r.state] ?? 'neutral'}>{r.stateLabel}</Badge>,
     },
-    ...(canManage
-      ? [
-          {
-            id: 'actions',
-            header: '',
-            cell: (r: TransferRow) => {
-              const step = NEXT_STEP[r.state];
-              if (!step) return null;
-              const Icon = step.icon;
-              return (
-                <span className="flex items-center justify-end gap-1">
-                  <Button
-                    size="sm"
-                    variant={step.to === 'RECEIVED' ? 'accent' : 'outline'}
-                    loading={busy === r.id}
-                    onClick={() => advance(r, step.to)}
-                  >
-                    <Icon />
-                    {step.label}
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    aria-label={`Cancel the transfer of ${r.transferDate}`}
-                    onClick={() => setCancelling(r)}
-                  >
-                    <X className="text-red-500" />
-                  </Button>
-                </span>
-              );
-            },
-          } satisfies DataColumn<TransferRow>,
-        ]
-      : []),
+    {
+      id: 'actions',
+      header: 'Actions',
+      cell: (r: TransferRow) => {
+        const step = NEXT_STEP[r.state];
+        return (
+          <RowActions
+            inline={3}
+            actions={[
+              viewAction(`/inventory/transfers/${r.id}`),
+              editAction(`/inventory/transfers/${r.id}/edit`, canManage && r.state === 'DRAFT'),
+              ...(canManage && step
+                ? [{ label: step.label, onSelect: () => void advance(r, step.to), icon: step.icon, disabled: busy === r.id }]
+                : []),
+              ...(canManage && r.state === 'RECEIVED'
+                ? [{ label: 'Correct or reverse', href: `/inventory/transfers/${r.id}`, icon: 'history' as const }]
+                : []),
+            ]}
+            destructive={
+              canManage && ['DRAFT', 'APPROVED', 'IN_TRANSIT'].includes(r.state)
+                ? {
+                    status: r.state === 'DRAFT' ? 'DRAFT' : 'POSTED',
+                    noun: 'transfer',
+                    cancelLabel: 'Cancel',
+                    description:
+                      r.state === 'DRAFT'
+                        ? 'A draft moves no stock; it is removed and its number is issued again.'
+                        : 'The stock it reserved is released back to the source warehouse. It stays on the list as cancelled.',
+                    run: async (reason?: string) =>
+                      r.state === 'DRAFT'
+                        ? deleteStockTransferAction(r.id)
+                        : advanceStockTransferAction(r.id, 'CANCELLED', reason ?? 'Cancelled'),
+                  }
+                : undefined
+            }
+          />
+        );
+      },
+    } satisfies DataColumn<TransferRow>,
   ];
 
   return (
@@ -172,7 +213,40 @@ export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canM
         data={rows}
         columns={columns}
         getRowId={(r) => r.id}
-        searchValue={(r) => `${r.transferLabel} ${r.storedNumber} ${r.fromWarehouse} ${r.toWarehouse}`}
+        searchValue={(r) =>
+          `${r.transferLabel} ${r.storedNumber} ${r.fromWarehouse} ${r.toWarehouse} ${r.lines
+            .map((l) => `${l.reference} ${l.itemName} ${l.batchNumber} ${l.lotNumber} ${l.containerNumber}`)
+            .join(' ')}`
+        }
+        rowHref={(r) => `/inventory/transfers/${r.id}`}
+        expandedContent={(r) =>
+          r.lines.length > 1 ? (
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-ink-muted">
+                  <th className="py-1 pr-3 font-medium">ICUL/FID Reference</th>
+                  <th className="py-1 pr-3 font-medium">Item</th>
+                  <th className="py-1 pr-3 font-medium">Batch</th>
+                  <th className="py-1 pr-3 font-medium">Lot</th>
+                  <th className="py-1 pr-3 font-medium">Container</th>
+                  <th className="py-1 text-right font-medium">Quantity</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.lines.map((l, i) => (
+                  <tr key={`${l.batchId}-${i}`} className="border-t border-line/60">
+                    <td className="py-1 pr-3 font-medium text-forest-800">{l.reference}</td>
+                    <td className="py-1 pr-3">{l.itemName}</td>
+                    <td className="py-1 pr-3">{l.batchNumber}</td>
+                    <td className="py-1 pr-3">{l.lotNumber}</td>
+                    <td className="py-1 pr-3">{l.containerNumber}</td>
+                    <td className="tnum py-1 text-right">{l.quantityLabel}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null
+        }
         searchPlaceholder="Search transfers…"
         emptyTitle="No transfers yet"
         emptyDescription="Move coffee between warehouses without changing how much the company owns."
@@ -199,29 +273,6 @@ export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canM
         }
       />
 
-      <ConfirmDialog
-        open={Boolean(cancelling)}
-        onOpenChange={(open) => !open && setCancelling(null)}
-        title={`Cancel ${cancelling?.transferLabel ?? 'transfer'}?`}
-        description="Any stock this transfer had reserved is released back to the source warehouse."
-        confirmLabel="Cancel transfer"
-        variant="danger"
-        requireReason
-        reasonLabel="Why is this being cancelled?"
-        onConfirm={async (reason) => {
-          if (!cancelling) return;
-          const result =
-            cancelling.state === 'DRAFT'
-              ? await deleteStockTransferAction(cancelling.id)
-              : await advanceStockTransferAction(cancelling.id, 'CANCELLED', reason);
-          if (result.ok) {
-            toast.success('Transfer cancelled.');
-            router.refresh();
-          } else {
-            throw new Error(result.error);
-          }
-        }}
-      />
     </>
   );
 }
