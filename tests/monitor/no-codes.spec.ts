@@ -15,8 +15,15 @@ const COMPANY = process.env.MONITOR_COMPANY ?? 'FID Trading International SARL';
 test.skip(!ADMIN_PIN, 'Set ADMIN_PIN to run the monitor.');
 test.describe.configure({ mode: 'serial' });
 
-/** "1100 · Name", "4000 — Name", "(1200)" — a code sitting beside a name. */
-const CODE_BESIDE_NAME = /\b[12345]\d{3}\s*[·—–-]\s*[A-Z]/;
+/*
+ * An account code beside its name — "1100 · Cash in Hand".
+ *
+ * A year is four digits in the same range, and a journal line reads "22 Sep
+ * 2026 — Cash received", which is a date and a sentence, not a code. So a
+ * group of digits that follows a month is not one.
+ */
+const MONTH = String.raw`(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s`;
+const CODE_BESIDE_NAME = new RegExp(String.raw`(?<!${MONTH})\b[12345]\d{3}\s*[·—–-]\s*[A-Z]`);
 const CODE_IN_BRACKETS = /\(\s*[12345]\d{3}\s*\)/;
 /** FID-MA-SI-000008 and every other number the system issues itself. */
 const SYSTEM_DOCUMENT_NUMBER = /\bFID-[A-Z]{2,3}-[A-Z]{2,4}-\d{4,}\b/;

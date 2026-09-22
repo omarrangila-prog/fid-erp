@@ -248,6 +248,11 @@ export default async function ShipmentsPage() {
         landedLocal: costs.length && localCurrency ? formatMoney(landedLocal, localCurrency) : null,
         costPerKg: costs.length ? formatMoney(perKg(landedUsd), 'USD') : null,
         costPerKgLocal: costs.length && localCurrency ? formatMoney(perKg(landedLocal), localCurrency) : null,
+        // Coffee is quoted by the tonne as often as by the kilo, in both
+        // currencies, and grouping the list by contract must not lose that.
+        costPerMt: costs.length ? formatMoney(perKg(landedUsd).times(1000), 'USD') : null,
+        costPerMtLocal:
+          costs.length && localCurrency ? formatMoney(perKg(landedLocal).times(1000), localCurrency) : null,
         remainingKg: costs.length ? formatQuantityKg(sum(costs.map((c) => dec(c.remainingKg)))) : null,
         lines,
       };

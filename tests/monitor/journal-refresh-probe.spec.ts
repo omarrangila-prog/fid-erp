@@ -52,7 +52,7 @@ test('a refreshed journal voucher is either honestly empty or honestly full', as
    */
   const openAdvanced = async () => {
     const advanced = main.getByRole('button', { name: /advanced journal entry/i });
-    const box = main.getByLabel(/description/i);
+    const box = main.getByLabel(/^memo/i);
     // Either the voucher is already open, or the chooser is on screen and the
     // button has to be pressed — and on a cold page neither has rendered yet,
     // so this keeps looking rather than deciding on the first glance.
@@ -63,9 +63,9 @@ test('a refreshed journal voucher is either honestly empty or honestly full', as
     }).toPass({ timeout: 120_000 });
   };
   await openAdvanced();
-  const descriptionBox = main.getByLabel(/description/i);
+  const memoBox = main.getByLabel(/^memo/i);
 
-  await descriptionBox.fill('Refresh probe — never posted');
+  await memoBox.fill('Refresh probe — never posted');
   await main.getByLabel(/line 1 amount/i).fill('123.45');
   await main.getByRole('combobox', { name: /line 1 account/i }).click();
   // The list leads with a heading rendered as a disabled option; take the
@@ -74,7 +74,7 @@ test('a refreshed journal voucher is either honestly empty or honestly full', as
 
   const accountBefore = await main.getByRole('combobox', { name: /line 1 account/i }).innerText();
   console.log('\nbefore refresh');
-  console.log('  description :', await main.getByLabel(/description/i).inputValue());
+  console.log('  memo        :', await main.getByLabel(/^memo/i).inputValue());
   console.log('  amount      :', await main.getByLabel(/line 1 amount/i).inputValue());
   console.log('  account     :', accountBefore.replace(/\s+/g, ' ').trim());
 
@@ -85,21 +85,21 @@ test('a refreshed journal voucher is either honestly empty or honestly full', as
   await openAdvanced();
   await page.waitForTimeout(2_000);
 
-  const description = await main.getByLabel(/description/i).inputValue();
+  const memo = await main.getByLabel(/^memo/i).inputValue();
   const amount = await main.getByLabel(/line 1 amount/i).inputValue();
   const account = (await main.getByRole('combobox', { name: /line 1 account/i }).innerText()).replace(/\s+/g, ' ').trim();
   const balanced = await main.getByText(/^balanced$/i).count();
   const notBalanced = await main.getByText(/not balanced/i).count();
 
   console.log('after refresh');
-  console.log('  description :', JSON.stringify(description));
+  console.log('  memo        :', JSON.stringify(memo));
   console.log('  amount      :', JSON.stringify(amount));
   console.log('  account     :', JSON.stringify(account));
   console.log('  balanced?   :', balanced ? 'says balanced' : notBalanced ? 'says NOT balanced' : 'says neither');
 
   // The dangerous combination: inputs still show figures while the account
   // picker has forgotten what was chosen, so the screen is not what posts.
-  const inputsKept = Boolean(description || amount);
+  const inputsKept = Boolean(memo || amount);
   const accountKept = !/choose an account/i.test(account);
   expect(
     inputsKept === accountKept,
