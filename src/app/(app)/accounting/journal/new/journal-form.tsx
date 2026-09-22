@@ -96,6 +96,7 @@ export function JournalForm({
   const [mode, setMode] = React.useState<'guided' | 'advanced'>('guided');
   const [entryDate, setEntryDate] = React.useState(today);
   const [description, setDescription] = React.useState('');
+  const [reference, setReference] = React.useState('');
   const [currency, setCurrency] = React.useState('USD');
   const [rateToUsd, setRateToUsd] = React.useState('1');
   const [localRate, setLocalRate] = React.useState(defaultLocalRate);
@@ -300,6 +301,7 @@ export function JournalForm({
           clientKey: clientKey.current ?? undefined,
           entryDate,
           description: description.trim(),
+          reference: reference.trim() || undefined,
           rateLocalPerUsd: localRate,
           lines: lines.map((line) => {
             const chosen = accountOptions.find((o) => o.value === line.accountId);
@@ -423,6 +425,17 @@ export function JournalForm({
                 onChange={setCustomerId}
                 placeholder="None — general ledger only"
                 emptyText="No customers"
+              />
+            </Field>
+          </div>
+          <div className="sm:col-span-2 lg:col-span-4">
+            <Field label="Reference" htmlFor="jv-reference" hint="Optional — your own reference: a bank advice, a file number. It shows on the journal and the ledgers.">
+              <Input
+                id="jv-reference"
+                value={reference}
+                onChange={(e) => setReference(e.target.value)}
+                placeholder="e.g. BANK ADVICE 4471"
+                maxLength={80}
               />
             </Field>
           </div>

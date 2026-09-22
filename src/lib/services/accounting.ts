@@ -74,6 +74,8 @@ export type PostJournalParams = {
   companyId: string;
   entryDate: Date;
   description: string;
+  /** The client's own reference for a hand-raised voucher: a bank advice, a file number. */
+  reference?: string | null;
   sourceType: JournalSourceType;
   sourceId: string;
   createdById: string;
@@ -410,6 +412,7 @@ export async function postJournalEntry(tx: Tx, params: PostJournalParams) {
       entryNumber,
       entryDate,
       description,
+      reference: params.reference?.trim() || null,
       sourceType,
       sourceId,
       sourceSeq: existingCount + 1,

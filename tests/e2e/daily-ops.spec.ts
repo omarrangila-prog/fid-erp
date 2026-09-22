@@ -202,6 +202,7 @@ test('the journal offers USD and MAD and posts a balanced USD voucher', async ({
   await currency.selectOption('USD');
 
   await page.locator('#jv-description').fill('Daily ops USD opening');
+  await page.locator('#jv-reference').fill('BANK ADVICE 4471');
 
   // Named accounts, not "whatever is first in the list": the first entries are
   // cash and bank drawers, and a drawer holds one currency only — a USD amount
@@ -217,6 +218,9 @@ test('the journal offers USD and MAD and posts a balanced USD voucher', async ({
   await page.getByRole('button', { name: /post voucher/i }).click();
   await page.waitForURL(/\/reports\/journal/, { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await expect(page.getByRole('main')).toContainText(/Daily ops USD opening/);
+  // The client's own reference is kept and shown beside the memo.
+  const row = page.getByRole('row').filter({ hasText: 'Daily ops USD opening' }).first();
+  await expect(row).toContainText('BANK ADVICE 4471');
 });
 
 test('an unpaid expense does not ask Paid from, and a category can be added on the voucher', async ({ page }) => {
@@ -263,6 +267,9 @@ test('an item shows stock by warehouse', async ({ page }) => {
 test('a plain MAD 7,400 shipment expense does not become 8,880', async ({ page }) => {
   test.setTimeout(180_000);
   await page.goto('/finance/expenses/new', { waitUntil: 'domcontentloaded' });
+  // Let the form hydrate before opening its pickers (an option list opened
+  // mid-hydration is re-rendered under the click).
+  await page.waitForLoadState('networkidle').catch(() => undefined);
   const form = page.getByRole('main');
 
   await form.getByRole('combobox', { name: /contract \/ shipment/i }).click();

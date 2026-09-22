@@ -154,7 +154,8 @@ export const REFERENCE_SQL = `
     WHEN 'EXPENSE'           THEN (SELECT e."expenseNumber"   FROM expenses e            WHERE e."id"   = je."sourceId")
     WHEN 'AGENT_SETTLEMENT'  THEN (SELECT s."settlementNumber" FROM agent_settlements s  WHERE s."id"   = je."sourceId")
     WHEN 'CREDIT_NOTE'       THEN (SELECT cn."creditNoteNumber" FROM credit_notes cn     WHERE cn."id"  = je."sourceId")
-    ELSE je."entryNumber"
+    -- A voucher raised by hand shows the client's own reference when it has one.
+    ELSE COALESCE(NULLIF(je."reference", ''), je."entryNumber")
   END
 `;
 

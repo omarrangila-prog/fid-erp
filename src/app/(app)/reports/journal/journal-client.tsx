@@ -37,6 +37,8 @@ export type JournalEntryRow = {
   entryDate: string;
   entryDateSort: number;
   description: string;
+  /** The client's own reference on a hand-raised voucher. */
+  reference: string | null;
   sourceType: string;
   sourceTypeLabel: string;
   sourceId: string | null;
@@ -83,6 +85,14 @@ export function JournalClient({
       sortValue: (r) => r.entryDateSort,
       exportValue: (r) => r.entryDate,
       cell: (r) => <span className="whitespace-nowrap">{r.entryDate}</span>,
+    },
+    {
+      id: 'reference',
+      header: 'Reference',
+      hideable: true,
+      sortValue: (r) => r.reference ?? '',
+      exportValue: (r) => r.reference ?? '',
+      cell: (r) => <span className="whitespace-nowrap text-xs">{r.reference ?? '—'}</span>,
     },
     {
       id: 'description',
@@ -189,7 +199,7 @@ export function JournalClient({
       dense
       pageSize={50}
       searchValue={(r) =>
-        `${r.entryNumber} ${r.description} ${r.sourceTypeLabel} ${r.createdBy} ${r.lines
+        `${r.entryNumber} ${r.reference ?? ""} ${r.description} ${r.sourceTypeLabel} ${r.createdBy} ${r.lines
           .map((l) => `${l.accountCode} ${l.accountName}`)
           .join(' ')}`
       }

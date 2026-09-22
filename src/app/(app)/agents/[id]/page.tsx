@@ -187,7 +187,7 @@ export default async function AgentLedgerPage({ params }: { params: Promise<{ id
                       <TR key={`${row.journalEntryId}-${index}`}>
                         <TD className="whitespace-nowrap">{formatDate(row.entryDate)}</TD>
                         <TD className="whitespace-nowrap text-xs">
-                          {businessNumber(row.sourceType === 'MANUAL' || !row.reference ? row.entryNumber : row.reference)}
+                          {businessNumber(row.reference ?? row.entryNumber)}
                         </TD>
                         <TD className="whitespace-nowrap text-xs font-medium" data-testid="agent-ledger-type">
                           {row.typeLabel}

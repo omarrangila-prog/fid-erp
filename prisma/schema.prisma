@@ -1810,6 +1810,8 @@ model JournalEntry {
   entryNumber  String
   entryDate    DateTime          @db.Date
   description  String
+  /// The client's own reference for a voucher raised by hand: a bank advice, a file number.
+  reference    String?           @db.VarChar(80)
   sourceType   JournalSourceType
   sourceId     String
   sourceSeq    Int               @default(1)

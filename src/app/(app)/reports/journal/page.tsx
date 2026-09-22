@@ -80,6 +80,7 @@ export default async function JournalPage({
             entryDate: formatDate(entry.entryDate),
             entryDateSort: entry.entryDate.getTime(),
             description: entry.description,
+            reference: entry.reference,
             sourceType: entry.sourceType,
             sourceTypeLabel: titleCase(entry.sourceType),
             sourceId: entry.sourceId,

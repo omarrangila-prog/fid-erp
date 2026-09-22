@@ -891,7 +891,7 @@ export async function getCashBook(params: {
       sourceId: row.sourceId,
       counterparty: row.counterparty,
       /** The document's own number in the client's words: PAY 22, EXP 8, JV 86. */
-      reference: businessNumber(row.sourceType === 'MANUAL' || !row.reference ? row.entryNumber : row.reference),
+      reference: businessNumber(row.reference ?? row.entryNumber),
       /**
        * What the person typed on the document; failing that, a sentence built
        * from what the entry knows — who the money came from or went to —
@@ -968,6 +968,7 @@ export async function getJournalReport(params: {
             OR: [
               { entryNumber: { contains: needle, mode: 'insensitive' } },
               { description: { contains: needle, mode: 'insensitive' } },
+              { reference: { contains: needle, mode: 'insensitive' } },
             ],
           }
         : {}),

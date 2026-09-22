@@ -143,9 +143,7 @@ export function LedgerView({
                           ))}
                     </TD>
                     <TD className="whitespace-nowrap text-xs">
-                      {row.sourceType === 'MANUAL' || !row.reference
-                        ? businessNumber(row.entryNumber)
-                        : businessNumber(row.reference)}
+                      {businessNumber(row.reference ?? row.entryNumber)}
                     </TD>
                     <TD>
                       <MemoCell memo={row.memo} note={row.collectedBy ? `Collected by ${row.collectedBy}` : null} />

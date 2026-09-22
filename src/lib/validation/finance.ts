@@ -271,7 +271,9 @@ export const journalVoucherSchema = z.object({
    */
   clientKey: z.string().regex(/^[A-Za-z0-9-]{8,64}$/).optional(),
   entryDate: dateString('Entry date'),
-  description: requiredText('Description', 300),
+  description: requiredText('Memo', 300),
+  /** The client's own reference: a bank advice, a file number. Optional. */
+  reference: optionalText(80),
   rateLocalPerUsd: decimalString('Local exchange rate'),
   lines: z
     .array(

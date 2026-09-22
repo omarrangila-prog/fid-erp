@@ -490,6 +490,7 @@ export async function postJournalVoucherAction(payload: string): Promise<DocForm
         companyId: user.activeCompany.id,
         entryDate: input.entryDate,
         description: input.description,
+        reference: input.reference,
         sourceType: 'MANUAL',
         sourceId,
         createdById: user.id,

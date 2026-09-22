@@ -25,6 +25,16 @@ const apply = process.argv.includes('--apply');
 
 type Rename = { table: 'lot' | 'batch'; id: string; from: string; to: string };
 
+/**
+ * A reversed order carries "(reversed 2026-09-19 13:48)" on its reference so
+ * the re-entered order can reuse the name. Its lots keep that fact but not
+ * the timestamp: "ICUL/FID/SCR/004 (reversed)/1" says what it is without a
+ * clock reading in a lot number.
+ */
+function cleanReference(reference: string): string {
+  return reference.replace(/\s*\(reversed[^)]*\)\s*$/i, ' (reversed)');
+}
+
 async function main() {
   const [lots, batches] = await Promise.all([
     prisma.lot.findMany({
@@ -57,7 +67,7 @@ async function main() {
       skipped.push(`lot ${lot.lotNumber}: the contract's reference is itself the FID number`);
       continue;
     }
-    renames.push({ table: 'lot', id: lot.id, from: lot.lotNumber, to: `${contract.contractReference}${match[2]}` });
+    renames.push({ table: 'lot', id: lot.id, from: lot.lotNumber, to: `${cleanReference(contract.contractReference)}${match[2]}` });
   }
 
   for (const batch of batches) {
@@ -72,7 +82,7 @@ async function main() {
       skipped.push(`batch ${batch.batchNumber}: the contract's reference is itself the FID number`);
       continue;
     }
-    renames.push({ table: 'batch', id: batch.id, from: batch.batchNumber, to: `${contract.contractReference}${match[2]}` });
+    renames.push({ table: 'batch', id: batch.id, from: batch.batchNumber, to: `${cleanReference(contract.contractReference)}${match[2]}` });
   }
 
   // A new name that already exists would trip the unique constraint; say so

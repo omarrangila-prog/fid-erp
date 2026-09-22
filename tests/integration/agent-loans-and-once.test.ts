@@ -154,3 +154,28 @@ describe('one submission, one document', () => {
     expect(await prisma.receipt.count({ where: { companyId, customerId: masters.customer.id } })).toBe(2);
   }, 240_000);
 });
+
+describe('a journal voucher keeps the client reference', () => {
+  it('stores it, and every ledger shows it instead of the system number', async () => {
+    const { postJournalEntry } = await import('@/lib/services/accounting');
+    const { getCashBook } = await import('@/lib/services/reports');
+    const { transaction: tx } = await import('@/lib/db');
+    const clearing = await prisma.account.findFirstOrThrow({ where: { companyId, systemKey: 'AGENT_CLEARING' } });
+    const entry = await tx((t) =>
+      postJournalEntry(t, {
+        companyId, entryDate: utcDate('2026-09-20'), description: 'Cash handed over by the agent',
+        reference: 'BANK ADVICE 4471', sourceType: 'MANUAL', sourceId: 'JV-ref-test', createdById: ctx.admin.id,
+        localCurrency: 'MAD', rateLocalPerUsd: '9.6',
+        lines: [
+          { cashBankAccountId: cashId, direction: 'DEBIT', currency: 'MAD', amount: '1000', rateToUsd: '9.6' },
+          { accountId: clearing.id, direction: 'CREDIT', currency: 'MAD', amount: '1000', rateToUsd: '9.6', agentId },
+        ],
+      }),
+    );
+    expect((await prisma.journalEntry.findUniqueOrThrow({ where: { id: entry.id } })).reference).toBe('BANK ADVICE 4471');
+    const book = await getCashBook({ companyId, cashBankAccountId: cashId });
+    expect(book.rows.find((r) => r.entryId === entry.id)?.reference).toBe('BANK ADVICE 4471');
+    const { rows } = await getAgentLedger({ companyId, agentId });
+    expect(rows.find((r) => r.journalEntryId === entry.id)?.reference).toBe('BANK ADVICE 4471');
+  }, 240_000);
+});
