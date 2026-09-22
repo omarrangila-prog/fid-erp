@@ -8,6 +8,7 @@ import { getStockTransferDetail } from '@/lib/services/stock-transfer';
 import { transferNumberLabel } from '@/lib/transfer-number';
 import { toDateInputValue } from '@/lib/format';
 import { NotFoundError } from '@/lib/errors';
+import { dec } from '@/lib/money';
 import { PageHeader } from '@/components/shared/page-header';
 import { TransferForm, type TransferStock } from '@/app/(app)/inventory/transfers/new/transfer-form';
 
@@ -23,7 +24,9 @@ export default async function EditTransferPage({ params }: { params: Promise<{ i
     if (error instanceof NotFoundError) notFound();
     throw error;
   });
-  if (transfer.workflowState !== 'DRAFT') redirect(`/inventory/transfers/${id}`);
+  // A received or cancelled transfer is not edited in place: its page offers
+  // Edit, which moves the stock back and opens a copy.
+  if (!['DRAFT', 'APPROVED', 'IN_TRANSIT'].includes(transfer.workflowState)) redirect(`/inventory/transfers/${id}`);
 
   const [warehouses, stock] = await Promise.all([
     prisma.warehouse.findMany({ where: { companyId, status: 'ACTIVE' }, orderBy: { name: 'asc' }, select: { id: true, name: true } }),
@@ -39,11 +42,36 @@ export default async function EditTransferPage({ params }: { params: Promise<{ i
     availableKg: s.availableKg.toString(),
   }));
 
+  // An approved transfer's own lines are reserved, so they no longer count as
+  // free. Add each line's quantity back so the figure already entered still
+  // validates, and a batch reserved in full is still on the list.
+  if (transfer.workflowState !== 'DRAFT') {
+    for (const line of transfer.lines) {
+      const own = transferStock.find((s) => s.batchId === line.batch.id && s.warehouseId === transfer.fromWarehouseId);
+      if (own) {
+        own.availableKg = dec(own.availableKg).plus(dec(line.quantityKg)).toString();
+      } else {
+        transferStock.push({
+          batchId: line.batch.id,
+          warehouseId: transfer.fromWarehouseId,
+          batchNumber: line.batch.batchNumber,
+          lotNumber: line.batch.lot?.lotNumber ?? '—',
+          itemName: line.item.itemName,
+          availableKg: dec(line.quantityKg).toString(),
+        });
+      }
+    }
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
         title={`Edit ${label}`}
-        description="A draft moves nothing yet, so it can be changed freely."
+        description={
+          transfer.workflowState === 'DRAFT'
+            ? 'A draft moves nothing yet, so it can be changed freely.'
+            : 'This transfer has reserved its stock at the source. Saving releases that reservation and takes it again for the lines you save; the transfer keeps its stage.'
+        }
         breadcrumbs={[
           { label: 'Inventory', href: '/inventory' },
           { label: 'Transfers', href: '/inventory/transfers' },

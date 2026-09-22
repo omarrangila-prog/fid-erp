@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Check, Truck, PackageCheck, Pencil, Trash2, Undo2, X, Wrench } from 'lucide-react';
+import { Check, Truck, PackageCheck, Pencil, Trash2, Undo2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm';
@@ -20,13 +20,16 @@ type Pending = 'delete' | 'cancel' | 'reverse' | 'correct' | null;
  * Every action a transfer allows at its stage, and nothing it does not.
  *
  *   Draft       Edit · Approve · Delete
- *   Approved    Dispatch · Receive · Cancel (releases the reserved stock)
- *   In transit  Receive · Cancel
- *   Received    Correct (moves the stock back and opens a new draft) · Reverse
+ *   Approved    Edit · Dispatch · Receive · Cancel (releases the reserved stock)
+ *   In transit  Edit · Receive · Cancel
+ *   Received    Edit (moves the stock back and opens a corrected copy) · Reverse
  *   Cancelled   —
  *
- * A received transfer's movements are never rewritten: correcting or
- * reversing it posts a matched move back, so out always equals in.
+ * Edit is offered at every live stage because that is the word the client
+ * looks for. Before the stock has moved it edits in place, re-reserving for
+ * the new lines. Once received, the movements are never rewritten: Edit
+ * posts a matched move back and opens a new draft with the same lines under
+ * the next number, which is then changed and received again.
  */
 export function TransferActions({ id, label, state, canManage }: { id: string; label: string; state: string; canManage: boolean }) {
   const router = useRouter();
@@ -53,7 +56,7 @@ export function TransferActions({ id, label, state, canManage }: { id: string; l
     delete: { title: `Delete ${label}?`, description: 'A draft moves no stock, so it is removed and its number is issued again.', confirmLabel: 'Delete draft', requireReason: false },
     cancel: { title: `Cancel ${label}?`, description: 'The stock it reserved is released back to the source warehouse. The transfer stays on the list as cancelled.', confirmLabel: 'Cancel transfer', requireReason: true },
     reverse: { title: `Reverse ${label}?`, description: 'Every line is moved back from the destination to the source as a matched pair. The original movements stay in the history.', confirmLabel: 'Reverse transfer', requireReason: true },
-    correct: { title: `Correct ${label}?`, description: 'The stock is moved back, this transfer is kept as reversed, and a new draft with the same lines opens for you to change and receive again.', confirmLabel: 'Move back and open a draft', requireReason: true },
+    correct: { title: `Edit ${label}?`, description: 'This transfer has already moved the stock. Editing it moves the stock back, keeps this transfer in the history as reversed, and opens a copy with the same lines under the next number for you to change and receive again.', confirmLabel: 'Move back and edit a copy', requireReason: true },
   } as const;
 
   return (
@@ -76,6 +79,14 @@ export function TransferActions({ id, label, state, canManage }: { id: string; l
           </Button>
         </>
       ) : null}
+      {state === 'APPROVED' || state === 'IN_TRANSIT' ? (
+        <Button asChild variant="outline" size="sm">
+          <Link href={`/inventory/transfers/${id}/edit`}>
+            <Pencil />
+            Edit
+          </Link>
+        </Button>
+      ) : null}
       {state === 'APPROVED' ? (
         <Button variant="outline" size="sm" onClick={() => advance('IN_TRANSIT')} loading={busy}>
           <Truck />
@@ -97,8 +108,8 @@ export function TransferActions({ id, label, state, canManage }: { id: string; l
       {state === 'RECEIVED' ? (
         <>
           <Button variant="outline" size="sm" onClick={() => setPending('correct')}>
-            <Wrench />
-            Correct
+            <Pencil />
+            Edit
           </Button>
           <Button variant="outline" size="sm" onClick={() => setPending('reverse')}>
             <Undo2 className="text-red-500" />
@@ -143,7 +154,7 @@ export function TransferActions({ id, label, state, canManage }: { id: string; l
             }
             const result = await correctStockTransferAction(id, reason);
             if (!result.ok) throw new Error(result.error);
-            toast.success(`${label} moved back. Change the new draft and receive it again.`);
+            toast.success(`${label} moved back. Change the copy and receive it again.`);
             router.push(`/inventory/transfers/${result.data.id}/edit`);
           }}
         />

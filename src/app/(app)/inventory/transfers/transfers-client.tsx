@@ -8,8 +8,9 @@ import { Plus, Check, Truck, PackageCheck } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { advanceStockTransferAction, deleteStockTransferAction } from '@/server/actions/trading-actions';
+import { advanceStockTransferAction, correctStockTransferAction, deleteStockTransferAction } from '@/server/actions/trading-actions';
 import { MemoCell } from '@/components/shared/memo-cell';
+import { ConfirmDialog } from '@/components/ui/confirm';
 import { RowActions, viewAction, editAction } from '@/components/shared/row-actions';
 import type { BadgeTone } from '@/lib/constants';
 
@@ -69,6 +70,7 @@ const NEXT_STEP: Record<string, { to: 'APPROVED' | 'IN_TRANSIT' | 'RECEIVED'; la
 export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canManage: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = React.useState<string | null>(null);
+  const [correcting, setCorrecting] = React.useState<TransferRow | null>(null);
 
   async function advance(row: TransferRow, to: 'APPROVED' | 'IN_TRANSIT' | 'RECEIVED') {
     setBusy(row.id);
@@ -189,12 +191,16 @@ export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canM
             inline={3}
             actions={[
               viewAction(`/inventory/transfers/${r.id}`),
-              editAction(`/inventory/transfers/${r.id}/edit`, canManage && r.state === 'DRAFT'),
+              editAction(`/inventory/transfers/${r.id}/edit`, canManage && ['DRAFT', 'APPROVED', 'IN_TRANSIT'].includes(r.state)),
+              // Received: the stock has moved, so Edit moves it back and opens a copy.
+              ...(canManage && r.state === 'RECEIVED'
+                ? [{ label: 'Edit', icon: 'edit' as const, onSelect: () => setCorrecting(r) }]
+                : []),
               ...(canManage && step
                 ? [{ label: step.label, onSelect: () => void advance(r, step.to), icon: step.icon, disabled: busy === r.id }]
                 : []),
               ...(canManage && r.state === 'RECEIVED'
-                ? [{ label: 'Correct or reverse', href: `/inventory/transfers/${r.id}`, icon: 'history' as const }]
+                ? [{ label: 'Reverse', href: `/inventory/transfers/${r.id}`, icon: 'history' as const, overflowOnly: true }]
                 : []),
             ]}
             destructive={
@@ -222,6 +228,24 @@ export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canM
 
   return (
     <>
+      {correcting ? (
+        <ConfirmDialog
+          open
+          onOpenChange={(open) => !open && setCorrecting(null)}
+          title={`Edit ${correcting.transferLabel}?`}
+          description="This transfer has already moved the stock. Editing it moves the stock back, keeps this transfer in the history as reversed, and opens a copy with the same lines under the next number for you to change and receive again."
+          confirmLabel="Move back and edit a copy"
+          variant="danger"
+          requireReason
+          reasonLabel="Why?"
+          onConfirm={async (reason) => {
+            const result = await correctStockTransferAction(correcting.id, reason ?? '');
+            if (!result.ok) throw new Error(result.error);
+            toast.success(`${correcting.transferLabel} moved back. Change the copy and receive it again.`);
+            router.push(`/inventory/transfers/${result.data.id}/edit`);
+          }}
+        />
+      ) : null}
       <DataTable
       prefsKey="transfers"
         data={rows}

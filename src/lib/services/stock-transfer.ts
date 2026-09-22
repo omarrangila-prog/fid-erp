@@ -421,19 +421,57 @@ export async function getStockTransferDetail(companyId: string, id: string) {
  * and posts nothing, so its lines, warehouses, date and notes can simply be
  * replaced; the number stays the same.
  */
+/**
+ * Edit a transfer that has not yet moved stock.
+ *
+ * A draft is simply rewritten. An approved or in-transit transfer holds a
+ * reservation at the source for its old lines; that reservation is released
+ * and taken again for the new lines inside the same transaction, so the
+ * stock is never free for a moment and the transfer keeps its stage. A
+ * received transfer has moved coffee and is corrected instead (below).
+ */
 export async function updateDraftStockTransfer(id: string, input: StockTransferInput, userId: string) {
   return transaction(async (tx) => {
     const existing = await tx.stockTransfer.findFirst({ where: { id, companyId: input.companyId } });
     if (!existing) throw new NotFoundError('Stock transfer');
-    if (existing.workflowState !== 'DRAFT') {
+    if (!['DRAFT', 'APPROVED', 'IN_TRANSIT'].includes(existing.workflowState)) {
       throw new BusinessRuleError(
-        'Only a draft transfer can be edited in place. A received transfer is corrected instead, which moves the stock back and opens a new draft.',
+        existing.workflowState === 'RECEIVED'
+          ? 'This transfer has already moved the stock. Use Edit on it to move the stock back and open a corrected copy.'
+          : 'A cancelled or reversed transfer cannot be edited.',
       );
     }
     if (input.fromWarehouseId === input.toWarehouseId) {
       throw new BusinessRuleError('The source and destination warehouses must be different.');
     }
+    const reserved = existing.workflowState !== 'DRAFT';
+    if (reserved) {
+      // Let go of the old lines before the new ones are checked against
+      // what is free, so a quantity moved from one batch to another is not
+      // refused for being reserved by this very transfer.
+      await releaseReservations(tx, {
+        companyId: input.companyId,
+        referenceType: REFERENCE_TYPE,
+        referenceId: id,
+        createdById: userId,
+        transactionDate: new Date(),
+      });
+    }
     const lines = await resolveLines(tx, input);
+    if (reserved) {
+      for (const line of lines) {
+        await reserveStock(tx, {
+          companyId: input.companyId,
+          batchId: line.batchId,
+          warehouseId: input.fromWarehouseId,
+          quantityKg: line.quantityKg,
+          referenceType: REFERENCE_TYPE,
+          referenceId: id,
+          transactionDate: input.transferDate,
+          createdById: userId,
+        });
+      }
+    }
 
     await tx.stockTransferLine.deleteMany({ where: { stockTransferId: id } });
     const updated = await tx.stockTransfer.update({
@@ -463,7 +501,7 @@ export async function updateDraftStockTransfer(id: string, input: StockTransferI
       action: 'STOCK_TRANSFER_UPDATED',
       entityType: 'StockTransfer',
       entityId: id,
-      after: { transferNumber: existing.transferNumber, totalKg: sum(lines.map((l) => l.quantityKg)).toString() },
+      after: { transferNumber: existing.transferNumber, workflowState: existing.workflowState, totalKg: sum(lines.map((l) => l.quantityKg)).toString() },
     });
     return updated;
   });

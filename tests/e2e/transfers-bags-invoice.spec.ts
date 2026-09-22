@@ -68,6 +68,39 @@ test('a new transfer shows the next WTO number, and the list carries it', async 
   await expect(page.getByRole('columnheader', { name: 'Transfer No.' })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole('cell', { name: issued }).first()).toBeVisible();
   console.log(`  transfer saved as ${issued}`);
+
+  // Edit is on the row at every live stage: as a draft, once approved, and
+  // after it has been received (when it moves the stock back and opens a copy).
+  const row = page.getByRole('row').filter({ hasText: issued }).first();
+  await expect(row.getByRole('link', { name: /^Edit$/ })).toBeVisible();
+  await row.getByRole('button', { name: /^Approve$/ }).click();
+  await expect(row.getByRole('button', { name: /^Dispatch$|^Receive$/ }).first()).toBeVisible({ timeout: 30_000 });
+  await expect(row.getByRole('link', { name: /^Edit$/ })).toBeVisible();
+
+  // Edit while approved: the number and the stage are kept.
+  await row.getByRole('link', { name: /^Edit$/ }).click();
+  await page.waitForURL(/\/inventory\/transfers\/[\w-]+\/edit$/, { timeout: 30_000 });
+  await expect(page.getByLabel('Transfer No.')).toHaveValue(issued);
+  await page.getByRole('button', { name: /^Save changes$/ }).click();
+  await page.waitForURL(/\/inventory\/transfers/, { timeout: 45_000 });
+
+  await page.goto('/inventory/transfers', { waitUntil: 'domcontentloaded' });
+  const again = page.getByRole('row').filter({ hasText: issued }).first();
+  await expect(again).toContainText(/Approved/, { timeout: 30_000 });
+  await again.getByRole('button', { name: /^Dispatch$/ }).click();
+  await expect(again).toContainText(/In Transit/i, { timeout: 30_000 });
+  await again.getByRole('button', { name: /^Receive$/ }).click();
+  await expect(again).toContainText(/Received/, { timeout: 30_000 });
+  // Received: Edit is a button that explains it moves the stock back first.
+  await again.getByRole('button', { name: /^Edit$/ }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText(/moves the stock back/i);
+  await dialog.getByLabel(/Why/).fill('Wrong quantity entered');
+  await dialog.getByRole('button', { name: /Move back and edit a copy/ }).click();
+  await page.waitForURL(/\/inventory\/transfers\/[\w-]+\/edit$/, { timeout: 45_000 });
+  const copy = await page.getByLabel('Transfer No.').inputValue();
+  expect(copy).not.toBe(issued);
+  console.log(`  ${issued} edited while approved, received, then edited again as ${copy}`);
 });
 
 test('Stock on Hand shows bags that follow the kilograms, never negative', async ({ page }) => {

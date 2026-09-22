@@ -84,8 +84,46 @@ describe('warehouse transfer actions', () => {
     expect(await at(ridwan)).toBe(0);
   }, 300_000);
 
-  it('refuses to edit a transfer once it has moved stock', async () => {
+  it('edits an approved transfer in place: the reservation follows the new lines, the stage is kept', async () => {
     await approveStockTransfer({ id: transferId, companyId, userId: ctx.admin.id });
+    const reservedBefore = await prisma.inventoryBalance.findUniqueOrThrow({ where: { batchId_warehouseId: { batchId, warehouseId: ipsen } } });
+    expect(Number(reservedBefore.reservedKg)).toBe(3000);
+    expect(Number(reservedBefore.availableKg)).toBe(7000);
+
+    await updateDraftStockTransfer(
+      transferId,
+      { companyId, transferDate: utcDate('2026-09-03'), fromWarehouseId: ipsen, toWarehouseId: ridwan, notes: 'Edited while approved', lines: [{ batchId, quantityKg: '4500' }] },
+      ctx.admin.id,
+    );
+    const detail = await getStockTransferDetail(companyId, transferId);
+    expect(detail.workflowState).toBe('APPROVED');
+    expect(detail.transferNumber).toBe('WTO-001');
+    expect(Number(detail.lines[0].quantityKg)).toBe(4500);
+    const reservedAfter = await prisma.inventoryBalance.findUniqueOrThrow({ where: { batchId_warehouseId: { batchId, warehouseId: ipsen } } });
+    expect(Number(reservedAfter.reservedKg)).toBe(4500);
+    expect(Number(reservedAfter.availableKg)).toBe(5500);
+    expect(await at(ipsen)).toBe(10000);
+
+    // More than the batch holds is refused, and the reservation is untouched.
+    await expect(
+      updateDraftStockTransfer(
+        transferId,
+        { companyId, transferDate: utcDate('2026-09-03'), fromWarehouseId: ipsen, toWarehouseId: ridwan, lines: [{ batchId, quantityKg: '12000' }] },
+        ctx.admin.id,
+      ),
+    ).rejects.toThrow();
+    const reservedStill = await prisma.inventoryBalance.findUniqueOrThrow({ where: { batchId_warehouseId: { batchId, warehouseId: ipsen } } });
+    expect(Number(reservedStill.reservedKg)).toBe(4500);
+
+    // Back to the 3,000 the rest of the story uses.
+    await updateDraftStockTransfer(
+      transferId,
+      { companyId, transferDate: utcDate('2026-09-02'), fromWarehouseId: ipsen, toWarehouseId: ridwan, lines: [{ batchId, quantityKg: '3000' }] },
+      ctx.admin.id,
+    );
+  }, 300_000);
+
+  it('refuses to edit a transfer in place once it has moved stock', async () => {
     await receiveStockTransfer({ id: transferId, companyId, userId: ctx.admin.id });
     expect(await at(ipsen)).toBe(7000);
     expect(await at(ridwan)).toBe(3000);
@@ -95,7 +133,7 @@ describe('warehouse transfer actions', () => {
         { companyId, transferDate: utcDate('2026-09-02'), fromWarehouseId: ipsen, toWarehouseId: ridwan, lines: [{ batchId, quantityKg: '1' }] },
         ctx.admin.id,
       ),
-    ).rejects.toThrow(/Only a draft/);
+    ).rejects.toThrow(/already moved the stock/);
   }, 300_000);
 
   it('corrects a received transfer: stock goes back, the original stays, a new draft opens', async () => {
