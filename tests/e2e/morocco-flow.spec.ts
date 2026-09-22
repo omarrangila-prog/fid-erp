@@ -53,6 +53,28 @@ async function signInToMorocco(page: Page) {
   }
 }
 
+/**
+ * Click the first entry of an open picker.
+ *
+ * The list repositions itself as it opens — the portal measures, then moves —
+ * and a click that lands mid-move hits a node the next render replaces, which
+ * Playwright reports as "element is not stable" and then "detached". Retrying
+ * the click is the honest fix: the list is fine, it was simply still settling.
+ */
+async function pickFirstOption(page: Page, timeout = 30_000) {
+  const option = page.getByRole('listbox').getByRole('option').first();
+  await expect(option).toBeVisible({ timeout });
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await option.click({ timeout: 10_000 });
+      return;
+    } catch {
+      await page.waitForTimeout(300);
+    }
+  }
+  throw new Error('the option list never settled enough to click');
+}
+
 test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await signInToMorocco(page);
@@ -201,10 +223,10 @@ test('a purchase order can be raised from the screen, start to finish', async ({
   // native <option> elements inside the currency <select>, which are never
   // visible, so the click waited three minutes for one of those.
   await form.getByRole('combobox', { name: /^Supplier/ }).click();
-  await page.getByRole('listbox').getByRole('option').first().click();
+  await pickFirstOption(page);
 
   await form.getByRole('combobox', { name: /^Coffee/ }).click();
-  await page.getByRole('listbox').getByRole('option').first().click();
+  await pickFirstOption(page);
 
   const quantity = form.getByRole('textbox', { name: /^Quantity/ }).first();
           const price = form.getByRole('textbox', { name: /USD Rate|Price per/ }).first();

@@ -60,6 +60,28 @@ async function signIn(page: Page) {
   }
 }
 
+/**
+ * Click the first entry of an open picker.
+ *
+ * The list repositions itself as it opens — the portal measures, then moves —
+ * and a click that lands mid-move hits a node the next render replaces, which
+ * Playwright reports as "element is not stable" and then "detached". Retrying
+ * the click is the honest fix: the list is fine, it was simply still settling.
+ */
+async function pickFirstOption(page: Page, timeout = 30_000) {
+  const option = page.getByRole('listbox').getByRole('option').first();
+  await expect(option).toBeVisible({ timeout });
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await option.click({ timeout: 10_000 });
+      return;
+    } catch {
+      await page.waitForTimeout(300);
+    }
+  }
+  throw new Error('the option list never settled enough to click');
+}
+
 /** The balance the Cash & Bank screen prints for one named account. */
 async function bankBalance(page: Page, account: RegExp, currency = 'MAD'): Promise<number> {
   await page.goto('/finance/cash-bank', { waitUntil: 'domcontentloaded' });
@@ -211,7 +233,7 @@ test('an invoice is raised warehouse first, and the warehouse drives the coffee'
   const coffeeOptions = await page.getByRole('listbox').getByRole('option').allTextContents();
   console.log(`  coffee in that warehouse: ${coffeeOptions.join(' | ')}`);
   expect(coffeeOptions.length).toBeGreaterThan(0);
-  await page.getByRole('listbox').getByRole('option').first().click();
+  await pickFirstOption(page);
 
   // The batch list narrows to that coffee, in that warehouse.
   const batch = page.getByLabel(/Batch on item 1/);
@@ -254,7 +276,7 @@ test('part of the invoice is paid in cash, and only that reaches the drawer', as
 
   await page.getByRole('combobox', { name: /customer/i }).first().click();
   await page.keyboard.type(CUSTOMER.slice(0, 14));
-  await page.getByRole('listbox').getByRole('option').first().click();
+  await pickFirstOption(page);
 
   await page.getByLabel('Payment method').selectOption('CASH');
   await page.getByLabel('Amount received').fill('50000');
@@ -357,7 +379,7 @@ test('the rest is settled by a cheque the agent takes away', async ({ page }) =>
 
   await page.getByRole('combobox', { name: /customer/i }).first().click();
   await page.keyboard.type(CUSTOMER.slice(0, 14));
-  await page.getByRole('listbox').getByRole('option').first().click();
+  await pickFirstOption(page);
 
   // The customer handed the cheque to the agent, not to us.
   await page.getByLabel('Payment method').selectOption('AGENT_COLLECTION');
@@ -366,7 +388,7 @@ test('the rest is settled by a cheque the agent takes away', async ({ page }) =>
   const agent = page.getByRole('combobox', { name: /agent/i }).first();
   await expect(agent).toBeVisible({ timeout: 30_000 });
   await agent.click();
-  await page.getByRole('listbox').getByRole('option').first().click();
+  await pickFirstOption(page);
 
   // A real cheque, dated three days out.
   await page.getByLabel('Cheque number').fill('CHQ-WALK-1');
@@ -442,9 +464,9 @@ test('a second cheque is taken by the agent, and bounces', async ({ page }) => {
   await page.getByLabel('Warehouse on item 1', { exact: true }).selectOption({ index: 1 });
   await page.getByRole('combobox', { name: /customer/i }).first().click();
   await page.keyboard.type(CUSTOMER.slice(0, 14));
-  await page.getByRole('listbox').getByRole('option').first().click();
+  await pickFirstOption(page);
   await page.getByRole('combobox', { name: /Coffee on item 1/ }).click();
-  await page.getByRole('listbox').getByRole('option').first().click();
+  await pickFirstOption(page);
   await page.getByLabel(/Batch on item 1/).selectOption({ index: 1 });
   await page.getByRole('textbox', { name: /^Quantity/ }).first().fill('500');
   await page.getByRole('textbox', { name: /Price/ }).first().fill('100');
@@ -456,11 +478,11 @@ test('a second cheque is taken by the agent, and bounces', async ({ page }) => {
   await page.waitForLoadState('networkidle', { timeout: 8_000 }).catch(() => undefined);
   await page.getByRole('combobox', { name: /customer/i }).first().click();
   await page.keyboard.type(CUSTOMER.slice(0, 14));
-  await page.getByRole('listbox').getByRole('option').first().click();
+  await pickFirstOption(page);
   await page.getByLabel('Payment method').selectOption('AGENT_COLLECTION');
   await page.getByLabel('Amount received').fill('50000');
   await page.getByRole('combobox', { name: /agent/i }).first().click();
-  await page.getByRole('listbox').getByRole('option').first().click();
+  await pickFirstOption(page);
   await page.getByLabel('Cheque number').fill('CHQ-WALK-2');
   const allocation = page.getByRole('textbox', { name: /Amount applied to/i }).first();
   await expect(allocation).toBeVisible({ timeout: 30_000 });
