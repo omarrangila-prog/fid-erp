@@ -396,6 +396,18 @@ test('stock, batches, items and the loading sheet each show three lines under th
   await expect(shipmentLines.locator('tbody tr')).toHaveCount(LINES.length);
   const shipmentsText = (await page.locator('main').textContent()) ?? '';
 
+  /*
+   * Cost per kilo and per tonne, each in dollars and in the company's own
+   * money. Grouping this list by contract once dropped the tonne figure, and
+   * nothing here noticed — only the watcher on the client's own deployment
+   * did, a day later.
+   */
+  const costRow = (await shipmentRow.first().innerText()).replace(/\s+/g, ' ');
+  expect(costRow, 'cost per kilo in USD').toMatch(/USD\s*[\d,]+\.\d{2}/);
+  expect(costRow, 'cost per kilo in the local currency').toMatch(/MAD\s*[\d,]+\.\d{2}/);
+  expect(costRow, 'cost per tonne in USD').toMatch(/USD\s*[\d,]+\.\d{2}\s*\/\s*MT/);
+  expect(costRow, 'cost per tonne in the local currency').toMatch(/MAD\s*[\d,]+\.\d{2}\s*\/\s*MT/);
+
   // Loading sheet: one parent row for the order, its three containers inside it.
   await page.goto('/loading', { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => undefined);
