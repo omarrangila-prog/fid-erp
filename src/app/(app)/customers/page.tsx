@@ -21,11 +21,17 @@ export default async function CustomersPage({
   const user = await requirePageAccess(PERMISSIONS.CUSTOMERS_VIEW);
   const companyId = user.activeCompany.id;
 
-  const [customers, receivables, traded, rates] = await Promise.all([
+  const [customers, agents, receivables, traded, rates] = await Promise.all([
     prisma.customer.findMany({
       where: { companyId },
       orderBy: { customerName: 'asc' },
       include: { _count: { select: { salesInvoices: true } } },
+    }),
+    // For the one case where a customer and an agent are the same person.
+    prisma.agent.findMany({
+      where: { companyId, status: 'ACTIVE' },
+      orderBy: { agentName: 'asc' },
+      select: { id: true, agentName: true },
     }),
     getReceivables({ companyId, onlyOutstanding: true }),
     // What each customer has actually bought and paid, and when they last
@@ -111,6 +117,7 @@ export default async function CustomersPage({
       })(),
       lastTradedSort: tradedByCustomer.get(c.id)?.lastAt?.getTime() ?? 0,
       status: c.status,
+      agentId: c.agentId,
     };
   });
 
@@ -130,6 +137,7 @@ export default async function CustomersPage({
         localCurrency={user.activeCompany.localCurrency}
         defaultLocalRate={rates.local}
         defaultCurrency={user.activeCompany.code === 'FID-MA' ? 'MAD' : 'USD'}
+        agents={agents}
       />
     </div>
   );

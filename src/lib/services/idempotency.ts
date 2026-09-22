@@ -27,11 +27,11 @@ const KEY_PATTERN = /^[A-Za-z0-9-]{8,64}$/;
 export async function onceForKey<T extends { id: string }>(
   params: { companyId: string; userId: string; scope: string; key?: string | null },
   create: () => Promise<T>,
-): Promise<{ id: string; replayed: boolean }> {
+): Promise<{ id: string; replayed: boolean; created: T | null }> {
   const key = params.key && KEY_PATTERN.test(params.key) ? params.key : null;
   if (!key) {
     const created = await create();
-    return { id: created.id, replayed: false };
+    return { id: created.id, replayed: false, created };
   }
 
   return transaction(async (tx) => {
@@ -47,7 +47,8 @@ export async function onceForKey<T extends { id: string }>(
       },
       select: { entityId: true },
     });
-    if (seen) return { id: seen.entityId, replayed: true };
+    // A replay has nothing new to report beyond which document it was.
+    if (seen) return { id: seen.entityId, replayed: true, created: null };
 
     const created = await create();
     await writeAudit(tx, {
@@ -58,6 +59,6 @@ export async function onceForKey<T extends { id: string }>(
       entityId: created.id,
       after: { key },
     });
-    return { id: created.id, replayed: false };
+    return { id: created.id, replayed: false, created };
   }, 120_000);
 }

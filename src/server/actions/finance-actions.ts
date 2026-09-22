@@ -7,6 +7,7 @@ import { PERMISSIONS } from '@/lib/constants';
 import { fieldErrors } from '@/lib/validation/common';
 import {
   agentSettlementSchema,
+  agentOffsetSchema,
   receiptSchema,
   paymentSchema,
   expenseSchema,
@@ -30,7 +31,12 @@ import {
   deleteDraftExpense,
 } from '@/lib/services/expense';
 import { changeChequeStatus } from '@/lib/services/cheque';
-import { createAgentSettlement, postAgentSettlement } from '@/lib/services/agent-ledger';
+import {
+  createAgentSettlement,
+  postAgentSettlement,
+  recordAgentHandover,
+  offsetAgentBalances,
+} from '@/lib/services/agent-ledger';
 import { postRevaluation } from '@/lib/services/revaluation';
 import { postJournalEntry } from '@/lib/services/accounting';
 import { postCashBankTransfer, postIntercompanyLoan } from '@/lib/services/cash-transfer';
@@ -76,6 +82,7 @@ const paths = {
   payments: ['/finance/payments', '/finance/payables', '/finance/cash-bank', '/dashboard'],
   expenses: ['/finance/expenses', '/finance/cash-bank', '/profitability', '/dashboard'],
   cheques: ['/finance/cheques', '/finance/cash-bank', '/finance/receivables', '/dashboard'],
+  journals: ['/accounting/journals', '/accounting/general-ledger', '/reports/trial-balance', '/dashboard'],
 };
 
 function revalidateAll(list: string[]) {
@@ -122,6 +129,37 @@ export async function saveReceiptAction(id: string | null, payload: string): Pro
  * has already handed over — and there is no reason anybody would want to keep
  * one as a draft.
  */
+/**
+ * Settle an agent's two balances against each other — never automatic.
+ *
+ * Showing a net position is a convenience; moving one balance against the
+ * other changes both ledgers, so somebody has to ask for it and say why.
+ */
+export async function offsetAgentBalancesAction(payload: string): Promise<DocFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.ACCOUNTING_POST);
+    const { clientKey, ...input } = agentOffsetSchema.parse(parseJson(payload));
+
+    const posted = await onceForKey(
+      { companyId: user.activeCompany.id, userId: user.id, scope: 'AGENT_OFFSET', key: clientKey },
+      () => offsetAgentBalances({ companyId: user.activeCompany.id, userId: user.id, ...input }),
+    );
+
+    revalidateAll(paths.journals);
+    revalidatePath('/agents');
+    revalidatePath(`/agents/${input.agentId}`);
+    return {
+      ok: true,
+      id: posted.id,
+      message: posted.created
+        ? `Settled against each other as ${posted.created.entryNumber}.`
+        : 'Already settled against each other.',
+    };
+  } catch (error) {
+    return toState(error);
+  }
+}
+
 export async function recordAgentSettlementAction(payload: string): Promise<DocFormState> {
   try {
     const user = await requirePermission(PERMISSIONS.RECEIPTS_POST);
@@ -131,9 +169,24 @@ export async function recordAgentSettlementAction(payload: string): Promise<DocF
     const created = await onceForKey(
       { companyId: user.activeCompany.id, userId: user.id, scope: 'AGENT_SETTLEMENT', key: clientKey },
       async () => {
+        /*
+         * Money coming back from an agent may be more than he was holding,
+         * because part of it is his own. That part is a loan, and it has to be
+         * said so rather than inferred, so the hand-over splits the amount and
+         * refuses an excess nobody has explained.
+         */
+        if (input.direction === 'COLLECTION') {
+          const { settlementId, lent } = await recordAgentHandover({
+            companyId: user.activeCompany.id,
+            userId: user.id,
+            ...input,
+            excess: input.excess ?? null,
+          });
+          return { id: settlementId ?? input.agentId, lent };
+        }
         const settlement = await createAgentSettlement({ companyId: user.activeCompany.id, ...input }, user.id);
         await postAgentSettlement({ id: settlement.id, companyId: user.activeCompany.id, userId: user.id });
-        return settlement;
+        return { id: settlement.id, lent: null };
       },
     );
 
@@ -144,9 +197,11 @@ export async function recordAgentSettlementAction(payload: string): Promise<DocF
       ok: true,
       id: created.id,
       message:
-        input.direction === 'COLLECTION'
-          ? 'Recorded. The money is now in the account you chose.'
-          : 'Commission paid.',
+        input.direction !== 'COLLECTION'
+          ? 'Commission paid.'
+          : created.created?.lent && created.created.lent.greaterThan(0)
+            ? `Recorded. ${input.currency} ${created.created.lent.toFixed(2)} of it is his own money, booked as a loan to the company.`
+            : 'Recorded. The money is now in the account you chose.',
     };
   } catch (error) {
     return toState(error);

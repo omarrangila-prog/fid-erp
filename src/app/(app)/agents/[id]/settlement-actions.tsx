@@ -30,6 +30,7 @@ export function AgentSettlementActions({
   localCurrency,
   defaultLocalRate,
   holdingUsd,
+  holdingLocal,
   commissionPayableUsd,
 }: {
   agentId: string;
@@ -38,13 +39,14 @@ export function AgentSettlementActions({
   localCurrency: string;
   defaultLocalRate: string;
   holdingUsd: string;
+  holdingLocal: string;
   commissionPayableUsd: string;
 }) {
   const [open, setOpen] = React.useState<'COLLECTION' | 'COMMISSION' | null>(null);
 
   return (
     <>
-      <Button variant="outline" size="sm" onClick={() => setOpen('COLLECTION')} disabled={Number(holdingUsd) <= 0}>
+      <Button variant="outline" size="sm" onClick={() => setOpen('COLLECTION')} data-testid="agent-received-open">
         <HandCoins />
         Received from agent
       </Button>
@@ -68,6 +70,7 @@ export function AgentSettlementActions({
           localCurrency={localCurrency}
           defaultLocalRate={defaultLocalRate}
           limitUsd={open === 'COLLECTION' ? holdingUsd : commissionPayableUsd}
+          holdingLocal={holdingLocal}
           onClose={() => setOpen(null)}
         />
       ) : null}
@@ -83,6 +86,7 @@ function SettlementSheet({
   localCurrency,
   defaultLocalRate,
   limitUsd,
+  holdingLocal,
   onClose,
 }: {
   direction: 'COLLECTION' | 'COMMISSION';
@@ -92,6 +96,7 @@ function SettlementSheet({
   localCurrency: string;
   defaultLocalRate: string;
   limitUsd: string;
+  holdingLocal: string;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -109,10 +114,25 @@ function SettlementSheet({
     rateLocalPerUsd: defaultLocalRate,
     reference: '',
     notes: '',
+    excess: '' as '' | 'LOAN',
   });
 
   const set = (patch: Partial<typeof form>) => setForm((prev) => ({ ...prev, ...patch }));
   const options = accounts.filter((a) => a.currency === form.currency);
+
+  /*
+   * What he is holding, in the currency he is handing over, so the form can
+   * tell the two parts of the money apart before anything is posted.
+   */
+  const holding =
+    form.currency === 'USD'
+      ? Number(limitUsd)
+      : form.currency === localCurrency
+        ? Number(holdingLocal)
+        : Number(limitUsd) * (Number(form.rateToUsd) || 0);
+  const entered = Number(form.amount) || 0;
+  const excessAmount = collecting ? Math.max(0, entered - holding) : 0;
+  const mustClassify = excessAmount > 0.005;
 
   function submit() {
     setError(null);
@@ -129,11 +149,24 @@ function SettlementSheet({
       setError('Enter the amount.');
       return;
     }
+    if (mustClassify && form.excess !== 'LOAN') {
+      setError(
+        `${agentName} is holding ${form.currency} ${holding.toFixed(2)}. Say what the extra ${form.currency} ` +
+          `${excessAmount.toFixed(2)} is before this is recorded.`,
+      );
+      return;
+    }
 
     if (pending) return;
     startTransition(async () => {
       const result = await recordAgentSettlementAction(
-        JSON.stringify({ clientKey: clientKey(), agentId, direction, ...form }),
+        JSON.stringify({
+          clientKey: clientKey(),
+          agentId,
+          direction,
+          ...form,
+          excess: mustClassify ? form.excess : null,
+        }),
       );
       if (!result?.ok) {
         setError(result?.error ?? 'This could not be recorded.');
@@ -245,11 +278,49 @@ function SettlementSheet({
           <Textarea rows={2} value={form.notes} onChange={(e) => set({ notes: e.target.value })} />
         </Field>
 
+        {mustClassify ? (
+          <div className="space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-3" data-testid="excess-choice">
+            <p className="text-xs text-amber-900">
+              {agentName} is holding <strong>{form.currency} {holding.toFixed(2)}</strong> of the company&rsquo;s money,
+              and this hand-over is {form.currency} {entered.toFixed(2)}. The extra{' '}
+              <strong>{form.currency} {excessAmount.toFixed(2)}</strong> is not a collection — say what it is. The
+              system will not decide it, because the wrong guess puts the amount in the wrong account for good.
+            </p>
+            <label className="flex items-start gap-2 text-xs text-amber-900">
+              <input
+                type="radio"
+                name="excess"
+                className="mt-0.5"
+                checked={form.excess === 'LOAN'}
+                onChange={() => set({ excess: 'LOAN' })}
+                data-testid="excess-loan"
+              />
+              <span>
+                It is his own money, lent to the company. The extra is posted as{' '}
+                <strong>Loan from {agentName}</strong>, a liability, and the company owes it back to him.
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-xs text-amber-900">
+              <input
+                type="radio"
+                name="excess"
+                className="mt-0.5"
+                checked={form.excess === ''}
+                onChange={() => set({ excess: '' })}
+                data-testid="excess-none"
+              />
+              <span>Neither — the amount is wrong. Change it above; nothing will be recorded until this is settled.</span>
+            </label>
+          </div>
+        ) : null}
+
         <Callout tone="info">
           {collecting ? (
             <>
-              {agentName} is holding <strong>USD {Number(limitUsd).toFixed(2)}</strong>. Recording more than that
-              would leave them owed money they never collected, so it is refused.
+              {agentName} is holding <strong>{form.currency} {holding.toFixed(2)}</strong>
+              {form.currency === 'USD' ? null : <> (USD {Number(limitUsd).toFixed(2)})</>}. Up to that, this settles
+              what he collected for the company. Anything beyond it is his own money and has to be classified before it
+              is recorded.
             </>
           ) : (
             <>

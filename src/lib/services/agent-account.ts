@@ -57,7 +57,9 @@ export type AgentLedgerRow = {
   balanceLocal: Decimal;
   status: string;
   /** Which balance the line belongs to: what a reader needs to tell a cheque held from a loan. */
-  accountKind: 'Agent Clearing' | 'Commission' | 'Loan from agent' | 'Loan to agent' | 'Other';
+  accountKind: 'Agent Clearing' | 'Commission' | 'Loan from agent' | 'Loan to agent' | 'Trade receivable' | 'Other';
+  /** In the client's words: who this line moved money towards. */
+  direction: 'He owes FID more' | 'He owes FID less' | 'FID owes him more' | 'FID owes him less';
 };
 
 export type AgentLedgerSummary = {
@@ -69,6 +71,8 @@ export type AgentLedgerSummary = {
   loanFromAgentLocal: Decimal;
   /** Money the company lent the agent and has not got back. */
   loanToAgentLocal: Decimal;
+  /** What he owes for coffee he bought himself. */
+  tradeReceivableLocal: Decimal;
   /** Everything else tagged to the agent through journals. */
   otherLocal: Decimal;
   /** Positive: the agent owes the company. Negative: the company owes the agent. */
@@ -112,21 +116,60 @@ const KIND = {
   commission: 'Commission',
   loanFrom: 'Loan from agent',
   loanTo: 'Loan to agent',
+  trade: 'Trade receivable',
   other: 'Other',
 } as const;
+
+/** Which balances mean the counterparty owes the company, so a line can say so plainly. */
+const OWES_US = new Set(['holding', 'loanTo', 'trade']);
 
 function bucketOf(row: { accountKey: string | null; accountName: string }) {
   const name = row.accountName.toLowerCase();
   if (row.accountKey === 'AGENT_CLEARING') return 'holding' as const;
   if (row.accountKey === 'AGENT_COMMISSION_PAYABLE') return 'commission' as const;
+  if (row.accountKey === 'ACCOUNTS_RECEIVABLE') return 'trade' as const;
   if (name.startsWith('loan from')) return 'loanFrom' as const;
   if (name.startsWith('loan to')) return 'loanTo' as const;
   return 'other' as const;
 }
 
+/**
+ * The slices of one counterparty's activity a reader asks for by name.
+ *
+ * Every line is on the page under ALL; these only narrow it, so the summary
+ * above the table is the same whichever is chosen.
+ */
+export const AGENT_LEDGER_TABS = {
+  ALL: 'All activity',
+  CLEARING: 'Agent Clearing',
+  LOANS: 'Loans',
+  SALES: 'Direct sales',
+  COMMISSION: 'Commission',
+  SETTLEMENTS: 'Settlements',
+  JOURNAL: 'Journal',
+} as const;
+
+export type AgentLedgerTab = keyof typeof AGENT_LEDGER_TABS;
+
+export function isAgentLedgerTab(value: string | undefined): value is AgentLedgerTab {
+  return !!value && value in AGENT_LEDGER_TABS;
+}
+
+const IN_TAB: Record<AgentLedgerTab, (row: AgentLedgerRow) => boolean> = {
+  ALL: () => true,
+  CLEARING: (row) => row.accountKind === 'Agent Clearing',
+  LOANS: (row) => row.accountKind === 'Loan from agent' || row.accountKind === 'Loan to agent',
+  SALES: (row) => row.accountKind === 'Trade receivable',
+  COMMISSION: (row) => row.accountKind === 'Commission',
+  SETTLEMENTS: (row) => row.sourceType === 'AGENT_SETTLEMENT',
+  JOURNAL: (row) => row.sourceType === 'MANUAL',
+};
+
 export async function getAgentLedger(params: {
   companyId: string;
   agentId: string;
+  /** Show one slice of the activity. The summary always covers all of it. */
+  tab?: AgentLedgerTab;
 }): Promise<{ rows: AgentLedgerRow[]; summary: AgentLedgerSummary }> {
   const raw = await prisma.$queryRawUnsafe<Raw[]>(
     `
@@ -155,14 +198,36 @@ export async function getAgentLedger(params: {
     LEFT JOIN customers c ON c."id" = jl."customerId"
     WHERE je."companyId" = $1
       AND ${LIVE_ENTRY_TEXT}
-      AND jl."agentId" = $2
+      -- The company's own cash and bank lines are tagged with the agent who
+      -- brought the money in, which is useful on a receipt and wrong here:
+      -- this page is what he owes and is owed, and the company's cash is
+      -- neither. Counting it made every hand-over leave its own amount
+      -- behind on his balance for good.
+      AND jl."cashBankAccountId" IS NULL
+      AND (
+        jl."agentId" = $2
+        /*
+         * The same person buying coffee himself: his customer record points
+         * back at this agent, so what he owes for it belongs on this page too.
+         *
+         * Only what he owes. A sales invoice tags its revenue — and its
+         * advances — with the customer as well, and those are the company's
+         * income and the company's obligation, not a balance between the two
+         * of them. Taking the whole invoice put the sale's revenue on his
+         * page as if it cancelled part of what he owed.
+         */
+        OR (
+          acc."systemKey" = 'ACCOUNTS_RECEIVABLE'
+          AND jl."customerId" IN (SELECT cu."id" FROM customers cu WHERE cu."agentId" = $2)
+        )
+      )
     ORDER BY je."entryDate" ASC, je."entryNumber" ASC, jl."lineNumber" ASC
     `,
     params.companyId,
     params.agentId,
   );
 
-  const totals = { holding: dec(0), commission: dec(0), loanFrom: dec(0), loanTo: dec(0), other: dec(0) };
+  const totals = { holding: dec(0), commission: dec(0), loanFrom: dec(0), loanTo: dec(0), trade: dec(0), other: dec(0) };
   let running = new Decimal(0);
   let usdNet = new Decimal(0);
 
@@ -188,6 +253,10 @@ export async function getAgentLedger(params: {
     if (row.sourceType === 'RECEIPT' && row.accountKey === 'AGENT_CLEARING' && debit) {
       typeLabel = row.chequeStatus ? 'Customer Cheque Collected' : 'Customer Payment Collected';
     }
+    // His own trade: coffee he bought, and what he paid for it.
+    if (row.accountKey === 'ACCOUNTS_RECEIVABLE') {
+      typeLabel = row.sourceType === 'SALES_INVOICE' ? 'Direct Sale Invoice' : debit ? 'Adjustment' : 'Invoice Payment';
+    }
 
     return {
       journalEntryId: row.journalEntryId,
@@ -210,18 +279,42 @@ export async function getAgentLedger(params: {
       usd: toMoney(usdMovement.abs()),
       balanceLocal: running,
       accountKind: KIND[bucketOf(row)],
+      direction: OWES_US.has(bucketOf(row))
+        ? movement.isNegative()
+          ? ('He owes FID less' as const)
+          : ('He owes FID more' as const)
+        : movement.isNegative()
+          ? ('FID owes him more' as const)
+          : ('FID owes him less' as const),
       status: row.chequeStatus ? (CHEQUE_LABEL[row.chequeStatus] ?? 'Posted') : 'Posted',
     };
   });
 
+  /*
+   * A tab narrows the table, and its running balance is then the balance of
+   * what is on screen — the clearing tab reads as the clearing account, the
+   * loans tab as the loans. Showing the combined balance beside a filtered
+   * list would look like an error in the arithmetic.
+   */
+  const tab = params.tab ?? 'ALL';
+  let shown = rows;
+  if (tab !== 'ALL') {
+    let tabRunning = new Decimal(0);
+    shown = rows.filter(IN_TAB[tab]).map((row) => {
+      tabRunning = toMoney(tabRunning.plus(row.debitLocal.minus(row.creditLocal)));
+      return { ...row, balanceLocal: tabRunning };
+    });
+  }
+
   return {
-    rows,
+    rows: shown,
     summary: {
       holdingLocal: toMoney(totals.holding),
       // Credit-natured: shown as what the company owes.
       commissionLocal: toMoney(totals.commission.negated()),
       loanFromAgentLocal: toMoney(totals.loanFrom.negated()),
       loanToAgentLocal: toMoney(totals.loanTo),
+      tradeReceivableLocal: toMoney(totals.trade),
       otherLocal: toMoney(totals.other),
       netLocal: running,
       netUsd: toMoney(usdNet),
@@ -243,6 +336,9 @@ export async function getAgentNetBalances(
     WHERE je."companyId" = $1
       AND ${LIVE_ENTRY_TEXT}
       AND jl."agentId" IS NOT NULL
+      -- See the note in getAgentLedger: the company's own money is not his
+      -- balance, however it reached the bank.
+      AND jl."cashBankAccountId" IS NULL
     GROUP BY jl."agentId"
     `,
     companyId,
@@ -266,6 +362,7 @@ export async function getAgentSummaries(companyId: string): Promise<
            CASE
              WHEN acc."systemKey" = 'AGENT_CLEARING' THEN 'holding'
              WHEN acc."systemKey" = 'AGENT_COMMISSION_PAYABLE' THEN 'commission'
+             WHEN acc."systemKey" = 'ACCOUNTS_RECEIVABLE' THEN 'trade'
              WHEN lower(acc."name") LIKE 'loan from%' THEN 'loanFrom'
              WHEN lower(acc."name") LIKE 'loan to%' THEN 'loanTo'
              WHEN acc."id" IS NULL THEN 'none'
@@ -278,7 +375,7 @@ export async function getAgentSummaries(companyId: string): Promise<
       journal_lines jl
       JOIN journal_entries je ON je."id" = jl."journalEntryId" AND ${LIVE_ENTRY_TEXT}
       JOIN accounts acc ON acc."id" = jl."accountId"
-    ) ON jl."agentId" = a."id"
+    ) ON (jl."agentId" = a."id" OR jl."customerId" IN (SELECT cu."id" FROM customers cu WHERE cu."agentId" = a."id"))
     WHERE a."companyId" = $1 AND a."status" = 'ACTIVE'
     GROUP BY a."id", a."agentName", bucket
     ORDER BY a."agentName"
@@ -295,11 +392,9 @@ export async function getAgentSummaries(companyId: string): Promise<
 
   return [...byAgent.entries()].map(([agentId, { agentName, buckets }]) => {
     const get = (k: string) => buckets[k]?.local ?? dec(0);
-    const netLocal = ['holding', 'commission', 'loanFrom', 'loanTo', 'other'].reduce((t, k) => t.plus(get(k)), dec(0));
-    const netUsd = ['holding', 'commission', 'loanFrom', 'loanTo', 'other'].reduce(
-      (t, k) => t.plus(buckets[k]?.usd ?? dec(0)),
-      dec(0),
-    );
+    const kinds = ['holding', 'commission', 'loanFrom', 'loanTo', 'trade', 'other'];
+    const netLocal = kinds.reduce((t, k) => t.plus(get(k)), dec(0));
+    const netUsd = kinds.reduce((t, k) => t.plus(buckets[k]?.usd ?? dec(0)), dec(0));
     return {
       agentId,
       agentName,
@@ -308,6 +403,7 @@ export async function getAgentSummaries(companyId: string): Promise<
         commissionLocal: toMoney(get('commission').negated()),
         loanFromAgentLocal: toMoney(get('loanFrom').negated()),
         loanToAgentLocal: toMoney(get('loanTo')),
+        tradeReceivableLocal: toMoney(get('trade')),
         otherLocal: toMoney(get('other')),
         netLocal: toMoney(netLocal),
         netUsd: toMoney(netUsd),

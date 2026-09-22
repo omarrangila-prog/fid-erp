@@ -34,9 +34,11 @@ export type CustomerRow = {
   address: string | null;
   whatsapp: string | null;
   notes: string | null;
+  /** Set where this customer is the same person as one of the agents. */
+  agentId: string | null;
 };
 
-const FIELDS = (defaultCurrency: string): FieldSpec[] => [
+const FIELDS = (defaultCurrency: string, agents: Array<{ id: string; agentName: string }>): FieldSpec[] => [
   { kind: 'section', title: 'Identity' },
   { kind: 'text', name: 'customerName', label: 'Customer name', required: true },
   { kind: 'text', name: 'country', label: 'Country' },
@@ -56,6 +58,22 @@ const FIELDS = (defaultCurrency: string): FieldSpec[] => [
   { kind: 'email', name: 'email', label: 'Email' },
   { kind: 'textarea', name: 'address', label: 'Address', full: true },
 
+  ...(agents.length > 0
+    ? ([
+        { kind: 'section', title: 'Also an agent' },
+        {
+          kind: 'select',
+          name: 'agentId',
+          label: 'Same person as agent',
+          full: true,
+          options: [{ value: '', label: 'Not an agent — an ordinary customer' }].concat(
+            agents.map((agent) => ({ value: agent.id, label: agent.agentName })),
+          ),
+          hint: 'Only where the customer and the agent are one person. What he buys for himself stays a trade receivable and what he collects for the company stays in Agent Clearing; linking them puts both on his page without one paying off the other.',
+        },
+      ] as FieldSpec[])
+    : []),
+
   { kind: 'section', title: 'Trading terms' },
   { kind: 'money', name: 'creditLimit', label: 'Credit limit' },
   { kind: 'select', name: 'status', label: 'Status', options: STATUS_OPTIONS },
@@ -71,6 +89,7 @@ export function CustomersClient({
   localCurrency,
   defaultLocalRate,
   defaultCurrency,
+  agents,
 }: {
   rows: CustomerRow[];
   canCreate: boolean;
@@ -80,6 +99,7 @@ export function CustomersClient({
   localCurrency: string;
   defaultLocalRate: string;
   defaultCurrency: string;
+  agents: Array<{ id: string; agentName: string }>;
 }) {
   const [editing, setEditing] = React.useState<CustomerRow | null>(null);
   const [opening, setOpening] = React.useState<CustomerRow | null>(null);
@@ -255,8 +275,8 @@ export function CustomersClient({
           onOpenChange={setCreating}
           title="New customer"
           description="Customers are created once and referenced by every sale and receipt."
-          fields={FIELDS(defaultCurrency)}
-          defaults={{ primaryCurrency: defaultCurrency, status: 'ACTIVE', creditLimit: '0' }}
+          fields={FIELDS(defaultCurrency, agents)}
+          defaults={{ primaryCurrency: defaultCurrency, status: 'ACTIVE', creditLimit: '0', agentId: '' }}
           action={saveCustomerAction.bind(null, null) as (p: MasterFormState, f: FormData) => Promise<MasterFormState>}
           submitLabel="Create customer"
         />
@@ -267,9 +287,10 @@ export function CustomersClient({
           open
           onOpenChange={(open) => !open && setEditing(null)}
           title={`Edit ${editing.customerName}`}
-          fields={FIELDS(defaultCurrency)}
+          fields={FIELDS(defaultCurrency, agents)}
           defaults={{
             customerCode: editing.customerCode,
+            agentId: editing.agentId ?? '',
             customerName: editing.customerName,
             country: editing.country,
             contactPerson: editing.contactPerson,
@@ -308,6 +329,7 @@ export function CustomersClient({
 export function CustomerEditButton({
   customer,
   defaultCurrency,
+  agents = [],
 }: {
   customer: {
     id: string;
@@ -323,8 +345,10 @@ export function CustomerEditButton({
     creditLimit: string;
     notes: string | null;
     status: string;
+    agentId?: string | null;
   };
   defaultCurrency: string;
+  agents?: Array<{ id: string; agentName: string }>;
 }) {
   const [open, setOpen] = React.useState(false);
   return (
@@ -337,8 +361,8 @@ export function CustomerEditButton({
         open={open}
         onOpenChange={setOpen}
         title={`Edit ${customer.customerName}`}
-        fields={FIELDS(defaultCurrency)}
-        defaults={customer}
+        fields={FIELDS(defaultCurrency, agents)}
+        defaults={{ ...customer, agentId: customer.agentId ?? '' }}
         action={saveCustomerAction.bind(null, customer.id) as (p: MasterFormState, f: FormData) => Promise<MasterFormState>}
       />
     </>

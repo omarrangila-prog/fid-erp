@@ -176,6 +176,20 @@ async function saveMaster<S extends z.ZodTypeAny>(
       }
     }
 
+    /*
+     * Linking a customer to the agent who is the same person: the agent must
+     * be one of this company's own. An id from the other company would put a
+     * Morocco balance on a Dubai page, which is the one thing these two sets
+     * of books must never do to each other.
+     */
+    if (delegate === 'customer' && data.agentId) {
+      const agent = await prisma.agent.findFirst({
+        where: { id: String(data.agentId), companyId },
+        select: { id: true },
+      });
+      if (!agent) throw new NotFoundError('Agent');
+    }
+
     const saved = id
       ? await model.update({ where: { id }, data })
       : await model.create({ data: { ...data, companyId } });
@@ -198,6 +212,8 @@ async function saveMaster<S extends z.ZodTypeAny>(
       revalidatePath('/sales');
       revalidatePath('/sales/new');
       revalidatePath('/ledgers/customers');
+      revalidatePath('/agents');
+      if (data.agentId) revalidatePath(`/agents/${String(data.agentId)}`);
     }
     if (delegate === 'vendor') {
       revalidatePath('/purchases');

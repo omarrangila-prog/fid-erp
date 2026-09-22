@@ -27,6 +27,15 @@ export const customerSchema = z.object({
   address: optionalText(400),
   primaryCurrency: currencyCode,
   creditLimit: optionalDecimalString('Credit limit'),
+  /**
+   * The same person as one of the company's agents, where he also buys
+   * coffee for himself.
+   *
+   * It only says who he is. His invoices stay trade receivable and his
+   * collections stay in Agent Clearing — two accounts, one man — so that his
+   * page can show both without either paying the other off.
+   */
+  agentId: optionalCuid,
   notes: optionalText(1000),
   status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),
 });

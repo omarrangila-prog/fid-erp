@@ -478,11 +478,16 @@ model Customer {
   paymentTermDays Int          @default(0)
   openingBalance  Decimal      @default(0) @db.Decimal(18, 4)
   notes           String?
+  /// The same real person as this agent, when a counterparty both collects for
+  /// the company and buys from it. The accounts stay separate; the relationship
+  /// can then be read as one.
+  agentId         String?
   status          RecordStatus @default(ACTIVE)
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
   company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agent         Agent?         @relation(fields: [agentId], references: [id], onDelete: SetNull)
   salesInvoices SalesInvoice[]
   receipts      Receipt[]
   shipments     Shipment[]
@@ -493,6 +498,7 @@ model Customer {
   @@unique([companyId, customerCode])
   @@index([companyId, status])
   @@index([companyId, customerName])
+  @@index([agentId])
   @@map("customers")
 }
 
@@ -629,6 +635,7 @@ model Agent {
   expenses        Expense[]
   journalLines    JournalLine[]
   receipts        Receipt[]
+  customers       Customer[]
   settlements     AgentSettlement[]
   /// Commission and other costs owed to this agent but not yet paid.
   payableExpenses Expense[]         @relation("ExpensePayableToAgent")

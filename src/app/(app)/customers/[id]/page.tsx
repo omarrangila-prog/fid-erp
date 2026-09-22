@@ -70,9 +70,14 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
 
   if (!customer) notFound();
 
-  const [receivables, ordinals] = await Promise.all([
+  const [receivables, ordinals, agents] = await Promise.all([
     getReceivables({ companyId, customerId: id, onlyOutstanding: true }),
     getShipmentOrdinals(companyId),
+    prisma.agent.findMany({
+      where: { companyId, status: 'ACTIVE' },
+      orderBy: { agentName: 'asc' },
+      select: { id: true, agentName: true },
+    }),
   ]);
   const outstandingUsd = receivables.reduce((a, r) => a.plus(r.outstandingAmountUsd), dec(0));
   const outstandingOwn = receivables.reduce((a, r) => a.plus(r.outstandingAmount), dec(0));
@@ -104,6 +109,11 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
               {customer.status === 'ACTIVE' ? 'Active' : 'Inactive'}
             </Badge>
             {overdue.length > 0 ? <Badge tone="danger">{overdue.length} overdue</Badge> : null}
+            {customer.agentId ? (
+              <Link href={`/agents/${customer.agentId}`} className="text-xs font-medium text-forest-800 hover:text-gold-700">
+                Also an agent — everything he owes and is owed
+              </Link>
+            ) : null}
           </>
         }
         actions={
@@ -124,8 +134,10 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                   creditLimit: customer.creditLimit.toString(),
                   notes: customer.notes,
                   status: customer.status,
+                  agentId: customer.agentId,
                 }}
                 defaultCurrency={customer.primaryCurrency}
+                agents={agents}
               />
             ) : null}
             {can(user, PERMISSIONS.LEDGERS_VIEW) ? (

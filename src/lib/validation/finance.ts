@@ -339,6 +339,20 @@ export const agentSettlementSchema = z.object({
   rateLocalPerUsd: decimalString('Local exchange rate'),
   reference: optionalText(60),
   notes: optionalText(400),
+  /**
+   * When he hands over more than he was holding, what the extra is. Left
+   * unsaid, the excess is refused rather than guessed at.
+   */
+  excess: z.enum(['LOAN']).nullish(),
+});
+
+/** Settling what he owes the company against what the company owes him. */
+export const agentOffsetSchema = z.object({
+  clientKey: z.string().regex(/^[A-Za-z0-9-]{8,64}$/).optional(),
+  agentId: requiredChoice('Agent'),
+  date: dateString('Date'),
+  amount: decimalString('Amount'),
+  reason: requiredText('Reason', 400),
 });
 
 export const ledgerAccountSchema = z.object({
