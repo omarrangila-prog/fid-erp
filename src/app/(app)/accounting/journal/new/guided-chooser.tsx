@@ -10,6 +10,7 @@ import {
   HandCoins,
   Landmark,
   PiggyBank,
+  Redo2,
   Scale,
   SlidersHorizontal,
   Undo2,
@@ -106,8 +107,8 @@ const GROUPS: Group[] = [
         href: '/finance/loans/new?direction=RECEIVED',
         icon: Landmark,
         title: 'Loan received',
-        blurb: 'Somebody lent the business money — a director, a friend, another company.',
-        posts: 'The account rises and a loan balance is recorded. Not income.',
+        blurb: 'Somebody lent the business money — an agent, a director, a friend, another company.',
+        posts: 'The account rises and a loan balance is recorded in their name. Not income.',
       },
       {
         href: '/finance/loans/new?direction=GIVEN',
@@ -122,6 +123,13 @@ const GROUPS: Group[] = [
         title: 'Loan repayment',
         blurb: 'Paying back money the business borrowed.',
         posts: 'The account falls and what you owe them falls with it.',
+      },
+      {
+        href: '/finance/loans/new?direction=RECOVERED',
+        icon: Redo2,
+        title: 'Loan repaid to us',
+        blurb: 'Somebody paid back money the business lent them.',
+        posts: 'The account rises and what they owe you falls. Not income.',
       },
       {
         href: '/finance/loans/new?direction=RECEIVED',

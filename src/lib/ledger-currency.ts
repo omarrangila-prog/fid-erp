@@ -9,7 +9,8 @@
  *   1. Explicit URL / picker choice (including ALL)
  *   2. Cash/bank account currency (the drawer the user opened)
  *   3. Account.currency on the GL head
- *   4. USD — only for true multi-currency control accounts
+ *   4. The single currency every posting on the account is in
+ *   5. USD — only for accounts that genuinely carry several currencies
  *
  * Pass ALL to list currencies separately without adding them together.
  */
@@ -59,11 +60,20 @@ export function resolveLedgerViewCurrency(params: {
   requested?: string | null;
   accountCurrency?: string | null;
   cashBankCurrency?: string | null;
+  /**
+   * The only currency the account's own postings are in, when they are all in
+   * one. An account is not "multi-currency" because the reports are kept in
+   * USD: Agent Clearing in Morocco holds nothing but dirhams, and opening it
+   * at its USD value made a MAD 46,000 cheque read as USD 4,791.67 under a
+   * USD heading. When every line agrees, that currency is the view.
+   */
+  onlyPostedCurrency?: string | null;
 }): LedgerViewCurrency {
   return (
     parseLedgerViewCurrency(params.requested) ??
     parseLedgerViewCurrency(params.cashBankCurrency) ??
     parseLedgerViewCurrency(params.accountCurrency) ??
+    parseLedgerViewCurrency(params.onlyPostedCurrency) ??
     'REPORTING'
   );
 }

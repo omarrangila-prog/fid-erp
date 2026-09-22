@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
@@ -6,6 +7,7 @@ import { getGeneralLedger, getGeneralLedgerByAccount } from '@/lib/services/repo
 import { LedgerGroups } from '@/app/(app)/reports/general-ledger/ledger-groups';
 import { StatementHeader, FavouriteStar } from '@/components/reports/report-statement';
 import {
+  parseLedgerViewCurrency,
   resolveLedgerViewCurrency,
   pickCashBankCurrency,
   ledgerCurrencyLabel,
@@ -17,14 +19,14 @@ import { CustomizePanel } from '@/components/reports/customize-panel';
 import { PrintButton } from '@/components/shared/print-button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
-import { EmptyState } from '@/components/ui/feedback';
+import { Callout, EmptyState } from '@/components/ui/feedback';
 import { exportHref } from '@/components/shared/excel-link';
 import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
 import { AccountPicker } from '@/app/(app)/reports/general-ledger/account-picker';
 import { JournalSourceActions } from '@/components/shared/journal-source-actions';
 import { describeLedgerBalance } from '@/lib/ledger-meaning';
-import { dec, sum } from '@/lib/money';
+import { dec } from '@/lib/money';
 
 export const metadata: Metadata = { title: 'General Ledger' };
 export const dynamic = 'force-dynamic';
@@ -47,6 +49,7 @@ export default async function GeneralLedgerPage({
       name: true,
       type: true,
       currency: true,
+      systemKey: true,
       cashBankAccounts: { select: { currency: true }, orderBy: { currency: 'asc' } },
     },
   });
@@ -66,11 +69,12 @@ export default async function GeneralLedgerPage({
   const wholeBook = account === 'all';
   const selectedId = wholeBook ? undefined : account && accounts.some((a) => a.id === account) ? account : accounts[0]?.id;
   const selected = accounts.find((row) => row.id === selectedId);
-  const selectedCurrency = resolveLedgerViewCurrency({
-    requested: currency,
-    accountCurrency: selected?.currency,
-    cashBankCurrency: pickCashBankCurrency(selected?.cashBankAccounts, selected?.currency ?? currency),
-  });
+  // Only what the reader asked for. Which currency an account opens in —
+  // its own, its drawer's, or the one every posting on it is in — is decided
+  // by the service, which can see the postings; deciding it here first meant
+  // the page always won and a dirham-only account still opened at its USD
+  // value.
+  const requestedCurrency = parseLedgerViewCurrency(currency) ?? undefined;
 
   const groups = wholeBook
     ? await getGeneralLedgerByAccount({
@@ -86,9 +90,12 @@ export default async function GeneralLedgerPage({
         accountId: selectedId,
         from: from ? new Date(`${from}T00:00:00.000Z`) : undefined,
         to: to ? new Date(`${to}T00:00:00.000Z`) : undefined,
-        currency: selectedCurrency,
+        currency: requestedCurrency,
       })
     : null;
+
+  // What it actually opened in, for the export link and the picker.
+  const selectedCurrency = ledger?.viewCurrency ?? requestedCurrency ?? 'REPORTING';
 
   return (
     <div className="space-y-6">
@@ -225,8 +232,7 @@ export default async function GeneralLedgerPage({
             ledger.account.type,
             ledger.account.name,
           );
-          const totalDebit = sum(ledger.rows.map((r) => dec(r.debit)));
-          const totalCredit = sum(ledger.rows.map((r) => dec(r.credit)));
+          const { totalDebit, totalCredit } = ledger;
           return (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Card>
@@ -265,6 +271,22 @@ export default async function GeneralLedgerPage({
             </div>
           );
         })()}
+
+        {/*
+          A control account is explained by its subledger. Somebody reading
+          Agent Clearing has to be able to get to the agents who hold that
+          money — and to be told that they are the same balance, not a second.
+        */}
+        {selected?.systemKey === 'AGENT_CLEARING' || selected?.systemKey === 'AGENT_COMMISSION_PAYABLE' ? (
+          <Callout tone="info" title="This account is held by named agents">
+            Every figure here is also shown under the agent who holds it, on{' '}
+            <Link href="/ledgers/agents" className="font-medium underline underline-offset-2">
+              Agent Balances
+            </Link>
+            . That is the same balance seen twice — the account, and who it is with. The balance sheet counts this
+            account once; the agents never add to it.
+          </Callout>
+        ) : null}
 
         <Card>
           <CardHeader>

@@ -614,12 +614,24 @@ export async function getGeneralLedger(params: {
     },
   });
 
+  // What the account's own postings are actually in. One currency means the
+  // ledger opens in it — an account that only ever held dirhams is a dirham
+  // ledger, whatever the group reports in.
+  const posted = await prisma.$queryRaw<Array<{ currency: string }>>`
+    SELECT DISTINCT jl."currency"
+    FROM journal_lines jl
+    JOIN journal_entries je ON je."id" = jl."journalEntryId"
+    WHERE je."companyId" = ${params.companyId} AND ${LIVE_ENTRY_SQL}
+      AND jl."accountId" = ${account.id}
+    LIMIT 5`;
+
   // A report reads; it never writes. The drawer's currency is preferred in
   // memory below, which is all the "Cash in Hand opened as USD" case needed.
   const viewCurrency = resolveLedgerViewCurrency({
     requested: params.currency,
     accountCurrency: account.currency,
     cashBankCurrency: pickCashBankCurrency(account.cashBankAccounts, account.currency ?? params.currency),
+    onlyPostedCurrency: posted.length === 1 ? posted[0].currency : null,
   });
   // Three ways to read an account:
   //
@@ -744,6 +756,17 @@ export async function getGeneralLedger(params: {
     };
   });
 
+  /*
+   * Totals on the same basis as the view.
+   *
+   * The rows always carry both figures, and a screen that summed the
+   * original amounts while labelling them with the view's currency printed
+   * "USD 46,000.00" for a MAD 46,000 cheque. Reporting view totals the USD
+   * values; a currency view totals that currency's own amounts.
+   */
+  const totalDebit = toMoney(sum(shaped.map((r) => (useOriginal ? r.debit : r.debitUsd))));
+  const totalCredit = toMoney(sum(shaped.map((r) => (useOriginal ? r.credit : r.creditUsd))));
+
   return {
     account: {
       id: account.id,
@@ -756,6 +779,8 @@ export async function getGeneralLedger(params: {
     closingBalanceUsd: running,
     openingBalance: opening,
     closingBalance: running,
+    totalDebit,
+    totalCredit,
     viewCurrency,
     mixedCurrencies: allCurrencies,
     rows: shaped,

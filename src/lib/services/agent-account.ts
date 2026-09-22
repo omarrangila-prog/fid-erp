@@ -56,6 +56,8 @@ export type AgentLedgerRow = {
   /** Running balance in the company's currency: positive = agent owes the company. */
   balanceLocal: Decimal;
   status: string;
+  /** Which balance the line belongs to: what a reader needs to tell a cheque held from a loan. */
+  accountKind: 'Agent Clearing' | 'Commission' | 'Loan from agent' | 'Loan to agent' | 'Other';
 };
 
 export type AgentLedgerSummary = {
@@ -104,6 +106,14 @@ const CHEQUE_LABEL: Record<string, string> = {
   BOUNCED: 'Cheque bounced',
   CANCELLED: 'Cheque cancelled',
 };
+
+const KIND = {
+  holding: 'Agent Clearing',
+  commission: 'Commission',
+  loanFrom: 'Loan from agent',
+  loanTo: 'Loan to agent',
+  other: 'Other',
+} as const;
 
 function bucketOf(row: { accountKey: string | null; accountName: string }) {
   const name = row.accountName.toLowerCase();
@@ -199,6 +209,7 @@ export async function getAgentLedger(params: {
       creditLocal,
       usd: toMoney(usdMovement.abs()),
       balanceLocal: running,
+      accountKind: KIND[bucketOf(row)],
       status: row.chequeStatus ? (CHEQUE_LABEL[row.chequeStatus] ?? 'Posted') : 'Posted',
     };
   });
@@ -303,4 +314,69 @@ export async function getAgentSummaries(companyId: string): Promise<
       },
     };
   });
+}
+
+/**
+ * What the Agent Clearing and Agent Commission control accounts hold, and
+ * how much of each is explained by lines carrying an agent's name.
+ *
+ * The agents are a subledger: they say who the control account's money is
+ * with. They are not a second asset, and the balance sheet counts the
+ * control account once. This is what lets a screen say so, and show the
+ * difference if a posting ever reached the control account without naming
+ * an agent — which would be a gap in the subledger, not extra money.
+ */
+export async function getAgentControlTotals(companyId: string): Promise<{
+  clearingLocal: Decimal;
+  clearingUsd: Decimal;
+  clearingTaggedLocal: Decimal;
+  commissionLocal: Decimal;
+  commissionTaggedLocal: Decimal;
+  /** Control less what the agents explain: nil when the subledger is complete. */
+  untaggedLocal: Decimal;
+  localCurrency: string;
+}> {
+  const [company, rows] = await Promise.all([
+    prisma.company.findUniqueOrThrow({ where: { id: companyId }, select: { localCurrency: true } }),
+    prisma.$queryRawUnsafe<Array<{ key: string; tagged: boolean; local: string; usd: string }>>(
+      `
+      SELECT acc."systemKey" AS key,
+             (jl."agentId" IS NOT NULL) AS tagged,
+             COALESCE(SUM(jl."debitLocal" - jl."creditLocal"), 0)::text AS local,
+             COALESCE(SUM(jl."debitUsd" - jl."creditUsd"), 0)::text AS usd
+      FROM journal_lines jl
+      JOIN journal_entries je ON je."id" = jl."journalEntryId"
+      JOIN accounts acc ON acc."id" = jl."accountId"
+      WHERE je."companyId" = $1
+        AND ${LIVE_ENTRY_TEXT}
+        AND acc."systemKey" IN ('AGENT_CLEARING', 'AGENT_COMMISSION_PAYABLE')
+      GROUP BY acc."systemKey", (jl."agentId" IS NOT NULL)
+      `,
+      companyId,
+    ),
+  ]);
+
+  const pick = (key: string, tagged?: boolean) =>
+    toMoney(
+      rows
+        .filter((r) => r.key === key && (tagged === undefined || r.tagged === tagged))
+        .reduce((total, r) => total.plus(dec(r.local)), dec(0)),
+    );
+
+  const clearingLocal = pick('AGENT_CLEARING');
+  const clearingTaggedLocal = pick('AGENT_CLEARING', true);
+  const commissionLocal = toMoney(pick('AGENT_COMMISSION_PAYABLE').negated());
+  const commissionTaggedLocal = toMoney(pick('AGENT_COMMISSION_PAYABLE', true).negated());
+
+  return {
+    clearingLocal,
+    clearingUsd: toMoney(
+      rows.filter((r) => r.key === 'AGENT_CLEARING').reduce((total, r) => total.plus(dec(r.usd)), dec(0)),
+    ),
+    clearingTaggedLocal,
+    commissionLocal,
+    commissionTaggedLocal,
+    untaggedLocal: toMoney(clearingLocal.minus(clearingTaggedLocal)),
+    localCurrency: company.localCurrency,
+  };
 }

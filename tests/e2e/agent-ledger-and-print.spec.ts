@@ -204,6 +204,36 @@ test('the agent ledger shows the collection once, in MAD, with USD only as an eq
   await expect(elsewhere).toContainText(/Customer Ledger/);
 });
 
+test('the agent is the subledger of Agent Clearing, not a second balance', async ({ page }) => {
+  await signIn(page);
+
+  // Agent Balances states the control account and what the agents explain.
+  await page.goto('/ledgers/agents', { waitUntil: 'domcontentloaded' });
+  const reconciliation = page.getByTestId('agent-clearing-reconciliation');
+  await expect(reconciliation).toBeVisible({ timeout: 30_000 });
+  const text = (await reconciliation.innerText()).replace(/\s+/g, ' ');
+  const figures = [...text.matchAll(/MAD\s([\d,]+\.\d{2})/g)].map((m) => Number(m[1].replace(/,/g, '')));
+  expect(figures).toHaveLength(2);
+  // Control account = what the agents hold, so nothing is counted twice.
+  expect(figures[0]).toBeCloseTo(figures[1], 2);
+  expect(text).toMatch(/never counted twice/i);
+
+  // The Agent Clearing account itself opens in MAD and points at the agents.
+  await page.goto('/ledgers', { waitUntil: 'domcontentloaded' });
+  await page.getByLabel('Search ledgers').fill('Agent Clearing');
+  await page.getByRole('link', { name: /Open ledger/ }).first().click();
+  await page.waitForURL(/\/reports\/general-ledger/, { timeout: 30_000 });
+  const main = page.getByRole('main');
+  await expect(main).toContainText(/held by named agents/i, { timeout: 30_000 });
+  await expect(main).toContainText(/MAD/);
+  // The collection is MAD on this ledger — never stated as USD.
+  const ledgerText = (await main.innerText()).replace(/\s+/g, ' ');
+  const mad = [...ledgerText.matchAll(/MAD\s([\d,]+\.\d{2})/g)].map((m) => Number(m[1].replace(/,/g, '')));
+  expect(mad.some((n) => n === 46000)).toBe(true);
+  expect(ledgerText).not.toMatch(/USD 46,000\.00/);
+  console.log('  agent clearing: control equals the agent subledger, shown in MAD');
+});
+
 test('the cash ledger prints six columns that fit the sheet, with the memo on it', async ({ page }) => {
   await signIn(page);
   await page.goto('/reports/cash-book', { waitUntil: 'domcontentloaded' });

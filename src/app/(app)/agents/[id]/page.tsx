@@ -97,23 +97,23 @@ export default async function AgentLedgerPage({ params }: { params: Promise<{ id
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-print-drop>
         {[
           {
-            title: 'Holding for the company',
-            hint: 'Customers’ money and cheques collected and not yet handed over.',
+            title: 'Receivable from this agent',
+            hint: 'Customers’ money and cheques they collected and have not yet handed over. Part of the Agent Clearing account — not a second asset.',
             value: ledger.summary.holdingLocal,
           },
           {
-            title: 'Commission owed to them',
-            hint: 'Agreed and not yet paid.',
+            title: 'Commission payable to them',
+            hint: 'Agreed and not yet paid. Part of the Agent Commission Payable account.',
             value: ledger.summary.commissionLocal,
           },
           {
-            title: 'Loan from the agent',
-            hint: 'Lent to the company and not yet repaid.',
+            title: 'Loan payable to them',
+            hint: 'They lent the company money that has not been repaid.',
             value: ledger.summary.loanFromAgentLocal,
           },
           {
-            title: 'Loan to the agent',
-            hint: 'Lent by the company and not yet returned.',
+            title: 'Loan receivable from them',
+            hint: 'The company lent them money that has not come back.',
             value: ledger.summary.loanToAgentLocal,
           },
         ].map((card) => (
@@ -171,6 +171,7 @@ export default async function AgentLedgerPage({ params }: { params: Promise<{ id
                     <TH>Customer</TH>
                     <TH>Invoice</TH>
                     <TH>Memo</TH>
+                    <TH>Account</TH>
                     <TH>Currency</TH>
                     <TH numeric>Debit</TH>
                     <TH numeric>Credit</TH>
@@ -209,6 +210,7 @@ export default async function AgentLedgerPage({ params }: { params: Promise<{ id
                         <TD>
                           <MemoCell memo={row.memo} />
                         </TD>
+                        <TD className="whitespace-nowrap text-xs text-ink-muted">{row.accountKind}</TD>
                         <TD className="text-xs">{row.currency}</TD>
                         <TD numeric>
                           {row.debit.greaterThan(0) ? (
