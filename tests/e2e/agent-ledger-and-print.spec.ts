@@ -234,6 +234,81 @@ test('the agent is the subledger of Agent Clearing, not a second balance', async
   console.log('  agent clearing: control equals the agent subledger, shown in MAD');
 });
 
+test('he hands over more than he collected: the excess is classified, never guessed', async ({ page }) => {
+  await signIn(page);
+
+  // Open his page from General Ledgers, as a user would.
+  await page.goto('/ledgers', { waitUntil: 'domcontentloaded' });
+  await page.getByLabel('Search ledgers').fill(AGENT.slice(0, 12));
+  const hit = page.getByRole('link', { name: AGENT, exact: true }).first();
+  await expect(hit).toBeVisible({ timeout: 20_000 });
+  await hit.click();
+  await page.waitForURL(/\/agents\//, { timeout: 30_000 });
+  const agentUrl = page.url();
+
+  // He is holding MAD 46,000, and the page says so in the client's words.
+  const main = page.getByRole('main');
+  await expect(main).toContainText(new RegExp(`${AGENT.split(' ')[0]}.*owes the company`, 'i'), { timeout: 30_000 });
+
+  // MAD 200,000 handed over: the form names the 154,000 and will not take it
+  // until somebody says what it is.
+  await page.getByTestId('agent-received-open').click();
+  const sheet = page.getByRole('dialog');
+  await expect(sheet).toBeVisible({ timeout: 20_000 });
+  await sheet.getByLabel(/Paid into/i).selectOption({ index: 1 });
+  await sheet.getByLabel(/^Amount/i).fill('200000');
+  await expect(page.getByTestId('excess-choice')).toContainText(/MAD 154,000\.00/, { timeout: 10_000 });
+  await sheet.getByRole('button', { name: /Record money received/i }).click();
+  await expect(sheet).toContainText(/Say what the extra MAD 154,000\.00 is/i, { timeout: 10_000 });
+
+  // Told it is his own money, it settles what he held and lends the rest.
+  await page.getByTestId('excess-loan').check();
+  await sheet.getByLabel(/^Memo/i).fill('Handed over 200,000: 46,000 collected, the rest his own money');
+  await sheet.getByRole('button', { name: /Record money received/i }).click();
+  await expect(sheet).toHaveCount(0, { timeout: 30_000 });
+
+  await page.goto(agentUrl, { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+  const summary = (await main.innerText()).replace(/\s+/g, ' ');
+  expect(summary).toMatch(/The company owes .* MAD 154,000\.00/i);
+  expect(summary).not.toMatch(/USD 200,000\.00/);
+  console.log('  hand-over: MAD 46,000 settled, MAD 154,000 booked as his loan');
+
+  // The tabs slice the same ledger: loans on their own, clearing back to nil.
+  await page.getByTestId('agent-tab-loans').click();
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+  await expect(page.getByTestId('agent-ledger')).toContainText(/154,000\.00/, { timeout: 20_000 });
+  await expect(page.getByTestId('agent-ledger')).not.toContainText(/46,000\.00/);
+  const direction = await page.getByTestId('agent-ledger-direction').first().innerText();
+  expect(direction).toMatch(new RegExp(`(${AGENT.split(' ')[0]}|FID) owes`, 'i'));
+
+  await page.getByTestId('agent-tab-clearing').click();
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+  const clearing = page.getByTestId('agent-ledger');
+  await expect(clearing).toContainText(/46,000\.00/, { timeout: 20_000 });
+  const balances = [...((await clearing.innerText()).matchAll(/MAD\s(-?[\d,]+\.\d{2})/g))].map((m) =>
+    Number(m[1].replace(/,/g, '')),
+  );
+  // What he collected and what he handed over, ending at nothing held.
+  expect(balances.some((n) => n === 46000)).toBe(true);
+  console.log('  tabs: loans and clearing shown separately, each with its own balance');
+});
+
+test('setting the two balances against each other is asked for, never automatic', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/ledgers', { waitUntil: 'domcontentloaded' });
+  await page.getByLabel('Search ledgers').fill(AGENT.slice(0, 12));
+  await page.getByRole('link', { name: AGENT, exact: true }).first().click();
+  await page.waitForURL(/\/agents\//, { timeout: 30_000 });
+
+  // He holds nothing right now, so there is nothing to set off and the
+  // button says so by being unavailable.
+  await expect(page.getByTestId('agent-offset-open')).toBeDisabled({ timeout: 30_000 });
+  const text = (await page.getByRole('main').innerText()).replace(/\s+/g, ' ');
+  expect(text).toMatch(/nothing is set against anything else until someone asks for it/i);
+  console.log('  offset: nothing to settle, and nothing settled on its own');
+});
+
 test('the cash ledger prints six columns that fit the sheet, with the memo on it', async ({ page }) => {
   await signIn(page);
   await page.goto('/reports/cash-book', { waitUntil: 'domcontentloaded' });

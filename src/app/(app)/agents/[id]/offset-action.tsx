@@ -10,7 +10,7 @@ import { Input, Textarea, MoneyInput } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { Callout } from '@/components/ui/feedback';
 import { offsetAgentBalancesAction } from '@/server/actions/finance-actions';
-import { todayInputValue } from '@/lib/format';
+import { todayInputValue, formatMoney } from '@/lib/format';
 import { useClientKey } from '@/lib/use-client-key';
 
 /**
@@ -44,11 +44,15 @@ export function AgentOffsetAction({
   const holding = Number(holdingLocal);
   const loan = Number(loanFromAgentLocal);
   const most = Math.min(holding, loan);
+  // Filled when the sheet is opened, so the figures are the ones on the page
+  // at that moment rather than whatever a stale render left behind.
   const [form, setForm] = React.useState({ date: todayInputValue(), amount: '', reason: '' });
 
-  React.useEffect(() => {
-    if (open) setForm({ date: todayInputValue(), amount: most > 0 ? most.toFixed(2) : '', reason: '' });
-  }, [open, most]);
+  function start() {
+    setForm({ date: todayInputValue(), amount: most > 0 ? most.toFixed(2) : '', reason: '' });
+    setError(null);
+    setOpen(true);
+  }
 
   function submit() {
     setError(null);
@@ -78,7 +82,7 @@ export function AgentOffsetAction({
       <Button
         variant="outline"
         size="sm"
-        onClick={() => setOpen(true)}
+        onClick={start}
         disabled={most <= 0}
         data-testid="agent-offset-open"
       >
@@ -119,7 +123,7 @@ export function AgentOffsetAction({
               <Field label="Date" required>
                 <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
               </Field>
-              <Field label="Amount" required hint={`At most ${localCurrency} ${most.toFixed(2)}.`}>
+              <Field label="Amount" required hint={`At most ${formatMoney(most, localCurrency)}.`}>
                 <MoneyInput
                   currency={localCurrency}
                   value={form.amount}
@@ -138,8 +142,8 @@ export function AgentOffsetAction({
             </Field>
 
             <Callout tone="warning" title="What this posts">
-              {agentName} is holding {localCurrency} {holding.toFixed(2)} for the company, and the company owes him{' '}
-              {localCurrency} {loan.toFixed(2)}. This debits <strong>Loan from {agentName}</strong> and credits{' '}
+              {agentName} is holding {formatMoney(holding, localCurrency)} for the company, and the company owes him{' '}
+              {formatMoney(loan, localCurrency)}. This debits <strong>Loan from {agentName}</strong> and credits{' '}
               <strong>Agent Clearing</strong>, so both fall by the amount entered. No money moves and no profit changes.
               It is only ever posted when someone asks for it here.
             </Callout>

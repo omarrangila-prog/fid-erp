@@ -10,7 +10,7 @@ import { Input, Select, Textarea, MoneyInput } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { Callout } from '@/components/ui/feedback';
 import { recordAgentSettlementAction } from '@/server/actions/finance-actions';
-import { todayInputValue } from '@/lib/format';
+import { todayInputValue, formatMoney } from '@/lib/format';
 import { useClientKey } from '@/lib/use-client-key';
 
 type Account = { id: string; name: string; code: string; currency: string };
@@ -151,8 +151,8 @@ function SettlementSheet({
     }
     if (mustClassify && form.excess !== 'LOAN') {
       setError(
-        `${agentName} is holding ${form.currency} ${holding.toFixed(2)}. Say what the extra ${form.currency} ` +
-          `${excessAmount.toFixed(2)} is before this is recorded.`,
+        `${agentName} is holding ${formatMoney(holding, form.currency)}. ` +
+          `Say what the extra ${formatMoney(excessAmount, form.currency)} is before this is recorded.`,
       );
       return;
     }
@@ -281,9 +281,9 @@ function SettlementSheet({
         {mustClassify ? (
           <div className="space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-3" data-testid="excess-choice">
             <p className="text-xs text-amber-900">
-              {agentName} is holding <strong>{form.currency} {holding.toFixed(2)}</strong> of the company&rsquo;s money,
-              and this hand-over is {form.currency} {entered.toFixed(2)}. The extra{' '}
-              <strong>{form.currency} {excessAmount.toFixed(2)}</strong> is not a collection — say what it is. The
+              {agentName} is holding <strong>{formatMoney(holding, form.currency)}</strong> of the company&rsquo;s
+              money, and this hand-over is {formatMoney(entered, form.currency)}. The extra{' '}
+              <strong>{formatMoney(excessAmount, form.currency)}</strong> is not a collection — say what it is. The
               system will not decide it, because the wrong guess puts the amount in the wrong account for good.
             </p>
             <label className="flex items-start gap-2 text-xs text-amber-900">
@@ -317,14 +317,14 @@ function SettlementSheet({
         <Callout tone="info">
           {collecting ? (
             <>
-              {agentName} is holding <strong>{form.currency} {holding.toFixed(2)}</strong>
-              {form.currency === 'USD' ? null : <> (USD {Number(limitUsd).toFixed(2)})</>}. Up to that, this settles
+              {agentName} is holding <strong>{formatMoney(holding, form.currency)}</strong>
+              {form.currency === 'USD' ? null : <> ({formatMoney(limitUsd, 'USD')})</>}. Up to that, this settles
               what he collected for the company. Anything beyond it is his own money and has to be classified before it
               is recorded.
             </>
           ) : (
             <>
-              <strong>USD {Number(limitUsd).toFixed(2)}</strong> of commission is outstanding. It has already been
+              <strong>{formatMoney(limitUsd, 'USD')}</strong> of commission is outstanding. It has already been
               charged to the shipments it belongs to, so paying it moves money without changing any profit.
             </>
           )}

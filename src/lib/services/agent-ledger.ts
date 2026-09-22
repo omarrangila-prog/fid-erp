@@ -6,6 +6,7 @@ import { BusinessRuleError, NotFoundError } from '@/lib/errors';
 import { nextReference } from '@/lib/services/numbering';
 import { postJournalEntry } from '@/lib/services/accounting';
 import { getCompanyContext } from '@/lib/services/company';
+import { formatMoney } from '@/lib/format';
 import { getRate, getLocalRateForPosting } from '@/lib/services/exchange-rate';
 import { findOrCreateAgentLoanAccount, postLoan } from '@/lib/services/loan';
 import { writeAudit } from '@/lib/services/audit';
@@ -107,9 +108,9 @@ function assertNotOverCollecting(params: {
   const held = holdingIn(params.position, params.currency, params.localCurrency, params.rateToUsd);
   if (params.amount.greaterThan(held.plus('0.01'))) {
     throw new BusinessRuleError(
-      `${params.agentName} is holding ${params.currency.toUpperCase()} ${held.toFixed(2)}. ` +
-        `Recording ${params.amount.toFixed(2)} would leave the agent owed money he never collected. ` +
-        `If the extra is his own money, record it on his page as a hand-over and say what it is.`,
+      `${params.agentName} is holding ${formatMoney(held, params.currency)}. ` +
+        `Recording ${formatMoney(params.amount, params.currency)} would leave the agent owed money he never ` +
+        `collected. If the extra is his own money, record it on his page as a hand-over and say what it is.`,
     );
   }
 }
@@ -485,14 +486,21 @@ export async function recordAgentHandover(input: {
     return { agentName: agent.agentName, holdingOwn: toMoney(own), bankCurrency: bank.currency.toUpperCase() };
   });
 
-  const settled = total.greaterThan(holdingOwn) ? holdingOwn : total;
+  /*
+   * What can be settled, never below nothing. A clearing balance that has
+   * somehow gone negative would otherwise make the "excess" larger than the
+   * money in hand, and the company would book a loan bigger than what he
+   * handed over.
+   */
+  const held = holdingOwn.greaterThan(0) ? holdingOwn : toMoney(0);
+  const settled = total.greaterThan(held) ? held : total;
   const lent = toMoney(total.minus(settled));
 
   if (lent.greaterThan('0.005') && input.excess !== 'LOAN') {
     throw new BusinessRuleError(
-      `${agentName} is holding ${input.currency} ${holdingOwn.toFixed(2)} for the company, and this hand-over is ` +
-        `${input.currency} ${total.toFixed(2)}. Say what the extra ${input.currency} ${lent.toFixed(2)} is — money he ` +
-        `is lending the company, or an amount entered in error — because the system will not decide it for you.`,
+      `${agentName} is holding ${formatMoney(held, input.currency)} for the company, and this hand-over is ` +
+        `${formatMoney(total, input.currency)}. Say what the extra ${formatMoney(lent, input.currency)} is — money ` +
+        `he is lending the company, or an amount entered in error — because the system will not decide it for you.`,
     );
   }
 
@@ -529,6 +537,12 @@ export async function recordAgentHandover(input: {
           (await getRate({ companyId: input.companyId, quoteCurrency: bankCurrency })) ??
           dec(1));
     const exchangeRate = bankCurrency === currency ? dec(1) : toRate(bankPerUsd.dividedBy(dec(input.rateToUsd)));
+    /*
+     * The settlement above is already posted by now, and this is a second
+     * entry. If it fails — a closed period, a rate the loan needs — the money
+     * that was collected has still been received, so the error says which
+     * part landed rather than leaving somebody to guess.
+     */
     const loan = await postLoan({
       exchangeRate: exchangeRate.toString(),
       companyId: input.companyId,
@@ -541,6 +555,15 @@ export async function recordAgentHandover(input: {
       amount: lent.toString(),
       reference: input.reference ?? null,
       description: input.notes?.trim() || `Lent to the company by ${agentName} beyond the collections handed over`,
+    }).catch((error: unknown) => {
+      if (settlementId) {
+        throw new BusinessRuleError(
+          `${formatMoney(settled, input.currency)} of collections was recorded, but the remaining ` +
+            `${formatMoney(lent, input.currency)} could not be posted as a loan: ` +
+            `${error instanceof Error ? error.message : String(error)}. Record that part on its own from Loans.`,
+        );
+      }
+      throw error;
     });
     loanEntryId = loan.entry.id;
   }
@@ -575,6 +598,11 @@ export async function offsetAgentBalances(input: {
   return transaction(async (tx) => {
     const agent = await loadAgent(tx, input.companyId, input.agentId);
     const company = await getCompanyContext(tx, input.companyId);
+
+    // Hold the agent while his two balances are read and moved, so two
+    // people pressing this at once cannot each offset the same amount.
+    await tx.$queryRaw`SELECT "id" FROM agents WHERE "id" = ${input.agentId} AND "companyId" = ${input.companyId} FOR UPDATE`;
+
     const { getAgentLedger } = await import('@/lib/services/agent-account');
     const { summary } = await getAgentLedger({ companyId: input.companyId, agentId: input.agentId });
 
@@ -583,13 +611,14 @@ export async function offsetAgentBalances(input: {
     const most = holding.lessThan(loan) ? holding : loan;
     if (most.lessThanOrEqualTo(0)) {
       throw new BusinessRuleError(
-        `There is nothing to settle: ${agent.agentName} holds ${holding.toFixed(2)} for the company and the company owes him ${loan.toFixed(2)}.`,
+        `There is nothing to settle: ${agent.agentName} holds ${formatMoney(holding, company.localCurrency)} for ` +
+          `the company and the company owes him ${formatMoney(loan, company.localCurrency)}.`,
       );
     }
     if (amount.greaterThan(most.plus('0.005'))) {
       throw new BusinessRuleError(
-        `Only ${company.localCurrency} ${most.toFixed(2)} can be settled against each other: ${agent.agentName} holds ` +
-          `${holding.toFixed(2)} and is owed ${loan.toFixed(2)}.`,
+        `Only ${formatMoney(most, company.localCurrency)} can be settled against each other: ${agent.agentName} ` +
+          `holds ${formatMoney(holding, company.localCurrency)} and is owed ${formatMoney(loan, company.localCurrency)}.`,
       );
     }
 
