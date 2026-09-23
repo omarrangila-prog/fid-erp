@@ -43,6 +43,25 @@ export type OpenInvoice = {
 
 export type BankOption = ComboOption & { currency: string; accountType: 'CASH' | 'PETTY_CASH' | 'BANK' };
 
+export type ReceiptInitial = {
+  id: string;
+  status: string;
+  receiptNumber: string;
+  receiptDate: string;
+  customerId: string;
+  currency: string;
+  amount: string;
+  rateToUsd: string;
+  rateLocalPerUsd: string;
+  paymentMethod: string;
+  cashBankAccountId: string | null;
+  agentId: string | null;
+  reference: string;
+  description: string;
+  allocations: Array<{ salesInvoiceId: string; amount: string }>;
+  cheque: { chequeNumber: string; chequeDate: string; bankName: string; beneficiary: string } | null;
+};
+
 export function ReceiptForm({
   customers,
   accounts,
@@ -54,6 +73,7 @@ export function ReceiptForm({
   agents,
   canCreateCashBank = false,
   canPost = true,
+  initial,
 }: {
   customers: Array<ComboOption & { currency: string }>;
   accounts: BankOption[];
@@ -67,6 +87,14 @@ export function ReceiptForm({
   canPost?: boolean;
   /** Opening a drawer creates a ledger account, so it is its own permission. */
   canCreateCashBank?: boolean;
+  /**
+   * An existing receipt, opened to be corrected.
+   *
+   * A posted one is rewritten under the same number: the old posting comes
+   * out of the books and the new one goes on, which is what somebody holding
+   * the paper expects.
+   */
+  initial?: ReceiptInitial;
 }) {
   const router = useRouter();
   const clientKey = useClientKey();
@@ -87,26 +115,30 @@ export function ReceiptForm({
   );
 
   const [form, setForm] = React.useState({
-    receiptDate: todayInputValue(),
-    customerId: preselected?.customerId ?? null,
-    currency: initialCurrency,
-    amount: preselected?.outstanding ?? '',
-    rateToUsd: rateFor(initialCurrency),
+    receiptDate: initial?.receiptDate ?? todayInputValue(),
+    customerId: initial?.customerId ?? preselected?.customerId ?? null,
+    currency: initial?.currency ?? initialCurrency,
+    amount: initial?.amount ?? preselected?.outstanding ?? '',
+    rateToUsd: initial?.rateToUsd ?? rateFor(initialCurrency),
     usdEquivalent: '',
-    rateLocalPerUsd: defaultLocalRate,
-    paymentMethod: 'BANK_TRANSFER',
-    cashBankAccountId: null as string | null,
-    reference: '',
-    description: '',
-    chequeNumber: '',
-    chequeDate: '',
-    bankName: '',
-    beneficiary: '',
-    agentId: null as string | null,
+    rateLocalPerUsd: initial?.rateLocalPerUsd ?? defaultLocalRate,
+    paymentMethod: initial?.paymentMethod ?? 'BANK_TRANSFER',
+    cashBankAccountId: (initial?.cashBankAccountId ?? null) as string | null,
+    reference: initial?.reference ?? '',
+    description: initial?.description ?? '',
+    chequeNumber: initial?.cheque?.chequeNumber ?? '',
+    chequeDate: initial?.cheque?.chequeDate ?? '',
+    bankName: initial?.cheque?.bankName ?? '',
+    beneficiary: initial?.cheque?.beneficiary ?? '',
+    agentId: (initial?.agentId ?? null) as string | null,
   });
 
   const [allocations, setAllocationsState] = React.useState<Record<string, string>>(
-    preselected ? { [preselected.id]: preselected.outstanding } : {},
+    initial
+      ? Object.fromEntries(initial.allocations.map((a) => [a.salesInvoiceId, a.amount]))
+      : preselected
+        ? { [preselected.id]: preselected.outstanding }
+        : {},
   );
   /*
    * "Amount received" follows what is applied to invoices until the user
@@ -114,7 +146,8 @@ export function ReceiptForm({
    * actually paid used to leave the amount at the full MAD 126,000, and the
    * other MAD 46,000 was booked as an advance nobody had paid.
    */
-  const [amountTyped, setAmountTyped] = React.useState(false);
+  // An amount already on a saved receipt is one somebody typed.
+  const [amountTyped, setAmountTyped] = React.useState(Boolean(initial));
   const [keepRemainderAsAdvance, setKeepRemainderAsAdvance] = React.useState(false);
   function setAllocations(next: Record<string, string>) {
     setAllocationsState(next);
@@ -235,7 +268,7 @@ export function ReceiptForm({
     };
 
     start(async () => {
-      const result = await saveReceiptAction(null, JSON.stringify(payload));
+      const result = await saveReceiptAction(initial?.id ?? null, JSON.stringify(payload));
       if (!result?.ok) {
         setError(result?.error ?? 'The receipt could not be saved.');
         setFieldIssues(result && !result.ok ? (result.errors ?? {}) : {});
@@ -243,7 +276,9 @@ export function ReceiptForm({
         return;
       }
 
-      if (andPost) {
+      // A posted receipt is re-posted by the save itself; only a draft needs
+      // posting afterwards.
+      if (andPost && initial?.status !== 'POSTED') {
         const posted = await postReceiptAction(result.id);
         if (!posted.ok) {
           setError(posted.error);
@@ -252,6 +287,8 @@ export function ReceiptForm({
           return;
         }
         toast.success('Receipt posted.');
+      } else if (initial?.status === 'POSTED') {
+        toast.success(`Receipt ${initial.receiptNumber} corrected.`);
       } else {
         toast.success('Receipt saved as a draft.');
       }
@@ -697,14 +734,25 @@ export function ReceiptForm({
         <Button variant="outline" onClick={() => router.back()} disabled={busy}>
           Cancel
         </Button>
-        <Button variant="outline" onClick={() => submit(false)} loading={busy}>
-          Save draft
-        </Button>
-        {canPost ? (
+        {/* A posted receipt is corrected in one press: saving rewrites the
+            posting under the same number, so "save as a draft" would be a
+            lie and posting again would be a second entry. */}
+        {initial?.status === 'POSTED' ? (
           <Button variant="accent" onClick={() => submit(true)} loading={busy}>
-            Save and post
+            Save the correction
           </Button>
-        ) : null}
+        ) : (
+          <>
+            <Button variant="outline" onClick={() => submit(false)} loading={busy}>
+              Save draft
+            </Button>
+            {canPost ? (
+              <Button variant="accent" onClick={() => submit(true)} loading={busy}>
+                Save and post
+              </Button>
+            ) : null}
+          </>
+        )}
       </div>
     </div>
   );

@@ -34,6 +34,24 @@ export type OpenContract = {
   vendorId: string | null;
 };
 
+export type PaymentInitial = {
+  id: string;
+  status: string;
+  paymentNumber: string;
+  paymentDate: string;
+  vendorId: string | null;
+  currency: string;
+  amount: string;
+  rateToUsd: string;
+  rateLocalPerUsd: string;
+  paymentMethod: string;
+  cashBankAccountId: string | null;
+  reference: string;
+  description: string;
+  allocations: Array<{ id: string; amount: string }>;
+  cheque: { chequeNumber: string; chequeDate: string; bankName: string } | null;
+};
+
 /**
  * Supplier payment. The mirror of a receipt: money out, allocated against
  * purchase contracts rather than sales invoices.
@@ -47,6 +65,7 @@ export function PaymentForm({
   preselectedExpenseId,
   canCreateCashBank = false,
   canPost = true,
+  initial,
 }: {
   vendors: Array<ComboOption & { currency: string }>;
   accounts: Array<ComboOption & { currency: string; accountType: 'CASH' | 'PETTY_CASH' | 'BANK' }>;
@@ -57,6 +76,8 @@ export function PaymentForm({
   canPost?: boolean;
   /** Opening a drawer creates a ledger account, so it is its own permission. */
   canCreateCashBank?: boolean;
+  /** An existing payment, opened to be corrected under its own number. */
+  initial?: PaymentInitial;
 }) {
   const router = useRouter();
   const clientKey = useClientKey();
@@ -70,23 +91,27 @@ export function PaymentForm({
   const accruedCost = preselected && !preselected.vendorId ? preselected : null;
 
   const [form, setForm] = React.useState({
-    paymentDate: todayInputValue(),
-    vendorId: preselected?.vendorId ?? null,
-    currency: preselected?.currency ?? 'USD',
-    amount: preselected?.outstanding ?? '',
-    rateToUsd: preselected && preselected.currency !== 'USD' ? defaultLocalRate : '1',
-    rateLocalPerUsd: defaultLocalRate,
-    paymentMethod: 'BANK_TRANSFER',
-    cashBankAccountId: null as string | null,
-    reference: '',
-    description: '',
-    chequeNumber: '',
-    chequeDate: '',
-    bankName: '',
+    paymentDate: initial?.paymentDate ?? todayInputValue(),
+    vendorId: initial?.vendorId ?? preselected?.vendorId ?? null,
+    currency: initial?.currency ?? preselected?.currency ?? 'USD',
+    amount: initial?.amount ?? preselected?.outstanding ?? '',
+    rateToUsd: initial?.rateToUsd ?? (preselected && preselected.currency !== 'USD' ? defaultLocalRate : '1'),
+    rateLocalPerUsd: initial?.rateLocalPerUsd ?? defaultLocalRate,
+    paymentMethod: initial?.paymentMethod ?? 'BANK_TRANSFER',
+    cashBankAccountId: (initial?.cashBankAccountId ?? null) as string | null,
+    reference: initial?.reference ?? '',
+    description: initial?.description ?? '',
+    chequeNumber: initial?.cheque?.chequeNumber ?? '',
+    chequeDate: initial?.cheque?.chequeDate ?? '',
+    bankName: initial?.cheque?.bankName ?? '',
   });
 
   const [allocations, setAllocations] = React.useState<Record<string, string>>(
-    preselected ? { [preselected.id]: preselected.outstanding } : {},
+    initial
+      ? Object.fromEntries(initial.allocations.map((a) => [a.id, a.amount]))
+      : preselected
+        ? { [preselected.id]: preselected.outstanding }
+        : {},
   );
 
   const vendorContracts = React.useMemo(
@@ -153,7 +178,7 @@ export function PaymentForm({
     };
 
     start(async () => {
-      const result = await savePaymentAction(null, JSON.stringify(payload));
+      const result = await savePaymentAction(initial?.id ?? null, JSON.stringify(payload));
       if (!result?.ok) {
         setError(result?.error ?? 'The payment could not be saved.');
         setFieldIssues(result && !result.ok ? (result.errors ?? {}) : {});
@@ -161,7 +186,8 @@ export function PaymentForm({
         return;
       }
 
-      if (andPost) {
+      // A posted payment is re-posted by the save itself.
+      if (andPost && initial?.status !== 'POSTED') {
         const posted = await postPaymentAction(result.id);
         if (!posted.ok) {
           setError(posted.error);
@@ -170,6 +196,8 @@ export function PaymentForm({
           return;
         }
         toast.success('Payment posted.');
+      } else if (initial?.status === 'POSTED') {
+        toast.success(`Payment ${initial.paymentNumber} corrected.`);
       } else {
         toast.success('Payment saved as a draft.');
       }
@@ -387,14 +415,24 @@ export function PaymentForm({
         <Button variant="outline" onClick={() => router.back()} disabled={busy}>
           Cancel
         </Button>
-        <Button variant="outline" onClick={() => submit(false)} loading={busy}>
-          Save draft
-        </Button>
-        {canPost ? (
+        {/* A posted payment is corrected in one press: the save rewrites the
+            posting under the same number. */}
+        {initial?.status === 'POSTED' ? (
           <Button variant="accent" onClick={() => submit(true)} loading={busy}>
-            Save and post
+            Save the correction
           </Button>
-        ) : null}
+        ) : (
+          <>
+            <Button variant="outline" onClick={() => submit(false)} loading={busy}>
+              Save draft
+            </Button>
+            {canPost ? (
+              <Button variant="accent" onClick={() => submit(true)} loading={busy}>
+                Save and post
+              </Button>
+            ) : null}
+          </>
+        )}
       </div>
     </div>
   );

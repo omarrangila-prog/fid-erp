@@ -168,6 +168,48 @@ test('Record Payment opens from an outstanding invoice', async ({ page }) => {
   await expect(page.getByRole('heading', { name: /this page could|something went wrong/i })).toHaveCount(0);
 });
 
+test('a posted receipt is corrected under its own number, not deleted and retyped', async ({ page }) => {
+  await page.goto('/finance/receipts', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+
+  const posted = page.locator('main table tbody tr').filter({ hasText: /Posted/i }).first();
+  if ((await posted.count()) === 0) {
+    test.skip(true, 'No posted receipt in this company.');
+    return;
+  }
+  const number = ((await posted.innerText()).match(/RV[\s-]?\d+|\d{4,}/) ?? [''])[0];
+  await posted.getByRole('link', { name: /view|open/i }).first().click().catch(async () => {
+    await posted.click();
+  });
+  await page.waitForURL(/\/finance\/receipts\/[\w-]+$/, { waitUntil: 'domcontentloaded' });
+  const receiptUrl = page.url();
+
+  // Edit is offered on a posted receipt, and says what saving will do.
+  await page.getByRole('link', { name: /^Edit$/ }).first().click();
+  await page.waitForURL(/\/edit$/, { waitUntil: 'domcontentloaded' });
+  const main = page.getByRole('main');
+  await expect(main).toContainText(/takes the old posting back out of the books/i, { timeout: 20_000 });
+
+  // The voucher opens with its own figures in it, not an empty form.
+  const amount = main.getByLabel(/amount received/i).first();
+  await expect(amount).toBeVisible({ timeout: 20_000 });
+  const before = await amount.inputValue();
+  expect(Number(before.replace(/,/g, ''))).toBeGreaterThan(0);
+
+  // One press corrects it: there is no "save as a draft" for something posted.
+  await expect(page.getByRole('button', { name: /Save the correction/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Save draft/i })).toHaveCount(0);
+
+  await page.getByRole('button', { name: /Save the correction/i }).click();
+  await page.waitForURL(/\/finance\/receipts\/[\w-]+$/, { timeout: 60_000 });
+  expect(page.url()).toBe(receiptUrl);
+
+  // Same receipt, same number, still posted.
+  await expect(page.getByRole('main')).toContainText(/Posted/i, { timeout: 20_000 });
+  if (number) await expect(page.getByRole('main')).toContainText(number.trim());
+  console.log(`  receipt ${number.trim()}: corrected in place, still posted`);
+});
+
 test('the journal can add an account without leaving the voucher', async ({ page }) => {
   await page.goto('/accounting/journal/new', { waitUntil: 'domcontentloaded' });
   // The journal opens on the guided list now; the ledger form is behind it.

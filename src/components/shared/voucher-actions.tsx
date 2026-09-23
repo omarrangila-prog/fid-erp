@@ -3,7 +3,8 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { CheckCircle2, Trash2, Copy } from 'lucide-react';
+import Link from 'next/link';
+import { CheckCircle2, Trash2, Copy, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm';
 import { HandCoins } from 'lucide-react';
@@ -15,11 +16,15 @@ import {
 } from '@/server/actions/finance-actions';
 
 /**
- * Post / delete for the three cash-cycle vouchers.
+ * Edit / post / delete for the three cash-cycle vouchers.
  *
- * They share one component because they share one lifecycle: a draft has no
- * ledger impact and can be deleted; a posted voucher is corrected by reversal,
- * never by editing, and the reason is recorded.
+ * They share one component because they share one lifecycle. A draft has no
+ * ledger impact: it is edited freely, posted, or deleted outright. A posted
+ * voucher is corrected in place — the old posting comes out of the books and
+ * the new figures go on under the same number, so the paper in somebody's
+ * hand still points at a document that exists — or deleted, which mirrors the
+ * entry and takes it out of every list and total. Either way the reason is
+ * recorded and the journal keeps both entries.
  */
 
 type Kind = 'receipt' | 'payment' | 'expense';
@@ -106,6 +111,17 @@ export function VoucherActions({
 
   return (
     <>
+      {/* Correcting a voucher is the same act whatever its state: a draft is
+          replaced, a posted one is rewritten under the same number. */}
+      {status === 'DRAFT' || status === 'POSTED' ? (
+        <Button variant="outline" asChild>
+          <Link href={`${config.listPath}/${id}/edit`}>
+            <Pencil />
+            Edit
+          </Link>
+        </Button>
+      ) : null}
+
       {status === 'DRAFT' ? (
         <>
           {canDelete ? (
@@ -187,9 +203,9 @@ export function VoucherRowActions({
 }) {
   const config = ACTIONS[kind];
   const viewPath = `${config.listPath}/${id}`;
-  // A cost can be corrected whether or not it has been posted: posting is
-  // undone and rewritten under the same number. Only a deleted one is closed.
-  const editPath = kind === 'expense' && status !== 'CANCELLED' && status !== 'REVERSED' ? `${viewPath}/edit` : null;
+  // All three correct the same way, posted or not: the posting is undone and
+  // rewritten under the same number. Only a deleted one is closed.
+  const editPath = status !== 'CANCELLED' && status !== 'REVERSED' ? `${viewPath}/edit` : null;
 
   /*
    * Rendered through the shared row-action pattern, so a voucher row looks
