@@ -3,6 +3,7 @@ import { Decimal, dec } from '@/lib/money';
 import { getCustomerBalances, getVendorBalances, getTrialBalanceReport, getFinancialPosition } from '@/lib/services/reports';
 import { getAgentNetBalances, getAgentSummaries } from '@/lib/services/agent-account';
 import { formatMoney } from '@/lib/format';
+import type { LedgerSection } from '@/lib/ledger-sections';
 
 /**
  * The General Ledgers directory: every account that is not a customer or a
@@ -21,6 +22,7 @@ import { formatMoney } from '@/lib/format';
  */
 
 export type LedgerKind = 'Customer' | 'Supplier' | 'Agent' | 'Bank' | 'Cash' | 'Loan' | 'Account';
+
 
 export type LedgerEntry = {
   key: string;
@@ -52,9 +54,38 @@ export type LedgerEntry = {
   summary?: Array<{ label: string; value: string }>;
   /** True for a row that only exists in the accountant's view of the list. */
   advancedOnly?: boolean;
+  /** Which heading this is read under. */
+  section: LedgerSection;
+  /**
+   * What the figure is, in the words that account uses: a bank has a
+   * balance, stock has a value, an agent owes or is owed. One phrase for
+   * everything made a warehouse of coffee read as money somebody owed us.
+   */
+  amountLabel: string;
+  /** For a control account: the sentence that says it is not a second balance. */
+  controlNote?: string;
+  /** The account's system key, where it has one, so a control total can be found. */
+  systemKey?: string | null;
 };
 
 const LOAN = /loan|financ|borrow|lend/i;
+
+/**
+ * A control account is the total of a sub-ledger, not a party of its own.
+ *
+ * Agent Clearing and what RADOUAN is holding are one exposure looked at from
+ * two sides. Listing them side by side invites the reader to add them up, so
+ * in the simple view only the party is shown and the control account waits
+ * in the accountant's view, where it belongs.
+ */
+const CONTROL_KEYS: Record<string, string> = {
+  AGENT_CLEARING: 'The total of what the agents are holding. Each agent is listed under Agents & counterparties — this is the same money, not more of it.',
+  ACCOUNTS_RECEIVABLE: 'The total of what customers owe. Each customer is in the Customer Ledger — this is the same money, not more of it.',
+  ACCOUNTS_PAYABLE: 'The total of what is owed to suppliers. Each supplier is in the Supplier Ledger — this is the same money, not more of it.',
+  CUSTOMER_ADVANCES: 'The total of what customers have paid in advance, explained by the Customer Ledger.',
+  SUPPLIER_ADVANCES: 'The total paid to suppliers in advance, explained by the Supplier Ledger.',
+  AGENT_COMMISSION_PAYABLE: 'The total commission owed to agents, explained by each agent’s own page.',
+};
 
 export async function getLedgerDirectory(companyId: string, localCurrency: string): Promise<LedgerEntry[]> {
   const [customers, vendors, agents, customerBalances, vendorBalances, agentBalances, summaries, trial, position] = await Promise.all([
@@ -85,6 +116,8 @@ export async function getLedgerDirectory(companyId: string, localCurrency: strin
       href: `/ledgers/customers/${c.id}`,
       keywords: [c.phone, c.email].filter(Boolean).join(' '),
       elsewhere: true,
+      section: 'COUNTERPARTY',
+      amountLabel: balance.isNegative() ? 'Paid in advance' : 'Owes FID',
     });
   }
 
@@ -102,6 +135,8 @@ export async function getLedgerDirectory(companyId: string, localCurrency: strin
       href: `/ledgers/vendors/${v.id}`,
       keywords: [v.phone, v.email].filter(Boolean).join(' '),
       elsewhere: true,
+      section: 'COUNTERPARTY',
+      amountLabel: balance.isNegative() ? 'Owes FID' : 'FID owes',
     });
   }
 
@@ -144,6 +179,8 @@ export async function getLedgerDirectory(companyId: string, localCurrency: strin
       balanceMeaning: balance.isNegative() ? 'we owe them' : 'owes us',
       href: `/agents/${a.id}`,
       keywords: `agent counterparty loan clearing commission ${a.phone ?? ''}`,
+      section: 'COUNTERPARTY',
+      amountLabel: balance.isZero() ? 'Square' : balance.isPositive() ? 'Net receivable' : 'Net payable',
       usdEquivalent: localCurrency === 'USD' ? null : (summary?.netUsd ?? net?.netUsd ?? null),
       summary: [
         { label: `${first} owes FID`, value: money(owed) },
@@ -175,9 +212,11 @@ export async function getLedgerDirectory(companyId: string, localCurrency: strin
       detail: account.accountType === 'PETTY_CASH' ? 'Petty cash' : cash ? 'Cash in hand' : 'Bank account',
       currency: account.currency,
       balance: account.balance,
-      balanceMeaning: 'held',
+      balanceMeaning: cash ? 'in hand' : 'in the bank',
       href: `/reports/cash-book?account=${account.accountId}`,
-      keywords: account.code,
+      keywords: `${account.code} cash bank drawer`,
+      section: 'CASH_BANK',
+      amountLabel: cash ? 'Cash balance' : 'Balance',
     });
   }
 
@@ -197,6 +236,47 @@ export async function getLedgerDirectory(companyId: string, localCurrency: strin
     const sign = (value: Decimal) => (debitNatured ? value : value.negated());
     const balance = sign(closingLocal.get(account.id) ?? new Decimal(0));
     const usd = sign(closingUsd.get(account.id) ?? new Decimal(0));
+    /*
+     * What kind of thing this account is, which decides where it is read and
+     * in what words. Stock is worth something; a bank holds a balance; a
+     * related company is owed money. Calling all three "held / owed to us"
+     * is how a warehouse of coffee came to read as a debt.
+     */
+    const controlNote = account.systemKey ? CONTROL_KEYS[account.systemKey] : undefined;
+    const inventory = account.systemKey === 'INVENTORY' || /inventor|stock/i.test(account.name);
+    const relatedParty = loan || account.name.toUpperCase().includes('F I D') || /current account/i.test(account.name);
+
+    const section: LedgerSection = controlNote
+      ? 'CONTROL'
+      : inventory
+        ? 'INVENTORY'
+        : relatedParty
+          ? 'RELATED_PARTY'
+          : 'OTHER';
+
+    const owed = account.type === 'LIABILITY' || account.type === 'EQUITY';
+    const amountLabel = inventory
+      ? 'Stock value'
+      : controlNote
+        ? 'Control total'
+        : relatedParty
+          ? balance.isZero()
+            ? 'Settled'
+            : owed === balance.isPositive()
+              ? 'FID owes'
+              : 'Owed to FID'
+          : account.type === 'LIABILITY'
+            ? balance.isZero()
+              ? 'No outstanding balance'
+              : 'Outstanding'
+            : account.type === 'ASSET'
+              ? 'Balance'
+              : account.type === 'EXPENSE'
+                ? 'Spent'
+                : account.type === 'INCOME'
+                  ? 'Earned'
+                  : 'Balance';
+
     const control =
       account.subledgerType === 'CUSTOMER'
         ? ' · control account — each customer is in Customer Ledger'
@@ -209,13 +289,32 @@ export async function getLedgerDirectory(companyId: string, localCurrency: strin
       key: `account:${account.id}`,
       name: account.name,
       kind: loan ? 'Loan' : 'Account',
-      detail: `${account.type.charAt(0)}${account.type.slice(1).toLowerCase()}${control}`,
+      detail: inventory
+        ? 'Inventory asset — coffee at landed cost'
+        : relatedParty
+          ? `Related party / loan${control}`
+          : `${account.type.charAt(0)}${account.type.slice(1).toLowerCase()}${control}`,
       currency: localCurrency,
       balance,
-      balanceMeaning: account.type === 'LIABILITY' ? (balance.isNegative() ? 'owed to us' : 'we owe') : account.type === 'ASSET' ? 'held / owed to us' : '',
+      balanceMeaning: inventory
+        ? 'at landed cost'
+        : account.type === 'LIABILITY'
+          ? balance.isNegative()
+            ? 'owed to us'
+            : 'we owe'
+          : account.type === 'ASSET'
+            ? 'held'
+            : '',
       href: `/reports/general-ledger?account=${account.id}`,
-      keywords: `${account.type} ${account.systemKey ?? ''}`,
+      keywords: `${account.type} ${account.systemKey ?? ''} ${inventory ? 'inventory stock' : ''} ${relatedParty ? 'loan related party' : ''}`,
       usdEquivalent: localCurrency === 'USD' ? null : usd,
+      section,
+      amountLabel,
+      controlNote,
+      systemKey: account.systemKey,
+      // A control account is the same money the sub-ledger already shows, so
+      // it waits in the accountant's view rather than competing with it.
+      ...(controlNote ? { advancedOnly: true } : {}),
     };
 
     /*

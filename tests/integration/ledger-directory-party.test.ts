@@ -131,6 +131,48 @@ describe('the general ledgers list', () => {
     expect(loan?.href).toMatch(/general-ledger/);
   }, 300_000);
 
+  it('reads each thing under its own heading, in its own words', async () => {
+    const entries = await directory();
+    const by = (name: RegExp) => entries.find((e) => name.test(e.name));
+
+    // Stock is worth something; it is not money somebody owes.
+    const stock = by(/inventory/i);
+    expect(stock?.section).toBe('INVENTORY');
+    expect(stock?.amountLabel).toBe('Stock value');
+    expect(stock?.balanceMeaning).not.toMatch(/owed to us/i);
+
+    // A drawer holds a balance.
+    const bank = entries.find((e) => e.kind === 'Bank' || e.kind === 'Cash');
+    expect(bank?.section).toBe('CASH_BANK');
+    expect(bank?.amountLabel).toMatch(/balance/i);
+
+    // The party is a counterparty, not a general account.
+    const party = entries.find((e) => e.key === `agent:${agentId}`);
+    expect(party?.section).toBe('COUNTERPARTY');
+
+    // The loan opened in his name is a related party account.
+    const loan = by(/^loan from radouan/i);
+    expect(loan?.section).toBe('RELATED_PARTY');
+  }, 300_000);
+
+  it('keeps the control accounts out of the client\u2019s view, and says why', async () => {
+    const entries = await directory();
+    const clearing = entries.find((e) => e.systemKey === 'AGENT_CLEARING');
+    expect(clearing?.section).toBe('CONTROL');
+    expect(clearing?.advancedOnly).toBe(true);
+    expect(clearing?.controlNote).toMatch(/same money, not more of it/i);
+
+    const receivable = entries.find((e) => e.systemKey === 'ACCOUNTS_RECEIVABLE');
+    expect(receivable?.advancedOnly).toBe(true);
+
+    // And the control total is exactly what the agents explain, so showing
+    // one beside the other can never invite adding them up.
+    const held = entries
+      .filter((e) => e.key.startsWith('agent:'))
+      .reduce((total, e) => total + Number(e.summary?.find((s) => /owes FID$/.test(s.label))?.value.replace(/[^\d.]/g, '') ?? 0), 0);
+    expect(Math.abs(Number(clearing?.balance) - held)).toBeLessThan(0.01);
+  }, 300_000);
+
   it('is grouped by who the account belongs to, not by the words in its name', async () => {
     const account = await prisma.account.findFirstOrThrow({
       where: { companyId, name: 'Loan from RADOUAN MOHAMMED' },

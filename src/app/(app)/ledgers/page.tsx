@@ -38,6 +38,10 @@ export default async function LedgersPage({ searchParams }: { searchParams: Prom
     elsewhere: e.elsewhere,
     summary: e.summary,
     advancedOnly: e.advancedOnly,
+    section: e.section,
+    amountLabel: e.amountLabel,
+    controlNote: e.controlNote,
+    systemKey: e.systemKey,
     children: e.children?.map(toRow),
   });
 
@@ -45,7 +49,7 @@ export default async function LedgersPage({ searchParams }: { searchParams: Prom
     <div className="space-y-6">
       <PageHeader
         title="General Ledgers"
-        description="Everything that is not a customer or a supplier: the people you deal with, cash, banks, loans, capital, income and expenses. One row for each of them — a person with several accounts opens to show them underneath."
+        description="Read under what each thing is: cash and bank, what the stock is worth, the companies and people you owe or are owed, and the rest. A party with several accounts is one row that opens to show them."
         breadcrumbs={[{ label: 'Accounting' }, { label: 'General Ledgers' }]}
         actions={
           <div className="flex flex-wrap gap-2 text-xs">

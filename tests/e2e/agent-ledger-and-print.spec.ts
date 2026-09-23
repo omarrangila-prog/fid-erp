@@ -218,10 +218,25 @@ test('the agent is the subledger of Agent Clearing, not a second balance', async
   expect(figures[0]).toBeCloseTo(figures[1], 2);
   expect(text).toMatch(/never counted twice/i);
 
-  // The Agent Clearing account itself opens in MAD and points at the agents.
+  /*
+   * The control account itself is the accountant's view: in the simple list
+   * it would sit beside the agents it explains, inviting the reader to add
+   * the same money up twice.
+   */
   await page.goto('/ledgers', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle').catch(() => undefined);
   await page.getByLabel('Search ledgers').fill('Agent Clearing');
-  await page.getByRole('link', { name: /Open ledger/ }).first().click();
+  // Searching it finds the agent who holds the money, not the control account.
+  const simple = page.getByTestId('ledger-entry').filter({ hasText: /Agent Clearing/ });
+  await expect(simple).toHaveCount(0, { timeout: 15_000 });
+  // What it does find is the people holding the money.
+  await expect(page.getByTestId('ledger-entry').first()).toContainText(/owes FID/i);
+
+  await page.getByTestId('ledger-view-accounting').click();
+  const controlRow = page.getByTestId('ledger-entry').filter({ hasText: /Agent Clearing/ }).first();
+  await expect(controlRow).toBeVisible({ timeout: 15_000 });
+  await expect(controlRow).toContainText(/same money, not more of it/i);
+  await controlRow.getByRole('link', { name: /Open ledger/ }).click();
   await page.waitForURL(/\/reports\/general-ledger/, { timeout: 30_000 });
   const main = page.getByRole('main');
   await expect(main).toContainText(/held by named agents/i, { timeout: 30_000 });
@@ -313,6 +328,13 @@ test('the ledger list shows him once, and opens to the accounts behind him', asy
   await signIn(page);
   await page.goto('/ledgers', { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => undefined);
+
+  // The page opens under headings, not as one flat list of accounts.
+  const headings = (await page.getByRole('main').innerText()).replace(/\s+/g, ' ');
+  expect(headings).toMatch(/Cash & bank/i);
+  expect(headings).toMatch(/Agents & counterparties/i);
+  // Control accounts are not offered beside the parties they explain.
+  expect(headings).not.toMatch(/Control accounts/i);
 
   // Simple is what opens: one row for the man, not one per account.
   await page.getByLabel('Search ledgers').fill(AGENT.split(' ')[0]);
