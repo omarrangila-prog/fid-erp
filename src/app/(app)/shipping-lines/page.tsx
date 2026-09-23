@@ -75,6 +75,7 @@ export default async function ShippingLinesPage() {
         createDefaults={{ status: 'ACTIVE' }}
         action={saveShippingLineAction}
         entityLabel="Shipping line"
+        deleteTarget="shippingLine"
         canCreate={can(user, PERMISSIONS.SHIPPING_LINES_MANAGE)}
         canEdit={can(user, PERMISSIONS.SHIPPING_LINES_MANAGE)}
         emptyDescription="Add the carriers you book containers with."

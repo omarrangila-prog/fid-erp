@@ -288,7 +288,7 @@ export function ReceiptForm({
         }
         toast.success('Receipt posted.');
       } else if (initial?.status === 'POSTED') {
-        toast.success(`Receipt ${initial.receiptNumber} corrected.`);
+        toast.success('Receipt corrected. The old posting is out of the books and the new one is on.');
       } else {
         toast.success('Receipt saved as a draft.');
       }

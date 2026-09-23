@@ -1260,6 +1260,7 @@ const STATUS_TARGETS = {
     label: 'Expense category',
   },
   cashBankAccount: { permission: PERMISSIONS.CASHBANK_MANAGE, path: '/finance/cash-bank', label: 'Account' },
+  port: { permission: PERMISSIONS.PORTS_MANAGE, path: '/ports', label: 'Port' },
 } as const;
 
 /**
@@ -1331,6 +1332,114 @@ export async function deleteCashBankAccountAction(id: string): Promise<ActionRes
     revalidatePath('/accounting/chart');
     return { deleted: true };
   });
+}
+
+/**
+ * What would be left pointing at nothing if this record were removed.
+ *
+ * A master that has never been used is a mistake somebody made typing —
+ * a duplicate supplier, a warehouse that was never built — and deleting it
+ * is the honest answer. One that has been used is part of what the documents
+ * mean: removing it would leave an invoice whose customer is a blank. Those
+ * are deactivated instead, which takes them out of every picker and leaves
+ * the history readable.
+ */
+const MASTER_USES: Record<
+  keyof typeof STATUS_TARGETS,
+  (companyId: string, id: string) => Promise<Array<{ what: string; count: number }>>
+> = {
+  customer: async (companyId, id) => [
+    { what: 'invoices', count: await prisma.salesInvoice.count({ where: { companyId, customerId: id } }) },
+    { what: 'receipts', count: await prisma.receipt.count({ where: { companyId, customerId: id } }) },
+    { what: 'postings', count: await prisma.journalLine.count({ where: { customerId: id } }) },
+  ],
+  vendor: async (companyId, id) => [
+    { what: 'purchase orders', count: await prisma.purchaseContract.count({ where: { companyId, vendorId: id } }) },
+    { what: 'payments', count: await prisma.payment.count({ where: { companyId, vendorId: id } }) },
+    { what: 'costs', count: await prisma.expense.count({ where: { companyId, vendorId: id } }) },
+    { what: 'postings', count: await prisma.journalLine.count({ where: { vendorId: id } }) },
+  ],
+  coffeeItem: async (companyId, id) => [
+    { what: 'purchase order lines', count: await prisma.purchaseContractLine.count({ where: { itemId: id } }) },
+    { what: 'batches', count: await prisma.batch.count({ where: { companyId, itemId: id } }) },
+  ],
+  warehouse: async (companyId, id) => [
+    { what: 'stock balances', count: await prisma.inventoryBalance.count({ where: { companyId, warehouseId: id } }) },
+    { what: 'stock movements', count: await prisma.inventoryTransaction.count({ where: { companyId, warehouseId: id } }) },
+    { what: 'goods receipts', count: await prisma.goodsReceipt.count({ where: { companyId, warehouseId: id } }) },
+  ],
+  agent: async (companyId, id) => [
+    { what: 'postings', count: await prisma.journalLine.count({ where: { agentId: id } }) },
+    { what: 'receipts', count: await prisma.receipt.count({ where: { companyId, agentId: id } }) },
+    { what: 'settlements', count: await prisma.agentSettlement.count({ where: { companyId, agentId: id } }) },
+    { what: 'accounts in their name', count: await prisma.account.count({ where: { companyId, agentId: id } }) },
+  ],
+  shippingLine: async (companyId, id) => [
+    { what: 'shipments', count: await prisma.shipment.count({ where: { companyId, shippingLineId: id } }) },
+  ],
+  expenseCategory: async (companyId, id) => [
+    { what: 'costs', count: await prisma.expense.count({ where: { companyId, expenseCategoryId: id } }) },
+  ],
+  cashBankAccount: async (companyId, id) => [
+    { what: 'postings', count: await prisma.journalLine.count({ where: { cashBankAccountId: id } }) },
+  ],
+  // A port is named on documents as text, so removing one leaves nothing
+  // pointing at a blank; it is a list of places, and the list can be edited.
+  port: async () => [],
+};
+
+/**
+ * Delete a master record that has never been used.
+ *
+ * The client asked that everything be deletable, and everything that can be
+ * deleted without leaving a document pointing at a blank now is. Where it
+ * cannot, the answer says what is in the way and in how many places, rather
+ * than refusing without explanation.
+ */
+export type MasterDeleteTarget = keyof typeof STATUS_TARGETS;
+
+export async function deleteMasterAction(
+  target: MasterDeleteTarget,
+  id: string,
+): Promise<ActionResult<undefined>> {
+  try {
+    const config = STATUS_TARGETS[target];
+    const user = await requirePermission(config.permission);
+    const companyId = user.activeCompany.id;
+
+    const model = prisma[target] as unknown as {
+      findFirst: (args: unknown) => Promise<Record<string, unknown> | null>;
+      delete: (args: unknown) => Promise<unknown>;
+    };
+    const existing = await model.findFirst({ where: { id, companyId } });
+    if (!existing) throw new NotFoundError(config.label);
+
+    const uses = (await MASTER_USES[target](companyId, id)).filter((use) => use.count > 0);
+    if (uses.length > 0) {
+      const what = uses.map((use) => `${use.count} ${use.what}`).join(', ');
+      throw new ConflictError(
+        `This ${config.label.toLowerCase()} is used by ${what}, so deleting it would leave them pointing at nothing. ` +
+          `Set it to Inactive instead: it disappears from every list while the history stays readable.`,
+      );
+    }
+
+    await transaction(async (tx) => {
+      await writeAudit(tx, {
+        companyId,
+        userId: user.id,
+        action: `${config.label.toUpperCase().replace(/ /g, '_')}_DELETED`,
+        entityType: config.label.replace(/ /g, ''),
+        entityId: id,
+        before: existing,
+      });
+    });
+    await model.delete({ where: { id } });
+
+    revalidatePath(config.path);
+    return { ok: true, data: undefined };
+  } catch (error) {
+    return fail(error);
+  }
 }
 
 export async function toggleMasterStatusAction(

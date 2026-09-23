@@ -105,6 +105,7 @@ export default async function WarehousesPage() {
         createDefaults={{ status: 'ACTIVE', country: user.activeCompany.code === 'FID-MA' ? 'Morocco' : 'United Arab Emirates' }}
         action={saveWarehouseAction}
         entityLabel="Warehouse"
+        deleteTarget="warehouse"
         canCreate={can(user, PERMISSIONS.WAREHOUSES_MANAGE)}
         canEdit={can(user, PERMISSIONS.WAREHOUSES_MANAGE)}
         emptyDescription="Add the physical locations where coffee is stored."

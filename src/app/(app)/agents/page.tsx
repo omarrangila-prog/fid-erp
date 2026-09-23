@@ -107,6 +107,7 @@ export default async function AgentsPage() {
         createDefaults={{ status: 'ACTIVE', commissionPct: '0' }}
         action={saveAgentAction}
         entityLabel="Agent"
+        deleteTarget="agent"
         canCreate={can(user, PERMISSIONS.AGENTS_MANAGE)}
         canEdit={can(user, PERMISSIONS.AGENTS_MANAGE)}
         emptyDescription="Add the clearing and forwarding agents you work with."

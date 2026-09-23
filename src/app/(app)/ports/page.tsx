@@ -89,6 +89,7 @@ export default async function PortsPage() {
         createDefaults={{ status: 'ACTIVE' }}
         action={savePortAction}
         entityLabel="Port"
+        deleteTarget="port"
         canCreate={can(user, PERMISSIONS.PORTS_MANAGE)}
         canEdit={can(user, PERMISSIONS.PORTS_MANAGE)}
         emptyDescription="Add the ports you load at and discharge into."

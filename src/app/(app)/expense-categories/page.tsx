@@ -128,6 +128,7 @@ export default async function ExpenseCategoriesPage() {
         createDefaults={{ status: 'ACTIVE', kind: 'SHIPMENT', capitaliseByDefault: true }}
         action={saveExpenseCategoryAction}
         entityLabel="Expense category"
+        deleteTarget="expenseCategory"
         canCreate={can(user, PERMISSIONS.EXPENSE_CATEGORIES_MANAGE)}
         canEdit={can(user, PERMISSIONS.EXPENSE_CATEGORIES_MANAGE)}
         emptyDescription="Categories are created automatically when a company is set up."

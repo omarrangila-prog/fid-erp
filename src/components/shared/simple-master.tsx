@@ -1,12 +1,19 @@
 'use client';
 
 import * as React from 'react';
-import { Plus, Pencil } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
+import { Plus, Pencil, Power } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { MasterFormSheet, type FieldSpec } from '@/components/shared/master-form';
-import type { MasterFormState } from '@/server/actions/master-actions';
+import {
+  deleteMasterAction,
+  toggleMasterStatusAction,
+  type MasterFormState,
+  type MasterDeleteTarget,
+} from '@/server/actions/master-actions';
 import { RowActions, type RowAction } from '@/components/shared/row-actions';
 import type { BadgeTone } from '@/lib/constants';
 
@@ -55,6 +62,7 @@ export function SimpleMasterTable({
   canEdit,
   emptyDescription,
   searchPlaceholder,
+  deleteTarget,
 }: {
   rows: SimpleRow[];
   columns: SimpleColumnSpec[];
@@ -67,7 +75,16 @@ export function SimpleMasterTable({
   canEdit: boolean;
   emptyDescription: string;
   searchPlaceholder: string;
+  /**
+   * Which master this is, so a record that was never used can be deleted.
+   *
+   * One that has been used cannot: an invoice whose customer is a blank is
+   * worse than a list with an old name on it. The answer says what is in the
+   * way and offers Inactive instead.
+   */
+  deleteTarget?: MasterDeleteTarget;
 }) {
+  const router = useRouter();
   const [editing, setEditing] = React.useState<SimpleRow | null>(null);
   const [creating, setCreating] = React.useState(false);
 
@@ -106,7 +123,43 @@ export function SimpleMasterTable({
           actions={[
             ...(row.actions ?? []),
             { label: 'Edit', icon: Pencil, show: canEdit, onSelect: () => setEditing(row) },
+            ...(deleteTarget && canEdit
+              ? [
+                  {
+                    label: String(row.data.status ?? '').toLowerCase() === 'inactive' ? 'Reactivate' : 'Deactivate',
+                    icon: Power,
+                    overflowOnly: true,
+                    onSelect: async () => {
+                      const inactive = String(row.data.status ?? '').toLowerCase() === 'inactive';
+                      const result = await toggleMasterStatusAction(
+                        deleteTarget,
+                        row.id,
+                        inactive ? 'ACTIVE' : 'INACTIVE',
+                      );
+                      if (result.ok) {
+                        toast.success(inactive ? `${entityLabel} reactivated.` : `${entityLabel} deactivated.`);
+                        router.refresh();
+                      } else {
+                        toast.error(result.error);
+                      }
+                    },
+                  } satisfies RowAction,
+                ]
+              : []),
           ]}
+          destructive={
+            deleteTarget && canEdit
+              ? {
+                  status: 'DRAFT',
+                  noun: entityLabel.toLowerCase(),
+                  description: `This removes the ${entityLabel.toLowerCase()} entirely. It is only possible while nothing has used it; once it is on a document it can be deactivated instead, which takes it out of every list and leaves the history readable.`,
+                  run: async () => {
+                    const result = await deleteMasterAction(deleteTarget, row.id);
+                    return { ok: result.ok, error: result.ok ? undefined : result.error };
+                  },
+                }
+              : undefined
+          }
         />
       ),
     } satisfies DataColumn<SimpleRow>,

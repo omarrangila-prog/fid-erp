@@ -197,7 +197,7 @@ export function PaymentForm({
         }
         toast.success('Payment posted.');
       } else if (initial?.status === 'POSTED') {
-        toast.success(`Payment ${initial.paymentNumber} corrected.`);
+        toast.success('Payment corrected. The old posting is out of the books and the new one is on.');
       } else {
         toast.success('Payment saved as a draft.');
       }
