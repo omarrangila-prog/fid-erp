@@ -401,6 +401,13 @@ async function syncDraftCheque(
   if (!params.cheque) {
     if (existing && existing.status === 'RECEIVED') {
       await tx.cheque.delete({ where: { id: existing.id } });
+    } else if (existing && existing.status !== 'CANCELLED') {
+      // The paper is with the bank. Saying the money came another way would
+      // leave a cheque in hand that the receipt no longer accounts for.
+      throw new BusinessRuleError(
+        `This receipt's cheque has been ${existing.status.toLowerCase()}, so it cannot be changed to another way of paying. ` +
+          `Deal with the cheque from Cheques first.`,
+      );
     }
     return;
   }
@@ -429,7 +436,33 @@ async function syncDraftCheque(
 
   if (existing) {
     if (existing.status !== 'RECEIVED') {
-      throw new BusinessRuleError('This receipt already has a cheque that has moved on from received, so the instrument cannot be rewritten.');
+      /*
+       * A cheque that has been banked or cleared is a fact about the bank,
+       * not a field on a form, so it cannot be rewritten. That is no reason
+       * to refuse the rest of the correction: fixing the memo on a receipt
+       * whose cheque cleared last week changes nothing about the cheque.
+       * So this refuses only what is actually being changed.
+       */
+      const changed = (
+        [
+          ['cheque number', data.chequeNumber, existing.chequeNumber],
+          ['cheque date', data.chequeDate.toISOString().slice(0, 10), existing.chequeDate.toISOString().slice(0, 10)],
+          ['bank', data.bankName, existing.bankName],
+          ['amount', toMoney(data.amount).toFixed(2), toMoney(existing.amount).toFixed(2)],
+          ['currency', data.currency, existing.currency],
+          ['beneficiary', data.beneficiary, existing.beneficiary],
+        ] as Array<[string, string | null, string | null]>
+      )
+        .filter(([, next, was]) => (next ?? '') !== (was ?? ''))
+        .map(([what]) => what);
+
+      if (changed.length > 0) {
+        throw new BusinessRuleError(
+          `This receipt's cheque has been ${existing.status.toLowerCase()}, so its ${changed.join(', ')} can no longer be changed. ` +
+            `Correct the cheque itself from Cheques, or delete this receipt and record it again.`,
+        );
+      }
+      return;
     }
     await tx.cheque.update({ where: { id: existing.id }, data });
     return;
@@ -569,7 +602,17 @@ export async function updateReceipt(id: string, input: ReceiptInput, userId: str
         entryDate: new Date(),
         reason: `Correction of ${existing.receiptNumber}`,
       });
-      await cancelLinkedCheque(tx, { receiptId: id, userId });
+      /*
+       * The cheque is left where it is. A correction is not a cancellation:
+       * cancelling the paper and writing it again is what happens when a
+       * receipt is deleted, and doing it here left a corrected receipt
+       * pointing at a cancelled cheque — which the receivables sub-ledger
+       * stopped counting while the journal still did, so the two disagreed
+       * by the amount of the cheque.
+       *
+       * Rewriting the instrument is handled below, where a cheque that has
+       * already been banked refuses only the fields that would change.
+       */
       await tx.receipt.update({ where: { id }, data: { status: 'DRAFT' } });
     }
 

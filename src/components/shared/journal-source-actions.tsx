@@ -22,7 +22,7 @@ export function JournalSourceActions({
   isReversal?: boolean;
 }) {
   const view = journalSourceHref(sourceType, sourceId ?? '', { entryNumber });
-  const edit = sourceId ? journalSourceEditHref(sourceType, sourceId) : null;
+  const edit = journalSourceEditHref(sourceType, sourceId ?? '', { journalEntryId });
   if (!view) return <span className="text-ink-subtle">—</span>;
 
   /*

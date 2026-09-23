@@ -5,6 +5,7 @@ import { createGoodsReceipt, postGoodsReceipt } from '@/lib/services/goods-recei
 import { createSalesInvoice, postSalesInvoice } from '@/lib/services/sales';
 import { createReceipt, postReceipt, updateReceipt, getInvoiceOutstanding } from '@/lib/services/receipt';
 import { createPayment, postPayment, updatePayment } from '@/lib/services/payment';
+import { changeChequeStatus } from '@/lib/services/cheque';
 import { getCashBankBalance } from '@/lib/services/accounting';
 import { reconcile } from '@/lib/services/reconciliation';
 import { transaction } from '@/lib/db';
@@ -147,6 +148,66 @@ describe('a posted receipt typed for the wrong amount', () => {
   it('keeps the day it first reached the books', async () => {
     const receipt = await prisma.receipt.findUniqueOrThrow({ where: { id: receiptId } });
     expect(receipt.postedAt).not.toBeNull();
+  }, 300_000);
+});
+
+describe('a receipt whose cheque has already been banked', () => {
+  let chequeReceiptId = '';
+
+  it('still lets the rest of the receipt be corrected', async () => {
+    const receipt = await createReceipt(
+      {
+        companyId, receiptDate: utcDate('2026-09-20'), customerId: masters.customer.id, currency: 'MAD',
+        amount: '5000', rateToUsd: '9.6', rateLocalPerUsd: '9.6',
+        paymentMethod: 'CHEQUE', cashBankAccountId: cashId,
+        description: 'Cheque received',
+        cheque: { chequeNumber: '778899', chequeDate: utcDate('2026-09-20'), bankName: 'Attijariwafa' },
+        allocations: [{ salesInvoiceId: invoiceId, amount: '5000' }],
+      },
+      ctx.admin.id,
+    );
+    chequeReceiptId = receipt.id;
+    await postReceipt({ id: chequeReceiptId, companyId, userId: ctx.admin.id });
+
+    // The cheque is banked through the same path a person uses, so the books
+    // move with it: forcing the status straight into the table would leave a
+    // deposit nobody posted, and the sub-ledger would stop agreeing.
+    const cheque = await prisma.cheque.findFirstOrThrow({ where: { receiptId: chequeReceiptId } });
+    await changeChequeStatus({
+      chequeId: cheque.id, companyId, userId: ctx.admin.id, toStatus: 'DEPOSITED', cashBankAccountId: cashId,
+    });
+
+    // The memo can still be fixed, because nothing about the cheque changes.
+    const corrected = await updateReceipt(
+      chequeReceiptId,
+      {
+        companyId, receiptDate: utcDate('2026-09-20'), customerId: masters.customer.id, currency: 'MAD',
+        amount: '5000', rateToUsd: '9.6', rateLocalPerUsd: '9.6',
+        paymentMethod: 'CHEQUE', cashBankAccountId: cashId,
+        description: 'Cheque received from the roastery against September',
+        cheque: { chequeNumber: '778899', chequeDate: utcDate('2026-09-20'), bankName: 'Attijariwafa' },
+        allocations: [{ salesInvoiceId: invoiceId, amount: '5000' }],
+      },
+      ctx.admin.id,
+    );
+    expect(corrected.description).toMatch(/against September/);
+  }, 300_000);
+
+  it('refuses to rewrite the cheque itself, and says which part', async () => {
+    await expect(
+      updateReceipt(
+        chequeReceiptId,
+        {
+          companyId, receiptDate: utcDate('2026-09-20'), customerId: masters.customer.id, currency: 'MAD',
+          amount: '5000', rateToUsd: '9.6', rateLocalPerUsd: '9.6',
+          paymentMethod: 'CHEQUE', cashBankAccountId: cashId,
+          description: 'Trying to change the paper',
+          cheque: { chequeNumber: '000111', chequeDate: utcDate('2026-09-20'), bankName: 'Attijariwafa' },
+          allocations: [{ salesInvoiceId: invoiceId, amount: '5000' }],
+        },
+        ctx.admin.id,
+      ),
+    ).rejects.toThrow(/cheque number can no longer be changed/i);
   }, 300_000);
 });
 

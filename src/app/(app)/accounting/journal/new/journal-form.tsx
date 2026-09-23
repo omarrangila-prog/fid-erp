@@ -14,7 +14,7 @@ import { Combobox, type ComboOption } from '@/components/ui/combobox';
 import { Callout } from '@/components/ui/feedback';
 import { cn } from '@/lib/utils';
 import { tryDec, Decimal } from '@/lib/money';
-import { postJournalVoucherAction } from '@/server/actions/finance-actions';
+import { postJournalVoucherAction, replaceJournalVoucherAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { AddJournalAccountDialog, type CreatedJournalAccount } from '@/app/(app)/accounting/journal/new/add-account';
 
@@ -69,6 +69,22 @@ const emptyLine = (index: number, currency = 'USD', rateToUsd = '1'): Line => ({
  * running total is shown as you type rather than only on submit — finding out
  * you are three cents out after filling in eight lines is miserable.
  */
+export type JournalInitial = {
+  entryId: string;
+  entryDate: string;
+  description: string;
+  reference: string;
+  rateLocalPerUsd: string;
+  lines: Array<{
+    accountId: string;
+    direction: 'DEBIT' | 'CREDIT';
+    amount: string;
+    currency: string;
+    rateToUsd: string;
+    description: string;
+  }>;
+};
+
 export function JournalForm({
   accounts,
   customers = [],
@@ -76,6 +92,7 @@ export function JournalForm({
   defaultLocalRate,
   ratesByCurrency,
   today,
+  initial,
 }: {
   accounts: AccountOption[];
   customers?: ComboOption[];
@@ -83,6 +100,14 @@ export function JournalForm({
   defaultLocalRate: string;
   ratesByCurrency: Record<string, string>;
   today: string;
+  /**
+   * A posted voucher, opened to be corrected.
+   *
+   * Saving takes the entry it replaces back out of the books and posts these
+   * figures as a new entry, so the journal shows what was written, what took
+   * it out, and what stands now.
+   */
+  initial?: JournalInitial;
 }) {
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
@@ -93,20 +118,26 @@ export function JournalForm({
    * tax on somebody running a coffee business. The journal proper is one
    * click away, and an accountant who wants it goes straight there.
    */
-  const [mode, setMode] = React.useState<'guided' | 'advanced'>('guided');
-  const [entryDate, setEntryDate] = React.useState(today);
-  const [description, setDescription] = React.useState('');
-  const [reference, setReference] = React.useState('');
-  const [currency, setCurrency] = React.useState('USD');
-  const [rateToUsd, setRateToUsd] = React.useState('1');
-  const [localRate, setLocalRate] = React.useState(defaultLocalRate);
+  // A voucher being corrected opens on the voucher itself; the guided
+  // chooser is for deciding what to write, and that is already decided.
+  const [mode, setMode] = React.useState<'guided' | 'advanced'>(initial ? 'advanced' : 'guided');
+  const [entryDate, setEntryDate] = React.useState(initial?.entryDate ?? today);
+  const [description, setDescription] = React.useState(initial?.description ?? '');
+  const [reference, setReference] = React.useState(initial?.reference ?? '');
+  const [currency, setCurrency] = React.useState(initial?.lines[0]?.currency ?? 'USD');
+  const [rateToUsd, setRateToUsd] = React.useState(initial?.lines[0]?.rateToUsd ?? '1');
+  const [localRate, setLocalRate] = React.useState(initial?.rateLocalPerUsd ?? defaultLocalRate);
   const [customerId, setCustomerId] = React.useState<string | null>(null);
   const [accountOptions, setAccountOptions] = React.useState(accounts);
   const [addAccountFor, setAddAccountFor] = React.useState<string | null>(null);
   const [addAccountName, setAddAccountName] = React.useState('');
-  const [lines, setLines] = React.useState<Line[]>(() => [emptyLine(0), emptyLine(1)]);
+  const [lines, setLines] = React.useState<Line[]>(() =>
+    initial
+      ? initial.lines.map((line, index) => ({ ...line, key: `line-${index}` }))
+      : [emptyLine(0), emptyLine(1)],
+  );
   const [error, setError] = React.useState<string | null>(null);
-  const nextKey = React.useRef(2);
+  const nextKey = React.useRef(initial ? initial.lines.length : 2);
 
   /*
    * A cash or bank drawer holds exactly one currency, so a MAD till cannot
@@ -296,29 +327,30 @@ export function JournalForm({
     }
 
     start(async () => {
-      const result = await postJournalVoucherAction(
-        JSON.stringify({
-          clientKey: clientKey.current ?? undefined,
-          entryDate,
-          description: description.trim(),
-          reference: reference.trim() || undefined,
-          rateLocalPerUsd: localRate,
-          lines: lines.map((line) => {
-            const chosen = accountOptions.find((o) => o.value === line.accountId);
-            return {
-            accountId: chosen?.postsTo ?? line.accountId,
-            agentId: chosen?.agentId,
-            direction: line.direction,
-            // Each line in the currency it was actually written in.
-            currency: line.currency,
-            amount: line.amount,
-            rateToUsd: line.currency === 'USD' ? '1' : line.rateToUsd,
-            description: line.description.trim() || undefined,
-            customerId: customerId || undefined,
-            };
-          }),
+      const body = JSON.stringify({
+        clientKey: clientKey.current ?? undefined,
+        entryDate,
+        description: description.trim(),
+        reference: reference.trim() || undefined,
+        rateLocalPerUsd: localRate,
+        lines: lines.map((line) => {
+          const chosen = accountOptions.find((o) => o.value === line.accountId);
+          return {
+          accountId: chosen?.postsTo ?? line.accountId,
+          agentId: chosen?.agentId,
+          direction: line.direction,
+          // Each line in the currency it was actually written in.
+          currency: line.currency,
+          amount: line.amount,
+          rateToUsd: line.currency === 'USD' ? '1' : line.rateToUsd,
+          description: line.description.trim() || undefined,
+          customerId: customerId || undefined,
+          };
         }),
-      );
+      });
+      const result = initial
+        ? await replaceJournalVoucherAction(initial.entryId, body)
+        : await postJournalVoucherAction(body);
 
       if (result?.ok) {
         toast.success(result.message || 'Journal voucher posted.');

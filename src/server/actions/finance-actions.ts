@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { requirePermission } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
+import { BusinessRuleError, NotFoundError } from '@/lib/errors';
 import { fieldErrors } from '@/lib/validation/common';
 import {
   agentSettlementSchema,
@@ -546,6 +547,84 @@ export async function deletePostedEntryAction(entryId: string, reason: string): 
     return { ok: true, data: undefined };
   } catch (error) {
     return fail(error);
+  }
+}
+
+/**
+ * Correct a posted voucher: the old entry out, the new one in.
+ *
+ * A hand-raised voucher could be deleted and written again, which is two
+ * acts and two chances to get it wrong. This is one: the entry it replaces
+ * is mirrored, the new figures are posted, and the journal keeps all three
+ * so the correction reads as a correction.
+ *
+ * Unlike a receipt or a cost, a voucher is not rewritten under its own
+ * number — an entry number is the order things reached the books, and the
+ * new entry reaches them now. The old number stays where it was, marked as
+ * replaced.
+ */
+export async function replaceJournalVoucherAction(entryId: string, payload: string): Promise<DocFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.ACCOUNTING_POST);
+    const companyId = user.activeCompany.id;
+    const input = journalVoucherSchema.parse(parseJson(payload));
+
+    const original = await prisma.journalEntry.findFirst({
+      where: { id: entryId, companyId, sourceType: 'MANUAL', status: 'POSTED' },
+      select: { id: true, entryNumber: true },
+    });
+    if (!original) throw new NotFoundError('Journal voucher');
+
+    await deletePostedEntry({
+      companyId,
+      userId: user.id,
+      entryId,
+      reason: `Corrected — replaced by a new voucher dated ${input.entryDate.toISOString().slice(0, 10)}`,
+    });
+
+    const sourceId = input.clientKey ? `JV-${input.clientKey}` : `JV-${Date.now()}`;
+    const entry = await transaction(async (tx) => {
+      const company = await getCompanyContext(tx, companyId);
+      return postJournalEntry(tx, {
+        companyId,
+        entryDate: input.entryDate,
+        description: input.description,
+        reference: input.reference,
+        sourceType: 'MANUAL',
+        sourceId,
+        createdById: user.id,
+        localCurrency: company.localCurrency,
+        rateLocalPerUsd: input.rateLocalPerUsd,
+        lines: input.lines.map((line) => ({
+          accountId: line.accountId,
+          direction: line.direction,
+          currency: line.currency,
+          amount: line.amount,
+          rateToUsd: line.rateToUsd,
+          description: line.description ?? undefined,
+          customerId: line.customerId,
+          vendorId: line.vendorId,
+          agentId: line.agentId,
+          shipmentId: line.shipmentId,
+        })),
+      }).catch((error: unknown) => {
+        /*
+         * The entry being replaced is already out of the books by now. If the
+         * replacement will not post — a closed period, an inactive account —
+         * say so plainly rather than leaving somebody to discover that both
+         * the old figures and the new ones are missing.
+         */
+        throw new BusinessRuleError(
+          `The voucher this replaces has been taken out of the books, but the correction could not be posted: ` +
+            `${error instanceof Error ? error.message : String(error)}. Write it as a new voucher.`,
+        );
+      });
+    });
+
+    revalidateAll(['/accounting/journal', '/reports', '/ledgers', '/ledgers/customers', '/ledgers/vendors', '/agents', '/dashboard']);
+    return { ok: true, id: entry.id, message: 'Voucher corrected. The entry it replaces is out of the books.' };
+  } catch (error) {
+    return toState(error);
   }
 }
 

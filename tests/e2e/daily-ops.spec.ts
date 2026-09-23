@@ -172,12 +172,17 @@ test('a posted receipt is corrected under its own number, not deleted and retype
   await page.goto('/finance/receipts', { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => undefined);
 
-  const posted = page.locator('main table tbody tr').filter({ hasText: /Posted/i }).first();
+  // A receipt whose cheque has already been banked keeps its cheque fields;
+  // this walks the ordinary case, where the money went straight to an account.
+  const posted = page
+    .locator('main table tbody tr')
+    .filter({ hasText: /Posted/i })
+    .filter({ hasNotText: /Cheque/i })
+    .first();
   if ((await posted.count()) === 0) {
     test.skip(true, 'No posted receipt in this company.');
     return;
   }
-  const number = ((await posted.innerText()).match(/RV[\s-]?\d+|\d{4,}/) ?? [''])[0];
   await posted.getByRole('link', { name: /view|open/i }).first().click().catch(async () => {
     await posted.click();
   });
@@ -204,10 +209,17 @@ test('a posted receipt is corrected under its own number, not deleted and retype
   await page.waitForURL(/\/finance\/receipts\/[\w-]+$/, { timeout: 60_000 });
   expect(page.url()).toBe(receiptUrl);
 
-  // Same receipt, same number, still posted.
-  await expect(page.getByRole('main')).toContainText(/Posted/i, { timeout: 20_000 });
-  if (number) await expect(page.getByRole('main')).toContainText(number.trim());
-  console.log(`  receipt ${number.trim()}: corrected in place, still posted`);
+  /*
+   * Same receipt, same page, still posted — and the journal underneath shows
+   * the whole story: what was written, the entry that took it out, and the
+   * one that stands now.
+   */
+  const after = page.getByRole('main');
+  await expect(after).toContainText(/Posted/i, { timeout: 20_000 });
+  await expect(after).toContainText(/Deletion of JV \d+ — Correction of/i);
+  const entries = (await after.innerText()).match(/Receipt PAY \d+/g) ?? [];
+  expect(entries.length, 'the original posting and its replacement').toBeGreaterThanOrEqual(2);
+  console.log('  receipt: corrected in place, still posted, correction visible in the journal');
 });
 
 test('the journal can add an account without leaving the voucher', async ({ page }) => {
@@ -263,6 +275,50 @@ test('the journal offers USD and MAD and posts a balanced USD voucher', async ({
   // The client's own reference is kept and shown beside the memo.
   const row = page.getByRole('row').filter({ hasText: 'Daily ops USD opening' }).first();
   await expect(row).toContainText('BANK ADVICE 4471');
+});
+
+test('a posted voucher is corrected: the old entry leaves the books, the new one stands', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto('/reports/journal', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+
+  const row = page.getByRole('row').filter({ hasText: 'Daily ops USD opening' }).first();
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  await expect(row).toContainText('25.00');
+
+  // Edit is offered on a hand-raised voucher, and opens it with its own lines.
+  const edit = row.getByRole('link', { name: /^Edit$/ }).first();
+  await expect(edit).toBeVisible({ timeout: 20_000 });
+  await edit.click();
+  await page.waitForURL(/\/accounting\/journal\/[\w-]+\/edit/, { timeout: 30_000 });
+
+  const main = page.getByRole('main');
+  await expect(main).toContainText(/takes the entry this replaces back out of the books/i, { timeout: 20_000 });
+  await expect(page.locator('#jv-description')).toHaveValue('Daily ops USD opening');
+  await expect(page.getByLabel(/line 1 amount/i)).toHaveValue(/25/);
+
+  // Correct both sides and save.
+  await page.locator('#jv-description').fill('Daily ops USD opening — corrected to 40');
+  await page.getByLabel(/line 1 amount/i).fill('40');
+  await page.getByLabel(/line 2 amount/i).fill('40');
+  await expect(page.getByText(/^balanced$/i)).toBeVisible();
+  await page.getByRole('button', { name: /post voucher|save/i }).first().click();
+  await page.waitForURL(/\/reports\/journal/, { timeout: 60_000 });
+
+  // The corrected voucher stands.
+  const corrected = page.getByRole('row').filter({ hasText: 'corrected to 40' }).first();
+  await expect(corrected).toBeVisible({ timeout: 30_000 });
+  await expect(corrected).toContainText('40.00');
+
+  /*
+   * And the voucher it replaced has left the books: the journal lists live
+   * entries only, so the 25 is gone from it — as it is from every ledger and
+   * total — while both it and its reversal stay readable on the entry itself.
+   */
+  await expect(page.getByRole('row').filter({ hasText: 'Daily ops USD opening' })).toHaveCount(1);
+  const listed = (await page.getByRole('main').innerText()).replace(/\s+/g, ' ');
+  expect(listed).toContain('corrected to 40');
+  console.log('  voucher: corrected to 40, and the 25 no longer counts anywhere');
 });
 
 test('an unpaid expense does not ask Paid from, and a category can be added on the voucher', async ({ page }) => {

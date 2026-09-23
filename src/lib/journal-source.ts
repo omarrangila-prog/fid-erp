@@ -42,17 +42,33 @@ export function journalSourceHref(
   }
 }
 
-/** Editor for the source document, when one exists. Posted drafts still open the editor; posted expenses redirect to the voucher. */
-export function journalSourceEditHref(sourceType: string, sourceId: string): string | null {
-  if (!sourceId) return null;
+/**
+ * Editor for the source document, when one exists.
+ *
+ * A posted document opens its own editor, where the correction can undo
+ * what the document did — the stock, the allocations, the cheque. A voucher
+ * somebody wrote by hand has no such consequences, so it is corrected in the
+ * journal itself, which needs the entry rather than the source.
+ */
+export function journalSourceEditHref(
+  sourceType: string,
+  sourceId: string,
+  options?: { journalEntryId?: string | null },
+): string | null {
   switch (sourceType) {
     case 'EXPENSE':
-      return `/finance/expenses/${sourceId}/edit`;
+      return sourceId ? `/finance/expenses/${sourceId}/edit` : null;
     case 'SALES_INVOICE':
-      return `/sales/${sourceId}/edit`;
+      return sourceId ? `/sales/${sourceId}/edit` : null;
     case 'PURCHASE_CONTRACT':
-      return `/purchases/${sourceId}/edit`;
+      return sourceId ? `/purchases/${sourceId}/edit` : null;
+    case 'RECEIPT':
+      return sourceId ? `/finance/receipts/${sourceId}/edit` : null;
+    case 'PAYMENT':
+      return sourceId ? `/finance/payments/${sourceId}/edit` : null;
+    case 'MANUAL':
+      return options?.journalEntryId ? `/accounting/journal/${options.journalEntryId}/edit` : null;
     default:
-      return journalSourceHref(sourceType, sourceId);
+      return sourceId ? journalSourceHref(sourceType, sourceId) : null;
   }
 }

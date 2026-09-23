@@ -434,6 +434,13 @@ async function syncDraftPaymentCheque(
   if (params.method !== 'CHEQUE') {
     if (existing && existing.status === 'RECEIVED') {
       await tx.cheque.delete({ where: { id: existing.id } });
+    } else if (existing && existing.status !== 'CANCELLED') {
+      // The cheque has left the building; the payment cannot claim the money
+      // went another way while it is still out there.
+      throw new BusinessRuleError(
+        `This payment's cheque has been ${existing.status.toLowerCase()}, so it cannot be changed to another way of paying. ` +
+          `Deal with the cheque from Cheques first.`,
+      );
     }
     return;
   }
@@ -463,9 +470,28 @@ async function syncDraftPaymentCheque(
 
   if (existing) {
     if (existing.status !== 'RECEIVED') {
-      throw new BusinessRuleError(
-        'This payment already has a cheque that has moved on from issued, so the instrument cannot be rewritten.',
-      );
+      // As on a receipt: a cheque that has left the building is a fact about
+      // the bank, but correcting the rest of the payment is still allowed.
+      const changed = (
+        [
+          ['cheque number', data.chequeNumber, existing.chequeNumber],
+          ['cheque date', data.chequeDate.toISOString().slice(0, 10), existing.chequeDate.toISOString().slice(0, 10)],
+          ['bank', data.bankName, existing.bankName],
+          ['amount', toMoney(data.amount).toFixed(2), toMoney(existing.amount).toFixed(2)],
+          ['currency', data.currency, existing.currency],
+          ['payee', data.beneficiary, existing.beneficiary],
+        ] as Array<[string, string | null, string | null]>
+      )
+        .filter(([, next, was]) => (next ?? '') !== (was ?? ''))
+        .map(([what]) => what);
+
+      if (changed.length > 0) {
+        throw new BusinessRuleError(
+          `This payment's cheque has been ${existing.status.toLowerCase()}, so its ${changed.join(', ')} can no longer ` +
+            `be changed. Correct the cheque itself from Cheques, or delete this payment and record it again.`,
+        );
+      }
+      return;
     }
     await tx.cheque.update({ where: { id: existing.id }, data });
     return;
@@ -605,7 +631,9 @@ export async function updatePayment(id: string, input: PaymentInput, userId: str
         entryDate: new Date(),
         reason: `Correction of ${existing.paymentNumber}`,
       });
-      await cancelPaymentCheque(tx, id, userId);
+      // The cheque stays as it is: correcting a payment is not cancelling the
+      // cheque it was written on. See the same note on a receipt — cancelling
+      // it here left the payment pointing at a cancelled instrument.
       await tx.payment.update({ where: { id }, data: { status: 'DRAFT' } });
     }
 

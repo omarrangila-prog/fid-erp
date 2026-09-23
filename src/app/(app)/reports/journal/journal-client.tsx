@@ -175,13 +175,13 @@ export function JournalClient({
         // A voucher's actions belong to the document that raised it: a journal
         // line is never edited on its own. A manual voucher is its own source.
         const view = journalSourceHref(r.sourceType, r.sourceId ?? '', { entryNumber: r.entryNumber });
-        const edit = r.sourceId ? journalSourceEditHref(r.sourceType, r.sourceId) : null;
+        const edit = r.isReversal ? null : journalSourceEditHref(r.sourceType, r.sourceId ?? '', { journalEntryId: r.id });
         return (
           <RowActions
             actions={[
               ...(view ? [viewAction(view)] : []),
               {
-                label: 'Edit source',
+                label: r.sourceType === 'MANUAL' ? 'Edit' : 'Edit source',
                 href: edit ?? '',
                 icon: FileText,
                 show: Boolean(edit && edit !== view),
