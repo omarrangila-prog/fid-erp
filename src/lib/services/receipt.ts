@@ -546,8 +546,31 @@ export async function updateReceipt(id: string, input: ReceiptInput, userId: str
   return transaction(async (tx) => {
     const existing = await tx.receipt.findFirst({ where: { id, companyId: input.companyId } });
     if (!existing) throw new NotFoundError('Receipt');
-    if (existing.status !== 'DRAFT') {
-      throw new BusinessRuleError('Only draft receipts can be edited. Reverse the receipt to correct a posted one.');
+    if (existing.status !== 'DRAFT' && existing.status !== 'POSTED') {
+      throw new BusinessRuleError('This receipt has been deleted, so it can no longer be edited.');
+    }
+
+    /*
+     * A posted receipt is corrected in place, like a cost and like an invoice.
+     *
+     * The old posting comes back out of the books first — the journal
+     * mirrored, the cheque cancelled, the invoices it settled outstanding
+     * again — and the new figures go back on under the same receipt number.
+     * The paper in somebody's hand still matches the system, and the ledger
+     * keeps both entries so an auditor can see what was changed.
+     */
+    const wasPosted = existing.status === 'POSTED';
+    if (wasPosted) {
+      await reverseJournalEntry(tx, {
+        companyId: input.companyId,
+        sourceType: 'RECEIPT',
+        sourceId: id,
+        createdById: userId,
+        entryDate: new Date(),
+        reason: `Correction of ${existing.receiptNumber}`,
+      });
+      await cancelLinkedCheque(tx, { receiptId: id, userId });
+      await tx.receipt.update({ where: { id }, data: { status: 'DRAFT' } });
     }
 
     const company = await getCompanyContext(tx, input.companyId);
@@ -607,11 +630,20 @@ export async function updateReceipt(id: string, input: ReceiptInput, userId: str
       action: 'RECEIPT_UPDATED',
       entityType: 'Receipt',
       entityId: id,
-      before: { amount: existing.amount, currency: existing.currency, rateToUsd: existing.rateToUsd },
+      before: { amount: existing.amount, currency: existing.currency, rateToUsd: existing.rateToUsd, status: existing.status },
       after: { amount: receipt.amount, currency: receipt.currency, rateToUsd: receipt.rateToUsd },
     });
 
-    return receipt;
+    if (!wasPosted) return receipt;
+
+    await postReceiptIn(tx, { id, companyId: input.companyId, userId });
+    // The receipt was posted before it was corrected, and it is the same
+    // receipt: the day it first reached the books is the day it belongs to.
+    return tx.receipt.update({
+      where: { id },
+      data: { postedAt: existing.postedAt },
+      include: { allocations: true },
+    });
   });
 }
 

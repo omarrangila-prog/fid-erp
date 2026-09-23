@@ -585,8 +585,28 @@ export async function updatePayment(id: string, input: PaymentInput, userId: str
   return transaction(async (tx) => {
     const existing = await tx.payment.findFirst({ where: { id, companyId: input.companyId } });
     if (!existing) throw new NotFoundError('Payment');
-    if (existing.status !== 'DRAFT') {
-      throw new BusinessRuleError('Only draft payments can be edited. Reverse the payment to correct a posted one.');
+    if (existing.status !== 'DRAFT' && existing.status !== 'POSTED') {
+      throw new BusinessRuleError('This payment has been deleted, so it can no longer be edited.');
+    }
+
+    /*
+     * A posted payment is corrected in place, the same way a receipt is: the
+     * old posting comes out of the books, the cheque is cancelled, whatever
+     * it settled goes back to being owed, and the new figures go on under the
+     * same payment number.
+     */
+    const wasPosted = existing.status === 'POSTED';
+    if (wasPosted) {
+      await reverseJournalEntry(tx, {
+        companyId: input.companyId,
+        sourceType: 'PAYMENT',
+        sourceId: id,
+        createdById: userId,
+        entryDate: new Date(),
+        reason: `Correction of ${existing.paymentNumber}`,
+      });
+      await cancelPaymentCheque(tx, id, userId);
+      await tx.payment.update({ where: { id }, data: { status: 'DRAFT' } });
     }
 
     const vendor = await requireVendorIfNamed(tx, input);
@@ -645,227 +665,238 @@ export async function updatePayment(id: string, input: PaymentInput, userId: str
       action: 'PAYMENT_UPDATED',
       entityType: 'Payment',
       entityId: id,
-      before: { amount: existing.amount, currency: existing.currency },
+      before: { amount: existing.amount, currency: existing.currency, status: existing.status },
       after: { amount: payment.amount, currency: payment.currency },
     });
 
-    return payment;
+    if (!wasPosted) return payment;
+
+    await postPaymentIn(tx, { id, companyId: input.companyId, userId });
+    // Same payment, same day it reached the books.
+    return tx.payment.update({
+      where: { id },
+      data: { postedAt: existing.postedAt },
+      include: { allocations: true },
+    });
   });
 }
 
 export async function postPayment(params: { id: string; companyId: string; userId: string }) {
-  return transaction(async (tx) => {
-    const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>`
-      SELECT "id", "status"::text FROM payments
-      WHERE "id" = ${params.id} AND "companyId" = ${params.companyId}
-      FOR UPDATE
-    `;
-    if (locked.length === 0) throw new NotFoundError('Payment');
-    if (locked[0].status !== 'DRAFT') {
-      throw new BusinessRuleError(`This payment is already ${locked[0].status.toLowerCase()} and cannot be posted again.`);
+  return transaction((tx) => postPaymentIn(tx, params));
+}
+
+/** The body of postPayment, for a caller already inside a transaction. */
+export async function postPaymentIn(tx: Tx, params: { id: string; companyId: string; userId: string }) {
+  const locked = await tx.$queryRaw<Array<{ id: string; status: string }>>`
+    SELECT "id", "status"::text FROM payments
+    WHERE "id" = ${params.id} AND "companyId" = ${params.companyId}
+    FOR UPDATE
+  `;
+  if (locked.length === 0) throw new NotFoundError('Payment');
+  if (locked[0].status !== 'DRAFT') {
+    throw new BusinessRuleError(`This payment is already ${locked[0].status.toLowerCase()} and cannot be posted again.`);
+  }
+
+  const payment = await tx.payment.findUniqueOrThrow({
+    where: { id: params.id },
+    include: {
+      vendor: true,
+      cashBankAccount: true,
+      allocations: { include: { purchaseContract: true, expense: true } },
+    },
+  });
+
+  if (payment.paymentMethod !== 'CHEQUE' && !payment.cashBankAccountId) {
+    throw new BusinessRuleError('This payment has no cash or bank account and cannot be posted.');
+  }
+  const company = await getCompanyContext(tx, params.companyId);
+
+  await lockPayableDocuments(tx, payment.allocations);
+
+  for (const alloc of payment.allocations) {
+    const outstanding = alloc.purchaseContractId
+      ? await getContractOutstanding(tx, alloc.purchaseContractId)
+      : await getExpenseOutstanding(tx, alloc.expenseId!);
+    if (dec(alloc.amount).greaterThan(outstanding.amount)) {
+      const label = alloc.purchaseContract
+        ? `Contract ${alloc.purchaseContract.contractNumber}`
+        : `Cost ${alloc.expense?.expenseNumber ?? ''}`.trim();
+      throw new BusinessRuleError(
+        `${label} now has only ${outstanding.currency} ${outstanding.amount.toFixed(2)} outstanding, which is less than the ${dec(alloc.amount).toFixed(2)} allocated here.`,
+      );
     }
+  }
 
-    const payment = await tx.payment.findUniqueOrThrow({
-      where: { id: params.id },
-      include: {
-        vendor: true,
-        cashBankAccount: true,
-        allocations: { include: { purchaseContract: true, expense: true } },
-      },
-    });
+  // Each document is cleared at the value it was booked at — in USD and in
+  // the company's own currency — so paying a bill in full always clears it
+  // exactly, whatever today's rate says the money is worth. The difference
+  // between that and the money line is a realised exchange gain or loss,
+  // which the posting engine books on its own.
+  const localCode = company.localCurrency.toUpperCase();
+  const settlementLines = payment.allocations.map((allocation) => {
+    const document = allocation.purchaseContract ?? allocation.expense;
+    if (!document) throw new BusinessRuleError('An allocation names neither a contract nor a cost.');
+    const bookedUsd = toMoney(allocation.amountUsd);
+    const bookedLocal =
+      document.currency === localCode
+        ? toMoney(allocation.amount)
+        : convertFromUsd(bookedUsd, document.rateLocalPerUsd, localCode);
+    const label = allocation.purchaseContract
+      ? allocation.purchaseContract.contractNumber
+      : allocation.expense!.expenseNumber;
 
-    if (payment.paymentMethod !== 'CHEQUE' && !payment.cashBankAccountId) {
-      throw new BusinessRuleError('This payment has no cash or bank account and cannot be posted.');
-    }
-    const company = await getCompanyContext(tx, params.companyId);
-
-    await lockPayableDocuments(tx, payment.allocations);
-
-    for (const alloc of payment.allocations) {
-      const outstanding = alloc.purchaseContractId
-        ? await getContractOutstanding(tx, alloc.purchaseContractId)
-        : await getExpenseOutstanding(tx, alloc.expenseId!);
-      if (dec(alloc.amount).greaterThan(outstanding.amount)) {
-        const label = alloc.purchaseContract
-          ? `Contract ${alloc.purchaseContract.contractNumber}`
-          : `Cost ${alloc.expense?.expenseNumber ?? ''}`.trim();
-        throw new BusinessRuleError(
-          `${label} now has only ${outstanding.currency} ${outstanding.amount.toFixed(2)} outstanding, which is less than the ${dec(alloc.amount).toFixed(2)} allocated here.`,
-        );
-      }
-    }
-
-    // Each document is cleared at the value it was booked at — in USD and in
-    // the company's own currency — so paying a bill in full always clears it
-    // exactly, whatever today's rate says the money is worth. The difference
-    // between that and the money line is a realised exchange gain or loss,
-    // which the posting engine books on its own.
-    const localCode = company.localCurrency.toUpperCase();
-    const settlementLines = payment.allocations.map((allocation) => {
-      const document = allocation.purchaseContract ?? allocation.expense;
-      if (!document) throw new BusinessRuleError('An allocation names neither a contract nor a cost.');
-      const bookedUsd = toMoney(allocation.amountUsd);
-      const bookedLocal =
-        document.currency === localCode
-          ? toMoney(allocation.amount)
-          : convertFromUsd(bookedUsd, document.rateLocalPerUsd, localCode);
-      const label = allocation.purchaseContract
-        ? allocation.purchaseContract.contractNumber
-        : allocation.expense!.expenseNumber;
-
-      // A cost booked to nobody in particular was accrued, not put on a
-      // supplier's account. Paying it clears Accrued Expenses at the value it
-      // was booked — no sub-ledger, no party currency to translate into.
-      if (!payment.vendor) {
-        return {
-          accountKey: ACCOUNT_KEYS.ACCRUED_EXPENSES,
-          direction: 'DEBIT' as const,
-          currency: document.currency,
-          amount: toMoney(allocation.amount),
-          rateToUsd: document.rateToUsd,
-          bookedUsd,
-          bookedLocal,
-          description: `Settles ${label}`,
-          shipmentId: payment.shipmentId,
-          purchaseContractId: allocation.purchaseContractId ?? null,
-        };
-      }
-
-      // In the supplier's ledger currency, at the document's own rate — the
-      // same statement the accrual made when the bill was booked.
-      const leg = resolveSubledgerLeg({
-        partyCurrency: payment.vendor.primaryCurrency,
-        voucherCurrency: document.currency,
-        voucherAmount: toMoney(allocation.amount),
-        voucherRateToUsd: document.rateToUsd,
-        voucherAmountUsd: bookedUsd,
-        localCurrency: company.localCurrency,
-        rateLocalPerUsd: document.rateLocalPerUsd,
-        partyLabel: payment.vendor.vendorName,
-      });
+    // A cost booked to nobody in particular was accrued, not put on a
+    // supplier's account. Paying it clears Accrued Expenses at the value it
+    // was booked — no sub-ledger, no party currency to translate into.
+    if (!payment.vendor) {
       return {
-        accountKey: ACCOUNT_KEYS.ACCOUNTS_PAYABLE,
+        accountKey: ACCOUNT_KEYS.ACCRUED_EXPENSES,
         direction: 'DEBIT' as const,
-        currency: leg.currency,
-        amount: leg.amount,
-        rateToUsd: leg.rateToUsd,
+        currency: document.currency,
+        amount: toMoney(allocation.amount),
+        rateToUsd: document.rateToUsd,
         bookedUsd,
         bookedLocal,
         description: `Settles ${label}`,
-        vendorId: payment.vendorId,
         shipmentId: payment.shipmentId,
         purchaseContractId: allocation.purchaseContractId ?? null,
       };
-    });
-
-    // Anything not put against a document is an advance the supplier owes
-    // back in goods — an asset, not a reduction of payables. Measured in the
-    // payment's own currency.
-    const settledInVoucher = toMoney(
-      sum(
-        payment.allocations.map((allocation) => {
-          const document = allocation.purchaseContract ?? allocation.expense!;
-          return document.currency === payment.currency
-            ? dec(allocation.amount)
-            : convertFromUsd(allocation.amountUsd, payment.rateToUsd, payment.currency);
-        }),
-      ),
-    );
-    const unallocated = toMoney(dec(payment.amount).minus(settledInVoucher));
-    const hasAdvance = unallocated.greaterThan('0.005');
-
-    // An advance is money a supplier owes back in goods. With no supplier
-    // there is nobody to owe it, so a payment to nobody must be fully allocated.
-    if (hasAdvance && !payment.vendor) {
-      throw new BusinessRuleError(
-        `${payment.currency} ${unallocated.toFixed(2)} of this payment is not put against a cost. A payment with no supplier has to be allocated in full.`,
-      );
     }
 
-    const advanceLines = hasAdvance && payment.vendor
-      ? (() => {
-          const vendor = payment.vendor;
-          const advance = resolveSubledgerLeg({
-            partyCurrency: vendor.primaryCurrency,
-            voucherCurrency: payment.currency,
-            voucherAmount: unallocated,
-            voucherRateToUsd: payment.rateToUsd,
-            voucherAmountUsd: convertToUsd(unallocated, payment.rateToUsd, payment.currency),
-            localCurrency: company.localCurrency,
-            rateLocalPerUsd: payment.rateLocalPerUsd,
-            partyLabel: vendor.vendorName,
-          });
-          return [
-            {
-              accountKey: ACCOUNT_KEYS.SUPPLIER_ADVANCES,
-              direction: 'DEBIT' as const,
-              currency: advance.currency,
-              amount: advance.amount,
-              rateToUsd: advance.rateToUsd,
-              description: `Advance to ${vendor.vendorName}, not yet applied to a contract`,
-              vendorId: payment.vendorId,
-              shipmentId: payment.shipmentId,
-            },
-          ];
-        })()
-      : [];
-
-    const debitLines = [...settlementLines, ...advanceLines];
-
-    await postJournalEntry(tx, {
-      companyId: params.companyId,
-      entryDate: payment.paymentDate,
-      description: `Payment ${payment.paymentNumber} — ${payment.vendor?.vendorName ?? 'accrued cost'}`,
-      sourceType: 'PAYMENT',
-      sourceId: payment.id,
-      createdById: params.userId,
+    // In the supplier's ledger currency, at the document's own rate — the
+    // same statement the accrual made when the bill was booked.
+    const leg = resolveSubledgerLeg({
+      partyCurrency: payment.vendor.primaryCurrency,
+      voucherCurrency: document.currency,
+      voucherAmount: toMoney(allocation.amount),
+      voucherRateToUsd: document.rateToUsd,
+      voucherAmountUsd: bookedUsd,
       localCurrency: company.localCurrency,
-      rateLocalPerUsd: payment.rateLocalPerUsd,
-      lines: [
-        // Anything not put against a contract is an advance the supplier owes
-        // back in goods, so it is an asset rather than a reduction of payables.
-        ...debitLines,
-        payment.paymentMethod === 'CHEQUE'
-          ? {
-              accountKey: ACCOUNT_KEYS.CHEQUES_ISSUED,
-              direction: 'CREDIT' as const,
-              currency: payment.currency,
-              amount: payment.amount,
-              rateToUsd: payment.rateToUsd,
-              description: 'Cheque issued, not yet cleared',
-              vendorId: payment.vendorId,
-              shipmentId: payment.shipmentId,
-            }
-          : {
-              cashBankAccountId: payment.cashBankAccountId!,
-              direction: 'CREDIT' as const,
-              currency: payment.currency,
-              amount: payment.amount,
-              rateToUsd: payment.rateToUsd,
-              description: `Paid from ${payment.cashBankAccount?.name ?? 'cash/bank'}`,
-              vendorId: payment.vendorId,
-              shipmentId: payment.shipmentId,
-            },
-      ],
+      rateLocalPerUsd: document.rateLocalPerUsd,
+      partyLabel: payment.vendor.vendorName,
     });
-
-    const posted = await tx.payment.update({
-      where: { id: payment.id },
-      data: { status: 'POSTED', postedAt: new Date() },
-    });
-
-    await writeAudit(tx, {
-      companyId: params.companyId,
-      userId: params.userId,
-      action: 'PAYMENT_POSTED',
-      entityType: 'Payment',
-      entityId: payment.id,
-      before: { status: 'DRAFT' },
-      after: { status: 'POSTED', amount: payment.amount, currency: payment.currency, amountUsd: payment.amountUsd },
-    });
-
-    return posted;
+    return {
+      accountKey: ACCOUNT_KEYS.ACCOUNTS_PAYABLE,
+      direction: 'DEBIT' as const,
+      currency: leg.currency,
+      amount: leg.amount,
+      rateToUsd: leg.rateToUsd,
+      bookedUsd,
+      bookedLocal,
+      description: `Settles ${label}`,
+      vendorId: payment.vendorId,
+      shipmentId: payment.shipmentId,
+      purchaseContractId: allocation.purchaseContractId ?? null,
+    };
   });
+
+  // Anything not put against a document is an advance the supplier owes
+  // back in goods — an asset, not a reduction of payables. Measured in the
+  // payment's own currency.
+  const settledInVoucher = toMoney(
+    sum(
+      payment.allocations.map((allocation) => {
+        const document = allocation.purchaseContract ?? allocation.expense!;
+        return document.currency === payment.currency
+          ? dec(allocation.amount)
+          : convertFromUsd(allocation.amountUsd, payment.rateToUsd, payment.currency);
+      }),
+    ),
+  );
+  const unallocated = toMoney(dec(payment.amount).minus(settledInVoucher));
+  const hasAdvance = unallocated.greaterThan('0.005');
+
+  // An advance is money a supplier owes back in goods. With no supplier
+  // there is nobody to owe it, so a payment to nobody must be fully allocated.
+  if (hasAdvance && !payment.vendor) {
+    throw new BusinessRuleError(
+      `${payment.currency} ${unallocated.toFixed(2)} of this payment is not put against a cost. A payment with no supplier has to be allocated in full.`,
+    );
+  }
+
+  const advanceLines = hasAdvance && payment.vendor
+    ? (() => {
+        const vendor = payment.vendor;
+        const advance = resolveSubledgerLeg({
+          partyCurrency: vendor.primaryCurrency,
+          voucherCurrency: payment.currency,
+          voucherAmount: unallocated,
+          voucherRateToUsd: payment.rateToUsd,
+          voucherAmountUsd: convertToUsd(unallocated, payment.rateToUsd, payment.currency),
+          localCurrency: company.localCurrency,
+          rateLocalPerUsd: payment.rateLocalPerUsd,
+          partyLabel: vendor.vendorName,
+        });
+        return [
+          {
+            accountKey: ACCOUNT_KEYS.SUPPLIER_ADVANCES,
+            direction: 'DEBIT' as const,
+            currency: advance.currency,
+            amount: advance.amount,
+            rateToUsd: advance.rateToUsd,
+            description: `Advance to ${vendor.vendorName}, not yet applied to a contract`,
+            vendorId: payment.vendorId,
+            shipmentId: payment.shipmentId,
+          },
+        ];
+      })()
+    : [];
+
+  const debitLines = [...settlementLines, ...advanceLines];
+
+  await postJournalEntry(tx, {
+    companyId: params.companyId,
+    entryDate: payment.paymentDate,
+    description: `Payment ${payment.paymentNumber} — ${payment.vendor?.vendorName ?? 'accrued cost'}`,
+    sourceType: 'PAYMENT',
+    sourceId: payment.id,
+    createdById: params.userId,
+    localCurrency: company.localCurrency,
+    rateLocalPerUsd: payment.rateLocalPerUsd,
+    lines: [
+      // Anything not put against a contract is an advance the supplier owes
+      // back in goods, so it is an asset rather than a reduction of payables.
+      ...debitLines,
+      payment.paymentMethod === 'CHEQUE'
+        ? {
+            accountKey: ACCOUNT_KEYS.CHEQUES_ISSUED,
+            direction: 'CREDIT' as const,
+            currency: payment.currency,
+            amount: payment.amount,
+            rateToUsd: payment.rateToUsd,
+            description: 'Cheque issued, not yet cleared',
+            vendorId: payment.vendorId,
+            shipmentId: payment.shipmentId,
+          }
+        : {
+            cashBankAccountId: payment.cashBankAccountId!,
+            direction: 'CREDIT' as const,
+            currency: payment.currency,
+            amount: payment.amount,
+            rateToUsd: payment.rateToUsd,
+            description: `Paid from ${payment.cashBankAccount?.name ?? 'cash/bank'}`,
+            vendorId: payment.vendorId,
+            shipmentId: payment.shipmentId,
+          },
+    ],
+  });
+
+  const posted = await tx.payment.update({
+    where: { id: payment.id },
+    data: { status: 'POSTED', postedAt: new Date() },
+  });
+
+  await writeAudit(tx, {
+    companyId: params.companyId,
+    userId: params.userId,
+    action: 'PAYMENT_POSTED',
+    entityType: 'Payment',
+    entityId: payment.id,
+    before: { status: 'DRAFT' },
+    after: { status: 'POSTED', amount: payment.amount, currency: payment.currency, amountUsd: payment.amountUsd },
+  });
+
+  return posted;
 }
 
 export async function reversePayment(params: { id: string; companyId: string; userId: string; reason: string }) {
