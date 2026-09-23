@@ -309,6 +309,39 @@ test('setting the two balances against each other is asked for, never automatic'
   console.log('  offset: nothing to settle, and nothing settled on its own');
 });
 
+test('the ledger list shows him once, and opens to the accounts behind him', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/ledgers', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+
+  // Simple is what opens: one row for the man, not one per account.
+  await page.getByLabel('Search ledgers').fill(AGENT.split(' ')[0]);
+  const rows = page.getByTestId('ledger-entry');
+  await expect(rows).toHaveCount(1, { timeout: 20_000 });
+  const row = rows.first();
+  await expect(row).toContainText(AGENT);
+
+  // What he owes and what FID owes him, said in words.
+  const summary = (await row.getByTestId('ledger-party-summary').innerText()).replace(/\s+/g, ' ');
+  expect(summary).toMatch(new RegExp(`${AGENT.split(' ')[0]} owes FID: MAD [\\d,]+\\.\\d{2}`, 'i'));
+  expect(summary).toMatch(/FID owes .*: MAD [\d,]+\.\d{2}/i);
+  expect(summary).toMatch(/Net position: MAD [\d,]+\.\d{2} (receivable|payable)/i);
+  console.log('  ledger list:', summary);
+
+  // The accounts are underneath him, not beside him.
+  await row.getByTestId('ledger-expand').click();
+  const children = page.getByTestId('ledger-children');
+  await expect(children).toBeVisible({ timeout: 10_000 });
+  await expect(children).toContainText(new RegExp(`Loan from ${AGENT.split(' ')[0]}`, 'i'));
+  await expect(children).toContainText(/each still its own account in the books/i);
+
+  // The accountant's view lists those accounts on their own, as the books hold them.
+  await page.getByTestId('ledger-view-accounting').click();
+  await page.getByLabel('Search ledgers').fill(`Loan from ${AGENT.split(' ')[0]}`);
+  await expect(page.getByTestId('ledger-entry').first()).toContainText(/Loan from/i, { timeout: 10_000 });
+  console.log('  accounting view: the loan account is listed on its own');
+});
+
 test('the cash ledger prints six columns that fit the sheet, with the memo on it', async ({ page }) => {
   await signIn(page);
   await page.goto('/reports/cash-book', { waitUntil: 'domcontentloaded' });

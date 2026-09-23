@@ -36,13 +36,16 @@ export default async function LedgersPage({ searchParams }: { searchParams: Prom
     href: e.href,
     keywords: e.keywords,
     elsewhere: e.elsewhere,
+    summary: e.summary,
+    advancedOnly: e.advancedOnly,
+    children: e.children?.map(toRow),
   });
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="General Ledgers"
-        description="Every account that is not a customer or a supplier: cash, banks, agents, loans, capital, income and expenses. Search and open any of them."
+        description="Everything that is not a customer or a supplier: the people you deal with, cash, banks, loans, capital, income and expenses. One row for each of them — a person with several accounts opens to show them underneath."
         breadcrumbs={[{ label: 'Accounting' }, { label: 'General Ledgers' }]}
         actions={
           <div className="flex flex-wrap gap-2 text-xs">

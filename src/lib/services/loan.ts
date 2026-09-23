@@ -131,7 +131,7 @@ export async function findOrCreateLoanAccount(
  */
 export async function findOrCreateAgentLoanAccount(
   tx: Tx,
-  params: { companyId: string; userId: string; agentName: string; side: 'FROM' | 'TO' },
+  params: { companyId: string; userId: string; agentName: string; side: 'FROM' | 'TO'; agentId?: string | null },
 ) {
   const name = `${params.side === 'FROM' ? 'Loan from' : 'Loan to'} ${params.agentName.trim()}`;
   const type = params.side === 'FROM' ? 'LIABILITY' : 'ASSET';
@@ -140,6 +140,10 @@ export async function findOrCreateAgentLoanAccount(
   });
   if (existing) {
     if (existing.status !== 'ACTIVE') throw new BusinessRuleError(`${existing.name} is inactive. Reactivate it in the chart of accounts.`);
+    // An account opened before accounts knew whose they were still gets told.
+    if (params.agentId && !existing.agentId) {
+      return tx.account.update({ where: { id: existing.id }, data: { agentId: params.agentId } });
+    }
     return existing;
   }
   const created = await tx.account.create({
@@ -152,6 +156,8 @@ export async function findOrCreateAgentLoanAccount(
       currency: null,
       isSystem: false,
       subledgerType: 'NONE',
+      // Whose account this is, so the ledger list can show him once.
+      agentId: params.agentId ?? null,
     },
   });
   await writeAudit(tx, {
@@ -273,6 +279,7 @@ export async function postLoan(input: LoanInput) {
           companyId: input.companyId,
           userId: input.userId,
           agentName: agent.agentName,
+          agentId: agent.id,
           // Money the agent lent us, or we repay them: "Loan from"; money we
           // lent them, or they repay us: "Loan to".
           side: input.direction === 'RECEIVED' || input.direction === 'REPAID' ? 'FROM' : 'TO',

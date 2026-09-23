@@ -626,6 +626,7 @@ export async function offsetAgentBalances(input: {
       companyId: input.companyId,
       userId: input.userId,
       agentName: agent.agentName,
+      agentId: agent.id,
       side: 'FROM',
     });
 

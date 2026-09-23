@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Search, X } from 'lucide-react';
+import { ChevronRight, Search, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,12 @@ export type LedgerSearchRow = {
   keywords: string;
   /** A customer or supplier: its ledger is the dedicated one, not this list. */
   elsewhere?: boolean;
+  /** The accounts that belong to this one party, read underneath it. */
+  children?: LedgerSearchRow[];
+  /** "Radouan owes FID: MAD 46,000" — said in words, not in debits. */
+  summary?: Array<{ label: string; value: string }>;
+  /** An account that belongs to a party row, so it is only listed on its own in the accountant's view. */
+  advancedOnly?: boolean;
 };
 
 const KINDS: Array<LedgerSearchRow['kind'] | 'All'> = ['All', 'Cash', 'Bank', 'Agent', 'Loan', 'Account'];
@@ -40,7 +46,9 @@ const TONES: Record<LedgerSearchRow['kind'], 'info' | 'success' | 'progress' | '
 
 /** Loose matching: "ideal commodities" finds "Ideal commodities uganda". */
 function matches(row: LedgerSearchRow, query: string) {
-  const hay = `${row.name} ${row.kind} ${row.detail} ${row.keywords} ${row.currency}`.toLowerCase();
+  const own = `${row.name} ${row.kind} ${row.detail} ${row.keywords} ${row.currency}`;
+  const under = (row.children ?? []).map((c) => `${c.name} ${c.detail} ${c.keywords}`).join(' ');
+  const hay = `${own} ${under}`.toLowerCase();
   return query
     .toLowerCase()
     .split(/\s+/)
@@ -48,11 +56,22 @@ function matches(row: LedgerSearchRow, query: string) {
     .every((word) => hay.includes(word));
 }
 
+/**
+ * The list of ledgers, read the way the business thinks about them.
+ *
+ * Simple is what the client opens: one row for each real thing — a person,
+ * a drawer of cash, a bank, an expense — with a person's several accounts
+ * folded underneath his name. Advanced is the same list with every ledger
+ * account standing on its own, which is what an accountant wants and what
+ * this screen used to show everybody.
+ */
 export function LedgerSearch({ rows, initialQuery }: { rows: LedgerSearchRow[]; initialQuery: string }) {
   const [query, setQuery] = React.useState(initialQuery);
   const [kind, setKind] = React.useState<(typeof KINDS)[number]>('All');
+  const [advanced, setAdvanced] = React.useState(false);
+  const [open, setOpen] = React.useState<Record<string, boolean>>({});
 
-  const general = rows.filter((r) => !r.elsewhere);
+  const general = rows.filter((r) => !r.elsewhere && (advanced || !r.advancedOnly));
   const shown = general.filter((r) => (kind === 'All' || r.kind === kind) && (!query.trim() || matches(r, query)));
   // A customer or supplier typed here is pointed at its own ledger.
   const redirected = query.trim() ? rows.filter((r) => r.elsewhere && matches(r, query)).slice(0, 8) : [];
@@ -69,7 +88,7 @@ export function LedgerSearch({ rows, initialQuery }: { rows: LedgerSearchRow[]; 
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search: cash, bank, an agent, loan, fuel, rent…"
+            placeholder="Search: a name, cash, bank, loan, fuel, rent…"
             aria-label="Search ledgers"
             className="pl-9 pr-9"
           />
@@ -95,7 +114,34 @@ export function LedgerSearch({ rows, initialQuery }: { rows: LedgerSearchRow[]; 
             </button>
           ))}
         </div>
+        <div className="ml-auto flex gap-1 rounded-lg border border-line p-0.5" role="group" aria-label="How much detail">
+          {[
+            { value: false, label: 'Simple' },
+            { value: true, label: 'Accounting' },
+          ].map((mode) => (
+            <button
+              key={mode.label}
+              type="button"
+              onClick={() => setAdvanced(mode.value)}
+              aria-pressed={advanced === mode.value}
+              data-testid={`ledger-view-${mode.label.toLowerCase()}`}
+              className={cn(
+                'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                advanced === mode.value ? 'bg-white text-ink shadow-sm' : 'text-ink-muted hover:text-ink',
+              )}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {advanced ? (
+        <p className="text-xs text-ink-subtle">
+          Every ledger account on its own, in its own classification — including the ones opened in a person&rsquo;s
+          name. Simple shows each person once instead.
+        </p>
+      ) : null}
 
       {redirected.length > 0 ? (
         <Card className="space-y-1 px-4 py-3" data-testid="ledger-elsewhere">
@@ -123,30 +169,79 @@ export function LedgerSearch({ rows, initialQuery }: { rows: LedgerSearchRow[]; 
         )
       ) : (
         <Card className="divide-y divide-line overflow-hidden p-0">
-          {limit.map((row) => (
-            <div key={row.key} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-surface-sunken/40" data-testid="ledger-entry">
-              <div className="min-w-0">
-                <Link href={row.href} className="font-medium text-ink hover:text-gold-700 hover:underline">
-                  {row.name}
-                </Link>
-                <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
-                  <Badge tone={TONES[row.kind]}>{row.kind}</Badge>
-                  {row.detail ? <span>{row.detail}</span> : null}
-                  <span>{row.currency}</span>
-                </p>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="text-right">
-                  <p className="tnum text-sm font-semibold text-ink">{row.balanceLabel}</p>
-                  <p className="text-[11px] text-ink-subtle">{row.balanceMeaning}</p>
-                  {row.usdLabel ? <p className="tnum text-[11px] text-ink-subtle">USD Eq. {row.usdLabel.replace(/^USD\s*/, '')}</p> : null}
+          {limit.map((row) => {
+            const expandable = !advanced && (row.children?.length ?? 0) > 0;
+            const isOpen = Boolean(open[row.key]);
+            return (
+              <div key={row.key} data-testid="ledger-entry">
+                <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-surface-sunken/40">
+                  <div className="flex min-w-0 items-start gap-2">
+                    {expandable ? (
+                      <button
+                        type="button"
+                        onClick={() => setOpen((prev) => ({ ...prev, [row.key]: !prev[row.key] }))}
+                        aria-expanded={isOpen}
+                        aria-label={`${isOpen ? 'Hide' : 'Show'} the accounts behind ${row.name}`}
+                        data-testid="ledger-expand"
+                        className="mt-0.5 rounded p-0.5 text-ink-subtle hover:text-ink"
+                      >
+                        <ChevronRight className={cn('size-4 transition-transform', isOpen && 'rotate-90')} />
+                      </button>
+                    ) : (
+                      <span className="w-5" aria-hidden />
+                    )}
+                    <div className="min-w-0">
+                      <Link href={row.href} className="font-medium text-ink hover:text-gold-700 hover:underline">
+                        {row.name}
+                      </Link>
+                      <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
+                        <Badge tone={TONES[row.kind]}>{row.kind}</Badge>
+                        {row.detail ? <span>{row.detail}</span> : null}
+                        <span>{row.currency}</span>
+                      </p>
+                      {row.summary ? (
+                        <p className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs" data-testid="ledger-party-summary">
+                          {row.summary.map((line) => (
+                            <span key={line.label} className="text-ink-muted">
+                              {line.label}: <span className="tnum font-medium text-ink">{line.value}</span>
+                            </span>
+                          ))}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="tnum text-sm font-semibold text-ink">{row.balanceLabel}</p>
+                      <p className="text-[11px] text-ink-subtle">{row.balanceMeaning}</p>
+                      {row.usdLabel ? <p className="tnum text-[11px] text-ink-subtle">USD Eq. {row.usdLabel.replace(/^USD\s*/, '')}</p> : null}
+                    </div>
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={row.href}>Open ledger</Link>
+                    </Button>
+                  </div>
                 </div>
-                <Button asChild variant="outline" size="sm">
-                  <Link href={row.href}>Open ledger</Link>
-                </Button>
+
+                {expandable && isOpen ? (
+                  <div className="space-y-1 border-t border-line bg-surface-sunken/40 px-4 py-3" data-testid="ledger-children">
+                    <p className="text-[11px] uppercase tracking-wide text-ink-subtle">
+                      The accounts behind {row.name} — each still its own account in the books
+                    </p>
+                    {row.children?.map((child) => (
+                      <div key={child.key} className="flex flex-wrap items-center justify-between gap-2 py-1">
+                        <Link href={child.href} className="text-sm text-forest-800 hover:text-gold-700 hover:underline">
+                          {child.name}
+                        </Link>
+                        <span className="tnum text-xs text-ink-muted">
+                          {child.balanceLabel} {child.balanceMeaning}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </Card>
       )}
       {!query.trim() && ordered.length > limit.length ? (

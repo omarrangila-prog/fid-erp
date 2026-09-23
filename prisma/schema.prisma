@@ -636,6 +636,9 @@ model Agent {
   journalLines    JournalLine[]
   receipts        Receipt[]
   customers       Customer[]
+  /// The ledger accounts opened in this person's name — his loans, his
+  /// current account — so one party can be shown once with them underneath.
+  accounts        Account[]
   settlements     AgentSettlement[]
   /// Commission and other costs owed to this agent but not yet paid.
   payableExpenses Expense[]         @relation("ExpensePayableToAgent")
@@ -826,12 +829,20 @@ model Account {
   isSystem      Boolean       @default(false)
   parentId      String?
   status        RecordStatus  @default(ACTIVE)
+  /// The one real person or company this account is about, where it is about
+  /// one — "Loan from RADOUAN MOHAMMED" is his account, not a general one.
+  ///
+  /// It is how the ledger list shows him once instead of four times. Grouping
+  /// by the words in the name would break the day somebody fixes a spelling,
+  /// and would put two people with the same surname together.
+  agentId       String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
   company           Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   parent            Account?          @relation("AccountParent", fields: [parentId], references: [id], onDelete: SetNull)
   children          Account[]         @relation("AccountParent")
+  agent             Agent?            @relation(fields: [agentId], references: [id], onDelete: SetNull)
   journalLines      JournalLine[]
   cashBankAccounts  CashBankAccount[]
   expenseCategories ExpenseCategory[]
@@ -839,6 +850,7 @@ model Account {
   @@unique([companyId, code])
   @@unique([companyId, systemKey])
   @@index([companyId, type])
+  @@index([agentId])
   @@map("accounts")
 }
 

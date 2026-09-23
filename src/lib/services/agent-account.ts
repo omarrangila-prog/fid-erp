@@ -375,7 +375,19 @@ export async function getAgentSummaries(companyId: string): Promise<
       journal_lines jl
       JOIN journal_entries je ON je."id" = jl."journalEntryId" AND ${LIVE_ENTRY_TEXT}
       JOIN accounts acc ON acc."id" = jl."accountId"
-    ) ON (jl."agentId" = a."id" OR jl."customerId" IN (SELECT cu."id" FROM customers cu WHERE cu."agentId" = a."id"))
+    ) ON (
+      -- The same two rules as the ledger itself, so this summary and his page
+      -- can never disagree: the company's own cash is not his balance, and a
+      -- sale to him puts what he owes on his page, not the company's revenue.
+      jl."cashBankAccountId" IS NULL
+      AND (
+        jl."agentId" = a."id"
+        OR (
+          acc."systemKey" = 'ACCOUNTS_RECEIVABLE'
+          AND jl."customerId" IN (SELECT cu."id" FROM customers cu WHERE cu."agentId" = a."id")
+        )
+      )
+    )
     WHERE a."companyId" = $1 AND a."status" = 'ACTIVE'
     GROUP BY a."id", a."agentName", bucket
     ORDER BY a."agentName"
