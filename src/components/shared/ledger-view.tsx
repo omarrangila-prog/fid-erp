@@ -36,6 +36,7 @@ export function LedgerView({
   localCurrency,
   emptyDescription,
   documentHeader = 'Invoice',
+  canDelete = false,
 }: {
   documentHeader?: string;
   ledger: LedgerResult;
@@ -44,6 +45,8 @@ export function LedgerView({
   partyCurrency: string;
   localCurrency: string;
   emptyDescription: string;
+  /** Whether a posting on this ledger can be taken back out of the books here. */
+  canDelete?: boolean;
 }) {
   const currencies = ledgerCurrencyTabs(localCurrency, partyCurrency);
   const selected = ledger.currencyFilter ?? ledger.viewCurrency;
@@ -166,6 +169,8 @@ export function LedgerView({
                         sourceType={row.sourceType}
                         sourceId={row.sourceId}
                         entryNumber={row.entryNumber}
+                        journalEntryId={row.journalEntryId}
+                        canDelete={canDelete}
                       />
                     </TD>
                   </TR>

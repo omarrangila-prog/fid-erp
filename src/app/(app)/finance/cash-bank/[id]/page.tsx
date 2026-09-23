@@ -148,6 +148,8 @@ export default async function CashBookPage({ params }: { params: Promise<{ id: s
                           sourceType={row.sourceType}
                           sourceId={row.sourceId}
                           entryNumber={row.entryNumber}
+                          journalEntryId={row.entryId}
+                          canDelete={can(user, PERMISSIONS.ACCOUNTING_POST)}
                         />
                       </TD>
                     </TR>

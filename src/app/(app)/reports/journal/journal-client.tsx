@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { RowActions, viewAction } from '@/components/shared/row-actions';
 import { journalSourceEditHref, journalSourceHref } from '@/lib/journal-source';
+import { deletePostedEntryAction } from '@/server/actions/finance-actions';
 
 /**
  * Every posted voucher, one to a row, with its lines underneath.
@@ -55,9 +56,12 @@ export type JournalEntryRow = {
 export function JournalClient({
   rows,
   localCurrency,
+  canDelete = false,
 }: {
   rows: JournalEntryRow[];
   localCurrency: string;
+  /** Taking a posting back out of the books is a posting of its own. */
+  canDelete?: boolean;
 }) {
   const columns: DataColumn<JournalEntryRow>[] = [
     {
@@ -184,6 +188,22 @@ export function JournalClient({
               },
               { label: 'Print', href: '#', icon: Printer, onSelect: () => window.print(), overflowOnly: true },
             ]}
+            /*
+             * Any posted entry can be taken back out of the books from here,
+             * whatever kind of document wrote it. A reversal is not itself
+             * deletable: undoing it would put back what it took out.
+             */
+            destructive={
+              canDelete && !r.isReversal
+                ? {
+                    status: 'POSTED',
+                    noun: r.sourceTypeLabel.toLowerCase(),
+                    description:
+                      'The entry is mirrored, and both it and the reversal stay in the journal so the correction can be traced. It disappears from every ledger, report and total.',
+                    run: (reason) => deletePostedEntryAction(r.id, reason ?? ''),
+                  }
+                : undefined
+            }
           />
         );
       },

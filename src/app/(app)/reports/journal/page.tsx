@@ -113,6 +113,7 @@ export default async function JournalPage({
           };
         })}
         localCurrency={local}
+        canDelete={can(user, PERMISSIONS.ACCOUNTING_POST)}
       />
     </div>
   );

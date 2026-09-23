@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { requirePageAccess } from '@/lib/auth/guards';
+import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getGeneralLedger, getGeneralLedgerByAccount } from '@/lib/services/reports';
@@ -363,6 +363,8 @@ export default async function GeneralLedgerPage({
                             sourceType={row.sourceType}
                             sourceId={row.sourceId}
                             entryNumber={row.entryNumber}
+                            journalEntryId={row.entryId}
+                            canDelete={can(user, PERMISSIONS.ACCOUNTING_POST)}
                           />
                         </TD>
                       </TR>

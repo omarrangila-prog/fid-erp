@@ -137,6 +137,7 @@ export default async function CustomerLedgerPage({
         partyCurrency={customer.primaryCurrency}
         localCurrency={user.activeCompany.localCurrency}
         emptyDescription="Post a sales invoice or a receipt to open this customer's ledger."
+        canDelete={can(user, PERMISSIONS.ACCOUNTING_POST)}
       />
     </div>
   );

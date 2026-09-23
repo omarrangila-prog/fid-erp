@@ -315,6 +315,8 @@ export default async function AgentLedgerPage({
                             sourceType={row.sourceType}
                             sourceId={row.sourceId}
                             entryNumber={row.entryNumber}
+                            journalEntryId={row.journalEntryId}
+                            canDelete={can(user, PERMISSIONS.ACCOUNTING_POST)}
                           />
                         </TD>
                       </TR>

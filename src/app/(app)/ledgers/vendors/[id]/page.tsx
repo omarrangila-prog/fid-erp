@@ -131,6 +131,7 @@ export default async function VendorLedgerPage({
         partyCurrency={vendor.primaryCurrency}
         localCurrency={user.activeCompany.localCurrency}
         emptyDescription="Approve a purchase contract or post a payment to open this supplier's ledger."
+        canDelete={can(user, PERMISSIONS.ACCOUNTING_POST)}
       />
     </div>
   );

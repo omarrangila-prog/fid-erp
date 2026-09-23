@@ -38,6 +38,7 @@ import {
   offsetAgentBalances,
 } from '@/lib/services/agent-ledger';
 import { postRevaluation } from '@/lib/services/revaluation';
+import { deletePostedEntry } from '@/lib/services/document-lifecycle';
 import { postJournalEntry } from '@/lib/services/accounting';
 import { postCashBankTransfer, postIntercompanyLoan } from '@/lib/services/cash-transfer';
 import { postLoan } from '@/lib/services/loan';
@@ -523,6 +524,30 @@ export async function changeChequeStatusAction(chequeId: string, payload: string
 // ---------------------------------------------------------------------------
 // Manual journal voucher
 // ---------------------------------------------------------------------------
+
+/**
+ * Delete any posted entry, from wherever it is being read.
+ *
+ * The journal, a ledger, the cash book: a row that is in the books can be
+ * taken back out of them from the screen it is on, whatever kind of document
+ * put it there. A loan, a transfer between the company's own accounts, a
+ * revaluation, an agent's settlement and a hand-raised voucher had no way to
+ * be deleted at all before this.
+ */
+export async function deletePostedEntryAction(entryId: string, reason: string): Promise<ActionResult<undefined>> {
+  try {
+    const user = await requirePermission(PERMISSIONS.ACCOUNTING_POST);
+    await deletePostedEntry({ companyId: user.activeCompany.id, userId: user.id, entryId, reason });
+    revalidateAll([...paths.journals, ...paths.receipts, ...paths.payments, ...paths.expenses]);
+    revalidatePath('/agents');
+    revalidatePath('/ledgers');
+    revalidatePath('/sales');
+    revalidatePath('/purchases');
+    return { ok: true, data: undefined };
+  } catch (error) {
+    return fail(error);
+  }
+}
 
 export async function postJournalVoucherAction(payload: string): Promise<DocFormState> {
   try {
