@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import type { PoolConfig } from 'pg';
@@ -233,6 +234,15 @@ export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
 export type Tx = Parameters<Parameters<PrismaClient['$transaction']>[0]>[0];
 
 /**
+ * The transaction this piece of work is already running inside, if any.
+ *
+ * Async-local rather than a parameter threaded through every service, so a
+ * service can be called on its own or as part of a larger posting without
+ * two versions of it existing.
+ */
+const openTransaction = new AsyncLocalStorage<Tx>();
+
+/**
  * A hosted database adds a network round-trip to every statement inside a
  * transaction, so the ceiling that is generous on localhost can be tight from
  * another continent. Raise DATABASE_TRANSACTION_TIMEOUT_MS if posting starts
@@ -298,11 +308,33 @@ export async function transaction<T>(
   fn: (tx: Tx) => Promise<T>,
   timeoutMs = DEFAULT_TRANSACTION_TIMEOUT_MS,
 ): Promise<T> {
+  /*
+   * Already inside one? Then this is part of it, not a second one.
+   *
+   * A service that opens a transaction and calls another service that does
+   * the same used to ask the pool for a second connection while holding the
+   * only one it has. Behind a pooler that pool is one connection deep, so the
+   * inner call waited for a connection its own caller was holding, and waited
+   * until it was told it could not start. Every attempt to save a cost died
+   * this way — not under load, but every single time, because the save takes
+   * an idempotency key inside one transaction and writes the cost inside
+   * another.
+   *
+   * Joining instead is also the more honest reading of what the code means:
+   * an expense and the key that stops it being written twice belong in one
+   * transaction, and either both land or neither does.
+   */
+  const open = openTransaction.getStore();
+  if (open) return fn(open);
+
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
     try {
-      return await prisma.$transaction(fn, { timeout: timeoutMs, maxWait: DEFAULT_TRANSACTION_MAX_WAIT_MS });
+      return await prisma.$transaction((tx) => openTransaction.run(tx, () => fn(tx)), {
+        timeout: timeoutMs,
+        maxWait: DEFAULT_TRANSACTION_MAX_WAIT_MS,
+      });
     } catch (error) {
       lastError = error;
       if (!neverStarted(error) || attempt === RETRY_DELAYS_MS.length) break;
