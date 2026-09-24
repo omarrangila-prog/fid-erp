@@ -165,7 +165,16 @@ export type Tx = Parameters<Parameters<PrismaClient['$transaction']>[0]>[0];
  * another continent. Raise DATABASE_TRANSACTION_TIMEOUT_MS if posting starts
  * timing out; the right answer is usually a database closer to the server.
  */
-const DEFAULT_TRANSACTION_TIMEOUT_MS = Number(process.env.DATABASE_TRANSACTION_TIMEOUT_MS ?? 20_000);
+const DEFAULT_TRANSACTION_TIMEOUT_MS = Number(process.env.DATABASE_TRANSACTION_TIMEOUT_MS ?? 60_000);
+
+/**
+ * How long to wait for a free connection before giving up.
+ *
+ * Under a connection pooler a burst of requests can leave a transaction
+ * queueing for a slot, and failing after ten seconds of queueing tells the
+ * user their cost was not saved when nothing was ever wrong with it.
+ */
+const DEFAULT_TRANSACTION_MAX_WAIT_MS = Number(process.env.DATABASE_TRANSACTION_MAX_WAIT_MS ?? 20_000);
 
 /**
  * Runs `fn` inside a database transaction. Serializable-adjacent defaults are
@@ -177,5 +186,5 @@ export function transaction<T>(
   fn: (tx: Tx) => Promise<T>,
   timeoutMs = DEFAULT_TRANSACTION_TIMEOUT_MS,
 ): Promise<T> {
-  return prisma.$transaction(fn, { timeout: timeoutMs, maxWait: 10_000 });
+  return prisma.$transaction(fn, { timeout: timeoutMs, maxWait: DEFAULT_TRANSACTION_MAX_WAIT_MS });
 }

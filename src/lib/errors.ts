@@ -209,12 +209,28 @@ export function translateDatabaseError(error: unknown): AppError | null {
       );
     case 'P2025':
       return new NotFoundError('Record');
-    case 'P2028':
+    case 'P2028': {
+      /*
+       * Two different faults arrive under this one code — the work ran past
+       * the ceiling, or it never got a database connection to start on — and
+       * they call for opposite remedies. The user is told the same plain
+       * thing either way, but the server keeps the distinction, because the
+       * first time this happened on the client's books nobody could tell
+       * which of the two it had been.
+       */
+      const detail = typeof candidate.message === 'string' ? candidate.message : '';
+      const queueing = /unable to start a transaction|connection/i.test(detail);
+      console.error(
+        `[transaction] ${queueing ? 'could not start' : 'ran past the ceiling'}: ${detail.replace(/\s+/g, ' ').slice(0, 400)}`,
+      );
       return new AppError(
-        'The operation took too long and was rolled back; nothing was saved. Please try again.',
+        queueing
+          ? 'The database was busy and the entry was not saved. Nothing was changed — please try again in a moment.'
+          : 'The operation took too long and was rolled back; nothing was saved. Please try again.',
         'TRANSACTION_TIMEOUT',
         503,
       );
+    }
     default:
       return translateConnectionError(candidate);
   }

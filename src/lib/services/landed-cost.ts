@@ -341,6 +341,16 @@ async function restateSoldCost(
   const invoiceTotals = new Map<string, Decimal>();
   const creditTotals = new Map<string, Decimal>();
 
+  /*
+   * Every line at once, and every document at once.
+   *
+   * These used to run a statement per invoice line and then a read and a
+   * write per invoice. A cost spread over eight sold lines was twenty-four
+   * round trips, and with the database on another continent that alone is
+   * most of a transaction's life. Restating a cost is arithmetic the database
+   * can do in one pass, so it does.
+   */
+  const lineCosts: Array<[string, string, string | null]> = [];
   for (let i = 0; i < invoiceLines.length; i += 1) {
     const line = invoiceLines[i];
     const share = shares[i];
@@ -348,14 +358,11 @@ async function restateSoldCost(
 
     const quantityKg = dec(line.quantityKg);
     const costTotalUsd = toMoney(dec(line.costTotalUsd).plus(share));
-
-    await tx.salesInvoiceLine.update({
-      where: { id: line.id },
-      data: {
-        costTotalUsd,
-        ...(quantityKg.greaterThan(0) ? { unitCostUsd: toUnitCost(costTotalUsd.dividedBy(quantityKg)) } : {}),
-      },
-    });
+    lineCosts.push([
+      line.id,
+      costTotalUsd.toString(),
+      quantityKg.greaterThan(0) ? toUnitCost(costTotalUsd.dividedBy(quantityKg)).toString() : null,
+    ]);
 
     invoiceTotals.set(
       line.salesInvoiceId,
@@ -363,6 +370,7 @@ async function restateSoldCost(
     );
   }
 
+  const creditCosts: Array<[string, string]> = [];
   for (let i = 0; i < creditLines.length; i += 1) {
     const line = creditLines[i];
     // The weight was negated so the basis nets out; the credit note's own cost
@@ -370,34 +378,59 @@ async function restateSoldCost(
     const share = shares[invoiceLines.length + i].negated();
     if (share.isZero()) continue;
 
-    await tx.creditNoteLine.update({
-      where: { id: line.id },
-      data: { costTotalUsd: toMoney(dec(line.costTotalUsd).plus(share)) },
-    });
-
+    creditCosts.push([line.id, toMoney(dec(line.costTotalUsd).plus(share)).toString()]);
     creditTotals.set(line.creditNoteId, (creditTotals.get(line.creditNoteId) ?? new Decimal(0)).plus(share));
   }
 
-  for (const [salesInvoiceId, delta] of invoiceTotals) {
-    const invoice = await tx.salesInvoice.findUniqueOrThrow({
-      where: { id: salesInvoiceId },
-      select: { costOfGoodsUsd: true },
-    });
-    await tx.salesInvoice.update({
-      where: { id: salesInvoiceId },
-      data: { costOfGoodsUsd: toMoney(dec(invoice.costOfGoodsUsd).plus(delta)) },
-    });
+  if (lineCosts.length > 0) {
+    const values = lineCosts
+      .map((_, i) => `($${i * 3 + 1}, $${i * 3 + 2}::numeric, $${i * 3 + 3}::numeric)`)
+      .join(', ');
+    await tx.$executeRawUnsafe(
+      `UPDATE "sales_invoice_lines" AS l
+         SET "costTotalUsd" = v.cost,
+             "unitCostUsd" = COALESCE(v.unit, l."unitCostUsd")
+       FROM (VALUES ${values}) AS v(id, cost, unit)
+       WHERE l."id" = v.id`,
+      ...lineCosts.flat(),
+    );
   }
 
-  for (const [creditNoteId, delta] of creditTotals) {
-    const note = await tx.creditNote.findUniqueOrThrow({
-      where: { id: creditNoteId },
-      select: { costOfGoodsUsd: true },
-    });
-    await tx.creditNote.update({
-      where: { id: creditNoteId },
-      data: { costOfGoodsUsd: toMoney(dec(note.costOfGoodsUsd).plus(delta)) },
-    });
+  if (creditCosts.length > 0) {
+    const values = creditCosts.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2}::numeric)`).join(', ');
+    await tx.$executeRawUnsafe(
+      `UPDATE "credit_note_lines" AS l
+         SET "costTotalUsd" = v.cost
+       FROM (VALUES ${values}) AS v(id, cost)
+       WHERE l."id" = v.id`,
+      ...creditCosts.flat(),
+    );
+  }
+
+  // The document totals move by the difference, added by the database to
+  // whatever is there now — so no read is needed to write them.
+  if (invoiceTotals.size > 0) {
+    const deltas = [...invoiceTotals.entries()].map(([id, delta]) => [id, toMoney(delta).toString()]);
+    const values = deltas.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2}::numeric)`).join(', ');
+    await tx.$executeRawUnsafe(
+      `UPDATE "sales_invoices" AS i
+         SET "costOfGoodsUsd" = i."costOfGoodsUsd" + v.delta, "updatedAt" = now()
+       FROM (VALUES ${values}) AS v(id, delta)
+       WHERE i."id" = v.id`,
+      ...deltas.flat(),
+    );
+  }
+
+  if (creditTotals.size > 0) {
+    const deltas = [...creditTotals.entries()].map(([id, delta]) => [id, toMoney(delta).toString()]);
+    const values = deltas.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2}::numeric)`).join(', ');
+    await tx.$executeRawUnsafe(
+      `UPDATE "credit_notes" AS c
+         SET "costOfGoodsUsd" = c."costOfGoodsUsd" + v.delta, "updatedAt" = now()
+       FROM (VALUES ${values}) AS v(id, delta)
+       WHERE c."id" = v.id`,
+      ...deltas.flat(),
+    );
   }
 }
 

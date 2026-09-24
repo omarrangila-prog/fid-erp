@@ -384,7 +384,105 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
      * which is what this used to force, was to delete the cost and type it
      * again as a new number, and the client has been doing exactly that.
      */
+    /*
+     * Fixing the wording is not re-posting the cost.
+     *
+     * Correcting a posted cost takes the old posting out of the books and
+     * writes a new one, which is right when a figure changed and wasteful
+     * when it did not: the commonest correction by far is a memo or a
+     * reference, and putting the whole shipment's landed cost through two
+     * full cycles for a typo is how a save came to take twenty seconds and
+     * be rolled back on the client.
+     *
+     * So the posting is only rewritten when something the posting depends on
+     * has actually moved. Everything compared here is a value the journal or
+     * the landed cost is computed from.
+     */
+    const ledgerFields = (source: {
+      expenseDate: Date;
+      expenseCategoryId: string;
+      shipmentId: string | null;
+      containerId: string | null;
+      batchId: string | null;
+      vendorId: string | null;
+      payableToAgentId: string | null;
+      agentId: string | null;
+      currency: string;
+      amount: unknown;
+      rateToUsd: unknown;
+      rateLocalPerUsd: unknown;
+      taxCodeId: string | null;
+      cashBankAccountId: string | null;
+      capitaliseToLandedCost: boolean;
+      paymentMethod: string | null;
+    }) =>
+      [
+        source.expenseDate.toISOString().slice(0, 10),
+        source.expenseCategoryId,
+        // The order behind the shipment is derived from it, not typed, so
+        // comparing it would call every re-save a change.
+        source.shipmentId ?? '',
+        source.containerId ?? '',
+        source.batchId ?? '',
+        source.vendorId ?? '',
+        source.payableToAgentId ?? '',
+        source.agentId ?? '',
+        source.currency.toUpperCase(),
+        dec(source.amount as never).toFixed(4),
+        dec(source.rateToUsd as never).toFixed(8),
+        dec(source.rateLocalPerUsd as never).toFixed(8),
+        source.taxCodeId ?? '',
+        source.cashBankAccountId ?? '',
+        String(source.capitaliseToLandedCost),
+        source.paymentMethod ?? '',
+      ].join('|');
+
     const wasPosted = existing.status === 'POSTED';
+    const repost =
+      wasPosted &&
+      ledgerFields(existing) !==
+        ledgerFields({
+          expenseDate: input.expenseDate,
+          expenseCategoryId: input.expenseCategoryId,
+          shipmentId: input.shipmentId ?? null,
+          containerId: input.containerId ?? null,
+          batchId: input.batchId ?? null,
+          vendorId: input.vendorId ?? null,
+          payableToAgentId: input.payableToAgentId ?? null,
+          agentId: input.agentId ?? null,
+          currency: input.currency,
+          amount: input.amount,
+          rateToUsd: input.rateToUsd,
+          rateLocalPerUsd: input.rateLocalPerUsd,
+          taxCodeId: input.taxCodeId ?? null,
+          cashBankAccountId: input.cashBankAccountId ?? null,
+          capitaliseToLandedCost: Boolean(input.capitaliseToLandedCost),
+          paymentMethod: input.paymentMethod ?? null,
+        });
+
+    if (wasPosted && !repost) {
+      // Only the words changed, so only the words are written.
+      const reworded = await tx.expense.update({
+        where: { id },
+        data: {
+          reference: input.reference ?? null,
+          description: input.description ?? null,
+        },
+      });
+
+      await writeAudit(tx, {
+        companyId: input.companyId,
+        userId,
+        action: 'EXPENSE_UPDATED',
+        entityType: 'Expense',
+        entityId: id,
+        before: { description: existing.description, reference: existing.reference },
+        after: { description: reworded.description, reference: reworded.reference, posting: 'unchanged' },
+      });
+
+      return reworded;
+    }
+
     if (wasPosted) {
       const settled = await tx.paymentAllocation.count({
         where: { expenseId: id, payment: { status: 'POSTED' } },
