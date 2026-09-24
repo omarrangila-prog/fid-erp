@@ -63,17 +63,29 @@ function resolveCertificate(value: string | undefined): string | undefined {
  * DATABASE_POOLER_MODE=session to turn this off.
  */
 function preferTransactionPooler(url: URL): URL {
-  if (process.env.DATABASE_POOLER_MODE === 'session') return url;
   const serverless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
   const supabasePooler = /\.pooler\.supabase\.com$/i.test(url.hostname);
-  if (!serverless || !supabasePooler || url.port !== '5432') return url;
+  // A connection string may leave the port out; Postgres reads that as 5432,
+  // and so must this, or the session port goes unnoticed for want of five
+  // characters — which is exactly what happened the first time.
+  const port = url.port || '5432';
 
+  const moving = serverless && supabasePooler && port === '5432' && process.env.DATABASE_POOLER_MODE !== 'session';
   const moved = new URL(url.toString());
-  moved.port = '6543';
+  if (moving) moved.port = '6543';
+
+  /*
+   * Said out loud on every boot, because the last round of this was spent
+   * guessing which connection the deployment had. Host and port only — never
+   * the user, never the password.
+   */
   console.warn(
-    '[database] serverless on the session pooler (5432); using the transaction pooler (6543) instead, ' +
-      'which is what a serverless runtime needs. Set DATABASE_POOLER_MODE=session to keep 5432.',
+    `[database] connecting to ${moved.hostname}:${moved.port || '5432'}` +
+      (moving ? ' — moved off the session pooler (5432), which a serverless runtime exhausts' : '') +
+      (serverless ? ' · serverless' : ' · long-running') +
+      (supabasePooler ? ' · supabase pooler' : ''),
   );
+
   return moved;
 }
 
@@ -206,10 +218,15 @@ const DEFAULT_TRANSACTION_TIMEOUT_MS = Number(process.env.DATABASE_TRANSACTION_T
  * How long to wait for a free connection before giving up.
  *
  * Under a connection pooler a burst of requests can leave a transaction
- * queueing for a slot, and failing after ten seconds of queueing tells the
- * user their cost was not saved when nothing was ever wrong with it.
+ * queueing for a slot, and failing immediately tells the user their cost was
+ * not saved when nothing was ever wrong with it.
+ *
+ * Kept short on purpose. This is waited three times over, and a person
+ * watching a spinner would rather be told in eight seconds that the save did
+ * not happen than sit for a minute and be told the same thing — which is
+ * what a twenty-second wait, tried three times, did to the client.
  */
-const DEFAULT_TRANSACTION_MAX_WAIT_MS = Number(process.env.DATABASE_TRANSACTION_MAX_WAIT_MS ?? 20_000);
+const DEFAULT_TRANSACTION_MAX_WAIT_MS = Number(process.env.DATABASE_TRANSACTION_MAX_WAIT_MS ?? 6_000);
 
 /**
  * Runs `fn` inside a database transaction. Serializable-adjacent defaults are
