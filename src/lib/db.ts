@@ -83,7 +83,9 @@ function preferTransactionPooler(url: URL): URL {
     `[database] connecting to ${moved.hostname}:${moved.port || '5432'}` +
       (moving ? ' — moved off the session pooler (5432), which a serverless runtime exhausts' : '') +
       (serverless ? ' · serverless' : ' · long-running') +
-      (supabasePooler ? ' · supabase pooler' : ''),
+      (supabasePooler ? ' · supabase pooler' : '') +
+      ` · pool max ${defaultPoolSize(moved.toString())}` +
+      ` · waits ${DEFAULT_TRANSACTION_MAX_WAIT_MS}ms for a connection, then ${DEFAULT_TRANSACTION_TIMEOUT_MS}ms to finish`,
   );
 
   return moved;
@@ -125,9 +127,6 @@ function resolveConnection(rawUrl: string): PoolConfig {
  * real pool, because there the connections are ours to spend.
  */
 function defaultPoolSize(rawUrl: string): number {
-  const configured = process.env.DATABASE_POOL_MAX;
-  if (configured) return Math.max(1, Number(configured));
-
   let host = '';
   let query = '';
   try {
@@ -141,6 +140,33 @@ function defaultPoolSize(rawUrl: string): number {
 
   const pooled = /pooler\.|pgbouncer|-pooler/.test(host) || /pgbouncer=true/.test(query);
   const serverless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+  const configured = process.env.DATABASE_POOL_MAX ? Math.max(1, Number(process.env.DATABASE_POOL_MAX)) : null;
+
+  /*
+   * Behind a pooler, one is the right number and a setting cannot make it
+   * otherwise.
+   *
+   * This used to take DATABASE_POOL_MAX at its word. A setting of ten, made
+   * when the database was addressed directly, then had every serverless
+   * instance reaching for ten connections at once — and a pooler with a few
+   * dozen client slots is emptied by a handful of instances doing that. The
+   * symptom is a transaction that cannot start, which is what the client was
+   * looking at, and it survives moving to the transaction pooler because the
+   * demand, not the port, is what is wrong.
+   *
+   * So the setting is honoured where the connections are genuinely ours to
+   * spend, and overruled where they are not. The reason is said out loud
+   * rather than silently applied.
+   */
+  if (configured !== null && (pooled || serverless) && configured > 1) {
+    console.warn(
+      `[database] DATABASE_POOL_MAX is ${configured}; using 1 instead. Behind a pooler each instance should hold ` +
+        'one connection and let the pooler do the pooling — many instances reaching for many each is what empties it.',
+    );
+    return 1;
+  }
+
+  if (configured !== null) return configured;
   return pooled || serverless ? 1 : 10;
 }
 

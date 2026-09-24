@@ -20,15 +20,34 @@ test.describe.configure({ mode: 'serial' });
 async function signIn(page: Page) {
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
   const tile = page.getByRole('button', { name: new RegExp(ADMIN_NAME, 'i') }).first();
+  const keypad = page.getByRole('button', { name: '1', exact: true });
   await expect(tile).toBeVisible({ timeout: 60_000 });
-  await tile.click();
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await tile.click().catch(() => undefined);
+    const arrived = await keypad.waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false);
+    if (arrived) break;
+    if (!(await tile.isVisible().catch(() => false))) break;
+  }
+  await expect(keypad).toBeVisible({ timeout: 30_000 });
   for (const digit of (ADMIN_PIN ?? '').split('')) {
     await page.getByRole('button', { name: digit, exact: true }).first().click();
   }
   await page.waitForURL(/\/(dashboard|select-company)/, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+
   if (page.url().includes('select-company')) {
     await page.getByRole('button', { name: new RegExp(COMPANY, 'i') }).first().click();
     await page.waitForURL(/\/dashboard/, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    return;
+  }
+  const switcher = page.getByRole('button', { name: /FID Trading/ }).first();
+  if (await switcher.count()) {
+    const label = (await switcher.textContent()) ?? '';
+    if (!new RegExp(COMPANY, 'i').test(label)) {
+      await switcher.click();
+      await page.getByRole('menuitem', { name: new RegExp(COMPANY, 'i') }).click();
+      await page.waitForLoadState('domcontentloaded');
+    }
   }
 }
 

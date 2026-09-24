@@ -44,11 +44,32 @@ describe('how many connections one instance may hold', () => {
     expect(defaultPoolSize(`${DIRECT}?pgbouncer=true`)).toBe(1);
   });
 
-  it('lets the number be set explicitly, but never below one', () => {
+  it('lets the number be set where the connections are ours to spend', () => {
+    delete process.env.VERCEL;
+    delete process.env.AWS_LAMBDA_FUNCTION_NAME;
     process.env.DATABASE_POOL_MAX = '4';
-    expect(defaultPoolSize(POOLED)).toBe(4);
+    expect(defaultPoolSize(LOCAL)).toBe(4);
     process.env.DATABASE_POOL_MAX = '0';
+    expect(defaultPoolSize(LOCAL)).toBe(1);
+  });
+
+  /*
+   * A setting made when the database was addressed directly, left in place
+   * after moving behind a pooler, had every instance reaching for ten
+   * connections at once — and a pooler is emptied by a handful of instances
+   * doing that. The symptom is a transaction that cannot start, which is
+   * what the client was looking at while trying to save a cost.
+   */
+  it('overrules the setting behind a pooler, where they are not', () => {
+    delete process.env.VERCEL;
+    process.env.DATABASE_POOL_MAX = '10';
     expect(defaultPoolSize(POOLED)).toBe(1);
+  });
+
+  it('overrules it on a serverless host too, however it connects', () => {
+    process.env.VERCEL = '1';
+    process.env.DATABASE_POOL_MAX = '10';
+    expect(defaultPoolSize(DIRECT)).toBe(1);
   });
 
   it('assumes the safe number when the URL cannot be read', () => {
