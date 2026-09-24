@@ -78,6 +78,10 @@ export default async function SalesPage() {
       quantitySort: Number(quantity),
       paidLabel: receivable ? formatMoney(receivable.paidAmount, inv.currency) : '—',
       outstandingLabel: receivable ? formatMoney(receivable.outstandingAmount, inv.currency) : '—',
+      // In dollars as well, because a total across invoices in dirhams and
+      // dollars is only meaningful in one of them.
+      paidUsdSort: receivable ? Number(receivable.paidAmountUsd) : 0,
+      outstandingUsdSort: receivable ? Number(receivable.outstandingAmountUsd) : 0,
       settlement: receivable?.status ?? 'UNPAID',
       daysOverdue: days !== null && days < 0 ? Math.abs(days) : 0,
       status: inv.status,

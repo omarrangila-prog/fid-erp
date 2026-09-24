@@ -222,6 +222,44 @@ test('a posted receipt is corrected under its own number, not deleted and retype
   console.log('  receipt: corrected in place, still posted, correction visible in the journal');
 });
 
+test('the invoice standing cards filter the list to the invoices behind them', async ({ page }) => {
+  await page.goto('/sales', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+
+  const standing = page.getByTestId('invoice-standing');
+  await expect(standing).toBeVisible({ timeout: 30_000 });
+
+  // Each card says a figure and how many invoices are behind it.
+  const summary = (await standing.innerText()).replace(/\s+/g, ' ');
+  expect(summary).toMatch(/Paid/);
+  expect(summary).toMatch(/Partly paid/);
+  expect(summary).toMatch(/Unpaid/);
+  expect(summary).toMatch(/USD [\d,]+\.\d{2}/);
+  console.log(`  standing: ${summary.slice(0, 140)}`);
+
+  const rowsBefore = await page.locator('main table tbody tr').count();
+
+  // Clicking one shows only those invoices, and says so.
+  const unpaid = page.getByTestId('invoice-standing-unpaid');
+  const unpaidCount = Number(((await unpaid.innerText()).match(/(\d+) invoices?/) ?? ['', '0'])[1]);
+  await unpaid.click();
+  await expect(page.getByTestId('invoice-standing-active')).toBeVisible({ timeout: 15_000 });
+
+  if (unpaidCount > 0) {
+    const shown = page.locator('main table tbody tr');
+    await expect(shown).toHaveCount(unpaidCount, { timeout: 15_000 });
+    // And every one of them really is unpaid.
+    const text = (await page.locator('main table tbody').innerText()).replace(/\s+/g, ' ');
+    expect(text).not.toMatch(/Partially Paid/);
+    console.log(`  unpaid card: ${unpaidCount} invoices, and the list shows exactly those`);
+  }
+
+  // Clicking it again puts every invoice back.
+  await unpaid.click();
+  await expect(page.getByTestId('invoice-standing-active')).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.locator('main table tbody tr')).toHaveCount(rowsBefore, { timeout: 15_000 });
+});
+
 test('the journal can add an account without leaving the voucher', async ({ page }) => {
   await page.goto('/accounting/journal/new', { waitUntil: 'domcontentloaded' });
   // The journal opens on the guided list now; the ledger form is behind it.

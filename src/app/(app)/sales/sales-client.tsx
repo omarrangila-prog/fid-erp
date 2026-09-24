@@ -11,6 +11,7 @@ import { TRANSACTION_STATUS_META, SETTLEMENT_STATUS_META } from '@/lib/constants
 import { HandCoins, BookOpen, Printer } from 'lucide-react';
 import { RowActions, viewAction, editAction } from '@/components/shared/row-actions';
 import { deleteSalesInvoiceAction } from '@/server/actions/trading-actions';
+import { cn } from '@/lib/utils';
 
 export type SaleRow = {
   id: string;
@@ -29,6 +30,9 @@ export type SaleRow = {
   quantitySort: number;
   paidLabel: string;
   outstandingLabel: string;
+  /** The same two in dollars, so invoices in different currencies can be totalled. */
+  paidUsdSort: number;
+  outstandingUsdSort: number;
   settlement: string;
   daysOverdue: number;
   status: string;
@@ -61,10 +65,38 @@ export function SalesClient({
   canReverse: boolean;
   canApprove: boolean;
 }) {
+  /*
+   * Where the money stands, and a way into it.
+   *
+   * The question a trader asks first is how much is still owed and by whom,
+   * and the answer used to mean reading down a column of invoices. These say
+   * it at the top, and each one opens the invoices behind it: the figure and
+   * the list are the same thing, so a total can never point at nothing.
+   */
+  const [standing, setStanding] = React.useState<'PAID' | 'PARTIAL' | 'UNPAID' | null>(null);
+
+  const posted = rows.filter((row) => row.status === 'POSTED');
+  const summarise = (settlement: 'PAID' | 'PARTIAL' | 'UNPAID') => {
+    const matching = posted.filter((row) => row.settlement === settlement);
+    return {
+      settlement,
+      count: matching.length,
+      paidUsd: matching.reduce((total, row) => total + row.paidUsdSort, 0),
+      outstandingUsd: matching.reduce((total, row) => total + row.outstandingUsdSort, 0),
+    };
+  };
+  const standings = [
+    { ...summarise('PAID'), label: 'Paid', hint: 'Settled in full', amount: 'paid' as const },
+    { ...summarise('PARTIAL'), label: 'Partly paid', hint: 'Something received, something still owed', amount: 'outstanding' as const },
+    { ...summarise('UNPAID'), label: 'Unpaid', hint: 'Nothing received yet', amount: 'outstanding' as const },
+  ];
+  const money = (value: number) =>
+    `USD ${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
   // A deleted invoice is not on this list at all: the page only loads live
   // documents. Its journal and the trail of who deleted it stay in the books
   // and the audit log, where an accountant can find them.
-  const visible = rows;
+  const visible = standing ? rows.filter((row) => row.status === 'POSTED' && row.settlement === standing) : rows;
 
   const columns: DataColumn<SaleRow>[] = [
     /* The order the client reads a sales list in: when, which invoice, which
@@ -249,7 +281,48 @@ export function SalesClient({
   ];
 
   return (
-    <DataTable
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-3" data-testid="invoice-standing">
+        {standings.map((card) => {
+          const active = standing === card.settlement;
+          const figure = card.amount === 'paid' ? card.paidUsd : card.outstandingUsd;
+          return (
+            <button
+              key={card.settlement}
+              type="button"
+              onClick={() => setStanding(active ? null : card.settlement)}
+              aria-pressed={active}
+              data-testid={`invoice-standing-${card.settlement.toLowerCase()}`}
+              className={cn(
+                'rounded-xl border p-4 text-left transition-colors',
+                active
+                  ? 'border-forest-500 bg-forest-50/60'
+                  : 'border-line bg-surface hover:border-forest-300',
+              )}
+            >
+              <p className="text-xs font-medium text-ink-muted">{card.label}</p>
+              <p className="tnum mt-1 text-xl font-semibold text-ink">{money(figure)}</p>
+              <p className="mt-0.5 text-xs text-ink-subtle">
+                {card.count === 1 ? '1 invoice' : `${card.count} invoices`} ·{' '}
+                {card.amount === 'paid' ? 'received' : 'still owed'}
+              </p>
+              <p className="mt-1 text-[11px] text-ink-subtle">{active ? 'Showing these — click to clear' : card.hint}</p>
+            </button>
+          );
+        })}
+      </div>
+
+      {standing ? (
+        <p className="text-xs text-ink-muted" data-testid="invoice-standing-active">
+          Showing {visible.length === 1 ? 'the 1 invoice' : `the ${visible.length} invoices`} that are{' '}
+          {SETTLEMENT_STATUS_META[standing]?.label.toLowerCase() ?? standing.toLowerCase()}.{' '}
+          <button type="button" onClick={() => setStanding(null)} className="underline underline-offset-2 hover:text-ink">
+            Show every invoice
+          </button>
+        </p>
+      ) : null}
+
+      <DataTable
       prefsKey="sales"
       data={visible}
       filters={[
@@ -315,7 +388,8 @@ export function SalesClient({
           ) : null}
         </>
       }
-    />
+      />
+    </div>
   );
 }
 
