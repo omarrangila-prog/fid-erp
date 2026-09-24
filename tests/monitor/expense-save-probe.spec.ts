@@ -112,15 +112,25 @@ test('a shipment cost saves and posts', async ({ page }) => {
     })
     .then(() => 'saved' as const)
     .catch(() => 'stuck' as const);
+  /*
+   * A refusal is text that reads like one, not any live region: the page
+   * carries several, and waiting on "an alert appeared" called a successful
+   * save a failure.
+   */
   const refused = page
-    .getByRole('alert')
+    .getByText(/could not|was not saved|database was busy|please correct/i)
     .first()
     .waitFor({ state: 'visible', timeout: 120_000 })
     .then(() => 'refused' as const)
     .catch(() => 'stuck' as const);
 
   const outcome = await Promise.race([landed, refused]);
+  await page.waitForTimeout(2_000);
   const alerts = await page.getByRole('alert').allTextContents();
+  // Whatever the form is saying, in its own words.
+  const shown = (await page.getByRole('main').innerText()).replace(/\s+/g, ' ');
+  const complaint = shown.match(/.{0,160}(could not|cannot|must|required|busy|failed|invalid|choose).{0,160}/i);
+  console.log(`  form says: ${complaint ? complaint[0] : '(nothing that reads like a complaint)'}`);
 
   console.log(`  outcome: ${outcome}`);
   for (const alert of alerts) console.log(`  on screen: ${alert.replace(/\s+/g, ' ').slice(0, 300)}`);
