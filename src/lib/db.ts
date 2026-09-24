@@ -42,8 +42,43 @@ function resolveCertificate(value: string | undefined): string | undefined {
   }
 }
 
+/**
+ * Serverless belongs on the transaction pooler, not the session one.
+ *
+ * Supabase offers the same database on two ports. 5432 is session mode: each
+ * client holds a Postgres backend for as long as it is connected, and there
+ * are about fifteen of those in total. 6543 is transaction mode: a client
+ * borrows a backend for the length of one transaction and gives it straight
+ * back, which is why it can serve far more callers than there are backends.
+ *
+ * A serverless deployment is many short-lived instances, so session mode runs
+ * out — and it did, on the client's books: "Unable to start a transaction in
+ * the given time" on every attempt at saving a cost, with the work never
+ * beginning. Waiting and trying again does not help when the slots are held
+ * by other instances, which is what the retry above proved.
+ *
+ * So a serverless process pointed at the session port is moved to the
+ * transaction port. Migrations are unaffected: they run from DIRECT_URL,
+ * which is left exactly as it is and must stay on session mode. Set
+ * DATABASE_POOLER_MODE=session to turn this off.
+ */
+function preferTransactionPooler(url: URL): URL {
+  if (process.env.DATABASE_POOLER_MODE === 'session') return url;
+  const serverless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+  const supabasePooler = /\.pooler\.supabase\.com$/i.test(url.hostname);
+  if (!serverless || !supabasePooler || url.port !== '5432') return url;
+
+  const moved = new URL(url.toString());
+  moved.port = '6543';
+  console.warn(
+    '[database] serverless on the session pooler (5432); using the transaction pooler (6543) instead, ' +
+      'which is what a serverless runtime needs. Set DATABASE_POOLER_MODE=session to keep 5432.',
+  );
+  return moved;
+}
+
 function resolveConnection(rawUrl: string): PoolConfig {
-  const url = new URL(rawUrl);
+  const url = preferTransactionPooler(new URL(rawUrl));
   const mode = url.searchParams.get('sslmode') ?? process.env.PGSSLMODE ?? null;
 
   // Leave the rest of the query string (schema, application_name…) intact.
