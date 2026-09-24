@@ -8,6 +8,7 @@ import { postJournalEntry, reverseJournalEntry } from '@/lib/services/accounting
 import { receiveStock, recordMovement, lockBatch } from '@/lib/services/inventory';
 import { getCompanyContext } from '@/lib/services/company';
 import { writeAudit } from '@/lib/services/audit';
+import { markArrivedOnReceipt } from '@/lib/services/shipment';
 
 /**
  * GoodsReceiptService.
@@ -677,6 +678,27 @@ export async function postGoodsReceiptIn(tx: Tx, params: { id: string; companyId
     where: { id: receipt.id },
     data: { status: 'POSTED', postedAt: new Date() },
   });
+
+  /*
+   * The cargo is in the warehouse, so the shipment it came on has arrived.
+   * Left unsaid, a receipt taken without first pressing "Mark arrived" made
+   * the order read "0 of 2 arrived" while the stock sat on the shelf.
+   */
+  // The receipt's own shipment, plus any the batches it received belong to.
+  const shipmentIds = [
+    ...new Set(
+      [receipt.shipmentId, ...receipt.lines.map((line) => line.batch?.shipmentId ?? null)].filter(Boolean) as string[],
+    ),
+  ];
+  for (const shipmentId of shipmentIds) {
+    await markArrivedOnReceipt(tx, {
+      companyId: params.companyId,
+      shipmentId,
+      userId: params.userId,
+      receiptDate: receipt.receiptDate,
+      reference: receipt.grnNumber,
+    });
+  }
 
   await writeAudit(tx, {
     companyId: params.companyId,

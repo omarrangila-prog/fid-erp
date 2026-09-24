@@ -453,6 +453,35 @@ export async function reconcile(companyId: string): Promise<ReconciliationResult
     passed: negative === 0,
   });
 
+  /*
+   * A status that disagrees with the goods.
+   *
+   * Receiving a container used to leave the shipment's own status alone, so
+   * an order could read "0 of 2 arrived" while the coffee was on the shelf
+   * and being sold from. The engine now moves the status when the goods are
+   * counted in; this is the check that says so, because the client found
+   * that fault before the software did.
+   */
+  const stranded = await prisma.$queryRaw<Array<{ count: bigint }>>`
+    SELECT COUNT(DISTINCT s."id") AS count
+    FROM shipments s
+    JOIN batches b ON b."shipmentId" = s."id"
+    WHERE s."companyId" = ${companyId}
+      AND s."status" IN ('CONTRACT_CREATED', 'AWAITING_LOADING', 'LOADED', 'IN_TRANSIT')
+      AND b."receivedQuantityKg" > 0`;
+  const strandedCount = Number(stranded[0]?.count ?? 0);
+  checks.push({
+    id: 'shipment-status-matches-goods',
+    group: 'Inventory',
+    label: 'No shipment is still in transit after its goods were received',
+    explanation:
+      'Coffee counted into a warehouse means the shipment arrived. A shipment left in transit with received stock is why an order can read "0 of 2 arrived" while the goods are on the shelf.',
+    left: { label: 'Shipments in transit holding received stock', value: String(strandedCount) },
+    right: { label: 'Expected', value: '0' },
+    differenceUsd: String(strandedCount),
+    passed: strandedCount === 0,
+  });
+
   const failed = checks.filter((c) => !c.passed).length;
   return { companyId, checks, passed: checks.length - failed, failed, healthy: failed === 0 };
 }

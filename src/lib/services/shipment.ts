@@ -79,6 +79,60 @@ export function assertStatusDataComplete(
   }
 }
 
+/**
+ * Coffee in the warehouse means the shipment arrived, whatever the paperwork says.
+ *
+ * The status a person sets by hand and the fact of the goods being received
+ * were two separate records, and nothing kept them in step. A client who
+ * received a container without first pressing "Mark arrived" left the
+ * shipment at "contract created" — so the order read "0 of 2 arrived" while
+ * the stock was on the shelf, and the shipment stayed "Pending" after it had
+ * been received in full.
+ *
+ * The normal transition graph does not allow that jump, and it is right not
+ * to for a person clicking through the workflow: it exists so a consignment
+ * cannot be marked landed before it is loaded. A goods receipt is not a
+ * click, though — it is the cargo itself, counted into a warehouse — so it
+ * outranks the graph and says so here.
+ *
+ * Only ever forwards: a shipment already landed, cleared or delivered is
+ * left alone, and nothing here moves a status backwards.
+ */
+export async function markArrivedOnReceipt(
+  tx: Tx,
+  params: { companyId: string; shipmentId: string; userId: string; receiptDate: Date; reference: string },
+): Promise<boolean> {
+  const shipment = await tx.shipment.findFirst({
+    where: { id: params.shipmentId, companyId: params.companyId },
+    select: { id: true, status: true, ataDate: true, shipmentNumber: true },
+  });
+  if (!shipment) return false;
+  if (!SHIPMENT_STATUSES_IN_TRANSIT.includes(shipment.status)) return false;
+
+  await tx.shipment.update({
+    where: { id: shipment.id },
+    data: {
+      status: 'ARRIVED',
+      // The day the goods were counted in, unless an arrival date was already
+      // recorded — that one is the client's own and is not overwritten.
+      ataDate: shipment.ataDate ?? params.receiptDate,
+      updatedById: params.userId,
+    },
+  });
+
+  await writeAudit(tx, {
+    companyId: params.companyId,
+    userId: params.userId,
+    action: 'SHIPMENT_ARRIVED_ON_RECEIPT',
+    entityType: 'Shipment',
+    entityId: shipment.id,
+    before: { status: shipment.status },
+    after: { status: 'ARRIVED', because: `Goods received on ${params.reference}` },
+  });
+
+  return true;
+}
+
 export async function changeShipmentStatus(input: ShipmentStatusChangeInput) {
   return transaction(async (tx) => {
     const shipment = await tx.shipment.findFirst({

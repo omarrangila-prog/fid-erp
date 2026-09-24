@@ -182,9 +182,61 @@ const DEFAULT_TRANSACTION_MAX_WAIT_MS = Number(process.env.DATABASE_TRANSACTION_
  * balances. We use the ORM default (read committed) plus explicit row locks in
  * the services, which is the standard approach for high-write ERP posting.
  */
-export function transaction<T>(
+/**
+ * A failure that happened before the work began, and is therefore safe to try again.
+ *
+ * The distinction is the whole point. A transaction that could not get a
+ * connection never ran a statement: nothing was written, nothing was half
+ * written, and trying again cannot post anything twice. A transaction that
+ * ran and then failed is a different animal and is never retried here —
+ * whether its work landed is the one thing this cannot know, and guessing
+ * would be how a cost gets posted twice.
+ */
+function neverStarted(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return (
+    /unable to start a transaction/i.test(message) ||
+    /max client connections reached/i.test(message) ||
+    /too many connections/i.test(message) ||
+    /connection terminated|connection closed|ECONNRESET|ETIMEDOUT|EPIPE/i.test(message) ||
+    /server closed the connection/i.test(message)
+  );
+}
+
+const RETRY_DELAYS_MS = [250, 750];
+
+/**
+ * Runs `fn` inside a database transaction. Serializable-adjacent defaults are
+ * intentional: financial posting must not observe torn reads of stock or
+ * balances. We use the ORM default (read committed) plus explicit row locks in
+ * the services, which is the standard approach for high-write ERP posting.
+ *
+ * A connection that could not be had is waited out rather than handed to the
+ * user as a failure: behind a pooler with few slots, a burst of traffic makes
+ * this ordinary, and the client should not be told their expense was not
+ * saved because somebody else was saving one at the same moment.
+ */
+export async function transaction<T>(
   fn: (tx: Tx) => Promise<T>,
   timeoutMs = DEFAULT_TRANSACTION_TIMEOUT_MS,
 ): Promise<T> {
-  return prisma.$transaction(fn, { timeout: timeoutMs, maxWait: DEFAULT_TRANSACTION_MAX_WAIT_MS });
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return await prisma.$transaction(fn, { timeout: timeoutMs, maxWait: DEFAULT_TRANSACTION_MAX_WAIT_MS });
+    } catch (error) {
+      lastError = error;
+      if (!neverStarted(error) || attempt === RETRY_DELAYS_MS.length) break;
+
+      const wait = RETRY_DELAYS_MS[attempt];
+      console.warn(
+        `[transaction] no connection on attempt ${attempt + 1}; waiting ${wait}ms and trying again. ` +
+          `Nothing was written: ${(error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').slice(0, 200)}`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+  }
+
+  throw lastError;
 }
