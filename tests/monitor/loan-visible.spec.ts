@@ -54,8 +54,19 @@ test('Morocco sees the money arrive and the debt it owes', async ({ page }) => {
 
   await page.goto('/finance/cash-bank', { waitUntil: 'domcontentloaded' });
   await expect(page.getByText(/ATIJJARI BANK/i).first()).toBeVisible({ timeout: 45_000 });
+  /*
+   * The loan's own line in the bank's statement, not the bank's balance.
+   * This probe once read the balance, which equalled the loan only until the
+   * client spent from the account; the arrival is a transaction, and that is
+   * what stays true.
+   */
+  const bankRow = page.locator('a[href^="/finance/cash-bank/"]').filter({ hasText: /ATIJJARI BANK/i }).first();
+  const href = await bankRow.getAttribute('href');
+  expect(href, 'the bank account opens its statement').toBeTruthy();
+  await page.goto(href!, { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle').catch(() => undefined);
   const cash = (await page.locator('body').textContent()) ?? '';
-  console.log('  Cash & Bank shows 461,000:', /461[,\s.]?000/.test(cash));
+  console.log('  The bank statement shows the 461,000 arrival:', /461[,\s.]?000/.test(cash));
   expect(cash).toMatch(/461[,\s.]?000/);
 
   await page.goto('/reports/journal', { waitUntil: 'domcontentloaded' });

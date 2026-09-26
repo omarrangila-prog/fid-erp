@@ -22,8 +22,17 @@ test.describe.configure({ mode: 'serial' });
 async function signIn(page: Page) {
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
   const tile = page.getByRole('button', { name: new RegExp(ADMIN_NAME, 'i') }).first();
+  const keypad = page.getByRole('button', { name: '1', exact: true });
   await expect(tile).toBeVisible({ timeout: 60_000 });
-  await tile.click();
+  // A click that lands before the page is interactive does nothing; try again
+  // only while the tile is still there, so a working click is never undone.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await tile.click().catch(() => undefined);
+    const arrived = await keypad.waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false);
+    if (arrived) break;
+    if (!(await tile.isVisible().catch(() => false))) break;
+  }
+  await expect(keypad).toBeVisible({ timeout: 30_000 });
   for (const digit of (ADMIN_PIN ?? '').split('')) {
     await page.getByRole('button', { name: digit, exact: true }).first().click();
   }
@@ -79,8 +88,15 @@ test('the purchase list and the order page agree about arrival', async ({ page }
     return;
   }
 
-  const listRow = page.getByRole('row').filter({ has: link }).first();
-  const listText = (await listRow.innerText()).replace(/\s+/g, ' ');
+  /*
+   * The row by the order's reference. A list row is itself the link to the
+   * order, so looking for a link inside a row found none and waited out the
+   * whole test; a short timeout means a changed layout is reported, not hung on.
+   */
+  const reference = ((await link.textContent()) ?? '').trim();
+  const listRow = page.getByRole('row').filter({ hasText: reference }).first();
+  const listText = (await listRow.innerText({ timeout: 20_000 }).catch(() => '')).replace(/\s+/g, ' ');
+  expect(listText, `the purchase list has a row for ${reference}`).not.toBe('');
   const listArrival = listText.match(/(\d+) of (\d+) containers arrived/i);
 
   await link.click();
