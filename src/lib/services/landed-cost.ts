@@ -1,4 +1,5 @@
 import type { Tx } from '@/lib/db';
+import type { CostAllocationMethod } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { getExpenseSettlements, type ExpensePaymentStatus } from '@/lib/services/expense-settlement';
 import { batchLandedLocal, getCapitalisedRates, getOrderFxTransactions, summariseFx } from '@/lib/services/shipment-fx';
@@ -73,6 +74,13 @@ export async function applyLandedCost(
     containerId?: string | null;
     /** Put the whole amount on this one batch. */
     batchId?: string | null;
+    /** How a cost for the whole order is shared between its coffees. */
+    method?: CostAllocationMethod;
+    /**
+     * Exactly these amounts on exactly these batches — how a recorded cost is
+     * taken back. Given, it replaces the method and the batch search.
+     */
+    splits?: Array<{ batchId: string; amountUsd: Decimal }>;
   },
 ): Promise<LandedCostResult> {
   const amountUsd = toMoney(params.amountUsd);
@@ -98,13 +106,15 @@ export async function applyLandedCost(
   // A named container or batch is specific enough on its own; the order is
   // the boundary either way, so a container from another order cannot be hit.
   const batches = await tx.batch.findMany({
-    where: {
-      companyId: params.companyId,
-      purchaseContractId: anchor.purchaseContractId,
-      status: 'ACTIVE',
-      ...(params.batchId ? { id: params.batchId } : {}),
-      ...(params.containerId && !params.batchId ? { containerId: params.containerId } : {}),
-    },
+    where: params.splits
+      ? { companyId: params.companyId, id: { in: params.splits.map((s) => s.batchId) } }
+      : {
+          companyId: params.companyId,
+          purchaseContractId: anchor.purchaseContractId,
+          status: 'ACTIVE',
+          ...(params.batchId ? { id: params.batchId } : {}),
+          ...(params.containerId && !params.batchId ? { containerId: params.containerId } : {}),
+        },
     select: {
       id: true,
       batchNumber: true,
@@ -169,30 +179,52 @@ export async function applyLandedCost(
    * instead quietly charged the heavier coffee more for work that was done
    * once per consignment, and the client said no to that.
    */
-  const lineKeyOf = (b: { itemId: string }) => b.itemId;
-  const lineKeys: string[] = [];
-  for (const batch of locked) {
-    const key = lineKeyOf(batch);
-    if (!lineKeys.includes(key)) lineKeys.push(key);
-  }
-
-  // Equal shares between the lines, to the cent, with any remainder landing
-  // on the first — allocateProportionally already distributes that way.
-  const perLine = allocateProportionally(amountUsd, lineKeys.map(() => dec(1)));
-
   const split: Decimal[] = locked.map(() => dec(0));
-  lineKeys.forEach((key, lineIndex) => {
-    const members = locked
-      .map((batch, index) => ({ batch, index }))
-      .filter(({ batch }) => lineKeyOf(batch) === key);
-    const withinLine = allocateProportionally(
-      perLine[lineIndex],
-      members.map(({ batch }) => dec(batch.orderedQuantityKg)),
-    );
-    members.forEach(({ index }, memberIndex) => {
-      split[index] = withinLine[memberIndex];
+  const method = params.method ?? 'PER_ITEM';
+
+  if (params.splits) {
+    // A recorded cost coming back off: exactly what it put on each batch.
+    const recorded = new Map(params.splits.map((s) => [s.batchId, toMoney(s.amountUsd)]));
+    locked.forEach((batch, index) => {
+      split[index] = recorded.get(batch.id) ?? dec(0);
     });
-  });
+  } else if (method === 'BY_WEIGHT' || method === 'BY_VALUE') {
+    /*
+     * The two other ways the client may choose, cost by cost: in proportion
+     * to kilograms across every container, or to what each container's
+     * coffee cost. Value falls back to weight when the order carries no price.
+     */
+    const values = locked.map((b) => dec(b.purchaseCostUsd));
+    const byValue = method === 'BY_VALUE' && sum(values).greaterThan(0);
+    const weights = byValue ? values : locked.map((b) => dec(b.orderedQuantityKg));
+    allocateProportionally(amountUsd, weights).forEach((share, index) => {
+      split[index] = share;
+    });
+  } else {
+    const lineKeyOf = (b: { itemId: string }) => b.itemId;
+    const lineKeys: string[] = [];
+    for (const batch of locked) {
+      const key = lineKeyOf(batch);
+      if (!lineKeys.includes(key)) lineKeys.push(key);
+    }
+
+    // Equal shares between the lines, to the cent, with any remainder landing
+    // on the first — allocateProportionally already distributes that way.
+    const perLine = allocateProportionally(amountUsd, lineKeys.map(() => dec(1)));
+
+    lineKeys.forEach((key, lineIndex) => {
+      const members = locked
+        .map((batch, index) => ({ batch, index }))
+        .filter(({ batch }) => lineKeyOf(batch) === key);
+      const withinLine = allocateProportionally(
+        perLine[lineIndex],
+        members.map(({ batch }) => dec(batch.orderedQuantityKg)),
+      );
+      members.forEach(({ index }, memberIndex) => {
+        split[index] = withinLine[memberIndex];
+      });
+    });
+  }
   const allocations: LandedCostAllocation[] = [];
 
   for (let i = 0; i < locked.length; i += 1) {

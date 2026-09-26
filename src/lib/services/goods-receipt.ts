@@ -341,7 +341,7 @@ async function splitBatch(
     },
   });
 
-  return tx.batch.create({
+  const created = await tx.batch.create({
     data: {
       companyId: params.companyId,
       batchNumber: params.batchNumber,
@@ -364,6 +364,36 @@ async function splitBatch(
       landedUnitCostUsd: newLandedUnit,
     },
   });
+
+  /*
+   * The costs recorded on the batch divide with it. Each cost moves the same
+   * share as the coffee, rounded so the records moved add up to that share of
+   * the records, so a cost taken back later comes off the two batches in
+   * exactly the amounts they carry. (A batch can also carry older costs with
+   * no record; those move inside the capitalised figure above, as before.)
+   */
+  const shares = await tx.expenseBatchShare.findMany({
+    where: { batchId: batch.id },
+    select: { id: true, expenseId: true, amountUsd: true },
+    orderBy: { id: 'asc' },
+  });
+  if (shares.length > 0) {
+    const moved = shares.map((row) => toMoney(dec(row.amountUsd).times(share)));
+    const recorded = shares.reduce((t, row) => t.plus(dec(row.amountUsd)), dec(0));
+    const drift = toMoney(toMoney(recorded.times(share)).minus(moved.reduce((t, m) => t.plus(m), dec(0))));
+    moved[moved.length - 1] = toMoney(moved[moved.length - 1].plus(drift));
+    for (const [index, row] of shares.entries()) {
+      if (moved[index].isZero()) continue;
+      await tx.expenseBatchShare.update({
+        where: { id: row.id },
+        data: { amountUsd: toMoney(dec(row.amountUsd).minus(moved[index])) },
+      });
+      await tx.expenseBatchShare.create({
+        data: { expenseId: row.expenseId, batchId: created.id, amountUsd: moved[index] },
+      });
+    }
+  }
+  return created;
 }
 
 async function resolveLines(tx: Tx, input: GoodsReceiptInput): Promise<ResolvedGrnLine[]> {

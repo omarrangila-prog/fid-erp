@@ -150,6 +150,8 @@ export const expenseSchema = z.object({
   paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'CHEQUE']),
   cashBankAccountId: optionalCuid,
   capitaliseToLandedCost: z.coerce.boolean().optional(),
+  /** How a cost for the whole order is shared between its coffees. */
+  allocationMethod: z.enum(['PER_ITEM', 'BY_WEIGHT', 'BY_VALUE']).optional(),
   kind: z.enum(['SHIPMENT', 'GENERAL']),
   taxCodeId: optionalCuid,
   reference: optionalText(60),

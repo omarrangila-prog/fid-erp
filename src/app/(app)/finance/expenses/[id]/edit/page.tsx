@@ -82,6 +82,7 @@ export default async function EditExpensePage({ params }: { params: Promise<{ id
           reference: expense.reference ?? '',
           description: expense.description ?? '',
           capitaliseToLandedCost: expense.capitaliseToLandedCost,
+          allocationMethod: expense.allocationMethod,
         }}
       />
     </div>

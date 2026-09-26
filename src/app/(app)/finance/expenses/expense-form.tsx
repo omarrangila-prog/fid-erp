@@ -52,6 +52,7 @@ export type ExpenseFormInitial = {
   reference: string;
   description: string;
   capitaliseToLandedCost: boolean;
+  allocationMethod?: 'PER_ITEM' | 'BY_WEIGHT' | 'BY_VALUE';
 };
 
 /**
@@ -151,6 +152,9 @@ export function ExpenseForm({
     initial ? initial.capitaliseToLandedCost : null,
   );
   const capitalise = kind === 'SHIPMENT' && (capitaliseOverride ?? category?.capitaliseByDefault ?? false);
+  const [allocationMethod, setAllocationMethod] = React.useState<'PER_ITEM' | 'BY_WEIGHT' | 'BY_VALUE'>(
+    initial?.allocationMethod ?? 'PER_ITEM',
+  );
 
   function isCommissionCategory(option: CategoryOption | undefined) {
     const hay = `${option?.label ?? ''} ${option?.keywords ?? ''}`.toLowerCase();
@@ -234,6 +238,9 @@ export function ExpenseForm({
       paymentMethod: form.paymentMethod,
       cashBankAccountId: paidFrom,
       capitaliseToLandedCost: capitalise,
+      // Only meaningful for a cost spread over the whole order; a named
+      // container or batch takes it all, however it is shared.
+      allocationMethod: capitalise && !form.batchId ? allocationMethod : 'PER_ITEM',
       kind,
       taxCodeId: form.taxCodeId ?? '',
       reference: form.reference,
@@ -719,6 +726,23 @@ export function ExpenseForm({
                 </button>
               ))}
             </div>
+
+            {capitalise && !form.batchId ? (
+              <Field
+                label="How to share this cost"
+                hint="Between the coffees it is spread over. Equal per coffee is the usual rule."
+              >
+                <Select
+                  aria-label="How to share this cost"
+                  value={allocationMethod}
+                  onChange={(e) => setAllocationMethod(e.target.value as typeof allocationMethod)}
+                >
+                  <option value="PER_ITEM">Equal share per coffee, then by weight</option>
+                  <option value="BY_WEIGHT">By weight — kilograms in each container</option>
+                  <option value="BY_VALUE">By value — what each container&rsquo;s coffee cost</option>
+                </Select>
+              </Field>
+            ) : null}
 
             {capitaliseOverride !== null && capitaliseOverride !== category.capitaliseByDefault ? (
               <Callout tone="warning">

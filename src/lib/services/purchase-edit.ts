@@ -815,7 +815,14 @@ async function removeUntouchedContainer(
       tx.overheadAllocationLine.count({ where: { shipmentId: { in: shipmentIds } } }),
     ]);
 
+  // A cost booked to the whole order is spread onto every container, even one
+  // it was not filed under; taking the container away would lose that share.
+  const spread =
+    params.batches.some((b) => !dec(b.capitalisedCostUsd).isZero()) ||
+    (await tx.expenseBatchShare.count({ where: { batchId: { in: batchIds } } })) > 0;
+
   const blockers = [
+    spread && 'shipment costs spread onto it',
     receipts + receiptLines > 0 && 'a goods receipt',
     movements > 0 && 'stock movements',
     invoiceLines + invoices + credits > 0 && 'a sale',

@@ -87,6 +87,7 @@ export default async function CloneExpensePage({ params }: { params: Promise<{ i
           reference: '',
           description: expense.description ?? '',
           capitaliseToLandedCost: expense.capitaliseToLandedCost,
+          allocationMethod: expense.allocationMethod,
         }}
       />
     </div>

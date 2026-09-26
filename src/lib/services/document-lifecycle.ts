@@ -77,6 +77,14 @@ export async function deletePostedEntry(params: {
   if (entry.reversedBy) {
     throw new BusinessRuleError('This entry has already been deleted.');
   }
+  // The system's own correction that keeps stock, cost of sales and the
+  // batches in step after a price or cost changed. On its own, taking it out
+  // would put them out of step again.
+  if (entry.sourceType === 'LANDED_COST') {
+    throw new BusinessRuleError(
+      'This entry keeps the stock value in step with a corrected price or cost. Correct the purchase order or the expense instead, and it follows.',
+    );
+  }
 
   const common = { companyId: params.companyId, userId: params.userId, reason: params.reason.trim() };
 

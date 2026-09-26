@@ -46,9 +46,32 @@ export type ExpenseRow = {
 const PAYMENT_LABEL = { PAID: 'Paid', PARTIAL: 'Partially paid', UNPAID: 'Unpaid' } as const;
 const PAYMENT_TONE = { PAID: 'success', PARTIAL: 'warning', UNPAID: 'danger' } as const;
 
+type Period = 'MONTH' | 'LAST_MONTH' | 'YEAR' | 'ALL';
+
+/**
+ * The first and last instant of each period, in UTC, from the date the
+ * server says it is today — worked out once there, so the server and the
+ * browser can never draw the page for two different months.
+ */
+function periodBounds(todayIso: string): Record<Exclude<Period, 'ALL'>, { from: number; to: number; label: string }> {
+  const [y, m] = todayIso.split('-').map(Number);
+  const start = (year: number, month: number) => Date.UTC(year, month - 1, 1);
+  const name = (year: number, month: number) =>
+    new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const lastY = m === 1 ? y - 1 : y;
+  const lastM = m === 1 ? 12 : m - 1;
+  return {
+    MONTH: { from: start(y, m), to: start(m === 12 ? y + 1 : y, m === 12 ? 1 : m + 1) - 1, label: name(y, m) },
+    LAST_MONTH: { from: start(lastY, lastM), to: start(y, m) - 1, label: name(lastY, lastM) },
+    YEAR: { from: Date.UTC(y, 0, 1), to: Date.UTC(y + 1, 0, 1) - 1, label: String(y) },
+  };
+}
+
 export function ExpensesClient({
   rows,
   localCurrency,
+  todayIso,
+  defaultPeriod = 'ALL',
   canExport,
   emptyAction,
   canPost = false,
@@ -56,6 +79,10 @@ export function ExpensesClient({
 }: {
   rows: ExpenseRow[];
   localCurrency: string;
+  /** Today's date on the server, YYYY-MM-DD. */
+  todayIso: string;
+  /** General expenses open on this month, as the summary is read monthly. */
+  defaultPeriod?: Period;
   canExport: boolean;
   /** Rendered inside the empty state; built on the server so permissions are checked there. */
   emptyAction?: React.ReactNode;
@@ -198,7 +225,14 @@ export function ExpensesClient({
    * rate — total, paid and still owed are exactly additive.
    */
   const [standing, setStanding] = React.useState<'PAID' | 'PARTIAL' | 'UNPAID' | null>(null);
-  const posted = rows.filter((r) => r.payment !== null);
+  const [period, setPeriod] = React.useState<Period>(defaultPeriod);
+  const bounds = periodBounds(todayIso);
+  // The totals, the cards and the list all follow the period, so a figure
+  // always opens exactly the costs it adds up.
+  const inPeriod =
+    period === 'ALL' ? rows : rows.filter((r) => r.dateSort >= bounds[period].from && r.dateSort <= bounds[period].to);
+  const periodLabel = period === 'ALL' ? 'All time' : bounds[period].label;
+  const posted = inPeriod.filter((r) => r.payment !== null);
   const add = (list: ExpenseRow[], pick: (r: ExpenseRow) => number) => list.reduce((t, r) => t + pick(r), 0);
   const money = (value: number, currency: string) =>
     `${currency} ${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -221,12 +255,39 @@ export function ExpensesClient({
       hint: status === 'PAID' ? 'Settled in full' : status === 'PARTIAL' ? 'Some paid, the rest still owed' : 'Nothing paid yet',
     };
   });
-  const visible = standing ? rows.filter((r) => r.payment === standing) : rows;
+  const visible = standing ? inPeriod.filter((r) => r.payment === standing) : inPeriod;
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap gap-1" role="group" aria-label="Period" data-testid="expense-period">
+        {(
+          [
+            ['MONTH', 'This month'],
+            ['LAST_MONTH', 'Last month'],
+            ['YEAR', 'This year'],
+            ['ALL', 'All time'],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => {
+              setPeriod(value);
+              setStanding(null);
+            }}
+            aria-pressed={period === value}
+            className={cn(
+              'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+              period === value ? 'border-forest-500 bg-forest-50 text-forest-800' : 'border-line bg-surface text-ink-muted hover:border-forest-300',
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <div className="rounded-xl border border-line bg-surface px-4 py-3 text-sm" data-testid="expense-totals">
-        <span className="text-ink-muted">All costs </span>
+        <span className="font-medium text-ink">{periodLabel} — </span>
+        <span className="text-ink-muted">all costs </span>
         <span className="tnum font-semibold">{money(totals.gross, localCurrency)}</span>
         <span className="text-ink-muted"> · paid </span>
         <span className="tnum font-semibold text-forest-700">{money(totals.paid, localCurrency)}</span>

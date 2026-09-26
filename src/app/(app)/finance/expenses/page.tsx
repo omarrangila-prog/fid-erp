@@ -157,6 +157,8 @@ export default async function ExpensesPage({
         }
         rows={rows}
         localCurrency={local}
+        todayIso={todayUtc.toISOString().slice(0, 10)}
+        defaultPeriod={kind === 'GENERAL' ? 'MONTH' : 'ALL'}
         canExport={can(user, PERMISSIONS.REPORTS_EXPORT)}
         canPost={can(user, PERMISSIONS.EXPENSES_POST)}
         canDelete={can(user, PERMISSIONS.EXPENSES_DELETE)}

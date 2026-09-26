@@ -87,6 +87,15 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
             <Badge tone={expense.capitaliseToLandedCost ? 'info' : 'neutral'}>
               {expense.capitaliseToLandedCost ? 'Landed cost' : 'Period cost'}
             </Badge>
+            {expense.capitaliseToLandedCost && !expense.batchId ? (
+              <Badge tone="neutral">
+                {expense.allocationMethod === 'BY_WEIGHT'
+                  ? 'Shared by weight'
+                  : expense.allocationMethod === 'BY_VALUE'
+                    ? 'Shared by value'
+                    : 'Shared equally per coffee'}
+              </Badge>
+            ) : null}
             {expense.shipment ? (
               <Link href={`/shipments/${expense.shipment.id}`}>
                 <Badge tone="info">{expense.shipment.purchaseContract?.contractReference ?? 'Shipment'}</Badge>

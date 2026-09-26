@@ -1,7 +1,8 @@
 import { transaction } from '@/lib/db';
 import type { Tx } from '@/lib/db';
+import type { CostAllocationMethod } from '@prisma/client';
 import type { PaymentMethod } from '@prisma/client';
-import { dec, toMoney, convertToUsd, convertFromUsd } from '@/lib/money';
+import { dec, toMoney, convertToUsd, convertFromUsd, type Decimal } from '@/lib/money';
 import { ACCOUNT_KEYS, DOC_TYPES } from '@/lib/constants';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
 import { nextReference } from '@/lib/services/numbering';
@@ -46,6 +47,11 @@ export type ExpenseInput = {
   /** Overrides the category default. Direct shipment costs are capitalised
    *  into landed cost; period costs go straight to the profit and loss. */
   capitaliseToLandedCost?: boolean;
+  /**
+   * How a cost for the whole order is shared between its coffees: equal per
+   * coffee (the default and the client's rule), by weight, or by value.
+   */
+  allocationMethod?: CostAllocationMethod | null;
   /** Shipment cost or company overhead. Defaults to the category's own kind. */
   kind?: 'SHIPMENT' | 'GENERAL';
   /** Named tax code only. Omitted or empty means no tax — never the company default. */
@@ -332,6 +338,7 @@ export async function createExpenseIn(tx: Tx, input: ExpenseInput, userId: strin
         cashBankAccountId: input.cashBankAccountId ?? null,
         paymentMethod: input.paymentMethod ?? 'BANK_TRANSFER',
         capitaliseToLandedCost: capitalise,
+        allocationMethod: input.allocationMethod ?? 'PER_ITEM',
         kind,
         taxCodeId: tax.taxCodeId,
         taxRatePct: tax.taxRatePct,
@@ -414,6 +421,7 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
       taxCodeId: string | null;
       cashBankAccountId: string | null;
       capitaliseToLandedCost: boolean;
+      allocationMethod: string | null;
       paymentMethod: string | null;
     }) =>
       [
@@ -434,6 +442,8 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
         source.taxCodeId ?? '',
         source.cashBankAccountId ?? '',
         String(source.capitaliseToLandedCost),
+        // A different sharing puts the cost on different coffee.
+        source.allocationMethod ?? 'PER_ITEM',
         source.paymentMethod ?? '',
       ].join('|');
 
@@ -457,6 +467,7 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
           taxCodeId: input.taxCodeId ?? null,
           cashBankAccountId: input.cashBankAccountId ?? null,
           capitaliseToLandedCost: Boolean(input.capitaliseToLandedCost),
+          allocationMethod: input.allocationMethod ?? 'PER_ITEM',
           paymentMethod: input.paymentMethod ?? null,
         });
 
@@ -527,6 +538,7 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
         cashBankAccountId: input.cashBankAccountId ?? null,
         paymentMethod: input.paymentMethod ?? 'BANK_TRANSFER',
         capitaliseToLandedCost: capitalise,
+        allocationMethod: input.allocationMethod ?? 'PER_ITEM',
         kind,
         taxCodeId: tax.taxCodeId,
         taxRatePct: tax.taxRatePct,
@@ -695,6 +707,13 @@ export async function postExpenseIn(tx: Tx, params: { id: string; companyId: str
         reference: expense.expenseNumber,
         containerId: expense.containerId,
         batchId: expense.batchId,
+        method: expense.allocationMethod,
+      });
+      // What went on each batch, so taking the cost back takes exactly that.
+      await tx.expenseBatchShare.createMany({
+        data: landed.allocations
+          .filter((a) => !a.allocatedUsd.isZero())
+          .map((a) => ({ expenseId: expense.id, batchId: a.batchId, amountUsd: a.allocatedUsd })),
       });
 
       // The engine has already split the cost three ways by kilograms. Any
@@ -802,17 +821,58 @@ async function unwindPostedExpense(
   params: { companyId: string; expenseId: string; userId: string; reason: string; asOf: Date },
 ) {
   const expense = await tx.expense.findUniqueOrThrow({ where: { id: params.expenseId } });
+  /** Where the capitalised cost sits today — on the shelf, at sea, sold. */
+  let now: { INVENTORY: Decimal; INVENTORY_IN_TRANSIT: Decimal; COST_OF_GOODS_SOLD: Decimal } | null = null;
 
   if (expense.capitaliseToLandedCost && expense.shipmentId) {
-    await applyLandedCost(tx, {
+    /*
+     * Off exactly as it went on. A cost spread since this record existed
+     * comes back from the batches that carry it, in the amounts they carry;
+     * recomputing the split would use today's containers and prices, and a
+     * container added or a price corrected since would be charged for a cost
+     * it never took. Older costs have no record and unwind as before.
+     */
+    const shares = await tx.expenseBatchShare.findMany({
+      where: { expenseId: expense.id },
+      select: { batchId: true, amountUsd: true },
+    });
+    const landed = await applyLandedCost(tx, {
       companyId: params.companyId,
       shipmentId: expense.shipmentId,
       amountUsd: dec(expense.amountUsd).negated(),
       reference: `${expense.expenseNumber} ${params.reason}`,
       containerId: expense.containerId,
       batchId: expense.batchId,
+      method: expense.allocationMethod,
+      ...(shares.length
+        ? { splits: shares.map((share) => ({ batchId: share.batchId, amountUsd: dec(share.amountUsd).negated() })) }
+        : {}),
     });
+    await tx.expenseBatchShare.deleteMany({ where: { expenseId: expense.id } });
+    const sold = landed.totalTrueUpUsd.negated();
+    const atSea = landed.totalInTransitUsd.negated();
+    now = {
+      COST_OF_GOODS_SOLD: sold,
+      INVENTORY_IN_TRANSIT: atSea,
+      INVENTORY: toMoney(dec(expense.amountUsd).minus(sold).minus(atSea)),
+    };
   }
+
+  // Where the posting put the cost, read before it is mirrored.
+  const posting = now
+    ? await tx.journalEntry.findFirst({
+        where: {
+          companyId: params.companyId,
+          sourceType: 'EXPENSE',
+          sourceId: params.expenseId,
+          status: 'POSTED',
+          isReversal: false,
+          reversedBy: { is: null },
+        },
+        orderBy: { sourceSeq: 'desc' },
+        select: { lines: { select: { debitUsd: true, creditUsd: true, account: { select: { systemKey: true } } } } },
+      })
+    : null;
 
   await reverseJournalEntry(tx, {
     companyId: params.companyId,
@@ -822,6 +882,53 @@ async function unwindPostedExpense(
     entryDate: params.asOf,
     reason: params.reason,
   });
+
+  /*
+   * The mirror takes the cost back from where it was posted. If coffee has
+   * been received or sold since, the goods receipt and the sale have moved
+   * part of that cost on — into stock, into cost of sales — and the mirror
+   * would leave it there with nothing behind it: stock worth more in the
+   * ledger than on the shelf. So the difference is moved from where the
+   * cost was posted to where it is now, once, and the three accounts end
+   * exactly where the batches say.
+   */
+  if (now && posting) {
+    const keys = ['INVENTORY', 'INVENTORY_IN_TRANSIT', 'COST_OF_GOODS_SOLD'] as const;
+    const lines: JournalLineInput[] = [];
+    for (const key of keys) {
+      const postedThere = posting.lines
+        .filter((l) => l.account.systemKey === key)
+        .reduce((t, l) => t.plus(dec(l.debitUsd)).minus(dec(l.creditUsd)), dec(0));
+      const difference = toMoney(postedThere.minus(now[key]));
+      if (difference.isZero()) continue;
+      lines.push({
+        accountKey: ACCOUNT_KEYS[key],
+        direction: difference.greaterThan(0) ? 'DEBIT' : 'CREDIT',
+        currency: 'USD',
+        amount: difference.abs(),
+        rateToUsd: 1,
+        description: `${expense.expenseNumber} taken back from where the cost sits now`,
+        shipmentId: expense.shipmentId,
+        purchaseContractId: expense.purchaseContractId,
+      });
+    }
+    if (lines.length >= 2) {
+      const company = await getCompanyContext(tx, params.companyId);
+      await postJournalEntry(tx, {
+        companyId: params.companyId,
+        entryDate: params.asOf,
+        description: `${expense.expenseNumber}: cost taken back from stock and sales as they stand`,
+        // Its own source, so a later correction of the cost never mistakes
+        // this for the cost's posting.
+        sourceType: 'LANDED_COST',
+        sourceId: expense.id,
+        createdById: params.userId,
+        localCurrency: company.localCurrency,
+        rateLocalPerUsd: expense.rateLocalPerUsd,
+        lines,
+      });
+    }
+  }
 
   return expense;
 }

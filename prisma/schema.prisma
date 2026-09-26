@@ -1173,6 +1173,7 @@ model Batch {
   receiptLines     GoodsReceiptLine[]
   transferLines    StockTransferLine[]
   creditNoteLines  CreditNoteLine[]
+  expenseShares    ExpenseBatchShare[]
   stockCountLines  StockCountLine[]
   expenses         Expense[]
 
@@ -1610,13 +1611,13 @@ model PaymentAllocation {
 }
 
 model Expense {
-  id                     String            @id @default(cuid())
+  id                     String               @id @default(cuid())
   /// Set when a management overhead allocation has included this expense.
   /// The expense itself is unchanged: this only records that it was counted.
   overheadAllocationId   String?
   companyId              String
   expenseNumber          String
-  expenseDate            DateTime          @db.Date
+  expenseDate            DateTime             @db.Date
   expenseCategoryId      String
   shipmentId             String?
   purchaseContractId     String?
@@ -1630,36 +1631,39 @@ model Expense {
   /// is the usual case: it is a real cost of the shipment from the day it is
   /// agreed, and the agent collects it later.
   payableToAgentId       String?
-  currency               String            @db.VarChar(3)
-  amount                 Decimal           @db.Decimal(18, 4)
-  rateToUsd              Decimal           @db.Decimal(18, 8)
-  amountUsd              Decimal           @db.Decimal(18, 4)
-  rateLocalPerUsd        Decimal           @db.Decimal(18, 8)
-  amountLocal            Decimal           @db.Decimal(18, 4)
+  currency               String               @db.VarChar(3)
+  amount                 Decimal              @db.Decimal(18, 4)
+  rateToUsd              Decimal              @db.Decimal(18, 8)
+  amountUsd              Decimal              @db.Decimal(18, 4)
+  rateLocalPerUsd        Decimal              @db.Decimal(18, 8)
+  amountLocal            Decimal              @db.Decimal(18, 4)
   cashBankAccountId      String?
-  paymentMethod          PaymentMethod     @default(BANK_TRANSFER)
+  paymentMethod          PaymentMethod        @default(BANK_TRANSFER)
   /// When true the amount is added to the shipment's landed cost instead of
   /// being written straight to the profit and loss account.
-  capitaliseToLandedCost Boolean           @default(false)
+  capitaliseToLandedCost Boolean              @default(false)
+  /// How a cost for the whole order is shared between its coffees. The
+  /// default is the client's own rule and what every earlier cost used.
+  allocationMethod       CostAllocationMethod @default(PER_ITEM)
   /// Recorded on the voucher, not inferred from the category later: a category
   /// reclassified next year must not silently rewrite what last year's
   /// expenses were.
-  kind                   ExpenseKind       @default(SHIPMENT)
+  kind                   ExpenseKind          @default(SHIPMENT)
   /// Recoverable input tax on top of `amount`. `amount` stays the net cost, so
   /// a capitalised expense never pushes reclaimable tax into landed cost.
   taxCodeId              String?
-  taxRatePct             Decimal           @default(0) @db.Decimal(9, 4)
-  taxAmount              Decimal           @default(0) @db.Decimal(18, 4)
-  taxAmountUsd           Decimal           @default(0) @db.Decimal(18, 4)
+  taxRatePct             Decimal              @default(0) @db.Decimal(9, 4)
+  taxAmount              Decimal              @default(0) @db.Decimal(18, 4)
+  taxAmountUsd           Decimal              @default(0) @db.Decimal(18, 4)
   reference              String?
   description            String?
-  status                 TransactionStatus @default(DRAFT)
+  status                 TransactionStatus    @default(DRAFT)
   postedAt               DateTime?
   reversedAt             DateTime?
   reversalReason         String?
   createdById            String
-  createdAt              DateTime          @default(now())
-  updatedAt              DateTime          @updatedAt
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
 
   company            Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   expenseCategory    ExpenseCategory     @relation(fields: [expenseCategoryId], references: [id])
@@ -1674,6 +1678,9 @@ model Expense {
   taxCode            TaxCode?            @relation(fields: [taxCodeId], references: [id])
   createdBy          User                @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
   allocations        PaymentAllocation[]
+  /// What this cost put on each batch when it was capitalised, so taking it
+  /// back takes exactly that off again, whatever has changed since.
+  batchShares        ExpenseBatchShare[]
   overheadAllocation OverheadAllocation? @relation("OverheadAllocationExpenses", fields: [overheadAllocationId], references: [id])
 
   @@unique([companyId, expenseNumber])
@@ -2393,4 +2400,35 @@ enum OverheadAllocationBasis {
 enum OverheadAllocationStatus {
   ACTIVE
   WITHDRAWN
+}
+
+/// How a shipment cost booked to the whole order is shared between its coffees.
+enum CostAllocationMethod {
+  /// Equal share per coffee on the order, then by weight within each coffee.
+  PER_ITEM
+  /// In proportion to kilograms, across every container.
+  BY_WEIGHT
+  /// In proportion to what each container's coffee cost.
+  BY_VALUE
+}
+
+/// The part of one capitalised cost that sits on one batch.
+///
+/// Recorded when the cost is spread and followed when a receipt divides the
+/// batch. Taking the cost back reverses these rows exactly: recomputing the
+/// split instead would use today's weights, and a container added or a price
+/// corrected since would move the cost onto coffee that never carried it.
+model ExpenseBatchShare {
+  id        String   @id @default(cuid())
+  expenseId String
+  batchId   String
+  amountUsd Decimal  @db.Decimal(18, 4)
+  createdAt DateTime @default(now())
+
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  batch   Batch   @relation(fields: [batchId], references: [id])
+
+  @@index([expenseId])
+  @@index([batchId])
+  @@map("expense_batch_shares")
 }

@@ -117,19 +117,25 @@ test('receiving the coffee is what makes it arrived, without pressing anything e
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible({ timeout: 20_000 });
 
-  // Take the first container only, so the partial state can be read.
-  const rows = dialog.getByRole('row').filter({ hasText: CONTAINERS[0].container });
-  if ((await rows.count()) > 0) {
-    const others = dialog.getByRole('row').filter({ hasText: CONTAINERS[1].container });
-    const tick = others.getByRole('checkbox').first();
-    if ((await tick.count()) && (await tick.isChecked())) await tick.uncheck();
-  }
-  await dialog.getByRole('button', { name: /^Receive/i }).first().click();
+  /*
+   * Nothing is ticked: the sheet pre-ticks only containers already marked
+   * arrived, and this path deliberately skips that. Tick the first container
+   * alone, as the person at the warehouse would, so the partial state can be
+   * read afterwards.
+   */
+  const first = dialog.getByRole('checkbox', { name: 'Receive container 1' });
+  await first.check();
+  const second = dialog.getByRole('checkbox', { name: 'Receive container 2' });
+  if ((await second.count()) && (await second.isChecked())) await second.uncheck();
+  await dialog.getByRole('button', { name: /^Receive selected \(1\)$/ }).click();
   await expect(dialog).toHaveCount(0, { timeout: 90_000 });
 
-  await page.waitForLoadState('networkidle').catch(() => undefined);
-  const partial = (await page.getByRole('main').innerText()).replace(/\s+/g, ' ');
-  expect(partial, 'one container in means one arrived, not none').toMatch(/1 of 2 containers arrived/);
+  // The sheet closes, then the page refreshes itself: wait for what it says.
+  await expect(page.getByText('received into stock').first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('main'), 'one container in means one arrived, not none').toContainText(
+    /1 of 2 containers arrived/,
+    { timeout: 60_000 },
+  );
   console.log('  after receiving one: 1 of 2 arrived');
 });
 
@@ -142,12 +148,14 @@ test('the second container takes it to fully arrived and fully received', async 
   await page.getByRole('button', { name: /Receive goods/i }).first().click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible({ timeout: 20_000 });
-  await dialog.getByRole('button', { name: /^Receive/i }).first().click();
+  // Only the container still outstanding is offered; tick it and receive.
+  await dialog.getByRole('checkbox', { name: 'Select all containers' }).check();
+  await dialog.getByRole('button', { name: /^Receive all$/ }).click();
   await expect(dialog).toHaveCount(0, { timeout: 90_000 });
 
-  await page.waitForLoadState('networkidle').catch(() => undefined);
+  await expect(page.getByText('received into stock').first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('main')).toContainText(/2 of 2 containers arrived/, { timeout: 60_000 });
   const full = (await page.getByRole('main').innerText()).replace(/\s+/g, ' ');
-  expect(full).toMatch(/2 of 2 containers arrived/);
   expect(full).toMatch(/Fully arrived/i);
   expect(full).toMatch(/2 of 2/);
   // And nothing anywhere still calls it pending.
