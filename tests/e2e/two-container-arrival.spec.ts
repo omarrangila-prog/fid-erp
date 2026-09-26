@@ -182,3 +182,24 @@ test('the purchase list and the loading sheet say the same thing', async ({ page
     console.log(`  loading sheet: ${sheetText.slice(0, 90)}`);
   }
 });
+
+test('the shipment page shows the whole order, opened from either container', async ({ page }) => {
+  test.setTimeout(240_000);
+  await signIn(page);
+  await page.goto(orderUrl, { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+  const hrefs = [...new Set(await page.locator('a[href^="/shipments/"]').evaluateAll((links) => links.map((a) => a.getAttribute('href')!)))]
+    .filter((href) => /^\/shipments\/[\w-]+$/.test(href));
+  expect(hrefs.length, 'one page link per container').toBeGreaterThanOrEqual(2);
+
+  for (const href of hrefs) {
+    await page.goto(href, { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle').catch(() => undefined);
+    await expect(page.getByRole('heading', { level: 1 }).first()).toHaveText(REFERENCE);
+    const text = (await page.getByRole('main').innerText()).replace(/\s+/g, ' ');
+    // Both containers, whichever was opened.
+    for (const line of CONTAINERS) expect(text, `${href} shows ${line.container}`).toContain(line.container);
+    expect(text).toMatch(/38,400(\.000)? KG/);
+    console.log(`  ${href}: ${REFERENCE}, both containers, 38,400 KG`);
+  }
+});

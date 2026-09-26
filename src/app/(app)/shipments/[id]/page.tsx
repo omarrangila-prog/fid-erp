@@ -15,7 +15,8 @@ import {
 import { prisma, transaction } from '@/lib/db';
 import { dec } from '@/lib/money';
 import { getShipmentSettlement } from '@/lib/services/shipment';
-import { getShipmentProfitabilityById } from '@/lib/services/profitability';
+import { getShipmentProfitability } from '@/lib/services/profitability';
+import { DualAmount } from '@/components/shared/dual-amount';
 import { getJobCostSummary, getShipmentCostSheet } from '@/lib/services/landed-cost';
 import { getBatchStock } from '@/lib/services/stock';
 import { formatMoney, formatQuantityKg, formatQuantityMt, formatDate, formatDateTime, formatPercent, formatRate, toDateInputValue } from '@/lib/format';
@@ -61,18 +62,38 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
       customer: { select: { id: true, customerName: true } },
       item: { select: { itemName: true, originCountry: true, grade: true } },
       shippingLine: { select: { id: true, name: true } },
-      containerList: { orderBy: { containerNumber: 'asc' } },
-      statusHistory: { orderBy: { changedAt: 'desc' }, include: { changedBy: { select: { name: true } } } },
-      docStatusHistory: { orderBy: { changedAt: 'desc' }, include: { changedBy: { select: { name: true } } } },
-      expenses: {
-        where: { status: 'POSTED' },
-        include: { expenseCategory: { select: { name: true } } },
-        orderBy: { expenseDate: 'desc' },
-      },
     },
   });
 
   if (!shipment) notFound();
+
+  /*
+   * The whole shipment, not the record that happened to be opened.
+   *
+   * ICUL/FID/002 was entered as one record holding both its containers, so
+   * its page always showed the whole shipment. Orders entered since hold one
+   * record per container, and each container's page showed only itself —
+   * three "shipments" for one ICUL/FID reference. The page now loads every
+   * record on the order, so every shipment reads the way ICUL/FID/002 does.
+   * Status and logistics actions still apply to the container opened.
+   */
+  const records = await prisma.shipment.findMany({
+    where: { companyId, purchaseContractId: shipment.purchaseContract.id },
+    orderBy: { createdAt: 'asc' },
+    include: {
+      item: { select: { itemName: true } },
+      containerList: { orderBy: { containerNumber: 'asc' } },
+      statusHistory: { orderBy: { changedAt: 'desc' }, include: { changedBy: { select: { name: true } } } },
+      docStatusHistory: { orderBy: { changedAt: 'desc' }, include: { changedBy: { select: { name: true } } } },
+    },
+  });
+  const ids = records.map((r) => r.id);
+  const local = user.activeCompany.localCurrency;
+  const containerLabel = (recordId: string) => {
+    const index = records.findIndex((r) => r.id === recordId);
+    const numbers = records[index]?.containerList.map((c) => c.containerNumber).join(', ');
+    return `Container ${index + 1}${numbers ? ` · ${numbers}` : ''}`;
+  };
 
   /*
    * The sales from this shipment's coffee: every invoice with a line sold from
@@ -81,24 +102,29 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
    * reason a sold-out SCREEN 18 container once showed almost no sales.
    */
   const soldFromHere = await prisma.$queryRaw<
-    Array<{ id: string; invoiceDate: Date; currency: string; customerName: string; kg: string; amount: string }>
+    Array<{ id: string; invoiceDate: Date; currency: string; rate: string; customerName: string; kg: string; amount: string; usd: string }>
   >`
-    SELECT si."id", si."invoiceDate", si."currency", c."customerName",
-           SUM(sil."quantityKg")::text AS kg, SUM(sil."lineTotal")::text AS amount
+    SELECT si."id", si."invoiceDate", si."currency", si."rateLocalPerUsd"::text AS rate, c."customerName",
+           SUM(sil."quantityKg")::text AS kg, SUM(sil."lineTotal")::text AS amount, SUM(sil."lineTotalUsd")::text AS usd
     FROM sales_invoice_lines sil
     JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
     JOIN batches b ON b."id" = sil."batchId"
     JOIN customers c ON c."id" = si."customerId"
-    WHERE b."shipmentId" = ${shipment.id} AND si."status" = 'POSTED'
-    GROUP BY si."id", si."invoiceDate", si."currency", c."customerName"
+    WHERE b."shipmentId" = ANY(${ids}) AND si."status" = 'POSTED'
+    GROUP BY si."id", si."invoiceDate", si."currency", si."rateLocalPerUsd", c."customerName"
     ORDER BY si."invoiceDate" DESC`;
 
-  const [settlement, profit, jobCost, costSheet, batches, shippingLines, customers, ports] = await Promise.all([
-    getShipmentSettlement(prisma as never, companyId, shipment.id),
-    showProfit ? getShipmentProfitabilityById(companyId, shipment.id) : Promise.resolve(null),
-    showCost ? transaction((tx) => getJobCostSummary(tx, companyId, shipment.id)) : Promise.resolve(null),
-    showCost ? getShipmentCostSheet(companyId, shipment.id) : Promise.resolve(null),
-    getBatchStock({ companyId, shipmentId: shipment.id, includeEmpty: true }),
+  const [settlements, pnlRows, jobCost, costSheet, batches, orderExpenses, shippingLines, customers, ports] = await Promise.all([
+    Promise.all(ids.map((recordId) => getShipmentSettlement(prisma as never, companyId, recordId))),
+    showProfit ? getShipmentProfitability({ companyId }) : Promise.resolve([]),
+    showCost ? transaction((tx) => getJobCostSummary(tx, companyId, ids)) : Promise.resolve(null),
+    showCost ? getShipmentCostSheet(companyId, shipment.id, { wholeOrder: true }) : Promise.resolve(null),
+    getBatchStock({ companyId, purchaseContractId: shipment.purchaseContract.id, includeEmpty: true }),
+    prisma.expense.findMany({
+      where: { companyId, shipmentId: { in: ids }, status: 'POSTED' },
+      include: { expenseCategory: { select: { name: true } } },
+      orderBy: { expenseDate: 'desc' },
+    }),
     prisma.shippingLine.findMany({
       where: { companyId, status: 'ACTIVE' },
       orderBy: { name: 'asc' },
@@ -116,36 +142,89 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
     }),
   ]);
 
-  const costing = await getBatchCostings({ companyId, shipmentId: shipment.id });
+  const costing = await getBatchCostings({ companyId, purchaseContractId: shipment.purchaseContract.id });
+  const localPerKg = new Map(costing.map((c) => [c.batchId, c.landedPerKgLocal]));
 
-  const siblings = shipment.purchaseContract.shipments;
-  const ordinal = siblings.findIndex((s) => s.id === shipment.id) + 1;
-  const orderLabel = siblings.length > 1 ? `Shipment ${ordinal} of ${siblings.length}` : null;
+  // The order's money, added up once from its containers.
+  const settlement = (() => {
+    const invoicedUsd = settlements.reduce((t, x) => t.plus(x.invoicedUsd), dec(0));
+    const receivedUsd = settlements.reduce((t, x) => t.plus(x.receivedUsd), dec(0));
+    const outstandingUsd = invoicedUsd.minus(receivedUsd);
+    const status = invoicedUsd.isZero() ? 'UNPAID' : outstandingUsd.lessThanOrEqualTo('0.005') ? 'PAID' : receivedUsd.greaterThan(0) ? 'PARTIAL' : 'UNPAID';
+    return { invoicedUsd, receivedUsd, outstandingUsd, status };
+  })();
+  const mine = pnlRows.filter((row) => ids.includes(row.shipmentId));
+  const total = (pick: (row: (typeof mine)[number]) => Parameters<typeof dec>[0]) => mine.reduce((t, row) => t.plus(dec(pick(row))), dec(0));
+  const profit = showProfit && mine.length
+    ? (() => {
+        const soldKg = total((r) => r.soldQuantityKg);
+        const revenueUsd = total((r) => r.salesRevenueUsd);
+        const grossUsd = total((r) => r.grossProfitUsd);
+        const netUsd = total((r) => r.netProfitUsd);
+        const netLocal = total((r) => r.netProfitLocal);
+        const pct = (part: ReturnType<typeof dec>) => (revenueUsd.greaterThan(0) ? part.dividedBy(revenueUsd).times(100) : dec(0));
+        return {
+          soldQuantityKg: soldKg,
+          remainingQuantityKg: total((r) => r.remainingQuantityKg),
+          salesRevenueUsd: revenueUsd,
+          salesRevenueLocal: total((r) => r.salesRevenueLocal),
+          allocatedLandedCostUsd: total((r) => r.allocatedLandedCostUsd),
+          allocatedLandedCostLocal: total((r) => r.allocatedLandedCostLocal),
+          grossProfitUsd: grossUsd,
+          grossProfitLocal: total((r) => r.grossProfitLocal),
+          grossMarginPct: pct(grossUsd),
+          otherCostsUsd: total((r) => r.otherCostsUsd),
+          otherCostsLocal: total((r) => r.otherCostsLocal),
+          netProfitUsd: netUsd,
+          netProfitLocal: netLocal,
+          netMarginPct: pct(netUsd),
+          profitPerKgUsd: soldKg.greaterThan(0) ? netUsd.dividedBy(soldKg) : dec(0),
+          profitPerKgLocal: soldKg.greaterThan(0) ? netLocal.dividedBy(soldKg) : dec(0),
+        };
+      })()
+    : null;
+  // Sales in the company's currency are at each invoice's own rate; this is
+  // their weighted rate, used only to restate what has been received.
+  const salesRate = profit && profit.salesRevenueUsd.greaterThan(0) ? profit.salesRevenueLocal.dividedBy(profit.salesRevenueUsd) : null;
+
+  const quantityKg = records.reduce((t, r) => t.plus(dec(r.quantityKg)), dec(0));
+  const bags = records.reduce((t, r) => t + r.bags, 0);
+  const containerCount = records.reduce((t, r) => t + r.containers, 0);
+  const lastEta = records.map((r) => r.etaDate).filter(Boolean).sort((a, b) => b!.getTime() - a!.getTime())[0] ?? null;
+  const items = [...new Set(records.map((r) => r.item.itemName))];
+  const statuses = [...new Set(records.map((r) => r.status))];
+  const arrived = records.filter((r) => SHIPMENT_STATUSES_LANDED.includes(r.status)).length;
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title={orderLabel ? `${shipment.purchaseContract.contractReference} — ${orderLabel}` : shipment.purchaseContract.contractReference}
-        description={`${shipment.item.itemName} · ${shipment.vendor.vendorName}${orderLabel ? ` · one of ${siblings.length} shipments on this order` : ''}`}
+        title={shipment.purchaseContract.contractReference}
+        description={`${items.join(' / ')} · ${shipment.vendor.vendorName}`}
         breadcrumbs={[{ label: 'Trading' }, { label: 'Shipments', href: '/shipments' }, { label: shipment.purchaseContract.contractReference }]}
         meta={
           <>
-            <StatusBadge status={shipment.status} meta={SHIPMENT_STATUS_META} />
+            {statuses.length === 1 ? (
+              <StatusBadge status={statuses[0]} meta={SHIPMENT_STATUS_META} />
+            ) : (
+              <Badge tone="progress">
+                {arrived} of {records.length} containers arrived
+              </Badge>
+            )}
             <StatusBadge status={shipment.documentStatus} meta={DOCUMENT_STATUS_META} />
             <StatusBadge status={settlement.status} meta={SETTLEMENT_STATUS_META} />
             <Link href={`/purchases/${shipment.purchaseContract.id}`}>
-              <Badge tone="info">{shipment.purchaseContract.contractReference}</Badge>
+              <Badge tone="info">Purchase order</Badge>
             </Link>
-            {siblings.length > 1
-              ? siblings.map((sibling, index) =>
-                  sibling.id === shipment.id ? (
-                    <Badge key={sibling.id} tone="progress">
-                      Shipment {index + 1}
+            {records.length > 1
+              ? records.map((record, index) =>
+                  record.id === shipment.id ? (
+                    <Badge key={record.id} tone="progress" title="Status and logistics actions apply to this container">
+                      Container {index + 1} · actions
                     </Badge>
                   ) : (
-                    <Link key={sibling.id} href={`/shipments/${sibling.id}`}>
-                      <Badge tone={SHIPMENT_STATUSES_LANDED.includes(sibling.status) ? 'success' : 'neutral'}>
-                        Shipment {index + 1}
+                    <Link key={record.id} href={`/shipments/${record.id}`} title="Use this container's status and logistics actions">
+                      <Badge tone={SHIPMENT_STATUSES_LANDED.includes(record.status) ? 'success' : 'neutral'}>
+                        Container {index + 1}
                       </Badge>
                     </Link>
                   ),
@@ -195,18 +274,21 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
       />
 
       <MetricGrid>
-        <Metric label="Quantity" value={formatQuantityKg(shipment.quantityKg)} hint={`${shipment.bags.toLocaleString()} bags`} />
-        <Metric label="Containers" value={String(shipment.containers)} />
-        <Metric label="ETA" value={formatDate(shipment.etaDate)} hint={shipment.vesselName ?? undefined} />
-        <Metric label="Invoiced" value={formatMoney(settlement.invoicedUsd, 'USD')} />
+        <Metric label="Quantity" value={formatQuantityKg(quantityKg)} hint={`${bags.toLocaleString()} bags`} />
+        <Metric label="Containers" value={String(containerCount)} hint={items.join(' / ')} />
+        <Metric label="ETA" value={formatDate(lastEta)} hint={records.length > 1 ? 'Latest of the containers' : (shipment.vesselName ?? undefined)} />
+        <Metric
+          label="Invoiced"
+          value={<DualAmount amount={settlement.invoicedUsd} currency="USD" localCurrency={local} amountLocal={profit?.salesRevenueLocal} rateSource="Each invoice at its own rate" hideMissing />}
+        />
         <Metric
           label="Received"
-          value={formatMoney(settlement.receivedUsd, 'USD')}
+          value={<DualAmount amount={settlement.receivedUsd} currency="USD" localCurrency={local} rateLocalPerUsd={salesRate} rateSource="Weighted rate of the invoices' own rates" hideMissing />}
           tone={settlement.receivedUsd.greaterThan(0) ? 'positive' : 'muted'}
         />
         <Metric
           label="Outstanding"
-          value={formatMoney(settlement.outstandingUsd, 'USD')}
+          value={<DualAmount amount={settlement.outstandingUsd} currency="USD" localCurrency={local} rateLocalPerUsd={salesRate} rateSource="Weighted rate of the invoices' own rates" hideMissing />}
           tone={settlement.outstandingUsd.greaterThan(0) ? 'negative' : 'positive'}
         />
       </MetricGrid>
@@ -231,22 +313,20 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
           <CardContent className="space-y-4">
             <MetricGrid className="lg:grid-cols-5">
               <Metric
-                label="Purchase cost USD"
-                value={formatMoney(costSheet.goodsUsd, 'USD')}
-                hint={`${formatMoney(costSheet.goodsLocal, costSheet.localCurrency)} at the contract rate`}
+                label="Purchase cost"
+                value={<DualAmount amount={costSheet.goodsUsd} currency="USD" localCurrency={costSheet.localCurrency} amountLocal={costSheet.goodsLocal} rateLocalPerUsd={costSheet.rateLocalPerUsd} rateSource="The purchase order's own rate" />}
               />
               <Metric
-                label={`Local shipment expenses ${costSheet.localCurrency}`}
-                value={formatMoney(costSheet.expenseLocal, costSheet.localCurrency)}
-                hint={`${formatMoney(costSheet.expenseUsd, 'USD')} USD equivalent`}
+                label="Local shipment expenses"
+                value={<DualAmount amount={costSheet.expenseLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} amountUsd={costSheet.expenseUsd} rateSource="Each expense at its own rate" />}
               />
               <Metric
-                label="Total landed cost USD"
-                value={formatMoney(costSheet.totalShipmentCostUsd, 'USD')}
+                label="Total landed cost"
+                value={<DualAmount amount={costSheet.totalShipmentCostLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} amountUsd={costSheet.totalShipmentCostUsd} rateSource="Each transaction at its own rate" />}
                 hint={
                   costSheet.periodExpenseUsd.isZero()
-                    ? formatMoney(costSheet.totalShipmentCostLocal, costSheet.localCurrency)
-                    : `${formatMoney(costSheet.totalShipmentCostLocal, costSheet.localCurrency)} · leaves out ${formatMoney(costSheet.periodExpenseLocal, costSheet.localCurrency)} not added to the coffee`
+                    ? undefined
+                    : `Leaves out ${formatMoney(costSheet.periodExpenseLocal, costSheet.localCurrency)} not added to the coffee`
                 }
               />
               <Metric
@@ -260,19 +340,24 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
               />
               <Metric
                 label="Cost / MT"
-                value={formatMoney(costSheet.costPerMtUsd, 'USD')}
-                hint={formatMoney(costSheet.costPerMtLocal, costSheet.localCurrency)}
+                value={<DualAmount amount={costSheet.costPerMtLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} amountUsd={costSheet.costPerMtUsd} rateSource="From the landed cost, each transaction at its own rate" />}
               />
               <Metric
                 label="Cost / KG"
-                value={formatMoney(costSheet.costPerKgUsd, 'USD')}
-                hint={formatMoney(costSheet.costPerKgLocal, costSheet.localCurrency)}
+                value={<DualAmount amount={costSheet.costPerKgLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} amountUsd={costSheet.costPerKgUsd} rateSource="From the landed cost, each transaction at its own rate" />}
               />
-              <Metric label="Revenue" value={formatMoney(costSheet.revenueUsd, 'USD')} />
-              <Metric label="COGS" value={formatMoney(costSheet.cogsUsd, 'USD')} tone="muted" />
+              <Metric
+                label="Revenue"
+                value={<DualAmount amount={costSheet.revenueLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} amountUsd={costSheet.revenueUsd} rateSource="Each invoice at its own rate" />}
+              />
+              <Metric
+                label="COGS"
+                value={<DualAmount amount={costSheet.cogsLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} amountUsd={costSheet.cogsUsd} rateSource="At the rates the cost was incurred at" />}
+                tone="muted"
+              />
               <Metric
                 label="Gross profit"
-                value={formatMoney(costSheet.grossProfitUsd, 'USD')}
+                value={<DualAmount amount={costSheet.grossProfitLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} amountUsd={costSheet.grossProfitUsd} rateSource="Sales less cost of sales, each at its own rate" />}
                 tone={costSheet.grossProfitUsd.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
                 hint={formatPercent(costSheet.profitPct)}
               />
@@ -302,7 +387,9 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                       <TR key={line.batchId}>
                         <TD className="font-medium">{line.batchNumber}</TD>
                         <TD numeric>{formatQuantityKg(line.quantityKg)}</TD>
-                        <TD numeric>{formatMoney(line.purchaseCostUsd, 'USD')}</TD>
+                        <TD numeric>
+                          <DualAmount amount={line.purchaseCostUsd} currency="USD" localCurrency={costSheet.localCurrency} rateLocalPerUsd={costSheet.rateLocalPerUsd} rateSource="The purchase order's own rate" />
+                        </TD>
                       </TR>
                     ))}
                   </TBody>
@@ -310,7 +397,9 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                     <tr>
                       <TD>Total purchase cost</TD>
                       <TD />
-                      <TD numeric>{formatMoney(costSheet.goodsUsd, 'USD')}</TD>
+                      <TD numeric>
+                        <DualAmount amount={costSheet.goodsUsd} currency="USD" localCurrency={costSheet.localCurrency} amountLocal={costSheet.goodsLocal} rateSource="The purchase order's own rate" />
+                      </TD>
                     </tr>
                   </TFoot>
                 </Table>
@@ -390,7 +479,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
       {showProfit && profit ? (
         <Card>
           <CardHeader>
-            <CardTitle>Job profitability</CardTitle>
+            <CardTitle>Shipment profitability</CardTitle>
             <CardDescription>
               Only the coffee that has actually sold counts. Unsold stock stays on the balance sheet.
             </CardDescription>
@@ -399,25 +488,25 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
             <MetricGrid className="lg:grid-cols-5">
               <Metric label="Sold" value={formatQuantityKg(profit.soldQuantityKg)} />
               <Metric label="Remaining" value={formatQuantityKg(profit.remainingQuantityKg)} tone="muted" />
-              <Metric label="Sales revenue" value={formatMoney(profit.salesRevenueUsd, 'USD')} />
-              <Metric label="Landed cost of sales" value={formatMoney(profit.allocatedLandedCostUsd, 'USD')} tone="muted" />
+              <Metric label="Sales revenue" value={<DualAmount amount={profit.salesRevenueLocal} currency={local} localCurrency={local} amountUsd={profit.salesRevenueUsd} rateSource="Each invoice at its own rate" />} />
+              <Metric label="Landed cost of sales" value={<DualAmount amount={profit.allocatedLandedCostLocal} currency={local} localCurrency={local} amountUsd={profit.allocatedLandedCostUsd} rateSource="At the rates the cost was incurred at" />} tone="muted" />
               <Metric
                 label="Gross profit"
-                value={formatMoney(profit.grossProfitUsd, 'USD')}
+                value={<DualAmount amount={profit.grossProfitLocal} currency={local} localCurrency={local} amountUsd={profit.grossProfitUsd} rateSource="Each transaction at its own rate" />}
                 tone={profit.grossProfitUsd.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
                 hint={`${formatPercent(profit.grossMarginPct)} margin`}
               />
-              <Metric label="Period costs" value={formatMoney(profit.otherCostsUsd, 'USD')} tone="muted" />
+              <Metric label="Period costs" value={<DualAmount amount={profit.otherCostsLocal} currency={local} localCurrency={local} amountUsd={profit.otherCostsUsd} rateSource="Each expense at its own rate" />} tone="muted" />
               <Metric
                 label="Net profit"
-                value={formatMoney(profit.netProfitUsd, 'USD')}
+                value={<DualAmount amount={profit.netProfitLocal} currency={local} localCurrency={local} amountUsd={profit.netProfitUsd} rateSource="Each transaction at its own rate" />}
                 tone={profit.netProfitUsd.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
                 hint={`${formatPercent(profit.netMarginPct)} margin`}
               />
-              <Metric label="Profit per KG" value={formatMoney(profit.profitPerKgUsd, 'USD')} />
-              {jobCost ? (
+              <Metric label="Profit per KG" value={<DualAmount amount={profit.profitPerKgLocal} currency={local} localCurrency={local} amountUsd={profit.profitPerKgUsd} rateSource="Each transaction at its own rate" />} />
+              {jobCost && costSheet ? (
                 <>
-                  <Metric label="Landed cost / KG" value={formatMoney(jobCost.landedCostPerKgUsd, 'USD')} />
+                  <Metric label="Landed cost / KG" value={<DualAmount amount={costSheet.costPerKgLocal} currency={local} localCurrency={local} amountUsd={jobCost.landedCostPerKgUsd} rateSource="Each transaction at its own rate" />} />
                   <Metric label="Landed cost / bag" value={formatMoney(jobCost.landedCostPerBagUsd, 'USD')} />
                 </>
               ) : null}
@@ -461,7 +550,11 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                       <TD numeric>{formatQuantityKg(b.receivedKg)}</TD>
                       <TD numeric>{formatQuantityKg(b.soldKg)}</TD>
                       <TD numeric className="font-medium">{formatQuantityKg(b.availableKg)}</TD>
-                      {showCost ? <TD numeric>{formatMoney(b.unitCostUsd, 'USD')}</TD> : null}
+                      {showCost ? (
+                        <TD numeric>
+                          <DualAmount amount={b.unitCostUsd} currency="USD" localCurrency={local} amountLocal={localPerKg.get(b.batchId) ?? null} rateSource="The purchase at its rate, each cost at its own" hideMissing />
+                        </TD>
+                      ) : null}
                     </TR>
                   ))}
                 </TBody>
@@ -509,18 +602,32 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
               <DetailRow label="Delivered">{formatDate(shipment.deliveryDate)}</DetailRow>
             </dl>
 
-            {shipment.containerList.length > 0 ? (
+            {records.some((r) => r.containerList.length > 0) ? (
               <div className="mt-3 border-t border-line pt-3">
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink-subtle">Containers</p>
-                <ul className="space-y-1">
-                  {shipment.containerList.map((c) => (
-                    <li key={c.id} className="flex items-center justify-between text-xs">
-                      <span className="font-medium text-ink">{c.containerNumber}</span>
-                      <span className="text-ink-subtle">
-                        {c.containerType} · {formatQuantityKg(c.netWeightKg)}
-                      </span>
-                    </li>
-                  ))}
+                <ul className="space-y-2">
+                  {records.flatMap((record, index) =>
+                    record.containerList.map((c) => (
+                      <li key={c.id} className="text-xs">
+                        <span className="flex items-center justify-between">
+                          <span className="font-medium text-ink">{c.containerNumber}</span>
+                          <span className="text-ink-subtle">
+                            {c.containerType} · {formatQuantityKg(c.netWeightKg)}
+                          </span>
+                        </span>
+                        {records.length > 1 ? (
+                          <span className="block text-ink-subtle">
+                            Container {index + 1} · {record.item.itemName} ·{' '}
+                            {SHIPMENT_STATUS_META[record.status]?.label ?? record.status}
+                            {record.etaDate ? ` · ETA ${formatDate(record.etaDate)}` : ''}
+                            {record.ataDate ? ` · arrived ${formatDate(record.ataDate)}` : ''}
+                            {record.vesselName ? ` · ${record.vesselName}` : ''}
+                            {record.billOfLading ? ` · B/L ${record.billOfLading}` : ''}
+                          </span>
+                        ) : null}
+                      </li>
+                    )),
+                  )}
                 </ul>
               </div>
             ) : null}
@@ -531,11 +638,11 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Sales against this job</CardTitle>
+            <CardTitle>Sales against this shipment</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {soldFromHere.length === 0 ? (
-              <p className="py-4 text-center text-xs text-ink-subtle">Nothing sold from this job yet.</p>
+              <p className="py-4 text-center text-xs text-ink-subtle">Nothing sold from this shipment yet.</p>
             ) : (
               soldFromHere.map((inv) => (
                 <Link
@@ -549,9 +656,15 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                       {formatDate(inv.invoiceDate)} · {formatQuantityKg(dec(inv.kg))} from this shipment
                     </span>
                   </span>
-                  <span className="tnum shrink-0 text-sm font-semibold">
-                    {formatMoney(dec(inv.amount), inv.currency)}
-                  </span>
+                  <DualAmount
+                    className="shrink-0 text-right text-sm"
+                    amount={dec(inv.amount)}
+                    currency={inv.currency}
+                    localCurrency={local}
+                    rateLocalPerUsd={dec(inv.rate)}
+                    amountUsd={inv.currency === local ? dec(inv.usd) : null}
+                    rateSource={`This invoice's own rate, ${formatDate(inv.invoiceDate)}`}
+                  />
                 </Link>
               ))
             )}
@@ -560,14 +673,14 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
 
         <Card>
           <CardHeader>
-            <CardTitle>Job costs</CardTitle>
+            <CardTitle>Shipment costs</CardTitle>
             <CardDescription>Capitalised costs raise the landed cost; period costs reduce net profit.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {shipment.expenses.length === 0 ? (
-              <p className="py-4 text-center text-xs text-ink-subtle">No costs booked to this job yet.</p>
+            {orderExpenses.length === 0 ? (
+              <p className="py-4 text-center text-xs text-ink-subtle">No costs booked to this shipment yet.</p>
             ) : (
-              shipment.expenses.map((e) => (
+              orderExpenses.map((e) => (
                 <Link
                   key={e.id}
                   href={`/finance/expenses/${e.id}`}
@@ -582,7 +695,16 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                     </span>
                   </span>
                   <span className="shrink-0 text-right">
-                    <span className="tnum block text-sm font-semibold">{formatMoney(e.amount, e.currency)}</span>
+                    <DualAmount
+                      className="text-sm"
+                      amount={e.amount}
+                      currency={e.currency}
+                      localCurrency={local}
+                      amountUsd={e.amountUsd}
+                      amountLocal={e.amountLocal}
+                      rateLocalPerUsd={e.rateLocalPerUsd}
+                      rateSource={`This expense's own rate, ${formatDate(e.expenseDate)}`}
+                    />
                     <Badge tone={e.capitaliseToLandedCost ? 'info' : 'neutral'}>
                       {e.capitaliseToLandedCost ? 'Landed cost' : 'Period cost'}
                     </Badge>
@@ -600,8 +722,10 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
           <CardDescription>Every status change, who made it and when.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
-          {[...shipment.statusHistory.map((h) => ({ ...h, kind: 'status' as const })),
-            ...shipment.docStatusHistory.map((h) => ({ ...h, kind: 'document' as const }))]
+          {records.flatMap((record) => [
+            ...record.statusHistory.map((h) => ({ ...h, kind: 'status' as const, recordId: record.id })),
+            ...record.docStatusHistory.map((h) => ({ ...h, kind: 'document' as const, recordId: record.id })),
+          ])
             .sort((a, b) => b.changedAt.getTime() - a.changedAt.getTime())
             .map((entry) => (
               <div key={`${entry.kind}-${entry.id}`} className="flex items-start gap-3 border-b border-line pb-2 last:border-0">
@@ -611,6 +735,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                 />
                 <div className="min-w-0 flex-1">
                   <p className="text-xs text-ink-muted">
+                    {records.length > 1 ? `${containerLabel(entry.recordId)} · ` : ''}
                     {entry.kind === 'document' ? 'Documents · ' : ''}
                     {entry.changedBy.name} · {formatDateTime(entry.changedAt)}
                   </p>

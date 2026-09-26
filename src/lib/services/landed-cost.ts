@@ -468,8 +468,9 @@ export async function restateSoldCost(
   }
 }
 
-/** Landed cost summary for one job, used by the shipment costing screen. */
-export async function getJobCostSummary(tx: Tx, companyId: string, shipmentId: string) {
+/** Landed cost summary for one job — or every job on an order — for the shipment costing screen. */
+export async function getJobCostSummary(tx: Tx, companyId: string, shipmentId: string | string[]) {
+  const ids = Array.isArray(shipmentId) ? shipmentId : [shipmentId];
   const rows = await tx.$queryRaw<
     Array<{
       goodsUsd: string;
@@ -488,7 +489,7 @@ export async function getJobCostSummary(tx: Tx, companyId: string, shipmentId: s
       COALESCE(SUM(b."soldQuantityKg"), 0)::text     AS "soldKg",
       COALESCE(SUM(b."orderedBags"), 0)::text        AS bags
     FROM batches b
-    WHERE b."companyId" = ${companyId} AND b."shipmentId" = ${shipmentId} AND b."status" = 'ACTIVE'
+    WHERE b."companyId" = ${companyId} AND b."shipmentId" = ANY(${ids}) AND b."status" = 'ACTIVE'
   `;
 
   const row = rows[0];
@@ -540,8 +541,25 @@ export type ShipmentPurchaseLine = {
 };
 
 /** The costing / profitability sheet for one consignment. */
-export async function getShipmentCostSheet(companyId: string, shipmentId: string) {
-  const job = await getJobCostSummary(prisma as Tx, companyId, shipmentId);
+export async function getShipmentCostSheet(
+  companyId: string,
+  shipmentId: string,
+  options: {
+    /**
+     * The whole order this shipment record is on — every container, its
+     * costs and its sales. What the shipment page shows: the client's
+     * shipment is the order's reference, whether the order was entered as one
+     * record holding two containers or one record per container.
+     */
+    wholeOrder?: boolean;
+  } = {},
+) {
+  const anchor = await prisma.shipment.findFirstOrThrow({
+    where: { id: shipmentId, companyId },
+    select: { purchaseContract: { select: { shipments: { select: { id: true } } } } },
+  });
+  const shipmentIds = options.wholeOrder ? anchor.purchaseContract.shipments.map((s) => s.id) : [shipmentId];
+  const job = await getJobCostSummary(prisma as Tx, companyId, shipmentIds);
 
   const [company, shipment] = await Promise.all([
     prisma.company.findUniqueOrThrow({
@@ -565,7 +583,7 @@ export async function getShipmentCostSheet(companyId: string, shipmentId: string
 
   const [expenses, purchaseBatches] = await Promise.all([
     prisma.expense.findMany({
-      where: { companyId, shipmentId, status: 'POSTED', kind: 'SHIPMENT' },
+      where: { companyId, shipmentId: { in: shipmentIds }, status: 'POSTED', kind: 'SHIPMENT' },
       include: {
         expenseCategory: { select: { name: true } },
         cashBankAccount: { select: { name: true } },
@@ -576,7 +594,7 @@ export async function getShipmentCostSheet(companyId: string, shipmentId: string
       orderBy: [{ expenseDate: 'asc' }, { expenseNumber: 'asc' }],
     }),
     prisma.batch.findMany({
-      where: { companyId, shipmentId, status: 'ACTIVE' },
+      where: { companyId, shipmentId: { in: shipmentIds }, status: 'ACTIVE' },
       select: {
         id: true,
         batchNumber: true,
@@ -655,9 +673,11 @@ export async function getShipmentCostSheet(companyId: string, shipmentId: string
    * wrong one — while its own lines said otherwise. The same figures the
    * shipment P&L uses.
    */
-  const [pnl] = await getShipmentProfitability({ companyId, shipmentId });
-  const revenueUsd = toMoney(pnl?.salesRevenueUsd ?? 0);
-  const cogsUsd = toMoney(pnl?.allocatedLandedCostUsd ?? 0);
+  const pnl = (await getShipmentProfitability({ companyId })).filter((row) => shipmentIds.includes(row.shipmentId));
+  const revenueUsd = toMoney(sum(pnl.map((row) => row.salesRevenueUsd)));
+  const cogsUsd = toMoney(sum(pnl.map((row) => row.allocatedLandedCostUsd)));
+  const revenueLocal = toMoney(sum(pnl.map((row) => row.salesRevenueLocal)));
+  const cogsLocal = toMoney(sum(pnl.map((row) => row.allocatedLandedCostLocal)));
   const grossProfitUsd = toMoney(revenueUsd.minus(cogsUsd));
   const soldKg = toQuantity(job.soldKg);
 
@@ -687,6 +707,9 @@ export async function getShipmentCostSheet(companyId: string, shipmentId: string
     costPerMtLocal,
     revenueUsd,
     cogsUsd,
+    revenueLocal,
+    cogsLocal,
+    grossProfitLocal: toMoney(revenueLocal.minus(cogsLocal)),
     grossProfitUsd,
     profitPerKgUsd: soldKg.greaterThan(0) ? toUnitCost(grossProfitUsd.dividedBy(soldKg)) : new Decimal(0),
     profitPct: revenueUsd.greaterThan(0) ? grossProfitUsd.dividedBy(revenueUsd).times(100) : new Decimal(0),

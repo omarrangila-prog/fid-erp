@@ -99,6 +99,16 @@ describe('sales follow the coffee', () => {
     expect(total).toBeCloseTo(Number(invoices._sum.subtotalUsd), 2);
   }, 300_000);
 
+  it("either container's shipment page shows the whole shipment: both containers, all its sales", async () => {
+    for (const opened of [a.shipmentId, b.shipmentId]) {
+      const whole = await getShipmentCostSheet(companyId, opened, { wholeOrder: true });
+      expect(Number(whole.revenueUsd)).toBeCloseTo(120_000, 2);
+      expect(Number(whole.cogsUsd)).toBeCloseTo(80_000, 2);
+      expect(Number(whole.receivedKg)).toBeCloseTo(20_000, 3);
+      expect(whole.purchaseLines).toHaveLength(2);
+    }
+  }, 300_000);
+
   it('what each container has invoiced is its own share', async () => {
     const sa = await getShipmentSettlement(prisma, companyId, a.shipmentId);
     const sb = await getShipmentSettlement(prisma, companyId, b.shipmentId);

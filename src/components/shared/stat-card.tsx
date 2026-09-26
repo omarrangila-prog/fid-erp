@@ -65,7 +65,8 @@ export function Metric({
   hint,
 }: {
   label: string;
-  value: string;
+  /** Text, or a DualAmount for a figure shown in two currencies. */
+  value: React.ReactNode;
   tone?: 'default' | 'positive' | 'negative' | 'muted';
   hint?: string;
 }) {
