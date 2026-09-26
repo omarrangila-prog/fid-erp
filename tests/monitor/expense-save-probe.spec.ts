@@ -6,7 +6,7 @@ import { test, expect, type Page } from '@playwright/test';
  * This is the one probe in this folder that writes: the client cannot save a
  * cost and the logs alone have not settled why, so it does what they do. It
  * uses a token amount, marks the memo plainly as a probe, and deletes what
- * it created before it finishes. It runs only when asked for by name.
+ * it created before it finishes. It runs only with MONITOR_ALLOW_WRITE=1.
  */
 
 const ADMIN_PIN = process.env.ADMIN_PIN;
@@ -15,6 +15,9 @@ const COMPANY = process.env.MONITOR_COMPANY ?? 'FID Trading International SARL';
 const MEMO = 'Probe — safe to delete, raised while diagnosing the save failure';
 
 test.skip(!ADMIN_PIN, 'Set ADMIN_PIN to run the monitor.');
+// The one probe here that writes. A routine monitor run must never touch the
+// live books, so it runs only when asked for explicitly.
+test.skip(process.env.MONITOR_ALLOW_WRITE !== '1', 'Writes to the live books: set MONITOR_ALLOW_WRITE=1 to run it.');
 test.describe.configure({ mode: 'serial' });
 
 async function signIn(page: Page) {

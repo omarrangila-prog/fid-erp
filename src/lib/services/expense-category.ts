@@ -2,6 +2,7 @@ import type { Tx } from '@/lib/db';
 import { transaction } from '@/lib/db';
 import { BusinessRuleError, ConflictError } from '@/lib/errors';
 import { writeAudit } from '@/lib/services/audit';
+import { openExpenseAccountIn } from '@/lib/services/chart-of-accounts';
 import type { ExpenseKind } from '@prisma/client';
 
 /**
@@ -68,6 +69,9 @@ export async function quickCreateExpenseCategory(params: {
     }
 
     const code = await nextCategoryCode(tx, params.companyId, name);
+    // A general cost is posted to a ledger of its own name, so the P&L says
+    // what the money went on. A shipment cost is added to the coffee instead.
+    const ledger = kind === 'GENERAL' ? await openExpenseAccountIn(tx, params.companyId, name) : null;
     const created = await tx.expenseCategory.create({
       data: {
         companyId: params.companyId,
@@ -77,6 +81,7 @@ export async function quickCreateExpenseCategory(params: {
         kind,
         capitaliseByDefault,
         status: 'ACTIVE',
+        ...(ledger ? { glAccountId: ledger.id } : {}),
       },
       select: {
         id: true,
@@ -93,7 +98,7 @@ export async function quickCreateExpenseCategory(params: {
       action: 'EXPENSE_CATEGORY_CREATED',
       entityType: 'ExpenseCategory',
       entityId: created.id,
-      after: { code: created.code, name: created.name, kind: created.kind },
+      after: { code: created.code, name: created.name, kind: created.kind, ledger: ledger?.name ?? null },
     });
 
     return created;

@@ -816,6 +816,43 @@ export async function createLedgerAccount(input: {
   });
 }
 
+/**
+ * The expense ledger a general expense category posts to: "Fuel" posts to
+ * Fuel Expense, "Office Rent" to Office Rent Expense.
+ *
+ * A category added from the expense form used to have no ledger of its own,
+ * so every general cost — fuel, meals, rent — landed in one catch-all line and
+ * the P&L could not say what the money went on. An expense account already
+ * carrying the name is reused rather than duplicated.
+ */
+export async function openExpenseAccountIn(tx: Tx, companyId: string, categoryName: string) {
+  const base = categoryName.trim();
+  const name = /expenses?$/i.test(base) ? base : `${base} Expense`;
+  const existing = await tx.account.findFirst({
+    where: {
+      companyId,
+      type: 'EXPENSE',
+      status: 'ACTIVE',
+      OR: [{ name: { equals: name, mode: 'insensitive' } }, { name: { equals: base, mode: 'insensitive' } }],
+    },
+    select: { id: true, name: true },
+  });
+  if (existing) return existing;
+  const code = await nextCodeInSeries(tx, companyId, SERIES_FOR_TYPE.EXPENSE);
+  return tx.account.create({
+    data: {
+      companyId,
+      code,
+      name,
+      type: 'EXPENSE',
+      reportGroup: REPORT_GROUPS.OPERATING,
+      isSystem: false,
+      subledgerType: 'NONE',
+    },
+    select: { id: true, name: true },
+  });
+}
+
 async function nextCodeInSeries(tx: Tx, companyId: string, series: number): Promise<string> {
   const start = String(series);
   const existing = await tx.account.findMany({
