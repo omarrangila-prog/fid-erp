@@ -30,6 +30,10 @@ export default defineConfig({
     env: {
       DATABASE_URL: process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? '',
       NODE_ENV: 'test',
+      // One connection, as every production instance has. With four, a
+      // posting that waited on itself for a second connection passed here and
+      // hung for the client — loans, transfers and agent postings, 26 Sep.
+      DATABASE_POOL_MAX: '1',
       INITIAL_ADMIN_EMAIL: 'admin@test.local',
       INITIAL_ADMIN_NAME: 'Test Admin',
       INITIAL_ADMIN_PASSWORD: 'TestAdmin!2026',

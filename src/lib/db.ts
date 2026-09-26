@@ -215,8 +215,32 @@ function client(): PrismaClient {
  */
 export { defaultPoolSize };
 
+/*
+ * Client-level calls that must never be routed into a transaction: opening
+ * one, and the connection's own lifecycle.
+ */
+const CLIENT_ONLY = new Set<PropertyKey>(['$transaction', '$connect', '$disconnect', '$on', '$use', '$extends']);
+
 export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
   get(_target, property, receiver) {
+    /*
+     * Inside a posting, every query joins it.
+     *
+     * Each instance holds one connection. A posting holds it for as long as it
+     * runs, so a query made through this client while the posting is open —
+     * a rate lookup, a setting, a balance read by a shared helper — asked the
+     * pool for a second connection that does not exist, and waited until the
+     * posting's own transaction expired. Loans, cash and bank transfers,
+     * agent settlements and stock counts all died this way, at exactly the
+     * transaction's time limit, because each calls such a helper while
+     * posting. Routing those queries into the open transaction is also what
+     * the code means: a posting's reads should see its own writes.
+     */
+    const open = openTransaction.getStore();
+    if (open?.live && !CLIENT_ONLY.has(property)) {
+      const joined = Reflect.get(open.tx as object, property);
+      if (joined !== undefined) return typeof joined === 'function' ? joined.bind(open.tx) : joined;
+    }
     return Reflect.get(client(), property, receiver);
   },
   set(_target, property, value, receiver) {
@@ -240,7 +264,7 @@ export type Tx = Parameters<Parameters<PrismaClient['$transaction']>[0]>[0];
  * service can be called on its own or as part of a larger posting without
  * two versions of it existing.
  */
-const openTransaction = new AsyncLocalStorage<Tx>();
+const openTransaction = new AsyncLocalStorage<{ tx: Tx; live: boolean }>();
 
 /**
  * A hosted database adds a network round-trip to every statement inside a
@@ -325,16 +349,27 @@ export async function transaction<T>(
    * transaction, and either both land or neither does.
    */
   const open = openTransaction.getStore();
-  if (open) return fn(open);
+  if (open?.live) return fn(open.tx);
 
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
     try {
-      return await prisma.$transaction((tx) => openTransaction.run(tx, () => fn(tx)), {
-        timeout: timeoutMs,
-        maxWait: DEFAULT_TRANSACTION_MAX_WAIT_MS,
-      });
+      // `live` goes false the moment the transaction ends, so work that
+      // outlives it — a late continuation — uses the client again rather
+      // than a closed transaction.
+      const frame = { tx: undefined as unknown as Tx, live: true };
+      try {
+        return await prisma.$transaction(
+          (tx) => {
+            frame.tx = tx;
+            return openTransaction.run(frame, () => fn(tx));
+          },
+          { timeout: timeoutMs, maxWait: DEFAULT_TRANSACTION_MAX_WAIT_MS },
+        );
+      } finally {
+        frame.live = false;
+      }
     } catch (error) {
       lastError = error;
       if (!neverStarted(error) || attempt === RETRY_DELAYS_MS.length) break;
