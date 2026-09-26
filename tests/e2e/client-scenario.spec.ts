@@ -358,7 +358,7 @@ test('the reports agree with one another and open for any period', async ({ page
 test('the shipment cost report splits the shared charges between the lines', async ({ page }) => {
   await signIn(page);
   await page.goto('/reports/shipment-cost', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('shipment-costing-row').first().locator('summary').click({ timeout: 45_000 });
+  await page.getByTestId('shipment-costing-row').first().locator('summary').first().click({ timeout: 45_000 });
   await expect(page.getByText(/Cost per KG/i).first()).toBeVisible({ timeout: 45_000 });
 
   const main = (await page.locator('main').textContent()) ?? '';

@@ -456,7 +456,7 @@ test('shipment costing shows one row per order, collapsed, with its containers i
 
   // Collapsed by default: the detail tables are not on the page until opened.
   await expect(three.getByTestId('costing-lines')).toBeHidden();
-  await three.locator('summary').click();
+  await three.locator('summary').first().click();
   const lines = three.getByTestId('costing-lines');
   await expect(lines).toBeVisible();
   await expect(lines.locator('tbody tr')).toHaveCount(3);
@@ -474,9 +474,9 @@ test('shipment costing shows one row per order, collapsed, with its containers i
   expect(Number((coffeeUsd ?? '0').replace(/,/g, ''))).toBeCloseTo(purchase, 0);
 
   // Collapse, then open the other: six lines there.
-  await three.locator('summary').click();
+  await three.locator('summary').first().click();
   await expect(three.getByTestId('costing-lines')).toBeHidden();
-  await six.locator('summary').click();
+  await six.locator('summary').first().click();
   await expect(six.getByTestId('costing-lines').locator('tbody tr')).toHaveCount(6);
   console.log(`  costing: ${total} shipments on the page, ${await rows.count()} rows, 3 and 6 lines inside`);
 });
