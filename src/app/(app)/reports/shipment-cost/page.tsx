@@ -344,13 +344,21 @@ function OrderSection({
               <TBody>
                 {[
                   ['Coffee, at the contract price', sheet.goodsLocal, sheet.goodsUsd],
-                  ['Costs added (direct expenses)', sheet.expenseLocal, sheet.expenseUsd],
+                  ['Costs added to the coffee', sheet.capitalisedExpenseLocal, sheet.capitalisedExpenseUsd],
                   ['Total landed cost', sheet.landedLocal, sheet.landedUsd, 'bold'],
                   ['Cost per KG', sheet.costPerKgLocal, sheet.costPerKgUsd],
                   ['Cost per MT', sheet.costPerMtLocal, sheet.costPerMtUsd],
                   ['Sales', sheet.revenueLocal, sheet.revenueUsd],
                   ['Cost of what sold (COGS)', sheet.cogsLocal, sheet.cogsUsd],
                   ['Profit / loss', sheet.grossProfitLocal, sheet.grossProfitUsd, 'profit'],
+                  // Only when there are such costs, so an ordinary shipment's
+                  // costing stays six lines long.
+                  ...(dec(sheet.periodExpenseUsd).isZero()
+                    ? []
+                    : [
+                        ['Costs not added to the coffee', sheet.periodExpenseLocal, sheet.periodExpenseUsd],
+                        ['Profit after those costs', sheet.netProfitLocal, sheet.netProfitUsd, 'profit'],
+                      ]),
                 ].map(([label, localValue, usd, style]) => (
                   <TR key={String(label)}>
                     <TD className={cn(style ? 'font-semibold' : undefined, style === 'profit' ? profitTone : undefined)}>
@@ -380,7 +388,9 @@ function OrderSection({
           <p className="mt-2 text-[11px] text-ink-subtle">
             {formatQuantityKg(sheet.receivedKg)} landed of {formatQuantityKg(sheet.orderedKg)} bought · rate used for {local}:{' '}
             {dec(sheet.rateLocalPerUsd).toString()} per USD. Profit counts only what has been sold; stock still on hand is not
-            counted either way until it sells.
+            counted either way until it sells. The landed cost is what the coffee is valued at — the contract price plus the
+            costs added to it — so it is the same figure the stock and the cost of sales are drawn from. A cost marked as not
+            added to the coffee is taken off the profit here instead, once, and never twice.
           </p>
         </section>
       </div>

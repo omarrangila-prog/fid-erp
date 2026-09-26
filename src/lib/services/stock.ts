@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { Decimal, dec, toMoney, toQuantity, toUnitCost } from '@/lib/money';
 import { bagsForKg, addBags } from '@/lib/bags';
@@ -6,7 +7,16 @@ import { bagsForKg, addBags } from '@/lib/bags';
  * Stock query service. All figures are read from the batch cache, which the
  * inventory engine recomputes from the movement ledger inside every posting
  * transaction — so the cache is never stale, only faster.
+ *
+ * Coffee is worth what it cost to land: the price paid the supplier plus the
+ * freight, clearing and handling capitalised onto the batch. `unitCostUsd`
+ * holds only the contract price, and valuing the shelf at it understated the
+ * client's stock by the whole of every shipment's costs — USD 43,024 where the
+ * books, the dashboard and the valuation report all said USD 55,512, on screens
+ * whose own labels read "at landed cost". One definition, used by every query
+ * here, so no two stock screens can price the same coffee differently.
  */
+const SHELF_UNIT_COST = Prisma.raw('COALESCE(NULLIF(b."landedUnitCostUsd", 0), b."unitCostUsd")');
 
 export type StockFilters = {
   companyId: string;
@@ -43,6 +53,7 @@ export type BatchStockRow = {
   availableKg: Decimal;
   /** Bags on the shelf: what is in the warehouses (available + allocated) at the batch's bag weight. */
   bags: number;
+  /** What one kilo cost to land: the supplier's price plus the costs capitalised onto it. */
   unitCostUsd: Decimal;
   stockValueUsd: Decimal;
   currency: string;
@@ -66,7 +77,7 @@ export async function getBatchStock(filters: StockFilters): Promise<BatchStockRo
            b."soldQuantityKg"::text      AS "soldKg",
            b."availableQuantityKg"::text AS "availableKg",
            b."bagWeightKg"::text         AS "bagWeightKg",
-           b."unitCostUsd"::text         AS "unitCostUsd",
+           ${SHELF_UNIT_COST}::text      AS "unitCostUsd",
            i."id" AS "itemId", i."itemCode", i."itemName",
            s."id" AS "shipmentId", s."shipmentNumber", s."status"::text AS "shipmentStatus", s."etaDate",
            pc."id" AS "contractId", pc."contractNumber", pc."contractReference",
@@ -158,7 +169,7 @@ export async function getItemStock(companyId: string): Promise<ItemStockRow[]> {
            COALESCE(SUM(b."allocatedQuantityKg"), 0)::text AS "allocatedKg",
            COALESCE(SUM(b."soldQuantityKg"), 0)::text      AS "soldKg",
            COALESCE(SUM(b."availableQuantityKg"), 0)::text AS "availableKg",
-           COALESCE(SUM(b."availableQuantityKg" * b."unitCostUsd"), 0)::text AS "stockValueUsd",
+           COALESCE(SUM(b."availableQuantityKg" * ${SHELF_UNIT_COST}), 0)::text AS "stockValueUsd",
            COUNT(b."id") AS "batchCount"
     FROM coffee_items i
     LEFT JOIN batches b ON b."itemId" = i."id"
@@ -231,7 +242,7 @@ export async function getShipmentStock(companyId: string): Promise<ShipmentStock
            COALESCE(SUM(b."allocatedQuantityKg"), 0)::text AS "allocatedKg",
            COALESCE(SUM(b."soldQuantityKg"), 0)::text      AS "soldKg",
            COALESCE(SUM(b."availableQuantityKg"), 0)::text AS "availableKg",
-           COALESCE(SUM(b."availableQuantityKg" * b."unitCostUsd"), 0)::text AS "stockValueUsd"
+           COALESCE(SUM(b."availableQuantityKg" * ${SHELF_UNIT_COST}), 0)::text AS "stockValueUsd"
     FROM shipments s
     JOIN coffee_items i ON i."id" = s."itemId"
     JOIN vendors v ON v."id" = s."vendorId"

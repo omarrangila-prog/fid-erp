@@ -32,6 +32,8 @@ export type OrderCostLine = {
   orderedKg: Decimal;
   receivedKg: Decimal;
   soldKg: Decimal;
+  /** Still owned: on the shelf plus what a draft invoice has set aside. */
+  onHandKg: Decimal;
   purchaseUsd: Decimal;
   landedUsd: Decimal;
   landedPerKgUsd: Decimal;
@@ -77,6 +79,14 @@ export type OrderCostSheet = {
   expenseLocal: Decimal;
   /** Only the expenses that went into the coffee's cost. */
   capitalisedExpenseUsd: Decimal;
+  capitalisedExpenseLocal: Decimal;
+  /**
+   * Costs booked to this shipment that the client said not to add to stock —
+   * they belong to the month, not the coffee. Kept out of the landed cost and
+   * out of the cost per kilo, and taken off the profit once, below.
+   */
+  periodExpenseUsd: Decimal;
+  periodExpenseLocal: Decimal;
   landedUsd: Decimal;
   landedLocal: Decimal;
   costPerKgUsd: Decimal;
@@ -89,6 +99,9 @@ export type OrderCostSheet = {
   cogsLocal: Decimal;
   grossProfitUsd: Decimal;
   grossProfitLocal: Decimal;
+  /** Gross profit less the costs that were not added to stock. */
+  netProfitUsd: Decimal;
+  netProfitLocal: Decimal;
   marginPct: Decimal;
   /** What the unsold coffee is carried at. */
   remainingValueUsd: Decimal;
@@ -123,6 +136,8 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
                 orderedQuantityKg: true,
                 receivedQuantityKg: true,
                 soldQuantityKg: true,
+                availableQuantityKg: true,
+                allocatedQuantityKg: true,
                 purchaseCostUsd: true,
                 item: { select: { itemName: true } },
                 lot: { select: { lotNumber: true } },
@@ -196,6 +211,7 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
           orderedKg: toQuantity(b.orderedQuantityKg),
           receivedKg: toQuantity(b.receivedQuantityKg),
           soldKg: toQuantity(b.soldQuantityKg),
+          onHandKg: toQuantity(dec(b.availableQuantityKg).plus(dec(b.allocatedQuantityKg))),
           purchaseUsd: toMoney(b.purchaseCostUsd),
           landedUsd: cost ? toMoney(cost.landedUsd) : toMoney(b.purchaseCostUsd),
           landedPerKgUsd: cost ? toUnitCost(cost.landedPerKgUsd) : new Decimal(0),
@@ -247,8 +263,20 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
     const expenseUsd = toMoney(sum(orderExpenses.map((e) => e.amountUsd)));
     const expenseLocal = toMoney(sum(orderExpenses.map((e) => e.amountLocal)));
     const capitalisedExpenseUsd = toMoney(sum(orderExpenses.filter((e) => e.capitalised).map((e) => e.amountUsd)));
-    const landedUsd = toMoney(goodsUsd.plus(expenseUsd));
-    const landedLocal = toMoney(goodsLocal.plus(expenseLocal));
+    const capitalisedExpenseLocal = toMoney(sum(orderExpenses.filter((e) => e.capitalised).map((e) => e.amountLocal)));
+    const periodExpenseUsd = toMoney(expenseUsd.minus(capitalisedExpenseUsd));
+    const periodExpenseLocal = toMoney(expenseLocal.minus(capitalisedExpenseLocal));
+    /*
+     * The landed cost is the price paid the supplier plus the costs that were
+     * capitalised onto the coffee — the same figure the batches carry, the
+     * stock is valued at and cost of sales is drawn from. Adding every cost
+     * booked to the shipment, including those marked as not going into stock,
+     * gave a second landed cost that no other screen agreed with and a cost
+     * per kilo above what the coffee is actually worth. Those costs are real:
+     * they come off the profit below, once.
+     */
+    const landedUsd = toMoney(goodsUsd.plus(capitalisedExpenseUsd));
+    const landedLocal = toMoney(goodsLocal.plus(capitalisedExpenseLocal));
     const basisKg = receivedKg.greaterThan(0) ? receivedKg : orderedKg;
     const perKg = (total: Decimal) => (basisKg.greaterThan(0) ? toUnitCost(total.dividedBy(basisKg)) : new Decimal(0));
 
@@ -258,10 +286,13 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
     const revenueLocal = toMoney(sum(sold.map((s) => dec(s.revenueLocal))));
     const cogsLocal = toMoney(sum(sold.map((s) => dec(s.cogsLocal))));
     const grossProfitUsd = toMoney(revenueUsd.minus(cogsUsd));
-    const remainingKg = toQuantity(receivedKg.minus(soldKg));
-    const remainingValueUsd = toMoney(
-      sum(lines.map((l) => l.landedPerKgUsd.times(l.receivedKg.minus(l.soldKg).greaterThan(0) ? l.receivedKg.minus(l.soldKg) : 0))),
-    );
+    /*
+     * What is left is what the stock records hold, not received less sold.
+     * The two agree until coffee is written off or lost, and then subtracting
+     * gives a shipment stock nobody can find in a warehouse.
+     */
+    const remainingKg = toQuantity(sum(lines.map((l) => l.onHandKg)));
+    const remainingValueUsd = toMoney(sum(lines.map((l) => l.landedPerKgUsd.times(l.onHandKg))));
 
     const allBatchesContainers = new Set(lines.map((l) => l.containerNumber).filter(Boolean));
 
@@ -285,6 +316,9 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
       expenseUsd,
       expenseLocal,
       capitalisedExpenseUsd,
+      capitalisedExpenseLocal,
+      periodExpenseUsd,
+      periodExpenseLocal,
       landedUsd,
       landedLocal,
       costPerKgUsd: perKg(landedUsd),
@@ -297,6 +331,8 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
       cogsLocal,
       grossProfitUsd,
       grossProfitLocal: toMoney(revenueLocal.minus(cogsLocal)),
+      netProfitUsd: toMoney(grossProfitUsd.minus(periodExpenseUsd)),
+      netProfitLocal: toMoney(revenueLocal.minus(cogsLocal).minus(periodExpenseLocal)),
       marginPct: revenueUsd.greaterThan(0) ? grossProfitUsd.dividedBy(revenueUsd).times(100).toDecimalPlaces(1) : new Decimal(0),
       remainingValueUsd,
       lines,
