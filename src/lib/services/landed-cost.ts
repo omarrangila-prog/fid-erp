@@ -1,6 +1,7 @@
 import type { Tx } from '@/lib/db';
 import { prisma } from '@/lib/db';
-import { getCommissionPaidByExpense } from '@/lib/services/agent-commission';
+import { getExpenseSettlements, type ExpensePaymentStatus } from '@/lib/services/expense-settlement';
+import { batchLandedLocal, getCapitalisedRates, getOrderFxTransactions, summariseFx } from '@/lib/services/shipment-fx';
 import { Decimal, dec, toMoney, toUnitCost, allocateProportionally, sum, toQuantity, convertFromUsd, KG_PER_MT } from '@/lib/money';
 import { BusinessRuleError } from '@/lib/errors';
 import { lockBatch } from '@/lib/services/inventory';
@@ -492,6 +493,7 @@ export type ShipmentCostLine = {
   taxAmount: Decimal;
   capitalised: boolean;
   paid: boolean;
+  payment: ExpensePaymentStatus;
   paidFrom: string | null;
   containerNumber: string | null;
   batchNumber: string | null;
@@ -516,10 +518,13 @@ export async function getShipmentCostSheet(companyId: string, shipmentId: string
     prisma.shipment.findFirstOrThrow({
       where: { id: shipmentId, companyId },
       select: {
+        purchaseContractId: true,
         purchaseContract: { select: { rateLocalPerUsd: true, currency: true, contractReference: true } },
       },
     }),
   ]);
+  // One weighted rate per currency pair for the order this shipment is on.
+  const orderFx = (await getOrderFxTransactions(companyId, [shipment.purchaseContractId])).get(shipment.purchaseContractId);
 
   const rateLocalPerUsd = dec(shipment.purchaseContract.rateLocalPerUsd);
   const localCurrency = company.localCurrency;
@@ -533,7 +538,7 @@ export async function getShipmentCostSheet(companyId: string, shipmentId: string
         cashBankAccount: { select: { name: true } },
         container: { select: { containerNumber: true } },
         batch: { select: { batchNumber: true } },
-        allocations: { select: { payment: { select: { status: true } } } },
+        vendor: { select: { country: true } },
       },
       orderBy: [{ expenseDate: 'asc' }, { expenseNumber: 'asc' }],
     }),
@@ -550,15 +555,11 @@ export async function getShipmentCostSheet(companyId: string, shipmentId: string
     }),
   ]);
 
-  const commissionPaid = expenses.some((expense) => expense.payableToAgentId)
-    ? await getCommissionPaidByExpense(companyId)
-    : new Map<string, Decimal>();
+  // Paid, partly paid or unpaid: the same answer as the expense list.
+  const settlements = await getExpenseSettlements(companyId, expenses);
 
   const lines: ShipmentCostLine[] = expenses.map((expense) => {
-    const settledByAllocation = expense.allocations.some((allocation) => allocation.payment.status === 'POSTED');
-    const settledByCommission =
-      Boolean(expense.payableToAgentId) &&
-      toMoney(commissionPaid.get(expense.id) ?? 0).greaterThanOrEqualTo(toMoney(expense.amountUsd).minus('0.01'));
+    const settlement = settlements.get(expense.id);
     return {
       expenseId: expense.id,
       expenseNumber: expense.expenseNumber,
@@ -573,8 +574,9 @@ export async function getShipmentCostSheet(companyId: string, shipmentId: string
       rateToUsd: dec(expense.rateToUsd),
       taxAmount: toMoney(expense.taxAmount),
       capitalised: expense.capitaliseToLandedCost,
-      paid: Boolean(expense.cashBankAccountId) || settledByAllocation || settledByCommission,
-      paidFrom: expense.cashBankAccount?.name ?? null,
+      paid: settlement?.status === 'PAID',
+      payment: settlement?.status ?? 'UNPAID',
+      paidFrom: settlement?.paidFrom ?? null,
       containerNumber: expense.container?.containerNumber ?? null,
       batchNumber: expense.batch?.batchNumber ?? null,
     };
@@ -582,8 +584,17 @@ export async function getShipmentCostSheet(companyId: string, shipmentId: string
 
   const expenseUsd = toMoney(sum(lines.map((line) => line.amountUsd)));
   const expenseLocal = toMoney(sum(lines.map((line) => line.amountLocal)));
-  const totalShipmentCostUsd = toMoney(job.goodsUsd.plus(expenseUsd));
-  const totalShipmentCostLocal = toMoney(goodsLocal.plus(expenseLocal));
+  /*
+   * The landed cost is the coffee plus the costs added to it — what the
+   * batches carry and cost of sales is drawn from. A cost marked as not
+   * added to the coffee is still a cost of the shipment, shown on its own,
+   * but it does not raise the cost per kilo.
+   */
+  const capitalised = lines.filter((line) => line.capitalised);
+  const capitalisedExpenseUsd = toMoney(sum(capitalised.map((line) => line.amountUsd)));
+  const capitalisedExpenseLocal = toMoney(sum(capitalised.map((line) => line.amountLocal)));
+  const totalShipmentCostUsd = toMoney(job.goodsUsd.plus(capitalisedExpenseUsd));
+  const totalShipmentCostLocal = toMoney(goodsLocal.plus(capitalisedExpenseLocal));
   const receivedKg = toQuantity(job.receivedKg);
   const orderedKg = toQuantity(job.orderedKg);
   const basisKg = receivedKg.greaterThan(0) ? receivedKg : orderedKg;
@@ -616,11 +627,14 @@ export async function getShipmentCostSheet(companyId: string, shipmentId: string
     localCurrency,
     rateLocalPerUsd,
     contractReference: shipment.purchaseContract.contractReference,
+    costFx: summariseFx(orderFx?.costs ?? [], localCurrency),
     goodsUsd: job.goodsUsd,
     goodsLocal,
     capitalisedUsd: job.capitalisedUsd,
     expenseUsd,
     expenseLocal,
+    periodExpenseUsd: toMoney(expenseUsd.minus(capitalisedExpenseUsd)),
+    periodExpenseLocal: toMoney(expenseLocal.minus(capitalisedExpenseLocal)),
     totalShipmentCostUsd,
     totalShipmentCostLocal,
     orderedKg,
@@ -690,10 +704,15 @@ export async function getShipmentCostingIndex(companyId: string): Promise<Map<st
                      WHERE b."shipmentId" = s."id" AND b."status" = 'ACTIVE'), 0)::text AS "orderedKg",
            COALESCE((SELECT SUM(b."soldQuantityKg") FROM batches b
                      WHERE b."shipmentId" = s."id" AND b."status" = 'ACTIVE'), 0)::text AS "soldKg",
+           -- Only the costs added to the coffee: the landed cost and the cost
+           -- per kilo are what the stock is valued at, and a cost kept out of
+           -- stock must not raise them.
            COALESCE((SELECT SUM(e."amountUsd") FROM expenses e
-                     WHERE e."shipmentId" = s."id" AND e."status" = 'POSTED' AND e."kind" = 'SHIPMENT'), 0)::text AS "expenseUsd",
+                     WHERE e."shipmentId" = s."id" AND e."status" = 'POSTED' AND e."kind" = 'SHIPMENT'
+                       AND e."capitaliseToLandedCost" = true), 0)::text AS "expenseUsd",
            COALESCE((SELECT SUM(e."amountLocal") FROM expenses e
-                     WHERE e."shipmentId" = s."id" AND e."status" = 'POSTED' AND e."kind" = 'SHIPMENT'), 0)::text AS "expenseLocal",
+                     WHERE e."shipmentId" = s."id" AND e."status" = 'POSTED' AND e."kind" = 'SHIPMENT'
+                       AND e."capitaliseToLandedCost" = true), 0)::text AS "expenseLocal",
            pc."rateLocalPerUsd"::text AS "rateLocalPerUsd"
     FROM shipments s
     JOIN purchase_contracts pc ON pc."id" = s."purchaseContractId"
@@ -826,9 +845,12 @@ export async function getBatchCostings(params: {
       warehouse: { select: { name: true } },
       shipment: { select: { jobNumber: true } },
       purchaseContract: { select: { contractReference: true, rateLocalPerUsd: true } },
+      purchaseContractId: true,
     },
     orderBy: { batchNumber: 'asc' },
   });
+  // The costs capitalised onto each order, at the rates they were entered at.
+  const capitalisedRates = await getCapitalisedRates(params.companyId, [...new Set(batches.map((b) => b.purchaseContractId))]);
 
   return batches.map((batch) => {
     const rateLocalPerUsd = dec(batch.purchaseContract.rateLocalPerUsd);
@@ -841,7 +863,18 @@ export async function getBatchCostings(params: {
       ? toUnitCost(landedUsd.dividedBy(orderedKg))
       : dec(batch.landedUnitCostUsd);
 
-    const toLocal = (usd: Decimal) => convertFromUsd(usd, rateLocalPerUsd, localCurrency);
+    /*
+     * The coffee at the purchase's own rate, the capitalised costs at theirs.
+     * Converting both at the purchase rate restated every local bill at a
+     * rate it was never entered at.
+     */
+    const local = batchLandedLocal({
+      purchaseUsd,
+      capitalisedUsd: allocatedExpenseUsd,
+      purchaseRate: rateLocalPerUsd,
+      capitalisedRate: capitalisedRates.get(batch.purchaseContractId),
+    });
+    const landedPerKgLocal = orderedKg.greaterThan(0) ? toUnitCost(local.landedLocal.dividedBy(orderedKg)) : toUnitCost(landedPerKgUsd.times(rateLocalPerUsd));
 
     return {
       batchId: batch.id,
@@ -861,13 +894,13 @@ export async function getBatchCostings(params: {
       purchaseUsd,
       purchasePerKgUsd: orderedKg.greaterThan(0) ? toUnitCost(purchaseUsd.dividedBy(orderedKg)) : dec(0),
       allocatedExpenseUsd,
-      allocatedExpenseLocal: toLocal(allocatedExpenseUsd),
+      allocatedExpenseLocal: local.capitalisedLocal,
       landedUsd,
-      landedLocal: toLocal(landedUsd),
+      landedLocal: local.landedLocal,
       landedPerKgUsd,
-      landedPerKgLocal: toUnitCost(landedPerKgUsd.times(rateLocalPerUsd)),
+      landedPerKgLocal,
       stockValueUsd: toMoney(availableKg.times(landedPerKgUsd)),
-      stockValueLocal: toLocal(toMoney(availableKg.times(landedPerKgUsd))),
+      stockValueLocal: toMoney(availableKg.times(landedPerKgLocal)),
       localCurrency,
       rateLocalPerUsd,
     };

@@ -5,9 +5,10 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, VISIBLE_DOCUMENT_STATUSES } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { formatMoney, formatDate } from '@/lib/format';
-import { dec } from '@/lib/money';
+import { dec, type Decimal } from '@/lib/money';
 import { getWarehouseLabels } from '@/lib/services/stock';
 import { listDueRecurring } from '@/lib/services/recurring-expense';
+import { getExpenseSettlements, type ExpenseSettlement } from '@/lib/services/expense-settlement';
 import { Callout } from '@/components/ui/feedback';
 import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
@@ -31,7 +32,7 @@ export default async function ExpensesPage({
   const today = new Date();
   const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
 
-  const [expenses, warehouses, dueRecurring, settled] = await Promise.all([
+  const [expenses, warehouses, dueRecurring] = await Promise.all([
     prisma.expense.findMany({
       where: { companyId, status: { in: [...VISIBLE_DOCUMENT_STATUSES] }, ...(kind ? { kind } : {}) },
       orderBy: [{ expenseDate: 'desc' }, { expenseNumber: 'desc' }],
@@ -45,29 +46,23 @@ export default async function ExpensesPage({
           },
         },
         cashBankAccount: { select: { name: true } },
-        vendor: { select: { vendorName: true } },
+        vendor: { select: { vendorName: true, country: true } },
+        payableToAgent: { select: { agentName: true } },
         agent: { select: { agentName: true } },
         createdBy: { select: { name: true } },
       },
     }),
     getWarehouseLabels(companyId),
     listDueRecurring(companyId, todayUtc),
-    /*
-     * What has already been paid against each cost, in one query rather than
-     * one per row. A cost paid straight from cash or bank needs nothing more;
-     * a cost booked as owed is settled by a payment, and once that payment
-     * covers it there is nothing left to pay. Offering "Pay this cost" on
-     * either of those is how the same bill gets paid twice.
-     */
-    prisma.$queryRaw<Array<{ expenseId: string; paid: string }>>`
-      SELECT pa."expenseId", COALESCE(SUM(pa."amount"), 0)::text AS paid
-      FROM payment_allocations pa
-      JOIN payments p ON p."id" = pa."paymentId"
-      WHERE p."companyId" = ${companyId} AND p."status" = 'POSTED' AND pa."expenseId" IS NOT NULL
-      GROUP BY pa."expenseId"`,
   ]);
 
-  const paidByExpense = new Map(settled.map((row) => [row.expenseId, dec(row.paid)]));
+  /*
+   * Paid, partly paid or unpaid — the same answer the shipment page and the
+   * cost report give, from one calculation. Offering "Pay this cost" on a
+   * cost already settled is how the same bill gets paid twice.
+   */
+  const settlements = await getExpenseSettlements(companyId, expenses);
+  const local = user.activeCompany.localCurrency;
 
   const rows: ExpenseRow[] = expenses.map((e) => ({
     id: e.id,
@@ -82,14 +77,11 @@ export default async function ExpensesPage({
     amount: formatMoney(e.amount, e.currency),
     amountSort: Number(e.amountUsd),
     amountUsd: formatMoney(e.amountUsd, 'USD'),
-    account: e.cashBankAccount?.name ?? 'On credit',
-    // Paid on the spot, owed to an agent, or already settled by a payment —
-    // in none of those is there anything left to pay.
-    needsPayment:
-      e.status === 'POSTED' &&
-      !e.cashBankAccountId &&
-      !e.payableToAgentId &&
-      dec(e.amount).plus(e.taxAmount).greaterThan(paidByExpense.get(e.id) ?? 0),
+    ...paymentFields(settlements.get(e.id), e),
+    // Owed to an agent is settled through the agent's account, not here.
+    needsPayment: Boolean(
+      settlements.get(e.id) && settlements.get(e.id)!.status !== 'PAID' && !e.payableToAgentId,
+    ),
     capitalise: e.capitaliseToLandedCost,
     kind: e.kind,
     payee: e.vendor?.vendorName ?? e.agent?.agentName ?? null,
@@ -164,10 +156,52 @@ export default async function ExpensesPage({
           ) : undefined
         }
         rows={rows}
+        localCurrency={local}
         canExport={can(user, PERMISSIONS.REPORTS_EXPORT)}
         canPost={can(user, PERMISSIONS.EXPENSES_POST)}
         canDelete={can(user, PERMISSIONS.EXPENSES_DELETE)}
       />
     </div>
   );
+}
+
+/**
+ * The payment columns of one row: its status, where the money came from or
+ * who it is owed to, and the three amounts in the company's currency at the
+ * cost's own rate, so the totals above the list add up across currencies.
+ */
+function paymentFields(
+  settlement: ExpenseSettlement | undefined,
+  e: {
+    currency: string;
+    amountUsd: Decimal;
+    taxAmountUsd: Decimal;
+    vendor: { vendorName: string } | null;
+    payableToAgent: { agentName: string } | null;
+  },
+): Pick<ExpenseRow, 'payment' | 'account' | 'outstandingLabel' | 'grossLocal' | 'paidLocal' | 'owedLocal' | 'grossUsd' | 'paidUsd' | 'owedUsd'> {
+  if (!settlement) {
+    return { payment: null, account: '—', outstandingLabel: '—', grossLocal: 0, paidLocal: 0, owedLocal: 0, grossUsd: 0, paidUsd: 0, owedUsd: 0 };
+  }
+  const usd = dec(e.amountUsd).plus(dec(e.taxAmountUsd));
+  const share = (part: Decimal) => (settlement.gross.isZero() ? 0 : Number(usd.times(part).dividedBy(settlement.gross)));
+  const owedTo = e.payableToAgent?.agentName ?? e.vendor?.vendorName ?? null;
+  return {
+    payment: settlement.status,
+    account:
+      settlement.status === 'PAID'
+        ? (settlement.paidFrom ?? 'Paid')
+        : settlement.paidFrom
+          ? `${settlement.paidFrom} (part)`
+          : owedTo
+            ? `Owed to ${owedTo}`
+            : 'Not paid yet',
+    outstandingLabel: settlement.outstanding.isZero() ? '—' : formatMoney(settlement.outstanding, e.currency),
+    grossLocal: Number(settlement.grossLocal),
+    paidLocal: Number(settlement.paidLocal),
+    owedLocal: Number(settlement.outstandingLocal),
+    grossUsd: share(settlement.gross),
+    paidUsd: share(settlement.paid),
+    owedUsd: share(settlement.outstanding),
+  };
 }

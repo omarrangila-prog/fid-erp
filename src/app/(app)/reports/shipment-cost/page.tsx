@@ -288,7 +288,9 @@ function OrderSection({
                       <TD>
                         <Badge tone={e.capitalised ? 'success' : 'neutral'}>{e.capitalised ? 'Yes' : 'No — a running cost'}</Badge>
                       </TD>
-                      <TD className="text-xs text-ink-muted">{e.paid ? (e.paidFrom ?? 'Paid') : 'Owed'}</TD>
+                      <TD className="text-xs text-ink-muted">
+                        {e.payment === 'PAID' ? (e.paidFrom ?? 'Paid') : e.payment === 'PARTIAL' ? `Partly paid${e.paidFrom ? ` · ${e.paidFrom}` : ''}` : 'Unpaid'}
+                      </TD>
                     </TR>
                   ))}
                 </TBody>
@@ -379,15 +381,17 @@ function OrderSection({
                 <TR>
                   <TD>Remaining stock</TD>
                   <TD numeric colSpan={2}>
-                    {formatQuantityKg(sheet.remainingKg)} · carried at {formatMoney(sheet.remainingValueUsd, 'USD')}
+                    {formatQuantityKg(sheet.remainingKg)} · carried at {formatMoney(sheet.remainingValueLocal, local)} ·{' '}
+                    {formatMoney(sheet.remainingValueUsd, 'USD')}
                   </TD>
                 </TR>
               </TBody>
             </Table>
           </TableWrap>
+          <FxSummary sheet={sheet} />
           <p className="mt-2 text-[11px] text-ink-subtle">
-            {formatQuantityKg(sheet.receivedKg)} landed of {formatQuantityKg(sheet.orderedKg)} bought · rate used for {local}:{' '}
-            {dec(sheet.rateLocalPerUsd).toString()} per USD. Profit counts only what has been sold; stock still on hand is not
+            {formatQuantityKg(sheet.receivedKg)} landed of {formatQuantityKg(sheet.orderedKg)} bought. Every {local} figure is
+            the sum of each transaction at its own rate. Profit counts only what has been sold; stock still on hand is not
             counted either way until it sells. The landed cost is what the coffee is valued at — the contract price plus the
             costs added to it — so it is the same figure the stock and the cost of sales are drawn from. A cost marked as not
             added to the coffee is taken off the profit here instead, once, and never twice.
@@ -395,5 +399,86 @@ function OrderSection({
         </section>
       </div>
     </details>
+  );
+}
+
+/**
+ * FX SUMMARY — one weighted rate per currency pair, from the transactions
+ * that make up the figures above, and the transactions themselves on demand.
+ * Nothing here is used to convert anything: each transaction was converted
+ * at its own rate when it was entered.
+ */
+function FxSummary({ sheet }: { sheet: OrderCostSheet }) {
+  const local = sheet.localCurrency;
+  const describe = (pair: OrderCostSheet['costFx'][number], what: string) => (
+    <li key={`${what}-${pair.from}`} className="flex flex-wrap items-baseline gap-x-2">
+      <span className="font-medium text-ink">
+        {pair.from} → {pair.to}
+      </span>
+      <span className="text-ink-muted">{what}: weighted average</span>
+      <span className="tnum font-semibold text-ink">
+        1 {pair.from} = {dec(pair.rate).toFixed(4)} {pair.to}
+      </span>
+      <span className="text-xs text-ink-subtle">
+        from {pair.count} {pair.count === 1 ? 'transaction' : 'transactions'}
+        {dec(pair.lowest).equals(dec(pair.highest))
+          ? ''
+          : ` · rates ${dec(pair.lowest).toFixed(4)} to ${dec(pair.highest).toFixed(4)}`}
+      </span>
+    </li>
+  );
+  const rows = [...sheet.fxCosts, ...sheet.fxSales];
+  if (rows.length === 0) return null;
+  const kind = { PURCHASE: 'Purchase', COST: 'Shipment cost', SALE: 'Sale' } as const;
+
+  return (
+    <div className="mt-3 rounded-lg border border-line bg-surface-sunken/40 px-3 py-2" data-testid="fx-summary">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">FX summary</p>
+      <ul className="mt-1 space-y-0.5 text-sm">
+        {sheet.costFx.map((pair) => describe(pair, 'landed cost'))}
+        {sheet.salesFx.map((pair) => describe(pair, 'sales'))}
+      </ul>
+      <details className="mt-1">
+        <summary className="cursor-pointer text-xs font-medium text-forest-800 hover:text-gold-700">View FX breakdown</summary>
+        <TableWrap className="mt-2">
+          <Table data-testid="fx-breakdown">
+            <THead>
+              <TR className="hover:bg-transparent">
+                <TH>Date</TH>
+                <TH>Type</TH>
+                <TH>What</TH>
+                <TH numeric>Original amount</TH>
+                <TH numeric>FX rate ({local} per USD)</TH>
+                <TH numeric>{local} equivalent</TH>
+                <TH numeric>USD equivalent</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {rows.map((t) => (
+                <TR key={`${t.kind}-${t.id}`}>
+                  <TD className="whitespace-nowrap text-xs">{formatDate(t.date)}</TD>
+                  <TD className="text-xs">{kind[t.kind]}</TD>
+                  <TD className="text-xs">
+                    {t.label}
+                    {t.reference ? <span className="block text-ink-subtle">{t.reference}</span> : null}
+                  </TD>
+                  <TD numeric>{formatMoney(t.amount, t.currency)}</TD>
+                  <TD numeric className="text-xs">{dec(t.rateLocalPerUsd).toFixed(4)}</TD>
+                  <TD numeric>{formatMoney(t.local, local)}</TD>
+                  <TD numeric className="text-ink-muted">{formatMoney(t.usd, 'USD')}</TD>
+                </TR>
+              ))}
+            </TBody>
+            <TFoot>
+              <tr>
+                <TD colSpan={5}>Landed cost — the purchase and the costs added to it</TD>
+                <TD numeric>{formatMoney(sum(sheet.fxCosts.map((t) => t.local)), local)}</TD>
+                <TD numeric>{formatMoney(sum(sheet.fxCosts.map((t) => t.usd)), 'USD')}</TD>
+              </tr>
+            </TFoot>
+          </Table>
+        </TableWrap>
+      </details>
+    </div>
   );
 }

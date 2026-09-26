@@ -201,8 +201,15 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
           <CardHeader>
             <CardTitle>Shipment costing</CardTitle>
             <CardDescription>
-              Purchase cost USD + local expenses USD equivalent = total landed cost USD. Local expenses keep their
-              original MAD amount. Rate is {costSheet.localCurrency} per 1 USD ({Number(costSheet.rateLocalPerUsd).toFixed(4)}).
+              Purchase cost USD + local expenses USD equivalent = total landed cost USD. Every expense keeps its own
+              amount, currency and rate; {costSheet.localCurrency} totals add up those amounts, not dollars at one rate.
+              {costSheet.costFx.map((pair) => (
+                <span key={pair.from} className="block" data-testid="shipment-fx">
+                  {pair.from} → {pair.to} weighted average over the order&rsquo;s {pair.count}{' '}
+                  {pair.count === 1 ? 'transaction' : 'transactions'}: 1 {pair.from} = {Number(pair.rate).toFixed(4)} {pair.to}
+                  {pair.lowest.equals(pair.highest) ? '' : ` (rates ${Number(pair.lowest).toFixed(4)} to ${Number(pair.highest).toFixed(4)})`}.
+                </span>
+              ))}
               Cost per KG = total landed ÷ received KG (ordered KG if nothing has landed). Cost per MT = cost per KG × 1,000.
             </CardDescription>
           </CardHeader>
@@ -221,7 +228,11 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
               <Metric
                 label="Total landed cost USD"
                 value={formatMoney(costSheet.totalShipmentCostUsd, 'USD')}
-                hint={formatMoney(costSheet.totalShipmentCostLocal, costSheet.localCurrency)}
+                hint={
+                  costSheet.periodExpenseUsd.isZero()
+                    ? formatMoney(costSheet.totalShipmentCostLocal, costSheet.localCurrency)
+                    : `${formatMoney(costSheet.totalShipmentCostLocal, costSheet.localCurrency)} · leaves out ${formatMoney(costSheet.periodExpenseLocal, costSheet.localCurrency)} not added to the coffee`
+                }
               />
               <Metric
                 label="Received"
@@ -328,12 +339,14 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                         </TD>
                         <TD numeric>{formatMoney(line.amountUsd, 'USD')}</TD>
                         <TD>
-                          <Badge tone={line.paid ? 'success' : 'warning'}>{line.paid ? 'Paid' : 'Unpaid'}</Badge>
+                          <Badge tone={line.payment === 'PAID' ? 'success' : line.payment === 'PARTIAL' ? 'warning' : 'danger'}>
+                            {line.payment === 'PAID' ? 'Paid' : line.payment === 'PARTIAL' ? 'Partially paid' : 'Unpaid'}
+                          </Badge>
                         </TD>
                         <TD className="text-xs">{line.paidFrom ?? '—'}</TD>
                         <TD className="text-xs text-ink-muted">{line.containerNumber ?? 'Whole job'}</TD>
                         <TD className="text-xs text-ink-muted">{line.batchNumber ?? 'Every batch'}</TD>
-                        <TD className="text-xs">{line.reference ?? line.expenseNumber}</TD>
+                        <TD className="text-xs">{line.reference ?? '—'}</TD>
                         <TD className="text-right">
                           <Link href={`/finance/expenses/${line.expenseId}`} className="text-xs font-medium text-forest-800 hover:text-gold-700">
                             Open

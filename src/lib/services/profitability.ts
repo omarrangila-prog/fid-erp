@@ -1,6 +1,6 @@
 import { getOverheadByShipment } from '@/lib/services/overhead-allocation';
 import { prisma } from '@/lib/db';
-import { Decimal, dec, toMoney, toQuantity, toUnitCost, percentage } from '@/lib/money';
+import { Decimal, toMoney, toQuantity, toUnitCost, percentage } from '@/lib/money';
 
 /**
  * ProfitabilityService.
@@ -106,6 +106,7 @@ type RawRow = {
   otherCostsUsd: string;
   onHandKg: string;
   closingStockValueUsd: string;
+  closingStockValueLocal: string;
   goodsCostLocal: string;
   capitalisedCostLocal: string;
   allocatedLandedCostLocal: string;
@@ -114,8 +115,6 @@ type RawRow = {
 };
 
 function shape(row: RawRow): ShipmentProfitability {
-  // The order's own rate, the one the goods and their costs were converted at.
-  const rateLocalPerUsd = dec(row.goodsCostUsd).isZero() ? dec(1) : dec(row.goodsCostLocal).dividedBy(row.goodsCostUsd);
   const purchaseQuantityKg = toQuantity(row.orderedKg);
   const soldQuantityKg = toQuantity(row.soldKg);
   const goodsCostUsd = toMoney(row.goodsCostUsd);
@@ -187,7 +186,7 @@ function shape(row: RawRow): ShipmentProfitability {
     averageSellingPriceLocal: soldQuantityKg.greaterThan(0)
       ? toUnitCost(salesRevenueLocal.dividedBy(soldQuantityKg))
       : new Decimal(0),
-    closingStockValueLocal: toMoney(closingStockValueUsd.times(rateLocalPerUsd)),
+    closingStockValueLocal: toMoney(row.closingStockValueLocal),
     otherCostsLocal,
     grossProfitLocal,
     netProfitLocal,
@@ -270,10 +269,25 @@ export async function getShipmentProfitability(params: {
                  WHERE b."shipmentId" = s."id"), 0)::text AS "closingStockValueUsd",
       COALESCE((SELECT SUM(b."purchaseCostUsd" * pc."rateLocalPerUsd")
                   FROM batches b WHERE b."shipmentId" = s."id"), 0)::text AS "goodsCostLocal",
-      COALESCE((SELECT SUM(b."capitalisedCostUsd" * pc."rateLocalPerUsd")
+      /*
+       * The coffee at the purchase's own rate; the costs capitalised onto it
+       * at the rates those costs were entered at (their weighted rate across
+       * the order, cr.rate), never both at the purchase rate. What sold and
+       * what is left carry the same blend, so landed = sold + on hand in
+       * dirhams as well as in dollars.
+       */
+      COALESCE((SELECT SUM(b."capitalisedCostUsd") * COALESCE(cr."rate", pc."rateLocalPerUsd")
                   FROM batches b WHERE b."shipmentId" = s."id"), 0)::text AS "capitalisedCostLocal",
-      COALESCE((SELECT SUM(b."soldQuantityKg" * b."landedUnitCostUsd" * pc."rateLocalPerUsd")
+      COALESCE((SELECT SUM(b."soldQuantityKg"
+                           * (b."purchaseCostUsd" * pc."rateLocalPerUsd" + b."capitalisedCostUsd" * COALESCE(cr."rate", pc."rateLocalPerUsd"))
+                           / NULLIF(b."orderedQuantityKg", 0))
                   FROM batches b WHERE b."shipmentId" = s."id"), 0)::text AS "allocatedLandedCostLocal",
+      COALESCE((SELECT SUM(ib."onHandKg"
+                           * (b."purchaseCostUsd" * pc."rateLocalPerUsd" + b."capitalisedCostUsd" * COALESCE(cr."rate", pc."rateLocalPerUsd"))
+                           / NULLIF(b."orderedQuantityKg", 0))
+                  FROM batches b
+                  JOIN inventory_balances ib ON ib."batchId" = b."id"
+                 WHERE b."shipmentId" = s."id"), 0)::text AS "closingStockValueLocal",
       -- The same path in the company's own currency, at each invoice's rate.
       (COALESCE((SELECT SUM(sil."lineTotalUsd" * si."rateLocalPerUsd")
                    FROM sales_invoice_lines sil
@@ -303,6 +317,13 @@ export async function getShipmentProfitability(params: {
     JOIN vendors v ON v."id" = s."vendorId"
     JOIN purchase_contracts pc ON pc."id" = s."purchaseContractId"
     JOIN companies co ON co."id" = s."companyId"
+    -- The weighted rate of the costs capitalised onto the order.
+    LEFT JOIN LATERAL (
+      SELECT SUM(e2."amountLocal") / NULLIF(SUM(e2."amountUsd"), 0) AS rate
+      FROM expenses e2
+      JOIN shipments s2 ON s2."id" = e2."shipmentId"
+      WHERE s2."purchaseContractId" = pc."id" AND e2."status" = 'POSTED' AND e2."capitaliseToLandedCost" = true
+    ) cr ON true
     WHERE s."companyId" = ${params.companyId}
       AND pc."status" = 'POSTED'
       AND (${params.shipmentId ?? null}::text IS NULL OR s."id" = ${params.shipmentId ?? null})

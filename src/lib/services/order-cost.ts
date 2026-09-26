@@ -1,7 +1,8 @@
 import { prisma } from '@/lib/db';
 import { Decimal, dec, sum, toMoney, toQuantity, toUnitCost, convertFromUsd, KG_PER_MT } from '@/lib/money';
 import { getBatchCostings } from '@/lib/services/landed-cost';
-import { getCommissionPaidByExpense } from '@/lib/services/agent-commission';
+import { getExpenseSettlements, type ExpensePaymentStatus } from '@/lib/services/expense-settlement';
+import { getOrderFxTransactions, summariseFx, type FxPair, type FxTransaction } from '@/lib/services/shipment-fx';
 
 /**
  * The costing of one shipment — the order it was bought on, with every
@@ -37,6 +38,9 @@ export type OrderCostLine = {
   purchaseUsd: Decimal;
   landedUsd: Decimal;
   landedPerKgUsd: Decimal;
+  /** At the purchase's rate for the coffee and the costs' own rates for the costs. */
+  landedLocal: Decimal;
+  landedPerKgLocal: Decimal;
   warehouse: string | null;
   status: string;
 };
@@ -54,6 +58,7 @@ export type OrderExpenseLine = {
   amountLocal: Decimal;
   capitalised: boolean;
   paid: boolean;
+  payment: ExpensePaymentStatus;
   paidFrom: string | null;
 };
 
@@ -105,6 +110,17 @@ export type OrderCostSheet = {
   marginPct: Decimal;
   /** What the unsold coffee is carried at. */
   remainingValueUsd: Decimal;
+  remainingValueLocal: Decimal;
+  /**
+   * One weighted rate per currency pair, from the transactions themselves:
+   * the purchase and the capitalised costs for the landed cost, the invoices
+   * for the sales. Each transaction keeps its own rate; these only describe
+   * them together.
+   */
+  costFx: FxPair[];
+  salesFx: FxPair[];
+  fxCosts: FxTransaction[];
+  fxSales: FxTransaction[];
   lines: OrderCostLine[];
   expenses: OrderExpenseLine[];
   byCategory: Array<{ category: string; capitalised: boolean; count: number; amountUsd: Decimal; amountLocal: Decimal }>;
@@ -154,44 +170,51 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
 
   const shipmentIds = contracts.flatMap((c) => c.shipments.map((s) => s.id));
 
-  const [expenses, sales, costings, commissionPaid] = await Promise.all([
+  const [expenses, sales, costings] = await Promise.all([
     prisma.expense.findMany({
       where: { companyId, shipmentId: { in: shipmentIds }, status: 'POSTED', kind: 'SHIPMENT' },
       include: {
         expenseCategory: { select: { name: true } },
         cashBankAccount: { select: { name: true } },
         container: { select: { containerNumber: true } },
-        allocations: { select: { payment: { select: { status: true } } } },
+        vendor: { select: { country: true } },
       },
       orderBy: [{ expenseDate: 'asc' }, { expenseNumber: 'asc' }],
     }),
     // Sales by the batch each line was sold from: a line belongs to one
     // batch and a batch to one shipment, so each sale counts once.
-    prisma.$queryRaw<Array<{ shipmentId: string; revenueUsd: string; cogsUsd: string; revenueLocal: string; cogsLocal: string }>>`
-      SELECT b."shipmentId",
+    /*
+     * Sales by the batch they came from. Revenue in dirhams is at each
+     * invoice's own rate. The cost of what sold is the batch's cost, and in
+     * dirhams it is that cost at the rates it was incurred at — not the
+     * sale's rate, which would make the landed cost in dirhams differ from
+     * cost of sales plus the stock that is left.
+     */
+    prisma.$queryRaw<Array<{ batchId: string; shipmentId: string; revenueUsd: string; cogsUsd: string; revenueLocal: string }>>`
+      SELECT b."id" AS "batchId", b."shipmentId",
              COALESCE(SUM(sil."lineTotalUsd"), 0)::text AS "revenueUsd",
              COALESCE(SUM(sil."costTotalUsd"), 0)::text AS "cogsUsd",
-             COALESCE(SUM(sil."lineTotalUsd" * si."rateLocalPerUsd"), 0)::text AS "revenueLocal",
-             COALESCE(SUM(sil."costTotalUsd" * si."rateLocalPerUsd"), 0)::text AS "cogsLocal"
+             COALESCE(SUM(sil."lineTotalUsd" * si."rateLocalPerUsd"), 0)::text AS "revenueLocal"
       FROM sales_invoice_lines sil
       JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
       JOIN batches b ON b."id" = sil."batchId"
       WHERE si."companyId" = ${companyId} AND si."status" = 'POSTED'
         AND b."shipmentId" = ANY(${shipmentIds})
-      GROUP BY b."shipmentId"
+      GROUP BY b."id", b."shipmentId"
     `,
     Promise.all(shipmentIds.map((shipmentId) => getBatchCostings({ companyId, shipmentId }))).then((all) =>
       new Map(all.flat().map((c) => [c.batchId, c])),
     ),
-    getCommissionPaidByExpense(companyId),
   ]);
+  // Paid, partly paid or unpaid: the same answer as the expense list.
+  const settlements = await getExpenseSettlements(companyId, expenses);
 
   const expensesByShipment = new Map<string, typeof expenses>();
   for (const e of expenses) {
     if (!e.shipmentId) continue;
     expensesByShipment.set(e.shipmentId, [...(expensesByShipment.get(e.shipmentId) ?? []), e]);
   }
-  const salesByShipment = new Map(sales.map((s) => [s.shipmentId, s]));
+  const fx = await getOrderFxTransactions(companyId, contracts.map((c) => c.id));
 
   return contracts.map((contract): OrderCostSheet => {
     const records = contract.shipments;
@@ -215,6 +238,8 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
           purchaseUsd: toMoney(b.purchaseCostUsd),
           landedUsd: cost ? toMoney(cost.landedUsd) : toMoney(b.purchaseCostUsd),
           landedPerKgUsd: cost ? toUnitCost(cost.landedPerKgUsd) : new Decimal(0),
+          landedLocal: cost ? toMoney(cost.landedLocal) : convertFromUsd(toMoney(b.purchaseCostUsd), rateLocalPerUsd, local),
+          landedPerKgLocal: cost ? toUnitCost(cost.landedPerKgLocal) : new Decimal(0),
           warehouse: [...new Set(b.balances.map((x) => x.warehouse.name))].join(', ') || null,
           status: s.status,
         };
@@ -223,10 +248,7 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
 
     const orderExpenses: OrderExpenseLine[] = records.flatMap((s) =>
       (expensesByShipment.get(s.id) ?? []).map((e) => {
-        const settledByAllocation = e.allocations.some((a) => a.payment.status === 'POSTED');
-        const settledByCommission =
-          Boolean(e.payableToAgentId) &&
-          toMoney(commissionPaid.get(e.id) ?? 0).greaterThanOrEqualTo(toMoney(e.amountUsd).minus('0.01'));
+        const settlement = settlements.get(e.id);
         return {
           expenseId: e.id,
           expenseNumber: e.expenseNumber,
@@ -239,8 +261,9 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
           amountUsd: toMoney(e.amountUsd),
           amountLocal: toMoney(e.amountLocal),
           capitalised: e.capitaliseToLandedCost,
-          paid: Boolean(e.cashBankAccountId) || settledByAllocation || settledByCommission,
-          paidFrom: e.cashBankAccount?.name ?? null,
+          paid: settlement?.status === 'PAID',
+          payment: settlement?.status ?? 'UNPAID',
+          paidFrom: settlement?.paidFrom ?? null,
         };
       }),
     );
@@ -280,11 +303,22 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
     const basisKg = receivedKg.greaterThan(0) ? receivedKg : orderedKg;
     const perKg = (total: Decimal) => (basisKg.greaterThan(0) ? toUnitCost(total.dividedBy(basisKg)) : new Decimal(0));
 
-    const sold = records.map((s) => salesByShipment.get(s.id)).filter(Boolean) as typeof sales;
+    const mine = new Set(records.map((r) => r.id));
+    const sold = sales.filter((s) => mine.has(s.shipmentId));
+    const lineOf = new Map(lines.map((l) => [l.batchId, l]));
     const revenueUsd = toMoney(sum(sold.map((s) => dec(s.revenueUsd))));
     const cogsUsd = toMoney(sum(sold.map((s) => dec(s.cogsUsd))));
     const revenueLocal = toMoney(sum(sold.map((s) => dec(s.revenueLocal))));
-    const cogsLocal = toMoney(sum(sold.map((s) => dec(s.cogsLocal))));
+    // Each batch's cost of sales at that batch's own blend of historical rates.
+    const cogsLocal = toMoney(
+      sum(
+        sold.map((s) => {
+          const line = lineOf.get(s.batchId);
+          const blend = line && line.landedUsd.greaterThan(0) ? line.landedLocal.dividedBy(line.landedUsd) : rateLocalPerUsd;
+          return dec(s.cogsUsd).times(blend);
+        }),
+      ),
+    );
     const grossProfitUsd = toMoney(revenueUsd.minus(cogsUsd));
     /*
      * What is left is what the stock records hold, not received less sold.
@@ -293,6 +327,8 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
      */
     const remainingKg = toQuantity(sum(lines.map((l) => l.onHandKg)));
     const remainingValueUsd = toMoney(sum(lines.map((l) => l.landedPerKgUsd.times(l.onHandKg))));
+    const remainingValueLocal = toMoney(sum(lines.map((l) => l.landedPerKgLocal.times(l.onHandKg))));
+    const orderFx = fx.get(contract.id) ?? { costs: [], sales: [] };
 
     const allBatchesContainers = new Set(lines.map((l) => l.containerNumber).filter(Boolean));
 
@@ -335,6 +371,11 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
       netProfitLocal: toMoney(revenueLocal.minus(cogsLocal).minus(periodExpenseLocal)),
       marginPct: revenueUsd.greaterThan(0) ? grossProfitUsd.dividedBy(revenueUsd).times(100).toDecimalPlaces(1) : new Decimal(0),
       remainingValueUsd,
+      remainingValueLocal,
+      costFx: summariseFx(orderFx.costs, local),
+      salesFx: summariseFx(orderFx.sales, local),
+      fxCosts: orderFx.costs,
+      fxSales: orderFx.sales,
       lines,
       expenses: orderExpenses,
       byCategory: [...byCategoryMap.values()].sort((a, b) => a.category.localeCompare(b.category)),
