@@ -662,7 +662,8 @@ model AgentSettlement {
   agentId           String
   settlementDate    DateTime                 @db.Date
   direction         AgentSettlementDirection
-  cashBankAccountId String
+  /// Empty only for a commission settled against collections: no money moved.
+  cashBankAccountId String?
   currency          String                   @db.VarChar(3)
   amount            Decimal                  @db.Decimal(18, 4)
   rateToUsd         Decimal                  @default(1) @db.Decimal(18, 8)
@@ -677,10 +678,10 @@ model AgentSettlement {
   createdAt         DateTime                 @default(now())
   updatedAt         DateTime                 @updatedAt
 
-  company         Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  agent           Agent           @relation(fields: [agentId], references: [id])
-  cashBankAccount CashBankAccount @relation(fields: [cashBankAccountId], references: [id])
-  createdBy       User            @relation("AgentSettlementCreatedBy", fields: [createdById], references: [id])
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agent           Agent            @relation(fields: [agentId], references: [id])
+  cashBankAccount CashBankAccount? @relation(fields: [cashBankAccountId], references: [id], onDelete: Restrict)
+  createdBy       User             @relation("AgentSettlementCreatedBy", fields: [createdById], references: [id])
 
   @@unique([companyId, settlementNumber])
   @@index([companyId, agentId])
@@ -693,6 +694,9 @@ enum AgentSettlementDirection {
   COLLECTION
   /// The company pays the agent commission it owed him.
   COMMISSION
+  /// His commission is settled against the customer money he is holding for
+  /// the company — a ledger settlement only. No cash or bank moves.
+  COMMISSION_OFFSET
 }
 
 /// A lot is the supplier's traceability unit. One purchase contract can carry

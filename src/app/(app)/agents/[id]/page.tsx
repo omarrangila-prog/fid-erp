@@ -102,6 +102,7 @@ export default async function AgentLedgerPage({
                 holdingUsd={position?.holdingUsd.toString() ?? '0'}
                 holdingLocal={ledger.summary.holdingLocal.toString()}
                 commissionPayableUsd={position?.commissionPayableUsd.toString() ?? '0'}
+                commissionLocal={ledger.summary.commissionLocal.toString()}
               />
             ) : null}
             {can(user, PERMISSIONS.ACCOUNTING_POST) ? (

@@ -46,20 +46,28 @@ export async function getCommissionPaidByExpense(companyId: string): Promise<Map
     prisma.expense.findMany({
       where: { companyId, status: 'POSTED', payableToAgentId: { not: null } },
       orderBy: [{ expenseDate: 'asc' }, { createdAt: 'asc' }, { expenseNumber: 'asc' }],
-      select: { id: true, payableToAgentId: true, amountUsd: true },
+      select: { id: true, payableToAgentId: true, amountUsd: true, amountLocal: true },
     }),
+    /*
+     * Paid in cash or bank, or settled against the customer money he holds:
+     * both settle the commission. Counted in the company's own currency, so a
+     * dirham commission settled in dirhams reads settled in full whatever the
+     * dollar rate did in between.
+     */
     prisma.agentSettlement.findMany({
-      where: { companyId, direction: 'COMMISSION', status: 'POSTED' },
+      where: { companyId, direction: { in: ['COMMISSION', 'COMMISSION_OFFSET'] }, status: 'POSTED' },
       orderBy: [{ settlementDate: 'asc' }, { createdAt: 'asc' }],
-      select: { agentId: true, amountUsd: true },
+      select: { agentId: true, amountLocal: true },
     }),
   ]);
 
   const pool = new Map<string, Decimal>();
   for (const settlement of settlements) {
-    pool.set(settlement.agentId, (pool.get(settlement.agentId) ?? new Decimal(0)).plus(settlement.amountUsd));
+    pool.set(settlement.agentId, (pool.get(settlement.agentId) ?? new Decimal(0)).plus(settlement.amountLocal));
   }
 
+  // What is settled, returned in USD as before, as the share of each cost
+  // that the settlements in the company's currency cover.
   const paid = new Map<string, Decimal>();
   for (const expense of expenses) {
     const agentId = expense.payableToAgentId;
@@ -68,10 +76,13 @@ export async function getCommissionPaidByExpense(companyId: string): Promise<Map
       continue;
     }
     const available = pool.get(agentId) ?? new Decimal(0);
-    const amountUsd = dec(expense.amountUsd);
-    const applied = available.lessThan(amountUsd) ? available : amountUsd;
-    paid.set(expense.id, toMoney(applied));
-    pool.set(agentId, toMoney(available.minus(applied)));
+    const owedLocal = dec(expense.amountLocal);
+    const appliedLocal = available.lessThan(owedLocal) ? available : owedLocal;
+    pool.set(agentId, toMoney(available.minus(appliedLocal)));
+    paid.set(
+      expense.id,
+      owedLocal.isZero() ? new Decimal(0) : toMoney(dec(expense.amountUsd).times(appliedLocal).dividedBy(owedLocal)),
+    );
   }
 
   return paid;

@@ -3,6 +3,7 @@ import type { CostAllocationMethod } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { getExpenseSettlements, type ExpensePaymentStatus } from '@/lib/services/expense-settlement';
 import { batchLandedLocal, getCapitalisedRates, getOrderFxTransactions, summariseFx } from '@/lib/services/shipment-fx';
+import { getShipmentProfitability } from '@/lib/services/profitability';
 import { Decimal, dec, toMoney, toUnitCost, allocateProportionally, sum, toQuantity, convertFromUsd, KG_PER_MT } from '@/lib/money';
 import { BusinessRuleError } from '@/lib/errors';
 import { lockBatch } from '@/lib/services/inventory';
@@ -646,12 +647,17 @@ export async function getShipmentCostSheet(companyId: string, shipmentId: string
     ),
   }));
 
-  const invoices = await prisma.salesInvoice.findMany({
-    where: { companyId, shipmentId, status: 'POSTED' },
-    select: { subtotalUsd: true, costOfGoodsUsd: true },
-  });
-  const revenueUsd = toMoney(sum(invoices.map((invoice) => dec(invoice.subtotalUsd))));
-  const cogsUsd = toMoney(sum(invoices.map((invoice) => dec(invoice.costOfGoodsUsd))));
+  /*
+   * Sales follow the coffee: every invoice line sold from one of this
+   * shipment's batches, whatever the invoice's header names. Reading the
+   * header showed a sold-out SCREEN 18 container with almost no sales — one
+   * invoice sold from two containers and named neither, another named the
+   * wrong one — while its own lines said otherwise. The same figures the
+   * shipment P&L uses.
+   */
+  const [pnl] = await getShipmentProfitability({ companyId, shipmentId });
+  const revenueUsd = toMoney(pnl?.salesRevenueUsd ?? 0);
+  const cogsUsd = toMoney(pnl?.allocatedLandedCostUsd ?? 0);
   const grossProfitUsd = toMoney(revenueUsd.minus(cogsUsd));
   const soldKg = toQuantity(job.soldKg);
 

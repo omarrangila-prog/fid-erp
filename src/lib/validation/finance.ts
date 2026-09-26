@@ -333,8 +333,12 @@ export const agentSettlementSchema = z.object({
   clientKey: z.string().regex(/^[A-Za-z0-9-]{8,64}$/).optional(),
   agentId: requiredChoice('Agent'),
   settlementDate: dateString('Date'),
-  direction: z.enum(['COLLECTION', 'COMMISSION']),
-  cashBankAccountId: requiredChoice('Cash or bank account'),
+  /**
+   * COMMISSION_OFFSET: his commission settled against the customer money he
+   * holds — a ledger settlement with no cash or bank, so no account.
+   */
+  direction: z.enum(['COLLECTION', 'COMMISSION', 'COMMISSION_OFFSET']),
+  cashBankAccountId: optionalCuid,
   currency: currencyCode,
   amount: decimalString('Amount'),
   rateToUsd: decimalString('Exchange rate'),
@@ -346,6 +350,9 @@ export const agentSettlementSchema = z.object({
    * unsaid, the excess is refused rather than guessed at.
    */
   excess: z.enum(['LOAN']).nullish(),
+}).refine((v) => v.direction === 'COMMISSION_OFFSET' || Boolean(v.cashBankAccountId), {
+  message: 'Choose the cash or bank account.',
+  path: ['cashBankAccountId'],
 });
 
 /** Settling what he owes the company against what the company owes him. */

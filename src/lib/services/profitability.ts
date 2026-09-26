@@ -207,10 +207,14 @@ export async function getShipmentProfitability(params: {
       s."id" AS "shipmentId", s."shipmentNumber", s."jobNumber", s."status"::text AS status,
       pc."id" AS "contractId", pc."contractNumber", pc."contractReference",
       ci."itemName", v."vendorName",
+      -- Who bought this shipment's coffee: by the lines sold from its batches,
+      -- not by an invoice header, which may name another shipment or none.
       (SELECT string_agg(DISTINCT c2."customerName", ', ')
-         FROM sales_invoices si2
+         FROM sales_invoice_lines sil2
+         JOIN sales_invoices si2 ON si2."id" = sil2."salesInvoiceId"
+         JOIN batches b8 ON b8."id" = sil2."batchId"
          JOIN customers c2 ON c2."id" = si2."customerId"
-        WHERE si2."shipmentId" = s."id" AND si2."status" = 'POSTED') AS "customerNames",
+        WHERE b8."shipmentId" = s."id" AND si2."status" = 'POSTED') AS "customerNames",
       COALESCE((SELECT SUM(b."orderedQuantityKg")  FROM batches b WHERE b."shipmentId" = s."id"), 0)::text AS "orderedKg",
       COALESCE((SELECT SUM(b."receivedQuantityKg") FROM batches b WHERE b."shipmentId" = s."id"), 0)::text AS "receivedKg",
       COALESCE((SELECT SUM(b."soldQuantityKg")     FROM batches b WHERE b."shipmentId" = s."id"), 0)::text AS "soldKg",

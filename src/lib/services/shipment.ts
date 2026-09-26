@@ -355,18 +355,29 @@ export async function getShipmentSettlement(
   shipmentId: string,
 ): Promise<ShipmentSettlement> {
   const rows = await client.$queryRaw<Array<{ invoiced: string | null; received: string | null }>>`
+    /*
+     * This shipment's own share of each invoice, by the lines sold from its
+     * batches; receipts count in the same proportion. An invoice selling from
+     * two containers is no longer wholly one container's and none of the
+     * other's.
+     */
+    WITH mine AS (
+      SELECT si."id", si."subtotalUsd",
+             SUM(sil."lineTotalUsd") AS "fromHere"
+      FROM sales_invoice_lines sil
+      JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
+      JOIN batches b ON b."id" = sil."batchId"
+      WHERE si."companyId" = ${companyId} AND si."status" = 'POSTED' AND b."shipmentId" = ${shipmentId}
+      GROUP BY si."id", si."subtotalUsd"
+    )
     SELECT
+      COALESCE((SELECT SUM(m."fromHere") FROM mine m), 0)::text AS invoiced,
       COALESCE((
-        SELECT SUM(si."subtotalUsd") FROM sales_invoices si
-        WHERE si."companyId" = ${companyId} AND si."shipmentId" = ${shipmentId} AND si."status" = 'POSTED'
-      ), 0)::text AS invoiced,
-      COALESCE((
-        SELECT SUM(ra."amountUsd")
+        SELECT SUM(ra."amountUsd" * m."fromHere" / NULLIF(m."subtotalUsd", 0))
         FROM receipt_allocations ra
         JOIN receipts r ON r."id" = ra."receiptId"
-        JOIN sales_invoices si2 ON si2."id" = ra."salesInvoiceId"
+        JOIN mine m ON m."id" = ra."salesInvoiceId"
         WHERE r."companyId" = ${companyId} AND r."status" = 'POSTED'
-          AND si2."shipmentId" = ${shipmentId} AND si2."status" = 'POSTED'
       ), 0)::text AS received
   `;
 

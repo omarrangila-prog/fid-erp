@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { AlertCircle, Banknote, HandCoins } from 'lucide-react';
+import { AlertCircle, ArrowLeftRight, Banknote, HandCoins } from 'lucide-react';
 import { Sheet } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input, Select, Textarea, MoneyInput } from '@/components/ui/input';
@@ -32,6 +32,7 @@ export function AgentSettlementActions({
   holdingUsd,
   holdingLocal,
   commissionPayableUsd,
+  commissionLocal = '0',
 }: {
   agentId: string;
   agentName: string;
@@ -41,8 +42,12 @@ export function AgentSettlementActions({
   holdingUsd: string;
   holdingLocal: string;
   commissionPayableUsd: string;
+  /** Commission owed to him, in the company's currency. */
+  commissionLocal?: string;
 }) {
-  const [open, setOpen] = React.useState<'COLLECTION' | 'COMMISSION' | null>(null);
+  const [open, setOpen] = React.useState<Direction | null>(null);
+  // What can be settled against each other: the smaller of the two.
+  const offsetLimit = Math.min(Number(holdingLocal) || 0, Number(commissionLocal) || 0);
 
   return (
     <>
@@ -59,6 +64,16 @@ export function AgentSettlementActions({
         <Banknote />
         Pay commission
       </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setOpen('COMMISSION_OFFSET')}
+        disabled={offsetLimit <= 0}
+        data-testid="agent-commission-offset-open"
+      >
+        <ArrowLeftRight />
+        Settle commission against collections
+      </Button>
 
       {open ? (
         <SettlementSheet
@@ -71,6 +86,7 @@ export function AgentSettlementActions({
           defaultLocalRate={defaultLocalRate}
           limitUsd={open === 'COLLECTION' ? holdingUsd : commissionPayableUsd}
           holdingLocal={holdingLocal}
+          commissionLocal={commissionLocal}
           onClose={() => setOpen(null)}
         />
       ) : null}
@@ -78,8 +94,10 @@ export function AgentSettlementActions({
   );
 }
 
+type Direction = 'COLLECTION' | 'COMMISSION' | 'COMMISSION_OFFSET';
+
 function SettlementSheet({
-  direction,
+  direction: initialDirection,
   agentId,
   agentName,
   accounts,
@@ -87,9 +105,10 @@ function SettlementSheet({
   defaultLocalRate,
   limitUsd,
   holdingLocal,
+  commissionLocal,
   onClose,
 }: {
-  direction: 'COLLECTION' | 'COMMISSION';
+  direction: Direction;
   agentId: string;
   agentName: string;
   accounts: Account[];
@@ -97,8 +116,16 @@ function SettlementSheet({
   defaultLocalRate: string;
   limitUsd: string;
   holdingLocal: string;
+  commissionLocal: string;
   onClose: () => void;
 }) {
+  /*
+   * How the commission is settled. Paid in cash or from the bank, or kept
+   * against the customer money he holds — a ledger settlement between his two
+   * balances in which no money moves at all, so no account is asked for.
+   */
+  const [direction, setDirection] = React.useState<Direction>(initialDirection);
+  const offset = direction === 'COMMISSION_OFFSET';
   const router = useRouter();
   const clientKey = useClientKey();
   const [pending, startTransition] = React.useTransition();
@@ -137,7 +164,7 @@ function SettlementSheet({
   function submit() {
     setError(null);
 
-    if (!form.cashBankAccountId) {
+    if (!offset && !form.cashBankAccountId) {
       setError(
         collecting
           ? 'Choose the account the money was paid into.'
@@ -165,6 +192,8 @@ function SettlementSheet({
           agentId,
           direction,
           ...form,
+          // An offset moves no money, so it names no account.
+          cashBankAccountId: offset ? '' : form.cashBankAccountId,
           excess: mustClassify ? form.excess : null,
         }),
       );
@@ -182,11 +211,13 @@ function SettlementSheet({
     <Sheet
       open
       onOpenChange={(next) => !next && onClose()}
-      title={collecting ? 'Received from agent' : 'Pay commission'}
+      title={collecting ? 'Received from agent' : offset ? 'Settle commission against collections' : 'Pay commission'}
       description={
         collecting
           ? `${agentName} has handed over money collected from customers.`
-          : `Pay ${agentName} commission already charged to the shipments.`
+          : offset
+            ? `${agentName} keeps part of the customer money he holds as his commission. No cash or bank moves.`
+            : `Pay ${agentName} commission already charged to the shipments.`
       }
       width="md"
       footer={
@@ -195,7 +226,7 @@ function SettlementSheet({
             Cancel
           </Button>
           <Button onClick={submit} loading={pending}>
-            {collecting ? 'Record money received' : 'Record commission paid'}
+            {collecting ? 'Record money received' : offset ? 'Record the settlement' : 'Record commission paid'}
           </Button>
         </div>
       }
@@ -209,6 +240,23 @@ function SettlementSheet({
             <AlertCircle className="mt-0.5 size-4 shrink-0" />
             <span>{error}</span>
           </div>
+        ) : null}
+
+        {!collecting ? (
+          <Field label="Settlement method" required>
+            <Select
+              aria-label="Settlement method"
+              value={offset ? 'OFFSET' : 'MONEY'}
+              onChange={(e) => {
+                const next: Direction = e.target.value === 'OFFSET' ? 'COMMISSION_OFFSET' : 'COMMISSION';
+                setDirection(next);
+                if (next === 'COMMISSION_OFFSET') set({ cashBankAccountId: '', currency: localCurrency, rateToUsd: defaultLocalRate });
+              }}
+            >
+              <option value="MONEY">Cash or bank — money paid to him</option>
+              <option value="OFFSET">Journal / non-cash — kept against the customer money he holds</option>
+            </Select>
+          </Field>
         ) : null}
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -237,6 +285,7 @@ function SettlementSheet({
             </Select>
           </Field>
 
+          {offset ? null : (
           <Field
             label={collecting ? 'Paid into' : 'Paid from'}
             required
@@ -254,6 +303,7 @@ function SettlementSheet({
               ))}
             </Select>
           </Field>
+          )}
 
           <Field label="Amount" required>
             <MoneyInput
@@ -321,6 +371,13 @@ function SettlementSheet({
               {form.currency === 'USD' ? null : <> ({formatMoney(limitUsd, 'USD')})</>}. Up to that, this settles
               what he collected for the company. Anything beyond it is his own money and has to be classified before it
               is recorded.
+            </>
+          ) : offset ? (
+            <>
+              {agentName} holds <strong>{formatMoney(holdingLocal, localCurrency)}</strong> of customer money and is
+              owed <strong>{formatMoney(commissionLocal, localCurrency)}</strong> of commission. Up to the smaller of the
+              two can be settled here: his commission goes down and so does what he owes FID, by the same amount.
+              Cash and bank are not touched. He then hands over the rest.
             </>
           ) : (
             <>

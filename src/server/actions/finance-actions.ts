@@ -178,10 +178,12 @@ export async function recordAgentSettlementAction(payload: string): Promise<DocF
          * refuses an excess nobody has explained.
          */
         if (input.direction === 'COLLECTION') {
+          if (!input.cashBankAccountId) throw new BusinessRuleError('Choose the account the money was paid into.');
           const { settlementId, lent } = await recordAgentHandover({
             companyId: user.activeCompany.id,
             userId: user.id,
             ...input,
+            cashBankAccountId: input.cashBankAccountId,
             excess: input.excess ?? null,
           });
           return { id: settlementId ?? input.agentId, lent };

@@ -4,7 +4,7 @@ import { Decimal, dec, toMoney, toRate, convertToUsd, convertFromUsd } from '@/l
 import { ACCOUNT_KEYS, DOC_TYPES } from '@/lib/constants';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
 import { nextReference } from '@/lib/services/numbering';
-import { postJournalEntry } from '@/lib/services/accounting';
+import { postJournalEntry, type JournalLineInput } from '@/lib/services/accounting';
 import { getCompanyContext } from '@/lib/services/company';
 import { formatMoney } from '@/lib/format';
 import { getRate, getLocalRateForPosting } from '@/lib/services/exchange-rate';
@@ -43,7 +43,8 @@ export type AgentSettlementInput = {
   agentId: string;
   settlementDate: Date;
   direction: AgentSettlementDirection;
-  cashBankAccountId: string;
+  /** Required unless the commission is settled against collections he holds. */
+  cashBankAccountId?: string | null;
   currency: string;
   amount: string | number;
   rateToUsd: string | number;
@@ -120,20 +121,32 @@ export async function createAgentSettlement(input: AgentSettlementInput, userId:
     const company = await getCompanyContext(tx, input.companyId);
     const agent = await loadAgent(tx, input.companyId, input.agentId);
 
-    const account = await tx.cashBankAccount.findFirst({
-      where: { id: input.cashBankAccountId, companyId: input.companyId },
-      select: { id: true, name: true, currency: true, status: true },
-    });
-    if (!account) throw new NotFoundError('Cash or bank account');
-    if (account.status !== 'ACTIVE') {
-      throw new BusinessRuleError(`${account.name} is inactive.`);
-    }
-
+    /*
+     * A commission settled against the money he holds moves no money, so it
+     * names no account — and must not: an account on it would read as cash
+     * paid out. Every other settlement is money in or out and names one.
+     */
+    const offset = input.direction === 'COMMISSION_OFFSET';
     const currency = input.currency.toUpperCase();
-    if (account.currency !== currency) {
-      throw new BusinessRuleError(
-        `${account.name} is held in ${account.currency}, so a ${currency} settlement cannot be recorded against it.`,
-      );
+    if (offset) {
+      if (input.cashBankAccountId) {
+        throw new BusinessRuleError('A commission settled against collections moves no cash, so no account is named.');
+      }
+    } else {
+      if (!input.cashBankAccountId) throw new BusinessRuleError('Choose the cash or bank account.');
+      const account = await tx.cashBankAccount.findFirst({
+        where: { id: input.cashBankAccountId, companyId: input.companyId },
+        select: { id: true, name: true, currency: true, status: true },
+      });
+      if (!account) throw new NotFoundError('Cash or bank account');
+      if (account.status !== 'ACTIVE') {
+        throw new BusinessRuleError(`${account.name} is inactive.`);
+      }
+      if (account.currency !== currency) {
+        throw new BusinessRuleError(
+          `${account.name} is held in ${account.currency}, so a ${currency} settlement cannot be recorded against it.`,
+        );
+      }
     }
 
     const amount = toMoney(input.amount);
@@ -173,7 +186,7 @@ export async function createAgentSettlement(input: AgentSettlementInput, userId:
         agentId: input.agentId,
         settlementDate: input.settlementDate,
         direction: input.direction,
-        cashBankAccountId: input.cashBankAccountId,
+        cashBankAccountId: offset ? null : input.cashBankAccountId,
         currency,
         amount,
         rateToUsd,
@@ -207,10 +220,12 @@ export async function postAgentSettlement(params: { id: string; companyId: strin
     const company = await getCompanyContext(tx, params.companyId);
 
     const collecting = settlement.direction === 'COLLECTION';
+    const offset = settlement.direction === 'COMMISSION_OFFSET';
 
     await tx.$queryRaw`SELECT "id" FROM agents WHERE "id" = ${settlement.agentId} AND "companyId" = ${params.companyId} FOR UPDATE`;
 
-    if (collecting) {
+    if (collecting || offset) {
+      // An offset uses up money he holds exactly as a hand-over does.
       assertNotOverCollecting({
         agentName: settlement.agent.agentName,
         position: await getAgentPosition(tx, params.companyId, settlement.agentId),
@@ -219,12 +234,19 @@ export async function postAgentSettlement(params: { id: string; companyId: strin
         amount: dec(settlement.amount),
         rateToUsd: dec(settlement.rateToUsd),
       });
-    } else {
+    }
+    if (!collecting) {
       const position = await getAgentPosition(tx, params.companyId, settlement.agentId);
-      if (dec(settlement.amountUsd).greaterThan(position.commissionPayableUsd.plus('0.01'))) {
+      // Read in the company's currency when the settlement is in it, so a
+      // dirham commission settled in dirhams is never refused over a rate
+      // that moved since it was booked.
+      const inLocal = settlement.currency.toUpperCase() === company.localCurrency.toUpperCase();
+      const owed = inLocal ? position.commissionPayableLocal : position.commissionPayableUsd;
+      const asked = inLocal ? dec(settlement.amount) : dec(settlement.amountUsd);
+      if (asked.greaterThan(owed.plus('0.01'))) {
         throw new BusinessRuleError(
-          `${settlement.agent.agentName} is owed ${position.commissionPayableUsd.toFixed(2)} USD of commission. ` +
-            `Paying ${dec(settlement.amountUsd).toFixed(2)} USD would overpay him.`,
+          `${settlement.agent.agentName} is owed ${formatMoney(owed, inLocal ? settlement.currency : 'USD')} of commission. ` +
+            `Settling ${formatMoney(asked, inLocal ? settlement.currency : 'USD')} would overpay him.`,
         );
       }
     }
@@ -234,13 +256,41 @@ export async function postAgentSettlement(params: { id: string; companyId: strin
       entryDate: settlement.settlementDate,
       description: collecting
         ? `${settlement.settlementNumber} — ${settlement.agent.agentName} handed over collections`
-        : `${settlement.settlementNumber} — commission paid to ${settlement.agent.agentName}`,
+        : offset
+          ? `${settlement.settlementNumber} — ${settlement.agent.agentName}'s commission settled against collections he holds`
+          : `${settlement.settlementNumber} — commission paid to ${settlement.agent.agentName}`,
       sourceType: 'AGENT_SETTLEMENT',
       sourceId: settlement.id,
       createdById: params.userId,
       localCurrency: company.localCurrency,
       rateLocalPerUsd: settlement.rateLocalPerUsd,
-      lines: collecting
+      lines: (offset
+        ? [
+            /*
+             * A ledger settlement between his two balances: the commission the
+             * company owes him goes down, and so does the customer money he
+             * owes the company. No cash, no bank.
+             */
+            {
+              accountKey: ACCOUNT_KEYS.AGENT_COMMISSION_PAYABLE,
+              direction: 'DEBIT' as const,
+              currency: settlement.currency,
+              amount: settlement.amount,
+              rateToUsd: settlement.rateToUsd,
+              description: `Commission settled against collections — ${settlement.agent.agentName}`,
+              agentId: settlement.agentId,
+            },
+            {
+              accountKey: ACCOUNT_KEYS.AGENT_CLEARING,
+              direction: 'CREDIT' as const,
+              currency: settlement.currency,
+              amount: settlement.amount,
+              rateToUsd: settlement.rateToUsd,
+              description: 'Collections kept against his commission',
+              agentId: settlement.agentId,
+            },
+          ]
+        : collecting
         ? [
             {
               cashBankAccountId: settlement.cashBankAccountId,
@@ -277,10 +327,10 @@ export async function postAgentSettlement(params: { id: string; companyId: strin
               currency: settlement.currency,
               amount: settlement.amount,
               rateToUsd: settlement.rateToUsd,
-              description: `Paid from ${settlement.cashBankAccount.name}`,
+              description: `Paid from ${settlement.cashBankAccount?.name ?? 'cash or bank'}`,
               agentId: settlement.agentId,
             },
-          ],
+          ]) as JournalLineInput[],
     });
 
     const posted = await tx.agentSettlement.update({

@@ -13,6 +13,7 @@ import {
   SHIPMENT_STATUSES_LANDED,
 } from '@/lib/constants';
 import { prisma, transaction } from '@/lib/db';
+import { dec } from '@/lib/money';
 import { getShipmentSettlement } from '@/lib/services/shipment';
 import { getShipmentProfitabilityById } from '@/lib/services/profitability';
 import { getJobCostSummary, getShipmentCostSheet } from '@/lib/services/landed-cost';
@@ -63,11 +64,6 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
       containerList: { orderBy: { containerNumber: 'asc' } },
       statusHistory: { orderBy: { changedAt: 'desc' }, include: { changedBy: { select: { name: true } } } },
       docStatusHistory: { orderBy: { changedAt: 'desc' }, include: { changedBy: { select: { name: true } } } },
-      salesInvoices: {
-        where: { status: 'POSTED' },
-        include: { customer: { select: { customerName: true } } },
-        orderBy: { invoiceDate: 'desc' },
-      },
       expenses: {
         where: { status: 'POSTED' },
         include: { expenseCategory: { select: { name: true } } },
@@ -77,6 +73,25 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
   });
 
   if (!shipment) notFound();
+
+  /*
+   * The sales from this shipment's coffee: every invoice with a line sold from
+   * one of its batches, and how much of the invoice that was. By the lines,
+   * not the invoice header, which may name another container or none — the
+   * reason a sold-out SCREEN 18 container once showed almost no sales.
+   */
+  const soldFromHere = await prisma.$queryRaw<
+    Array<{ id: string; invoiceDate: Date; currency: string; customerName: string; kg: string; amount: string }>
+  >`
+    SELECT si."id", si."invoiceDate", si."currency", c."customerName",
+           SUM(sil."quantityKg")::text AS kg, SUM(sil."lineTotal")::text AS amount
+    FROM sales_invoice_lines sil
+    JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
+    JOIN batches b ON b."id" = sil."batchId"
+    JOIN customers c ON c."id" = si."customerId"
+    WHERE b."shipmentId" = ${shipment.id} AND si."status" = 'POSTED'
+    GROUP BY si."id", si."invoiceDate", si."currency", c."customerName"
+    ORDER BY si."invoiceDate" DESC`;
 
   const [settlement, profit, jobCost, costSheet, batches, shippingLines, customers, ports] = await Promise.all([
     getShipmentSettlement(prisma as never, companyId, shipment.id),
@@ -519,23 +534,23 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
             <CardTitle>Sales against this job</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {shipment.salesInvoices.length === 0 ? (
+            {soldFromHere.length === 0 ? (
               <p className="py-4 text-center text-xs text-ink-subtle">Nothing sold from this job yet.</p>
             ) : (
-              shipment.salesInvoices.map((inv) => (
+              soldFromHere.map((inv) => (
                 <Link
                   key={inv.id}
                   href={`/sales/${inv.id}`}
                   className="flex items-center justify-between gap-3 border-b border-line pb-3 last:border-0 last:pb-0"
                 >
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium text-forest-800">{inv.customer.customerName}</span>
+                    <span className="block truncate text-sm font-medium text-forest-800">{inv.customerName}</span>
                     <span className="block truncate text-xs text-ink-subtle">
-                      {inv.customer.customerName} · {formatDate(inv.invoiceDate)}
+                      {formatDate(inv.invoiceDate)} · {formatQuantityKg(dec(inv.kg))} from this shipment
                     </span>
                   </span>
                   <span className="tnum shrink-0 text-sm font-semibold">
-                    {formatMoney(inv.totalAmount, inv.currency)}
+                    {formatMoney(dec(inv.amount), inv.currency)}
                   </span>
                 </Link>
               ))

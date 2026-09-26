@@ -32,8 +32,7 @@ export const dynamic = 'force-dynamic';
 
 const VIEWS = [
   { key: 'statement', label: 'Statement' },
-  { key: 'shipment', label: 'By job' },
-  { key: 'contract', label: 'By contract' },
+  { key: 'shipment', label: 'By shipment' },
   { key: 'customer', label: 'By customer' },
   { key: 'product', label: 'By coffee' },
   { key: 'batch', label: 'By batch' },
@@ -46,7 +45,8 @@ export default async function ProfitabilityPage({ searchParams }: { searchParams
   const user = await requirePageAccess(PERMISSIONS.PROFITS_VIEW);
   const companyId = user.activeCompany.id;
   const local = user.activeCompany.localCurrency;
-  const active = VIEWS.find((v) => v.key === view)?.key ?? 'shipment';
+  // "By contract" was the same rows as "By job"; both are now the one shipment view.
+  const active = VIEWS.find((v) => v.key === (view === 'contract' ? 'shipment' : view))?.key ?? 'shipment';
 
   const summary = await getCompanyProfitSummary({ companyId });
 
@@ -116,9 +116,8 @@ export default async function ProfitabilityPage({ searchParams }: { searchParams
 
       {active === 'statement' ? <ProfitabilityStatement companyId={companyId} local={local} contractId={contract} /> : null}
       {active === 'shipment' ? <ShipmentTable companyId={companyId} local={local} lead="job" /> : null}
-      {active === 'contract' ? <ShipmentTable companyId={companyId} local={local} lead="contract" /> : null}
       {active === 'month' ? <MonthlyTable companyId={companyId} /> : null}
-      {active !== 'statement' && active !== 'shipment' && active !== 'contract' && active !== 'month' ? (
+      {active !== 'statement' && active !== 'shipment' && active !== 'month' ? (
         <BreakdownTable companyId={companyId} kind={active} />
       ) : null}
     </div>
@@ -128,120 +127,156 @@ export default async function ProfitabilityPage({ searchParams }: { searchParams
 async function ShipmentTable({
   companyId,
   local,
-  lead,
 }: {
   companyId: string;
   local: string;
-  lead: 'job' | 'contract';
+  lead?: 'job' | 'contract';
 }) {
   const rows = await getShipmentProfitability({ companyId });
+
+  /*
+   * One shipment reference, one row.
+   *
+   * An order of three containers was shown as three "shipments" side by side,
+   * each with only its own share of the sales. The client runs shipment-to-
+   * shipment accounting: the order's reference is the shipment, and the
+   * containers are its detail. Every figure on the parent is the sum of its
+   * containers, each counted once.
+   */
+  type Row = (typeof rows)[number];
+  const groups = new Map<string, Row[]>();
+  for (const row of rows) groups.set(row.contractId, [...(groups.get(row.contractId) ?? []), row]);
+  const add = (list: Row[], pick: (r: Row) => Parameters<typeof dec>[0]) => list.reduce((a, r) => a.plus(dec(pick(r))), dec(0));
+  const tone = (value: ReturnType<typeof dec>) => (value.greaterThanOrEqualTo(0) ? 'text-gold-700' : 'text-red-600');
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{lead === 'contract' ? 'Contract profitability' : 'Job profitability'}</CardTitle>
+        <CardTitle>Shipment profitability</CardTitle>
         <CardDescription>
-          Purchase cost converted to {local} at the contract rate, plus shipment costs. USD remains the group view.
+          One row per shipment reference; open it for its containers. Sales follow the coffee each invoice line sold,
+          wherever it was stored. Cost of sales is the landed cost of what sold, so shipment costs are never deducted twice.
         </CardDescription>
       </CardHeader>
-      <CardContent className="px-0 pb-0">
-            <TableWrap className="rounded-none border-0 border-t" data-wide-sheet>
-          <Table>
-            <THead>
-              <TR className="hover:bg-transparent">
-                <TH>{lead === 'contract' ? 'Contract' : 'Job'}</TH>
-                <TH>Coffee</TH>
-                <TH>Status</TH>
-                <TH numeric>Sold</TH>
-                <TH numeric>Remaining</TH>
-                <TH numeric>Revenue</TH>
-                <TH numeric>Landed cost</TH>
-                <TH numeric>Gross profit</TH>
-                <TH numeric>Other costs</TH>
-                <TH numeric>Net profit</TH>
-                <TH numeric>Per KG</TH>
-                <TH numeric>Margin</TH>
-              </TR>
-            </THead>
-            <TBody>
-              {rows.length === 0 ? (
-                <TR>
-                  <TD colSpan={12} className="py-8 text-center text-xs text-ink-subtle">
-                    No approved jobs yet.
-                  </TD>
-                </TR>
-              ) : (
-                rows.map((row) => (
-                  <TR key={row.shipmentId}>
-                    <TD>
-                      {lead === 'contract' ? (
-                        <Link href={`/purchases/${row.contractId}`} className="font-medium text-forest-800 hover:text-gold-700">
-                          <span className="block">{row.contractReference}</span>
-                        </Link>
-                      ) : (
-                        <Link href={`/shipments/${row.shipmentId}`} className="font-medium text-forest-800 hover:text-gold-700">
-                          <span className="block">{row.contractReference}</span>
-                          
-                        </Link>
-                      )}
-                    </TD>
-                    <TD>{row.itemName}</TD>
-                    <TD>
-                      <StatusBadge status={row.status} meta={SHIPMENT_STATUS_META} />
-                    </TD>
-                    <TD numeric>{formatQuantityKg(row.soldQuantityKg)}</TD>
-                    <TD numeric className="text-ink-muted">{formatQuantityKg(row.remainingQuantityKg)}</TD>
-                    <TD numeric>
-                      {formatMoney(row.salesRevenueUsd, 'USD')}
-                      <span className="block text-xs text-ink-subtle">{formatMoney(row.salesRevenueLocal, local)}</span>
-                    </TD>
-                    <TD numeric className="text-ink-muted">
-                      {formatMoney(row.allocatedLandedCostUsd, 'USD')}
-                      <span className="block text-xs">{formatMoney(row.allocatedLandedCostLocal, local)}</span>
-                    </TD>
-                    <TD numeric className={row.grossProfitUsd.greaterThanOrEqualTo(0) ? 'text-gold-700' : 'text-red-600'}>
-                      {formatMoney(row.grossProfitUsd, 'USD')}
-                      <span className="block text-xs font-normal text-ink-subtle">
-                        {formatMoney(row.grossProfitLocal, local)}
-                      </span>
-                    </TD>
-                    <TD numeric className="text-ink-muted">
-                      {formatMoney(row.otherCostsUsd, 'USD')}
-                      <span className="block text-xs">{formatMoney(row.otherCostsLocal, local)}</span>
-                    </TD>
-                    <TD
-                      numeric
-                      className={cn('font-semibold', row.netProfitUsd.greaterThanOrEqualTo(0) ? 'text-gold-700' : 'text-red-600')}
-                    >
-                      {formatMoney(row.netProfitUsd, 'USD')}
-                      <span className="block text-xs font-normal text-ink-subtle">
-                        {formatMoney(row.netProfitLocal, local)}
-                      </span>
-                    </TD>
-                    <TD numeric>
-                      {formatMoney(row.profitPerKgUsd, 'USD')}
-                      <span className="block text-xs font-normal text-ink-subtle">
-                        {formatMoney(row.profitPerKgLocal, local)}
-                      </span>
-                    </TD>
-                    <TD numeric>{formatPercent(row.netMarginPct)}</TD>
-                  </TR>
-                ))
-              )}
-            </TBody>
-            <TFoot>
-              <tr>
-                <TD colSpan={5}>Total</TD>
-                <TD numeric>{formatMoney(rows.reduce((a, r) => a.plus(r.salesRevenueUsd), dec(0)), 'USD')}</TD>
-                <TD numeric>{formatMoney(rows.reduce((a, r) => a.plus(r.allocatedLandedCostUsd), dec(0)), 'USD')}</TD>
-                <TD numeric>{formatMoney(rows.reduce((a, r) => a.plus(r.grossProfitUsd), dec(0)), 'USD')}</TD>
-                <TD numeric>{formatMoney(rows.reduce((a, r) => a.plus(r.otherCostsUsd), dec(0)), 'USD')}</TD>
-                <TD numeric>{formatMoney(rows.reduce((a, r) => a.plus(r.netProfitUsd), dec(0)), 'USD')}</TD>
-                <TD colSpan={2} />
-              </tr>
-            </TFoot>
-          </Table>
-        </TableWrap>
+      <CardContent className="space-y-2" data-testid="shipment-profitability">
+        {groups.size === 0 ? <p className="py-8 text-center text-xs text-ink-subtle">No approved shipments yet.</p> : null}
+        {[...groups.values()].map((children) => {
+          const first = children[0];
+          const sold = add(children, (r) => r.soldQuantityKg);
+          const purchased = add(children, (r) => r.purchaseQuantityKg);
+          const remaining = add(children, (r) => r.remainingQuantityKg);
+          const revenue = add(children, (r) => r.salesRevenueUsd);
+          const revenueLocal = add(children, (r) => r.salesRevenueLocal);
+          const cogs = add(children, (r) => r.allocatedLandedCostUsd);
+          const cogsLocal = add(children, (r) => r.allocatedLandedCostLocal);
+          const gross = add(children, (r) => r.grossProfitUsd);
+          const grossLocal = add(children, (r) => r.grossProfitLocal);
+          const other = add(children, (r) => r.otherCostsUsd);
+          const net = add(children, (r) => r.netProfitUsd);
+          const netLocal = add(children, (r) => r.netProfitLocal);
+          const landed = add(children, (r) => r.totalLandedCostUsd);
+          const stock = add(children, (r) => r.closingStockValueUsd);
+          const items = [...new Set(children.map((r) => r.itemName))];
+          return (
+            <details key={first.contractId} className="rounded-xl border border-line" data-testid="shipment-profitability-row">
+              <summary className="grid cursor-pointer list-none grid-cols-2 gap-3 px-4 py-3 text-sm sm:grid-cols-6">
+                <span className="col-span-2 sm:col-span-2">
+                  <span className="block font-semibold text-forest-800">{first.contractReference}</span>
+                  <span className="block text-xs text-ink-subtle">
+                    {children.length} {children.length === 1 ? 'container' : 'containers'} · {items.join(', ')}
+                  </span>
+                </span>
+                <span className="tnum text-right">
+                  <span className="block text-[11px] text-ink-subtle">Sold / bought</span>
+                  {formatQuantityKg(sold)} of {formatQuantityKg(purchased)}
+                  <span className="block text-xs text-ink-subtle">{formatQuantityKg(remaining)} left</span>
+                </span>
+                <span className="tnum text-right">
+                  <span className="block text-[11px] text-ink-subtle">Sales</span>
+                  {formatMoney(revenueLocal, local)}
+                  <span className="block text-xs text-ink-subtle">{formatMoney(revenue, 'USD')}</span>
+                </span>
+                <span className="tnum text-right">
+                  <span className="block text-[11px] text-ink-subtle">Cost of what sold</span>
+                  {formatMoney(cogsLocal, local)}
+                  <span className="block text-xs text-ink-subtle">{formatMoney(cogs, 'USD')}</span>
+                </span>
+                <span className={cn('tnum text-right font-semibold', tone(net))}>
+                  <span className="block text-[11px] font-normal text-ink-subtle">Profit</span>
+                  {formatMoney(netLocal, local)}
+                  <span className="block text-xs font-normal text-ink-subtle">
+                    {formatMoney(net, 'USD')} · {revenue.greaterThan(0) ? formatPercent(net.dividedBy(revenue).times(100)) : '—'}
+                  </span>
+                </span>
+              </summary>
+              <div className="space-y-2 border-t border-line px-4 py-3">
+                <p className="text-xs text-ink-muted">
+                  Landed cost {formatMoney(landed, 'USD')} · gross profit {formatMoney(grossLocal, local)} ({formatMoney(gross, 'USD')}) ·
+                  costs not added to the coffee {formatMoney(other, 'USD')} · stock left carried at {formatMoney(stock, 'USD')}.{' '}
+                  <Link href={`/reports/shipment-cost`} className="underline underline-offset-2">Full costing and FX</Link>
+                </p>
+                <TableWrap>
+                  <Table>
+                    <THead>
+                      <TR className="hover:bg-transparent">
+                        <TH>Container</TH>
+                        <TH>Coffee</TH>
+                        <TH>Status</TH>
+                        <TH numeric>Bought</TH>
+                        <TH numeric>Sold</TH>
+                        <TH numeric>Left</TH>
+                        <TH numeric>Sales</TH>
+                        <TH numeric>Cost of what sold</TH>
+                        <TH numeric>Profit</TH>
+                      </TR>
+                    </THead>
+                    <TBody>
+                      {children.map((row, index) => (
+                        <TR key={row.shipmentId}>
+                          <TD>
+                            <Link href={`/shipments/${row.shipmentId}`} className="font-medium text-forest-800 hover:text-gold-700">
+                              Container {index + 1}
+                            </Link>
+                          </TD>
+                          <TD>{row.itemName}</TD>
+                          <TD>
+                            <StatusBadge status={row.status} meta={SHIPMENT_STATUS_META} />
+                          </TD>
+                          <TD numeric>{formatQuantityKg(row.purchaseQuantityKg)}</TD>
+                          <TD numeric>{formatQuantityKg(row.soldQuantityKg)}</TD>
+                          <TD numeric className="text-ink-muted">{formatQuantityKg(row.remainingQuantityKg)}</TD>
+                          <TD numeric>
+                            {formatMoney(row.salesRevenueLocal, local)}
+                            <span className="block text-xs text-ink-subtle">{formatMoney(row.salesRevenueUsd, 'USD')}</span>
+                          </TD>
+                          <TD numeric className="text-ink-muted">
+                            {formatMoney(row.allocatedLandedCostLocal, local)}
+                            <span className="block text-xs">{formatMoney(row.allocatedLandedCostUsd, 'USD')}</span>
+                          </TD>
+                          <TD numeric className={cn('font-semibold', tone(row.netProfitUsd))}>
+                            {formatMoney(row.netProfitLocal, local)}
+                            <span className="block text-xs font-normal text-ink-subtle">{formatMoney(row.netProfitUsd, 'USD')}</span>
+                          </TD>
+                        </TR>
+                      ))}
+                    </TBody>
+                    <TFoot>
+                      <tr>
+                        <TD colSpan={3}>Shipment total</TD>
+                        <TD numeric>{formatQuantityKg(purchased)}</TD>
+                        <TD numeric>{formatQuantityKg(sold)}</TD>
+                        <TD numeric>{formatQuantityKg(remaining)}</TD>
+                        <TD numeric>{formatMoney(revenueLocal, local)}</TD>
+                        <TD numeric>{formatMoney(cogsLocal, local)}</TD>
+                        <TD numeric>{formatMoney(netLocal, local)}</TD>
+                      </tr>
+                    </TFoot>
+                  </Table>
+                </TableWrap>
+              </div>
+            </details>
+          );
+        })}
       </CardContent>
     </Card>
   );
