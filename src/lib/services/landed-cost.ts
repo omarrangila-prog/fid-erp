@@ -273,7 +273,7 @@ export async function applyLandedCost(
  * notes. This is the only quantity whose cost can be restated, because the
  * restatement is written onto those documents.
  */
-async function documentSoldKg(tx: Tx, companyId: string, batchId: string): Promise<Decimal> {
+export async function documentSoldKg(tx: Tx, companyId: string, batchId: string): Promise<Decimal> {
   const [invoiced, credited] = await Promise.all([
     tx.salesInvoiceLine.aggregate({
       where: { batchId, salesInvoice: { companyId, status: 'POSTED' } },
@@ -305,7 +305,7 @@ async function documentSoldKg(tx: Tx, companyId: string, batchId: string): Promi
  *
  * Costs move, prices do not. Nothing the customer sees is touched.
  */
-async function restateSoldCost(
+export async function restateSoldCost(
   tx: Tx,
   params: { companyId: string; batchId: string; trueUpUsd: Decimal },
 ): Promise<void> {

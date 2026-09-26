@@ -80,6 +80,7 @@ export function PurchaseForm({
   canApprove = true,
   canCreateItem = false,
   ports = [],
+  approved = false,
 }: {
   vendors: ComboOption[];
   items: ItemOption[];
@@ -91,12 +92,15 @@ export function PurchaseForm({
   canCreateItem?: boolean;
   /** Names from the Ports master, offered as the user types. */
   ports?: string[];
+  /** Correcting an approved order: every field, and the books follow. */
+  approved?: boolean;
 }) {
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
   const [errors, setErrors] = React.useState<Record<string, string>>({});
   const [confirmApprove, setConfirmApprove] = React.useState(false);
+  const [reason, setReason] = React.useState('');
 
   // A coffee added from inside the contract joins the list straight away, so
   // the line that needed it can be finished without a detour through Items.
@@ -171,7 +175,9 @@ export function PurchaseForm({
       dueDate: header.dueDate || undefined,
       freightAmount: header.freightAmount || '0',
       otherCharges: header.otherCharges || '0',
+      ...(approved ? { correctionReason: reason } : {}),
       lines: lines.map((line) => ({
+        ...(line.id ? { id: line.id } : {}),
         itemId: line.itemId,
         lotNumber: line.lotNumber,
         batchNumber: line.batchNumber,
@@ -511,18 +517,23 @@ export function PurchaseForm({
                       Container {index + 1}
                     </span>
                     <div className="flex items-center gap-1">
-                      <SplitControl
+                      {line.locked ? (
+                        <span className="rounded-full bg-forest-50 px-2 py-0.5 text-[11px] font-medium text-forest-700">
+                          Received
+                        </span>
+                      ) : null}
+                      {line.locked ? null : <SplitControl
                         onSplit={(count) =>
                           setLines((prev) => prev.flatMap((l) => (l.key === line.key ? splitLineIntoContainers(l, count) : [l])))
                         }
-                      />
+                      />}
                       <Button
                         variant="ghost"
                         size="icon"
                         aria-label="Duplicate container"
                         onClick={() =>
                           setLines((prev) => {
-                            const copy = { ...line, key: crypto.randomUUID(), batchNumber: '', containerNumber: '' };
+                            const copy = { ...line, key: crypto.randomUUID(), id: undefined, locked: false, batchNumber: '', containerNumber: '' };
                             const next = [...prev];
                             next.splice(index + 1, 0, copy);
                             return next;
@@ -535,7 +546,7 @@ export function PurchaseForm({
                         variant="ghost"
                         size="icon"
                         aria-label="Remove container"
-                        disabled={lines.length === 1}
+                        disabled={lines.length === 1 || line.locked}
                         onClick={() => setLines((prev) => prev.filter((l) => l.key !== line.key))}
                       >
                         <Trash2 />
@@ -548,6 +559,7 @@ export function PurchaseForm({
                       <MasterSelect
                         options={itemOptions}
                         value={line.itemId || null}
+                        disabled={line.locked}
                         onChange={(v) => chooseItem(line.key, v)}
                         placeholder="Choose a coffee…"
                         invalid={Boolean(lineError(index, 'itemId'))}
@@ -575,6 +587,7 @@ export function PurchaseForm({
                       <QuantityInput
                         unit={line.unit}
                         value={line.quantity}
+                        disabled={line.locked}
                         onChange={(e) => updateLine(line.key, { quantity: e.target.value })}
                         placeholder="19200"
                       />
@@ -617,6 +630,12 @@ export function PurchaseForm({
                     somebody to invent one. They stay available for a contract
                     that genuinely names them.
                   */}
+                  {line.locked ? (
+                    <p className="mt-2 text-[11px] text-ink-subtle">
+                      Received — its coffee, kilograms and numbers are what the warehouse counted, and are corrected on the
+                      goods receipt. The price can still be corrected here; stock and cost of sales follow it.
+                    </p>
+                  ) : null}
                   <details className="mt-3 rounded-lg border border-line bg-surface-sunken/40 px-3 py-2">
                     <summary className="cursor-pointer text-xs font-medium text-ink-muted">
                       Lot, batch, container and packing
@@ -629,6 +648,7 @@ export function PurchaseForm({
                     >
                       <Input
                         value={line.lotNumber}
+                        disabled={line.locked}
                         onChange={(e) => updateLine(line.key, { lotNumber: e.target.value })}
                         placeholder="Usually blank"
                         aria-invalid={Boolean(lineError(index, 'lotNumber'))}
@@ -637,6 +657,7 @@ export function PurchaseForm({
                     <Field label="Batch number" error={lineError(index, 'batchNumber')}>
                       <Input
                         value={line.batchNumber}
+                        disabled={line.locked}
                         onChange={(e) => updateLine(line.key, { batchNumber: e.target.value })}
                         placeholder="Usually blank"
                       />
@@ -644,6 +665,7 @@ export function PurchaseForm({
                     <Field label="Container number">
                       <Input
                         value={line.containerNumber}
+                        disabled={line.locked}
                         onChange={(e) => updateLine(line.key, { containerNumber: e.target.value })}
                         placeholder="MSCU1000001"
                       />
@@ -651,6 +673,7 @@ export function PurchaseForm({
                     <Field label="Unit">
                       <Select
                         value={line.unit}
+                        disabled={line.locked}
                         onChange={(e) => updateLine(line.key, { unit: e.target.value as LineDraft['unit'] })}
                       >
                         <option value="KG">KG</option>
@@ -759,13 +782,36 @@ export function PurchaseForm({
           <Field label="Memo" htmlFor="notes">
             <Textarea id="notes" value={header.notes} onChange={(e) => setField('notes', e.target.value)} />
           </Field>
+          {approved ? (
+            <Field
+              label="Reason for the correction"
+              htmlFor="correctionReason"
+              hint="Optional. Kept with the change in the audit log."
+            >
+              <Input
+                id="correctionReason"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="e.g. Supplier's final invoice price"
+              />
+            </Field>
+          ) : null}
         </CardContent>
       </Card>
 
-      <Callout tone="info" title="What saving does">
-        The contract appears on the Loading Sheet immediately, the supplier payable is raised and the batches are
-        created — but no coffee is in a warehouse yet. Record a purchase receipt when the containers actually arrive.
-      </Callout>
+      {approved ? (
+        <Callout tone="info" title="What saving the correction does">
+          The order is updated where it stands. The supplier&rsquo;s balance moves to the corrected amount, and a changed
+          price follows the coffee: what is still at sea stays in transit, what is on the shelf is revalued, and what has
+          already been sold is charged to cost of sales and to the invoices that sold it. Profit and stock value update
+          everywhere.
+        </Callout>
+      ) : (
+        <Callout tone="info" title="What saving does">
+          The contract appears on the Loading Sheet immediately, the supplier payable is raised and the batches are
+          created — but no coffee is in a warehouse yet. Record a purchase receipt when the containers actually arrive.
+        </Callout>
+      )}
 
       {/*
         One button, as the specification asks: "click SAVE PO … should
@@ -781,10 +827,16 @@ export function PurchaseForm({
         <Button variant="outline" onClick={() => router.back()} disabled={busy}>
           Cancel
         </Button>
-        <Button variant="ghost" onClick={() => save(false)} disabled={busy}>
-          Save as draft
-        </Button>
-        {canApprove ? (
+        {approved ? null : (
+          <Button variant="ghost" onClick={() => save(false)} disabled={busy}>
+            Save as draft
+          </Button>
+        )}
+        {approved ? (
+          <Button variant="accent" onClick={() => setConfirmApprove(true)} loading={busy}>
+            {busy ? 'Saving…' : 'Save correction'}
+          </Button>
+        ) : canApprove ? (
           <Button variant="accent" onClick={() => setConfirmApprove(true)} loading={busy}>
             {busy ? 'Saving…' : 'Save purchase order'}
           </Button>
@@ -798,11 +850,15 @@ export function PurchaseForm({
       <ConfirmDialog
         open={confirmApprove}
         onOpenChange={setConfirmApprove}
-        title="Save this purchase order?"
-        description="It appears on the Loading Sheet straight away, the supplier payable is raised and the batches are created. Correcting it afterwards means deleting it and entering it again, so check the quantities and the price."
-        confirmLabel="Save purchase order"
+        title={approved ? 'Save the correction?' : 'Save this purchase order?'}
+        description={
+          approved
+            ? 'The order, the supplier balance, the stock value and the profit on anything already sold are all updated to match. The change is recorded in the audit log.'
+            : 'It appears on the Loading Sheet straight away, the supplier payable is raised and the batches are created. It can be corrected afterwards from Edit.'
+        }
+        confirmLabel={approved ? 'Save correction' : 'Save purchase order'}
         variant="accent"
-        onConfirm={() => save(true)}
+        onConfirm={() => save(!approved)}
       />
     </div>
   );

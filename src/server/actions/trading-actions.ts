@@ -33,6 +33,7 @@ import {
   editContainer,
   addContainerToOrder,
 } from '@/lib/services/purchase';
+import { editApprovedPurchase } from '@/lib/services/purchase-edit';
 import {
   createGoodsReceipt,
   postGoodsReceipt,
@@ -109,11 +110,31 @@ function parseJson(payload: string): unknown {
 export async function savePurchaseContractAction(id: string | null, payload: string): Promise<DocFormState> {
   try {
     const user = await requirePermission(id ? PERMISSIONS.PURCHASES_EDIT : PERMISSIONS.PURCHASES_CREATE);
-    const input = purchaseContractSchema.parse(parseJson(payload));
+    const { correctionReason, ...input } = purchaseContractSchema.parse(parseJson(payload));
+    const companyId = user.activeCompany.id;
+
+    /*
+     * An approved order is corrected where it stands. That moves the books —
+     * the supplier's balance, the stock value, cost of sales — so it is for
+     * the people who may approve an order, checked here and not only by
+     * which buttons the screen shows.
+     */
+    if (id) {
+      const current = await prisma.purchaseContract.findFirst({ where: { id, companyId }, select: { status: true } });
+      if (current?.status === 'POSTED') {
+        assertPermission(user, PERMISSIONS.PURCHASES_APPROVE);
+        await editApprovedPurchase({ ...input, companyId, contractId: id, userId: user.id, reason: correctionReason });
+        revalidatePath('/purchases');
+        revalidatePath(`/purchases/${id}`);
+        revalidatePath('/inventory');
+        revalidatePath('/reports/shipment-cost');
+        return { ok: true, id, message: 'Purchase order corrected.' };
+      }
+    }
 
     const result = id
-      ? await updatePurchaseContract(id, { companyId: user.activeCompany.id, ...input }, user.id)
-      : await createPurchaseContract({ companyId: user.activeCompany.id, ...input }, user.id);
+      ? await updatePurchaseContract(id, { companyId, ...input }, user.id)
+      : await createPurchaseContract({ companyId, ...input }, user.id);
 
     revalidatePath('/purchases');
     revalidatePath(`/purchases/${result.id}`);

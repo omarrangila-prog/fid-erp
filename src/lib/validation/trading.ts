@@ -29,6 +29,8 @@ import {
  * physically in front of someone and stock traceability begins.
  */
 export const purchaseLineSchema = z.object({
+  /** The saved row, when an approved order is corrected. */
+  id: optionalCuid,
   itemId: requiredChoice('Coffee'),
   lotNumber: optionalText(60),
   batchNumber: optionalText(60),
@@ -71,6 +73,8 @@ export const purchaseContractSchema = z.object({
   containers: positiveInt('Number of containers').optional(),
   notes: optionalText(1000),
   lines: z.array(purchaseLineSchema).min(1, 'Add at least one coffee line.'),
+  /** Why an approved order was corrected, for the audit log. */
+  correctionReason: optionalText(300),
 });
 
 /**

@@ -21,8 +21,30 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
   });
 
   if (!contract) notFound();
-  // Posted contracts are corrected by reversal, never by silent edits.
-  if (contract.status !== 'DRAFT') redirect(`/purchases/${id}`);
+  /*
+   * A draft is edited freely. An approved order is corrected where it stands
+   * — the books follow — by someone who may approve orders. A reversed one is
+   * history and is not edited.
+   */
+  const approved = contract.status === 'POSTED';
+  if (contract.status !== 'DRAFT' && !approved) redirect(`/purchases/${id}`);
+  if (approved && !can(user, PERMISSIONS.PURCHASES_APPROVE)) redirect(`/purchases/${id}`);
+
+  // Containers whose coffee has been received, sold or set aside: their
+  // coffee, kilograms and numbers are what the warehouse counted.
+  const moved = approved
+    ? await prisma.batch.findMany({
+        where: {
+          purchaseContractId: id,
+          status: 'ACTIVE',
+          OR: [{ receivedQuantityKg: { gt: 0 } }, { soldQuantityKg: { gt: 0 } }, { allocatedQuantityKg: { gt: 0 } }],
+        },
+        select: { purchaseContractLineId: true, shipment: { select: { purchaseContractLineId: true } } },
+      })
+    : [];
+  const lockedLines = new Set(
+    moved.map((b) => b.purchaseContractLineId ?? b.shipment.purchaseContractLineId).filter(Boolean) as string[],
+  );
 
   const [vendors, items, ports] = await Promise.all([
     prisma.vendor.findMany({
@@ -63,7 +85,11 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
     <div className="space-y-6">
       <PageHeader
         title={`Edit ${contract.contractReference}`}
-        description="Only draft contracts can be edited. Once approved, a correction means deleting it and entering it again."
+        description={
+          approved
+            ? 'Every field can be corrected. The supplier balance, stock value, cost of sales and profit follow the change. A container already received keeps the coffee and kilograms the warehouse counted.'
+            : 'A draft order. Nothing is posted until it is saved as a purchase order.'
+        }
         breadcrumbs={[
           { label: 'Trading' },
           { label: 'Purchase Contracts', href: '/purchases' },
@@ -81,6 +107,7 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
         localCurrency={user.activeCompany.localCurrency}
         defaultLocalRate={contract.rateLocalPerUsd.toString()}
         canApprove={can(user, PERMISSIONS.PURCHASES_APPROVE)}
+        approved={approved}
         canCreateItem={can(user, PERMISSIONS.ITEMS_CREATE)}
         ports={ports.map((p) => p.name)}
         defaults={{
@@ -102,6 +129,8 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
           destination: contract.destination ?? '',
           notes: contract.notes ?? '',
           lines: contract.lines.map((l) => ({
+            id: l.id,
+            locked: lockedLines.has(l.id),
             itemId: l.itemId,
             lotNumber: l.lotNumber ?? '',
             batchNumber: l.batchNumber ?? '',

@@ -22,7 +22,6 @@ export function PurchaseActions({
   canReverse,
   canReceive,
   fullyReceived,
-  anyReceived = false,
   onReceive,
 }: {
   id: string;
@@ -33,7 +32,7 @@ export function PurchaseActions({
   canReverse: boolean;
   canReceive: boolean;
   fullyReceived: boolean;
-  /** Some coffee is already in stock, so the order is corrected container by container instead. */
+  /** Some coffee is already in stock. Kept for the callers; editing no longer depends on it. */
   anyReceived?: boolean;
   onReceive: () => void;
 }) {
@@ -85,11 +84,17 @@ export function PurchaseActions({
 
       {status === 'POSTED' ? (
         <>
-          {canReverse && !anyReceived ? (
+          {/*
+            Every field of an approved order can be corrected where it stands,
+            received or not; the edit page keeps the coffee and kilograms of a
+            received container as the warehouse counted them. It moves the
+            books, so it is for the people who may approve an order.
+          */}
+          {canEdit && canApprove ? (
             <Button variant="outline" asChild>
-              <Link href={`/purchases/${id}/correct`}>
+              <Link href={`/purchases/${id}/edit`}>
                 <Pencil />
-                Edit order
+                Edit
               </Link>
             </Button>
           ) : null}

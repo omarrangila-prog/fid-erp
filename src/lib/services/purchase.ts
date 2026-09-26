@@ -63,7 +63,7 @@ export function reversedReference(reference: string, at: Date): string {
   return `${base} (reversed ${stamp})`;
 }
 
-async function assertReferenceIsFree(tx: Tx, companyId: string, reference: string, excludeId?: string) {
+export async function assertReferenceIsFree(tx: Tx, companyId: string, reference: string, excludeId?: string) {
   const existing = await tx.purchaseContract.findFirst({
     where: { companyId, contractReference: reference, ...(excludeId ? { NOT: { id: excludeId } } : {}) },
     select: { id: true, contractNumber: true },
@@ -79,7 +79,7 @@ async function assertReferenceIsFree(tx: Tx, companyId: string, reference: strin
  * The form computes the same figures for its preview, but only this result is
  * ever saved.
  */
-async function applyServerTaxRates(tx: Tx, input: PurchaseContractInput): Promise<PurchaseContractInput> {
+export async function applyServerTaxRates(tx: Tx, input: PurchaseContractInput): Promise<PurchaseContractInput> {
   const company = await tx.company.findUniqueOrThrow({
     where: { id: input.companyId },
     select: { taxEnabled: true, country: true },
@@ -153,7 +153,7 @@ function lineData(totals: ReturnType<typeof computePurchaseTotals>) {
  * would strip the container off the earlier shipment and quietly falsify that
  * shipment's records. Refusing is the safe reading.
  */
-async function assertTraceabilityNumbersAreFree(
+export async function assertTraceabilityNumbersAreFree(
   tx: Tx,
   companyId: string,
   lines: PurchaseLineInput[],
@@ -232,7 +232,7 @@ async function assertTraceabilityNumbersAreFree(
  * supplier's standing terms are both expressed in days — it is derived from
  * the two dates rather than driving them.
  */
-function resolveDueDate(
+export function resolveDueDate(
   documentDate: Date,
   chosen: Date | null | undefined,
   standingTermDays: number | null | undefined,

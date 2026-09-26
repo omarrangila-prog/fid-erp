@@ -14,6 +14,10 @@ const KG_PER_MT = new Decimal(1000);
 
 export type LineDraft = {
   key: string;
+  /** The saved row, when an approved order is being corrected. */
+  id?: string;
+  /** Received: its coffee, kilograms and numbers are what the warehouse counted. */
+  locked?: boolean;
   itemId: string;
   lotNumber: string;
   batchNumber: string;
@@ -169,6 +173,8 @@ export function splitLineIntoContainers(line: LineDraft, count: number): LineDra
     return {
       ...line,
       key: index === 0 ? line.key : crypto.randomUUID(),
+      // The first keeps the saved row; the others are new containers.
+      id: index === 0 ? line.id : undefined,
       quantity: quantity.isZero() ? '' : q.toString(),
       bags: bags.isZero() ? '' : b.toString(),
       lotNumber: index === 0 ? line.lotNumber : '',
