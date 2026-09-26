@@ -57,8 +57,10 @@ export function SalesClient({
   canDelete,
   canReverse,
   canApprove,
+  initialStanding = null,
 }: {
   rows: SaleRow[];
+  initialStanding?: 'PAID' | 'PARTIAL' | 'UNPAID' | null;
   canCreate: boolean;
   canEdit: boolean;
   canDelete: boolean;
@@ -73,7 +75,7 @@ export function SalesClient({
    * it at the top, and each one opens the invoices behind it: the figure and
    * the list are the same thing, so a total can never point at nothing.
    */
-  const [standing, setStanding] = React.useState<'PAID' | 'PARTIAL' | 'UNPAID' | null>(null);
+  const [standing, setStanding] = React.useState<'PAID' | 'PARTIAL' | 'UNPAID' | null>(initialStanding);
 
   const posted = rows.filter((row) => row.status === 'POSTED');
   const summarise = (settlement: 'PAID' | 'PARTIAL' | 'UNPAID') => {

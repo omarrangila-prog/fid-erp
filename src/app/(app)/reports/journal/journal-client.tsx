@@ -64,28 +64,13 @@ export function JournalClient({
   canDelete?: boolean;
 }) {
   const columns: DataColumn<JournalEntryRow>[] = [
-    {
-      id: 'voucher',
-      header: 'Voucher',
-      mobile: 'title',
-      pin: 'left',
-      sortValue: (r) => r.entryNumber,
-      exportValue: (r) => r.entryNumber,
-      cell: (r) => (
-        <span className="whitespace-nowrap font-medium">
-          {r.entryNumber}
-          {r.isReversal ? (
-            <Badge tone="danger" className="ml-2">
-              Deletion
-            </Badge>
-          ) : null}
-        </span>
-      ),
-    },
+    // No voucher-number column: the client asked for it gone. An entry is
+    // known by its date, memo and source; the number still finds it in search.
     {
       id: 'date',
       header: 'Date',
-      mobile: 'meta',
+      mobile: 'title',
+      pin: 'left',
       sortValue: (r) => r.entryDateSort,
       exportValue: (r) => r.entryDate,
       cell: (r) => <span className="whitespace-nowrap">{r.entryDate}</span>,
@@ -104,7 +89,16 @@ export function JournalClient({
       mobile: 'meta',
       sortValue: (r) => r.description,
       exportValue: (r) => r.description,
-      cell: (r) => <span className="block min-w-56">{r.description}</span>,
+      cell: (r) => (
+        <span className="block min-w-56">
+          {r.description}
+          {r.isReversal ? (
+            <Badge tone="danger" className="ml-2">
+              Deletion
+            </Badge>
+          ) : null}
+        </span>
+      ),
     },
     {
       id: 'source',

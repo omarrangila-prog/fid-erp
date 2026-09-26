@@ -9,6 +9,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, SHIPMENT_STATUS_META, TRANSACTION_STATUS_META } from '@/lib/constants';
 import { WorkQueue } from '@/app/(app)/dashboard/work-queue';
 import { getMyRecentEntries, getDashboard, getRecentActivity, getLowStock } from '@/lib/services/dashboard';
+import { getOutstandingSummary } from '@/lib/services/outstanding';
 import { getSetupStatus, toChecklistStep } from '@/lib/services/setup';
 import { getMonthlyPurchases } from '@/lib/services/profitability';
 import { dec } from '@/lib/money';
@@ -481,6 +482,8 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
+      {can(user, PERMISSIONS.LEDGERS_VIEW) ? <OutstandingSection companyId={companyId} /> : null}
+
       {showProfit ? (
         <section className="space-y-3">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">Margin</h2>
@@ -787,5 +790,85 @@ export default async function DashboardPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+/**
+ * Still to be paid or collected — each figure opens the list behind it.
+ *
+ * Unpaid and partly paid invoices, what suppliers are owed, shipment and
+ * general costs still to pay (kept apart), what agents hold and are owed, and
+ * loans both ways. One figure per question, from the calculation its own
+ * screen uses, so nothing here is added up twice.
+ */
+async function OutstandingSection({ companyId }: { companyId: string }) {
+  const o = await getOutstandingSummary(companyId);
+  const local = o.localCurrency;
+  const cards: Array<{ key: string; label: string; figure: { count: number; local: ReturnType<typeof dec> }; unit: string; href: string; tone: 'owed' | 'due' }> = [
+    { key: 'invoices-unpaid', label: 'Customer invoices unpaid', figure: o.invoicesUnpaid, unit: 'invoice', href: '/sales?standing=UNPAID', tone: 'due' },
+    { key: 'invoices-partial', label: 'Invoices partly paid', figure: o.invoicesPartial, unit: 'invoice', href: '/sales?standing=PARTIAL', tone: 'due' },
+    { key: 'payables', label: 'Owed to suppliers', figure: o.supplierPayables, unit: 'order', href: '/finance/payables', tone: 'owed' },
+    { key: 'shipment-expenses', label: 'Shipment expenses unpaid', figure: o.shipmentExpensesUnpaid, unit: 'cost', href: '/finance/expenses?kind=SHIPMENT&payment=OWED', tone: 'owed' },
+    { key: 'general-expenses', label: 'General expenses unpaid', figure: o.generalExpensesUnpaid, unit: 'cost', href: '/finance/expenses?kind=GENERAL&payment=OWED', tone: 'owed' },
+    { key: 'agent-collections', label: 'Held by agents for FID', figure: o.agentCollections, unit: 'agent', href: '/ledgers/agents', tone: 'due' },
+    { key: 'agent-commission', label: 'Agent commission unpaid', figure: o.agentCommission, unit: 'agent', href: '/finance/agent-commission', tone: 'owed' },
+    { key: 'loans-payable', label: 'Loans FID owes', figure: o.loansPayable, unit: 'lender', href: '/ledgers', tone: 'owed' },
+    { key: 'loans-receivable', label: 'Loans owed to FID', figure: o.loansReceivable, unit: 'borrower', href: '/ledgers', tone: 'due' },
+  ];
+  return (
+    <section className="space-y-3" data-testid="dashboard-outstanding">
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">Still to be paid or collected</h2>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {cards.map((card) => {
+          const nothing = card.figure.count === 0;
+          return (
+            <Link
+              key={card.key}
+              href={card.href}
+              data-testid={`outstanding-${card.key}`}
+              className="flex items-center justify-between gap-3 rounded-xl border border-line bg-surface p-4 transition-colors hover:border-forest-300"
+            >
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-ink">{card.label}</span>
+                <span className="block text-xs text-ink-subtle">
+                  {nothing ? 'Nothing outstanding' : `${card.figure.count} ${card.unit}${card.figure.count === 1 ? '' : 's'}`}
+                </span>
+              </span>
+              <span
+                className={`tnum shrink-0 text-right text-base font-semibold ${
+                  nothing ? 'text-ink-subtle' : card.tone === 'owed' ? 'text-red-700' : 'text-amber-700'
+                }`}
+              >
+                {formatMoney(card.figure.local, local)}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+      {o.agents.length > 0 ? (
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          {o.agents.map((agent) => (
+            <div key={agent.agentId} className="rounded-xl border border-line bg-surface p-4" data-testid="outstanding-agent">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-semibold text-ink">{agent.agentName}</span>
+                <Link href={`/ledgers/agents?agent=${agent.agentId}`} className="text-xs font-medium text-forest-800 underline underline-offset-2">
+                  Open ledger
+                </Link>
+              </div>
+              <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                <dt className="text-ink-muted">Collections held</dt>
+                <dd className="tnum text-right font-medium">{formatMoney(agent.holdingLocal, local)}</dd>
+                <dt className="text-ink-muted">Unpaid commission</dt>
+                <dd className="tnum text-right font-medium">{formatMoney(agent.commissionLocal, local)}</dd>
+                <dt className="text-ink-muted">Loan FID owes him</dt>
+                <dd className="tnum text-right font-medium">{formatMoney(agent.loanFromLocal, local)}</dd>
+                <dt className="text-ink-muted">Loan he owes FID</dt>
+                <dd className="tnum text-right font-medium">{formatMoney(agent.loanToLocal, local)}</dd>
+              </dl>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </section>
   );
 }

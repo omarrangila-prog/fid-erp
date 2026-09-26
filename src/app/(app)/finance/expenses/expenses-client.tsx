@@ -47,6 +47,7 @@ const PAYMENT_LABEL = { PAID: 'Paid', PARTIAL: 'Partially paid', UNPAID: 'Unpaid
 const PAYMENT_TONE = { PAID: 'success', PARTIAL: 'warning', UNPAID: 'danger' } as const;
 
 type Period = 'MONTH' | 'LAST_MONTH' | 'YEAR' | 'ALL';
+type Standing = 'PAID' | 'PARTIAL' | 'UNPAID' | 'OWED';
 
 /**
  * The first and last instant of each period, in UTC, from the date the
@@ -72,6 +73,7 @@ export function ExpensesClient({
   localCurrency,
   todayIso,
   defaultPeriod = 'ALL',
+  initialStanding = null,
   canExport,
   emptyAction,
   canPost = false,
@@ -83,6 +85,8 @@ export function ExpensesClient({
   todayIso: string;
   /** General expenses open on this month, as the summary is read monthly. */
   defaultPeriod?: Period;
+  /** OWED is both unpaid and partly paid — everything still to pay. */
+  initialStanding?: Standing | null;
   canExport: boolean;
   /** Rendered inside the empty state; built on the server so permissions are checked there. */
   emptyAction?: React.ReactNode;
@@ -224,7 +228,7 @@ export function ExpensesClient({
    * MAD bill and a USD bill add up without converting anything at today's
    * rate — total, paid and still owed are exactly additive.
    */
-  const [standing, setStanding] = React.useState<'PAID' | 'PARTIAL' | 'UNPAID' | null>(null);
+  const [standing, setStanding] = React.useState<Standing | null>(initialStanding);
   const [period, setPeriod] = React.useState<Period>(defaultPeriod);
   const bounds = periodBounds(todayIso);
   // The totals, the cards and the list all follow the period, so a figure
@@ -255,7 +259,9 @@ export function ExpensesClient({
       hint: status === 'PAID' ? 'Settled in full' : status === 'PARTIAL' ? 'Some paid, the rest still owed' : 'Nothing paid yet',
     };
   });
-  const visible = standing ? inPeriod.filter((r) => r.payment === standing) : inPeriod;
+  const visible = standing
+    ? inPeriod.filter((r) => (standing === 'OWED' ? r.payment === 'UNPAID' || r.payment === 'PARTIAL' : r.payment === standing))
+    : inPeriod;
 
   return (
     <div className="space-y-4">
@@ -328,7 +334,7 @@ export function ExpensesClient({
       {standing ? (
         <p className="text-xs text-ink-muted" data-testid="expense-standing-active">
           Showing {visible.length === 1 ? 'the 1 cost' : `the ${visible.length} costs`} that {visible.length === 1 ? 'is' : 'are'}{' '}
-          {PAYMENT_LABEL[standing].toLowerCase()}.{' '}
+          {standing === 'OWED' ? 'still to pay' : PAYMENT_LABEL[standing].toLowerCase()}.{' '}
           <button type="button" onClick={() => setStanding(null)} className="underline underline-offset-2 hover:text-ink">
             Show every cost
           </button>

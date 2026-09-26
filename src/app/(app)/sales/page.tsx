@@ -20,7 +20,10 @@ function summariseReferences(refs: Array<string | null>): string | null {
   return `Multiple references (${distinct.length})`;
 }
 
-export default async function SalesPage() {
+export default async function SalesPage({ searchParams }: { searchParams: Promise<{ standing?: string }> }) {
+  const { standing } = await searchParams;
+  // A dashboard card opens the list already filtered to the invoices behind it.
+  const initialStanding = standing === 'UNPAID' || standing === 'PARTIAL' || standing === 'PAID' ? standing : null;
   const user = await requirePageAccess(PERMISSIONS.SALES_VIEW);
   const companyId = user.activeCompany.id;
 
@@ -114,6 +117,7 @@ export default async function SalesPage() {
       />
       <SalesClient
         rows={rows}
+        initialStanding={initialStanding}
         canCreate={can(user, PERMISSIONS.SALES_CREATE)}
         canEdit={can(user, PERMISSIONS.SALES_EDIT)}
         canDelete={can(user, PERMISSIONS.SALES_DELETE)}

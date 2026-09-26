@@ -21,9 +21,11 @@ export const dynamic = 'force-dynamic';
 export default async function ExpensesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ kind?: string }>;
+  searchParams: Promise<{ kind?: string; payment?: string }>;
 }) {
-  const { kind: kindParam } = await searchParams;
+  const { kind: kindParam, payment } = await searchParams;
+  // From a dashboard card: every cost still to pay, whenever it was booked.
+  const initialStanding = payment === 'OWED' || payment === 'UNPAID' || payment === 'PARTIAL' || payment === 'PAID' ? payment : null;
   // Shipment Expenses and General Expenses are this one list, filtered.
   const kind = kindParam === 'SHIPMENT' || kindParam === 'GENERAL' ? kindParam : undefined;
   const user = await requirePageAccess(PERMISSIONS.EXPENSES_VIEW);
@@ -158,7 +160,8 @@ export default async function ExpensesPage({
         rows={rows}
         localCurrency={local}
         todayIso={todayUtc.toISOString().slice(0, 10)}
-        defaultPeriod={kind === 'GENERAL' ? 'MONTH' : 'ALL'}
+        defaultPeriod={initialStanding ? 'ALL' : kind === 'GENERAL' ? 'MONTH' : 'ALL'}
+        initialStanding={initialStanding}
         canExport={can(user, PERMISSIONS.REPORTS_EXPORT)}
         canPost={can(user, PERMISSIONS.EXPENSES_POST)}
         canDelete={can(user, PERMISSIONS.EXPENSES_DELETE)}
