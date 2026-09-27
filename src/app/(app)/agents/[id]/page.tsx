@@ -93,6 +93,8 @@ export default async function AgentLedgerPage({
     }),
     receivableChange: Number(e.receivableChangeLocal),
     payableChange: Number(e.payableChangeLocal),
+    debit: e.lines.reduce((t, l) => t + Number(l.debitLocal), 0),
+    credit: e.lines.reduce((t, l) => t + Number(l.creditLocal), 0),
     netChange: Number(e.receivableChangeLocal.minus(e.payableChangeLocal)),
     runningNet: Number(e.runningNetLocal),
     status: e.status,
@@ -247,8 +249,8 @@ export default async function AgentLedgerPage({
           <CardTitle>{agent.agentName} — agent ledger</CardTitle>
           <CardDescription>
             Every business event with {firstName}, oldest first — collections, commission, loans, settlements, set-offs,
-            shipment costs and journals — one line each, from the entries tagged to him. Each line says how it moved what he
-            owes FID and what FID owes him; the running position is the two together.
+            shipment costs and journals — one line each, from the entries tagged to him. Debit and Credit are the lines on
+            his balances; the Balance runs over all of them — Dr when he owes FID, Cr when FID owes him.
           </CardDescription>
         </CardHeader>
         <CardContent>

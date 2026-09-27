@@ -26,6 +26,7 @@ import { useClientKey } from '@/lib/use-client-key';
 import { LedgerAccountField } from '@/components/shared/ledger-account-field';
 import { ledgerTargetPayload, ledgerTargetValue } from '@/lib/ledger-target';
 import type { LedgerSettlementOption } from '@/lib/services/ledger-settlement';
+import { AddJournalAccountDialog } from '@/app/(app)/accounting/journal/new/add-account';
 
 export type CategoryOption = ComboOption & { capitaliseByDefault: boolean; kind: 'SHIPMENT' | 'GENERAL' };
 
@@ -203,18 +204,36 @@ export function ExpenseForm({
   // Paid, but settled against another account in the books: no drawer moves.
   const isLedger = form.paymentMethod === 'LEDGER_TRANSFER';
   /** Who an unpaid cost is owed to: nobody yet, an agent, or a supplier. */
-  const payee = form.payableToAgentId
-    ? `agent:${form.payableToAgentId}`
-    : form.vendorId
-      ? `vendor:${form.vendorId}`
-      : 'general';
+  /*
+   * Who an unpaid cost is owed to, grouped: an agent, a supplier, or an
+   * account of its own — a loan or related party such as the other FID
+   * company. Each keeps its own balance; nothing is netted against anyone
+   * else. A cost owed through an account is recorded on that account.
+   */
+  const [owedThrough, setOwedThrough] = React.useState<string | null>(
+    initial && !initial.cashBankAccountId && initial.ledgerAccountId && !initial.vendorId && !initial.payableToAgentId
+      ? `ledger:${initial.ledgerAccountId}`
+      : null,
+  );
+  const [payeeAccounts, setPayeeAccounts] = React.useState(ledgerAccounts.filter((o) => !o.value.startsWith('agent:')));
+  const [addPayeeOpen, setAddPayeeOpen] = React.useState<string | null>(null);
+  const payee = owedThrough
+    ? owedThrough
+    : form.payableToAgentId
+      ? `agent:${form.payableToAgentId}`
+      : form.vendorId
+        ? `vendor:${form.vendorId}`
+        : 'general';
   const payeeOptions = React.useMemo(
     () => [
-      { value: 'general', label: 'General / unassigned', hint: 'owed, payee not named yet' },
-      ...agentOptions.map((a) => ({ value: `agent:${a.value}`, label: a.label, hint: 'agent', keywords: 'agent' })),
-      ...vendors.map((v) => ({ value: `vendor:${v.value}`, label: v.label, hint: 'supplier', keywords: `supplier ${v.keywords ?? ''}` })),
+      { value: 'general', label: 'General / unassigned', hint: 'owed, payee not named yet', group: 'General' },
+      ...agentOptions.map((a) => ({ value: `agent:${a.value}`, label: a.label, hint: 'agent', keywords: 'agent', group: 'Agents' })),
+      ...vendors.map((v) => ({ value: `vendor:${v.value}`, label: v.label, hint: 'supplier', keywords: `supplier ${v.keywords ?? ''}`, group: 'Suppliers' })),
+      ...payeeAccounts
+        .filter((o) => !o.currency || o.currency === form.currency)
+        .map((o) => ({ value: `ledger:${o.value}`, label: o.label, hint: o.hint, keywords: `account loan related ${o.keywords ?? ''}`, group: 'Loans, related parties & other accounts' })),
     ],
-    [agentOptions, vendors],
+    [agentOptions, vendors, payeeAccounts, form.currency],
   );
 
   const amountUsd = React.useMemo(() => {
@@ -287,7 +306,13 @@ export function ExpenseForm({
       rateLocalPerUsd: form.currency === localCurrency ? form.rateToUsd || '1' : form.rateLocalPerUsd,
       paymentMethod: form.paymentMethod,
       cashBankAccountId: paidFrom,
-      ...ledgerTargetPayload(settlement === 'PAID' && isLedger ? form.ledgerTarget : null),
+      ...ledgerTargetPayload(
+        settlement === 'PAID' && isLedger
+          ? form.ledgerTarget
+          : settlement === 'UNPAID' && owedThrough
+            ? owedThrough.slice('ledger:'.length)
+            : null,
+      ),
       capitaliseToLandedCost: capitalise,
       // Only meaningful for a cost spread over the whole order; a named
       // container or batch takes it all, however it is shared.
@@ -607,6 +632,7 @@ export function ExpenseForm({
                   value={payee}
                   onChange={(value) => {
                     const next = value ?? 'general';
+                    setOwedThrough(next.startsWith('ledger:') ? next : null);
                     setForm({
                       ...form,
                       payableToAgentId: next.startsWith('agent:') ? next.slice(6) : null,
@@ -614,8 +640,16 @@ export function ExpenseForm({
                     });
                   }}
                   placeholder="General / unassigned"
+                  createLabel="+ Add Account"
+                  onCreate={(query) => setAddPayeeOpen(query ?? '')}
                 />
               </Field>
+              {owedThrough ? (
+                <p className="text-xs text-ink-muted">
+                  Recorded as owed on that account, in its own balance — not in Unpaid Expenses and not merged with any other
+                  party.
+                </p>
+              ) : null}
               <Callout tone="info" title="Pay later">
                 Saving this records the cost now
                 {kind === 'SHIPMENT' ? ' and adds it to the shipment' : ''}. Cash and bank are not touched until
@@ -946,6 +980,28 @@ export function ExpenseForm({
           </>
         ) : null}
       </div>
+      <AddJournalAccountDialog
+        open={addPayeeOpen !== null}
+        onOpenChange={(open) => {
+          if (!open) setAddPayeeOpen(null);
+        }}
+        initialName={addPayeeOpen ?? ''}
+        defaultCurrency={form.currency}
+        localCurrency={localCurrency}
+        onCreated={(account) => {
+          const option = {
+            value: account.id,
+            label: account.name,
+            hint: account.currency ?? account.type.toLowerCase(),
+            keywords: `${account.code} ${account.name}`,
+            currency: account.currency,
+          };
+          setPayeeAccounts((prev) => [...prev, option]);
+          setOwedThrough(`ledger:${account.id}`);
+          setForm((current) => ({ ...current, payableToAgentId: null, vendorId: null }));
+          setAddPayeeOpen(null);
+        }}
+      />
     </div>
   );
 }

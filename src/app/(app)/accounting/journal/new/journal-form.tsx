@@ -91,6 +91,7 @@ export function JournalForm({
   ratesByCurrency,
   today,
   initial,
+  embedded = false,
 }: {
   accounts: AccountOption[];
   customers?: ComboOption[];
@@ -106,6 +107,8 @@ export function JournalForm({
    * it out, and what stands now.
    */
   initial?: JournalInitial;
+  /** Shown as a tab of General Entry: straight to the voucher, no guided list of its own. */
+  embedded?: boolean;
 }) {
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
@@ -118,7 +121,7 @@ export function JournalForm({
    */
   // A voucher being corrected opens on the voucher itself; the guided
   // chooser is for deciding what to write, and that is already decided.
-  const [mode, setMode] = React.useState<'guided' | 'advanced'>(initial ? 'advanced' : 'guided');
+  const [mode, setMode] = React.useState<'guided' | 'advanced'>(initial || embedded ? 'advanced' : 'guided');
   const [entryDate, setEntryDate] = React.useState(initial?.entryDate ?? today);
   const [description, setDescription] = React.useState(initial?.description ?? '');
   const [reference, setReference] = React.useState(initial?.reference ?? '');
@@ -366,13 +369,15 @@ export function JournalForm({
 
   return (
     <div className="space-y-4">
-      <button
-        type="button"
-        onClick={() => setMode('guided')}
-        className="text-xs font-medium text-forest-700 underline underline-offset-2 hover:text-forest-800"
-      >
-        ← Back to the guided list
-      </button>
+      {embedded ? null : (
+        <button
+          type="button"
+          onClick={() => setMode('guided')}
+          className="text-xs font-medium text-forest-700 underline underline-offset-2 hover:text-forest-800"
+        >
+          ← Back to the guided list
+        </button>
+      )}
 
       <Callout tone="info" title="This posts straight to the ledger">
         Use a journal voucher for corrections, opening balances and accruals — anything without a purchase, sale,

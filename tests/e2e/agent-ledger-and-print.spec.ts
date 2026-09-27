@@ -296,7 +296,8 @@ test('he hands over more than he collected: the excess is classified, never gues
   await expect(page.getByTestId('agent-ledger')).toContainText(/154,000\.00/, { timeout: 20_000 });
   await expect(page.getByTestId('agent-ledger')).not.toContainText(/46,000\.00/);
   const direction = await page.getByTestId('agent-ledger').locator('table').first().getByTestId('agent-ledger-direction').first().innerText();
-  expect(direction).toMatch(new RegExp(`(${AGENT.split(' ')[0]}|FID) owes`, 'i'));
+  // The standard balance column: Dr when he owes FID, Cr when FID owes him.
+  expect(direction).toMatch(/MAD [\d,]+\.\d{2} (Dr|Cr)/);
 
   await page.getByTestId('agent-tab-collections').click();
   await page.waitForLoadState('networkidle').catch(() => undefined);

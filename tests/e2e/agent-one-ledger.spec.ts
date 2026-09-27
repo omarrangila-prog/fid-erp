@@ -113,7 +113,9 @@ test('a commission booked on the shipment is one line on his ledger, with the sh
   await expect(line).toContainText(/JV \d+/);
   await expect(line).toContainText(/EXP \d+/);
   await expect(line).toContainText('Unpaid');
-  await expect(line).toContainText(/\+ MAD 12,000\.00/);
+  // Standard columns: a commission owed to him is a credit on his ledger.
+  await expect(line.getByTestId('agent-ledger-credit')).toHaveText('MAD 12,000.00');
+  await expect(line.getByTestId('agent-ledger-debit')).toHaveText('—');
   // The collection the fixture recorded is there too, in his words.
   await expect(page.getByTestId('agent-ledger')).toContainText('Customer Collection');
 });
@@ -152,8 +154,9 @@ test('the commission set off against what he holds is one line that lowers both 
   await page.goto(agentHref, { waitUntil: 'domcontentloaded' });
   const setOff = page.getByTestId('agent-ledger').locator('tbody tr').filter({ hasText: 'Commission set-off' });
   await expect(setOff).toHaveCount(1, { timeout: 30_000 });
-  const text = (await setOff.first().innerText()).replace(/\s+/g, ' ');
-  expect(text.match(/− MAD 12,000\.00/g)?.length).toBe(2);
+  // Commission payable debited and his collections credited: both sides, one line.
+  await expect(setOff.first().getByTestId('agent-ledger-debit')).toHaveText('MAD 12,000.00');
+  await expect(setOff.first().getByTestId('agent-ledger-credit')).toHaveText('MAD 12,000.00');
 });
 
 test('after a reload, all of it is one chronological ledger, and the dashboard opens it', async ({ page }) => {

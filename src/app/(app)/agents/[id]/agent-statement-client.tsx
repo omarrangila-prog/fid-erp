@@ -27,6 +27,9 @@ export type StatementRow = {
   amountEquivalent: Equivalent;
   receivableChange: number;
   payableChange: number;
+  /** The lines on his balances, in the company's currency: the standard ledger columns. */
+  debit: number;
+  credit: number;
   netChange: number;
   runningNet: number;
   status: string;
@@ -70,12 +73,9 @@ export function AgentStatementClient({
   const money = (value: number) =>
     `${localCurrency} ${Math.abs(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const signed = (value: number) => (Math.abs(value) < 0.005 ? '—' : `${value > 0 ? '+' : '−'} ${money(value)}`);
-  const position = (value: number) =>
-    Math.abs(value) < 0.005
-      ? 'Nothing either way'
-      : value > 0
-        ? `${agentFirstName} owes FID ${money(value)}`
-        : `FID owes ${agentFirstName} ${money(value)}`;
+  const plain = (value: number) => (Math.abs(value) < 0.005 ? '—' : money(value));
+  // Debit balance: he owes FID; credit balance: FID owes him.
+  const balance = (value: number) => (Math.abs(value) < 0.005 ? `${money(0)}` : `${money(value)} ${value > 0 ? 'Dr' : 'Cr'}`);
 
   const inRange = (r: StatementRow) => (!from || r.dateIso >= from) && (!to || r.dateIso <= to);
   const shown = rows.filter((r) => r.filters.includes(filter) && inRange(r));
@@ -161,27 +161,27 @@ export function AgentStatementClient({
       cell: (r) => <DualText primary={r.amount} equivalent={r.amountEquivalent} />,
     },
     {
-      id: 'receivable',
-      header: `${agentFirstName} owes FID`,
+      id: 'debit',
+      header: 'Debit',
       numeric: true,
-      exportValue: (r) => (Math.abs(r.receivableChange) < 0.005 ? '' : r.receivableChange.toFixed(2)),
-      cell: (r) => <span className="tnum whitespace-nowrap text-xs">{signed(r.receivableChange)}</span>,
+      exportValue: (r) => (Math.abs(r.debit) < 0.005 ? '' : r.debit.toFixed(2)),
+      cell: (r) => <span className="tnum whitespace-nowrap text-xs" data-testid="agent-ledger-debit">{plain(r.debit)}</span>,
     },
     {
-      id: 'payable',
-      header: `FID owes ${agentFirstName}`,
+      id: 'credit',
+      header: 'Credit',
       numeric: true,
-      exportValue: (r) => (Math.abs(r.payableChange) < 0.005 ? '' : r.payableChange.toFixed(2)),
-      cell: (r) => <span className="tnum whitespace-nowrap text-xs">{signed(r.payableChange)}</span>,
+      exportValue: (r) => (Math.abs(r.credit) < 0.005 ? '' : r.credit.toFixed(2)),
+      cell: (r) => <span className="tnum whitespace-nowrap text-xs" data-testid="agent-ledger-credit">{plain(r.credit)}</span>,
     },
     {
       id: 'running',
-      header: 'Running position',
+      header: 'Balance',
       numeric: true,
-      exportValue: (r) => position(r.runningNet),
+      exportValue: (r) => balance(r.runningNet),
       cell: (r) => (
         <span className="tnum whitespace-nowrap text-xs font-medium" data-testid="agent-ledger-direction">
-          {position(r.runningNet)}
+          {balance(r.runningNet)}
         </span>
       ),
     },
@@ -236,16 +236,16 @@ export function AgentStatementClient({
         </Field>
         <dl className="ml-auto grid grid-cols-3 gap-4 text-xs" data-testid="agent-ledger-period">
           <div>
-            <dt className="text-ink-muted">Opening position</dt>
-            <dd className="tnum font-medium">{position(opening)}</dd>
+            <dt className="text-ink-muted">Opening balance</dt>
+            <dd className="tnum font-medium">{balance(opening)}</dd>
           </div>
           <div>
             <dt className="text-ink-muted">Movement</dt>
             <dd className="tnum font-medium">{signed(closing - opening)}</dd>
           </div>
           <div>
-            <dt className="text-ink-muted">Closing position</dt>
-            <dd className="tnum font-semibold">{position(closing)}</dd>
+            <dt className="text-ink-muted">Closing balance</dt>
+            <dd className="tnum font-semibold">{balance(closing)}</dd>
           </div>
         </dl>
       </div>

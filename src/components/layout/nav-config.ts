@@ -143,7 +143,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Accounting',
     icon: BookOpen,
     items: [
-      { label: 'Guided Journal', href: '/accounting/journal/new', icon: BookPlus, permissions: [PERMISSIONS.ACCOUNTING_POST] },
+      { label: 'General Entry', href: '/accounting/journal/new', icon: BookPlus, permissions: [PERMISSIONS.ACCOUNTING_POST] },
       { label: 'General Journal', href: '/reports/journal', icon: LineChart, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
       // Every account that is not a customer or a supplier: cash, banks,
       // agents, loans, capital, income and expenses. Searchable by name.
