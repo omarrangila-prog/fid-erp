@@ -48,7 +48,10 @@ export type ReceivableRow = {
   etaDate: Date | null;
   currency: string;
   originalAmount: Decimal;
+  /** Payments and credit notes together: everything that reduced what is owed. */
   paidAmount: Decimal;
+  /** Of that, the credit notes — not money received. */
+  creditedAmount: Decimal;
   outstandingAmount: Decimal;
   originalAmountUsd: Decimal;
   paidAmountUsd: Decimal;
@@ -141,6 +144,7 @@ export async function getReceivables(params: {
       originalAmountUsd: string;
       paidAmount: string;
       paidAmountUsd: string;
+      creditedAmount?: string;
     }>
   >`
     SELECT si."id" AS "invoiceId", si."invoiceNumber", si."invoiceDate", si."dueDate",
@@ -170,7 +174,9 @@ export async function getReceivables(params: {
                           )), 0)
              + COALESCE((SELECT SUM(cn."totalAmountUsd") FROM credit_notes cn
                           WHERE cn."salesInvoiceId" = si."id" AND cn."status" = 'POSTED'), 0)
-           )::text AS "paidAmountUsd"
+           )::text AS "paidAmountUsd",
+           COALESCE((SELECT SUM(cn."totalAmount") FROM credit_notes cn
+                      WHERE cn."salesInvoiceId" = si."id" AND cn."status" = 'POSTED'), 0)::text AS "creditedAmount"
     FROM sales_invoices si
     JOIN customers c ON c."id" = si."customerId"
     LEFT JOIN shipments s ON s."id" = si."shipmentId"
@@ -207,6 +213,7 @@ export async function getReceivables(params: {
       rateLocalPerUsd: dec(row.rateLocalPerUsd),
       originalAmount,
       paidAmount,
+      creditedAmount: toMoney(row.creditedAmount ?? 0),
       outstandingAmount,
       originalAmountUsd,
       paidAmountUsd,
@@ -241,6 +248,7 @@ export async function getReceivables(params: {
           rateLocalPerUsd: dec(row.rateLocalPerUsd),
           originalAmount: amount,
           paidAmount: toMoney(0),
+          creditedAmount: toMoney(0),
           outstandingAmount: amount,
           originalAmountUsd: amountUsd,
           paidAmountUsd: toMoney(0),

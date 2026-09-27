@@ -31,6 +31,12 @@ export type SaleRow = {
   quantitySort: number;
   paidLabel: string;
   outstandingLabel: string;
+  totalRaw: number;
+  paidRaw: number;
+  /** Credit notes against the invoice, shown under Paid — not money received. */
+  creditedLabel: string | null;
+  outstandingRaw: number;
+  invoiceDateIso: string;
   totalEquivalent: { text: string; title: string } | null;
   paidEquivalent: { text: string; title: string } | null;
   outstandingEquivalent: { text: string; title: string } | null;
@@ -80,6 +86,8 @@ export function SalesClient({
    * the list are the same thing, so a total can never point at nothing.
    */
   const [standing, setStanding] = React.useState<'PAID' | 'PARTIAL' | 'UNPAID' | 'OUTSTANDING' | null>(initialStanding);
+  const [from, setFrom] = React.useState('');
+  const [to, setTo] = React.useState('');
 
   const posted = rows.filter((row) => row.status === 'POSTED');
   const summarise = (settlement: 'PAID' | 'PARTIAL' | 'UNPAID' | 'OUTSTANDING') => {
@@ -111,13 +119,37 @@ export function SalesClient({
   // A deleted invoice is not on this list at all: the page only loads live
   // documents. Its journal and the trail of who deleted it stay in the books
   // and the audit log, where an accountant can find them.
-  const visible = standing
-    ? rows.filter(
-        (row) =>
-          row.status === 'POSTED' &&
-          (standing === 'OUTSTANDING' ? row.settlement !== 'PAID' : row.settlement === standing),
-      )
-    : rows;
+  const inDates = (row: SaleRow) => (!from || row.invoiceDateIso >= from) && (!to || row.invoiceDateIso <= to);
+  const visible = (
+    standing
+      ? rows.filter(
+          (row) =>
+            row.status === 'POSTED' &&
+            (standing === 'OUTSTANDING' ? row.settlement !== 'PAID' : row.settlement === standing),
+        )
+      : rows
+  ).filter(inDates);
+
+  /*
+   * By customer: what was invoiced, received and is still owed across the
+   * invoices on screen, each in the invoices' own currency — a customer
+   * billed in dirhams and in dollars gets a line for each.
+   */
+  const byCustomer = [...visible
+    .filter((row) => row.status === 'POSTED')
+    .reduce((map, row) => {
+      const key = `${row.customerId}|${row.currency}`;
+      const entry = map.get(key) ?? { customerId: row.customerId, customerName: row.customerName, currency: row.currency, count: 0, invoiced: 0, received: 0, outstanding: 0 };
+      entry.count += 1;
+      entry.invoiced += row.totalRaw;
+      entry.received += row.paidRaw;
+      entry.outstanding += row.outstandingRaw;
+      map.set(key, entry);
+      return map;
+    }, new Map<string, { customerId: string; customerName: string; currency: string; count: number; invoiced: number; received: number; outstanding: number }>())
+    .values()].sort((a, b) => b.outstanding - a.outstanding);
+  const amount = (value: number, currency: string) =>
+    `${currency} ${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const columns: DataColumn<SaleRow>[] = [
     /* The order the client reads a sales list in: when, which invoice, which
@@ -182,7 +214,21 @@ export function SalesClient({
         </span>
       ),
     },
-    { id: 'paid', header: 'Paid', numeric: true, hideable: true, cell: (r) => (r.paidLabel === '—' ? '—' : <DualText primary={r.paidLabel} equivalent={r.paidEquivalent} />) },
+    {
+      id: 'paid',
+      header: 'Paid',
+      numeric: true,
+      hideable: true,
+      cell: (r) =>
+        r.paidLabel === '—' ? (
+          '—'
+        ) : (
+          <span>
+            <DualText primary={r.paidLabel} equivalent={r.paidEquivalent} />
+            {r.creditedLabel ? <span className="block text-[11px] text-ink-subtle">+ credit note {r.creditedLabel}</span> : null}
+          </span>
+        ),
+    },
     {
       id: 'outstanding',
       header: 'Outstanding',
@@ -343,6 +389,62 @@ export function SalesClient({
             Show every invoice
           </button>
         </p>
+      ) : null}
+
+      <div className="flex flex-wrap items-end gap-3" data-print="hide">
+        <label className="text-xs text-ink-muted">
+          From
+          <input
+            type="date"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+            className="mt-1 block h-9 rounded-lg border border-line bg-surface px-2 text-sm text-ink"
+            aria-label="Invoices from"
+          />
+        </label>
+        <label className="text-xs text-ink-muted">
+          To
+          <input
+            type="date"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            className="mt-1 block h-9 rounded-lg border border-line bg-surface px-2 text-sm text-ink"
+            aria-label="Invoices to"
+          />
+        </label>
+      </div>
+
+      {byCustomer.length > 0 ? (
+        <details className="rounded-xl border border-line bg-surface" open={standing === 'OUTSTANDING'} data-testid="sales-by-customer">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-ink">
+            By customer — invoiced, received and still owed
+          </summary>
+          {/* A grid, not a table: the invoice list below stays the one table on the page. */}
+          <div className="overflow-x-auto border-t border-line text-sm" role="list">
+            <div className="grid min-w-[36rem] grid-cols-[2fr_repeat(4,1fr)] gap-x-4 px-4 py-2 text-xs font-medium text-ink-muted">
+              <span>Customer</span>
+              <span className="text-right">Invoices</span>
+              <span className="text-right">Invoiced</span>
+              <span className="text-right">Received</span>
+              <span className="text-right">Outstanding</span>
+            </div>
+            {byCustomer.map((c) => (
+              <div
+                key={`${c.customerId}-${c.currency}`}
+                role="listitem"
+                className="grid min-w-[36rem] grid-cols-[2fr_repeat(4,1fr)] gap-x-4 border-t border-line px-4 py-2"
+              >
+                <a href={`/ledgers/customers/${c.customerId}`} className="font-medium text-forest-800 hover:text-gold-700">
+                  {c.customerName}
+                </a>
+                <span className="tnum text-right">{c.count}</span>
+                <span className="tnum text-right">{amount(c.invoiced, c.currency)}</span>
+                <span className="tnum text-right">{amount(c.received, c.currency)}</span>
+                <span className="tnum text-right font-semibold">{amount(c.outstanding, c.currency)}</span>
+              </div>
+            ))}
+          </div>
+        </details>
       ) : null}
 
       <DataTable

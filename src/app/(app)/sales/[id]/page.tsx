@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { shortDocumentNumber } from '@/lib/short-number';
 import { notFound } from 'next/navigation';
 import { requirePageAccess, can } from '@/lib/auth/guards';
-import { PERMISSIONS, TRANSACTION_STATUS_META, SETTLEMENT_STATUS_META } from '@/lib/constants';
+import { PERMISSIONS, TRANSACTION_STATUS_META, SETTLEMENT_STATUS_META, PAYMENT_METHOD_LABELS } from '@/lib/constants';
 import { prisma, transaction } from '@/lib/db';
 import { dec, toMoney } from '@/lib/money';
 import { getInvoiceOutstanding } from '@/lib/services/receipt';
@@ -79,9 +79,16 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
               amount: true,
               paymentMethod: true,
               status: true,
+              agent: { select: { id: true, agentName: true } },
+              cheque: { select: { status: true } },
             },
           },
         },
+      },
+      creditNotes: {
+        where: { status: 'POSTED' },
+        select: { id: true, creditNoteNumber: true, creditDate: true, totalAmount: true },
+        orderBy: { creditDate: 'asc' },
       },
     },
   });
@@ -98,14 +105,28 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
     ? grossProfitUsd.dividedBy(dec(invoice.totalAmountUsd)).times(100)
     : dec(0);
 
-  const livePayments = invoice.allocations.filter((a) => a.receipt.status === 'POSTED');
+  const livePayments = invoice.allocations
+    .filter((a) => a.receipt.status === 'POSTED')
+    .sort((a, b) => a.receipt.receiptDate.getTime() - b.receipt.receiptDate.getTime());
+  // A cheque that bounced or was cancelled paid nothing; it is listed, not counted.
+  const failed = (a: (typeof livePayments)[number]) =>
+    a.receipt.cheque?.status === 'BOUNCED' || a.receipt.cheque?.status === 'CANCELLED';
+  /*
+   * What was actually received: the payments themselves, never "total less
+   * outstanding" — that would count a credit note as money in. Credit notes
+   * reduce what is owed and are shown as what they are.
+   */
+  const paidAmount = livePayments.filter((a) => !failed(a)).reduce((t, a) => t.plus(dec(a.amount)), dec(0));
+  const creditedAmount = invoice.creditNotes.reduce((t, c) => t.plus(dec(c.totalAmount)), dec(0));
   const attachments = can(user, PERMISSIONS.ATTACHMENTS_VIEW)
     ? await loadAttachments(user.activeCompany.id, 'SalesInvoice', invoice.id)
     : [];
+  // Derived from the balance: nothing left is Paid; something received with
+  // something left is Partially paid; nothing received is Unpaid.
   const settlement = outstanding
     ? outstanding.amount.lessThanOrEqualTo(0)
       ? 'PAID'
-      : livePayments.length > 0
+      : paidAmount.greaterThan(0) || creditedAmount.greaterThan(0)
         ? 'PARTIAL'
         : 'UNPAID'
     : 'UNPAID';
@@ -173,10 +194,18 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
         {outstanding ? (
           <>
             <Metric
-              label="Received"
-              value={<DualAmount amount={dec(invoice.totalAmount).minus(outstanding.amount)} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" />}
+              label="Paid"
+              value={<DualAmount amount={paidAmount} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" />}
               tone="positive"
+              hint={`${livePayments.filter((a) => !failed(a)).length} ${livePayments.filter((a) => !failed(a)).length === 1 ? 'payment' : 'payments'}`}
             />
+            {creditedAmount.greaterThan(0) ? (
+              <Metric
+                label="Credit notes"
+                value={<DualAmount amount={creditedAmount} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" />}
+                tone="muted"
+              />
+            ) : null}
             <Metric
               label="Outstanding"
               value={<DualAmount amount={outstanding.amount} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" />}
@@ -336,8 +365,10 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                         {formatDate(allocation.receipt.receiptDate)}
                       </span>
                       <span className="block text-xs text-ink-subtle">
-                        {formatDate(allocation.receipt.receiptDate)} ·{' '}
-                        {allocation.receipt.paymentMethod.replaceAll('_', ' ').toLowerCase()}
+                        {shortDocumentNumber(allocation.receipt.receiptNumber, 'PAY')} ·{' '}
+                        {PAYMENT_METHOD_LABELS[allocation.receipt.paymentMethod] ?? allocation.receipt.paymentMethod}
+                        {allocation.receipt.agent ? ` — ${allocation.receipt.agent.agentName}` : ''}
+                        {failed(allocation) ? ` · cheque ${allocation.receipt.cheque?.status.toLowerCase()} — not counted` : ''}
                       </span>
                     </span>
                     <span className="tnum shrink-0 text-sm font-semibold text-gold-700">
@@ -346,6 +377,43 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                   </Link>
                 ))
               )}
+              {invoice.creditNotes.map((note) => (
+                <Link
+                  key={note.id}
+                  href={`/sales/credit-notes/${note.id}`}
+                  className="flex items-center justify-between gap-3 border-b border-line pb-3 last:border-0 last:pb-0"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium text-forest-800">{formatDate(note.creditDate)}</span>
+                    <span className="block text-xs text-ink-subtle">
+                      {shortDocumentNumber(note.creditNoteNumber, 'CN')} · Credit note — reduces what is owed, not a payment
+                    </span>
+                  </span>
+                  <span className="tnum shrink-0 text-sm font-semibold text-ink-muted">
+                    {formatMoney(note.totalAmount, invoice.currency)}
+                  </span>
+                </Link>
+              ))}
+              {outstanding ? (
+                <dl className="grid grid-cols-2 gap-y-1 border-t border-line pt-3 text-xs" data-testid="invoice-payment-summary">
+                  <dt className="text-ink-muted">Invoice total</dt>
+                  <dd className="tnum text-right">{formatMoney(invoice.totalAmount, invoice.currency)}</dd>
+                  <dt className="text-ink-muted">Total paid</dt>
+                  <dd className="tnum text-right">{formatMoney(paidAmount, invoice.currency)}</dd>
+                  {creditedAmount.greaterThan(0) ? (
+                    <>
+                      <dt className="text-ink-muted">Credit notes</dt>
+                      <dd className="tnum text-right">{formatMoney(creditedAmount, invoice.currency)}</dd>
+                    </>
+                  ) : null}
+                  <dt className="font-medium text-ink">Outstanding</dt>
+                  <dd className="tnum text-right font-semibold">{formatMoney(outstanding.amount, invoice.currency)}</dd>
+                  <dt className="text-ink-muted">Status</dt>
+                  <dd className="text-right">
+                    <StatusBadge status={settlement} meta={SETTLEMENT_STATUS_META} />
+                  </dd>
+                </dl>
+              ) : null}
             </CardContent>
           </Card>
 

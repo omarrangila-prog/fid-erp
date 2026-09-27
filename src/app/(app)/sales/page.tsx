@@ -82,11 +82,18 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
       totalAmountUsd: formatMoney(inv.totalAmountUsd, 'USD'),
       // The other currency, at this invoice's own rate.
       totalEquivalent: equivalentText({ amount: inv.totalAmount, currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd, amountUsd: inv.currency === local ? inv.totalAmountUsd : null }),
-      paidEquivalent: receivable ? equivalentText({ amount: receivable.paidAmount, currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd }) : null,
+      paidEquivalent: receivable ? equivalentText({ amount: receivable.paidAmount.minus(receivable.creditedAmount), currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd }) : null,
       outstandingEquivalent: receivable ? equivalentText({ amount: receivable.outstandingAmount, currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd }) : null,
       quantityLabel: formatQuantityKg(quantity),
       quantitySort: Number(quantity),
-      paidLabel: receivable ? formatMoney(receivable.paidAmount, inv.currency) : '—',
+      // Raw, in the invoice's own currency, for the per-customer summary.
+      totalRaw: Number(inv.totalAmount),
+      // Money received only; a credit note reduces what is owed but is not a payment.
+      paidRaw: receivable ? Number(receivable.paidAmount.minus(receivable.creditedAmount)) : 0,
+      creditedLabel: receivable && receivable.creditedAmount.greaterThan(0) ? formatMoney(receivable.creditedAmount, inv.currency) : null,
+      outstandingRaw: receivable ? Number(receivable.outstandingAmount) : 0,
+      invoiceDateIso: inv.invoiceDate.toISOString().slice(0, 10),
+      paidLabel: receivable ? formatMoney(receivable.paidAmount.minus(receivable.creditedAmount), inv.currency) : '—',
       outstandingLabel: receivable ? formatMoney(receivable.outstandingAmount, inv.currency) : '—',
       // In dollars as well, because a total across invoices in dirhams and
       // dollars is only meaningful in one of them.

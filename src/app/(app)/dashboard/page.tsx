@@ -908,8 +908,9 @@ async function OutstandingSection({ companyId }: { companyId: string }) {
                 : `${o.invoicesOutstanding.count} invoice${o.invoicesOutstanding.count === 1 ? '' : 's'} · unpaid and partly paid`}
             </span>
           </span>
+          <span data-testid="outstanding-invoices-total" className="shrink-0">
           <DualAmount
-            className={`shrink-0 text-right text-lg ${o.invoicesOutstanding.count === 0 ? 'text-ink-subtle' : 'text-amber-700'}`}
+            className={`text-right text-lg ${o.invoicesOutstanding.count === 0 ? 'text-ink-subtle' : 'text-amber-700'}`}
             amount={o.invoicesOutstanding.local}
             currency={local}
             localCurrency={local}
@@ -917,6 +918,7 @@ async function OutstandingSection({ companyId }: { companyId: string }) {
             rateSource="Each invoice at its own rate"
             hideMissing
           />
+          </span>
         </Link>
         <div className="mt-3 grid gap-2 border-t border-line pt-3 text-xs sm:grid-cols-3">
           {(
