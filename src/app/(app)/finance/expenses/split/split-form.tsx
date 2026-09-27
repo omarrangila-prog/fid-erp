@@ -18,6 +18,7 @@ import { accountsFor } from '@/lib/cash-account-choice';
 import { saveSplitExpenseAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import type { CategoryOption, ShipmentTrace } from '@/app/(app)/finance/expenses/expense-form';
+import { AddExpenseCategoryDialog } from '@/app/(app)/finance/expenses/add-expense-category';
 import { useClientKey } from '@/lib/use-client-key';
 import { transactionCurrencies } from '@/lib/company-currencies';
 import { LedgerAccountField } from '@/components/shared/ledger-account-field';
@@ -112,7 +113,10 @@ export function SplitExpenseForm({
   );
   const cashBankAccountId = accountChoice.automatic ?? header.cashBankAccountId;
 
-  const availableCategories = categories.filter((c) => c.kind === kind);
+  // A category added here joins the list at once, for this line and the rest.
+  const [categoryList, setCategoryList] = React.useState(categories);
+  const [addCategoryFor, setAddCategoryFor] = React.useState<{ key: string; name: string } | null>(null);
+  const availableCategories = categoryList.filter((c) => c.kind === kind);
   const trace = header.shipmentId ? traceByShipment[header.shipmentId] : undefined;
 
   const total = lines.reduce((sum, line) => {
@@ -371,6 +375,9 @@ export function SplitExpenseForm({
                   value={line.expenseCategoryId}
                   onChange={(value) => setLine(line.key, { expenseCategoryId: value })}
                   placeholder="Choose…"
+                  emptyText="No matching category — add a new one"
+                  createLabel="+ Add Category"
+                  onCreate={(query) => setAddCategoryFor({ key: line.key, name: query ?? '' })}
                 />
               </Field>
               <Field label={index === 0 ? 'Description' : undefined}>
@@ -455,6 +462,23 @@ export function SplitExpenseForm({
           Post all lines
         </Button>
       </div>
+
+      <AddExpenseCategoryDialog
+        open={addCategoryFor !== null}
+        onOpenChange={(open) => {
+          if (!open) setAddCategoryFor(null);
+        }}
+        kind={kind}
+        initialName={addCategoryFor?.name}
+        onCreated={(created) => {
+          setCategoryList((current) =>
+            current.some((option) => option.value === created.value)
+              ? current
+              : [...current, created].sort((a, b) => a.label.localeCompare(b.label)),
+          );
+          if (addCategoryFor) setLine(addCategoryFor.key, { expenseCategoryId: created.value });
+        }}
+      />
     </div>
   );
 }

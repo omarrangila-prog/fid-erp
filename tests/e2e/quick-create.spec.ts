@@ -185,3 +185,20 @@ test('a bank account opened from a receipt becomes a real ledger account', async
   await page.goto('/accounting/chart', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('main')).toContainText(account, { timeout: 30_000 });
 });
+
+test('a split line adds a category without leaving the form, and selects it on that line', async ({ page }) => {
+  test.setTimeout(120_000);
+  const category = unique('Phytosanitary Certificate');
+
+  await page.goto('/finance/expenses/split', { waitUntil: 'domcontentloaded' });
+  const form = page.getByRole('main');
+  await form.getByLabel('Amount on line 2').fill('1250');
+
+  await quickCreate(page, form.getByRole('combobox', { name: 'Category on line 2' }), /Add Category/i, /category name/i, category);
+  await expect(form.getByRole('combobox', { name: 'Category on line 2' })).toContainText(category);
+  await expect(form.getByRole('combobox', { name: 'Category on line 1' })).not.toContainText(category);
+  // What was typed is still there, and line 1 can pick the new category too.
+  await expect(form.getByLabel('Amount on line 2')).toHaveValue(/1,?250/);
+  await form.getByRole('combobox', { name: 'Category on line 1' }).click();
+  await expect(page.getByRole('listbox').getByRole('option', { name: new RegExp(category) })).toBeVisible();
+});
