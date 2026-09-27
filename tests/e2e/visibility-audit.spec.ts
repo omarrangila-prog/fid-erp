@@ -60,6 +60,7 @@ const PAGES: Array<{ label: string; href: string; group: string }> = [
 
   { group: 'Accounting', label: 'General Journal', href: '/reports/journal' },
   { group: 'Accounting', label: 'General Ledgers', href: '/ledgers' },
+  { group: 'Accounting', label: 'Unpaid Expenses', href: '/finance/unpaid-expenses' },
   { group: 'Accounting', label: 'Chart of Accounts', href: '/accounting/chart' },
   { group: 'Accounting', label: 'General Expenses', href: '/finance/expenses?kind=GENERAL' },
 

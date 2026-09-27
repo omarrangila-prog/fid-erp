@@ -9,6 +9,7 @@ import { getCompanyContext } from '@/lib/services/company';
 import { resolveSubledgerLeg } from '@/lib/services/subledger';
 import type { PaymentMethod } from '@prisma/client';
 import { writeAudit } from '@/lib/services/audit';
+import { resolveLedgerSettlement } from '@/lib/services/ledger-settlement';
 
 /**
  * ReceiptService — money in from customers.
@@ -59,6 +60,10 @@ export type ReceiptInput = {
   paymentMethod?: PaymentMethod;
   /** Required for cash and bank transfers; optional until a cheque is deposited. */
   cashBankAccountId?: string | null;
+  /** The account on the other side, when the receipt is settled ledger to ledger. */
+  ledgerAccountId?: string | null;
+  /** Or an agent's account, instead of a ledger account. */
+  ledgerAgentId?: string | null;
   /** The collection agent, when the customer paid him rather than the company. */
   agentId?: string | null;
   cheque?: ChequeDetailsInput | null;
@@ -317,6 +322,12 @@ async function validateSettlement(tx: Tx, input: ReceiptInput) {
     return method;
   }
 
+  // Settled against another account in the books: no drawer moves.
+  if (method === 'LEDGER_TRANSFER') {
+    await resolveLedgerSettlement(tx, input.companyId, input, input.currency);
+    return method;
+  }
+
   if (!input.cashBankAccountId) {
     throw new BusinessRuleError('Choose the cash or bank account the money was received into.');
   }
@@ -530,7 +541,9 @@ export async function createReceiptIn(tx: Tx, input: ReceiptInput, userId: strin
       amountUsd: amounts.amountUsd,
       rateLocalPerUsd: amounts.rateLocalPerUsd,
       amountLocal: amounts.amountLocal,
-      cashBankAccountId: input.cashBankAccountId ?? null,
+      cashBankAccountId: method === 'LEDGER_TRANSFER' ? null : (input.cashBankAccountId ?? null),
+      ledgerAccountId: method === 'LEDGER_TRANSFER' && !input.ledgerAgentId ? (input.ledgerAccountId ?? null) : null,
+      ledgerAgentId: method === 'LEDGER_TRANSFER' ? (input.ledgerAgentId ?? null) : null,
       agentId: input.agentId ?? null,
       paymentMethod: method,
       shipmentId: input.shipmentId ?? null,
@@ -643,7 +656,9 @@ export async function updateReceipt(id: string, input: ReceiptInput, userId: str
         amountUsd: amounts.amountUsd,
         rateLocalPerUsd: amounts.rateLocalPerUsd,
         amountLocal: amounts.amountLocal,
-        cashBankAccountId: input.cashBankAccountId ?? null,
+        cashBankAccountId: method === 'LEDGER_TRANSFER' ? null : (input.cashBankAccountId ?? null),
+        ledgerAccountId: method === 'LEDGER_TRANSFER' && !input.ledgerAgentId ? (input.ledgerAccountId ?? null) : null,
+        ledgerAgentId: method === 'LEDGER_TRANSFER' ? (input.ledgerAgentId ?? null) : null,
         agentId: input.agentId ?? null,
         paymentMethod: method,
         shipmentId: input.shipmentId ?? null,
@@ -711,6 +726,7 @@ export async function postReceiptIn(tx: Tx, params: { id: string; companyId: str
     include: {
       customer: true,
       cashBankAccount: true,
+      ledgerAccount: { select: { name: true, agentId: true } },
       agent: { select: { agentName: true } },
       allocations: { include: { salesInvoice: true } },
     },
@@ -718,10 +734,18 @@ export async function postReceiptIn(tx: Tx, params: { id: string; companyId: str
 
   // A cheque is held, not banked; an agent collection is held by the agent.
   // Neither names an account, and neither should.
-  const needsAccount = receipt.paymentMethod !== 'CHEQUE' && receipt.paymentMethod !== 'AGENT_COLLECTION';
+  const needsAccount =
+    receipt.paymentMethod !== 'CHEQUE' &&
+    receipt.paymentMethod !== 'AGENT_COLLECTION' &&
+    receipt.paymentMethod !== 'LEDGER_TRANSFER';
   if (needsAccount && !receipt.cashBankAccountId) {
     throw new BusinessRuleError('This receipt has no cash or bank account and cannot be posted.');
   }
+  // Debiting the other side: an agent's account may take any amount here.
+  const ledgerSide =
+    receipt.paymentMethod === 'LEDGER_TRANSFER'
+      ? await resolveLedgerSettlement(tx, params.companyId, receipt, receipt.currency)
+      : null;
   if (receipt.paymentMethod === 'AGENT_COLLECTION' && !receipt.agentId) {
     throw new BusinessRuleError('This receipt was collected by an agent, but no agent is named on it.');
   }
@@ -853,6 +877,19 @@ export async function postReceiptIn(tx: Tx, params: { id: string; companyId: str
             description: `Collected by ${receipt.agent?.agentName ?? 'agent'}, not yet handed over`,
             customerId: receipt.customerId,
             agentId: receipt.agentId,
+            shipmentId: receipt.shipmentId,
+          }
+        : receipt.paymentMethod === 'LEDGER_TRANSFER'
+        ? {
+            // Settled against another account: that account is debited, and
+            // no cash or bank account moves.
+            ...ledgerSide!.line,
+            direction: 'DEBIT' as const,
+            currency: receipt.currency,
+            amount: receipt.amount,
+            rateToUsd: receipt.rateToUsd,
+            description: `Settled ledger to ledger through ${ledgerSide!.name}`,
+            customerId: receipt.customerId,
             shipmentId: receipt.shipmentId,
           }
         : receipt.paymentMethod === 'CHEQUE'

@@ -11,6 +11,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import { VoucherTable, type VoucherRow } from '@/components/shared/voucher-table';
 import { EmptyAction } from '@/components/shared/empty-action';
+import { settledThrough } from '@/lib/ledger-target';
 
 export const metadata: Metadata = { title: 'Receipts' };
 export const dynamic = 'force-dynamic';
@@ -26,6 +27,8 @@ export default async function ReceiptsPage() {
       include: {
         customer: { select: { customerName: true } },
         cashBankAccount: { select: { name: true } },
+        ledgerAccount: { select: { name: true } },
+        ledgerAgent: { select: { agentName: true } },
         allocations: { select: { id: true } },
       },
     }),
@@ -38,7 +41,7 @@ export default async function ReceiptsPage() {
     date: formatDate(r.receiptDate),
     dateSort: r.receiptDate.getTime(),
     party: r.customer.customerName,
-    account: r.cashBankAccount?.name ?? 'Cheques on hand',
+    account: settledThrough(r, 'Cheques on hand'),
     method: PAYMENT_METHOD_LABELS[r.paymentMethod] ?? r.paymentMethod,
     currency: r.currency,
     amount: formatMoney(r.amount, r.currency),

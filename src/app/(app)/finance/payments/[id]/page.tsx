@@ -14,6 +14,7 @@ import { StatusBadge, Badge } from '@/components/ui/badge';
 import { Callout } from '@/components/ui/feedback';
 import { VoucherActions } from '@/components/shared/voucher-actions';
 import { getWarehouseLabels } from '@/lib/services/stock';
+import { settledThrough } from '@/lib/ledger-target';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,6 +33,8 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
     include: {
       vendor: true,
       cashBankAccount: true,
+      ledgerAccount: { select: { name: true } },
+      ledgerAgent: { select: { agentName: true } },
       createdBy: { select: { name: true } },
       cheque: true,
       allocations: {
@@ -178,7 +181,7 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
               </DetailRow>
               <DetailRow label="Date">{formatDate(payment.paymentDate)}</DetailRow>
               <DetailRow label="Method">{PAYMENT_METHOD_LABELS[payment.paymentMethod]}</DetailRow>
-              <DetailRow label="Account">{payment.cashBankAccount?.name ?? 'Cheques issued'}</DetailRow>
+              <DetailRow label="Account">{settledThrough(payment, 'Cheques issued')}</DetailRow>
               <DetailRow label="Reference">{payment.reference ?? '—'}</DetailRow>
               <DetailRow label="Warehouse">{warehouses.byPayment.get(payment.id) || '—'}</DetailRow>
               <DetailRow label={`Rate to ${user.activeCompany.localCurrency}`}>

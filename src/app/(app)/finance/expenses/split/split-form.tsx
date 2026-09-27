@@ -20,6 +20,9 @@ import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import type { CategoryOption, ShipmentTrace } from '@/app/(app)/finance/expenses/expense-form';
 import { useClientKey } from '@/lib/use-client-key';
 import { transactionCurrencies } from '@/lib/company-currencies';
+import { LedgerAccountField } from '@/components/shared/ledger-account-field';
+import { ledgerTargetPayload } from '@/lib/ledger-target';
+import type { LedgerSettlementOption } from '@/lib/services/ledger-settlement';
 
 /**
  * One payment, several cost categories.
@@ -58,6 +61,7 @@ export function SplitExpenseForm({
   categories,
   shipments,
   accounts,
+  ledgerAccounts = [],
   localCurrency,
   defaultLocalRate,
   ratesByCurrency,
@@ -68,6 +72,8 @@ export function SplitExpenseForm({
   categories: CategoryOption[];
   shipments: ComboOption[];
   accounts: Array<ComboOption & { currency: string; accountType: 'CASH' | 'PETTY_CASH' | 'BANK' }>;
+  /** Accounts the payment may be settled against, ledger to ledger. */
+  ledgerAccounts?: LedgerSettlementOption[];
   localCurrency: string;
   defaultLocalRate: string;
   ratesByCurrency: Record<string, string>;
@@ -89,8 +95,9 @@ export function SplitExpenseForm({
     currency: localCurrency,
     rateToUsd: localCurrency === 'USD' ? '1' : defaultLocalRate,
     rateLocalPerUsd: defaultLocalRate,
-    paymentMethod: 'CASH' as 'CASH' | 'BANK_TRANSFER' | 'CHEQUE',
+    paymentMethod: 'CASH' as 'CASH' | 'BANK_TRANSFER' | 'CHEQUE' | 'LEDGER_TRANSFER',
     cashBankAccountId: null as string | null,
+    ledgerTarget: null as string | null,
     reference: '',
   });
 
@@ -147,7 +154,12 @@ export function SplitExpenseForm({
       setError('A shipment expense must name the contract / shipment it belongs to.');
       return;
     }
-    if (settlement === 'PAID' && !cashBankAccountId) {
+    const isLedger = header.paymentMethod === 'LEDGER_TRANSFER';
+    if (settlement === 'PAID' && isLedger && !header.ledgerTarget) {
+      setError('Choose the ledger account on the other side.');
+      return;
+    }
+    if (settlement === 'PAID' && !isLedger && !cashBankAccountId) {
       setError('Choose the cash or bank this was paid from.');
       return;
     }
@@ -166,7 +178,8 @@ export function SplitExpenseForm({
           rateToUsd: isForeign ? header.rateToUsd : '1',
           rateLocalPerUsd: header.currency === localCurrency ? header.rateToUsd || '1' : header.rateLocalPerUsd,
           paymentMethod: header.paymentMethod,
-          cashBankAccountId: settlement === 'PAID' ? (cashBankAccountId ?? '') : '',
+          cashBankAccountId: settlement === 'PAID' && !isLedger ? (cashBankAccountId ?? '') : '',
+          ...ledgerTargetPayload(settlement === 'PAID' && isLedger ? header.ledgerTarget : null),
           reference: header.reference,
           lines: filled.map((l) => ({
             expenseCategoryId: l.expenseCategoryId,
@@ -274,19 +287,31 @@ export function SplitExpenseForm({
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Paid from" required>
                 <Select
-                  value={header.paymentMethod === 'CASH' ? 'CASH' : 'BANK'}
+                  value={header.paymentMethod === 'CASH' ? 'CASH' : header.paymentMethod === 'LEDGER_TRANSFER' ? 'LEDGER' : 'BANK'}
                   onChange={(e) =>
                     setHeader((prev) => ({
                       ...prev,
-                      paymentMethod: e.target.value === 'CASH' ? 'CASH' : 'BANK_TRANSFER',
+                      paymentMethod:
+                        e.target.value === 'CASH' ? 'CASH' : e.target.value === 'LEDGER' ? 'LEDGER_TRANSFER' : 'BANK_TRANSFER',
                       cashBankAccountId: null,
                     }))
                   }
                 >
                   <option value="CASH">Cash in hand</option>
                   <option value="BANK">Bank</option>
+                  <option value="LEDGER">Ledger to ledger</option>
                 </Select>
               </Field>
+              {header.paymentMethod === 'LEDGER_TRANSFER' ? (
+                <LedgerAccountField
+                  id="splitLedgerAccount"
+                  label="Settled through"
+                  options={ledgerAccounts}
+                  currency={header.currency}
+                  value={header.ledgerTarget}
+                  onChange={(value) => setHeader((prev) => ({ ...prev, ledgerTarget: value }))}
+                />
+              ) : (
               <Field
                 label={header.paymentMethod === 'CASH' ? 'Cash account' : 'Bank account'}
                 required
@@ -309,6 +334,7 @@ export function SplitExpenseForm({
                   }
                 />
               </Field>
+              )}
             </div>
           ) : (
             <p className="text-xs text-ink-muted">

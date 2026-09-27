@@ -12,6 +12,7 @@ import { getCompanyContext } from '@/lib/services/company';
 import { resolveSubledgerLeg } from '@/lib/services/subledger';
 import { writeAudit } from '@/lib/services/audit';
 import { resolveTaxCode, computeLineTax, supplierInvoiceIncludesInputTax, supplierGrossPayable } from '@/lib/services/tax';
+import { resolveLedgerSettlement } from '@/lib/services/ledger-settlement';
 
 /**
  * ExpenseService — shipment and operating costs.
@@ -43,6 +44,10 @@ export type ExpenseInput = {
   rateToUsd: string | number;
   rateLocalPerUsd: string | number;
   cashBankAccountId?: string | null;
+  /** Settled at once against this ledger account instead of cash or bank. */
+  ledgerAccountId?: string | null;
+  /** Or against an agent's account: he paid it out of what he holds. */
+  ledgerAgentId?: string | null;
   paymentMethod?: PaymentMethod;
   /** Overrides the category default. Direct shipment costs are capitalised
    *  into landed cost; period costs go straight to the profit and loss. */
@@ -95,12 +100,20 @@ async function validateReferences(tx: Tx, input: ExpenseInput) {
    * statement carries a balance it should not and the payables control still
    * agrees with the statements. What is not allowed is two of these at once.
    */
-  const settlements = [input.cashBankAccountId, input.vendorId, input.payableToAgentId].filter(Boolean);
+  const settledLedger = input.ledgerAccountId || input.ledgerAgentId;
+  const settlements = [input.cashBankAccountId, settledLedger, input.vendorId, input.payableToAgentId].filter(Boolean);
 
   if (settlements.length > 1) {
     throw new BusinessRuleError(
-      'A cost is settled one way only — paid from cash/bank, owed to a supplier, or owed to an agent. Record the payment separately.',
+      'A cost is settled one way only — paid from cash/bank, settled ledger to ledger, owed to a supplier, or owed to an agent. Record the payment separately.',
     );
+  }
+
+  // Settled at once against another account in the books: no drawer moves.
+  if (settledLedger) {
+    await resolveLedgerSettlement(tx, input.companyId, input, input.currency);
+  } else if (input.paymentMethod === 'LEDGER_TRANSFER' && input.cashBankAccountId) {
+    throw new BusinessRuleError('Choose the ledger account on the other side.');
   }
 
   if (input.payableToAgentId) {
@@ -336,7 +349,10 @@ export async function createExpenseIn(tx: Tx, input: ExpenseInput, userId: strin
         rateLocalPerUsd: amounts.rateLocalPerUsd,
         amountLocal: amounts.amountLocal,
         cashBankAccountId: input.cashBankAccountId ?? null,
-        paymentMethod: input.paymentMethod ?? 'BANK_TRANSFER',
+        ledgerAccountId: input.ledgerAgentId ? null : (input.ledgerAccountId ?? null),
+        ledgerAgentId: input.ledgerAgentId ?? null,
+        paymentMethod:
+          input.ledgerAccountId || input.ledgerAgentId ? 'LEDGER_TRANSFER' : (input.paymentMethod ?? 'BANK_TRANSFER'),
         capitaliseToLandedCost: capitalise,
         allocationMethod: input.allocationMethod ?? 'PER_ITEM',
         kind,
@@ -420,6 +436,8 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
       rateLocalPerUsd: unknown;
       taxCodeId: string | null;
       cashBankAccountId: string | null;
+      ledgerAccountId: string | null;
+      ledgerAgentId: string | null;
       capitaliseToLandedCost: boolean;
       allocationMethod: string | null;
       paymentMethod: string | null;
@@ -441,6 +459,8 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
         dec(source.rateLocalPerUsd as never).toFixed(8),
         source.taxCodeId ?? '',
         source.cashBankAccountId ?? '',
+        source.ledgerAccountId ?? '',
+        source.ledgerAgentId ?? '',
         String(source.capitaliseToLandedCost),
         // A different sharing puts the cost on different coffee.
         source.allocationMethod ?? 'PER_ITEM',
@@ -466,6 +486,8 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
           rateLocalPerUsd: input.rateLocalPerUsd,
           taxCodeId: input.taxCodeId ?? null,
           cashBankAccountId: input.cashBankAccountId ?? null,
+          ledgerAccountId: input.ledgerAccountId ?? null,
+          ledgerAgentId: input.ledgerAgentId ?? null,
           capitaliseToLandedCost: Boolean(input.capitaliseToLandedCost),
           allocationMethod: input.allocationMethod ?? 'PER_ITEM',
           paymentMethod: input.paymentMethod ?? null,
@@ -536,7 +558,10 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
         rateLocalPerUsd: amounts.rateLocalPerUsd,
         amountLocal: amounts.amountLocal,
         cashBankAccountId: input.cashBankAccountId ?? null,
-        paymentMethod: input.paymentMethod ?? 'BANK_TRANSFER',
+        ledgerAccountId: input.ledgerAgentId ? null : (input.ledgerAccountId ?? null),
+        ledgerAgentId: input.ledgerAgentId ?? null,
+        paymentMethod:
+          input.ledgerAccountId || input.ledgerAgentId ? 'LEDGER_TRANSFER' : (input.paymentMethod ?? 'BANK_TRANSFER'),
         capitaliseToLandedCost: capitalise,
         allocationMethod: input.allocationMethod ?? 'PER_ITEM',
         kind,
@@ -593,6 +618,7 @@ export async function postExpenseIn(tx: Tx, params: { id: string; companyId: str
       include: {
         expenseCategory: true,
         cashBankAccount: true,
+        ledgerAccount: { select: { name: true, agentId: true } },
         vendor: true,
         payableToAgent: { select: { agentName: true } },
       },
@@ -620,6 +646,16 @@ export async function postExpenseIn(tx: Tx, params: { id: string; companyId: str
       ? payable.amountUsd
       : toMoney(dec(expense.amountUsd).plus(expense.taxAmountUsd));
 
+    // An agent's account may not give up more than he holds.
+    const ledgerSide =
+      !expense.cashBankAccountId && (expense.ledgerAccountId || expense.ledgerAgentId)
+        ? await resolveLedgerSettlement(tx, params.companyId, expense, expense.currency, {
+            amount: grossAmount,
+            rateToUsd: expense.rateToUsd,
+            localCurrency: company.localCurrency,
+          })
+        : null;
+
     const creditLine: JournalLineInput = expense.cashBankAccountId
       ? {
           cashBankAccountId: expense.cashBankAccountId,
@@ -628,6 +664,18 @@ export async function postExpenseIn(tx: Tx, params: { id: string; companyId: str
           amount: grossAmount,
           rateToUsd: expense.rateToUsd,
           description: `Paid from ${expense.cashBankAccount?.name ?? 'cash/bank'}`,
+          shipmentId: expense.shipmentId,
+        }
+      : ledgerSide
+      ? {
+          // Settled at once against another account: that account is
+          // credited, and no cash or bank account moves.
+          ...ledgerSide.line,
+          direction: 'CREDIT' as const,
+          currency: expense.currency,
+          amount: grossAmount,
+          rateToUsd: expense.rateToUsd,
+          description: `Settled ledger to ledger through ${ledgerSide.name}`,
           shipmentId: expense.shipmentId,
         }
       : expense.payableToAgent

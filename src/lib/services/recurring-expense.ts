@@ -73,6 +73,8 @@ export async function createRecurringFromExpense(params: {
     rateLocalPerUsd: expense.rateLocalPerUsd.toString(),
     paymentMethod: expense.paymentMethod,
     cashBankAccountId: expense.cashBankAccountId ?? '',
+    ledgerAccountId: expense.ledgerAccountId ?? '',
+    ledgerAgentId: expense.ledgerAgentId ?? '',
     capitaliseToLandedCost: expense.capitaliseToLandedCost,
     kind: expense.kind,
     taxCodeId: expense.taxCodeId ?? '',

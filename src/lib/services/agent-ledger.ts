@@ -51,6 +51,8 @@ export type AgentSettlementInput = {
   rateLocalPerUsd: string | number;
   reference?: string | null;
   notes?: string | null;
+  /** The unpaid cost this settles, when settled from the cost itself. */
+  expenseId?: string | null;
 };
 
 /** What an agent owes the company, and what the company owes the agent. */
@@ -91,7 +93,7 @@ async function loadAgent(tx: Tx, companyId: string, agentId: string) {
  * He collected dirhams and is returning dirhams, so dirhams are what the
  * limit is read in.
  */
-function holdingIn(position: AgentPosition, currency: string, localCurrency: string, rateToUsd: Decimal): Decimal {
+export function agentHoldingIn(position: AgentPosition, currency: string, localCurrency: string, rateToUsd: Decimal): Decimal {
   const code = currency.toUpperCase();
   if (code === 'USD') return position.holdingUsd;
   if (code === localCurrency.toUpperCase()) return position.holdingLocal;
@@ -106,7 +108,7 @@ function assertNotOverCollecting(params: {
   amount: Decimal;
   rateToUsd: Decimal;
 }) {
-  const held = holdingIn(params.position, params.currency, params.localCurrency, params.rateToUsd);
+  const held = agentHoldingIn(params.position, params.currency, params.localCurrency, params.rateToUsd);
   if (params.amount.greaterThan(held.plus('0.01'))) {
     throw new BusinessRuleError(
       `${params.agentName} is holding ${formatMoney(held, params.currency)}. ` +
@@ -195,6 +197,7 @@ export async function createAgentSettlement(input: AgentSettlementInput, userId:
         amountLocal,
         reference: input.reference ?? null,
         notes: input.notes ?? null,
+        expenseId: input.expenseId ?? null,
         status: 'DRAFT',
         createdById: userId,
       },
@@ -532,7 +535,7 @@ export async function recordAgentHandover(input: {
     });
     if (!bank) throw new NotFoundError('Cash or bank account');
     // What he holds, in the currency being handed over.
-    const own = holdingIn(position, currency, company.localCurrency, dec(input.rateToUsd));
+    const own = agentHoldingIn(position, currency, company.localCurrency, dec(input.rateToUsd));
     return { agentName: agent.agentName, holdingOwn: toMoney(own), bankCurrency: bank.currency.toUpperCase() };
   });
 

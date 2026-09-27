@@ -23,6 +23,9 @@ import { AddAgentDialog } from '@/app/(app)/finance/receipts/add-agent';
 import { MasterSelect } from '@/components/shared/master-select';
 import { cashBankCreateSpec } from '@/components/shared/master-specs';
 import { useClientKey } from '@/lib/use-client-key';
+import { LedgerAccountField } from '@/components/shared/ledger-account-field';
+import { ledgerTargetPayload, ledgerTargetValue } from '@/lib/ledger-target';
+import type { LedgerSettlementOption } from '@/lib/services/ledger-settlement';
 
 export type CategoryOption = ComboOption & { capitaliseByDefault: boolean; kind: 'SHIPMENT' | 'GENERAL' };
 
@@ -47,8 +50,10 @@ export type ExpenseFormInitial = {
   amount: string;
   rateToUsd: string;
   rateLocalPerUsd: string;
-  paymentMethod: 'CASH' | 'BANK_TRANSFER' | 'CHEQUE';
+  paymentMethod: 'CASH' | 'BANK_TRANSFER' | 'CHEQUE' | 'LEDGER_TRANSFER';
   cashBankAccountId: string | null;
+  ledgerAccountId?: string | null;
+  ledgerAgentId?: string | null;
   taxCodeId: string | null;
   reference: string;
   description: string;
@@ -69,6 +74,8 @@ export function ExpenseForm({
   shipments,
   agents,
   accounts,
+  vendors = [],
+  ledgerAccounts = [],
   localCurrency,
   defaultLocalRate,
   ratesByCurrency,
@@ -85,6 +92,10 @@ export function ExpenseForm({
   shipments: ComboOption[];
   agents: ComboOption[];
   accounts: Array<ComboOption & { currency: string; accountType: 'CASH' | 'PETTY_CASH' | 'BANK' }>;
+  /** Who an unpaid cost can be owed to, besides agents. */
+  vendors?: ComboOption[];
+  /** Accounts a paid cost may be settled against, ledger to ledger. */
+  ledgerAccounts?: LedgerSettlementOption[];
   localCurrency: string;
   defaultLocalRate: string;
   ratesByCurrency: Record<string, string>;
@@ -114,7 +125,11 @@ export function ExpenseForm({
   // money spent on one consignment, or on running the business?
   const [kind, setKind] = React.useState<'SHIPMENT' | 'GENERAL'>(initial?.kind ?? 'SHIPMENT');
   const [settlement, setSettlement] = React.useState<'PAID' | 'UNPAID'>(
-    initial ? (initial.cashBankAccountId ? 'PAID' : 'UNPAID') : 'UNPAID',
+    initial
+      ? initial.cashBankAccountId || initial.ledgerAccountId || initial.ledgerAgentId
+        ? 'PAID'
+        : 'UNPAID'
+      : 'UNPAID',
   );
 
   const [form, setForm] = React.useState({
@@ -130,8 +145,9 @@ export function ExpenseForm({
     amount: initial?.amount ?? '',
     rateToUsd: initial?.rateToUsd ?? (localCurrency === 'USD' ? '1' : defaultLocalRate),
     rateLocalPerUsd: initial?.rateLocalPerUsd ?? defaultLocalRate,
-    paymentMethod: (initial?.paymentMethod ?? 'CASH') as 'CASH' | 'BANK_TRANSFER' | 'CHEQUE',
+    paymentMethod: (initial?.paymentMethod ?? 'CASH') as 'CASH' | 'BANK_TRANSFER' | 'CHEQUE' | 'LEDGER_TRANSFER',
     cashBankAccountId: initial?.cashBankAccountId ?? (null as string | null),
+    ledgerTarget: ledgerTargetValue(initial?.ledgerAccountId, initial?.ledgerAgentId),
     reference: initial?.reference ?? '',
     description: initial?.description ?? '',
     taxCodeId: initial?.taxCodeId ?? (null as string | null),
@@ -178,6 +194,22 @@ export function ExpenseForm({
   }
 
   const isForeign = form.currency !== 'USD';
+  // Paid, but settled against another account in the books: no drawer moves.
+  const isLedger = form.paymentMethod === 'LEDGER_TRANSFER';
+  /** Who an unpaid cost is owed to: nobody yet, an agent, or a supplier. */
+  const payee = form.payableToAgentId
+    ? `agent:${form.payableToAgentId}`
+    : form.vendorId
+      ? `vendor:${form.vendorId}`
+      : 'general';
+  const payeeOptions = React.useMemo(
+    () => [
+      { value: 'general', label: 'General / unassigned', hint: 'owed, payee not named yet' },
+      ...agentOptions.map((a) => ({ value: `agent:${a.value}`, label: a.label, hint: 'agent', keywords: 'agent' })),
+      ...vendors.map((v) => ({ value: `vendor:${v.value}`, label: v.label, hint: 'supplier', keywords: `supplier ${v.keywords ?? ''}` })),
+    ],
+    [agentOptions, vendors],
+  );
 
   const amountUsd = React.useMemo(() => {
     if (!form.amount) return dec(0);
@@ -206,12 +238,17 @@ export function ExpenseForm({
       return;
     }
 
-    if (settlement === 'PAID' && !cashBankAccountId) {
+    if (settlement === 'PAID' && isLedger && !form.ledgerTarget) {
+      setFieldIssues({ ledgerAccountId: 'Choose the ledger account on the other side.' });
+      focusFirstError();
+      return;
+    }
+    if (settlement === 'PAID' && !isLedger && !cashBankAccountId) {
       setError('Choose the cash or bank this was paid from.');
       return;
     }
 
-    const paidFrom = settlement === 'PAID' ? (cashBankAccountId ?? '') : '';
+    const paidFrom = settlement === 'PAID' && !isLedger ? (cashBankAccountId ?? '') : '';
     const agentId = kind === 'SHIPMENT' && settlement === 'PAID' ? (form.agentId ?? '') : '';
 
     const payload = {
@@ -223,9 +260,8 @@ export function ExpenseForm({
       purchaseContractId: '',
       containerId: kind === 'SHIPMENT' ? (form.containerId ?? '') : '',
       batchId: kind === 'SHIPMENT' ? (form.batchId ?? '') : '',
-      // An unpaid cost names nobody: it is accrued, and settled later from
-      // the cost itself. A supplier or agent on the record is kept only when
-      // the voucher was already booked that way.
+      // Who an unpaid cost is owed to: a supplier, an agent, or nobody yet
+      // (accrued). A paid cost is owed to nobody.
       vendorId: settlement === 'UNPAID' ? (form.vendorId ?? '') : '',
       agentId,
       payableToAgentId: settlement === 'UNPAID' ? (form.payableToAgentId ?? '') : '',
@@ -238,6 +274,7 @@ export function ExpenseForm({
       rateLocalPerUsd: form.currency === localCurrency ? form.rateToUsd || '1' : form.rateLocalPerUsd,
       paymentMethod: form.paymentMethod,
       cashBankAccountId: paidFrom,
+      ...ledgerTargetPayload(settlement === 'PAID' && isLedger ? form.ledgerTarget : null),
       capitaliseToLandedCost: capitalise,
       // Only meaningful for a cost spread over the whole order; a named
       // container or batch takes it all, however it is shared.
@@ -489,19 +526,32 @@ export function ExpenseForm({
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Paid from" required>
                 <Select
-                  value={form.paymentMethod === 'CASH' ? 'CASH' : 'BANK'}
+                  value={form.paymentMethod === 'CASH' ? 'CASH' : isLedger ? 'LEDGER' : 'BANK'}
                   onChange={(e) =>
                     setForm({
                       ...form,
-                      paymentMethod: e.target.value === 'CASH' ? 'CASH' : 'BANK_TRANSFER',
+                      paymentMethod:
+                        e.target.value === 'CASH' ? 'CASH' : e.target.value === 'LEDGER' ? 'LEDGER_TRANSFER' : 'BANK_TRANSFER',
                       cashBankAccountId: null,
                     })
                   }
                 >
                   <option value="CASH">Cash in hand</option>
                   <option value="BANK">Bank</option>
+                  <option value="LEDGER">Ledger to ledger</option>
                 </Select>
               </Field>
+              {isLedger ? (
+                <LedgerAccountField
+                  id="expenseLedgerAccount"
+                  label="Settled through"
+                  options={ledgerAccounts}
+                  currency={form.currency}
+                  value={form.ledgerTarget}
+                  onChange={(value) => setForm({ ...form, ledgerTarget: value })}
+                  error={fieldIssues.ledgerAccountId}
+                />
+              ) : (
               <Field
                 label={form.paymentMethod === 'CASH' ? 'Cash account' : 'Bank account'}
                 required
@@ -529,13 +579,36 @@ export function ExpenseForm({
                   }
                 />
               </Field>
+              )}
             </div>
           ) : (
-            <Callout tone="info" title="Pay later">
-              Saving this records the cost now
-              {kind === 'SHIPMENT' ? ' and adds it to the shipment' : ''}. Cash and bank are not touched until
-              you record the payment from the cost itself.
-            </Callout>
+            <div className="space-y-3">
+              <Field
+                label="Payable to"
+                htmlFor="expensePayee"
+                hint="Who this is owed to. It shows under their name in Unpaid Expenses; leave it general if not known yet."
+              >
+                <Combobox
+                  id="expensePayee"
+                  options={payeeOptions}
+                  value={payee}
+                  onChange={(value) => {
+                    const next = value ?? 'general';
+                    setForm({
+                      ...form,
+                      payableToAgentId: next.startsWith('agent:') ? next.slice(6) : null,
+                      vendorId: next.startsWith('vendor:') ? next.slice(7) : null,
+                    });
+                  }}
+                  placeholder="General / unassigned"
+                />
+              </Field>
+              <Callout tone="info" title="Pay later">
+                Saving this records the cost now
+                {kind === 'SHIPMENT' ? ' and adds it to the shipment' : ''}. Cash and bank are not touched until
+                you settle it from Unpaid Expenses.
+              </Callout>
+            </div>
           )}
 
           {kind === 'SHIPMENT' && settlement === 'PAID' ? (

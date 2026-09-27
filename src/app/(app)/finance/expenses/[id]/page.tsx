@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Callout } from '@/components/ui/feedback';
 import { VoucherActions } from '@/components/shared/voucher-actions';
 import { getWarehouseLabels } from '@/lib/services/stock';
+import { settledThrough } from '@/lib/ledger-target';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,6 +49,8 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
       agent: { select: { agentName: true } },
       payableToAgent: { select: { id: true, agentName: true } },
       cashBankAccount: { select: { name: true } },
+      ledgerAccount: { select: { name: true } },
+      ledgerAgent: { select: { agentName: true } },
       createdBy: { select: { name: true } },
     },
   });
@@ -66,7 +69,8 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
     _sum: { amount: true },
   });
   const owed = dec(expense.amount).plus(expense.taxAmount).minus(paidAgainst._sum.amount ?? 0);
-  const unpaid = expense.status === 'POSTED' && !expense.cashBankAccountId && owed.greaterThan(0);
+  const paidOnTheSpot = Boolean(expense.cashBankAccountId || expense.ledgerAccountId || expense.ledgerAgentId);
+  const unpaid = expense.status === 'POSTED' && !paidOnTheSpot && owed.greaterThan(0);
   const recordPayment = unpaid && !expense.payableToAgent && can(user, PERMISSIONS.PAYMENTS_CREATE);
   const payAgentCommission =
     unpaid && expense.payableToAgent && can(user, PERMISSIONS.AGENTS_VIEW);
@@ -124,15 +128,22 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
                 suggestedName={expense.description ?? expense.expenseCategory.name}
               />
             ) : null}
-            {recordPayment ? (
+            {unpaid && can(user, PERMISSIONS.PAYMENTS_POST) ? (
+              // Cash, bank, cheque or a set-off — settled from the cost itself, so it is never booked twice.
+              <Button asChild>
+                <Link href={`/finance/unpaid-expenses?settle=${expense.id}`}>
+                  <Banknote />
+                  Settle
+                </Link>
+              </Button>
+            ) : recordPayment ? (
               <Button asChild>
                 <Link href={`/finance/payments/new?expense=${expense.id}`}>
                   <Banknote />
                   Record payment
                 </Link>
               </Button>
-            ) : null}
-            {payAgentCommission && expense.payableToAgent ? (
+            ) : payAgentCommission && expense.payableToAgent ? (
               <Button asChild>
                 <Link href={`/agents/${expense.payableToAgent.id}`}>
                   <HandCoins />
@@ -185,7 +196,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
         ) : null}
         {Number(expense.taxAmount) > 0 ? (
           <Metric
-            label={expense.cashBankAccountId ? 'Cash / bank moved' : 'Gross payable'}
+            label={expense.cashBankAccountId ? 'Cash / bank moved' : paidOnTheSpot ? 'Settled ledger to ledger' : 'Gross payable'}
             value={formatMoney(expense.amount.plus(expense.taxAmount), expense.currency)}
           />
         ) : null}
@@ -236,7 +247,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
             ) : (
               <>
                 <DetailRow label="Method">{PAYMENT_METHOD_LABELS[expense.paymentMethod]}</DetailRow>
-                <DetailRow label="Paid from">{expense.cashBankAccount?.name ?? 'On credit'}</DetailRow>
+                <DetailRow label="Paid from">{settledThrough(expense, 'On credit')}</DetailRow>
               </>
             )}
             {expense.vendor ? (

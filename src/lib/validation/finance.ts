@@ -43,8 +43,12 @@ export const receiptSchema = z
     rateToUsd: optionalDecimalString('Exchange rate'),
     usdEquivalent: optionalDecimalString('USD equivalent'),
     rateLocalPerUsd: decimalString('Local exchange rate'),
-    paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'CHEQUE', 'AGENT_COLLECTION']),
+    paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'CHEQUE', 'AGENT_COLLECTION', 'LEDGER_TRANSFER']),
     cashBankAccountId: optionalCuid,
+    /** The account on the other side, when settled ledger to ledger. */
+    ledgerAccountId: optionalCuid,
+    /** Or an agent's account. */
+    ledgerAgentId: optionalCuid,
     /** Who collected it, when the customer paid an agent rather than the company. */
     agentId: optionalCuid,
     cheque: chequeDetails.nullish(),
@@ -65,12 +69,17 @@ export const receiptSchema = z
     (v) =>
       v.paymentMethod === 'CHEQUE' ||
       v.paymentMethod === 'AGENT_COLLECTION' ||
+      v.paymentMethod === 'LEDGER_TRANSFER' ||
       Boolean(v.cashBankAccountId),
     {
       message: 'Choose the cash or bank account the money was received into.',
       path: ['cashBankAccountId'],
     },
   )
+  .refine((v) => v.paymentMethod !== 'LEDGER_TRANSFER' || Boolean(v.ledgerAccountId || v.ledgerAgentId), {
+    message: 'Choose the ledger account on the other side.',
+    path: ['ledgerAccountId'],
+  })
   .refine((v) => v.paymentMethod !== 'AGENT_COLLECTION' || Boolean(v.agentId), {
     message: 'Choose the agent who collected this money.',
     path: ['agentId'],
@@ -91,8 +100,12 @@ export const paymentSchema = z
     amount: decimalString('Amount'),
     rateToUsd: decimalString('Exchange rate'),
     rateLocalPerUsd: decimalString('Local exchange rate'),
-    paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'CHEQUE']),
+    paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'CHEQUE', 'LEDGER_TRANSFER']),
     cashBankAccountId: optionalCuid,
+    /** The account on the other side, when settled ledger to ledger. */
+    ledgerAccountId: optionalCuid,
+    /** Or an agent's account. */
+    ledgerAgentId: optionalCuid,
     cheque: chequeDetails.nullish(),
     shipmentId: optionalCuid,
     reference: optionalText(60),
@@ -114,9 +127,13 @@ export const paymentSchema = z
       )
       .default([]),
   })
-  .refine((v) => v.paymentMethod === 'CHEQUE' || Boolean(v.cashBankAccountId), {
+  .refine((v) => v.paymentMethod === 'CHEQUE' || v.paymentMethod === 'LEDGER_TRANSFER' || Boolean(v.cashBankAccountId), {
     message: 'Choose the cash or bank account the money was paid from.',
     path: ['cashBankAccountId'],
+  })
+  .refine((v) => v.paymentMethod !== 'LEDGER_TRANSFER' || Boolean(v.ledgerAccountId || v.ledgerAgentId), {
+    message: 'Choose the ledger account on the other side.',
+    path: ['ledgerAccountId'],
   })
   // A cheque the company writes is drawn on a bank the company knows.
   .refine((v) => v.paymentMethod !== 'CHEQUE' || !v.cheque || Boolean(v.cheque.bankName?.trim()), {
@@ -147,8 +164,12 @@ export const expenseSchema = z.object({
   amount: decimalString('Amount'),
   rateToUsd: decimalString('Exchange rate'),
   rateLocalPerUsd: decimalString('Local exchange rate'),
-  paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'CHEQUE']),
+  paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'CHEQUE', 'LEDGER_TRANSFER']),
   cashBankAccountId: optionalCuid,
+  /** Settled at once against this ledger account instead of cash or bank. */
+  ledgerAccountId: optionalCuid,
+  /** Or against an agent's account. */
+  ledgerAgentId: optionalCuid,
   capitaliseToLandedCost: z.coerce.boolean().optional(),
   /** How a cost for the whole order is shared between its coffees. */
   allocationMethod: z.enum(['PER_ITEM', 'BY_WEIGHT', 'BY_VALUE']).optional(),
@@ -157,6 +178,45 @@ export const expenseSchema = z.object({
   reference: optionalText(60),
   description: optionalText(600),
 });
+
+/**
+ * Settling an unpaid cost from the Unpaid Expenses ledger. The user says what
+ * happened — cash, a bank, a cheque, or a set-off against a balance the party
+ * owes FID — and never which side is debited.
+ */
+export const settleUnpaidExpenseSchema = z
+  .object({
+    expenseId: cuid,
+    settlementDate: dateString('Settlement date'),
+    method: z.enum(['CASH', 'BANK', 'CHEQUE', 'SET_OFF']),
+    amount: decimalString('Amount'),
+    rateToUsd: decimalString('Exchange rate'),
+    rateLocalPerUsd: decimalString('Local exchange rate'),
+    cashBankAccountId: optionalCuid,
+    cheque: z
+      .object({
+        chequeNumber: z.string().trim().min(1, 'Enter the cheque number.').max(40),
+        chequeDate: dateString('Cheque date'),
+        bankName: z.string().trim().min(1, 'Enter the bank the cheque is drawn on.').max(120),
+        beneficiary: optionalText(160),
+      })
+      .nullish(),
+    /** A ledger account id, or "agent:<id>" for what an agent holds. */
+    setOffAgainst: z.string().trim().max(80).nullish(),
+    memo: optionalText(600),
+  })
+  .refine((v) => v.method === 'SET_OFF' || v.method === 'CHEQUE' || Boolean(v.cashBankAccountId), {
+    message: 'Choose the cash or bank account.',
+    path: ['cashBankAccountId'],
+  })
+  .refine((v) => v.method !== 'CHEQUE' || Boolean(v.cheque), {
+    message: 'Enter the cheque details.',
+    path: ['cheque', 'chequeNumber'],
+  })
+  .refine((v) => v.method !== 'SET_OFF' || Boolean(v.setOffAgainst), {
+    message: 'Choose the balance to set this off against.',
+    path: ['setOffAgainst'],
+  });
 
 /**
  * One payment spread across several cost categories.
@@ -180,8 +240,12 @@ export const splitExpenseSchema = z.object({
   currency: currencyCode,
   rateToUsd: decimalString('Exchange rate'),
   rateLocalPerUsd: decimalString('Local exchange rate'),
-  paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'CHEQUE']),
+  paymentMethod: z.enum(['CASH', 'BANK_TRANSFER', 'CHEQUE', 'LEDGER_TRANSFER']),
   cashBankAccountId: optionalCuid,
+  /** Settled at once against this ledger account instead of cash or bank. */
+  ledgerAccountId: optionalCuid,
+  /** Or against an agent's account. */
+  ledgerAgentId: optionalCuid,
   reference: optionalText(60),
   lines: z
     .array(

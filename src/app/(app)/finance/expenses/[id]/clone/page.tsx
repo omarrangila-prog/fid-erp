@@ -52,6 +52,8 @@ export default async function CloneExpensePage({ params }: { params: Promise<{ i
         categories={options.categories}
         shipments={options.shipments}
         agents={options.agents}
+        vendors={options.vendors}
+        ledgerAccounts={options.ledgerAccounts}
         accounts={options.accounts}
         localCurrency={user.activeCompany.localCurrency}
         defaultLocalRate={options.rates.local}
@@ -79,10 +81,12 @@ export default async function CloneExpensePage({ params }: { params: Promise<{ i
           rateToUsd: expense.rateToUsd.toString(),
           rateLocalPerUsd: expense.rateLocalPerUsd.toString(),
           paymentMethod:
-            expense.paymentMethod === 'CASH' || expense.paymentMethod === 'CHEQUE'
+            expense.paymentMethod === 'CASH' || expense.paymentMethod === 'CHEQUE' || expense.paymentMethod === 'LEDGER_TRANSFER'
               ? expense.paymentMethod
               : 'BANK_TRANSFER',
           cashBankAccountId: expense.cashBankAccountId,
+          ledgerAccountId: expense.ledgerAccountId,
+          ledgerAgentId: expense.ledgerAgentId,
           taxCodeId: expense.taxCodeId,
           reference: '',
           description: expense.description ?? '',

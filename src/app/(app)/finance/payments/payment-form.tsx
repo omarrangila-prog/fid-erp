@@ -21,6 +21,9 @@ import { savePaymentAction, postPaymentAction } from '@/server/actions/finance-a
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { accountsFor } from '@/lib/cash-account-choice';
 import { useClientKey } from '@/lib/use-client-key';
+import { LedgerAccountField } from '@/components/shared/ledger-account-field';
+import { ledgerTargetPayload, ledgerTargetValue } from '@/lib/ledger-target';
+import type { LedgerSettlementOption } from '@/lib/services/ledger-settlement';
 
 export type OpenContract = {
   /** A contract is the coffee; an expense is a cost the supplier billed. */
@@ -47,6 +50,8 @@ export type PaymentInitial = {
   rateLocalPerUsd: string;
   paymentMethod: string;
   cashBankAccountId: string | null;
+  ledgerAccountId?: string | null;
+  ledgerAgentId?: string | null;
   reference: string;
   description: string;
   allocations: Array<{ id: string; amount: string }>;
@@ -60,6 +65,7 @@ export type PaymentInitial = {
 export function PaymentForm({
   vendors,
   accounts,
+  ledgerAccounts = [],
   contracts,
   localCurrency,
   defaultLocalRate,
@@ -70,6 +76,8 @@ export function PaymentForm({
 }: {
   vendors: Array<ComboOption & { currency: string }>;
   accounts: Array<ComboOption & { currency: string; accountType: 'CASH' | 'PETTY_CASH' | 'BANK' }>;
+  /** Accounts a payment may be settled against, ledger to ledger. */
+  ledgerAccounts?: LedgerSettlementOption[];
   contracts: OpenContract[];
   localCurrency: string;
   defaultLocalRate: string;
@@ -100,6 +108,7 @@ export function PaymentForm({
     rateLocalPerUsd: initial?.rateLocalPerUsd ?? defaultLocalRate,
     paymentMethod: initial?.paymentMethod ?? 'BANK_TRANSFER',
     cashBankAccountId: (initial?.cashBankAccountId ?? null) as string | null,
+    ledgerAccountId: ledgerTargetValue(initial?.ledgerAccountId, initial?.ledgerAgentId),
     reference: initial?.reference ?? '',
     description: initial?.description ?? '',
     chequeNumber: initial?.cheque?.chequeNumber ?? '',
@@ -122,6 +131,8 @@ export function PaymentForm({
 
   const isForeign = form.currency !== 'USD';
   const isCheque = form.paymentMethod === 'CHEQUE';
+  // Settled against another account in the books: no drawer to choose.
+  const isLedger = form.paymentMethod === 'LEDGER_TRANSFER';
   // Cash goes into the drawer without asking; a bank transfer still needs to
   // say which bank.
   const accountChoice = React.useMemo(
@@ -144,6 +155,11 @@ export function PaymentForm({
   function submit(andPost: boolean) {
     setError(null);
     setFieldIssues({});
+    if (isLedger && !form.ledgerAccountId) {
+      setFieldIssues({ ledgerAccountId: 'Choose the ledger account on the other side.' });
+      focusFirstError();
+      return;
+    }
 
     const payload = {
       clientKey: clientKey(),
@@ -154,7 +170,8 @@ export function PaymentForm({
       rateToUsd: isForeign ? form.rateToUsd : '1',
       rateLocalPerUsd: form.currency === localCurrency ? form.rateToUsd || '1' : form.rateLocalPerUsd,
       paymentMethod: form.paymentMethod,
-      cashBankAccountId: cashBankAccountId ?? '',
+      cashBankAccountId: isLedger ? '' : (cashBankAccountId ?? ''),
+      ...ledgerTargetPayload(isLedger ? form.ledgerAccountId : null),
       cheque: isCheque
         ? {
             chequeNumber: form.chequeNumber,
@@ -256,6 +273,7 @@ export function PaymentForm({
               <option value="BANK_TRANSFER">Bank transfer</option>
               <option value="CASH">Cash</option>
               <option value="CHEQUE">Cheque</option>
+              <option value="LEDGER_TRANSFER">Ledger to ledger</option>
             </Select>
           </Field>
 
@@ -263,7 +281,13 @@ export function PaymentForm({
             <Select
               value={form.currency}
               onChange={(e) =>
-                setForm({ ...form, currency: e.target.value, rateToUsd: e.target.value === 'USD' ? '1' : '', cashBankAccountId: null })
+                setForm({
+                  ...form,
+                  currency: e.target.value,
+                  rateToUsd: e.target.value === 'USD' ? '1' : '',
+                  cashBankAccountId: null,
+                  ledgerAccountId: null,
+                })
               }
             >
               {transactionCurrencies(localCurrency).map((code) => (
@@ -278,7 +302,19 @@ export function PaymentForm({
             <MoneyInput currency={form.currency} value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
           </Field>
 
-          {!isCheque ? (
+          {isLedger ? (
+            <LedgerAccountField
+              id="paymentLedgerAccount"
+              label="Settled through"
+              options={ledgerAccounts}
+              currency={form.currency}
+              value={form.ledgerAccountId}
+              onChange={(value) => setForm({ ...form, ledgerAccountId: value })}
+              error={fieldIssues.ledgerAccountId}
+            />
+          ) : null}
+
+          {!isCheque && !isLedger ? (
             <Field
               label="Paid from"
               required

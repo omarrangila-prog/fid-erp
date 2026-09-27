@@ -28,6 +28,7 @@ export default async function SplitExpensePage({ searchParams }: { searchParams:
         categories={options.categories}
         shipments={options.shipments}
         accounts={options.accounts}
+        ledgerAccounts={options.ledgerAccounts}
         localCurrency={user.activeCompany.localCurrency}
         defaultLocalRate={options.rates.local}
         ratesByCurrency={options.rates.byCurrency}

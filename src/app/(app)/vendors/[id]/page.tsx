@@ -18,6 +18,7 @@ import { EmptyState } from '@/components/ui/feedback';
 import { StatCard, DetailRow } from '@/components/shared/stat-card';
 import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
 import { DualAmount } from '@/components/shared/dual-amount';
+import { settledThrough } from '@/lib/ledger-target';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,7 +44,14 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
           shipments: { select: { id: true, status: true } },
         },
       },
-      payments: { orderBy: { paymentDate: 'desc' }, include: { cashBankAccount: { select: { name: true } } } },
+      payments: {
+        orderBy: { paymentDate: 'desc' },
+        include: {
+          cashBankAccount: { select: { name: true } },
+          ledgerAccount: { select: { name: true } },
+          ledgerAgent: { select: { agentName: true } },
+        },
+      },
       shipments: {
         orderBy: { createdAt: 'desc' },
         include: {
@@ -257,7 +265,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
                       </TD>
                       <TD>{formatDate(payment.paymentDate)}</TD>
                       <TD>{PAYMENT_METHOD_LABELS[payment.paymentMethod] ?? payment.paymentMethod}</TD>
-                      <TD>{payment.cashBankAccount?.name ?? 'Cheque issued'}</TD>
+                      <TD>{settledThrough(payment, 'Cheque issued')}</TD>
                       <TD numeric>
                         <DualAmount
                           amount={payment.amount}

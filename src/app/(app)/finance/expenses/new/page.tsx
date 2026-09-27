@@ -24,6 +24,8 @@ export default async function NewExpensePage({ searchParams }: { searchParams: P
         categories={options.categories}
         shipments={options.shipments}
         agents={options.agents}
+        vendors={options.vendors}
+        ledgerAccounts={options.ledgerAccounts}
         accounts={options.accounts}
         localCurrency={user.activeCompany.localCurrency}
         defaultLocalRate={options.rates.local}

@@ -587,6 +587,8 @@ export async function getShipmentCostSheet(
       include: {
         expenseCategory: { select: { name: true } },
         cashBankAccount: { select: { name: true } },
+        ledgerAccount: { select: { name: true } },
+        ledgerAgent: { select: { agentName: true } },
         container: { select: { containerNumber: true } },
         batch: { select: { batchNumber: true } },
         vendor: { select: { country: true } },

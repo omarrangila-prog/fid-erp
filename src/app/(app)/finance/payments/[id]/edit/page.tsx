@@ -8,6 +8,7 @@ import { getPayables } from '@/lib/services/receivables';
 import { toDateInputValue } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { PaymentForm, type OpenContract } from '@/app/(app)/finance/payments/payment-form';
+import { getLedgerSettlementAccounts } from '@/lib/services/ledger-settlement';
 
 export const metadata: Metadata = { title: 'Edit Payment' };
 export const dynamic = 'force-dynamic';
@@ -38,7 +39,7 @@ export default async function EditPaymentPage({ params }: { params: Promise<{ id
   const allocatedContractIds = payment.allocations.map((a) => a.purchaseContractId).filter((v): v is string => !!v);
   const allocatedExpenseIds = payment.allocations.map((a) => a.expenseId).filter((v): v is string => !!v);
 
-  const [vendors, accounts, payables, rates, settledContracts, settledExpenses] = await Promise.all([
+  const [vendors, accounts, payables, rates, settledContracts, settledExpenses, ledgerAccounts] = await Promise.all([
     prisma.vendor.findMany({
       where: { companyId, status: 'ACTIVE' },
       orderBy: { vendorName: 'asc' },
@@ -59,6 +60,7 @@ export default async function EditPaymentPage({ params }: { params: Promise<{ id
       where: { id: { in: allocatedExpenseIds } },
       select: { id: true, expenseNumber: true, expenseDate: true, currency: true, description: true, vendorId: true, amount: true, expenseCategory: { select: { name: true } } },
     }),
+    getLedgerSettlementAccounts(companyId),
   ]);
 
   const contracts: OpenContract[] = payables
@@ -116,6 +118,7 @@ export default async function EditPaymentPage({ params }: { params: Promise<{ id
         ]}
       />
       <PaymentForm
+        ledgerAccounts={ledgerAccounts}
         vendors={vendors.map((v) => ({
           value: v.id,
           label: v.vendorName,
@@ -148,6 +151,8 @@ export default async function EditPaymentPage({ params }: { params: Promise<{ id
           rateLocalPerUsd: payment.rateLocalPerUsd.toString(),
           paymentMethod: payment.paymentMethod,
           cashBankAccountId: payment.cashBankAccountId,
+          ledgerAccountId: payment.ledgerAccountId,
+          ledgerAgentId: payment.ledgerAgentId,
           reference: payment.reference ?? '',
           description: payment.description ?? '',
           allocations: payment.allocations.map((a) => ({

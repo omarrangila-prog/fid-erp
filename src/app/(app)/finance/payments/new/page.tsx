@@ -9,6 +9,7 @@ import { toDateInputValue } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrerequisiteGate, anyMissing, type Prerequisite } from '@/components/shared/prerequisite-gate';
 import { PaymentForm, type OpenContract } from '@/app/(app)/finance/payments/payment-form';
+import { getLedgerSettlementAccounts } from '@/lib/services/ledger-settlement';
 
 export const metadata: Metadata = { title: 'New Payment' };
 export const dynamic = 'force-dynamic';
@@ -22,7 +23,7 @@ export default async function NewPaymentPage({
   const user = await requirePageAccess(PERMISSIONS.PAYMENTS_CREATE);
   const companyId = user.activeCompany.id;
 
-  const [vendors, accounts, payables, accrued] = await Promise.all([
+  const [vendors, accounts, payables, accrued, ledgerAccounts] = await Promise.all([
     prisma.vendor.findMany({
       where: { companyId, status: 'ACTIVE' },
       orderBy: { vendorName: 'asc' },
@@ -44,6 +45,8 @@ export default async function NewPaymentPage({
             companyId,
             status: 'POSTED',
             cashBankAccountId: null,
+            ledgerAccountId: null,
+            ledgerAgentId: null,
             vendorId: null,
             payableToAgentId: null,
           },
@@ -57,6 +60,7 @@ export default async function NewPaymentPage({
           },
         })
       : Promise.resolve(null),
+    getLedgerSettlementAccounts(companyId),
   ]);
 
   const prerequisites: Prerequisite[] = [
@@ -135,6 +139,7 @@ export default async function NewPaymentPage({
         breadcrumbs={[{ label: 'Finance' }, { label: 'Payments', href: '/finance/payments' }, { label: 'New' }]}
       />
       <PaymentForm
+        ledgerAccounts={ledgerAccounts}
         vendors={vendors.map((v) => ({
           value: v.id,
           label: v.vendorName,

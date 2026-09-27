@@ -176,6 +176,8 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
       include: {
         expenseCategory: { select: { name: true } },
         cashBankAccount: { select: { name: true } },
+        ledgerAccount: { select: { name: true } },
+        ledgerAgent: { select: { agentName: true } },
         container: { select: { containerNumber: true } },
         vendor: { select: { country: true } },
       },

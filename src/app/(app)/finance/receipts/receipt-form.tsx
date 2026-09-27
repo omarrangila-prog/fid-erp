@@ -20,6 +20,9 @@ import { formatMoney, formatDate, todayInputValue } from '@/lib/format';
 import { saveReceiptAction, postReceiptAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { accountsFor } from '@/lib/cash-account-choice';
+import { LedgerAccountField } from '@/components/shared/ledger-account-field';
+import { ledgerTargetPayload, ledgerTargetValue } from '@/lib/ledger-target';
+import type { LedgerSettlementOption } from '@/lib/services/ledger-settlement';
 import { AddAgentDialog } from '@/app/(app)/finance/receipts/add-agent';
 import { shortDocumentNumber } from '@/lib/short-number';
 import { useClientKey } from '@/lib/use-client-key';
@@ -56,6 +59,8 @@ export type ReceiptInitial = {
   rateLocalPerUsd: string;
   paymentMethod: string;
   cashBankAccountId: string | null;
+  ledgerAccountId?: string | null;
+  ledgerAgentId?: string | null;
   agentId: string | null;
   reference: string;
   description: string;
@@ -66,6 +71,7 @@ export type ReceiptInitial = {
 export function ReceiptForm({
   customers,
   accounts,
+  ledgerAccounts = [],
   invoices,
   localCurrency,
   defaultLocalRate,
@@ -78,6 +84,8 @@ export function ReceiptForm({
 }: {
   customers: Array<ComboOption & { currency: string }>;
   accounts: BankOption[];
+  /** Accounts a receipt may be settled against, ledger to ledger. */
+  ledgerAccounts?: LedgerSettlementOption[];
   invoices: OpenInvoice[];
   localCurrency: string;
   defaultLocalRate: string;
@@ -125,6 +133,7 @@ export function ReceiptForm({
     rateLocalPerUsd: initial?.rateLocalPerUsd ?? defaultLocalRate,
     paymentMethod: initial?.paymentMethod ?? 'BANK_TRANSFER',
     cashBankAccountId: (initial?.cashBankAccountId ?? null) as string | null,
+    ledgerAccountId: ledgerTargetValue(initial?.ledgerAccountId, initial?.ledgerAgentId),
     reference: initial?.reference ?? '',
     description: initial?.description ?? '',
     chequeNumber: initial?.cheque?.chequeNumber ?? '',
@@ -180,6 +189,8 @@ export function ReceiptForm({
    * one would put money in the bank that is not there.
    */
   const isAgentCollection = form.paymentMethod === 'AGENT_COLLECTION';
+  // Settled against another account in the books: no drawer to choose.
+  const isLedger = form.paymentMethod === 'LEDGER_TRANSFER';
 
   // The USD value of this receipt, however the user chose to express it.
   const amountUsd = React.useMemo(() => {
@@ -219,6 +230,11 @@ export function ReceiptForm({
       focusFirstError();
       return;
     }
+    if (isLedger && !form.ledgerAccountId) {
+      setFieldIssues({ ledgerAccountId: 'Choose the ledger account on the other side.' });
+      focusFirstError();
+      return;
+    }
 
     /*
      * A cheque the agent took away is recorded as a cheque, not as a note.
@@ -247,7 +263,8 @@ export function ReceiptForm({
       usdEquivalent: isForeign && entryMode === 'usd' && form.usdEquivalent ? form.usdEquivalent : undefined,
       rateLocalPerUsd: form.currency === localCurrency ? form.rateToUsd || '1' : form.rateLocalPerUsd,
       paymentMethod: form.paymentMethod,
-      cashBankAccountId: cashBankAccountId ?? '',
+      cashBankAccountId: isLedger ? '' : (cashBankAccountId ?? ''),
+      ...ledgerTargetPayload(isLedger ? form.ledgerAccountId : null),
       agentId: isAgentCollection || isCheque ? (form.agentId ?? '') : '',
       cheque: isCheque
         ? {
@@ -360,6 +377,7 @@ export function ReceiptForm({
               <option value="CASH">Cash</option>
               <option value="CHEQUE">Cheque (held by FID)</option>
               <option value="AGENT_COLLECTION">Agent cheque / Agent collection</option>
+              <option value="LEDGER_TRANSFER">Ledger to ledger</option>
             </Select>
           </Field>
 
@@ -376,6 +394,7 @@ export function ReceiptForm({
                   currency: e.target.value,
                   rateToUsd: rateFor(e.target.value),
                   cashBankAccountId: null,
+                  ledgerAccountId: null,
                 })
               }
             >
@@ -398,7 +417,19 @@ export function ReceiptForm({
             />
           </Field>
 
-          {!isCheque && !isAgentCollection ? (
+          {isLedger ? (
+            <LedgerAccountField
+              id="receiptLedgerAccount"
+              label="Settled through"
+              options={ledgerAccounts}
+              currency={form.currency}
+              value={form.ledgerAccountId}
+              onChange={(value) => setForm({ ...form, ledgerAccountId: value })}
+              error={fieldIssues.ledgerAccountId}
+            />
+          ) : null}
+
+          {!isCheque && !isAgentCollection && !isLedger ? (
             <Field
               label="Received into"
               required

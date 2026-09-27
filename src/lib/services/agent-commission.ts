@@ -57,12 +57,30 @@ export async function getCommissionPaidByExpense(companyId: string): Promise<Map
     prisma.agentSettlement.findMany({
       where: { companyId, direction: { in: ['COMMISSION', 'COMMISSION_OFFSET'] }, status: 'POSTED' },
       orderBy: [{ settlementDate: 'asc' }, { createdAt: 'asc' }],
-      select: { agentId: true, amountLocal: true },
+      select: { agentId: true, amountLocal: true, expenseId: true },
     }),
   ]);
 
+  /*
+   * A settlement made from the cost itself names that cost and settles it
+   * first; what it names is exactly what it paid. Anything else — a
+   * commission paid from the agent's page — goes to his oldest costs, as
+   * before.
+   */
+  const owedById = new Map(expenses.map((e) => [e.id, dec(e.amountLocal)]));
+  const linked = new Map<string, Decimal>();
   const pool = new Map<string, Decimal>();
   for (const settlement of settlements) {
+    const owed = settlement.expenseId ? owedById.get(settlement.expenseId) : undefined;
+    if (settlement.expenseId && owed) {
+      const already = linked.get(settlement.expenseId) ?? new Decimal(0);
+      const room = Decimal.max(owed.minus(already), new Decimal(0));
+      const applied = Decimal.min(room, dec(settlement.amountLocal));
+      linked.set(settlement.expenseId, already.plus(applied));
+      const rest = dec(settlement.amountLocal).minus(applied);
+      if (rest.greaterThan(0)) pool.set(settlement.agentId, (pool.get(settlement.agentId) ?? new Decimal(0)).plus(rest));
+      continue;
+    }
     pool.set(settlement.agentId, (pool.get(settlement.agentId) ?? new Decimal(0)).plus(settlement.amountLocal));
   }
 
@@ -76,9 +94,12 @@ export async function getCommissionPaidByExpense(companyId: string): Promise<Map
       continue;
     }
     const available = pool.get(agentId) ?? new Decimal(0);
+    const settledHere = linked.get(expense.id) ?? new Decimal(0);
     const owedLocal = dec(expense.amountLocal);
-    const appliedLocal = available.lessThan(owedLocal) ? available : owedLocal;
-    pool.set(agentId, toMoney(available.minus(appliedLocal)));
+    const stillOwed = Decimal.max(owedLocal.minus(settledHere), new Decimal(0));
+    const fromPool = available.lessThan(stillOwed) ? available : stillOwed;
+    pool.set(agentId, toMoney(available.minus(fromPool)));
+    const appliedLocal = settledHere.plus(fromPool);
     paid.set(
       expense.id,
       owedLocal.isZero() ? new Decimal(0) : toMoney(dec(expense.amountUsd).times(appliedLocal).dividedBy(owedLocal)),

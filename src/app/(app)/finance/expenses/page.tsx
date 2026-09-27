@@ -49,6 +49,8 @@ export default async function ExpensesPage({
           },
         },
         cashBankAccount: { select: { name: true } },
+        ledgerAccount: { select: { name: true } },
+        ledgerAgent: { select: { agentName: true } },
         vendor: { select: { vendorName: true, country: true } },
         payableToAgent: { select: { agentName: true } },
         agent: { select: { agentName: true } },

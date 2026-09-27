@@ -207,6 +207,30 @@ async function seedTrade(trade: Trade) {
   );
   await postReceipt({ id: money.id, companyId, userId: admin.id });
 
+  // Morocco: an agent holding MAD 50,000 of the customer's money, so a cost
+  // can be set off against what he holds (the Unpaid Expenses browser test).
+  if (trade.companyCode === 'FID-MA') {
+    const holder = await prisma.agent.create({
+      data: { companyId, agentCode: 'E2E-AG-SET', agentName: 'E2E Settlement Agent', commissionPct: '0' },
+    });
+    const held = await createReceipt(
+      {
+        companyId,
+        receiptDate: day('2026-09-12'),
+        customerId: customer.id,
+        currency: trade.invoiceCurrency,
+        amount: '50000',
+        rateToUsd: trade.invoiceRate,
+        rateLocalPerUsd: trade.rateToUsd,
+        paymentMethod: 'AGENT_COLLECTION',
+        agentId: holder.id,
+        allocations: [{ salesInvoiceId: invoice.id, amount: '50000' }],
+      },
+      admin.id,
+    );
+    await postReceipt({ id: held.id, companyId, userId: admin.id });
+  }
+
   // Money out as well as in: part of the supplier paid, and a clearing cost
   // capitalised into the job, so the payments, expenses and profitability
   // screens have something to show.

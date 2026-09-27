@@ -39,6 +39,8 @@ export type OutstandingSummary = {
   supplierPayables: OutstandingFigure;
   shipmentExpensesUnpaid: OutstandingFigure;
   generalExpensesUnpaid: OutstandingFigure;
+  /** Every cost still owed — shipment and general, and those owed to an agent — as on the Unpaid Expenses ledger. */
+  unpaidExpenses: OutstandingFigure;
   agentCollections: OutstandingFigure;
   agentCommission: OutstandingFigure;
   loansPayable: OutstandingFigure;
@@ -64,7 +66,7 @@ export async function getOutstandingSummary(companyId: string): Promise<Outstand
     getPayables({ companyId, onlyOutstanding: true }),
     // Only costs booked as owed can be unpaid; those paid on the spot never are.
     prisma.expense.findMany({
-      where: { companyId, status: 'POSTED', cashBankAccountId: null, payableToAgentId: null },
+      where: { companyId, status: 'POSTED', cashBankAccountId: null, ledgerAccountId: null, ledgerAgentId: null },
       include: { cashBankAccount: { select: { name: true } }, vendor: { select: { country: true } } },
     }),
     getAgentSummaries(companyId),
@@ -107,6 +109,7 @@ export async function getOutstandingSummary(companyId: string): Promise<Outstand
     supplierPayables: zero(),
     shipmentExpensesUnpaid: zero(),
     generalExpensesUnpaid: zero(),
+    unpaidExpenses: zero(),
     agentCollections: zero(),
     agentCommission: zero(),
     loansPayable: zero(),
@@ -135,6 +138,10 @@ export async function getOutstandingSummary(companyId: string): Promise<Outstand
     const usd = settled.gross.isZero()
       ? dec(0)
       : toMoney(dec(expense.amountUsd).plus(dec(expense.taxAmountUsd)).times(settled.outstanding).dividedBy(settled.gross));
+    bump(summary.unpaidExpenses, settled.outstandingLocal, usd);
+    // Costs owed to an agent are also on his commission card; the two
+    // shipment/general figures keep to the costs nobody else counts.
+    if (expense.payableToAgentId) continue;
     bump(expense.kind === 'SHIPMENT' ? summary.shipmentExpensesUnpaid : summary.generalExpensesUnpaid, settled.outstandingLocal, usd);
   }
 

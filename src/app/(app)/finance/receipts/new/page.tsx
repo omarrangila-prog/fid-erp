@@ -8,6 +8,7 @@ import { toDateInputValue } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrerequisiteGate, anyMissing, type Prerequisite } from '@/components/shared/prerequisite-gate';
 import { ReceiptForm, type OpenInvoice, type BankOption } from '@/app/(app)/finance/receipts/receipt-form';
+import { getLedgerSettlementAccounts } from '@/lib/services/ledger-settlement';
 
 export const metadata: Metadata = { title: 'New Receipt' };
 export const dynamic = 'force-dynamic';
@@ -21,7 +22,7 @@ export default async function NewReceiptPage({
   const user = await requirePageAccess(PERMISSIONS.RECEIPTS_CREATE);
   const companyId = user.activeCompany.id;
 
-  const [customers, accounts, receivables, agents] = await Promise.all([
+  const [customers, accounts, receivables, agents, ledgerAccounts] = await Promise.all([
     prisma.customer.findMany({
       where: { companyId, status: 'ACTIVE' },
       orderBy: { customerName: 'asc' },
@@ -39,6 +40,7 @@ export default async function NewReceiptPage({
       orderBy: { agentName: 'asc' },
       select: { id: true, agentName: true },
     }),
+    getLedgerSettlementAccounts(companyId),
   ]);
 
   const prerequisites: Prerequisite[] = [
@@ -102,6 +104,7 @@ export default async function NewReceiptPage({
         breadcrumbs={[{ label: 'Finance' }, { label: 'Receipts', href: '/finance/receipts' }, { label: 'New' }]}
       />
       <ReceiptForm
+        ledgerAccounts={ledgerAccounts}
         customers={customers.map((c) => ({
           value: c.id,
           label: c.customerName,

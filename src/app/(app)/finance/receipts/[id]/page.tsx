@@ -14,6 +14,7 @@ import { StatusBadge, Badge } from '@/components/ui/badge';
 import { Callout } from '@/components/ui/feedback';
 import { VoucherActions } from '@/components/shared/voucher-actions';
 import { getWarehouseLabels } from '@/lib/services/stock';
+import { settledThrough } from '@/lib/ledger-target';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +34,8 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
       customer: true,
       agent: { select: { id: true, agentName: true } },
       cashBankAccount: true,
+      ledgerAccount: { select: { name: true } },
+      ledgerAgent: { select: { agentName: true } },
       createdBy: { select: { name: true } },
       cheque: { include: { statusHistory: { orderBy: { changedAt: 'desc' }, include: { changedBy: { select: { name: true } } } } } },
       allocations: {
@@ -206,7 +209,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                 <DetailRow label="Account">
                   {receipt.paymentMethod === 'AGENT_COLLECTION'
                     ? 'Agent clearing'
-                    : (receipt.cashBankAccount?.name ?? 'Cheques on hand')}
+                    : settledThrough(receipt, 'Cheques on hand')}
                 </DetailRow>
                 <DetailRow label="Reference">{receipt.reference ?? '—'}</DetailRow>
                 <DetailRow label="Warehouse">

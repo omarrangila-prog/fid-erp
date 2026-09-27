@@ -13,6 +13,7 @@ import {
   paymentSchema,
   expenseSchema,
   splitExpenseSchema,
+  settleUnpaidExpenseSchema,
   chequeStatusSchema,
   journalVoucherSchema,
   revaluationSchema,
@@ -57,6 +58,7 @@ import { onceForKey } from '@/lib/services/idempotency';
 import { businessNumber } from '@/lib/short-number';
 import { fail, ok, type ActionResult } from '@/server/actions/action-utils';
 import type { DocFormState } from '@/server/actions/trading-actions';
+import { settleUnpaidExpense } from '@/lib/services/unpaid-expenses';
 
 /**
  * Finance actions. As with trading, these validate and delegate — the posting
@@ -272,6 +274,35 @@ export async function savePaymentAction(id: string | null, payload: string): Pro
   }
 }
 
+/** Settle an unpaid cost — cash, bank, cheque or set-off — from the Unpaid Expenses ledger. */
+export async function settleUnpaidExpenseAction(payload: string): Promise<DocFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.PAYMENTS_POST);
+    const input = settleUnpaidExpenseSchema.parse(parseJson(payload));
+    const result = await settleUnpaidExpense(
+      {
+        companyId: user.activeCompany.id,
+        ...input,
+        cheque: input.cheque ?? null,
+        setOffAgainst: input.setOffAgainst ?? null,
+      },
+      user.id,
+    );
+    revalidateAll([
+      ...paths.payments,
+      ...paths.expenses,
+      '/finance/unpaid-expenses',
+      `/finance/expenses/${input.expenseId}`,
+      '/ledgers/agents',
+      '/finance/agent-commission',
+      '/reports/shipment-cost',
+    ]);
+    return { ok: true, id: result.id, message: 'Settlement posted.' };
+  } catch (error) {
+    return toState(error);
+  }
+}
+
 export async function postPaymentAction(id: string): Promise<ActionResult<undefined>> {
   try {
     const user = await requirePermission(PERMISSIONS.PAYMENTS_POST);
@@ -391,6 +422,8 @@ export async function saveSplitExpenseAction(payload: string): Promise<ActionRes
             rateLocalPerUsd: input.rateLocalPerUsd,
             paymentMethod: input.paymentMethod,
             cashBankAccountId: input.cashBankAccountId,
+            ledgerAccountId: input.ledgerAccountId,
+            ledgerAgentId: input.ledgerAgentId,
             kind: input.kind,
             taxCodeId: line.taxCodeId,
             reference: input.reference,

@@ -836,8 +836,8 @@ async function OutstandingSection({ companyId }: { companyId: string }) {
     { key: 'invoices-unpaid', label: 'Customer invoices unpaid', figure: o.invoicesUnpaid, unit: 'invoice', href: '/sales?standing=UNPAID', tone: 'due' },
     { key: 'invoices-partial', label: 'Invoices partly paid', figure: o.invoicesPartial, unit: 'invoice', href: '/sales?standing=PARTIAL', tone: 'due' },
     { key: 'payables', label: 'Owed to suppliers', figure: o.supplierPayables, unit: 'order', href: '/finance/payables', tone: 'owed' },
-    { key: 'shipment-expenses', label: 'Shipment expenses unpaid', figure: o.shipmentExpensesUnpaid, unit: 'cost', href: '/finance/expenses?kind=SHIPMENT&payment=OWED', tone: 'owed' },
-    { key: 'general-expenses', label: 'General expenses unpaid', figure: o.generalExpensesUnpaid, unit: 'cost', href: '/finance/expenses?kind=GENERAL&payment=OWED', tone: 'owed' },
+    // One card for every cost still to pay; the ledger it opens splits them by shipment, party and age.
+    { key: 'unpaid-expenses', label: 'Unpaid expenses', figure: o.unpaidExpenses, unit: 'cost', href: '/finance/unpaid-expenses', tone: 'owed' },
     { key: 'agent-collections', label: 'Held by agents for FID', figure: o.agentCollections, unit: 'agent', href: '/ledgers/agents', tone: 'due' },
     { key: 'agent-commission', label: 'Agent commission unpaid', figure: o.agentCommission, unit: 'agent', href: '/finance/agent-commission', tone: 'owed' },
     { key: 'loans-payable', label: 'Loans FID owes', figure: o.loansPayable, unit: 'lender', href: '/ledgers', tone: 'owed' },

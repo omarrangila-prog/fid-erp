@@ -2,12 +2,13 @@ import { prisma, transaction } from '@/lib/db';
 import { ensureExpenseCategories } from '@/lib/services/chart-of-accounts';
 import { getRateDefaults } from '@/lib/services/exchange-rate';
 import { getTaxSettings, listTaxCodes } from '@/lib/services/tax';
+import { getLedgerSettlementAccounts } from '@/lib/services/ledger-settlement';
 import type { CategoryOption, ShipmentTrace } from '@/app/(app)/finance/expenses/expense-form';
 
 export async function loadExpenseFormOptions(companyId: string) {
   await transaction((tx) => ensureExpenseCategories(tx, companyId));
 
-  const [categories, shipments, agents, vendors, accounts, containers, batches, taxSettings, taxCodeRows, rates] =
+  const [categories, shipments, agents, vendors, accounts, containers, batches, taxSettings, taxCodeRows, rates, ledgerAccounts] =
     await Promise.all([
       prisma.expenseCategory.findMany({
         where: { companyId, status: 'ACTIVE' },
@@ -54,6 +55,7 @@ export async function loadExpenseFormOptions(companyId: string) {
       getTaxSettings(companyId),
       listTaxCodes(companyId, 'PURCHASE'),
       getRateDefaults(companyId),
+      getLedgerSettlementAccounts(companyId),
     ]);
 
   const categoryOptions: CategoryOption[] = categories.map((c) => ({
@@ -115,5 +117,6 @@ export async function loadExpenseFormOptions(companyId: string) {
       ratePct: code.ratePct.toString(),
     })),
     rates,
+    ledgerAccounts,
   };
 }

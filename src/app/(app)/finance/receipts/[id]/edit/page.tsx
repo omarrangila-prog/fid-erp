@@ -8,6 +8,7 @@ import { getReceivables } from '@/lib/services/receivables';
 import { toDateInputValue } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { ReceiptForm, type OpenInvoice, type BankOption } from '@/app/(app)/finance/receipts/receipt-form';
+import { getLedgerSettlementAccounts } from '@/lib/services/ledger-settlement';
 
 export const metadata: Metadata = { title: 'Edit Receipt' };
 export const dynamic = 'force-dynamic';
@@ -36,7 +37,7 @@ export default async function EditReceiptPage({ params }: { params: Promise<{ id
   if (!receipt) notFound();
   if (receipt.status !== 'DRAFT' && receipt.status !== 'POSTED') redirect(`/finance/receipts/${receipt.id}`);
 
-  const [customers, accounts, receivables, agents, rates, settled] = await Promise.all([
+  const [customers, accounts, receivables, agents, rates, settled, ledgerAccounts] = await Promise.all([
     prisma.customer.findMany({
       where: { companyId, status: 'ACTIVE' },
       orderBy: { customerName: 'asc' },
@@ -60,6 +61,7 @@ export default async function EditReceiptPage({ params }: { params: Promise<{ id
       where: { id: { in: receipt.allocations.map((a) => a.salesInvoiceId) } },
       select: { id: true, invoiceNumber: true, invoiceDate: true, currency: true, customerId: true, totalAmount: true },
     }),
+    getLedgerSettlementAccounts(companyId),
   ]);
 
   const invoices: OpenInvoice[] = [
@@ -109,6 +111,7 @@ export default async function EditReceiptPage({ params }: { params: Promise<{ id
         ]}
       />
       <ReceiptForm
+        ledgerAccounts={ledgerAccounts}
         customers={customers.map((c) => ({
           value: c.id,
           label: c.customerName,
@@ -136,6 +139,8 @@ export default async function EditReceiptPage({ params }: { params: Promise<{ id
           rateLocalPerUsd: receipt.rateLocalPerUsd.toString(),
           paymentMethod: receipt.paymentMethod,
           cashBankAccountId: receipt.cashBankAccountId,
+          ledgerAccountId: receipt.ledgerAccountId,
+          ledgerAgentId: receipt.ledgerAgentId,
           agentId: receipt.agentId,
           reference: receipt.reference ?? '',
           description: receipt.description ?? '',

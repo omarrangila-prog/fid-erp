@@ -93,6 +93,9 @@ enum PaymentMethod {
   /// The customer paid the agent, not the company. Nothing reaches cash or
   /// bank until the agent hands the money over.
   AGENT_COLLECTION
+  /// Settled against another ledger account — a person's, a loan, the other
+  /// FID company — instead of cash, bank or a cheque. No money moves.
+  LEDGER_TRANSFER
 }
 
 /// A cash sale is settled as it is raised; a credit sale is not.
@@ -643,6 +646,10 @@ model Agent {
   /// Commission and other costs owed to this agent but not yet paid.
   payableExpenses Expense[]         @relation("ExpensePayableToAgent")
 
+  receiptsLedger    Receipt[]         @relation("ReceiptLedgerAgent")
+  paymentsLedger    Payment[]         @relation("PaymentLedgerAgent")
+  expensesLedger    Expense[]         @relation("ExpenseLedgerAgent")
+
   @@unique([companyId, agentCode])
   @@index([companyId, status])
   @@map("agents")
@@ -672,6 +679,8 @@ model AgentSettlement {
   amountLocal       Decimal                  @db.Decimal(18, 4)
   reference         String?
   notes             String?
+  /// The unpaid cost this settles, when it was settled from the cost itself.
+  expenseId         String?
   status            TransactionStatus        @default(DRAFT)
   postedAt          DateTime?
   createdById       String
@@ -681,11 +690,13 @@ model AgentSettlement {
   company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   agent           Agent            @relation(fields: [agentId], references: [id])
   cashBankAccount CashBankAccount? @relation(fields: [cashBankAccountId], references: [id], onDelete: Restrict)
+  expense         Expense?         @relation(fields: [expenseId], references: [id], onDelete: Restrict)
   createdBy       User             @relation("AgentSettlementCreatedBy", fields: [createdById], references: [id])
 
   @@unique([companyId, settlementNumber])
   @@index([companyId, agentId])
   @@index([companyId, status])
+  @@index([expenseId])
   @@map("agent_settlements")
 }
 
@@ -850,6 +861,9 @@ model Account {
   journalLines      JournalLine[]
   cashBankAccounts  CashBankAccount[]
   expenseCategories ExpenseCategory[]
+  receiptsSettled   Receipt[]         @relation("ReceiptLedgerAccount")
+  paymentsSettled   Payment[]         @relation("PaymentLedgerAccount")
+  expensesSettled   Expense[]         @relation("ExpenseLedgerAccount")
 
   @@unique([companyId, code])
   @@unique([companyId, systemKey])
@@ -1507,6 +1521,10 @@ model Receipt {
   rateLocalPerUsd   Decimal           @db.Decimal(18, 8)
   amountLocal       Decimal           @db.Decimal(18, 4)
   cashBankAccountId String?
+  /// The ledger account on the other side, when settled ledger to ledger.
+  ledgerAccountId   String?
+  /// Or an agent's account: what he holds for the company.
+  ledgerAgentId String?
   paymentMethod     PaymentMethod     @default(BANK_TRANSFER)
   /// Set when the customer paid an agent instead of the company. The money is
   /// the agent's to hand over, so no cash or bank account is named.
@@ -1526,6 +1544,8 @@ model Receipt {
   customer        Customer            @relation(fields: [customerId], references: [id])
   agent           Agent?              @relation(fields: [agentId], references: [id])
   cashBankAccount CashBankAccount?    @relation(fields: [cashBankAccountId], references: [id])
+  ledgerAccount   Account?            @relation("ReceiptLedgerAccount", fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+  ledgerAgent     Agent?              @relation("ReceiptLedgerAgent", fields: [ledgerAgentId], references: [id], onDelete: Restrict)
   cheque          Cheque?
   shipment        Shipment?           @relation(fields: [shipmentId], references: [id])
   createdBy       User                @relation("ReceiptCreatedBy", fields: [createdById], references: [id])
@@ -1535,6 +1555,8 @@ model Receipt {
   @@index([companyId, status])
   @@index([companyId, customerId])
   @@index([companyId, receiptDate])
+  @@index([ledgerAccountId])
+  @@index([ledgerAgentId])
   @@map("receipts")
 }
 
@@ -1566,6 +1588,10 @@ model Payment {
   rateLocalPerUsd   Decimal           @db.Decimal(18, 8)
   amountLocal       Decimal           @db.Decimal(18, 4)
   cashBankAccountId String?
+  /// The ledger account on the other side, when settled ledger to ledger.
+  ledgerAccountId   String?
+  /// Or an agent's account: what he holds for the company.
+  ledgerAgentId String?
   paymentMethod     PaymentMethod     @default(BANK_TRANSFER)
   shipmentId        String?
   reference         String?
@@ -1581,6 +1607,8 @@ model Payment {
   company         Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   vendor          Vendor?             @relation(fields: [vendorId], references: [id])
   cashBankAccount CashBankAccount?    @relation(fields: [cashBankAccountId], references: [id])
+  ledgerAccount   Account?            @relation("PaymentLedgerAccount", fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+  ledgerAgent     Agent?              @relation("PaymentLedgerAgent", fields: [ledgerAgentId], references: [id], onDelete: Restrict)
   cheque          Cheque?
   shipment        Shipment?           @relation(fields: [shipmentId], references: [id])
   createdBy       User                @relation("PaymentCreatedBy", fields: [createdById], references: [id])
@@ -1590,6 +1618,8 @@ model Payment {
   @@index([companyId, status])
   @@index([companyId, vendorId])
   @@index([companyId, paymentDate])
+  @@index([ledgerAccountId])
+  @@index([ledgerAgentId])
   @@map("payments")
 }
 
@@ -1642,6 +1672,10 @@ model Expense {
   rateLocalPerUsd        Decimal              @db.Decimal(18, 8)
   amountLocal            Decimal              @db.Decimal(18, 4)
   cashBankAccountId      String?
+  /// Settled at once against this ledger account instead of cash or bank.
+  ledgerAccountId        String?
+  /// Or an agent's account: what he holds for the company.
+  ledgerAgentId      String?
   paymentMethod          PaymentMethod        @default(BANK_TRANSFER)
   /// When true the amount is added to the shipment's landed cost instead of
   /// being written straight to the profit and loss account.
@@ -1679,6 +1713,8 @@ model Expense {
   agent              Agent?              @relation(fields: [agentId], references: [id])
   payableToAgent     Agent?              @relation("ExpensePayableToAgent", fields: [payableToAgentId], references: [id])
   cashBankAccount    CashBankAccount?    @relation(fields: [cashBankAccountId], references: [id])
+  ledgerAccount      Account?            @relation("ExpenseLedgerAccount", fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+  ledgerAgent        Agent?              @relation("ExpenseLedgerAgent", fields: [ledgerAgentId], references: [id], onDelete: Restrict)
   taxCode            TaxCode?            @relation(fields: [taxCodeId], references: [id])
   createdBy          User                @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
   allocations        PaymentAllocation[]
@@ -1694,6 +1730,10 @@ model Expense {
   @@index([containerId])
   @@index([batchId])
   @@index([companyId, expenseCategoryId])
+  agentSettlements   AgentSettlement[]
+
+  @@index([ledgerAccountId])
+  @@index([ledgerAgentId])
   @@map("expenses")
 }
 

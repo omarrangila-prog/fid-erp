@@ -13,6 +13,8 @@ import { supplierGrossPayable } from '@/lib/services/tax';
  *
  *   paid on the spot       a cash or bank account was named when the cost was
  *                          booked: the money left then. Paid.
+ *   ledger to ledger       settled at once against another account in the
+ *                          books (a person, a loan, the other company). Paid.
  *   owed to an agent       settled by commission paid to that agent.
  *   owed to a supplier,    settled by posted payments allocated to it; a
  *   or to nobody yet       bounced or cancelled cheque settles nothing.
@@ -62,6 +64,10 @@ type SettlementInput = {
   taxAmountUsd: Decimal;
   cashBankAccountId: string | null;
   cashBankAccount?: { name: string } | null;
+  ledgerAccountId?: string | null;
+  ledgerAccount?: { name: string } | null;
+  ledgerAgentId?: string | null;
+  ledgerAgent?: { agentName: string } | null;
   payableToAgentId: string | null;
   vendor?: { country: string | null } | null;
 };
@@ -71,7 +77,9 @@ export async function getExpenseSettlements(
   expenses: SettlementInput[],
 ): Promise<Map<string, ExpenseSettlement>> {
   const posted = expenses.filter((e) => e.status === 'POSTED');
-  const owedIds = posted.filter((e) => !e.cashBankAccountId && !e.payableToAgentId).map((e) => e.id);
+  const owedIds = posted
+    .filter((e) => !e.cashBankAccountId && !e.ledgerAccountId && !e.ledgerAgentId && !e.payableToAgentId)
+    .map((e) => e.id);
 
   const [company, allocations, commission] = await Promise.all([
     prisma.company.findUniqueOrThrow({ where: { id: companyId }, select: { country: true } }),
@@ -79,10 +87,11 @@ export async function getExpenseSettlements(
       ? prisma.$queryRaw<Array<{ expenseId: string; amount: string; accounts: string | null }>>`
           SELECT pa."expenseId",
                  COALESCE(SUM(pa."amount"), 0)::text AS amount,
-                 string_agg(DISTINCT cba."name", ', ') AS accounts
+                 string_agg(DISTINCT COALESCE(cba."name", la."name"), ', ') AS accounts
           FROM payment_allocations pa
           JOIN payments p ON p."id" = pa."paymentId"
           LEFT JOIN cash_bank_accounts cba ON cba."id" = p."cashBankAccountId"
+          LEFT JOIN accounts la ON la."id" = p."ledgerAccountId"
           WHERE p."companyId" = ${companyId} AND p."status" = 'POSTED'
             AND pa."expenseId" = ANY(${owedIds})
             AND NOT EXISTS (
@@ -102,10 +111,12 @@ export async function getExpenseSettlements(
     let paid: Decimal;
     let paidFrom: string | null = null;
 
-    if (e.cashBankAccountId) {
+    if (e.cashBankAccountId || e.ledgerAccountId || e.ledgerAgentId) {
       gross = toMoney(dec(e.amount).plus(dec(e.taxAmount)));
       paid = gross;
-      paidFrom = e.cashBankAccount?.name ?? null;
+      paidFrom = e.cashBankAccountId
+        ? (e.cashBankAccount?.name ?? null)
+        : `Ledger to ledger · ${e.ledgerAgent ? `${e.ledgerAgent.agentName} — agent account` : (e.ledgerAccount?.name ?? 'another account')}`;
     } else if (e.payableToAgentId) {
       // Commission is settled in USD through the agent's account; restate the
       // share settled into the cost's own currency.

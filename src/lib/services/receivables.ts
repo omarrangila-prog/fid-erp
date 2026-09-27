@@ -395,6 +395,8 @@ export async function getPayables(params: {
     WHERE e."companyId" = ${params.companyId}
       AND e."status" = 'POSTED'
       AND e."cashBankAccountId" IS NULL
+      AND e."ledgerAccountId" IS NULL
+      AND e."ledgerAgentId" IS NULL
       AND e."payableToAgentId" IS NULL
       AND e."vendorId" IS NOT NULL
       AND (${params.vendorId ?? null}::text IS NULL OR e."vendorId" = ${params.vendorId ?? null})

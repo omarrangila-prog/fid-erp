@@ -10,6 +10,7 @@ import { resolveSubledgerLeg } from '@/lib/services/subledger';
 import type { PaymentMethod } from '@prisma/client';
 import { writeAudit } from '@/lib/services/audit';
 import { supplierGrossPayable } from '@/lib/services/tax';
+import { resolveLedgerSettlement } from '@/lib/services/ledger-settlement';
 
 /**
  * PaymentService — money out to vendors. The mirror image of ReceiptService:
@@ -39,6 +40,10 @@ export type PaymentInput = {
   rateToUsd: string | number;
   rateLocalPerUsd: string | number;
   cashBankAccountId?: string | null;
+  /** The account on the other side, when the payment is settled ledger to ledger. */
+  ledgerAccountId?: string | null;
+  /** Or an agent's account: set off against what he holds for the company. */
+  ledgerAgentId?: string | null;
   paymentMethod?: PaymentMethod;
   cheque?: {
     chequeNumber: string;
@@ -127,6 +132,8 @@ export async function getExpenseOutstanding(
       currency: true,
       status: true,
       cashBankAccountId: true,
+      ledgerAccountId: true,
+      ledgerAgentId: true,
       payableToAgentId: true,
       vendorId: true,
       vendor: { select: { country: true } },
@@ -147,7 +154,7 @@ export async function getExpenseOutstanding(
   `;
 
   const isUnpaidBill =
-    expense.status === 'POSTED' && !expense.cashBankAccountId && !expense.payableToAgentId;
+    expense.status === 'POSTED' && !expense.cashBankAccountId && !expense.ledgerAccountId && !expense.ledgerAgentId && !expense.payableToAgentId;
   const payable = supplierGrossPayable({
     netAmount: expense.amount,
     taxAmount: expense.taxAmount,
@@ -224,11 +231,13 @@ async function buildAllocations(
               currency: true,
               rateToUsd: true,
               cashBankAccountId: true,
+              ledgerAccountId: true,
+              ledgerAgentId: true,
               payableToAgentId: true,
             },
           });
           if (!expense) throw new NotFoundError('Cost in allocation');
-          if (expense.cashBankAccountId || expense.payableToAgentId) {
+          if (expense.cashBankAccountId || expense.ledgerAccountId || expense.ledgerAgentId || expense.payableToAgentId) {
             throw new BusinessRuleError(
               `Cost ${expense.expenseNumber} is not unpaid, so a supplier payment cannot settle it.`,
             );
@@ -355,6 +364,11 @@ async function validateSettlement(tx: Tx, input: PaymentInput) {
     if (!input.cheque?.bankName?.trim()) {
       throw new BusinessRuleError('The drawee bank is required for a cheque payment.');
     }
+    return method;
+  }
+  // Settled against another account in the books: no drawer moves.
+  if (method === 'LEDGER_TRANSFER') {
+    await resolveLedgerSettlement(tx, input.companyId, input, input.currency);
     return method;
   }
   if (!input.cashBankAccountId) {
@@ -564,7 +578,9 @@ export async function createPayment(input: PaymentInput, userId: string) {
         amountUsd: amounts.amountUsd,
         rateLocalPerUsd: amounts.rateLocalPerUsd,
         amountLocal: amounts.amountLocal,
-        cashBankAccountId: input.cashBankAccountId ?? null,
+        cashBankAccountId: method === 'LEDGER_TRANSFER' ? null : (input.cashBankAccountId ?? null),
+        ledgerAccountId: method === 'LEDGER_TRANSFER' && !input.ledgerAgentId ? (input.ledgerAccountId ?? null) : null,
+        ledgerAgentId: method === 'LEDGER_TRANSFER' ? (input.ledgerAgentId ?? null) : null,
         paymentMethod: method,
         shipmentId: input.shipmentId ?? null,
         reference: input.reference ?? null,
@@ -665,7 +681,9 @@ export async function updatePayment(id: string, input: PaymentInput, userId: str
         amountUsd: amounts.amountUsd,
         rateLocalPerUsd: amounts.rateLocalPerUsd,
         amountLocal: amounts.amountLocal,
-        cashBankAccountId: input.cashBankAccountId ?? null,
+        cashBankAccountId: method === 'LEDGER_TRANSFER' ? null : (input.cashBankAccountId ?? null),
+        ledgerAccountId: method === 'LEDGER_TRANSFER' && !input.ledgerAgentId ? (input.ledgerAccountId ?? null) : null,
+        ledgerAgentId: method === 'LEDGER_TRANSFER' ? (input.ledgerAgentId ?? null) : null,
         paymentMethod: method,
         shipmentId: input.shipmentId ?? null,
         reference: input.reference ?? null,
@@ -730,11 +748,14 @@ export async function postPaymentIn(tx: Tx, params: { id: string; companyId: str
     include: {
       vendor: true,
       cashBankAccount: true,
+      ledgerAccount: { select: { name: true, agentId: true } },
       allocations: { include: { purchaseContract: true, expense: true } },
     },
   });
 
-  if (payment.paymentMethod !== 'CHEQUE' && !payment.cashBankAccountId) {
+  if (payment.paymentMethod === 'LEDGER_TRANSFER') {
+    // Checked when the credit line is built, against what the agent holds.
+  } else if (payment.paymentMethod !== 'CHEQUE' && !payment.cashBankAccountId) {
     throw new BusinessRuleError('This payment has no cash or bank account and cannot be posted.');
   }
   const company = await getCompanyContext(tx, params.companyId);
@@ -872,6 +893,16 @@ export async function postPaymentIn(tx: Tx, params: { id: string; companyId: str
 
   const debitLines = [...settlementLines, ...advanceLines];
 
+  // Crediting the other side: an agent's account may not give up more than he holds.
+  const ledgerSide =
+    payment.paymentMethod === 'LEDGER_TRANSFER'
+      ? await resolveLedgerSettlement(tx, params.companyId, payment, payment.currency, {
+          amount: payment.amount,
+          rateToUsd: payment.rateToUsd,
+          localCurrency: company.localCurrency,
+        })
+      : null;
+
   await postJournalEntry(tx, {
     companyId: params.companyId,
     entryDate: payment.paymentDate,
@@ -885,7 +916,20 @@ export async function postPaymentIn(tx: Tx, params: { id: string; companyId: str
       // Anything not put against a contract is an advance the supplier owes
       // back in goods, so it is an asset rather than a reduction of payables.
       ...debitLines,
-      payment.paymentMethod === 'CHEQUE'
+      payment.paymentMethod === 'LEDGER_TRANSFER'
+        ? {
+            // Settled against another account: that account is credited, and
+            // no cash or bank account moves.
+            ...ledgerSide!.line,
+            direction: 'CREDIT' as const,
+            currency: payment.currency,
+            amount: payment.amount,
+            rateToUsd: payment.rateToUsd,
+            description: `Settled ledger to ledger through ${ledgerSide!.name}`,
+            vendorId: payment.vendorId,
+            shipmentId: payment.shipmentId,
+          }
+        : payment.paymentMethod === 'CHEQUE'
         ? {
             accountKey: ACCOUNT_KEYS.CHEQUES_ISSUED,
             direction: 'CREDIT' as const,

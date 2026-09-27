@@ -671,6 +671,7 @@ export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   BANK_TRANSFER: 'Bank Transfer',
   CHEQUE: 'Cheque',
   AGENT_COLLECTION: 'Agent cheque / Agent collection',
+  LEDGER_TRANSFER: 'Ledger to ledger',
 };
 
 export const PAYMENT_TYPE_LABELS: Record<string, string> = {
