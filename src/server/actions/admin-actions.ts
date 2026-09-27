@@ -11,6 +11,7 @@ import { destroyAllSessionsForUser } from '@/lib/auth/session';
 import { writeAudit } from '@/lib/services/audit';
 import { provisionCompany } from '@/lib/services/chart-of-accounts';
 import { setSetting } from '@/lib/services/settings';
+import { getRoleMenu, setRoleMenu } from '@/lib/services/role-menu';
 import { setClosedUntil } from '@/lib/services/period';
 import { formDataToObject, fieldErrors, requiredText, optionalText } from '@/lib/validation/common';
 import { fail, type ActionResult } from '@/server/actions/action-utils';
@@ -240,6 +241,71 @@ export async function saveRoleAction(
     return { ok: true, id: role.id, message: 'Role saved.' };
   } catch (error) {
     return invalid(error);
+  }
+}
+
+/**
+ * The permission grid's save: the codes ticked for one role, replacing what it
+ * had. Checked on the server like every permission — the grid only decides
+ * what the role may do; each page and action still asks.
+ */
+export async function saveRolePermissionsAction(roleId: string, codes: string[]): Promise<ActionResult<undefined>> {
+  try {
+    const admin = await requirePermission(PERMISSIONS.ROLES_MANAGE);
+    const role = await prisma.role.findUnique({ where: { id: roleId }, select: { id: true, code: true } });
+    if (!role) throw new NotFoundError('Role');
+    const wanted = [...new Set(codes)].filter((code) => ALL_PERMISSIONS.includes(code as never));
+    // Nobody takes away their own way back into this screen.
+    if (!admin.isSuperAdmin && !wanted.includes(PERMISSIONS.ROLES_MANAGE) && admin.roleIds.includes(roleId)) {
+      throw new BusinessRuleError('This is your own role: removing "Manage roles" would lock you out of this screen.');
+    }
+    const permissions = await prisma.permission.findMany({ where: { code: { in: wanted } }, select: { id: true, code: true } });
+    const before = await prisma.rolePermission.findMany({ where: { roleId }, select: { permission: { select: { code: true } } } });
+    await transaction(async (tx) => {
+      await tx.rolePermission.deleteMany({ where: { roleId } });
+      await tx.rolePermission.createMany({
+        data: permissions.map((p) => ({ roleId, permissionId: p.id })),
+        skipDuplicates: true,
+      });
+      await writeAudit(tx, {
+        companyId: admin.activeCompany.id,
+        userId: admin.id,
+        action: 'ROLE_PERMISSIONS_UPDATED',
+        entityType: 'Role',
+        entityId: roleId,
+        before: { permissions: before.map((b) => b.permission.code).sort() },
+        after: { permissions: permissions.map((p) => p.code).sort() },
+      });
+    });
+    revalidatePath('/admin/roles');
+    revalidatePath(`/admin/roles/${roleId}`);
+    return { ok: true, data: undefined };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+/** The pages a role sees first in its menu, in the order the owner chose. */
+export async function saveRoleMenuAction(roleId: string, hrefs: string[]): Promise<ActionResult<undefined>> {
+  try {
+    const admin = await requirePermission(PERMISSIONS.ROLES_MANAGE);
+    const role = await prisma.role.findUnique({ where: { id: roleId }, select: { id: true } });
+    if (!role) throw new NotFoundError('Role');
+    const before = await getRoleMenu(roleId);
+    const after = await setRoleMenu(roleId, hrefs);
+    await writeAudit(prisma, {
+      companyId: admin.activeCompany.id,
+      userId: admin.id,
+      action: 'ROLE_MENU_UPDATED',
+      entityType: 'Role',
+      entityId: roleId,
+      before: { pages: before },
+      after: { pages: after },
+    });
+    revalidatePath('/', 'layout');
+    return { ok: true, data: undefined };
+  } catch (error) {
+    return fail(error);
   }
 }
 

@@ -35,6 +35,8 @@ export type SessionUser = {
   isSuperAdmin: boolean;
   permissions: Set<PermissionCode>;
   roleNames: string[];
+  /** In the order they were given, for the role's own menu. */
+  roleIds: string[];
   companies: SessionCompany[];
   activeCompany: SessionCompany;
 };
@@ -155,6 +157,7 @@ async function loadCurrentUser(): Promise<SessionUser | null> {
     isSuperAdmin: user.isSuperAdmin,
     permissions,
     roleNames: user.roles.map((r) => r.role.name),
+    roleIds: user.roles.map((r) => r.role.id),
     companies,
     activeCompany,
   };

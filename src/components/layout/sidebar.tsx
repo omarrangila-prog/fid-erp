@@ -6,7 +6,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import * as Popover from '@radix-ui/react-popover';
 import { ChevronRight, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { NAV_GROUPS, filterNav, type NavGroup } from '@/components/layout/nav-config';
+import { NAV_GROUPS, filterNav, withMyPages, type NavGroup } from '@/components/layout/nav-config';
 
 /**
  * The navigation is filtered on the client from permission codes rather than
@@ -217,7 +217,7 @@ function ExpandedNav({
         // Searching opens everything that matches; otherwise the user's own
         // choice wins, and a section never touched is open only when it
         // holds the page you are on.
-        const isOpen = Boolean(needle) || (groupState[group.label] ?? holdsActive);
+        const isOpen = Boolean(needle) || (groupState[group.label] ?? (holdsActive || Boolean(group.openByDefault)));
         const bodyId = `nav-group-${group.label.replace(/\s+/g, '-').toLowerCase()}`;
         return (
           <div key={group.label} className="pb-1">
@@ -329,17 +329,20 @@ function CollapsedRail({ groups, activeHref }: { groups: NavGroup[]; activeHref:
 export function SidebarNav({
   permissions,
   isSuperAdmin,
+  myPages = [],
   collapsed = false,
   onNavigate,
 }: {
   permissions: string[];
   isSuperAdmin: boolean;
+  /** The role's own pages, in the owner's order, shown first. */
+  myPages?: string[];
   collapsed?: boolean;
   onNavigate?: () => void;
 }) {
   const groups = React.useMemo(
-    () => filterNav(NAV_GROUPS, permissions, isSuperAdmin),
-    [permissions, isSuperAdmin],
+    () => withMyPages(filterNav(NAV_GROUPS, permissions, isSuperAdmin), myPages),
+    [permissions, isSuperAdmin, myPages],
   );
   const activeHref = useActiveHref(groups);
 
@@ -353,10 +356,12 @@ export function SidebarNav({
 export function DesktopSidebar({
   permissions,
   isSuperAdmin,
+  myPages,
   defaultCollapsed = false,
 }: {
   permissions: string[];
   isSuperAdmin: boolean;
+  myPages?: string[];
   defaultCollapsed?: boolean;
 }) {
   const [collapsed, setCollapsed] = React.useState(defaultCollapsed);
@@ -397,7 +402,7 @@ export function DesktopSidebar({
       {/* overflow-x-visible would be ignored next to overflow-y-auto, which is
           exactly why the collapsed flyouts are portalled rather than nested. */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <SidebarNav permissions={permissions} isSuperAdmin={isSuperAdmin} collapsed={collapsed} />
+        <SidebarNav permissions={permissions} isSuperAdmin={isSuperAdmin} myPages={myPages} collapsed={collapsed} />
       </div>
 
       <div className="shrink-0 border-t border-forest-800 p-2">

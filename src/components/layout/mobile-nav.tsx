@@ -14,7 +14,15 @@ import { SidebarNav } from '@/components/layout/sidebar';
  * destinations field staff actually use live in a thumb-reachable bottom bar,
  * and everything else sits behind "More".
  */
-export function MobileNav({ permissions, isSuperAdmin }: { permissions: string[]; isSuperAdmin: boolean }) {
+export function MobileNav({
+  permissions,
+  isSuperAdmin,
+  myPages,
+}: {
+  permissions: string[];
+  isSuperAdmin: boolean;
+  myPages?: string[];
+}) {
   const pathname = usePathname();
   const [open, setOpen] = React.useState(false);
 
@@ -83,6 +91,7 @@ export function MobileNav({ permissions, isSuperAdmin }: { permissions: string[]
               <SidebarNav
                 permissions={permissions}
                 isSuperAdmin={isSuperAdmin}
+                myPages={myPages}
                 onNavigate={() => setOpen(false)}
               />
             </div>

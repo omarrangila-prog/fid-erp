@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getCurrentUser } from '@/lib/auth/session';
 import { countUnread } from '@/lib/services/notification';
+import { getMenuForRoles } from '@/lib/services/role-menu';
 import { DesktopSidebar } from '@/components/layout/sidebar';
 import { MobileNav } from '@/components/layout/mobile-nav';
 import { Topbar } from '@/components/layout/topbar';
@@ -19,7 +20,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await getCurrentUser();
   if (!user) redirect('/login');
 
-  const unreadCount = await countUnread(user.activeCompany.id);
+  const [unreadCount, myPages] = await Promise.all([countUnread(user.activeCompany.id), getMenuForRoles(user.roleIds)]);
 
   // Read the rail's width server-side so the first paint is already correct.
   const sidebarCollapsed = (await cookies()).get('fid_sidebar')?.value === 'collapsed';
@@ -60,6 +61,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <DesktopSidebar
         permissions={permissions}
         isSuperAdmin={user.isSuperAdmin}
+        myPages={myPages}
         defaultCollapsed={sidebarCollapsed}
       />
 
@@ -93,7 +95,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </main>
       </div>
 
-      <MobileNav permissions={permissions} isSuperAdmin={user.isSuperAdmin} />
+      <MobileNav permissions={permissions} isSuperAdmin={user.isSuperAdmin} myPages={myPages} />
     </div>
   );
 }

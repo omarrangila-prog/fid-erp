@@ -40,6 +40,7 @@ import {
   Warehouse,
   type LucideIcon,
   Scale,
+  Star,
 } from 'lucide-react';
 import { PERMISSIONS, type PermissionCode } from '@/lib/constants';
 
@@ -56,6 +57,8 @@ export type NavGroup = {
   /** Shown on the collapsed rail, where there is no room for the words. */
   icon: LucideIcon;
   items: NavItem[];
+  /** Open until the user closes it, rather than only when it holds the page. */
+  openByDefault?: boolean;
 };
 
 /**
@@ -255,6 +258,29 @@ export const MOBILE_PRIMARY: NavItem[] = [
   { label: 'Stock', href: '/inventory', icon: Boxes, permissions: [PERMISSIONS.INVENTORY_VIEW] },
   { label: 'Payments Received', href: '/finance/receipts', icon: ArrowDownToLine, permissions: [PERMISSIONS.RECEIPTS_VIEW] },
 ];
+
+export const MY_PAGES_LABEL = 'My pages';
+
+/** Every page the menu offers, once each, for choosing a role's own menu. */
+export function allNavItems(): Array<{ href: string; label: string; group: string }> {
+  const seen = new Set<string>();
+  return NAV_GROUPS.flatMap((group) => group.items.map((item) => ({ href: item.href, label: item.label, group: group.label }))).filter(
+    (item) => !seen.has(item.href) && Boolean(seen.add(item.href)),
+  );
+}
+
+/**
+ * The pages the owner chose for the user's role, first and in that order.
+ * Built from the menu already filtered by permission, so a page the role may
+ * not open never appears here either.
+ */
+export function withMyPages(groups: NavGroup[], hrefs: string[]): NavGroup[] {
+  if (hrefs.length === 0) return groups;
+  const byHref = new Map(groups.flatMap((group) => group.items.map((item) => [item.href, item] as const)));
+  const items = hrefs.map((href) => byHref.get(href)).filter((item): item is NavItem => Boolean(item));
+  if (items.length === 0) return groups;
+  return [{ label: MY_PAGES_LABEL, icon: Star, items, openByDefault: true }, ...groups];
+}
 
 export function filterNav(groups: NavGroup[], permissions: string[], isSuperAdmin: boolean): NavGroup[] {
   const granted = new Set(permissions);

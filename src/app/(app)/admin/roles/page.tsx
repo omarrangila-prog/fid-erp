@@ -70,6 +70,7 @@ export default async function RolesPage() {
       users: r._count.users,
       kind: r.isSystem ? 'System' : 'Custom',
     },
+    actions: [{ label: 'Permissions grid', href: `/admin/roles/${r.id}`, icon: 'view' as const }],
     formValues: {
       code: r.code,
       name: r.name,
