@@ -10,7 +10,7 @@ import { test, expect, type Page } from '@playwright/test';
 const ADMIN_PIN = process.env.ADMIN_PIN;
 const ADMIN_NAME = process.env.INITIAL_ADMIN_NAME ?? 'Ali Raza';
 const MOROCCO = /FID Trading International SARL/i;
-const SECTIONS = ['Shipment costing', 'Shipment profitability', 'Batches and containers', 'Logistics', 'Sales against this shipment', 'Shipment costs', 'History'];
+const SECTIONS = ['Shipment costing', 'Shipment profitability', 'Batches and containers', 'Logistics', 'Sales invoices from this shipment', 'Shipment costs', 'History'];
 
 test.skip(!ADMIN_PIN, 'Set ADMIN_PIN to run.');
 

@@ -17,6 +17,8 @@ import { dec } from '@/lib/money';
 import { getShipmentSettlement } from '@/lib/services/shipment';
 import { getShipmentProfitability } from '@/lib/services/profitability';
 import { DualAmount } from '@/components/shared/dual-amount';
+import { getReceivables } from '@/lib/services/receivables';
+import { shortDocumentNumber } from '@/lib/short-number';
 import { getJobCostSummary, getShipmentCostSheet } from '@/lib/services/landed-cost';
 import { getBatchStock } from '@/lib/services/stock';
 import { formatMoney, formatQuantityKg, formatQuantityMt, formatDate, formatDateTime, formatPercent, formatRate, toDateInputValue } from '@/lib/format';
@@ -100,21 +102,43 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
    * one of its batches, and how much of the invoice that was. By the lines,
    * not the invoice header, which may name another container or none — the
    * reason a sold-out SCREEN 18 container once showed almost no sales.
+   *
+   * An edited invoice keeps its id and has its lines replaced, so what is read
+   * here is always the invoice as it stands now. Drafts are listed too, marked,
+   * and left out of every total until they are posted.
    */
   const soldFromHere = await prisma.$queryRaw<
-    Array<{ id: string; invoiceDate: Date; currency: string; rate: string; customerName: string; kg: string; amount: string; usd: string }>
+    Array<{
+      id: string;
+      invoiceNumber: string;
+      invoiceDate: Date;
+      status: string;
+      currency: string;
+      rate: string;
+      customerName: string;
+      containers: string | null;
+      kg: string;
+      amount: string;
+      usd: string;
+      invoiceSubtotal: string;
+    }>
   >`
-    SELECT si."id", si."invoiceDate", si."currency", si."rateLocalPerUsd"::text AS rate, c."customerName",
+    SELECT si."id", si."invoiceNumber", si."invoiceDate", si."status"::text AS status, si."currency",
+           si."rateLocalPerUsd"::text AS rate, c."customerName", si."subtotal"::text AS "invoiceSubtotal",
+           string_agg(DISTINCT ct."containerNumber", ', ') AS containers,
            SUM(sil."quantityKg")::text AS kg, SUM(sil."lineTotal")::text AS amount, SUM(sil."lineTotalUsd")::text AS usd
     FROM sales_invoice_lines sil
     JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
     JOIN batches b ON b."id" = sil."batchId"
+    LEFT JOIN containers ct ON ct."id" = b."containerId"
     JOIN customers c ON c."id" = si."customerId"
-    WHERE b."shipmentId" = ANY(${ids}) AND si."status" = 'POSTED'
-    GROUP BY si."id", si."invoiceDate", si."currency", si."rateLocalPerUsd", c."customerName"
-    ORDER BY si."invoiceDate" DESC`;
+    WHERE si."companyId" = ${companyId} AND b."shipmentId" = ANY(${ids}) AND si."status" IN ('POSTED', 'DRAFT')
+    GROUP BY si."id", si."invoiceNumber", si."invoiceDate", si."status", si."currency", si."rateLocalPerUsd",
+             c."customerName", si."subtotal"
+    ORDER BY si."invoiceDate" DESC, si."invoiceNumber" DESC`;
+  const invoiceIds = soldFromHere.map((inv) => inv.id);
 
-  const [settlements, pnlRows, jobCost, costSheet, batches, orderExpenses, shippingLines, customers, ports] = await Promise.all([
+  const [settlements, pnlRows, jobCost, costSheet, batches, orderExpenses, shippingLines, customers, ports, invoiceEdits, receivables] = await Promise.all([
     Promise.all(ids.map((recordId) => getShipmentSettlement(prisma as never, companyId, recordId))),
     showProfit ? getShipmentProfitability({ companyId }) : Promise.resolve([]),
     showCost ? transaction((tx) => getJobCostSummary(tx, companyId, ids)) : Promise.resolve(null),
@@ -140,7 +164,30 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
       orderBy: [{ country: 'asc' }, { name: 'asc' }],
       select: { id: true, code: true, name: true, country: true },
     }),
+    // How often each invoice was corrected, when last and by whom.
+    invoiceIds.length
+      ? prisma.$queryRaw<Array<{ entityId: string; edits: number; lastEdited: Date; lastBy: string | null }>>`
+          SELECT a."entityId", COUNT(*)::int AS edits, MAX(a."createdAt") AS "lastEdited",
+                 (array_agg(u."name" ORDER BY a."createdAt" DESC))[1] AS "lastBy"
+          FROM audit_logs a
+          LEFT JOIN users u ON u."id" = a."userId"
+          WHERE a."companyId" = ${companyId} AND a."entityType" = 'SalesInvoice'
+            AND a."action" = 'SALES_INVOICE_UPDATED' AND a."entityId" = ANY(${invoiceIds})
+          GROUP BY a."entityId"`
+      : Promise.resolve([]),
+    // Paid, partly paid or unpaid: the same answer the invoice list gives.
+    invoiceIds.length ? getReceivables({ companyId }) : Promise.resolve([]),
   ]);
+  const editsByInvoice = new Map(invoiceEdits.map((e) => [e.entityId, e]));
+  const receivableByInvoice = new Map(receivables.map((r) => [r.invoiceId, r]));
+  // The posted sales, in the company's currency at each invoice's own rate.
+  const postedSales = soldFromHere.filter((inv) => inv.status === 'POSTED');
+  const salesKg = postedSales.reduce((t, inv) => t.plus(dec(inv.kg)), dec(0));
+  const salesUsd = postedSales.reduce((t, inv) => t.plus(dec(inv.usd)), dec(0));
+  const salesLocal = postedSales.reduce(
+    (t, inv) => t.plus(inv.currency === local ? dec(inv.amount) : dec(inv.usd).times(dec(inv.rate))),
+    dec(0),
+  );
 
   const costing = await getBatchCostings({ companyId, purchaseContractId: shipment.purchaseContract.id });
   const localPerKg = new Map(costing.map((c) => [c.batchId, c.landedPerKgLocal]));
@@ -635,42 +682,127 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
         </Card>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Sales against this shipment</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {soldFromHere.length === 0 ? (
-              <p className="py-4 text-center text-xs text-ink-subtle">Nothing sold from this shipment yet.</p>
-            ) : (
-              soldFromHere.map((inv) => (
-                <Link
-                  key={inv.id}
-                  href={`/sales/${inv.id}`}
-                  className="flex items-center justify-between gap-3 border-b border-line pb-3 last:border-0 last:pb-0"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium text-forest-800">{inv.customerName}</span>
-                    <span className="block truncate text-xs text-ink-subtle">
-                      {formatDate(inv.invoiceDate)} · {formatQuantityKg(dec(inv.kg))} from this shipment
-                    </span>
-                  </span>
-                  <DualAmount
-                    className="shrink-0 text-right text-sm"
-                    amount={dec(inv.amount)}
-                    currency={inv.currency}
-                    localCurrency={local}
-                    rateLocalPerUsd={dec(inv.rate)}
-                    amountUsd={inv.currency === local ? dec(inv.usd) : null}
-                    rateSource={`This invoice's own rate, ${formatDate(inv.invoiceDate)}`}
-                  />
-                </Link>
-              ))
-            )}
-          </CardContent>
-        </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Sales invoices from this shipment</CardTitle>
+          <CardDescription>
+            Every invoice with coffee from this shipment, as it stands now — a corrected invoice shows its corrected
+            lines. An invoice that also sold other coffee shows only this shipment&rsquo;s part. Drafts are listed but not
+            counted until they are posted.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-0 pb-0">
+          {soldFromHere.length === 0 ? (
+            <p className="px-5 pb-5 text-center text-xs text-ink-subtle">Nothing sold from this shipment yet.</p>
+          ) : (
+            <TableWrap className="rounded-none border-0 border-t">
+              <Table data-testid="shipment-sales-invoices">
+                <THead>
+                  <TR className="hover:bg-transparent">
+                    <TH>Invoice</TH>
+                    <TH>Date</TH>
+                    <TH>Customer</TH>
+                    <TH>Container</TH>
+                    <TH numeric>KG</TH>
+                    <TH numeric>Amount</TH>
+                    <TH>Payment</TH>
+                    <TH>Updated</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {soldFromHere.map((inv) => {
+                    const edit = editsByInvoice.get(inv.id);
+                    const due = receivableByInvoice.get(inv.id);
+                    const partOfInvoice = !dec(inv.amount).equals(dec(inv.invoiceSubtotal));
+                    return (
+                      <TR key={inv.id} data-testid="shipment-sales-invoice">
+                        <TD className="whitespace-nowrap">
+                          <Link href={`/sales/${inv.id}`} className="font-medium text-forest-800 hover:text-gold-700">
+                            {shortDocumentNumber(inv.invoiceNumber)}
+                          </Link>
+                        </TD>
+                        <TD className="whitespace-nowrap text-xs">{formatDate(inv.invoiceDate)}</TD>
+                        <TD className="text-sm">{inv.customerName}</TD>
+                        <TD className="font-mono text-xs">{inv.containers ?? '—'}</TD>
+                        <TD numeric>{formatQuantityKg(dec(inv.kg))}</TD>
+                        <TD numeric>
+                          <DualAmount
+                            amount={dec(inv.amount)}
+                            currency={inv.currency}
+                            localCurrency={local}
+                            rateLocalPerUsd={dec(inv.rate)}
+                            amountUsd={inv.currency === local ? dec(inv.usd) : null}
+                            rateSource={`This invoice's own rate, ${formatDate(inv.invoiceDate)}`}
+                            primaryClassName="font-normal"
+                          />
+                          {partOfInvoice ? (
+                            <span className="block text-[11px] text-ink-subtle">
+                              of {formatMoney(inv.invoiceSubtotal, inv.currency)} on the invoice
+                            </span>
+                          ) : null}
+                        </TD>
+                        <TD>
+                          {inv.status === 'DRAFT' ? (
+                            <Badge tone="neutral">Draft — not posted</Badge>
+                          ) : due ? (
+                            <>
+                              <Badge tone={due.status === 'PAID' ? 'success' : due.status === 'PARTIAL' ? 'warning' : 'danger'}>
+                                {due.status === 'PAID' ? 'Paid' : due.status === 'PARTIAL' ? 'Partly paid' : 'Unpaid'}
+                              </Badge>
+                              {due.status === 'PAID' ? null : (
+                                <span className="block text-[11px] text-ink-subtle">
+                                  {formatMoney(due.outstandingAmount, due.currency)} to collect
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            '—'
+                          )}
+                        </TD>
+                        <TD className="text-xs">
+                          {edit ? (
+                            <>
+                              <Badge tone="info">
+                                Edited{edit.edits > 1 ? ` ${edit.edits}×` : ''}
+                              </Badge>
+                              <span className="block text-[11px] text-ink-subtle">
+                                {formatDateTime(edit.lastEdited)}
+                                {edit.lastBy ? ` · ${edit.lastBy}` : ''}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-ink-subtle">—</span>
+                          )}
+                        </TD>
+                      </TR>
+                    );
+                  })}
+                </TBody>
+                <TFoot>
+                  <tr>
+                    <TD colSpan={4}>
+                      {postedSales.length} posted {postedSales.length === 1 ? 'invoice' : 'invoices'}
+                    </TD>
+                    <TD numeric>{formatQuantityKg(salesKg)}</TD>
+                    <TD numeric>
+                      <DualAmount
+                        amount={salesLocal}
+                        currency={local}
+                        localCurrency={local}
+                        amountUsd={salesUsd}
+                        rateSource="Each invoice at its own rate"
+                      />
+                    </TD>
+                    <TD colSpan={2} />
+                  </tr>
+                </TFoot>
+              </Table>
+            </TableWrap>
+          )}
+        </CardContent>
+      </Card>
 
+      <div>
         <Card>
           <CardHeader>
             <CardTitle>Shipment costs</CardTitle>
