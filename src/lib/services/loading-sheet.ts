@@ -37,6 +37,8 @@ export type Allocation = {
   quantityKg: Decimal;
   amount: Decimal;
   currency: string;
+  /** The invoice's own rate, local units per 1 USD, for its equivalent. */
+  rateLocalPerUsd: Decimal;
   outstanding: Decimal;
   settlement: 'PAID' | 'PARTIAL' | 'UNPAID' | 'OVERDUE';
   warehouseNames: string;
@@ -205,6 +207,7 @@ export async function getLoadingSheet(companyId: string): Promise<LoadingSheetRo
                   invoiceDate: true,
                   dueDate: true,
                   currency: true,
+                  rateLocalPerUsd: true,
                   totalAmount: true,
                   customerId: true,
                   customer: { select: { customerName: true } },
@@ -270,6 +273,7 @@ export async function getLoadingSheet(companyId: string): Promise<LoadingSheetRo
             quantityKg: toQuantity(line.quantityKg),
             amount: toMoney(total),
             currency: invoice.currency,
+            rateLocalPerUsd: invoice.rateLocalPerUsd,
             outstanding: toMoney(total.minus(received).minus(credited)),
             settlement: settlementOf(total, received, credited, invoice.dueDate, today),
             warehouseNames: line.warehouse?.name ?? '',

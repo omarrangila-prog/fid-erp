@@ -1,5 +1,6 @@
 'use client';
 
+import { DualText } from '@/components/shared/dual-text';
 import { formatBags } from '@/lib/bags';
 import * as React from 'react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
@@ -31,6 +32,8 @@ export type BatchRow = {
   availableSort: number;
   bags: number;
   landedCostLabel: string;
+  landedCostEquivalent: { text: string; title: string } | null;
+  valueEquivalent: { text: string; title: string } | null;
   landedCostSort: number;
   valueLabel: string;
   valueSort: number;
@@ -120,7 +123,7 @@ export function BatchesClient({
             hideable: true,
             exportValue: (r: BatchRow) => r.landedCostSort,
             exportType: 'number',
-            cell: (r: BatchRow) => r.landedCostLabel,
+            cell: (r: BatchRow) => <DualText primary={r.landedCostLabel} equivalent={r.landedCostEquivalent} />,
           } satisfies DataColumn<BatchRow>,
           {
             id: 'value',
@@ -130,7 +133,7 @@ export function BatchesClient({
             sortValue: (r: BatchRow) => r.valueSort,
             exportValue: (r: BatchRow) => r.valueSort,
             exportType: 'money',
-            cell: (r: BatchRow) => r.valueLabel,
+            cell: (r: BatchRow) => <DualText primary={r.valueLabel} equivalent={r.valueEquivalent} />,
           } satisfies DataColumn<BatchRow>,
         ]
       : []),

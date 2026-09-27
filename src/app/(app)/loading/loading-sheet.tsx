@@ -1,5 +1,6 @@
 'use client';
 
+import { DualText } from '@/components/shared/dual-text';
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -35,6 +36,8 @@ export type AllocationRow = {
   quantity: string;
   amount: string;
   outstanding: string;
+  amountEquivalent: { text: string; title: string } | null;
+  outstandingEquivalent: { text: string; title: string } | null;
   settlement: string;
   warehouseNames: string;
 };
@@ -813,8 +816,12 @@ export function LoadingSheet({
                         </TD>
                         <TD>{allocation.warehouseNames || '—'}</TD>
                         <TD numeric>{allocation.quantity}</TD>
-                        <TD numeric>{allocation.amount}</TD>
-                        <TD numeric>{allocation.outstanding}</TD>
+                        <TD numeric>
+                          <DualText primary={allocation.amount} equivalent={allocation.amountEquivalent} />
+                        </TD>
+                        <TD numeric>
+                          <DualText primary={allocation.outstanding} equivalent={allocation.outstandingEquivalent} />
+                        </TD>
                         <TD>
                           <Badge tone={meta.tone}>{meta.label}</Badge>
                         </TD>

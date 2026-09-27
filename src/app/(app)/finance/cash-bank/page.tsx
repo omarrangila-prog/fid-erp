@@ -6,6 +6,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getFinancialPosition } from '@/lib/services/reports';
 import { formatMoney } from '@/lib/format';
+import { DualAmount } from '@/components/shared/dual-amount';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { CashAccountRowActions } from '@/app/(app)/finance/cash-bank/cash-account-row-actions';
@@ -83,7 +84,6 @@ export default async function CashBankPage() {
                   <TH>Type</TH>
                   <TH>Currency</TH>
                   <TH numeric>Balance</TH>
-                  <TH numeric>USD equivalent</TH>
                   <TH className="text-right">Actions</TH>
                 </TR>
               </THead>
@@ -110,11 +110,16 @@ export default async function CashBankPage() {
                         </Badge>
                       </TD>
                       <TD>{account.currency}</TD>
-                      <TD numeric className="font-semibold">
-                        {formatMoney(account.balance, account.currency)}
-                      </TD>
-                      <TD numeric className="text-ink-muted">
-                        {account.currency === 'USD' ? '—' : formatMoney(account.balanceUsd, 'USD')}
+                      <TD numeric>
+                        {/* The account's own currency, and the other at each movement's own rate. */}
+                        <DualAmount
+                          amount={account.balance}
+                          currency={account.currency}
+                          localCurrency={user.activeCompany.localCurrency}
+                          amountUsd={account.balanceUsd}
+                          amountLocal={account.balanceLocal}
+                          rateSource="Each movement at its own rate"
+                        />
                       </TD>
                       <TD className="text-right">
                         <CashAccountRowActions

@@ -430,6 +430,8 @@ export type CashPosition = {
   currency: string;
   balance: Decimal;
   balanceUsd: Decimal;
+  /** In the company's currency, each movement at its own rate — for a USD account's equivalent. */
+  balanceLocal: Decimal;
 };
 
 export async function getFinancialPosition(params: { companyId: string; asOf?: Date }) {
@@ -448,6 +450,7 @@ export async function getFinancialPosition(params: { companyId: string; asOf?: D
       opening: string;
       movement: string;
       movementUsd: string;
+      movementLocal: string;
     }>
   >`
     SELECT cba."id" AS "accountId", cba."glAccountId", cba."code", cba."name",
@@ -460,7 +463,11 @@ export async function getFinancialPosition(params: { companyId: string; asOf?: D
            COALESCE((SELECT SUM(jl."debitUsd" - jl."creditUsd") FROM journal_lines jl
                        JOIN journal_entries je ON je."id" = jl."journalEntryId"
                       WHERE jl."cashBankAccountId" = cba."id" AND ${LIVE_ENTRY_SQL}
-                        AND (${asOf}::date IS NULL OR je."entryDate" <= ${asOf}::date)), 0)::text AS "movementUsd"
+                        AND (${asOf}::date IS NULL OR je."entryDate" <= ${asOf}::date)), 0)::text AS "movementUsd",
+           COALESCE((SELECT SUM(jl."debitLocal" - jl."creditLocal") FROM journal_lines jl
+                       JOIN journal_entries je ON je."id" = jl."journalEntryId"
+                      WHERE jl."cashBankAccountId" = cba."id" AND ${LIVE_ENTRY_SQL}
+                        AND (${asOf}::date IS NULL OR je."entryDate" <= ${asOf}::date)), 0)::text AS "movementLocal"
     FROM cash_bank_accounts cba
     WHERE cba."companyId" = ${params.companyId} AND cba."status" = 'ACTIVE'
     ORDER BY cba."accountType", cba."currency", cba."code"
@@ -475,6 +482,7 @@ export async function getFinancialPosition(params: { companyId: string; asOf?: D
     currency: row.currency,
     balance: toMoney(dec(row.opening).plus(dec(row.movement))),
     balanceUsd: toMoney(dec(row.movementUsd)),
+    balanceLocal: toMoney(dec(row.movementLocal)),
   }));
 
   // Totals per currency — never merged into one meaningless number.

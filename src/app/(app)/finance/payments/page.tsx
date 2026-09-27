@@ -5,6 +5,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, TRANSACTION_STATUS_META, PAYMENT_METHOD_LABELS, VISIBLE_DOCUMENT_STATUSES } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { formatMoney, formatDate, formatRate } from '@/lib/format';
+import { equivalentText } from '@/lib/dual-currency';
 import { getWarehouseLabels } from '@/lib/services/stock';
 import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
@@ -43,6 +44,7 @@ export default async function PaymentsPage() {
     amount: formatMoney(p.amount, p.currency),
     amountSort: Number(p.amountUsd),
     amountUsd: formatMoney(p.amountUsd, 'USD'),
+    amountEquivalent: equivalentText({ amount: p.amount, currency: p.currency, localCurrency: user.activeCompany.localCurrency, amountUsd: p.amountUsd, amountLocal: p.amountLocal, rateLocalPerUsd: p.rateLocalPerUsd }),
     rate: p.currency === 'USD' ? '—' : formatRate(p.rateToUsd),
     reference: p.reference,
     allocationCount: p.allocations.length,

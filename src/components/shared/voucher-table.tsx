@@ -1,5 +1,6 @@
 'use client';
 
+import { DualText } from '@/components/shared/dual-text';
 import * as React from 'react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { VoucherRowActions } from '@/components/shared/voucher-actions';
@@ -18,6 +19,8 @@ export type VoucherRow = {
   amount: string;
   amountSort: number;
   amountUsd: string;
+  /** "≈ USD …" or "≈ MAD …" at the voucher's own rate, worked out by the page. */
+  amountEquivalent?: { text: string; title: string } | null;
   rate: string;
   reference: string | null;
   allocationCount: number;
@@ -75,8 +78,7 @@ export function VoucherTable({
       sortValue: (r) => r.amountSort,
       cell: (r) => (
         <span>
-          <span className="block font-medium">{r.amount}</span>
-          {r.currency !== 'USD' ? <span className="block text-xs text-ink-subtle">{r.amountUsd}</span> : null}
+          <DualText primary={r.amount} equivalent={r.amountEquivalent ?? null} />
         </span>
       ),
     },

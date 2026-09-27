@@ -16,7 +16,8 @@ import { LIVE_ENTRY_SQL } from '@/lib/services/journal-visibility';
  * currency, otherwise its outstanding dollars at its own rate.
  */
 
-export type OutstandingFigure = { count: number; local: Decimal };
+/** `usd` is the sum of each document's own dollar equivalent; null where none is kept. */
+export type OutstandingFigure = { count: number; local: Decimal; usd: Decimal | null };
 
 export type AgentOutstanding = {
   agentId: string;
@@ -45,10 +46,11 @@ export type OutstandingSummary = {
   agents: AgentOutstanding[];
 };
 
-const zero = (): OutstandingFigure => ({ count: 0, local: dec(0) });
-const bump = (figure: OutstandingFigure, amount: Decimal) => {
+const zero = (): OutstandingFigure => ({ count: 0, local: dec(0), usd: null });
+const bump = (figure: OutstandingFigure, amount: Decimal, usd?: Decimal) => {
   figure.count += 1;
   figure.local = toMoney(figure.local.plus(amount));
+  if (usd) figure.usd = toMoney((figure.usd ?? dec(0)).plus(usd));
 };
 
 export async function getOutstandingSummary(companyId: string): Promise<OutstandingSummary> {
@@ -114,22 +116,26 @@ export async function getOutstandingSummary(companyId: string): Promise<Outstand
 
   for (const row of receivables) {
     const amount = inLocal(row.currency, dec(row.outstandingAmount), dec(row.outstandingAmountUsd), dec(row.rateLocalPerUsd));
-    if (row.status === 'UNPAID') bump(summary.invoicesUnpaid, amount);
-    else if (row.status === 'PARTIAL') bump(summary.invoicesPartial, amount);
+    if (row.status === 'UNPAID') bump(summary.invoicesUnpaid, amount, dec(row.outstandingAmountUsd));
+    else if (row.status === 'PARTIAL') bump(summary.invoicesPartial, amount, dec(row.outstandingAmountUsd));
   }
 
   // Supplier bills booked as costs are counted with the costs, not twice here.
   for (const row of payables) {
     if (row.kind === 'EXPENSE') continue;
     const amount = inLocal(row.currency, dec(row.outstandingAmount), dec(row.outstandingAmountUsd), dec(row.rateLocalPerUsd));
-    if (amount.greaterThan('0.005')) bump(summary.supplierPayables, amount);
+    if (amount.greaterThan('0.005')) bump(summary.supplierPayables, amount, dec(row.outstandingAmountUsd));
   }
 
   const settlements = await getExpenseSettlements(companyId, owedExpenses);
   for (const expense of owedExpenses) {
     const settled = settlements.get(expense.id);
     if (!settled || settled.status === 'PAID') continue;
-    bump(expense.kind === 'SHIPMENT' ? summary.shipmentExpensesUnpaid : summary.generalExpensesUnpaid, settled.outstandingLocal);
+    // The share still owed, in dollars at the cost's own rate.
+    const usd = settled.gross.isZero()
+      ? dec(0)
+      : toMoney(dec(expense.amountUsd).plus(dec(expense.taxAmountUsd)).times(settled.outstanding).dividedBy(settled.gross));
+    bump(expense.kind === 'SHIPMENT' ? summary.shipmentExpensesUnpaid : summary.generalExpensesUnpaid, settled.outstandingLocal, usd);
   }
 
   for (const agent of agents) {

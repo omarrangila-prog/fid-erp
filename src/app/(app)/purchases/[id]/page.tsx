@@ -11,6 +11,7 @@ import { dec } from '@/lib/money';
 import { getReceiptStatus } from '@/lib/services/purchase';
 import { getContractOutstanding } from '@/lib/services/payment';
 import { supplierGrossPayable } from '@/lib/services/tax';
+import { DualAmount } from '@/components/shared/dual-amount';
 import { formatMoney, formatQuantityKg, formatDate, formatDateTime, formatRate } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Metric, MetricGrid, DetailRow } from '@/components/shared/stat-card';
@@ -59,6 +60,9 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
   });
 
   if (!contract) notFound();
+  /** An amount in the order's currency, in dollars at the order's own rate. */
+  const usdOf = (value: Parameters<typeof dec>[0]) =>
+    contract.currency === 'USD' ? dec(value) : dec(value).dividedBy(dec(contract.rateToUsd));
 
   const attachments = can(user, PERMISSIONS.ATTACHMENTS_VIEW)
     ? await loadAttachments(user.activeCompany.id, 'PurchaseContract', contract.id)
@@ -200,15 +204,15 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
         />
         {showCost ? (
           <>
-            <Metric label="Goods value" value={formatMoney(contract.subtotal, contract.currency)} />
+            <Metric label="Goods value" value={<DualAmount amount={contract.subtotal} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={contract.rateLocalPerUsd} amountUsd={usdOf(contract.subtotal)} rateSource="This purchase order's own rate" />} />
             <Metric
               label="Freight + charges"
-              value={formatMoney(dec(contract.freightAmount).plus(dec(contract.otherCharges)), contract.currency)}
+              value={<DualAmount amount={dec(contract.freightAmount).plus(dec(contract.otherCharges))} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={contract.rateLocalPerUsd} amountUsd={usdOf(dec(contract.freightAmount).plus(dec(contract.otherCharges)))} rateSource="This purchase order's own rate" />}
             />
-            <Metric label="Contract value" value={formatMoney(contract.totalValue, contract.currency)} />
+            <Metric label="Contract value" value={<DualAmount amount={contract.totalValue} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={contract.rateLocalPerUsd} amountUsd={usdOf(contract.totalValue)} rateSource="This purchase order's own rate" />} />
             <Metric
               label="Posted to supplier"
-              value={formatMoney(supplierPayable.amount, contract.currency)}
+              value={<DualAmount amount={supplierPayable.amount} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={contract.rateLocalPerUsd} amountUsd={usdOf(supplierPayable.amount)} rateSource="This purchase order's own rate" />}
               hint={
                 supplierPayable.taxOnSupplierInvoice
                   ? 'Goods + freight + tax billed by this supplier.'
@@ -218,7 +222,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
             {outstanding ? (
               <Metric
                 label="Still owed"
-                value={formatMoney(outstanding.amount, contract.currency)}
+                value={<DualAmount amount={outstanding.amount} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={contract.rateLocalPerUsd} amountUsd={usdOf(outstanding.amount)} rateSource="This purchase order's own rate" />}
                 tone={outstanding.amount.greaterThan(0) ? 'negative' : 'positive'}
               />
             ) : null}
@@ -296,12 +300,12 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                       {showCost ? (
                         <>
                           <TD numeric>
-                            {formatMoney(line.unitPrice, contract.currency)}
+                            <DualAmount amount={line.unitPrice} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={contract.rateLocalPerUsd} amountUsd={usdOf(line.unitPrice)} rateSource="This purchase order's own rate" primaryClassName="font-normal" />
                             <span className="block text-xs text-ink-subtle">per {line.unit}</span>
                           </TD>
-                          <TD numeric>{formatMoney(line.lineSubtotal, contract.currency)}</TD>
+                          <TD numeric><DualAmount amount={line.lineSubtotal} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={contract.rateLocalPerUsd} amountUsd={usdOf(line.lineSubtotal)} rateSource="This purchase order's own rate" /></TD>
                           <TD numeric className="font-medium text-gold-700">
-                            {formatMoney(line.unitCostKg, contract.currency)}
+                            <DualAmount amount={line.unitCostKg} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={contract.rateLocalPerUsd} amountUsd={usdOf(line.unitCostKg)} rateSource="This purchase order's own rate" />
                           </TD>
                         </>
                       ) : null}
@@ -322,7 +326,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                       <TD numeric>{formatQuantityKg(totalOrdered)}</TD>
                       <TD numeric>{contract.totalBags.toLocaleString()}</TD>
                       <TD />
-                      <TD numeric>{formatMoney(contract.subtotal, contract.currency)}</TD>
+                      <TD numeric><DualAmount amount={contract.subtotal} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={contract.rateLocalPerUsd} amountUsd={usdOf(contract.subtotal)} rateSource="This purchase order's own rate" /></TD>
                       <TD />
                     </tr>
                   </TFoot>

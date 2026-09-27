@@ -79,6 +79,13 @@ async function pickFirstOption(page: Page, timeout = 30_000) {
       await page.waitForTimeout(300);
     }
   }
+  // Still moving after five tries: choose the highlighted entry the way a
+  // keyboard user would. The picker highlights the first match as it filters.
+  if (await option.isVisible().catch(() => false)) {
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('listbox')).toHaveCount(0, { timeout: 10_000 });
+    return;
+  }
   throw new Error('the option list never settled enough to click');
 }
 

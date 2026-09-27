@@ -8,6 +8,7 @@ import { formatMoney, formatDate } from '@/lib/format';
 import { dec, type Decimal } from '@/lib/money';
 import { getWarehouseLabels } from '@/lib/services/stock';
 import { listDueRecurring } from '@/lib/services/recurring-expense';
+import { equivalentText } from '@/lib/dual-currency';
 import { getExpenseSettlements, type ExpenseSettlement } from '@/lib/services/expense-settlement';
 import { Callout } from '@/components/ui/feedback';
 import { PageHeader } from '@/components/shared/page-header';
@@ -79,6 +80,7 @@ export default async function ExpensesPage({
     amount: formatMoney(e.amount, e.currency),
     amountSort: Number(e.amountUsd),
     amountUsd: formatMoney(e.amountUsd, 'USD'),
+    amountEquivalent: equivalentText({ amount: e.amount, currency: e.currency, localCurrency: local, amountUsd: e.amountUsd, amountLocal: e.amountLocal, rateLocalPerUsd: e.rateLocalPerUsd }),
     ...paymentFields(settlements.get(e.id), e),
     // Owed to an agent is settled through the agent's account, not here.
     needsPayment: Boolean(

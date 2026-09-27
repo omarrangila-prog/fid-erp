@@ -9,6 +9,7 @@ import { PERMISSIONS, TRANSACTION_STATUS_META, SETTLEMENT_STATUS_META } from '@/
 import { prisma, transaction } from '@/lib/db';
 import { dec, toMoney } from '@/lib/money';
 import { getInvoiceOutstanding } from '@/lib/services/receipt';
+import { DualAmount } from '@/components/shared/dual-amount';
 import { formatMoney, formatQuantityKg, formatDate, formatDateTime, formatRate, formatPercent } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
@@ -165,30 +166,30 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
 
       <MetricGrid>
         <Metric label="Quantity" value={formatQuantityKg(quantityKg)} hint={`${bags.toLocaleString()} bags`} />
-        <Metric label="Invoice value" value={formatMoney(invoice.totalAmount, invoice.currency)} />
-        {invoice.currency !== 'USD' ? (
-          <Metric label="USD equivalent" value={formatMoney(invoice.totalAmountUsd, 'USD')} tone="muted" />
-        ) : null}
+        <Metric
+          label="Invoice value"
+          value={<DualAmount amount={invoice.totalAmount} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" amountUsd={invoice.currency === user.activeCompany.localCurrency ? invoice.totalAmountUsd : null} />}
+        />
         {outstanding ? (
           <>
             <Metric
               label="Received"
-              value={formatMoney(dec(invoice.totalAmount).minus(outstanding.amount), invoice.currency)}
+              value={<DualAmount amount={dec(invoice.totalAmount).minus(outstanding.amount)} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" />}
               tone="positive"
             />
             <Metric
               label="Outstanding"
-              value={formatMoney(outstanding.amount, invoice.currency)}
+              value={<DualAmount amount={outstanding.amount} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" />}
               tone={outstanding.amount.greaterThan(0) ? 'negative' : 'positive'}
             />
           </>
         ) : null}
         {showProfit && invoice.status === 'POSTED' ? (
           <>
-            <Metric label="Cost of goods" value={formatMoney(invoice.costOfGoodsUsd, 'USD')} tone="muted" />
+            <Metric label="Cost of goods" value={<DualAmount amount={invoice.costOfGoodsUsd} currency="USD" localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" />} tone="muted" />
             <Metric
               label="Gross profit"
-              value={formatMoney(grossProfitUsd, 'USD')}
+              value={<DualAmount amount={grossProfitUsd} currency="USD" localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" />}
               tone={grossProfitUsd.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
               hint={`${formatPercent(marginPct)} margin`}
             />
@@ -254,11 +255,11 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                         <span className="block text-xs text-ink-subtle">{line.bags.toLocaleString()} bags</span>
                       </TD>
                       <TD numeric>
-                        {formatMoney(line.unitPrice, invoice.currency)}
+                        <DualAmount amount={line.unitPrice} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" primaryClassName="font-normal" />
                         <span className="block text-xs text-ink-subtle">per {line.unit}</span>
                       </TD>
                       <TD numeric className="font-medium">
-                        {formatMoney(line.lineTotal, invoice.currency)}
+                        <DualAmount amount={line.lineTotal} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" />
                       </TD>
                       {showProfit ? <TD numeric>{formatMoney(line.costTotalUsd, 'USD')}</TD> : null}
                     </TR>
@@ -269,7 +270,9 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                     <TD colSpan={4}>Total</TD>
                     <TD numeric>{formatQuantityKg(quantityKg)}</TD>
                     <TD />
-                    <TD numeric>{formatMoney(invoice.totalAmount, invoice.currency)}</TD>
+                    <TD numeric>
+                      <DualAmount amount={invoice.totalAmount} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" amountUsd={invoice.currency === user.activeCompany.localCurrency ? invoice.totalAmountUsd : null} />
+                    </TD>
                     {showProfit ? <TD numeric>{formatMoney(invoice.costOfGoodsUsd, 'USD')}</TD> : null}
                   </tr>
                 </TFoot>

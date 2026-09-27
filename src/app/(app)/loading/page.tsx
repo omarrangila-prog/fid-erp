@@ -4,6 +4,7 @@ import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getLoadingSheet } from '@/lib/services/loading-sheet';
 import { formatQuantityKg, formatDate, formatMoney } from '@/lib/format';
+import { equivalentText } from '@/lib/dual-currency';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrintButton } from '@/components/shared/print-button';
 import { PrintHeader } from '@/components/shared/print-header';
@@ -112,6 +113,9 @@ export default async function LoadingPage() {
         quantity: formatQuantityKg(allocation.quantityKg),
         amount: formatMoney(allocation.amount, allocation.currency),
         outstanding: formatMoney(allocation.outstanding, allocation.currency),
+        // The other currency, at the invoice's own rate.
+        amountEquivalent: equivalentText({ amount: allocation.amount, currency: allocation.currency, localCurrency: user.activeCompany.localCurrency, rateLocalPerUsd: allocation.rateLocalPerUsd }),
+        outstandingEquivalent: equivalentText({ amount: allocation.outstanding, currency: allocation.currency, localCurrency: user.activeCompany.localCurrency, rateLocalPerUsd: allocation.rateLocalPerUsd }),
         settlement: allocation.settlement,
         warehouseNames: allocation.warehouseNames,
       })),

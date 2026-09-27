@@ -54,3 +54,19 @@ export function rateLabel(rate: Decimal | null | undefined, localCurrency: strin
 }
 
 export { Decimal };
+
+/**
+ * The same equivalent as text, for lists built on the server and drawn in the
+ * browser: "≈ USD 4,791.67", and the rate it used for a tooltip.
+ */
+export function equivalentText(
+  params: Parameters<typeof equivalentOf>[0],
+): { text: string; title: string } | null {
+  const e = equivalentOf(params);
+  if (!e) return null;
+  const amount = e.amount.toNumber().toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return {
+    text: `≈ ${e.currency} ${amount}`,
+    title: rateLabel(e.rate, params.localCurrency.toUpperCase()) ?? 'At the transaction’s own rate',
+  };
+}

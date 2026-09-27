@@ -4,6 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { shortDocumentNumber } from '@/lib/short-number';
 import { Plus } from 'lucide-react';
+import { DualText } from '@/components/shared/dual-text';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { StatusBadge, Badge } from '@/components/ui/badge';
@@ -30,6 +31,9 @@ export type SaleRow = {
   quantitySort: number;
   paidLabel: string;
   outstandingLabel: string;
+  totalEquivalent: { text: string; title: string } | null;
+  paidEquivalent: { text: string; title: string } | null;
+  outstandingEquivalent: { text: string; title: string } | null;
   /** The same two in dollars, so invoices in different currencies can be totalled. */
   paidUsdSort: number;
   outstandingUsdSort: number;
@@ -159,8 +163,7 @@ export function SalesClient({
       sortValue: (r) => r.totalAmountSort,
       cell: (r) => (
         <span>
-          <span className="block font-medium">{r.totalAmount}</span>
-          {r.currency !== 'USD' ? <span className="block text-xs text-ink-subtle">{r.totalAmountUsd}</span> : null}
+          <DualText primary={r.totalAmount} equivalent={r.totalEquivalent} />
         </span>
       ),
     },
@@ -169,7 +172,7 @@ export function SalesClient({
       header: 'Balance due',
       numeric: true,
       hideable: true,
-      cell: (r) => <span className="font-medium">{r.outstandingLabel}</span>,
+      cell: (r) => (r.outstandingLabel === '—' ? '—' : <DualText primary={r.outstandingLabel} equivalent={r.outstandingEquivalent} />),
     },
     {
       id: 'warehouse',
@@ -200,7 +203,7 @@ export function SalesClient({
       sortValue: (r) => r.quantitySort,
       cell: (r) => r.quantityLabel,
     },
-    { id: 'paid', header: 'Paid', numeric: true, hideable: true, cell: (r) => r.paidLabel },
+    { id: 'paid', header: 'Paid', numeric: true, hideable: true, cell: (r) => (r.paidLabel === '—' ? '—' : <DualText primary={r.paidLabel} equivalent={r.paidEquivalent} />) },
     {
       id: 'settlement',
       header: 'Payment',

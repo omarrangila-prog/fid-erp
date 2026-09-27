@@ -10,6 +10,7 @@ import { PERMISSIONS, SHIPMENT_STATUS_META, TRANSACTION_STATUS_META } from '@/li
 import { WorkQueue } from '@/app/(app)/dashboard/work-queue';
 import { getMyRecentEntries, getDashboard, getRecentActivity, getLowStock } from '@/lib/services/dashboard';
 import { getOutstandingSummary } from '@/lib/services/outstanding';
+import { DualAmount } from '@/components/shared/dual-amount';
 import { getSetupStatus, toChecklistStep } from '@/lib/services/setup';
 import { getMonthlyPurchases } from '@/lib/services/profitability';
 import { dec } from '@/lib/money';
@@ -804,7 +805,7 @@ export default async function DashboardPage() {
 async function OutstandingSection({ companyId }: { companyId: string }) {
   const o = await getOutstandingSummary(companyId);
   const local = o.localCurrency;
-  const cards: Array<{ key: string; label: string; figure: { count: number; local: ReturnType<typeof dec> }; unit: string; href: string; tone: 'owed' | 'due' }> = [
+  const cards: Array<{ key: string; label: string; figure: { count: number; local: ReturnType<typeof dec>; usd: ReturnType<typeof dec> | null }; unit: string; href: string; tone: 'owed' | 'due' }> = [
     { key: 'invoices-unpaid', label: 'Customer invoices unpaid', figure: o.invoicesUnpaid, unit: 'invoice', href: '/sales?standing=UNPAID', tone: 'due' },
     { key: 'invoices-partial', label: 'Invoices partly paid', figure: o.invoicesPartial, unit: 'invoice', href: '/sales?standing=PARTIAL', tone: 'due' },
     { key: 'payables', label: 'Owed to suppliers', figure: o.supplierPayables, unit: 'order', href: '/finance/payables', tone: 'owed' },
@@ -834,13 +835,17 @@ async function OutstandingSection({ companyId }: { companyId: string }) {
                   {nothing ? 'Nothing outstanding' : `${card.figure.count} ${card.unit}${card.figure.count === 1 ? '' : 's'}`}
                 </span>
               </span>
-              <span
-                className={`tnum shrink-0 text-right text-base font-semibold ${
+              <DualAmount
+                className={`shrink-0 text-right text-base ${
                   nothing ? 'text-ink-subtle' : card.tone === 'owed' ? 'text-red-700' : 'text-amber-700'
                 }`}
-              >
-                {formatMoney(card.figure.local, local)}
-              </span>
+                amount={card.figure.local}
+                currency={local}
+                localCurrency={local}
+                amountUsd={card.figure.usd}
+                rateSource="Each document at its own rate"
+                hideMissing
+              />
             </Link>
           );
         })}

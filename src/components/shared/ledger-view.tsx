@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { formatMoney, formatDate } from '@/lib/format';
+import { DualAmount } from '@/components/shared/dual-amount';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/feedback';
@@ -51,8 +52,19 @@ export function LedgerView({
   const currencies = ledgerCurrencyTabs(localCurrency, partyCurrency);
   const selected = ledger.currencyFilter ?? ledger.viewCurrency;
   const currency = ledger.viewCurrency;
-  // The USD equivalent says something only when the rows are not already in USD.
-  const showUsd = currency !== 'USD';
+  // Each amount carries its own equivalent in the same cell, at the entry's
+  // own rate, so no separate equivalents column is needed.
+  const dual = (amount: LedgerResult['rows'][number]['debit'], rowCurrency: string, usd: typeof amount, localAmount: typeof amount) => (
+    <DualAmount
+      amount={amount}
+      currency={rowCurrency}
+      localCurrency={localCurrency}
+      amountUsd={usd}
+      amountLocal={localAmount}
+      rateSource="This entry's own rate"
+      primaryClassName="font-normal"
+    />
+  );
 
   const hrefFor = (code: string) => {
     const params = new URLSearchParams();
@@ -111,7 +123,6 @@ export function LedgerView({
                   <TH numeric>Debit</TH>
                   <TH numeric>Credit</TH>
                   <TH numeric>Balance</TH>
-                  {showUsd ? <TH numeric>USD Eq.</TH> : null}
                   <TH className="text-right" data-print="hide">Actions</TH>
                 </TR>
               </THead>
@@ -123,7 +134,6 @@ export function LedgerView({
                   <TD numeric className="font-semibold">
                     {formatMoney(ledger.openingBalance, currency)}
                   </TD>
-                  {showUsd ? <TD /> : null}
                   <TD data-print="hide" />
                 </TR>
 
@@ -152,18 +162,11 @@ export function LedgerView({
                       <MemoCell memo={row.memo} note={row.collectedBy ? `Collected by ${row.collectedBy}` : null} />
                     </TD>
                     <TD className="text-xs">{row.currency}</TD>
-                    <TD numeric>{row.debit.greaterThan(0) ? formatMoney(row.debit, row.currency) : '—'}</TD>
-                    <TD numeric>{row.credit.greaterThan(0) ? formatMoney(row.credit, row.currency) : '—'}</TD>
+                    <TD numeric>{row.debit.greaterThan(0) ? dual(row.debit, row.currency, row.debitUsd, row.debitLocal) : '—'}</TD>
+                    <TD numeric>{row.credit.greaterThan(0) ? dual(row.credit, row.currency, row.creditUsd, row.creditLocal) : '—'}</TD>
                     <TD numeric className="font-medium">
                       {formatMoney(row.balance, currency)}
                     </TD>
-                    {showUsd ? (
-                      <TD numeric className="text-xs text-ink-muted">
-                        {row.currency === 'USD'
-                          ? '—'
-                          : formatMoney(row.debitUsd.greaterThan(0) ? row.debitUsd : row.creditUsd, 'USD')}
-                      </TD>
-                    ) : null}
                     <TD data-print="hide">
                       <JournalSourceActions
                         sourceType={row.sourceType}
@@ -182,7 +185,6 @@ export function LedgerView({
                   <TD numeric>{formatMoney(ledger.totalDebit, currency)}</TD>
                   <TD numeric>{formatMoney(ledger.totalCredit, currency)}</TD>
                   <TD numeric>{formatMoney(ledger.closingBalance, currency)}</TD>
-                  {showUsd ? <TD /> : null}
                   <TD data-print="hide" />
                 </tr>
               </TFoot>

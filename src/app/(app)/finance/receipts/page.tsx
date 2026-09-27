@@ -5,6 +5,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, TRANSACTION_STATUS_META, PAYMENT_METHOD_LABELS, VISIBLE_DOCUMENT_STATUSES } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { formatMoney, formatDate, formatRate } from '@/lib/format';
+import { equivalentText } from '@/lib/dual-currency';
 import { getWarehouseLabels } from '@/lib/services/stock';
 import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
@@ -43,6 +44,7 @@ export default async function ReceiptsPage() {
     amount: formatMoney(r.amount, r.currency),
     amountSort: Number(r.amountUsd),
     amountUsd: formatMoney(r.amountUsd, 'USD'),
+    amountEquivalent: equivalentText({ amount: r.amount, currency: r.currency, localCurrency: user.activeCompany.localCurrency, amountUsd: r.amountUsd, amountLocal: r.amountLocal, rateLocalPerUsd: r.rateLocalPerUsd }),
     rate: r.currency === 'USD' ? '—' : formatRate(r.rateToUsd),
     reference: r.reference,
     allocationCount: r.allocations.length,

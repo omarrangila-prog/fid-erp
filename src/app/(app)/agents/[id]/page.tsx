@@ -11,6 +11,7 @@ import { JournalSourceActions } from '@/components/shared/journal-source-actions
 import Link from 'next/link';
 import { getRateDefaults } from '@/lib/services/exchange-rate';
 import { formatMoney, formatDate } from '@/lib/format';
+import { DualAmount } from '@/components/shared/dual-amount';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrintButton } from '@/components/shared/print-button';
 import { PrintHeader } from '@/components/shared/print-header';
@@ -241,14 +242,12 @@ export default async function AgentLedgerPage({
                     <TH numeric>Debit</TH>
                     <TH numeric>Credit</TH>
                     <TH numeric>Balance {local}</TH>
-                    <TH numeric>USD Eq.</TH>
                     <TH>Status</TH>
                     <TH className="text-right" data-print="hide">Actions</TH>
                   </TR>
                 </THead>
                 <TBody>
                   {ledger.rows.map((row, index) => {
-                    const foreign = row.currency !== local;
                     return (
                       <TR key={`${row.journalEntryId}-${index}`}>
                         <TD className="whitespace-nowrap">{formatDate(row.entryDate)}</TD>
@@ -282,33 +281,20 @@ export default async function AgentLedgerPage({
                         <TD className="text-xs">{row.currency}</TD>
                         <TD numeric>
                           {row.debit.greaterThan(0) ? (
-                            <>
-                              {formatMoney(row.debit, row.currency)}
-                              {foreign ? (
-                                <span className="block text-[11px] text-ink-subtle">{formatMoney(row.debitLocal, local)}</span>
-                              ) : null}
-                            </>
+                            <DualAmount amount={row.debit} currency={row.currency} localCurrency={local} amountLocal={row.debitLocal} amountUsd={row.currency === local ? row.usd.abs() : null} rateSource="This entry's own rate" primaryClassName="font-normal" />
                           ) : (
                             '—'
                           )}
                         </TD>
                         <TD numeric>
                           {row.credit.greaterThan(0) ? (
-                            <>
-                              {formatMoney(row.credit, row.currency)}
-                              {foreign ? (
-                                <span className="block text-[11px] text-ink-subtle">{formatMoney(row.creditLocal, local)}</span>
-                              ) : null}
-                            </>
+                            <DualAmount amount={row.credit} currency={row.currency} localCurrency={local} amountLocal={row.creditLocal} amountUsd={row.currency === local ? row.usd.abs() : null} rateSource="This entry's own rate" primaryClassName="font-normal" />
                           ) : (
                             '—'
                           )}
                         </TD>
                         <TD numeric className="font-medium">
                           {formatMoney(row.balanceLocal, local)}
-                        </TD>
-                        <TD numeric className="text-xs text-ink-muted">
-                          {row.currency === 'USD' ? '—' : formatMoney(row.usd, 'USD')}
                         </TD>
                         <TD className="whitespace-nowrap text-xs">{row.status}</TD>
                         <TD data-print="hide">

@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { cn } from '@/lib/utils';
+import { DualText } from '@/components/shared/dual-text';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { StatusBadge, Badge } from '@/components/ui/badge';
 import { TRANSACTION_STATUS_META } from '@/lib/constants';
@@ -20,6 +21,7 @@ export type ExpenseRow = {
   amount: string;
   amountSort: number;
   amountUsd: string;
+  amountEquivalent: { text: string; title: string } | null;
   account: string;
   capitalise: boolean;
   kind: 'SHIPMENT' | 'GENERAL';
@@ -137,12 +139,7 @@ export function ExpensesClient({
       sortValue: (r) => r.amountSort,
       exportValue: (r) => r.amountSort,
       exportType: 'money',
-      cell: (r) => (
-        <span>
-          <span className="block font-medium">{r.amount}</span>
-          {r.currency !== 'USD' ? <span className="block text-xs text-ink-subtle">{r.amountUsd}</span> : null}
-        </span>
-      ),
+      cell: (r) => <DualText primary={r.amount} equivalent={r.amountEquivalent} />,
     },
     {
       id: 'faceValue',

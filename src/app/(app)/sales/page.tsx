@@ -3,6 +3,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, VISIBLE_DOCUMENT_STATUSES } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { dec } from '@/lib/money';
+import { equivalentText } from '@/lib/dual-currency';
 import { formatMoney, formatQuantityKg, formatDate, daysUntil } from '@/lib/format';
 import { getReceivables } from '@/lib/services/receivables';
 import { getWarehouseLabels } from '@/lib/services/stock';
@@ -58,6 +59,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   ]);
 
   const receivableByInvoice = new Map(receivables.map((r) => [r.invoiceId, r]));
+  const local = user.activeCompany.localCurrency;
 
   const rows: SaleRow[] = invoices.map((inv) => {
     const quantity = inv.lines.reduce((a, l) => a.plus(dec(l.quantityKg)), dec(0));
@@ -77,6 +79,10 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
       totalAmount: formatMoney(inv.totalAmount, inv.currency),
       totalAmountSort: Number(inv.totalAmountUsd),
       totalAmountUsd: formatMoney(inv.totalAmountUsd, 'USD'),
+      // The other currency, at this invoice's own rate.
+      totalEquivalent: equivalentText({ amount: inv.totalAmount, currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd, amountUsd: inv.currency === local ? inv.totalAmountUsd : null }),
+      paidEquivalent: receivable ? equivalentText({ amount: receivable.paidAmount, currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd }) : null,
+      outstandingEquivalent: receivable ? equivalentText({ amount: receivable.outstandingAmount, currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd }) : null,
       quantityLabel: formatQuantityKg(quantity),
       quantitySort: Number(quantity),
       paidLabel: receivable ? formatMoney(receivable.paidAmount, inv.currency) : '—',
