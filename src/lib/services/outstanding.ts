@@ -36,6 +36,10 @@ export type OutstandingSummary = {
   localCurrency: string;
   invoicesUnpaid: OutstandingFigure;
   invoicesPartial: OutstandingFigure;
+  /** Unpaid and partly paid together, at what is still owed on each. */
+  invoicesOutstanding: OutstandingFigure;
+  /** Of those, the ones past their due date. */
+  invoicesOverdue: OutstandingFigure;
   supplierPayables: OutstandingFigure;
   shipmentExpensesUnpaid: OutstandingFigure;
   generalExpensesUnpaid: OutstandingFigure;
@@ -106,6 +110,8 @@ export async function getOutstandingSummary(companyId: string): Promise<Outstand
     localCurrency: local,
     invoicesUnpaid: zero(),
     invoicesPartial: zero(),
+    invoicesOutstanding: zero(),
+    invoicesOverdue: zero(),
     supplierPayables: zero(),
     shipmentExpensesUnpaid: zero(),
     generalExpensesUnpaid: zero(),
@@ -121,6 +127,10 @@ export async function getOutstandingSummary(companyId: string): Promise<Outstand
     const amount = inLocal(row.currency, dec(row.outstandingAmount), dec(row.outstandingAmountUsd), dec(row.rateLocalPerUsd));
     if (row.status === 'UNPAID') bump(summary.invoicesUnpaid, amount, dec(row.outstandingAmountUsd));
     else if (row.status === 'PARTIAL') bump(summary.invoicesPartial, amount, dec(row.outstandingAmountUsd));
+    if (row.status === 'PAID') continue;
+    // A part payment still leaves money owed: the remainder, never the invoice total.
+    bump(summary.invoicesOutstanding, amount, dec(row.outstandingAmountUsd));
+    if (row.dueDate && row.dueDate.getTime() < Date.now()) bump(summary.invoicesOverdue, amount, dec(row.outstandingAmountUsd));
   }
 
   // Supplier bills booked as costs are counted with the costs, not twice here.

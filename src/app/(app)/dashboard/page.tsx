@@ -833,8 +833,6 @@ async function OutstandingSection({ companyId }: { companyId: string }) {
   const o = await getOutstandingSummary(companyId);
   const local = o.localCurrency;
   const cards: Array<{ key: string; label: string; figure: { count: number; local: ReturnType<typeof dec>; usd: ReturnType<typeof dec> | null }; unit: string; href: string; tone: 'owed' | 'due' }> = [
-    { key: 'invoices-unpaid', label: 'Customer invoices unpaid', figure: o.invoicesUnpaid, unit: 'invoice', href: '/sales?standing=UNPAID', tone: 'due' },
-    { key: 'invoices-partial', label: 'Invoices partly paid', figure: o.invoicesPartial, unit: 'invoice', href: '/sales?standing=PARTIAL', tone: 'due' },
     { key: 'payables', label: 'Owed to suppliers', figure: o.supplierPayables, unit: 'order', href: '/finance/payables', tone: 'owed' },
     // One card for every cost still to pay; the ledger it opens splits them by shipment, party and age.
     { key: 'unpaid-expenses', label: 'Unpaid expenses', figure: o.unpaidExpenses, unit: 'cost', href: '/finance/unpaid-expenses', tone: 'owed' },
@@ -846,6 +844,52 @@ async function OutstandingSection({ companyId }: { companyId: string }) {
   return (
     <section className="space-y-3" data-testid="dashboard-outstanding">
       <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">Still to be paid or collected</h2>
+      {/*
+        Customer invoices still owed: the unpaid and the partly paid together,
+        at what is left on each. Each part opens the invoices behind it.
+      */}
+      <div className="rounded-xl border border-line bg-surface p-4" data-testid="outstanding-invoices">
+        <Link href="/sales?standing=OUTSTANDING" className="flex items-center justify-between gap-3">
+          <span className="min-w-0">
+            <span className="block text-sm font-medium text-ink">Outstanding customer invoices</span>
+            <span className="block text-xs text-ink-subtle">
+              {o.invoicesOutstanding.count === 0
+                ? 'Nothing outstanding'
+                : `${o.invoicesOutstanding.count} invoice${o.invoicesOutstanding.count === 1 ? '' : 's'} · unpaid and partly paid`}
+            </span>
+          </span>
+          <DualAmount
+            className={`shrink-0 text-right text-lg ${o.invoicesOutstanding.count === 0 ? 'text-ink-subtle' : 'text-amber-700'}`}
+            amount={o.invoicesOutstanding.local}
+            currency={local}
+            localCurrency={local}
+            amountUsd={o.invoicesOutstanding.usd}
+            rateSource="Each invoice at its own rate"
+            hideMissing
+          />
+        </Link>
+        <div className="mt-3 grid gap-2 border-t border-line pt-3 text-xs sm:grid-cols-3">
+          {(
+            [
+              ['Fully unpaid', o.invoicesUnpaid, '/sales?standing=UNPAID', 'unpaid'],
+              ['Partly paid — remaining', o.invoicesPartial, '/sales?standing=PARTIAL', 'partial'],
+              ['Overdue', o.invoicesOverdue, '/finance/receivables', 'overdue'],
+            ] as const
+          ).map(([label, figure, href, key]) => (
+            <Link
+              key={key}
+              href={href}
+              data-testid={`outstanding-invoices-${key}`}
+              className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 hover:bg-forest-50/60"
+            >
+              <span className="text-ink-muted">
+                {label} · {figure.count}
+              </span>
+              <span className="tnum font-medium text-ink">{formatMoney(figure.local, local)}</span>
+            </Link>
+          ))}
+        </div>
+      </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {cards.map((card) => {
           const nothing = card.figure.count === 0;

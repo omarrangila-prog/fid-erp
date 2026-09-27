@@ -64,7 +64,7 @@ export function SalesClient({
   initialStanding = null,
 }: {
   rows: SaleRow[];
-  initialStanding?: 'PAID' | 'PARTIAL' | 'UNPAID' | null;
+  initialStanding?: 'PAID' | 'PARTIAL' | 'UNPAID' | 'OUTSTANDING' | null;
   canCreate: boolean;
   canEdit: boolean;
   canDelete: boolean;
@@ -79,11 +79,14 @@ export function SalesClient({
    * it at the top, and each one opens the invoices behind it: the figure and
    * the list are the same thing, so a total can never point at nothing.
    */
-  const [standing, setStanding] = React.useState<'PAID' | 'PARTIAL' | 'UNPAID' | null>(initialStanding);
+  const [standing, setStanding] = React.useState<'PAID' | 'PARTIAL' | 'UNPAID' | 'OUTSTANDING' | null>(initialStanding);
 
   const posted = rows.filter((row) => row.status === 'POSTED');
-  const summarise = (settlement: 'PAID' | 'PARTIAL' | 'UNPAID') => {
-    const matching = posted.filter((row) => row.settlement === settlement);
+  const summarise = (settlement: 'PAID' | 'PARTIAL' | 'UNPAID' | 'OUTSTANDING') => {
+    // Outstanding is unpaid and partly paid together: a part payment still leaves money owed.
+    const matching = posted.filter((row) =>
+      settlement === 'OUTSTANDING' ? row.settlement !== 'PAID' : row.settlement === settlement,
+    );
     return {
       settlement,
       count: matching.length,
@@ -92,6 +95,12 @@ export function SalesClient({
     };
   };
   const standings = [
+    {
+      ...summarise('OUTSTANDING'),
+      label: 'Outstanding',
+      hint: 'Unpaid and partly paid — what customers still owe',
+      amount: 'outstanding' as const,
+    },
     { ...summarise('PAID'), label: 'Paid', hint: 'Settled in full', amount: 'paid' as const },
     { ...summarise('PARTIAL'), label: 'Partly paid', hint: 'Something received, something still owed', amount: 'outstanding' as const },
     { ...summarise('UNPAID'), label: 'Unpaid', hint: 'Nothing received yet', amount: 'outstanding' as const },
@@ -102,7 +111,13 @@ export function SalesClient({
   // A deleted invoice is not on this list at all: the page only loads live
   // documents. Its journal and the trail of who deleted it stay in the books
   // and the audit log, where an accountant can find them.
-  const visible = standing ? rows.filter((row) => row.status === 'POSTED' && row.settlement === standing) : rows;
+  const visible = standing
+    ? rows.filter(
+        (row) =>
+          row.status === 'POSTED' &&
+          (standing === 'OUTSTANDING' ? row.settlement !== 'PAID' : row.settlement === standing),
+      )
+    : rows;
 
   const columns: DataColumn<SaleRow>[] = [
     /* The order the client reads a sales list in: when, which invoice, which
@@ -157,7 +172,7 @@ export function SalesClient({
     },
     {
       id: 'value',
-      header: 'Value',
+      header: 'Invoice total',
       numeric: true,
       mobile: 'meta',
       sortValue: (r) => r.totalAmountSort,
@@ -167,9 +182,10 @@ export function SalesClient({
         </span>
       ),
     },
+    { id: 'paid', header: 'Paid', numeric: true, hideable: true, cell: (r) => (r.paidLabel === '—' ? '—' : <DualText primary={r.paidLabel} equivalent={r.paidEquivalent} />) },
     {
       id: 'outstanding',
-      header: 'Balance due',
+      header: 'Outstanding',
       numeric: true,
       hideable: true,
       cell: (r) => (r.outstandingLabel === '—' ? '—' : <DualText primary={r.outstandingLabel} equivalent={r.outstandingEquivalent} />),
@@ -203,7 +219,6 @@ export function SalesClient({
       sortValue: (r) => r.quantitySort,
       cell: (r) => r.quantityLabel,
     },
-    { id: 'paid', header: 'Paid', numeric: true, hideable: true, cell: (r) => (r.paidLabel === '—' ? '—' : <DualText primary={r.paidLabel} equivalent={r.paidEquivalent} />) },
     {
       id: 'settlement',
       header: 'Payment',
@@ -287,7 +302,7 @@ export function SalesClient({
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-3" data-testid="invoice-standing">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-testid="invoice-standing">
         {standings.map((card) => {
           const active = standing === card.settlement;
           const figure = card.amount === 'paid' ? card.paidUsd : card.outstandingUsd;
@@ -320,7 +335,10 @@ export function SalesClient({
       {standing ? (
         <p className="text-xs text-ink-muted" data-testid="invoice-standing-active">
           Showing {visible.length === 1 ? 'the 1 invoice' : `the ${visible.length} invoices`} that are{' '}
-          {SETTLEMENT_STATUS_META[standing]?.label.toLowerCase() ?? standing.toLowerCase()}.{' '}
+          {standing === 'OUTSTANDING'
+            ? 'outstanding (unpaid or partly paid)'
+            : (SETTLEMENT_STATUS_META[standing]?.label.toLowerCase() ?? standing.toLowerCase())}
+          .{' '}
           <button type="button" onClick={() => setStanding(null)} className="underline underline-offset-2 hover:text-ink">
             Show every invoice
           </button>

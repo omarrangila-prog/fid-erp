@@ -169,7 +169,8 @@ test('after a reload, every cost reads settled, with how it was settled', async 
   // The rent's history: MAD 4,000 by bank and MAD 5,000 in cash.
   const rent = ledgerRow(page, RENT);
   await rent.getByRole('button', { name: 'Show detail' }).click();
-  const history = page.getByRole('main').getByText('How it was settled').locator('..');
+  // The detail opens in the row directly beneath the cost.
+  const history = rent.locator('xpath=following-sibling::tr[1]');
   await expect(history).toContainText(/Bank/);
   await expect(history).toContainText(/Cash/);
   await expect(history).toContainText(/MAD 4,000\.00/);

@@ -275,6 +275,16 @@ test('the invoice standing cards filter the list to the invoices behind them', a
   await unpaid.click();
   await expect(page.getByTestId('invoice-standing-active')).toHaveCount(0, { timeout: 15_000 });
   await expect(page.locator('main table tbody tr')).toHaveCount(rowsBefore, { timeout: 15_000 });
+
+  // Outstanding is the unpaid and the partly paid together — a part payment still leaves money owed.
+  const count = async (id: string) =>
+    Number(((await page.getByTestId(id).innerText()).match(/(\d+) invoices?/) ?? ['', '0'])[1]);
+  const outstandingCount = await count('invoice-standing-outstanding');
+  expect(outstandingCount).toBe((await count('invoice-standing-unpaid')) + (await count('invoice-standing-partial')));
+  await page.getByTestId('invoice-standing-outstanding').click();
+  await expect(page.getByTestId('invoice-standing-active')).toContainText(/outstanding/);
+  if (outstandingCount > 0) await expect(page.locator('main table tbody tr')).toHaveCount(outstandingCount, { timeout: 15_000 });
+  console.log(`  outstanding card: ${outstandingCount} invoices, unpaid and partly paid`);
 });
 
 test('the journal can add an account without leaving the voucher', async ({ page }) => {

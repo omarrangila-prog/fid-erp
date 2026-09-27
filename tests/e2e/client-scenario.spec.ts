@@ -821,8 +821,8 @@ test('the sales list reads in the order the client asked for', async ({ page }) 
   const headers = (await page.locator('main table thead th').allTextContents()).map((h) => h.trim());
   console.log(`  columns: ${headers.join(' | ')}`);
 
-  // Date, invoice, ICUL/FID reference, customer, status, due, amount, balance, location.
-  const wanted = ['Date', 'Invoice #', 'ICUL/FID Ref', 'Customer', 'Status', 'Due', 'Value', 'Balance due', 'Location'];
+  // Date, invoice, ICUL/FID reference, customer, status, due, total, paid, still owed, location.
+  const wanted = ['Date', 'Invoice #', 'ICUL/FID Ref', 'Customer', 'Status', 'Due', 'Invoice total', 'Paid', 'Outstanding', 'Location'];
   const positions = wanted.map((w) => headers.findIndex((h) => h.startsWith(w)));
   for (const [i, w] of wanted.entries()) {
     expect(positions[i], `${w} should be on the list`).toBeGreaterThan(-1);

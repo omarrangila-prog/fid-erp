@@ -24,7 +24,8 @@ function summariseReferences(refs: Array<string | null>): string | null {
 export default async function SalesPage({ searchParams }: { searchParams: Promise<{ standing?: string }> }) {
   const { standing } = await searchParams;
   // A dashboard card opens the list already filtered to the invoices behind it.
-  const initialStanding = standing === 'UNPAID' || standing === 'PARTIAL' || standing === 'PAID' ? standing : null;
+  const initialStanding =
+    standing === 'UNPAID' || standing === 'PARTIAL' || standing === 'PAID' || standing === 'OUTSTANDING' ? standing : null;
   const user = await requirePageAccess(PERMISSIONS.SALES_VIEW);
   const companyId = user.activeCompany.id;
 

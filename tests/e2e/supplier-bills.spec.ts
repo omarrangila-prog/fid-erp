@@ -62,7 +62,8 @@ test('an unpaid cost is booked with nobody named, and paid later from cash', asy
   await page.getByRole('listbox').getByRole('option').first().click();
   await form.locator('label').filter({ hasText: /Book the cost now/i }).click();
 
-  // Unpaid asks for nothing about who is owed or how it will be paid.
+  // Unpaid asks nothing about how it will be paid; who is owed is optional and
+  // defaults to nobody named yet.
   await expect(form.getByRole('combobox', { name: /supplier/i })).toHaveCount(0);
   await expect(form.getByLabel(/^owed to/i)).toHaveCount(0);
   await expect(form.getByRole('combobox', { name: /^(cash|bank) account/i })).toHaveCount(0);
@@ -80,21 +81,26 @@ test('an unpaid cost is booked with nobody named, and paid later from cash', asy
   // The entry it wrote goes to Accrued Expenses, not to any supplier.
   await expect(main).toContainText(/Accrued Expenses/i);
 
-  // Later: pay it from the cost itself. No supplier is asked for.
-  await main.getByRole('link', { name: /record payment/i }).click();
-  await page.waitForURL(/\/finance\/payments\/new/, { waitUntil: 'domcontentloaded' });
-  const pay = page.getByRole('main');
-  await expect(pay.getByRole('combobox', { name: /supplier/i })).toHaveCount(0);
-  // The field names the cost being settled in words — the category or the
-  // description — rather than the system's own voucher number.
-  const settles = pay.getByLabel(/settles/i);
-  await expect(settles).toHaveAttribute('readonly', '');
-  await expect(settles).not.toHaveValue('');
-  await expect(pay.getByLabel(/^Amount/).first()).toHaveValue('4000');
+  // Later: settle it from the cost itself — in cash, and the cost is not booked again.
+  await main.getByRole('link', { name: /^Settle$/ }).click();
+  await page.waitForURL(/\/finance\/unpaid-expenses\?settle=/, { waitUntil: 'domcontentloaded' });
+  const dialog = page.getByTestId('settle-dialog');
+  await expect(dialog).toBeVisible({ timeout: 45_000 });
+  await expect(dialog.locator('#settleAmount')).toHaveValue(/^4,?000(\.00)?$/);
+  await dialog.getByRole('button', { name: /^Today$/ }).click();
+  await dialog.getByLabel(/^Cash$/).check();
+  await dialog.locator('#settleAccount').click();
+  await page.getByRole('listbox').getByRole('option').first().click();
+  await page.getByTestId('post-settlement').click();
+  await expect(page.getByText('Settlement posted.').first()).toBeVisible({ timeout: 90_000 });
 
-  await pay.getByLabel(/payment method/i).selectOption('CASH');
-  await pay.getByRole('button', { name: /save and post/i }).click();
-  await page.waitForURL(/\/finance\/payments\/(?!new)[\w-]+/, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  // The payment it wrote clears Accrued Expenses, and names the cost it settles.
+  await page.goto('/finance/unpaid-expenses?view=settled', { waitUntil: 'domcontentloaded' });
+  const row = page.getByRole('row').filter({ hasText: 'Office rent, invoice to follow' }).first();
+  await expect(row).toContainText('Settled', { timeout: 30_000 });
+  await row.getByRole('button', { name: 'Show detail' }).click();
+  await page.getByRole('main').getByRole('link', { name: /Cash/ }).first().click();
+  await page.waitForURL(/\/finance\/payments\/[\w-]+/, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await expect(page.getByRole('main')).toContainText(/POSTED/i);
   await expect(page.getByRole('main')).toContainText(/Accrued Expenses/i);
 });

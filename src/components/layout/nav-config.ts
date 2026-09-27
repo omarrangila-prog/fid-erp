@@ -149,7 +149,7 @@ export const NAV_GROUPS: NavGroup[] = [
       // agents, loans, capital, income and expenses. Searchable by name.
       { label: 'General Ledgers', href: '/ledgers', icon: BookOpen, permissions: [PERMISSIONS.LEDGERS_VIEW] },
       // Every cost booked now and paid later: who it is owed to, what is left, and Settle.
-      { label: 'Unpaid Expenses', href: '/finance/unpaid-expenses', icon: HandCoins, permissions: [PERMISSIONS.EXPENSES_VIEW] },
+      { label: 'Unpaid Expenses', href: '/finance/unpaid-expenses', icon: HandCoins, permissions: [PERMISSIONS.LEDGERS_VIEW] },
       { label: 'Chart of Accounts', href: '/accounting/chart', icon: Tags, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
       // Listed under Accounting for those who keep the books; a data-entry
       // operator reaches the same list through Shipments → Shipment Expenses.
