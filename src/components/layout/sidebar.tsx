@@ -371,7 +371,9 @@ export function DesktopSidebar({
   return (
     <aside
       className={cn(
-        'hidden shrink-0 flex-col border-r border-forest-950 bg-forest-900 transition-[width] duration-200 lg:flex',
+        // Pinned to the screen: the page scrolls, the menu stays where it is
+        // and scrolls on its own when it is longer than the screen.
+        'hidden shrink-0 flex-col border-r border-forest-950 bg-forest-900 transition-[width] duration-200 lg:sticky lg:top-0 lg:flex lg:h-dvh lg:self-start',
         collapsed ? 'w-[4.25rem]' : 'w-64',
       )}
     >

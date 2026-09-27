@@ -5,6 +5,7 @@ import { countUnread } from '@/lib/services/notification';
 import { DesktopSidebar } from '@/components/layout/sidebar';
 import { MobileNav } from '@/components/layout/mobile-nav';
 import { Topbar } from '@/components/layout/topbar';
+import { RecentTabs } from '@/components/layout/recent-tabs';
 import { PageTransition } from '@/components/layout/page-transition';
 
 /**
@@ -82,6 +83,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           unreadCount={unreadCount}
           permissions={permissions}
         />
+
+        {/* The screens opened lately, one click away. */}
+        <RecentTabs userId={user.id} companyId={user.activeCompany.id} />
 
         {/* The bottom padding clears the mobile tab bar. */}
         <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 px-3 pb-24 pt-5 sm:px-5 lg:px-8 lg:pb-10">
