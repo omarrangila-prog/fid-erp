@@ -46,7 +46,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
       container: { select: { containerNumber: true } },
       batch: { select: { batchNumber: true } },
       vendor: { select: { id: true, vendorName: true } },
-      agent: { select: { agentName: true } },
+      agent: { select: { id: true, agentName: true } },
       payableToAgent: { select: { id: true, agentName: true } },
       cashBankAccount: { select: { name: true } },
       ledgerAccount: { select: { name: true } },
@@ -263,8 +263,12 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
                   <Link href={`/agents/${expense.payableToAgent.id}`} className="text-gold-700 hover:underline">
                     {expense.payableToAgent.agentName}
                   </Link>
+                ) : expense.agent ? (
+                  <Link href={`/agents/${expense.agent.id}`} className="text-gold-700 hover:underline">
+                    {expense.agent.agentName}
+                  </Link>
                 ) : (
-                  expense.agent?.agentName ?? '—'
+                  '—'
                 )}
               </DetailRow>
             ) : null}

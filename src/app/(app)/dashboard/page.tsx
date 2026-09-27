@@ -832,18 +832,68 @@ export default async function DashboardPage() {
 async function OutstandingSection({ companyId }: { companyId: string }) {
   const o = await getOutstandingSummary(companyId);
   const local = o.localCurrency;
+  const soleAgent = o.agents.length === 1 ? o.agents[0].agentId : null;
   const cards: Array<{ key: string; label: string; figure: { count: number; local: ReturnType<typeof dec>; usd: ReturnType<typeof dec> | null }; unit: string; href: string; tone: 'owed' | 'due' }> = [
     { key: 'payables', label: 'Owed to suppliers', figure: o.supplierPayables, unit: 'order', href: '/finance/payables', tone: 'owed' },
     // One card for every cost still to pay; the ledger it opens splits them by shipment, party and age.
     { key: 'unpaid-expenses', label: 'Unpaid expenses', figure: o.unpaidExpenses, unit: 'cost', href: '/finance/unpaid-expenses', tone: 'owed' },
-    { key: 'agent-collections', label: 'Held by agents for FID', figure: o.agentCollections, unit: 'agent', href: '/ledgers/agents', tone: 'due' },
-    { key: 'agent-commission', label: 'Agent commission unpaid', figure: o.agentCommission, unit: 'agent', href: '/finance/agent-commission', tone: 'owed' },
+    // With one agent, each alert opens his ledger on the matching filter.
+    { key: 'agent-collections', label: 'Held by agents for FID', figure: o.agentCollections, unit: 'agent', href: soleAgent ? `/agents/${soleAgent}?tab=COLLECTIONS` : '/ledgers/agents', tone: 'due' },
+    { key: 'agent-commission', label: 'Agent commission unpaid', figure: o.agentCommission, unit: 'agent', href: soleAgent ? `/agents/${soleAgent}?tab=COMMISSION` : '/finance/agent-commission', tone: 'owed' },
     { key: 'loans-payable', label: 'Loans FID owes', figure: o.loansPayable, unit: 'lender', href: '/ledgers', tone: 'owed' },
     { key: 'loans-receivable', label: 'Loans owed to FID', figure: o.loansReceivable, unit: 'borrower', href: '/ledgers', tone: 'due' },
   ];
   return (
     <section className="space-y-3" data-testid="dashboard-outstanding">
       <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">Still to be paid or collected</h2>
+      {/*
+        Each agent's whole relationship, first: the client works with these
+        people every day. One ledger per agent, opened from here.
+      */}
+      {o.agents.map((agent) => {
+        const first = agent.agentName.split(/\s+/)[0];
+        const owesFid = agent.holdingLocal.plus(agent.loanToLocal);
+        const fidOwes = agent.commissionLocal.plus(agent.loanFromLocal);
+        const net = owesFid.minus(fidOwes);
+        return (
+          <div key={agent.agentId} className="rounded-xl border-2 border-forest-200 bg-forest-50/40 p-4" data-testid="outstanding-agent">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-base font-semibold text-ink">{agent.agentName}</span>
+              <Button asChild size="sm">
+                <Link href={`/agents/${agent.agentId}`}>Open agent ledger</Link>
+              </Button>
+            </div>
+            <dl className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+              <div>
+                <dt className="text-ink-muted">{first} owes FID</dt>
+                <dd className="tnum text-sm font-semibold">{formatMoney(owesFid, local)}</dd>
+              </div>
+              <div>
+                <dt className="text-ink-muted">FID owes {first}</dt>
+                <dd className="tnum text-sm font-semibold">{formatMoney(fidOwes, local)}</dd>
+              </div>
+              <div>
+                <dt className="text-ink-muted">Net position</dt>
+                <dd className="tnum text-sm font-semibold">
+                  {net.abs().lessThan('0.005')
+                    ? 'Nothing either way'
+                    : net.isPositive()
+                      ? `${first} owes FID ${formatMoney(net, local)}`
+                      : `FID owes ${first} ${formatMoney(net.abs(), local)}`}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-ink-muted">Outstanding commission</dt>
+                <dd className="tnum text-sm font-semibold">{formatMoney(agent.commissionLocal, local)}</dd>
+              </div>
+            </dl>
+            <p className="mt-2 text-[11px] text-ink-subtle">
+              Collections held {formatMoney(agent.holdingLocal, local)} · Loan FID owes him {formatMoney(agent.loanFromLocal, local)} · Loan he owes FID{' '}
+              {formatMoney(agent.loanToLocal, local)}
+            </p>
+          </div>
+        );
+      })}
       {/*
         Customer invoices still owed: the unpaid and the partly paid together,
         at what is left on each. Each part opens the invoices behind it.
@@ -921,30 +971,6 @@ async function OutstandingSection({ companyId }: { companyId: string }) {
           );
         })}
       </div>
-      {o.agents.length > 0 ? (
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          {o.agents.map((agent) => (
-            <div key={agent.agentId} className="rounded-xl border border-line bg-surface p-4" data-testid="outstanding-agent">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-semibold text-ink">{agent.agentName}</span>
-                <Link href={`/ledgers/agents?agent=${agent.agentId}`} className="text-xs font-medium text-forest-800 underline underline-offset-2">
-                  Open ledger
-                </Link>
-              </div>
-              <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                <dt className="text-ink-muted">Collections held</dt>
-                <dd className="tnum text-right font-medium">{formatMoney(agent.holdingLocal, local)}</dd>
-                <dt className="text-ink-muted">Unpaid commission</dt>
-                <dd className="tnum text-right font-medium">{formatMoney(agent.commissionLocal, local)}</dd>
-                <dt className="text-ink-muted">Loan FID owes him</dt>
-                <dd className="tnum text-right font-medium">{formatMoney(agent.loanFromLocal, local)}</dd>
-                <dt className="text-ink-muted">Loan he owes FID</dt>
-                <dd className="tnum text-right font-medium">{formatMoney(agent.loanToLocal, local)}</dd>
-              </dl>
-            </div>
-          ))}
-        </div>
-      ) : null}
     </section>
   );
 }

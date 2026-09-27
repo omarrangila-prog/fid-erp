@@ -30,7 +30,7 @@ export default async function ChequeDetailPage({ params }: { params: Promise<{ i
     include: {
       customer: { select: { id: true, customerName: true } },
       vendor: { select: { id: true, vendorName: true } },
-      agent: { select: { agentName: true } },
+      agent: { select: { id: true, agentName: true } },
       receipt: { select: { id: true, receiptNumber: true } },
       payment: { select: { id: true, paymentNumber: true } },
       cashBankAccount: { select: { name: true, currency: true } },
@@ -116,7 +116,15 @@ export default async function ChequeDetailPage({ params }: { params: Promise<{ i
                     (party ?? '—')
                   )}
                 </DetailRow>
-                <DetailRow label="Agent">{cheque.agent?.agentName ?? '—'}</DetailRow>
+                <DetailRow label="Agent">
+                  {cheque.agent ? (
+                    <Link href={`/agents/${cheque.agent.id}`} className="text-gold-700 hover:underline">
+                      {cheque.agent.agentName}
+                    </Link>
+                  ) : (
+                    '—'
+                  )}
+                </DetailRow>
                 <DetailRow label="Voucher">
                   {cheque.receipt ? (
                     <Link href={`/finance/receipts/${cheque.receipt.id}`} className="text-forest-800 hover:text-gold-700">

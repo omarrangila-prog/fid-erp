@@ -229,6 +229,28 @@ async function seedTrade(trade: Trade) {
       admin.id,
     );
     await postReceipt({ id: held.id, companyId, userId: admin.id });
+
+    // A second agent holding MAD 50,000, for the one-ledger browser test.
+    const ledgerAgent = await prisma.agent.create({
+      data: { companyId, agentCode: 'E2E-AG-LED', agentName: 'E2E Ledger Agent', commissionPct: '0' },
+    });
+    const collected = await createReceipt(
+      {
+        companyId,
+        receiptDate: day('2026-09-13'),
+        customerId: customer.id,
+        currency: trade.invoiceCurrency,
+        amount: '50000',
+        rateToUsd: trade.invoiceRate,
+        rateLocalPerUsd: trade.rateToUsd,
+        paymentMethod: 'AGENT_COLLECTION',
+        agentId: ledgerAgent.id,
+        description: 'E2E collection by the ledger agent',
+        allocations: [{ salesInvoiceId: invoice.id, amount: '50000' }],
+      },
+      admin.id,
+    );
+    await postReceipt({ id: collected.id, companyId, userId: admin.id });
   }
 
   // Money out as well as in: part of the supplier paid, and a clearing cost

@@ -167,10 +167,11 @@ test('the agent ledger shows the collection once, in MAD, with USD only as an eq
   // B: one line, MAD, the invoice named, the memo carried, USD beside it.
   const ledger = page.getByTestId('agent-ledger');
   await expect(ledger).toBeVisible({ timeout: 30_000 });
-  const lines = ledger.locator('tbody tr').filter({ hasText: /46,000\.00/ });
+  // The desktop table; the phone layout beside it is hidden but still on the page.
+  const lines = ledger.locator('table').first().locator(':scope > tbody > tr').filter({ hasText: /46,000\.00/ });
   await expect(lines).toHaveCount(1);
   const line = lines.first();
-  await expect(line.getByTestId('agent-ledger-type')).toContainText(/Customer Payment Collected/);
+  await expect(line.getByTestId('agent-ledger-type')).toContainText(/Customer (Cheque )?Collection/);
   await expect(line).toContainText(/INV \d+/);
   await expect(line).toContainText(/Agent collection from Radouan/);
   const text = (await line.textContent()) ?? '';
@@ -289,15 +290,15 @@ test('he hands over more than he collected: the excess is classified, never gues
   expect(summary).not.toMatch(/USD 200,000\.00/);
   console.log('  hand-over: MAD 46,000 settled, MAD 154,000 booked as his loan');
 
-  // The tabs slice the same ledger: loans on their own, clearing back to nil.
+  // The filters slice the same ledger: the loan on its own, the collections and the hand-over together.
   await page.getByTestId('agent-tab-loans').click();
   await page.waitForLoadState('networkidle').catch(() => undefined);
   await expect(page.getByTestId('agent-ledger')).toContainText(/154,000\.00/, { timeout: 20_000 });
   await expect(page.getByTestId('agent-ledger')).not.toContainText(/46,000\.00/);
-  const direction = await page.getByTestId('agent-ledger-direction').first().innerText();
+  const direction = await page.getByTestId('agent-ledger').locator('table').first().getByTestId('agent-ledger-direction').first().innerText();
   expect(direction).toMatch(new RegExp(`(${AGENT.split(' ')[0]}|FID) owes`, 'i'));
 
-  await page.getByTestId('agent-tab-clearing').click();
+  await page.getByTestId('agent-tab-collections').click();
   await page.waitForLoadState('networkidle').catch(() => undefined);
   const clearing = page.getByTestId('agent-ledger');
   await expect(clearing).toContainText(/46,000\.00/, { timeout: 20_000 });

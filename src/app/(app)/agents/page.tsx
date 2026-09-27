@@ -3,7 +3,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { formatMoney } from '@/lib/format';
-import { getAgentPositions } from '@/lib/services/agent-ledger';
+import { getAgentSummaries } from '@/lib/services/agent-account';
 import { PageHeader } from '@/components/shared/page-header';
 import { SimpleMasterTable, type SimpleRow, type SimpleColumnSpec } from '@/components/shared/simple-master';
 import { STATUS_OPTIONS, type FieldSpec } from '@/components/shared/master-form';
@@ -28,10 +28,13 @@ const COLUMNS: SimpleColumnSpec[] = [
   { id: 'phone', header: 'Phone', key: 'phone', hideable: true },
   { id: 'email', header: 'Email', key: 'email', hideable: true, defaultHidden: true },
   { id: 'commission', header: 'Commission %', key: 'commission', kind: 'number', mobile: 'meta' },
-  // What the agent is actually holding and what he is owed — the two figures
-  // that decide whether to chase him or pay him, from the agent ledger.
-  { id: 'holding', header: 'Holding for us', key: 'holding', kind: 'number', mobile: 'meta' },
-  { id: 'payable', header: 'Commission owed', key: 'payable', kind: 'number', mobile: 'meta' },
+  // Where FID and the agent stand, from his ledger: the whole position first,
+  // then what makes it up. Each balance stays in its own account.
+  { id: 'position', header: 'Current position', key: 'position', mobile: 'meta' },
+  { id: 'holding', header: 'Collections held', key: 'holding', kind: 'number', mobile: 'meta' },
+  { id: 'payable', header: 'Commission outstanding', key: 'payable', kind: 'number', mobile: 'meta' },
+  { id: 'loanFrom', header: 'Loan payable', key: 'loanFrom', kind: 'number', hideable: true },
+  { id: 'loanTo', header: 'Loan receivable', key: 'loanTo', kind: 'number', hideable: true },
   {
     id: 'status',
     header: 'Status',
@@ -49,9 +52,9 @@ export default async function AgentsPage() {
       where: { companyId: user.activeCompany.id },
       orderBy: { agentName: 'asc' },
     }),
-    getAgentPositions(user.activeCompany.id),
+    getAgentSummaries(user.activeCompany.id),
   ]);
-  const positionByAgent = new Map(positions.map((p) => [p.agentId, p]));
+  const positionByAgent = new Map(positions.map((p) => [p.agentId, p.summary]));
   const localCurrency = user.activeCompany.localCurrency;
 
   const rows: SimpleRow[] = agents.map((a) => ({
@@ -65,20 +68,35 @@ export default async function AgentsPage() {
       phone: a.phone,
       email: a.email,
       commission: `${a.commissionPct.toString()}%`,
+      position: (() => {
+        const p = positionByAgent.get(a.id);
+        if (!p || p.netLocal.abs().lessThan('0.005')) return 'Nothing either way';
+        const first = a.agentName.split(/\s+/)[0];
+        return p.netLocal.isPositive()
+          ? `${first} owes FID ${formatMoney(p.netLocal, localCurrency)}`
+          : `FID owes ${first} ${formatMoney(p.netLocal.abs(), localCurrency)}`;
+      })(),
       holding: (() => {
         const p = positionByAgent.get(a.id);
         return p && Number(p.holdingLocal) !== 0 ? formatMoney(p.holdingLocal, localCurrency) : '—';
       })(),
       payable: (() => {
         const p = positionByAgent.get(a.id);
-        return p && Number(p.commissionPayableLocal) !== 0
-          ? formatMoney(p.commissionPayableLocal, localCurrency)
-          : '—';
+        return p && Number(p.commissionLocal) !== 0 ? formatMoney(p.commissionLocal, localCurrency) : '—';
+      })(),
+      loanFrom: (() => {
+        const p = positionByAgent.get(a.id);
+        return p && Number(p.loanFromAgentLocal) !== 0 ? formatMoney(p.loanFromAgentLocal, localCurrency) : '—';
+      })(),
+      loanTo: (() => {
+        const p = positionByAgent.get(a.id);
+        return p && Number(p.loanToAgentLocal) !== 0 ? formatMoney(p.loanToAgentLocal, localCurrency) : '—';
       })(),
       status: a.status === 'ACTIVE' ? 'Active' : 'Inactive',
     },
     actions: [
-      { label: 'Ledger', href: `/ledgers/agents?agent=${a.id}`, icon: 'ledger' as const },
+      // The agent's one ledger: every collection, commission, loan, settlement and set-off.
+      { label: 'Open ledger', href: `/agents/${a.id}`, icon: 'ledger' as const },
       { label: 'Receive from agent', href: `/finance/agent-commission?agent=${a.id}`, icon: 'moneyIn' as const },
     ],
     formValues: {

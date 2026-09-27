@@ -56,6 +56,11 @@ export type AgentLedgerRow = {
   /** Running balance in the company's currency: positive = agent owes the company. */
   balanceLocal: Decimal;
   status: string;
+  /** The shipment the line is for, when it is for one. */
+  shipmentId: string | null;
+  shipmentReference: string | null;
+  /** Who posted the entry. */
+  createdBy: string | null;
   /** Which balance the line belongs to: what a reader needs to tell a cheque held from a loan. */
   accountKind: 'Agent Clearing' | 'Commission' | 'Loan from agent' | 'Loan to agent' | 'Trade receivable' | 'Other';
   /** In the client's words: who this line moved money towards. */
@@ -101,6 +106,9 @@ type Raw = {
   memo: string | null;
   documents: unknown;
   chequeStatus: string | null;
+  shipmentId: string | null;
+  shipmentReference: string | null;
+  createdBy: string | null;
 };
 
 const CHEQUE_LABEL: Record<string, string> = {
@@ -191,7 +199,11 @@ export async function getAgentLedger(params: {
            ${INVOICE_DOCUMENTS_SQL} AS documents,
            CASE WHEN je."sourceType" = 'RECEIPT' THEN
              (SELECT ch."status"::text FROM cheques ch WHERE ch."receiptId" = je."sourceId" LIMIT 1)
-           END AS "chequeStatus"
+           END AS "chequeStatus",
+           jl."shipmentId",
+           (SELECT pc."contractReference" FROM shipments s JOIN purchase_contracts pc ON pc."id" = s."purchaseContractId"
+             WHERE s."id" = jl."shipmentId") AS "shipmentReference",
+           (SELECT u."name" FROM users u WHERE u."id" = je."createdById") AS "createdBy"
     FROM journal_lines jl
     JOIN journal_entries je ON je."id" = jl."journalEntryId"
     JOIN accounts acc ON acc."id" = jl."accountId"
@@ -278,6 +290,9 @@ export async function getAgentLedger(params: {
       creditLocal,
       usd: toMoney(usdMovement.abs()),
       balanceLocal: running,
+      shipmentId: row.shipmentId,
+      shipmentReference: row.shipmentReference,
+      createdBy: row.createdBy,
       accountKind: KIND[bucketOf(row)],
       direction: OWES_US.has(bucketOf(row))
         ? movement.isNegative()

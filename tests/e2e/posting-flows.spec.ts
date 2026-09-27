@@ -92,16 +92,20 @@ test('the agent ledger shows all three, each once', async ({ page }) => {
   await page.goto('/agents', { waitUntil: 'domcontentloaded' });
   // Each agent's row opens his consolidated ledger.
   const row = page.getByRole('row').filter({ hasText: AGENT }).first();
-  const href = await row.getByRole('link', { name: 'Ledger' }).getAttribute('href');
+  const href = await row.getByRole('link', { name: 'Open ledger' }).getAttribute('href');
+  expect(href).toMatch(/^\/agents\/[\w-]+$/);
   await page.goto(href!, { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => undefined);
-  const text = (await page.getByRole('main').innerText()).replace(/\s+/g, ' ');
   // 27,500 received less 10,000 repaid; 20,000 lent. Only the loan balances:
   // other browser tests give the same agent cheques to hold, which move his
   // net position but not his loans.
-  const line = text.match(new RegExp(`${AGENT}.*?(agent owes us|we owe the agent|settled)`))?.[0] ?? '';
-  expect(line, 'loan from him').toMatch(/MAD 17,500\.00/);
-  expect(line, 'loan to him').toMatch(/MAD 20,000\.00/);
+  const position = (await page.getByTestId('agent-position').innerText()).replace(/\s+/g, ' ');
+  expect(position, 'loan from him').toMatch(/Loan payable MAD 17,500\.00/);
+  expect(position, 'loan to him').toMatch(/Loan receivable MAD 20,000\.00/);
+  // Each loan is its own line on his one ledger.
+  await page.getByTestId('agent-tab-loans').click();
+  await expect(page.getByTestId('agent-ledger')).toContainText(/Loan received from/);
+  await expect(page.getByTestId('agent-ledger')).toContainText(/Loan given to/);
 });
 
 async function transfer(page: Page, from: RegExp, to: RegExp, amount: string) {
