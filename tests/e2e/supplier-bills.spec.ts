@@ -117,8 +117,9 @@ test('a posted document shows the journal entry it wrote', async ({ page }) => {
   // The entry the invoice wrote, on the invoice itself.
   const main = page.getByRole('main');
   await expect(main.getByRole('heading', { name: /^Journal$/ })).toBeVisible({ timeout: 30_000 });
-  await expect(main.getByRole('columnheader', { name: /^Debit$/ })).toBeVisible();
-  await expect(main.getByRole('columnheader', { name: /^Credit$/ })).toBeVisible();
+  // A corrected invoice shows each entry it wrote — the original, its reversal and the new one.
+  await expect(main.getByRole('columnheader', { name: /^Debit$/ }).first()).toBeVisible();
+  await expect(main.getByRole('columnheader', { name: /^Credit$/ }).first()).toBeVisible();
 
   // And it names the accounts, so the document explains itself.
   await expect(main).toContainText(/Accounts Receivable|Sales/i);

@@ -82,6 +82,7 @@ export function ExpenseForm({
   defaultShipmentId,
   canPost = true,
   traceByShipment,
+  orderShipmentId = {},
   taxEnabled = false,
   taxLabel = 'VAT',
   taxCodes = [],
@@ -102,6 +103,8 @@ export function ExpenseForm({
   defaultShipmentId?: string;
   canPost?: boolean;
   traceByShipment?: Record<string, ShipmentTrace>;
+  /** Each shipment record → the entry its order is offered as, so any record opens its whole order. */
+  orderShipmentId?: Record<string, string>;
   taxEnabled?: boolean;
   taxLabel?: string;
   taxCodes?: Array<{ value: string; label: string; ratePct: string }>;
@@ -135,7 +138,10 @@ export function ExpenseForm({
   const [form, setForm] = React.useState({
     expenseDate: initial?.expenseDate ?? todayInputValue(),
     expenseCategoryId: initial?.expenseCategoryId ?? (null as string | null),
-    shipmentId: initial?.shipmentId ?? defaultShipmentId ?? (null as string | null),
+    shipmentId: (() => {
+      const id = initial?.shipmentId ?? defaultShipmentId ?? null;
+      return id ? (orderShipmentId[id] ?? id) : (null as string | null);
+    })(),
     containerId: initial?.containerId ?? (null as string | null),
     batchId: initial?.batchId ?? (null as string | null),
     vendorId: initial?.vendorId ?? (null as string | null),
@@ -256,7 +262,14 @@ export function ExpenseForm({
       clientKey: initial?.id ? undefined : clientKey(),
       expenseDate: form.expenseDate,
       expenseCategoryId: form.expenseCategoryId,
-      shipmentId: kind === 'SHIPMENT' ? (form.shipmentId ?? '') : '',
+      // An edited cost keeps the record it was filed under while its order is
+      // unchanged, so saving it untouched does not re-post it.
+      shipmentId:
+        kind === 'SHIPMENT'
+          ? initial?.shipmentId && orderShipmentId[initial.shipmentId] === form.shipmentId
+            ? initial.shipmentId
+            : (form.shipmentId ?? '')
+          : '',
       purchaseContractId: '',
       containerId: kind === 'SHIPMENT' ? (form.containerId ?? '') : '',
       batchId: kind === 'SHIPMENT' ? (form.batchId ?? '') : '',
@@ -639,10 +652,12 @@ export function ExpenseForm({
             <>
               <Field
                 label="Container"
-                hint="Leave blank to spread the cost across the whole job."
+                htmlFor="expenseContainer"
+                hint="Whole shipment spreads the cost across every container on the order; a container takes it all."
                 error={fieldIssues.containerId}
               >
                 <Combobox
+                  id="expenseContainer"
                   options={[
                     { value: '__all__', label: 'Whole shipment' },
                     ...(traceByShipment?.[form.shipmentId]?.containers ?? []),
@@ -657,10 +672,12 @@ export function ExpenseForm({
               </Field>
               <Field
                 label="Batch"
-                hint="Leave blank to spread across every batch in the container (or the job)."
+                htmlFor="expenseBatch"
+                hint="Leave blank to spread across every batch in the container (or the whole shipment)."
                 error={fieldIssues.batchId}
               >
                 <Combobox
+                  id="expenseBatch"
                   options={[
                     { value: '__all__', label: 'Every batch' },
                     ...((traceByShipment?.[form.shipmentId]?.batches ?? []).filter(

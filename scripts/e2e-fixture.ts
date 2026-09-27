@@ -314,6 +314,55 @@ async function reset() {
   console.log(`${databaseName}: emptied and provisioned`);
 }
 
+/**
+ * A Moroccan order of three containers, a different coffee in each, for the
+ * shipment expense test: the form must offer all three. Created before the
+ * Moroccan trade so that trade stays first in the lists other tests pick from.
+ */
+async function seedThreeContainerOrder() {
+  const company = await prisma.company.findUniqueOrThrow({ where: { code: 'FID-MA' } });
+  const admin = await prisma.user.findFirstOrThrow({ where: { isSuperAdmin: true } });
+  const companyId = company.id;
+  if (await prisma.purchaseContract.findFirst({ where: { companyId, contractReference: 'E2E-PO-MA-3C' } })) return;
+  const vendor = await prisma.vendor.create({
+    data: { companyId, vendorCode: 'E2E-SUP-3C', vendorName: 'E2E Exporter Three Containers', country: 'Uganda', primaryCurrency: 'USD' },
+  });
+  const items = await Promise.all(
+    ['E2E Robusta Screen 12', 'E2E Robusta Screen 15', 'E2E Robusta Screen 18'].map((itemName, i) =>
+      prisma.coffeeItem.create({
+        data: { companyId, itemCode: `E2E-ITM-3C-${i + 1}`, itemName, coffeeType: 'ROBUSTA', originCountry: 'Uganda', bagWeightKg: '60', defaultUnit: 'KG' },
+      }),
+    ),
+  );
+  const contract = await createPurchaseContract(
+    {
+      companyId,
+      contractReference: 'E2E-PO-MA-3C',
+      contractDate: day('2026-07-20'),
+      vendorId: vendor.id,
+      origin: 'Uganda',
+      currency: 'USD',
+      rateToUsd: '1',
+      rateLocalPerUsd: '9.85',
+      freightAmount: '0',
+      containers: 3,
+      lines: items.map((item, i) => ({
+        itemId: item.id,
+        lotNumber: `E2E-LOT-3C-${i + 1}`,
+        batchNumber: `E2E-B-3C-${i + 1}`,
+        containerNumber: `E2EC300000${i + 1}`,
+        quantity: '20000',
+        unit: 'KG' as const,
+        unitPrice: '4.00',
+        bagWeightKg: '60',
+      })),
+    },
+    admin.id,
+  );
+  await postPurchaseContract({ id: contract.id, companyId, userId: admin.id });
+  console.log('FID-MA: E2E-PO-MA-3C, three containers');
+}
+
 async function main() {
   if (process.argv.includes('--reset')) await reset();
   await seedTrade({
@@ -333,6 +382,7 @@ async function main() {
     unitPrice: '22',
     receiptAmount: '100000',
   });
+  await seedThreeContainerOrder();
   await seedTrade({
     companyCode: 'FID-MA',
     currency: 'MAD',

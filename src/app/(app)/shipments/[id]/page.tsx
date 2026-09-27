@@ -495,7 +495,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                           </Badge>
                         </TD>
                         <TD className="text-xs">{line.paidFrom ?? '—'}</TD>
-                        <TD className="text-xs text-ink-muted">{line.containerNumber ?? 'Whole job'}</TD>
+                        <TD className="text-xs text-ink-muted">{line.containerNumber ?? 'Whole shipment'}</TD>
                         <TD className="text-xs text-ink-muted">{line.batchNumber ?? 'Every batch'}</TD>
                         <TD className="text-xs">{line.reference ?? '—'}</TD>
                         <TD className="text-right">

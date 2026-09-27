@@ -55,10 +55,12 @@ test.beforeEach(async ({ page }) => {
  * before it is still settling can close again under the click — focus
  * returns to the field just chosen — so it is reopened rather than waited on.
  */
-async function chooseFirst(page: Page, combobox: Locator) {
+async function chooseFirst(page: Page, combobox: Locator, text?: string) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     await combobox.click();
-    const option = page.getByRole('listbox').getByRole('option').first();
+    if (text) await page.keyboard.type(text, { delay: 20 });
+    const options = page.getByRole('listbox').getByRole('option');
+    const option = text ? options.filter({ hasText: text }).first() : options.first();
     const shown = await option.waitFor({ state: 'visible', timeout: 10_000 }).then(() => true).catch(() => false);
     if (shown && (await option.click({ timeout: 5_000 }).then(() => true).catch(() => false))) return;
     await page.keyboard.press('Escape').catch(() => undefined);
@@ -435,7 +437,7 @@ test('a plain MAD 7,400 shipment expense does not become 8,880', async ({ page }
   await page.waitForLoadState('networkidle').catch(() => undefined);
   const form = page.getByRole('main');
 
-  await chooseFirst(page, form.getByRole('combobox', { name: /contract \/ shipment/i }));
+  await chooseFirst(page, form.getByRole('combobox', { name: /contract \/ shipment/i }), 'E2E-PO-MA-1');
 
   await chooseFirst(page, form.getByRole('combobox', { name: /expense category/i }));
 
@@ -469,7 +471,7 @@ test('a plain MAD 7,400 shipment expense does not become 8,880', async ({ page }
   await page.goto('/shipments', { waitUntil: 'domcontentloaded' });
   // Costing is one of the actions the shared row pattern keeps in plain sight,
   // next to View, rather than hiding behind the overflow menu.
-  await page.getByRole('link', { name: /^Costing$/i }).first().click();
+  await page.getByRole('row').filter({ hasText: 'E2E-PO-MA-1' }).getByRole('link', { name: /^Costing$/i }).first().click();
   const costing = page.locator('#costing');
   await expect(costing).toContainText(/7,400/);
   await expect(costing).not.toContainText(/8,880/);
@@ -503,7 +505,7 @@ test('a plain MAD 7,400 shipment expense does not become 8,880', async ({ page }
 
   await page.goto('/finance/expenses/new', { waitUntil: 'domcontentloaded' });
   const next = page.getByRole('main');
-  await chooseFirst(page, next.getByRole('combobox', { name: /contract \/ shipment/i }));
+  await chooseFirst(page, next.getByRole('combobox', { name: /contract \/ shipment/i }), 'E2E-PO-MA-1');
   await chooseFirst(page, next.getByRole('combobox', { name: /expense category/i }));
   await next.getByLabel(/expense date/i).fill('2026-07-29');
   await next.locator('label').filter({ hasText: /already paid from cash/i }).click();

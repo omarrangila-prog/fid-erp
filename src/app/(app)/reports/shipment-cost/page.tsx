@@ -280,7 +280,7 @@ function OrderSection({
                       <TD>
                         <MemoCell memo={e.memo} />
                       </TD>
-                      <TD className="font-mono text-xs">{e.containerNumber ?? '—'}</TD>
+                      <TD className="font-mono text-xs">{e.containerNumber ?? 'Whole shipment'}</TD>
                       <TD numeric>
                         <DualAmount
                           amount={e.amount}

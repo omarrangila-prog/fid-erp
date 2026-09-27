@@ -34,6 +34,7 @@ export default async function NewExpensePage({ searchParams }: { searchParams: P
         canPost={can(user, PERMISSIONS.EXPENSES_POST)}
         canCreateCashBank={can(user, PERMISSIONS.CASHBANK_MANAGE)}
         traceByShipment={options.traceByShipment}
+        orderShipmentId={options.orderShipmentId}
         taxEnabled={options.taxEnabled}
         taxLabel={options.taxLabel}
         taxCodes={options.taxCodes}

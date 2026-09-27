@@ -66,6 +66,7 @@ export function SplitExpenseForm({
   defaultLocalRate,
   ratesByCurrency,
   traceByShipment = {},
+  orderShipmentId = {},
   defaultShipmentId,
   canCreateCashBank = false,
 }: {
@@ -78,6 +79,8 @@ export function SplitExpenseForm({
   defaultLocalRate: string;
   ratesByCurrency: Record<string, string>;
   traceByShipment?: Record<string, ShipmentTrace>;
+  /** Each shipment record → the entry its order is offered as. */
+  orderShipmentId?: Record<string, string>;
   defaultShipmentId?: string;
   canCreateCashBank?: boolean;
 }) {
@@ -91,7 +94,7 @@ export function SplitExpenseForm({
 
   const [header, setHeader] = React.useState({
     expenseDate: todayInputValue(),
-    shipmentId: defaultShipmentId ?? (null as string | null),
+    shipmentId: defaultShipmentId ? (orderShipmentId[defaultShipmentId] ?? defaultShipmentId) : (null as string | null),
     currency: localCurrency,
     rateToUsd: localCurrency === 'USD' ? '1' : defaultLocalRate,
     rateLocalPerUsd: defaultLocalRate,

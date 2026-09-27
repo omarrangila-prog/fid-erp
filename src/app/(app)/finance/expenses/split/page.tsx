@@ -33,6 +33,7 @@ export default async function SplitExpensePage({ searchParams }: { searchParams:
         defaultLocalRate={options.rates.local}
         ratesByCurrency={options.rates.byCurrency}
         traceByShipment={options.traceByShipment}
+        orderShipmentId={options.orderShipmentId}
         defaultShipmentId={job}
         canCreateCashBank={can(user, PERMISSIONS.CASHBANK_MANAGE)}
       />
