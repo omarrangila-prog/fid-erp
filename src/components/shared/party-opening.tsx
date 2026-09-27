@@ -4,6 +4,7 @@ import * as React from 'react';
 import { MasterFormSheet, type FieldSpec } from '@/components/shared/master-form';
 import { postPartyOpeningAction } from '@/server/actions/master-actions';
 import type { MasterFormState } from '@/server/actions/master-actions';
+import { transactionCurrencies } from '@/lib/company-currencies';
 
 /**
  * What a customer or supplier already owed on the day the books started here.
@@ -59,7 +60,10 @@ export function PartyOpeningSheet({
       name: 'currency',
       label: 'Currency',
       required: true,
-      options: [...new Set([currency, 'USD', 'MAD', 'AED'])].map((code) => ({ value: code, label: code })),
+      options: transactionCurrencies(localCurrency, currency).map((code) => ({
+        value: code,
+        label: code,
+      })),
     },
     {
       kind: 'text',

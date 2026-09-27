@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getCashBook } from '@/lib/services/reports';
 import { formatMoney, formatDate, titleCase } from '@/lib/format';
+import { DualAmount } from '@/components/shared/dual-amount';
 import { PageHeader } from '@/components/shared/page-header';
 import { Metric, MetricGrid } from '@/components/shared/stat-card';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -66,6 +67,7 @@ export default async function CashBookPage({ params }: { params: Promise<{ id: s
             </Button>
             {canManage ? (
               <EditCashBankAccountButton
+                localCurrency={user.activeCompany.localCurrency}
                 account={{
                   id: exists.id,
                   code: exists.code,
@@ -137,10 +139,34 @@ export default async function CashBookPage({ params }: { params: Promise<{ id: s
                       </TD>
                       <TD>{row.counterparty ?? '—'}</TD>
                       <TD numeric className={row.moneyIn.greaterThan(0) ? 'text-gold-700' : 'text-ink-subtle'}>
-                        {row.moneyIn.greaterThan(0) ? formatMoney(row.moneyIn, currency) : '—'}
+                        {row.moneyIn.greaterThan(0) ? (
+                          <DualAmount
+                            amount={row.moneyIn}
+                            currency={currency}
+                            localCurrency={user.activeCompany.localCurrency}
+                            amountUsd={row.movementUsd}
+                            amountLocal={row.movementLocal}
+                            rateSource="This entry's own rate"
+                            primaryClassName="font-normal"
+                          />
+                        ) : (
+                          '—'
+                        )}
                       </TD>
                       <TD numeric className={row.moneyOut.greaterThan(0) ? 'text-red-600' : 'text-ink-subtle'}>
-                        {row.moneyOut.greaterThan(0) ? formatMoney(row.moneyOut, currency) : '—'}
+                        {row.moneyOut.greaterThan(0) ? (
+                          <DualAmount
+                            amount={row.moneyOut}
+                            currency={currency}
+                            localCurrency={user.activeCompany.localCurrency}
+                            amountUsd={row.movementUsd}
+                            amountLocal={row.movementLocal}
+                            rateSource="This entry's own rate"
+                            primaryClassName="font-normal"
+                          />
+                        ) : (
+                          '—'
+                        )}
                       </TD>
                       <TD numeric className="font-medium">{formatMoney(row.balance, currency)}</TD>
                       <TD>

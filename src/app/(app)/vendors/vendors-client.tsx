@@ -5,7 +5,8 @@ import { Pencil, Plus, Scale } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MasterFormSheet, STATUS_OPTIONS, CURRENCY_OPTIONS, type FieldSpec } from '@/components/shared/master-form';
+import { MasterFormSheet, STATUS_OPTIONS, type FieldSpec } from '@/components/shared/master-form';
+import { currencyOptions } from '@/lib/company-currencies';
 import { saveVendorAction, toggleMasterStatusAction, type MasterFormState } from '@/server/actions/master-actions';
 import { BookOpen, FileText, HandCoins } from 'lucide-react';
 import { RowActions, viewAction } from '@/components/shared/row-actions';
@@ -35,7 +36,7 @@ export type VendorRow = {
   status: string;
 };
 
-const FIELDS: FieldSpec[] = [
+const FIELDS = (localCurrency: string, keep?: string): FieldSpec[] => [
   { kind: 'section', title: 'Identity' },
   { kind: 'text', name: 'vendorName', label: 'Supplier name', required: true, placeholder: 'Fazenda Santa Clara Exportadora' },
   { kind: 'text', name: 'country', label: 'Origin country', placeholder: 'Brazil' },
@@ -44,7 +45,7 @@ const FIELDS: FieldSpec[] = [
     name: 'primaryCurrency',
     label: 'Ledger currency',
     required: true,
-    options: CURRENCY_OPTIONS,
+    options: currencyOptions(localCurrency, { keep }),
     hint: 'Overseas coffee suppliers are normally carried in USD for both companies.',
   },
 
@@ -255,7 +256,7 @@ export function VendorsClient({
           onOpenChange={setCreating}
           title="New supplier"
           description="Suppliers are referenced by every purchase contract and payment."
-          fields={FIELDS}
+          fields={FIELDS(localCurrency)}
           defaults={{ primaryCurrency: 'USD', status: 'ACTIVE' }}
           action={saveVendorAction.bind(null, null) as (p: MasterFormState, f: FormData) => Promise<MasterFormState>}
           submitLabel="Create supplier"
@@ -267,7 +268,7 @@ export function VendorsClient({
           open
           onOpenChange={(open) => !open && setEditing(null)}
           title={`Edit ${editing.vendorName}`}
-          fields={FIELDS}
+          fields={FIELDS(localCurrency, editing.primaryCurrency)}
           defaults={{ ...editing }}
           action={
             saveVendorAction.bind(null, editing.id) as (p: MasterFormState, f: FormData) => Promise<MasterFormState>

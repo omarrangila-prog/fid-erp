@@ -1,4 +1,5 @@
 import type { MasterCreateSpec } from '@/components/shared/master-select';
+import { currencyOptions } from '@/lib/company-currencies';
 import {
   quickCreateVendorAction,
   quickCreateCustomerAction,
@@ -19,8 +20,13 @@ import {
 
 const CURRENCIES = ['USD', 'MAD', 'AED', 'EUR'].map((code) => ({ value: code, label: code }));
 
+/** Morocco keeps to dirhams and dollars; elsewhere the full list. */
+const currencyChoices = (localCurrency: string | undefined, current: string) =>
+  localCurrency?.toUpperCase() === 'MAD' ? currencyOptions(localCurrency, { keep: current, short: true }) : CURRENCIES;
+
 export function vendorCreateSpec(
   defaultCurrency: string,
+  localCurrency?: string,
 ): MasterCreateSpec<{ id: string; name: string; code: string; currency: string }> {
   return {
     label: '+ Add New Supplier',
@@ -34,7 +40,7 @@ export function vendorCreateSpec(
         label: 'Account currency',
         kind: 'select',
         required: true,
-        options: CURRENCIES,
+        options: currencyChoices(localCurrency, defaultCurrency),
         defaultValue: defaultCurrency,
         hint: 'The currency this supplier’s balance is stated in.',
       },
@@ -53,6 +59,7 @@ export function vendorCreateSpec(
 
 export function customerCreateSpec(
   defaultCurrency: string,
+  localCurrency?: string,
 ): MasterCreateSpec<{ id: string; name: string; currency: string; paymentTermDays: number }> {
   return {
     label: '+ Add New Customer',
@@ -66,7 +73,7 @@ export function customerCreateSpec(
         label: 'Account currency',
         kind: 'select',
         required: true,
-        options: CURRENCIES,
+        options: currencyChoices(localCurrency, defaultCurrency),
         defaultValue: defaultCurrency,
         hint: 'The currency this customer’s balance is stated in.',
       },
@@ -169,6 +176,7 @@ export function coffeeItemCreateSpec(): MasterCreateSpec<{
 export function cashBankCreateSpec(
   defaultCurrency: string,
   accountType: 'CASH' | 'BANK' = 'BANK',
+  localCurrency?: string,
 ): MasterCreateSpec<{ id: string; name: string; code: string; currency: string; accountType: string }> {
   return {
     label: accountType === 'CASH' ? '+ Add New Cash Account' : '+ Add New Bank Account',
@@ -194,7 +202,7 @@ export function cashBankCreateSpec(
         label: 'Currency',
         kind: 'select',
         required: true,
-        options: CURRENCIES,
+        options: currencyChoices(localCurrency, defaultCurrency),
         defaultValue: defaultCurrency,
         hint: 'A drawer holds one currency only.',
       },

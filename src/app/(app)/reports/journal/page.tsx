@@ -4,6 +4,7 @@ import { PERMISSIONS } from '@/lib/constants';
 import { getJournalReport } from '@/lib/services/reports';
 import { dec } from '@/lib/money';
 import { formatMoney, formatDate, formatDateTime, titleCase } from '@/lib/format';
+import { equivalentText } from '@/lib/dual-currency';
 import { PageHeader } from '@/components/shared/page-header';
 import { JournalClient } from '@/app/(app)/reports/journal/journal-client';
 import { DateRangePicker } from '@/components/shared/date-range';
@@ -70,10 +71,37 @@ export default async function JournalPage({
       <JournalClient
         rows={entries.map((entry) => {
           const debits = entry.lines.reduce((a, l) => a.plus(dec(l.debitUsd)), dec(0));
-          const credits = entry.lines.reduce((a, l) => a.plus(dec(l.creditUsd)), dec(0));
           // A voucher is normally in one currency; say so when it is, and
           // "mixed" when a settlement genuinely spans two.
           const currencies = [...new Set(entry.lines.map((l) => l.currency))];
+          /*
+           * The totals in the voucher's own currency with the other one
+           * underneath, both summed from what each line stored — nothing is
+           * converted here. A mixed voucher has no single own currency, so it
+           * reads in dollars with the company's currency underneath.
+           */
+          const own = currencies.length === 1 ? currencies[0] : 'USD';
+          const total = (side: 'debit' | 'credit') => {
+            const pick = (l: (typeof entry.lines)[number]) =>
+              side === 'debit'
+                ? { own: l.debit, usd: l.debitUsd, local: l.debitLocal }
+                : { own: l.credit, usd: l.creditUsd, local: l.creditLocal };
+            const sumOf = (key: 'own' | 'usd' | 'local') =>
+              entry.lines.reduce((a, l) => a.plus(dec(pick(l)[key])), dec(0));
+            const amount = currencies.length === 1 ? sumOf('own') : sumOf('usd');
+            return {
+              text: formatMoney(amount, own),
+              equivalent: equivalentText({
+                amount,
+                currency: own,
+                localCurrency: local,
+                amountUsd: sumOf('usd'),
+                amountLocal: sumOf('local'),
+              }),
+            };
+          };
+          const debitTotal = total('debit');
+          const creditTotal = total('credit');
           return {
             id: entry.id,
             entryNumber: entry.entryNumber,
@@ -85,8 +113,10 @@ export default async function JournalPage({
             sourceTypeLabel: titleCase(entry.sourceType),
             sourceId: entry.sourceId,
             currency: currencies.length === 1 ? currencies[0] : 'mixed',
-            totalDebit: formatMoney(debits, 'USD'),
-            totalCredit: formatMoney(credits, 'USD'),
+            totalDebit: debitTotal.text,
+            totalDebitEquivalent: debitTotal.equivalent,
+            totalCredit: creditTotal.text,
+            totalCreditEquivalent: creditTotal.equivalent,
             totalSort: Number(debits),
             isReversal: entry.isReversal,
             createdBy: entry.createdBy.name,
@@ -98,21 +128,28 @@ export default async function JournalPage({
               description: line.description,
               currency: line.currency,
               debit: dec(line.debit).greaterThan(0) ? formatMoney(line.debit, line.currency) : '—',
+              debitEquivalent: dec(line.debit).greaterThan(0)
+                ? equivalentText({
+                    amount: line.debit,
+                    currency: line.currency,
+                    localCurrency: local,
+                    amountUsd: line.debitUsd,
+                    amountLocal: line.debitLocal,
+                  })
+                : null,
               credit: dec(line.credit).greaterThan(0) ? formatMoney(line.credit, line.currency) : '—',
-              usd: dec(line.debitUsd).greaterThan(0)
-                ? formatMoney(line.debitUsd, 'USD')
-                : dec(line.creditUsd).greaterThan(0)
-                  ? `(${formatMoney(line.creditUsd, 'USD')})`
-                  : '—',
-              local: dec(line.debitLocal).greaterThan(0)
-                ? formatMoney(line.debitLocal, local)
-                : dec(line.creditLocal).greaterThan(0)
-                  ? `(${formatMoney(line.creditLocal, local)})`
-                  : '—',
+              creditEquivalent: dec(line.credit).greaterThan(0)
+                ? equivalentText({
+                    amount: line.credit,
+                    currency: line.currency,
+                    localCurrency: local,
+                    amountUsd: line.creditUsd,
+                    amountLocal: line.creditLocal,
+                  })
+                : null,
             })),
           };
         })}
-        localCurrency={local}
         canDelete={can(user, PERMISSIONS.ACCOUNTING_POST)}
       />
     </div>

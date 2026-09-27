@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import type { BatchCosting } from '@/lib/services/landed-cost';
 import { formatMoney, formatQuantityKg } from '@/lib/format';
-import { dec, sum } from '@/lib/money';
+import { dec, sum, type DecimalInput } from '@/lib/money';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 
 /**
@@ -36,6 +36,20 @@ export function CostingTable({
   const totalKg = sum(rows.map((r) => dec(r.orderedKg)));
   const totalPurchase = sum(rows.map((r) => dec(r.purchaseUsd)));
   const totalExpenseLocal = sum(rows.map((r) => dec(r.allocatedExpenseLocal)));
+  const totalExpenseUsd = sum(rows.map((r) => dec(r.allocatedExpenseUsd)));
+  /*
+   * Each figure in the company's currency with its dollars underneath, in one
+   * cell. Both are the batch's own — its purchase at the contract rate and its
+   * costs at the rate they were entered — so nothing is converted here.
+   */
+  const both = (localValue: DecimalInput, usd: DecimalInput) => (
+    <>
+      <span className="tnum block">{formatMoney(localValue, local)}</span>
+      {local === 'USD' ? null : (
+        <span className="tnum block text-[11px] font-normal text-ink-subtle">≈ {formatMoney(usd, 'USD')}</span>
+      )}
+    </>
+  );
   const totalLandedUsd = sum(rows.map((r) => dec(r.landedUsd)));
   const totalLandedLocal = sum(rows.map((r) => dec(r.landedLocal)));
   const share = rows.length > 0 ? 100 / rows.length : 0;
@@ -55,12 +69,9 @@ export function CostingTable({
             {showWarehouse ? <TH>Warehouse</TH> : null}
             <TH numeric>KG</TH>
             <TH numeric>Purchase USD</TH>
-            <TH numeric>Shared expense {local}</TH>
-            <TH numeric>Expense USD</TH>
-            <TH numeric>Landed {local}</TH>
-            <TH numeric>Landed USD</TH>
-            <TH numeric>Cost/KG {local}</TH>
-            <TH numeric>Cost/KG USD</TH>
+            <TH numeric>Shared expense</TH>
+            <TH numeric>Landed</TH>
+            <TH numeric>Cost/KG</TH>
           </TR>
         </THead>
         <TBody>
@@ -83,19 +94,14 @@ export function CostingTable({
               <TD numeric>{formatQuantityKg(row.orderedKg)}</TD>
               <TD numeric>{formatMoney(row.purchaseUsd, 'USD')}</TD>
               <TD numeric>
-                {formatMoney(row.allocatedExpenseLocal, local)}
+                {both(row.allocatedExpenseLocal, row.allocatedExpenseUsd)}
                 {rows.length > 1 ? (
                   <span className="block text-[11px] text-ink-subtle">{share.toFixed(0)}% of the job</span>
                 ) : null}
               </TD>
-              <TD numeric>{formatMoney(row.allocatedExpenseUsd, 'USD')}</TD>
-              <TD numeric>{formatMoney(row.landedLocal, local)}</TD>
-              <TD numeric>{formatMoney(row.landedUsd, 'USD')}</TD>
+              <TD numeric>{both(row.landedLocal, row.landedUsd)}</TD>
               <TD numeric className="font-semibold text-forest-800">
-                {formatMoney(row.landedPerKgLocal, local)}
-              </TD>
-              <TD numeric className="font-semibold text-forest-800">
-                {formatMoney(row.landedPerKgUsd, 'USD')}
+                {both(row.landedPerKgLocal, row.landedPerKgUsd)}
               </TD>
             </TR>
           ))}
@@ -105,15 +111,12 @@ export function CostingTable({
             <TD colSpan={showWarehouse ? 5 : 4}>Whole job</TD>
             <TD numeric>{formatQuantityKg(totalKg)}</TD>
             <TD numeric>{formatMoney(totalPurchase, 'USD')}</TD>
-            <TD numeric>{formatMoney(totalExpenseLocal, local)}</TD>
-            <TD />
-            <TD numeric>{formatMoney(totalLandedLocal, local)}</TD>
-            <TD numeric>{formatMoney(totalLandedUsd, 'USD')}</TD>
+            <TD numeric>{both(totalExpenseLocal, totalExpenseUsd)}</TD>
+            <TD numeric>{both(totalLandedLocal, totalLandedUsd)}</TD>
             <TD numeric>
-              {totalKg.greaterThan(0) ? formatMoney(totalLandedLocal.dividedBy(totalKg), local) : '—'}
-            </TD>
-            <TD numeric>
-              {totalKg.greaterThan(0) ? formatMoney(totalLandedUsd.dividedBy(totalKg), 'USD') : '—'}
+              {totalKg.greaterThan(0)
+                ? both(totalLandedLocal.dividedBy(totalKg), totalLandedUsd.dividedBy(totalKg))
+                : '—'}
             </TD>
           </tr>
         </TFoot>

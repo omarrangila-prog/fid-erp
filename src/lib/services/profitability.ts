@@ -425,8 +425,41 @@ export async function getShipmentProfitabilityById(
 
 /** Company-wide totals, used by the dashboard cards and the P&L cross-check. */
 export async function getCompanyProfitSummary(params: { companyId: string; from?: Date; to?: Date }) {
-  const rows = await prisma.$queryRaw<Array<{ revenue: string; cogs: string; expenses: string; soldKg: string }>>`
+  const rows = await prisma.$queryRaw<
+    Array<{
+      revenue: string;
+      cogs: string;
+      expenses: string;
+      soldKg: string;
+      revenueLocal: string;
+      cogsLocal: string;
+      expensesLocal: string;
+    }>
+  >`
     SELECT
+      -- The same figures in the company's currency, each document at its own
+      -- rate: the invoice's for sales and their cost, the expense's for costs.
+      (COALESCE((SELECT SUM(si."subtotalUsd" * si."rateLocalPerUsd") FROM sales_invoices si
+                 WHERE si."companyId" = ${params.companyId} AND si."status" = 'POSTED'
+                   AND (${params.from ?? null}::date IS NULL OR si."invoiceDate" >= ${params.from ?? null}::date)
+                   AND (${params.to ?? null}::date IS NULL OR si."invoiceDate" <= ${params.to ?? null}::date)), 0)
+      - COALESCE((SELECT SUM(cn."subtotalAmountUsd" * cn."rateLocalPerUsd") FROM credit_notes cn
+                 WHERE cn."companyId" = ${params.companyId} AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'
+                   AND (${params.from ?? null}::date IS NULL OR cn."creditDate" >= ${params.from ?? null}::date)
+                   AND (${params.to ?? null}::date IS NULL OR cn."creditDate" <= ${params.to ?? null}::date)), 0))::text AS "revenueLocal",
+      (COALESCE((SELECT SUM(si."costOfGoodsUsd" * si."rateLocalPerUsd") FROM sales_invoices si
+                 WHERE si."companyId" = ${params.companyId} AND si."status" = 'POSTED'
+                   AND (${params.from ?? null}::date IS NULL OR si."invoiceDate" >= ${params.from ?? null}::date)
+                   AND (${params.to ?? null}::date IS NULL OR si."invoiceDate" <= ${params.to ?? null}::date)), 0)
+      - COALESCE((SELECT SUM(cn."costOfGoodsUsd" * cn."rateLocalPerUsd") FROM credit_notes cn
+                 WHERE cn."companyId" = ${params.companyId} AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'
+                   AND (${params.from ?? null}::date IS NULL OR cn."creditDate" >= ${params.from ?? null}::date)
+                   AND (${params.to ?? null}::date IS NULL OR cn."creditDate" <= ${params.to ?? null}::date)), 0))::text AS "cogsLocal",
+      COALESCE((SELECT SUM(e."amountLocal") FROM expenses e
+                 WHERE e."companyId" = ${params.companyId} AND e."status" = 'POSTED'
+                   AND e."capitaliseToLandedCost" = false
+                   AND (${params.from ?? null}::date IS NULL OR e."expenseDate" >= ${params.from ?? null}::date)
+                   AND (${params.to ?? null}::date IS NULL OR e."expenseDate" <= ${params.to ?? null}::date)), 0)::text AS "expensesLocal",
       (COALESCE((SELECT SUM(si."subtotalUsd") FROM sales_invoices si
                  WHERE si."companyId" = ${params.companyId} AND si."status" = 'POSTED'
                    AND (${params.from ?? null}::date IS NULL OR si."invoiceDate" >= ${params.from ?? null}::date)
@@ -467,8 +500,15 @@ export async function getCompanyProfitSummary(params: { companyId: string; from?
   const netProfit = toMoney(grossProfit.minus(expenses));
   const soldKg = toQuantity(rows[0]?.soldKg ?? 0);
 
+  const revenueLocal = toMoney(rows[0]?.revenueLocal ?? 0);
+  const netProfitLocal = toMoney(
+    revenueLocal.minus(toMoney(rows[0]?.cogsLocal ?? 0)).minus(toMoney(rows[0]?.expensesLocal ?? 0)),
+  );
+
   return {
     revenueUsd: revenue,
+    revenueLocal,
+    netProfitLocal,
     cogsUsd: cogs,
     expensesUsd: expenses,
     grossProfitUsd: grossProfit,

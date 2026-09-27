@@ -20,7 +20,8 @@ import { exportHref } from '@/components/shared/excel-link';
 import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
 import { ReportSummary } from '@/components/shared/report-summary';
-import { dec } from '@/lib/money';
+import { dec, type Decimal } from '@/lib/money';
+import { transactionCurrencies } from '@/lib/company-currencies';
 
 export const metadata: Metadata = { title: 'Trial Balance' };
 export const dynamic = 'force-dynamic';
@@ -130,7 +131,7 @@ export default async function TrialBalancePage({
           label: `${s.purchaseContract.contractReference} · ${shipmentOrdinalLabel(ordinals.get(s.id))}`,
         }))}
         warehouses={warehouses.map((w) => ({ value: w.id, label: w.name }))}
-        currencies={[...new Set(['USD', local, 'AED', 'MAD'])]}
+        currencies={[...new Set(['USD', ...transactionCurrencies(local)])]}
       />
       {filtered ? (
         <p className="text-xs text-ink-muted">
@@ -190,10 +191,8 @@ export default async function TrialBalancePage({
                       <TH numeric>Credit movement</TH>
                     </>
                   ) : null}
-                  <TH numeric>{trial.hasOpening ? 'Closing debit' : 'Debit USD'}</TH>
-                  <TH numeric>{trial.hasOpening ? 'Closing credit' : 'Credit USD'}</TH>
-                  <TH numeric>Debit {local}</TH>
-                  <TH numeric>Credit {local}</TH>
+                  <TH numeric>{trial.hasOpening ? 'Closing debit' : 'Debit'}</TH>
+                  <TH numeric>{trial.hasOpening ? 'Closing credit' : 'Credit'}</TH>
                 </TR>
               </THead>
               <TBody>
@@ -220,13 +219,11 @@ export default async function TrialBalancePage({
                         <TD numeric>{row.periodCreditUsd.greaterThan(0) ? formatMoney(row.periodCreditUsd, 'USD') : '—'}</TD>
                       </>
                     ) : null}
-                    <TD numeric>{row.debitUsd.greaterThan(0) ? formatMoney(row.debitUsd, 'USD') : '—'}</TD>
-                    <TD numeric>{row.creditUsd.greaterThan(0) ? formatMoney(row.creditUsd, 'USD') : '—'}</TD>
-                    <TD numeric className="text-ink-muted">
-                      {row.debitLocal.greaterThan(0) ? formatMoney(row.debitLocal, local) : '—'}
+                    <TD numeric>
+                      <BookSides usd={row.debitUsd} local={row.debitLocal} localCurrency={local} />
                     </TD>
-                    <TD numeric className="text-ink-muted">
-                      {row.creditLocal.greaterThan(0) ? formatMoney(row.creditLocal, local) : '—'}
+                    <TD numeric>
+                      <BookSides usd={row.creditUsd} local={row.creditLocal} localCurrency={local} />
                     </TD>
                   </TR>
                 ))}
@@ -242,10 +239,12 @@ export default async function TrialBalancePage({
                       <TD numeric>{formatMoney(trial.totals.periodCreditUsd, 'USD')}</TD>
                     </>
                   ) : null}
-                  <TD numeric>{formatMoney(trial.totals.debitUsd, 'USD')}</TD>
-                  <TD numeric>{formatMoney(trial.totals.creditUsd, 'USD')}</TD>
-                  <TD numeric>{formatMoney(trial.totals.debitLocal, local)}</TD>
-                  <TD numeric>{formatMoney(trial.totals.creditLocal, local)}</TD>
+                  <TD numeric>
+                    <BookSides usd={trial.totals.debitUsd} local={trial.totals.debitLocal} localCurrency={local} always />
+                  </TD>
+                  <TD numeric>
+                    <BookSides usd={trial.totals.creditUsd} local={trial.totals.creditLocal} localCurrency={local} always />
+                  </TD>
                 </tr>
               </TFoot>
             </Table>
@@ -253,5 +252,37 @@ export default async function TrialBalancePage({
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/**
+ * One side of an account in both sets of books, in one cell: the dollar book
+ * above, the company's-currency book beneath. Both are what the entries
+ * stored — the local figure is the books' own, not a conversion of the
+ * dollars.
+ */
+function BookSides({
+  usd,
+  local,
+  localCurrency,
+  always = false,
+}: {
+  usd: Decimal;
+  local: Decimal;
+  localCurrency: string;
+  always?: boolean;
+}) {
+  const showUsd = always || usd.greaterThan(0);
+  const showLocal = localCurrency !== 'USD' && (always || local.greaterThan(0));
+  if (!showUsd && !showLocal) return <>—</>;
+  return (
+    <span className="inline-block">
+      <span className="tnum block">{showUsd ? formatMoney(usd, 'USD') : '—'}</span>
+      {showLocal ? (
+        <span className="tnum block text-[11px] font-normal text-ink-subtle" title={`${localCurrency} books`}>
+          {formatMoney(local, localCurrency)}
+        </span>
+      ) : null}
+    </span>
   );
 }

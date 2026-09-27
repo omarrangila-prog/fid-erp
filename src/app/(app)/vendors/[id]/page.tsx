@@ -17,6 +17,7 @@ import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/tabl
 import { EmptyState } from '@/components/ui/feedback';
 import { StatCard, DetailRow } from '@/components/shared/stat-card';
 import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
+import { DualAmount } from '@/components/shared/dual-amount';
 
 export const dynamic = 'force-dynamic';
 
@@ -240,7 +241,6 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
                     <TH>Method</TH>
                     <TH>Account</TH>
                     <TH numeric>Amount</TH>
-                    <TH numeric>USD</TH>
                     <TH>Status</TH>
                   </TR>
                 </THead>
@@ -258,8 +258,18 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
                       <TD>{formatDate(payment.paymentDate)}</TD>
                       <TD>{PAYMENT_METHOD_LABELS[payment.paymentMethod] ?? payment.paymentMethod}</TD>
                       <TD>{payment.cashBankAccount?.name ?? 'Cheque issued'}</TD>
-                      <TD numeric>{formatMoney(payment.amount, payment.currency)}</TD>
-                      <TD numeric>{formatMoney(payment.amountUsd, 'USD')}</TD>
+                      <TD numeric>
+                        <DualAmount
+                          amount={payment.amount}
+                          currency={payment.currency}
+                          localCurrency={user.activeCompany.localCurrency}
+                          rateLocalPerUsd={payment.rateLocalPerUsd}
+                          amountUsd={payment.amountUsd}
+                          amountLocal={payment.amountLocal}
+                          rateSource="This payment's own rate"
+                          primaryClassName="font-normal"
+                        />
+                      </TD>
                       <TD>
                         <StatusBadge status={payment.status} meta={TRANSACTION_STATUS_META} />
                       </TD>

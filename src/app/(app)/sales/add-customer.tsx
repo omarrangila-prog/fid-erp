@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { quickCreateCustomerAction } from '@/server/actions/master-actions';
+import { CURRENCY_NAMES, transactionCurrencies } from '@/lib/company-currencies';
 
 /**
  * Add a customer without leaving the invoice.
@@ -22,6 +23,7 @@ import { quickCreateCustomerAction } from '@/server/actions/master-actions';
  */
 export function AddCustomer({
   defaultCurrency,
+  localCurrency,
   initialName,
   open,
   onOpenChange,
@@ -29,6 +31,7 @@ export function AddCustomer({
   triggerLabel = 'Add Customer',
 }: {
   defaultCurrency: string;
+  localCurrency: string;
   initialName?: string;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -58,6 +61,7 @@ export function AddCustomer({
         {dialogOpen ? (
           <AddCustomerBody
             defaultCurrency={defaultCurrency}
+            localCurrency={localCurrency}
             initialName={initialName}
             onClose={() => setDialogOpen(false)}
             onCreated={(customer) => {
@@ -73,11 +77,13 @@ export function AddCustomer({
 
 function AddCustomerBody({
   defaultCurrency,
+  localCurrency,
   initialName,
   onClose,
   onCreated,
 }: {
   defaultCurrency: string;
+  localCurrency: string;
   initialName?: string;
   onClose: () => void;
   onCreated: (customer: { id: string; name: string; currency: string }) => void;
@@ -150,9 +156,11 @@ function AddCustomerBody({
             value={form.primaryCurrency}
             onChange={(e) => set({ primaryCurrency: e.target.value })}
           >
-            <option value="USD">USD — US Dollar</option>
-            <option value="MAD">MAD — Moroccan Dirham</option>
-            <option value="AED">AED — UAE Dirham</option>
+            {transactionCurrencies(localCurrency, defaultCurrency).map((code) => (
+              <option key={code} value={code}>
+                {code} — {CURRENCY_NAMES[code] ?? code}
+              </option>
+            ))}
           </Select>
         </Field>
 

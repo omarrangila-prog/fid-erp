@@ -18,6 +18,7 @@ import { ExportLinks } from '@/components/shared/export-links';
 import { FavouriteStar } from '@/components/reports/report-statement';
 import { PrintHeader } from '@/components/shared/print-header';
 import { MemoCell } from '@/components/shared/memo-cell';
+import { DualAmount } from '@/components/shared/dual-amount';
 import { businessNumber } from '@/lib/short-number';
 import { OpenAllForPrint } from '@/app/(app)/reports/shipment-cost/open-for-print';
 
@@ -262,8 +263,6 @@ function OrderSection({
                     <TH>Memo</TH>
                     <TH>Container</TH>
                     <TH numeric>Amount</TH>
-                    <TH numeric>USD</TH>
-                    <TH numeric>{local}</TH>
                     <TH>In the coffee?</TH>
                     <TH>Paid</TH>
                   </TR>
@@ -282,9 +281,17 @@ function OrderSection({
                         <MemoCell memo={e.memo} />
                       </TD>
                       <TD className="font-mono text-xs">{e.containerNumber ?? '—'}</TD>
-                      <TD numeric>{formatMoney(e.amount, e.currency)}</TD>
-                      <TD numeric>{formatMoney(e.amountUsd, 'USD')}</TD>
-                      <TD numeric>{formatMoney(e.amountLocal, local)}</TD>
+                      <TD numeric>
+                        <DualAmount
+                          amount={e.amount}
+                          currency={e.currency}
+                          localCurrency={local}
+                          amountUsd={e.amountUsd}
+                          amountLocal={e.amountLocal}
+                          rateSource="This cost's own rate"
+                          primaryClassName="font-normal"
+                        />
+                      </TD>
                       <TD>
                         <Badge tone={e.capitalised ? 'success' : 'neutral'}>{e.capitalised ? 'Yes' : 'No — a running cost'}</Badge>
                       </TD>
@@ -297,7 +304,7 @@ function OrderSection({
                 {sheet.byCategory.length > 0 ? (
                   <TBody>
                     <TR className="bg-surface-sunken/40 hover:bg-surface-sunken/40">
-                      <TD colSpan={9} className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+                      <TD colSpan={7} className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
                         By category
                       </TD>
                     </TR>
@@ -308,9 +315,17 @@ function OrderSection({
                         <TD className="text-xs text-ink-muted">
                           {row.count} {row.count === 1 ? 'entry' : 'entries'}
                         </TD>
-                        <TD colSpan={2} />
-                        <TD numeric>{formatMoney(row.amountUsd, 'USD')}</TD>
-                        <TD numeric>{formatMoney(row.amountLocal, local)}</TD>
+                        <TD />
+                        <TD numeric>
+                          <DualAmount
+                            amount={row.amountLocal}
+                            currency={local}
+                            localCurrency={local}
+                            amountUsd={row.amountUsd}
+                            rateSource="Each cost at its own rate"
+                            primaryClassName="font-normal"
+                          />
+                        </TD>
                         <TD>
                           <Badge tone={row.capitalised ? 'success' : 'neutral'}>{row.capitalised ? 'Yes' : 'No — a running cost'}</Badge>
                         </TD>
@@ -321,9 +336,16 @@ function OrderSection({
                 ) : null}
                 <TFoot>
                   <tr>
-                    <TD colSpan={5}>Total expenses</TD>
-                    <TD numeric>{formatMoney(sheet.expenseUsd, 'USD')}</TD>
-                    <TD numeric>{formatMoney(sheet.expenseLocal, local)}</TD>
+                    <TD colSpan={4}>Total expenses</TD>
+                    <TD numeric>
+                      <DualAmount
+                        amount={sheet.expenseLocal}
+                        currency={local}
+                        localCurrency={local}
+                        amountUsd={sheet.expenseUsd}
+                        rateSource="Each cost at its own rate"
+                      />
+                    </TD>
                     <TD colSpan={2} />
                   </tr>
                 </TFoot>
@@ -339,8 +361,7 @@ function OrderSection({
               <THead>
                 <TR className="hover:bg-transparent">
                   <TH />
-                  <TH numeric>{local}</TH>
-                  <TH numeric>USD</TH>
+                  <TH numeric>Amount</TH>
                 </TR>
               </THead>
               <TBody>
@@ -366,23 +387,27 @@ function OrderSection({
                     <TD className={cn(style ? 'font-semibold' : undefined, style === 'profit' ? profitTone : undefined)}>
                       {String(label)}
                     </TD>
-                    <TD numeric className={cn(style ? 'font-semibold' : undefined, style === 'profit' ? profitTone : undefined)}>
-                      {formatMoney(localValue as never, local)}
-                    </TD>
-                    <TD numeric className={cn('text-ink-muted', style ? 'font-semibold' : undefined)}>
-                      {formatMoney(usd as never, 'USD')}
+                    <TD numeric className={cn(style === 'profit' ? profitTone : undefined)}>
+                      <DualAmount
+                        amount={localValue as never}
+                        currency={local}
+                        localCurrency={local}
+                        amountUsd={usd as never}
+                        rateSource="Each transaction at its own rate"
+                        primaryClassName={style ? 'font-semibold' : 'font-normal'}
+                      />
                     </TD>
                   </TR>
                 ))}
                 <TR>
                   <TD>Margin</TD>
-                  <TD numeric colSpan={2}>{dec(sheet.marginPct).toFixed(1)}%</TD>
+                  <TD numeric>{dec(sheet.marginPct).toFixed(1)}%</TD>
                 </TR>
                 <TR>
                   <TD>Remaining stock</TD>
-                  <TD numeric colSpan={2}>
-                    {formatQuantityKg(sheet.remainingKg)} · carried at {formatMoney(sheet.remainingValueLocal, local)} ·{' '}
-                    {formatMoney(sheet.remainingValueUsd, 'USD')}
+                  <TD numeric>
+                    {formatQuantityKg(sheet.remainingKg)} · carried at {formatMoney(sheet.remainingValueLocal, local)}
+                    <span className="block text-[11px] text-ink-subtle">≈ {formatMoney(sheet.remainingValueUsd, 'USD')}</span>
                   </TD>
                 </TR>
               </TBody>

@@ -13,6 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { Callout, EmptyState } from '@/components/ui/feedback';
 import { OverheadAllocationForm } from '@/app/(app)/reports/overhead-allocation/allocation-form';
+import { DualAmount } from '@/components/shared/dual-amount';
 
 export const metadata: Metadata = { title: 'Overhead Allocation' };
 export const dynamic = 'force-dynamic';
@@ -116,7 +117,6 @@ export default async function OverheadAllocationPage({
                   <TH>Category</TH>
                   <TH>Memo</TH>
                   <TH numeric>Amount</TH>
-                  <TH numeric>USD</TH>
                   <TH>Allocated</TH>
                 </TR>
               </THead>
@@ -126,15 +126,24 @@ export default async function OverheadAllocationPage({
                     <TD>{formatDate(expense.expenseDate)}</TD>
                     <TD>{expense.expenseCategory.name}</TD>
                     <TD className="text-xs text-ink-muted">{expense.description ?? '—'}</TD>
-                    <TD numeric>{formatMoney(expense.amount, expense.currency)}</TD>
-                    <TD numeric>{formatMoney(expense.amountUsd, 'USD')}</TD>
+                    <TD numeric>
+                      <DualAmount
+                        amount={expense.amount}
+                        currency={expense.currency}
+                        localCurrency={user.activeCompany.localCurrency}
+                        amountUsd={expense.amountUsd}
+                        amountLocal={expense.amountLocal}
+                        rateSource="This cost's own rate"
+                        primaryClassName="font-normal"
+                      />
+                    </TD>
                     <TD className="text-xs">{expense.overheadAllocationId ? 'Counted in an allocation' : 'Not allocated'}</TD>
                   </TR>
                 ))}
               </TBody>
               <TFoot>
                 <tr>
-                  <TD colSpan={4}>Total</TD>
+                  <TD colSpan={3}>Total</TD>
                   <TD numeric>{formatMoney(overheads.totalUsd, 'USD')}</TD>
                   <TD />
                 </tr>

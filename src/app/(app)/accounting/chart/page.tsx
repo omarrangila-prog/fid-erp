@@ -92,8 +92,7 @@ export default async function ChartOfAccountsPage() {
                     <TH>Status</TH>
                     <TH numeric>Debit USD</TH>
                     <TH numeric>Credit USD</TH>
-                    <TH numeric>Balance USD</TH>
-                    <TH numeric>Balance {localCurrency}</TH>
+                    <TH numeric>Balance</TH>
                     <TH className="text-right print:hidden">Actions</TH>
                   </TR>
                 </THead>
@@ -142,8 +141,14 @@ export default async function ChartOfAccountsPage() {
                       <TD numeric className="text-ink-muted">
                         {account.creditUsd.greaterThan(0) ? formatMoney(account.creditUsd, 'USD') : '—'}
                       </TD>
-                      <TD numeric>{formatMoney(account.balanceUsd, 'USD')}</TD>
-                      <TD numeric>{formatMoney(account.balanceLocal, localCurrency)}</TD>
+                      <TD numeric>
+                        <span className="tnum block">{formatMoney(account.balanceUsd, 'USD')}</span>
+                        {localCurrency === 'USD' ? null : (
+                          <span className="tnum block text-[11px] text-ink-subtle" title={`${localCurrency} books`}>
+                            {formatMoney(account.balanceLocal, localCurrency)}
+                          </span>
+                        )}
+                      </TD>
                       <TD className="text-right print:hidden">
                         {canPost ? (
                           <AccountRowActions

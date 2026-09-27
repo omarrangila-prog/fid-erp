@@ -19,6 +19,7 @@ import { EmptyState } from '@/components/ui/feedback';
 import { StatCard, DetailRow } from '@/components/shared/stat-card';
 import { shortDocumentNumber } from '@/lib/short-number';
 import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
+import { DualAmount } from '@/components/shared/dual-amount';
 
 export const dynamic = 'force-dynamic';
 
@@ -120,6 +121,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
           <>
             {can(user, PERMISSIONS.CUSTOMERS_EDIT) ? (
               <CustomerEditButton
+                localCurrency={user.activeCompany.localCurrency}
                 customer={{
                   id: customer.id,
                   customerCode: customer.customerCode,
@@ -322,7 +324,6 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                     <TH>Account</TH>
                     <TH numeric>Amount</TH>
                     <TH numeric>Rate</TH>
-                    <TH numeric>USD</TH>
                     <TH>Status</TH>
                   </TR>
                 </THead>
@@ -340,9 +341,19 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                       <TD>{formatDate(receipt.receiptDate)}</TD>
                       <TD>{PAYMENT_METHOD_LABELS[receipt.paymentMethod] ?? receipt.paymentMethod}</TD>
                       <TD>{receipt.cashBankAccount?.name ?? 'Cheque in hand'}</TD>
-                      <TD numeric>{formatMoney(receipt.amount, receipt.currency)}</TD>
+                      <TD numeric>
+                        <DualAmount
+                          amount={receipt.amount}
+                          currency={receipt.currency}
+                          localCurrency={user.activeCompany.localCurrency}
+                          rateLocalPerUsd={receipt.rateLocalPerUsd}
+                          amountUsd={receipt.amountUsd}
+                          amountLocal={receipt.amountLocal}
+                          rateSource="This receipt's own rate"
+                          primaryClassName="font-normal"
+                        />
+                      </TD>
                       <TD numeric>{receipt.currency === 'USD' ? '—' : receipt.rateToUsd.toString()}</TD>
-                      <TD numeric>{formatMoney(receipt.amountUsd, 'USD')}</TD>
                       <TD>
                         <StatusBadge status={receipt.status} meta={TRANSACTION_STATUS_META} />
                       </TD>

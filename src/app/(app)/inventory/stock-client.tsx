@@ -1,5 +1,6 @@
 'use client';
 
+import { DualText } from '@/components/shared/dual-text';
 import { formatBags } from '@/lib/bags';
 import * as React from 'react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
@@ -25,6 +26,9 @@ export type StockRow = {
   valueLabel: string;
   costPerKgLabel: string;
   valueSort: number;
+  valueLocalSort: number;
+  valueEquivalent: { text: string; title: string } | null;
+  costPerKgEquivalent: { text: string; title: string } | null;
   /** Every batch making up this row, with where it came from. */
   lots: Array<{
     batchNumber: string;
@@ -131,7 +135,7 @@ export function StockClient({
             numeric: true,
             mobile: 'meta',
             sortValue: (r: StockRow) => (r.onHandSort > 0 ? r.valueSort / r.onHandSort : 0),
-            cell: (r: StockRow) => r.costPerKgLabel,
+            cell: (r: StockRow) => <DualText primary={r.costPerKgLabel} equivalent={r.costPerKgEquivalent} />,
           } satisfies DataColumn<StockRow>,
           {
             id: 'value',
@@ -139,7 +143,7 @@ export function StockClient({
             numeric: true,
             mobile: 'meta',
             sortValue: (r: StockRow) => r.valueSort,
-            cell: (r: StockRow) => r.valueLabel,
+            cell: (r: StockRow) => <DualText primary={r.valueLabel} equivalent={r.valueEquivalent} />,
           } satisfies DataColumn<StockRow>,
         ]
       : []),

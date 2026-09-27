@@ -51,7 +51,9 @@ export default async function CashBankPage() {
                 </Link>
               </Button>
             ) : null}
-            {can(user, PERMISSIONS.CASHBANK_MANAGE) ? <CashBankAccountButton /> : null}
+            {can(user, PERMISSIONS.CASHBANK_MANAGE) ? (
+              <CashBankAccountButton localCurrency={user.activeCompany.localCurrency} />
+            ) : null}
           </div>
         }
       />

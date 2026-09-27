@@ -9,6 +9,7 @@ import { Input, Select } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { JOURNAL_ACCOUNT_KINDS } from '@/lib/services/journal-account-kind';
 import { quickCreateJournalAccountAction } from '@/server/actions/master-actions';
+import { CURRENCY_NAMES, transactionCurrencies } from '@/lib/company-currencies';
 
 export type CreatedJournalAccount = {
   id: string;
@@ -30,12 +31,14 @@ export function AddJournalAccountDialog({
   onOpenChange,
   initialName,
   defaultCurrency,
+  localCurrency,
   onCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialName?: string;
   defaultCurrency: string;
+  localCurrency: string;
   onCreated: (account: CreatedJournalAccount) => void;
 }) {
   return (
@@ -44,6 +47,7 @@ export function AddJournalAccountDialog({
         <AddJournalAccountBody
           initialName={initialName}
           defaultCurrency={defaultCurrency}
+          localCurrency={localCurrency}
           onClose={() => onOpenChange(false)}
           onCreated={(account) => {
             onCreated(account);
@@ -58,11 +62,13 @@ export function AddJournalAccountDialog({
 function AddJournalAccountBody({
   initialName,
   defaultCurrency,
+  localCurrency,
   onClose,
   onCreated,
 }: {
   initialName?: string;
   defaultCurrency: string;
+  localCurrency: string;
   onClose: () => void;
   onCreated: (account: CreatedJournalAccount) => void;
 }) {
@@ -143,9 +149,11 @@ function AddJournalAccountBody({
           hint="The currency this ledger is usually kept in. Journals in another currency stay separate."
         >
           <Select id="newAccountCurrency" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-            <option value="USD">USD — US Dollar</option>
-            <option value="MAD">MAD — Moroccan Dirham</option>
-            <option value="AED">AED — UAE Dirham</option>
+            {transactionCurrencies(localCurrency, defaultCurrency).map((code) => (
+              <option key={code} value={code}>
+                {code} — {CURRENCY_NAMES[code] ?? code}
+              </option>
+            ))}
           </Select>
         </Field>
 

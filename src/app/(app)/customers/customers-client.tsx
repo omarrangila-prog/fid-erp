@@ -5,7 +5,8 @@ import { Pencil, Plus, Scale } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MasterFormSheet, STATUS_OPTIONS, CURRENCY_OPTIONS, type FieldSpec } from '@/components/shared/master-form';
+import { MasterFormSheet, STATUS_OPTIONS, type FieldSpec } from '@/components/shared/master-form';
+import { currencyOptions } from '@/lib/company-currencies';
 import { saveCustomerAction, toggleMasterStatusAction, type MasterFormState } from '@/server/actions/master-actions';
 import { BookOpen, FileText, HandCoins } from 'lucide-react';
 import { RowActions, viewAction } from '@/components/shared/row-actions';
@@ -38,7 +39,12 @@ export type CustomerRow = {
   agentId: string | null;
 };
 
-const FIELDS = (defaultCurrency: string, agents: Array<{ id: string; agentName: string }>): FieldSpec[] => [
+const FIELDS = (
+  defaultCurrency: string,
+  agents: Array<{ id: string; agentName: string }>,
+  localCurrency: string,
+  keep?: string,
+): FieldSpec[] => [
   { kind: 'section', title: 'Identity' },
   { kind: 'text', name: 'customerName', label: 'Customer name', required: true },
   { kind: 'text', name: 'country', label: 'Country' },
@@ -47,7 +53,7 @@ const FIELDS = (defaultCurrency: string, agents: Array<{ id: string; agentName: 
     name: 'primaryCurrency',
     label: 'Ledger currency',
     required: true,
-    options: CURRENCY_OPTIONS,
+    options: currencyOptions(localCurrency, { keep }),
     hint: `This customer's ledger is kept in this currency. ${defaultCurrency} is normal here.`,
   },
 
@@ -275,8 +281,13 @@ export function CustomersClient({
           onOpenChange={setCreating}
           title="New customer"
           description="Customers are created once and referenced by every sale and receipt."
-          fields={FIELDS(defaultCurrency, agents)}
-          defaults={{ primaryCurrency: defaultCurrency, status: 'ACTIVE', creditLimit: '0', agentId: '' }}
+          fields={FIELDS(defaultCurrency, agents, localCurrency)}
+          defaults={{
+            primaryCurrency: defaultCurrency,
+            status: 'ACTIVE',
+            creditLimit: '0',
+            agentId: '',
+          }}
           action={saveCustomerAction.bind(null, null) as (p: MasterFormState, f: FormData) => Promise<MasterFormState>}
           submitLabel="Create customer"
         />
@@ -287,7 +298,7 @@ export function CustomersClient({
           open
           onOpenChange={(open) => !open && setEditing(null)}
           title={`Edit ${editing.customerName}`}
-          fields={FIELDS(defaultCurrency, agents)}
+          fields={FIELDS(defaultCurrency, agents, localCurrency, editing.primaryCurrency)}
           defaults={{
             customerCode: editing.customerCode,
             agentId: editing.agentId ?? '',
@@ -329,6 +340,7 @@ export function CustomersClient({
 export function CustomerEditButton({
   customer,
   defaultCurrency,
+  localCurrency,
   agents = [],
 }: {
   customer: {
@@ -348,6 +360,7 @@ export function CustomerEditButton({
     agentId?: string | null;
   };
   defaultCurrency: string;
+  localCurrency: string;
   agents?: Array<{ id: string; agentName: string }>;
 }) {
   const [open, setOpen] = React.useState(false);
@@ -361,7 +374,7 @@ export function CustomerEditButton({
         open={open}
         onOpenChange={setOpen}
         title={`Edit ${customer.customerName}`}
-        fields={FIELDS(defaultCurrency, agents)}
+        fields={FIELDS(defaultCurrency, agents, localCurrency, customer.primaryCurrency)}
         defaults={{ ...customer, agentId: customer.agentId ?? '' }}
         action={saveCustomerAction.bind(null, customer.id) as (p: MasterFormState, f: FormData) => Promise<MasterFormState>}
       />

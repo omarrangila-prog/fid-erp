@@ -123,12 +123,16 @@ export async function getDashboard(params: { companyId: string; from?: Date; to?
 
   const agentHoldingUsd = agents.reduce((sum, a) => sum.plus(a.holdingUsd), new Decimal(0));
   const agentCommissionUsd = agents.reduce((sum, a) => sum.plus(a.commissionPayableUsd), new Decimal(0));
+  const agentHoldingLocal = agents.reduce((sum, a) => sum.plus(a.holdingLocal), new Decimal(0));
+  const agentCommissionLocal = agents.reduce((sum, a) => sum.plus(a.commissionPayableLocal), new Decimal(0));
 
   return {
     agents: {
       positions: agents.filter((a) => !a.holdingUsd.isZero() || !a.commissionPayableUsd.isZero()),
       /** Money customers have paid that has not reached the company. */
       holdingUsd: toMoney(agentHoldingUsd),
+      holdingLocal: toMoney(agentHoldingLocal),
+      commissionPayableLocal: toMoney(agentCommissionLocal),
       /** Commission already charged to shipments and not yet paid. */
       commissionPayableUsd: toMoney(agentCommissionUsd),
     },

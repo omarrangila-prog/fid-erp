@@ -85,6 +85,7 @@ export function AccountSelect({
   value,
   onChange,
   defaultCurrency,
+  localCurrency,
   placeholder = 'Search or type a name…',
 }: {
   id?: string;
@@ -93,6 +94,8 @@ export function AccountSelect({
   onChange: (accountId: string) => void;
   /** The currency a newly created account should default to. */
   defaultCurrency: string;
+  /** The company's own currency: which currencies a new account may be kept in. */
+  localCurrency: string;
   placeholder?: string;
 }) {
   const [addOpen, setAddOpen] = React.useState(false);
@@ -159,6 +162,7 @@ export function AccountSelect({
         onOpenChange={setAddOpen}
         initialName={typedName}
         defaultCurrency={defaultCurrency}
+        localCurrency={localCurrency}
         onCreated={(account: CreatedJournalAccount) => {
           // Added to the list and selected, with the rest of the form intact.
           setCreated((existing) => [...existing, { id: account.id, name: account.name, currency: account.currency }]);

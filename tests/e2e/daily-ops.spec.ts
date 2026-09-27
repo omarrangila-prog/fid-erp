@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { chooseCompany } from './settle';
 
 /**
@@ -48,6 +48,24 @@ test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await signInToMorocco(page);
 });
+
+
+/**
+ * Open a picker and choose its first entry. A picker opened while the one
+ * before it is still settling can close again under the click — focus
+ * returns to the field just chosen — so it is reopened rather than waited on.
+ */
+async function chooseFirst(page: Page, combobox: Locator) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await combobox.click();
+    const option = page.getByRole('listbox').getByRole('option').first();
+    const shown = await option.waitFor({ state: 'visible', timeout: 10_000 }).then(() => true).catch(() => false);
+    if (shown && (await option.click({ timeout: 5_000 }).then(() => true).catch(() => false))) return;
+    await page.keyboard.press('Escape').catch(() => undefined);
+    await page.waitForTimeout(500);
+  }
+  throw new Error('the picker never stayed open long enough to choose');
+}
 
 test('Customer Save adds the name to the list', async ({ page }) => {
   const name = unique('Daily Roasters');
@@ -115,8 +133,7 @@ test('a posted credit invoice can be deleted from the invoice page, and leaves e
   }
   await warehouse.selectOption({ index: 1 });
 
-  await form.getByRole('combobox', { name: /Coffee on item 1/ }).click();
-  await page.getByRole('listbox').getByRole('option').first().click();
+  await chooseFirst(page, form.getByRole('combobox', { name: /Coffee on item 1/ }));
   await form.getByLabel(/Batch on item 1/).selectOption({ index: 1 });
 
   const quantity = form.getByRole('textbox', { name: /^Quantity/ }).first();
@@ -408,11 +425,9 @@ test('a plain MAD 7,400 shipment expense does not become 8,880', async ({ page }
   await page.waitForLoadState('networkidle').catch(() => undefined);
   const form = page.getByRole('main');
 
-  await form.getByRole('combobox', { name: /contract \/ shipment/i }).click();
-  await page.getByRole('listbox').getByRole('option').first().click();
+  await chooseFirst(page, form.getByRole('combobox', { name: /contract \/ shipment/i }));
 
-  await form.getByRole('combobox', { name: /expense category/i }).click();
-  await page.getByRole('listbox').getByRole('option').first().click();
+  await chooseFirst(page, form.getByRole('combobox', { name: /expense category/i }));
 
   await form.getByLabel(/expense date/i).fill('2026-07-28');
   await form.locator('label').filter({ hasText: /already paid from cash/i }).click();
@@ -478,10 +493,8 @@ test('a plain MAD 7,400 shipment expense does not become 8,880', async ({ page }
 
   await page.goto('/finance/expenses/new', { waitUntil: 'domcontentloaded' });
   const next = page.getByRole('main');
-  await next.getByRole('combobox', { name: /contract \/ shipment/i }).click();
-  await page.getByRole('listbox').getByRole('option').first().click();
-  await next.getByRole('combobox', { name: /expense category/i }).click();
-  await page.getByRole('listbox').getByRole('option').first().click();
+  await chooseFirst(page, next.getByRole('combobox', { name: /contract \/ shipment/i }));
+  await chooseFirst(page, next.getByRole('combobox', { name: /expense category/i }));
   await next.getByLabel(/expense date/i).fill('2026-07-29');
   await next.locator('label').filter({ hasText: /already paid from cash/i }).click();
   await next.getByLabel(/^Amount/).fill('1000');

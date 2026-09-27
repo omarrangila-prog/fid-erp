@@ -511,9 +511,47 @@ export async function getFinancialPosition(params: { companyId: string; asOf?: D
       inTransitKg: string;
       bags: string;
       chequesOnHandUsd: string;
+      receivableLocal: string;
+      payableLocal: string;
+      inventoryLocal: string;
     }>
   >`
     SELECT
+      -- The same three in the company's currency, each document at its own
+      -- rate — never the dollar total times one rate.
+      COALESCE((SELECT SUM((si."totalAmountUsd" - COALESCE(alloc."paid", 0)) * si."rateLocalPerUsd")
+                FROM sales_invoices si
+                LEFT JOIN (
+                  SELECT ra."salesInvoiceId" AS "invoiceId", SUM(ra."amountUsd") AS "paid"
+                  FROM receipt_allocations ra
+                  JOIN receipts r ON r."id" = ra."receiptId"
+                  WHERE r."status" = 'POSTED'
+                  GROUP BY ra."salesInvoiceId"
+                ) alloc ON alloc."invoiceId" = si."id"
+               WHERE si."companyId" = ${params.companyId} AND si."status" = 'POSTED'), 0)::text AS "receivableLocal",
+      COALESCE((SELECT SUM((pc."totalValueUsd" - COALESCE(settled."paid", 0)) * pc."rateLocalPerUsd")
+                FROM purchase_contracts pc
+                LEFT JOIN (
+                  SELECT pa."purchaseContractId" AS "contractId", SUM(pa."amountUsd") AS "paid"
+                  FROM payment_allocations pa
+                  JOIN payments p ON p."id" = pa."paymentId"
+                  WHERE p."status" = 'POSTED'
+                  GROUP BY pa."purchaseContractId"
+                ) settled ON settled."contractId" = pc."id"
+               WHERE pc."companyId" = ${params.companyId} AND pc."status" = 'POSTED'), 0)::text AS "payableLocal",
+      -- Stock at its historical cost: the coffee at the purchase's rate and the
+      -- costs added to it at the rates they were entered at.
+      COALESCE((SELECT SUM((b."availableQuantityKg" + b."allocatedQuantityKg")
+                           * (b."purchaseCostUsd" * pc."rateLocalPerUsd" + b."capitalisedCostUsd" * COALESCE(cr."rate", pc."rateLocalPerUsd"))
+                           / NULLIF(b."orderedQuantityKg", 0))
+                FROM batches b
+                JOIN purchase_contracts pc ON pc."id" = b."purchaseContractId"
+                LEFT JOIN LATERAL (
+                  SELECT SUM(e2."amountLocal") / NULLIF(SUM(e2."amountUsd"), 0) AS rate
+                  FROM expenses e2 JOIN shipments s2 ON s2."id" = e2."shipmentId"
+                  WHERE s2."purchaseContractId" = pc."id" AND e2."status" = 'POSTED' AND e2."capitaliseToLandedCost" = true
+                ) cr ON true
+               WHERE b."companyId" = ${params.companyId} AND b."status" = 'ACTIVE'), 0)::text AS "inventoryLocal",
       -- Outstanding is summed per document first. Correlating the allocation
       -- subquery to an aggregated row is not valid SQL, so the allocations are
       -- pre-aggregated and joined instead.
@@ -574,6 +612,9 @@ export async function getFinancialPosition(params: { companyId: string; asOf?: D
     receivableUsd: toMoney(t?.receivableUsd ?? 0),
     payableUsd: toMoney(t?.payableUsd ?? 0),
     inventoryValueUsd: toMoney(t?.inventoryUsd ?? 0),
+    receivableLocal: toMoney(t?.receivableLocal ?? 0),
+    payableLocal: toMoney(t?.payableLocal ?? 0),
+    inventoryValueLocal: toMoney(t?.inventoryLocal ?? 0),
     inTransitValueUsd: toMoney(t?.inTransitUsd ?? 0),
     availableKg: toQuantity(t?.availableKg ?? 0),
     inTransitKg: toQuantity(t?.inTransitKg ?? 0),
@@ -869,6 +910,8 @@ export async function getCashBook(params: {
       sourceId: string;
       debit: string;
       credit: string;
+      usd: string;
+      local: string;
       counterparty: string | null;
       reference: string | null;
       memo: string | null;
@@ -879,6 +922,10 @@ export async function getCashBook(params: {
     SELECT je."id" AS "entryId", je."entryNumber", je."entryDate", je."description",
            je."sourceType"::text AS "sourceType", je."sourceId" AS "sourceId",
            jl."debit"::text AS debit, jl."credit"::text AS credit,
+           -- The same movement in dollars and in the company's currency, at the
+           -- entry's own rate, for the equivalent shown under each amount.
+           ABS(jl."debitUsd" - jl."creditUsd")::text AS usd,
+           ABS(jl."debitLocal" - jl."creditLocal")::text AS local,
            COALESCE(
              c."customerName", v."vendorName", ag."agentName",
              CASE je."sourceType"
@@ -941,6 +988,8 @@ export async function getCashBook(params: {
       }),
       moneyIn,
       moneyOut,
+      movementUsd: dec(row.usd),
+      movementLocal: dec(row.local),
       balance: running,
     };
   });

@@ -111,7 +111,8 @@ test('the accounting reports agree with one another', async ({ page }) => {
   await open(page, '/reports/profit-loss', /Coffee Sales|Cost of Goods Sold/);
   await open(page, '/reports/balance-sheet', /Inventory|Accounts Receivable/);
   await open(page, '/reports/general-ledger', /Account|account/);
-  await open(page, '/reports/journal', /FID-DXB-JV-/);
+  // No voucher numbers on the list: the client asked for that column gone.
+  await open(page, '/reports/journal', /Total debit/);
   await open(page, '/reports/cash-flow', /Bank|Cash/);
 
   // The report that exists to catch everything else being wrong.

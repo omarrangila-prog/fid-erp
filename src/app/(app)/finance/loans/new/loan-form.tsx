@@ -17,6 +17,7 @@ import { formatMoney, todayInputValue } from '@/lib/format';
 import { postLoanAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { useClientKey } from '@/lib/use-client-key';
+import { transactionCurrencies } from '@/lib/company-currencies';
 
 type Account = { id: string; name: string; currency: string };
 type LoanAccount = { id: string; label: string; currency: string | null };
@@ -281,6 +282,7 @@ export function LoanForm({
               value={loanAccountId}
               onChange={setLoanAccountId}
               defaultCurrency={localCurrency}
+              localCurrency={localCurrency}
               placeholder="Search or type a name…"
             />
           </Field>
@@ -321,7 +323,7 @@ export function LoanForm({
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Loan currency" required hint="What the loan itself is in.">
             <Select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-              {[...new Set([bankCurrency, localCurrency, 'USD', 'MAD', 'AED'])].map((c) => (
+              {[...new Set([bankCurrency, ...transactionCurrencies(localCurrency, currency)])].map((c) => (
                 <option key={c} value={c}>
                   {c}
                 </option>

@@ -5,6 +5,7 @@ import { Pencil, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MasterFormSheet, STATUS_OPTIONS, type FieldSpec } from '@/components/shared/master-form';
 import { saveCashBankAccountAction } from '@/server/actions/master-actions';
+import { currencyOptions } from '@/lib/company-currencies';
 
 const TYPE_OPTIONS = [
   { value: 'BANK', label: 'Bank' },
@@ -12,14 +13,8 @@ const TYPE_OPTIONS = [
   { value: 'PETTY_CASH', label: 'Petty cash' },
 ];
 
-const CURRENCY_OPTIONS = [
-  { value: 'USD', label: 'USD — US Dollar' },
-  { value: 'AED', label: 'AED — UAE Dirham' },
-  { value: 'MAD', label: 'MAD — Moroccan Dirham' },
-];
-
-const CREATE_FIELDS: FieldSpec[] = [
-  { kind: 'text', name: 'name', label: 'Account name', required: true, placeholder: 'AED Bank Account' },
+const CREATE_FIELDS = (localCurrency: string): FieldSpec[] => [
+  { kind: 'text', name: 'name', label: 'Account name', required: true, placeholder: `${localCurrency} Bank Account` },
   {
     kind: 'select',
     name: 'accountType',
@@ -33,14 +28,14 @@ const CREATE_FIELDS: FieldSpec[] = [
     label: 'Currency',
     required: true,
     hint: 'Fixed once the account has postings — changing it would restate history.',
-    options: CURRENCY_OPTIONS,
+    options: currencyOptions(localCurrency),
   },
   { kind: 'money', name: 'openingBalance', label: 'Opening balance' },
   { kind: 'text', name: 'bankName', label: 'Bank name' },
   { kind: 'text', name: 'accountNumber', label: 'Account number / IBAN' },
 ];
 
-const EDIT_FIELDS: FieldSpec[] = [
+const EDIT_FIELDS = (localCurrency: string, currency: string): FieldSpec[] => [
   { kind: 'text', name: 'name', label: 'Account name', required: true },
   {
     kind: 'select',
@@ -55,7 +50,7 @@ const EDIT_FIELDS: FieldSpec[] = [
     label: 'Currency',
     required: true,
     hint: 'Fixed once the account has postings — changing it would restate history.',
-    options: CURRENCY_OPTIONS,
+    options: currencyOptions(localCurrency, { keep: currency }),
   },
   { kind: 'money', name: 'openingBalance', label: 'Opening balance' },
   { kind: 'text', name: 'bankName', label: 'Bank name' },
@@ -75,7 +70,7 @@ export type CashBankAccountValues = {
   status: string;
 };
 
-export function CashBankAccountButton() {
+export function CashBankAccountButton({ localCurrency }: { localCurrency: string }) {
   const [open, setOpen] = React.useState(false);
 
   return (
@@ -90,7 +85,7 @@ export function CashBankAccountButton() {
         onOpenChange={setOpen}
         title="New cash or bank account"
         description="A backing general ledger account is created automatically."
-        fields={CREATE_FIELDS}
+        fields={CREATE_FIELDS(localCurrency)}
         defaults={{ accountType: 'BANK', currency: 'USD', openingBalance: '0', status: 'ACTIVE' }}
         action={saveCashBankAccountAction.bind(null, null)}
         submitLabel="Create account"
@@ -99,7 +94,13 @@ export function CashBankAccountButton() {
   );
 }
 
-export function EditCashBankAccountButton({ account }: { account: CashBankAccountValues }) {
+export function EditCashBankAccountButton({
+  account,
+  localCurrency,
+}: {
+  account: CashBankAccountValues;
+  localCurrency: string;
+}) {
   const [open, setOpen] = React.useState(false);
 
   return (
@@ -113,7 +114,7 @@ export function EditCashBankAccountButton({ account }: { account: CashBankAccoun
         onOpenChange={setOpen}
         title={`Edit ${account.name}`}
         description="Renaming does not change historical receipts or payments posted to this account."
-        fields={EDIT_FIELDS}
+        fields={EDIT_FIELDS(localCurrency, account.currency)}
         defaults={{
           name: account.name,
           accountType: account.accountType,

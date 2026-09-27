@@ -162,6 +162,15 @@ export default async function DashboardPage() {
   // The local-currency cash position; every currency is listed in its own panel.
   const localTotals = data.position.currencyTotals.find((c) => c.currency === local);
   const localCash = dec(localTotals?.cash ?? 0).plus(localTotals?.bank ?? 0);
+  // Its dollars: each movement at its own rate, from the accounts themselves.
+  const localCashUsd = data.position.accounts
+    .filter((a) => a.currency === local)
+    .reduce((t, a) => t.plus(a.balanceUsd), dec(0));
+  /** "≈ USD …" under a headline figure — a sum of documents, each at its own rate. */
+  const eq = (usd: ReturnType<typeof dec>, source: string) => ({
+    text: `≈ ${formatMoneyCompact(usd, 'USD')}`,
+    title: source,
+  });
 
   // Nothing has been traded yet. Charts of nothing help no one, so the screen
   // becomes a set of next steps instead.
@@ -268,8 +277,9 @@ export default async function DashboardPage() {
         {showProfit ? (
           <KpiCard
             label="Sales"
-            currency="USD"
-            value={formatMoneyCompact(data.profit.revenueUsd, 'USD').replace(/^USD\s*/, '')}
+            currency={local}
+            value={formatMoneyCompact(data.profit.revenueLocal, local).replace(new RegExp(`^${local}\\s*`), '')}
+            equivalent={eq(data.profit.revenueUsd, 'Each invoice at its own rate')}
             icon={TrendingUp}
             tone="sales"
             deltaPct={salesDeltaPct}
@@ -282,8 +292,9 @@ export default async function DashboardPage() {
 
         <KpiCard
           label="Receivables"
-          currency="USD"
-          value={formatMoneyCompact(data.position.receivableUsd, 'USD').replace(/^USD\s*/, '')}
+          currency={local}
+          value={formatMoneyCompact(data.position.receivableLocal, local).replace(new RegExp(`^${local}\\s*`), '')}
+          equivalent={eq(data.position.receivableUsd, 'Each invoice at its own rate')}
           icon={CircleDollarSign}
           tone="receivable"
           note={
@@ -297,8 +308,9 @@ export default async function DashboardPage() {
 
         <KpiCard
           label="Payables"
-          currency="USD"
-          value={formatMoneyCompact(data.position.payableUsd, 'USD').replace(/^USD\s*/, '')}
+          currency={local}
+          value={formatMoneyCompact(data.position.payableLocal, local).replace(new RegExp(`^${local}\\s*`), '')}
+          equivalent={eq(data.position.payableUsd, 'Each order at its own rate')}
           icon={HandCoins}
           tone="payable"
           note={`${data.payables.count} open contract${data.payables.count === 1 ? '' : 's'}`}
@@ -313,8 +325,9 @@ export default async function DashboardPage() {
         {!data.agents.holdingUsd.isZero() ? (
           <KpiCard
             label="With Agents"
-            currency="USD"
-            value={formatMoneyCompact(data.agents.holdingUsd, 'USD').replace(/^USD\s*/, '')}
+            currency={local}
+            value={formatMoneyCompact(data.agents.holdingLocal, local).replace(new RegExp(`^${local}\\s*`), '')}
+            equivalent={eq(data.agents.holdingUsd, 'Each collection at its own rate')}
             icon={HandCoins}
             tone="receivable"
             note={
@@ -329,8 +342,12 @@ export default async function DashboardPage() {
         {!data.agents.commissionPayableUsd.isZero() ? (
           <KpiCard
             label="Commission Owed"
-            currency="USD"
-            value={formatMoneyCompact(data.agents.commissionPayableUsd, 'USD').replace(/^USD\s*/, '')}
+            currency={local}
+            value={formatMoneyCompact(data.agents.commissionPayableLocal, local).replace(
+              new RegExp(`^${local}\\s*`),
+              '',
+            )}
+            equivalent={eq(data.agents.commissionPayableUsd, 'Each commission at its own rate')}
             icon={HandCoins}
             tone="payable"
             note="Already charged to the shipments"
@@ -340,11 +357,19 @@ export default async function DashboardPage() {
 
         <KpiCard
           label="Inventory Value"
-          currency={showCost ? 'USD' : undefined}
+          currency={showCost ? local : undefined}
           value={
             showCost
-              ? formatMoneyCompact(data.position.inventoryValueUsd, 'USD').replace(/^USD\s*/, '')
+              ? formatMoneyCompact(data.position.inventoryValueLocal, local).replace(new RegExp(`^${local}\\s*`), '')
               : formatQuantityKg(data.position.availableKg)
+          }
+          equivalent={
+            showCost
+              ? eq(
+                  data.position.inventoryValueUsd,
+                  'At historical cost: the purchase at its rate, each cost at its own',
+                )
+              : null
           }
           icon={Boxes}
           tone="inventory"
@@ -357,6 +382,7 @@ export default async function DashboardPage() {
           label="Cash & Bank"
           currency={local}
           value={formatMoneyCompact(localCash, local).replace(new RegExp(`^${local}\\s*`), '')}
+          equivalent={eq(localCashUsd, 'Each movement at its own rate')}
           icon={Wallet}
           tone="cash"
           note={`${data.position.currencyTotals.length} currenc${data.position.currencyTotals.length === 1 ? 'y' : 'ies'}`}
@@ -367,8 +393,9 @@ export default async function DashboardPage() {
         {showProfit ? (
           <KpiCard
             label="Net Profit"
-            currency="USD"
-            value={formatMoneyCompact(data.profit.netProfitUsd, 'USD').replace(/^USD\s*/, '')}
+            currency={local}
+            value={formatMoneyCompact(data.profit.netProfitLocal, local).replace(new RegExp(`^${local}\\s*`), '')}
+            equivalent={eq(data.profit.netProfitUsd, 'Each document at its own rate')}
             icon={Coins}
             tone="profit"
             deltaPct={profitDeltaPct}

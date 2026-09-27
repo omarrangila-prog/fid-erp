@@ -6,6 +6,8 @@ import { prisma } from '@/lib/db';
 import { dec, toMoney, toQuantity } from '@/lib/money';
 import { formatMoney, formatQuantityKg } from '@/lib/format';
 import { getWarehouseStock } from '@/lib/services/dashboard';
+import { getBatchCostings } from '@/lib/services/landed-cost';
+import { equivalentText } from '@/lib/dual-currency';
 import { bagsForKg, addBags, formatBags } from '@/lib/bags';
 import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
 import { PageHeader } from '@/components/shared/page-header';
@@ -24,7 +26,7 @@ export default async function InventoryPage() {
   const companyId = user.activeCompany.id;
   const showValue = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
 
-  const [balances, warehouses, warehouseStock, inTransit, ordinals] = await Promise.all([
+  const [balances, warehouses, warehouseStock, inTransit, ordinals, costings] = await Promise.all([
     prisma.inventoryBalance.findMany({
       where: { companyId },
       include: {
@@ -57,10 +59,14 @@ export default async function InventoryPage() {
       _sum: { inTransitQuantityKg: true },
     }),
     getShipmentOrdinals(companyId),
+    getBatchCostings({ companyId }),
   ]);
 
   // Aggregate to one row per coffee per warehouse.
   const grouped = new Map<string, StockRow>();
+  const local = user.activeCompany.localCurrency;
+  const localPerKg = new Map(costings.map((c) => [c.batchId, c.landedPerKgLocal]));
+
   for (const balance of balances) {
     const key = `${balance.itemId}:${balance.warehouseId}`;
     const existing = grouped.get(key);
@@ -68,6 +74,8 @@ export default async function InventoryPage() {
     const reserved = dec(balance.reservedKg);
     const available = dec(balance.availableKg);
     const value = toMoney(onHand.times(dec(balance.batch.landedUnitCostUsd)));
+    // The same coffee in the company's currency at its historical cost rates.
+    const valueLocal = Number(toMoney(onHand.times(localPerKg.get(balance.batchId) ?? 0)));
     // Bags follow the kilograms at the batch's bag weight — never a separate
     // count that can drift below zero while coffee is still on the shelf.
     const bags = bagsForKg(onHand, balance.batch.bagWeightKg);
@@ -91,6 +99,7 @@ export default async function InventoryPage() {
       existing.availableSort += Number(available);
       existing.bags = addBags(existing.bags, bags);
       existing.valueSort += Number(value);
+      existing.valueLocalSort += valueLocal;
       existing.onHandLabel = formatQuantityKg(existing.onHandSort);
       existing.availableLabel = formatQuantityKg(existing.availableSort);
       existing.reservedLabel = formatQuantityKg(
@@ -117,6 +126,9 @@ export default async function InventoryPage() {
         bags,
         valueLabel: formatMoney(value, 'USD'),
         valueSort: Number(value),
+        valueLocalSort: valueLocal,
+        valueEquivalent: null,
+        costPerKgEquivalent: null,
         // §24: what a kilo of this actually cost, beside how much there is.
         costPerKgLabel: Number(onHand) > 0 ? formatMoney(Number(value) / Number(onHand), 'USD') : '—',
         lots: [lot],
@@ -125,6 +137,24 @@ export default async function InventoryPage() {
   }
 
   const rows = [...grouped.values()].filter((r) => r.onHandSort !== 0);
+  for (const row of rows) {
+    row.valueEquivalent = equivalentText({
+      amount: row.valueSort,
+      currency: 'USD',
+      localCurrency: local,
+      amountLocal: row.valueLocalSort,
+    });
+    row.costPerKgEquivalent =
+      row.onHandSort > 0
+        ? equivalentText({
+            amount: row.valueSort / row.onHandSort,
+            currency: 'USD',
+            localCurrency: local,
+            amountLocal: row.valueLocalSort / row.onHandSort,
+          })
+        : null;
+  }
+  const totalValueLocal = rows.reduce((a, r) => a + r.valueLocalSort, 0);
   const totalOnHand = rows.reduce((a, r) => a + r.onHandSort, 0);
   const totalAvailable = rows.reduce((a, r) => a + r.availableSort, 0);
   const totalValue = rows.reduce((a, r) => a + r.valueSort, 0);
@@ -173,7 +203,19 @@ export default async function InventoryPage() {
           href="/shipments"
         />
         {showValue ? (
-          <StatCard label="Stock value" value={formatMoney(totalValue, 'USD')} icon={WarehouseIcon} />
+          <StatCard
+            label="Stock value"
+            value={formatMoney(totalValue, 'USD')}
+            sublabel={
+              equivalentText({
+                amount: totalValue,
+                currency: 'USD',
+                localCurrency: local,
+                amountLocal: totalValueLocal,
+              })?.text
+            }
+            icon={WarehouseIcon}
+          />
         ) : (
           <StatCard label="Warehouses" value={String(warehouses.length)} icon={WarehouseIcon} />
         )}

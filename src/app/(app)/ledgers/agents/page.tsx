@@ -117,7 +117,6 @@ export default async function AgentLedgersPage() {
                   <TH numeric>Loan from agent</TH>
                   <TH numeric>Loan to agent</TH>
                   <TH numeric>Net position</TH>
-                  <TH numeric>USD Eq.</TH>
                   <TH className="text-right">Actions</TH>
                 </TR>
               </THead>
@@ -137,12 +136,17 @@ export default async function AgentLedgersPage() {
                     <TD numeric>{formatMoney(summary.loanToAgentLocal, local)}</TD>
                     <TD numeric className="font-medium">
                       {formatMoney(summary.netLocal.abs(), local)}
+                      {local === 'USD' ? null : (
+                        <span
+                          className="tnum block text-[11px] font-normal text-ink-subtle"
+                          title="Each entry at its own rate"
+                        >
+                          ≈ {formatMoney(summary.netUsd.abs(), 'USD')}
+                        </span>
+                      )}
                       <span className="block text-[11px] font-normal text-ink-subtle">
                         {summary.netLocal.isZero() ? 'settled' : summary.netLocal.isPositive() ? 'agent owes us' : 'we owe agent'}
                       </span>
-                    </TD>
-                    <TD numeric className="text-xs text-ink-muted">
-                      {local === 'USD' ? '—' : formatMoney(summary.netUsd.abs(), 'USD')}
                     </TD>
                     <TD className="text-right">
                       <RowActions

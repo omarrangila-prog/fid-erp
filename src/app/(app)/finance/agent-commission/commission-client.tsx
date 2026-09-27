@@ -4,6 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
+import { DualText } from '@/components/shared/dual-text';
 
 export type CommissionRow = {
   id: string;
@@ -95,15 +96,22 @@ export function AgentCommissionClient({ rows }: { rows: CommissionRow[] }) {
       cell: (r) => r.warehouseNames || '—',
     },
     { id: 'currency', header: 'Currency', hideable: true, cell: (r) => r.currency },
-    { id: 'amount', header: 'Amount', numeric: true, cell: (r) => r.amount },
-    { id: 'rate', header: 'Rate to USD', numeric: true, hideable: true, cell: (r) => r.rate },
     {
-      id: 'usd',
-      header: 'USD',
+      id: 'amount',
+      header: 'Amount',
       numeric: true,
       sortValue: (r) => r.amountUsdSort,
-      cell: (r) => r.amountUsd,
+      exportValue: (r) => r.amount,
+      // Commission is settled in dollars: a dirham amount shows its dollars
+      // underneath, at the commission's own rate.
+      cell: (r) => (
+        <DualText
+          primary={r.amount}
+          equivalent={r.currency === 'USD' ? null : { text: `≈ ${r.amountUsd}`, title: `Rate to USD ${r.rate}` }}
+        />
+      ),
     },
+    { id: 'rate', header: 'Rate to USD', numeric: true, hideable: true, cell: (r) => r.rate },
     { id: 'paid', header: 'Paid USD', numeric: true, hideable: true, cell: (r) => r.paidUsd },
     {
       id: 'remaining',

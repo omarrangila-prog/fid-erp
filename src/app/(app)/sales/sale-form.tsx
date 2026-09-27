@@ -1,5 +1,6 @@
 'use client';
 
+import { transactionCurrencies, CURRENCY_NAMES } from '@/lib/company-currencies';
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -440,6 +441,7 @@ export function SaleForm({
             {canCreateCustomer ? (
               <AddCustomer
                 defaultCurrency={header.currency}
+                localCurrency={localCurrency}
                 initialName={addCustomerName}
                 open={addCustomerOpen}
                 onOpenChange={(next) => {
@@ -514,9 +516,11 @@ export function SaleForm({
                 })
               }
             >
-              <option value="USD">USD — US Dollar</option>
-              <option value="AED">AED — UAE Dirham</option>
-              <option value="MAD">MAD — Moroccan Dirham</option>
+              {transactionCurrencies(localCurrency).map((code) => (
+                <option key={code} value={code}>
+                  {code} — {CURRENCY_NAMES[code] ?? code}
+                </option>
+              ))}
             </Select>
           </Field>
 

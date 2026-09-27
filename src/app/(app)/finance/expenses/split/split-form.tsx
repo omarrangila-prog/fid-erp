@@ -19,6 +19,7 @@ import { saveSplitExpenseAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import type { CategoryOption, ShipmentTrace } from '@/app/(app)/finance/expenses/expense-form';
 import { useClientKey } from '@/lib/use-client-key';
+import { transactionCurrencies } from '@/lib/company-currencies';
 
 /**
  * One payment, several cost categories.
@@ -236,7 +237,7 @@ export function SplitExpenseForm({
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="Currency" required>
               <Select value={header.currency} onChange={(e) => chooseCurrency(e.target.value)}>
-                {[...new Set(['USD', localCurrency, 'MAD', 'AED'])].map((code) => (
+                {transactionCurrencies(localCurrency, header.currency).map((code) => (
                   <option key={code} value={code}>
                     {code}
                   </option>
@@ -299,7 +300,11 @@ export function SplitExpenseForm({
                   emptyText={`No ${header.currency} account exists`}
                   create={
                     canCreateCashBank
-                      ? cashBankCreateSpec(header.currency, header.paymentMethod === 'CASH' ? 'CASH' : 'BANK')
+                      ? cashBankCreateSpec(
+                          header.currency,
+                          header.paymentMethod === 'CASH' ? 'CASH' : 'BANK',
+                          localCurrency,
+                        )
                       : undefined
                   }
                 />

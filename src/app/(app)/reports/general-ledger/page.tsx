@@ -124,6 +124,7 @@ export default async function GeneralLedgerPage({
         from={from ?? ''}
         to={to ?? ''}
         currency={selectedCurrency}
+        localCurrency={user.activeCompany.localCurrency}
       />
 
       {groups ? (

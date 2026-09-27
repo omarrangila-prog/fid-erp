@@ -1,5 +1,6 @@
 'use client';
 
+import { transactionCurrencies, CURRENCY_NAMES } from '@/lib/company-currencies';
 import * as React from 'react';
 import { MasterSelect } from '@/components/shared/master-select';
 import { vendorCreateSpec, cashBankCreateSpec } from '@/components/shared/master-specs';
@@ -238,7 +239,7 @@ export function PaymentForm({
                 }}
                 placeholder="Choose a supplier…"
                 invalid={Boolean(fieldIssues.vendorId)}
-                create={vendorCreateSpec(form.currency)}
+                create={vendorCreateSpec(form.currency, localCurrency)}
               />
             </Field>
           )}
@@ -265,9 +266,11 @@ export function PaymentForm({
                 setForm({ ...form, currency: e.target.value, rateToUsd: e.target.value === 'USD' ? '1' : '', cashBankAccountId: null })
               }
             >
-              <option value="USD">USD — US Dollar</option>
-              <option value="AED">AED — UAE Dirham</option>
-              <option value="MAD">MAD — Moroccan Dirham</option>
+              {transactionCurrencies(localCurrency).map((code) => (
+                <option key={code} value={code}>
+                  {code} — {CURRENCY_NAMES[code] ?? code}
+                </option>
+              ))}
             </Select>
           </Field>
 
@@ -290,7 +293,7 @@ export function PaymentForm({
                 emptyText={`No ${form.currency} account exists`}
                 create={
                   canCreateCashBank
-                    ? cashBankCreateSpec(form.currency, form.paymentMethod === 'CASH' ? 'CASH' : 'BANK')
+                    ? cashBankCreateSpec(form.currency, form.paymentMethod === 'CASH' ? 'CASH' : 'BANK', localCurrency)
                     : undefined
                 }
               />

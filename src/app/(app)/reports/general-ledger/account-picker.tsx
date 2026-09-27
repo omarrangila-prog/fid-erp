@@ -6,6 +6,7 @@ import { Combobox } from '@/components/ui/combobox';
 import { Input, Select } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
+import { transactionCurrencies } from '@/lib/company-currencies';
 
 export function AccountPicker({
   accounts,
@@ -13,12 +14,14 @@ export function AccountPicker({
   from,
   to,
   currency,
+  localCurrency,
 }: {
   accounts: Array<{ id: string; code: string; name: string; type: string; nativeCurrency: string }>;
   selectedId: string;
   from: string;
   to: string;
   currency: string;
+  localCurrency: string;
 }) {
   const router = useRouter();
   const [account, setAccount] = React.useState<string | null>(selectedId || null);
@@ -65,9 +68,16 @@ export function AccountPicker({
         <Select value={ccy} onChange={(e) => setCcy(e.target.value)}>
           <option value="REPORTING">Every line at USD value</option>
           <option value="ALL">All — listed separately</option>
-          <option value="USD">USD lines only</option>
-          <option value="MAD">MAD lines only</option>
-          <option value="AED">AED lines only</option>
+          {[
+            ...new Set([
+              'USD',
+              ...transactionCurrencies(localCurrency, currency === 'REPORTING' || currency === 'ALL' ? null : currency),
+            ]),
+          ].map((code) => (
+            <option key={code} value={code}>
+              {code} lines only
+            </option>
+          ))}
         </Select>
       </Field>
       <Field label="From" className="w-40">

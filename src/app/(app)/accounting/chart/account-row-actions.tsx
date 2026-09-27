@@ -16,6 +16,7 @@ import { STATEMENT_GROUP_OPTIONS } from '@/app/(app)/accounting/chart/add-accoun
 import { todayInputValue } from '@/lib/format';
 import { ledgerHref } from '@/lib/ledger-currency';
 import { RowActions } from '@/components/shared/row-actions';
+import { currencyOptions } from '@/lib/company-currencies';
 
 export type ChartRowAccount = {
   id: string;
@@ -74,11 +75,10 @@ export function AccountRowActions({
       name: 'currency',
       label: 'Currency',
       required: true,
-      options: [
-        { value: 'USD', label: 'USD' },
-        { value: 'AED', label: 'AED' },
-        { value: 'MAD', label: 'MAD' },
-      ],
+      options: currencyOptions(localCurrency, {
+        keep: account.cashBank?.currency ?? account.currency,
+        short: true,
+      }),
     },
     { kind: 'text', name: 'rateToUsd', label: 'Rate to USD', required: true, hint: 'Units of this currency per 1 USD.' },
     { kind: 'text', name: 'rateLocalPerUsd', label: `Rate to ${localCurrency}`, required: true },

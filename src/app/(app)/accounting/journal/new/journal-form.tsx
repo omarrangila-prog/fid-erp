@@ -17,6 +17,7 @@ import { tryDec, Decimal } from '@/lib/money';
 import { postJournalVoucherAction, replaceJournalVoucherAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { AddJournalAccountDialog, type CreatedJournalAccount } from '@/app/(app)/accounting/journal/new/add-account';
+import { transactionCurrencies } from '@/lib/company-currencies';
 
 export type AccountOption = ComboOption & {
   accountType: string;
@@ -46,9 +47,6 @@ type Line = {
   currency: string;
   rateToUsd: string;
 };
-
-/** The currencies these books are kept in. */
-const CURRENCIES = ['USD', 'MAD', 'AED'] as const;
 
 const emptyLine = (index: number, currency = 'USD', rateToUsd = '1'): Line => ({
   key: `line-${index}`,
@@ -420,7 +418,7 @@ export function JournalForm({
                 );
               }}
             >
-              {CURRENCIES.map((code) => (
+              {transactionCurrencies(localCurrency, currency).map((code) => (
                 <option key={code} value={code}>
                   {code}
                 </option>
@@ -559,7 +557,7 @@ export function JournalForm({
                         });
                       }}
                     >
-                      {CURRENCIES.map((code) => (
+                      {transactionCurrencies(localCurrency, line.currency).map((code) => (
                         <option key={code} value={code}>
                           {code}
                         </option>
@@ -616,7 +614,10 @@ export function JournalForm({
                         onClick={() => updateLine(line.key, { amount: fill.own })}
                         className="mt-1 text-left text-[11px] font-medium text-forest-700 underline underline-offset-2 hover:text-forest-800"
                       >
-                        Use {line.currency} {Number(fill.own).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        Use {line.currency}{' '}
+                        {Number(fill.own).toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                        })}
                         {line.currency !== 'USD' ? ` — USD ${fill.usd} at ${line.rateToUsd}` : ''}
                       </button>
                     );
@@ -711,6 +712,7 @@ export function JournalForm({
         }}
         initialName={addAccountName}
         defaultCurrency={currency}
+        localCurrency={localCurrency}
         onCreated={onAccountCreated}
       />
     </div>

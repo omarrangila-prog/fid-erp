@@ -1,5 +1,6 @@
 'use client';
 
+import { transactionCurrencies, CURRENCY_NAMES } from '@/lib/company-currencies';
 import * as React from 'react';
 import { MasterSelect } from '@/components/shared/master-select';
 import { customerCreateSpec, cashBankCreateSpec } from '@/components/shared/master-specs';
@@ -331,7 +332,7 @@ export function ReceiptForm({
               }}
               placeholder="Choose a customer…"
               invalid={Boolean(fieldIssues.customerId)}
-              create={customerCreateSpec(form.currency)}
+              create={customerCreateSpec(form.currency, localCurrency)}
               onCreated={(created) => {
                 // A receipt is stated in the customer's own currency, so the
                 // new account's currency has to reach the voucher too.
@@ -378,9 +379,11 @@ export function ReceiptForm({
                 })
               }
             >
-              <option value="USD">USD — US Dollar</option>
-              <option value="AED">AED — UAE Dirham</option>
-              <option value="MAD">MAD — Moroccan Dirham</option>
+              {transactionCurrencies(localCurrency).map((code) => (
+                <option key={code} value={code}>
+                  {code} — {CURRENCY_NAMES[code] ?? code}
+                </option>
+              ))}
             </Select>
           </Field>
 
@@ -414,7 +417,7 @@ export function ReceiptForm({
                 emptyText={`No ${form.currency} account exists`}
                 create={
                   canCreateCashBank
-                    ? cashBankCreateSpec(form.currency, form.paymentMethod === 'CASH' ? 'CASH' : 'BANK')
+                    ? cashBankCreateSpec(form.currency, form.paymentMethod === 'CASH' ? 'CASH' : 'BANK', localCurrency)
                     : undefined
                 }
               />

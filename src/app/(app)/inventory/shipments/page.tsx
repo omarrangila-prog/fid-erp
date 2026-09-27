@@ -3,8 +3,10 @@ import Link from 'next/link';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, SHIPMENT_STATUS_META } from '@/lib/constants';
 import { getShipmentStock } from '@/lib/services/stock';
+import { getBatchCostings } from '@/lib/services/landed-cost';
+import { DualAmount } from '@/components/shared/dual-amount';
 import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
-import { formatMoney, formatQuantityKg, formatDate } from '@/lib/format';
+import { formatQuantityKg, formatDate } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { StatusBadge } from '@/components/ui/badge';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
@@ -17,10 +19,17 @@ export const dynamic = 'force-dynamic';
 export default async function ShipmentStockPage() {
   const user = await requirePageAccess(PERMISSIONS.INVENTORY_VIEW);
   const showValue = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
-  const [rows, ordinals] = await Promise.all([
+  const [rows, ordinals, costings] = await Promise.all([
     getShipmentStock(user.activeCompany.id),
     getShipmentOrdinals(user.activeCompany.id),
+    showValue ? getBatchCostings({ companyId: user.activeCompany.id }) : Promise.resolve([]),
   ]);
+  const local = user.activeCompany.localCurrency;
+  // What each shipment's remaining coffee cost in the company's currency: the
+  // purchase at its rate and each cost at its own, batch by batch.
+  const localByShipment = new Map<string, ReturnType<typeof dec>>();
+  for (const c of costings)
+    localByShipment.set(c.shipmentId, (localByShipment.get(c.shipmentId) ?? dec(0)).plus(c.stockValueLocal));
 
   const totals = rows.reduce(
     (acc, r) => ({
@@ -78,8 +87,22 @@ export default async function ShipmentStockPage() {
                   <TD numeric>{formatQuantityKg(r.receivedKg)}</TD>
                   <TD numeric>{formatQuantityKg(r.allocatedKg)}</TD>
                   <TD numeric>{formatQuantityKg(r.soldKg)}</TD>
-                  <TD numeric className="font-medium">{formatQuantityKg(r.availableKg)}</TD>
-                  {showValue ? <TD numeric>{formatMoney(r.stockValueUsd, 'USD')}</TD> : null}
+                  <TD numeric className="font-medium">
+                    {formatQuantityKg(r.availableKg)}
+                  </TD>
+                  {showValue ? (
+                    <TD numeric>
+                      <DualAmount
+                        amount={r.stockValueUsd}
+                        currency="USD"
+                        localCurrency={local}
+                        amountLocal={localByShipment.get(r.shipmentId) ?? null}
+                        rateSource="At historical cost: the purchase at its rate, each cost at its own"
+                        hideMissing
+                        primaryClassName="font-normal"
+                      />
+                    </TD>
+                  ) : null}
                   <TD>
                     <StatusBadge status={r.status} meta={SHIPMENT_STATUS_META} />
                   </TD>
@@ -93,7 +116,18 @@ export default async function ShipmentStockPage() {
                 <TD />
                 <TD numeric>{formatQuantityKg(totals.sold)}</TD>
                 <TD numeric>{formatQuantityKg(totals.available)}</TD>
-                {showValue ? <TD numeric>{formatMoney(totals.value, 'USD')}</TD> : null}
+                {showValue ? (
+                  <TD numeric>
+                    <DualAmount
+                      amount={totals.value}
+                      currency="USD"
+                      localCurrency={local}
+                      amountLocal={[...localByShipment.values()].reduce((t, v) => t.plus(v), dec(0))}
+                      rateSource="At historical cost, each batch at its own rates"
+                      hideMissing
+                    />
+                  </TD>
+                ) : null}
                 <TD />
               </tr>
             </TFoot>

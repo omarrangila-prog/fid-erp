@@ -6,6 +6,7 @@ import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { RowActions, viewAction } from '@/components/shared/row-actions';
+import { DualText } from '@/components/shared/dual-text';
 import { journalSourceEditHref, journalSourceHref } from '@/lib/journal-source';
 import { deletePostedEntryAction } from '@/server/actions/finance-actions';
 
@@ -28,9 +29,12 @@ export type JournalLineRow = {
   currency: string;
   debit: string;
   credit: string;
-  usd: string;
-  local: string;
+  /** The other currency, from what the line stored. */
+  debitEquivalent: Equivalent;
+  creditEquivalent: Equivalent;
 };
+
+type Equivalent = { text: string; title: string } | null;
 
 export type JournalEntryRow = {
   id: string;
@@ -45,7 +49,9 @@ export type JournalEntryRow = {
   sourceId: string | null;
   currency: string;
   totalDebit: string;
+  totalDebitEquivalent: Equivalent;
   totalCredit: string;
+  totalCreditEquivalent: Equivalent;
   totalSort: number;
   isReversal: boolean;
   createdBy: string;
@@ -55,11 +61,9 @@ export type JournalEntryRow = {
 
 export function JournalClient({
   rows,
-  localCurrency,
   canDelete = false,
 }: {
   rows: JournalEntryRow[];
-  localCurrency: string;
   /** Taking a posting back out of the books is a posting of its own. */
   canDelete?: boolean;
 }) {
@@ -124,7 +128,7 @@ export function JournalClient({
       mobile: 'meta',
       sortValue: (r) => r.totalSort,
       exportValue: (r) => r.totalDebit,
-      cell: (r) => r.totalDebit,
+      cell: (r) => <DualText primary={r.totalDebit} equivalent={r.totalDebitEquivalent} />,
     },
     {
       id: 'credit',
@@ -132,7 +136,7 @@ export function JournalClient({
       numeric: true,
       hideable: true,
       exportValue: (r) => r.totalCredit,
-      cell: (r) => r.totalCredit,
+      cell: (r) => <DualText primary={r.totalCredit} equivalent={r.totalCreditEquivalent} />,
     },
     {
       id: 'lineCount',
@@ -235,8 +239,6 @@ export function JournalClient({
                 <TH>Currency</TH>
                 <TH numeric>Debit</TH>
                 <TH numeric>Credit</TH>
-                <TH numeric>USD</TH>
-                <TH numeric>{localCurrency}</TH>
               </TR>
             </THead>
             <TBody>
@@ -247,13 +249,11 @@ export function JournalClient({
                   </TD>
                   <TD className="text-xs text-ink-muted">{line.description ?? '—'}</TD>
                   <TD className="text-xs">{line.currency}</TD>
-                  <TD numeric>{line.debit}</TD>
-                  <TD numeric>{line.credit}</TD>
-                  <TD numeric className="text-ink-muted">
-                    {line.usd}
+                  <TD numeric>
+                    <DualText primary={line.debit} equivalent={line.debitEquivalent} className="[&>span:first-child]:font-normal" />
                   </TD>
-                  <TD numeric className="text-ink-muted">
-                    {line.local}
+                  <TD numeric>
+                    <DualText primary={line.credit} equivalent={line.creditEquivalent} className="[&>span:first-child]:font-normal" />
                   </TD>
                 </TR>
               ))}

@@ -34,6 +34,7 @@ export function KpiCard({
   noteTone = 'muted',
   href,
   linkLabel,
+  equivalent,
 }: {
   label: string;
   /** Shown small before the figure, because a bare number is ambiguous here. */
@@ -47,6 +48,8 @@ export function KpiCard({
   noteTone?: 'muted' | 'warning' | 'danger';
   href?: string;
   linkLabel?: string;
+  /** "≈ USD …" under the figure: the other currency, each document at its own rate. */
+  equivalent?: { text: string; title: string } | null;
 }) {
   const rising = (deltaPct ?? 0) >= 0;
 
@@ -74,6 +77,11 @@ export function KpiCard({
         {currency ? <span className="mr-1 text-sm font-medium text-ink-muted">{currency}</span> : null}
         {value}
       </p>
+      {equivalent ? (
+        <p className="tnum text-[11px] text-ink-subtle" title={equivalent.title}>
+          {equivalent.text}
+        </p>
+      ) : null}
 
       <div className="mt-auto pt-2">
         {note ? (
