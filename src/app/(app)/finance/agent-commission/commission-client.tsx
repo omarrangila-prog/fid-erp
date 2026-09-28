@@ -32,7 +32,7 @@ export type CommissionRow = {
 
 const STATUS: Record<CommissionRow['status'], { label: string; tone: 'warning' | 'progress' | 'success' }> = {
   UNPAID: { label: 'Unpaid', tone: 'warning' },
-  PARTIAL: { label: 'Partially paid', tone: 'progress' },
+  PARTIAL: { label: 'Partially settled', tone: 'progress' },
   PAID: { label: 'Paid', tone: 'success' },
 };
 

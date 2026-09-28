@@ -175,9 +175,9 @@ test('after a reload, all of it is one chronological ledger, and the dashboard o
   await expect(table.locator(':scope > tbody > tr').filter({ hasText: MEMO }).first()).toContainText('Settled');
   // Held 50,000 − 10,000 handed over − 12,000 set off, plus 3,000 lent to him; FID owes him the 5,000 loan.
   const position = (await page.getByTestId('agent-position').innerText()).replace(/\s+/g, ' ');
-  expect(position).toMatch(/Collections held MAD 28,000\.00/);
-  expect(position).toMatch(/Loan receivable MAD 3,000\.00/);
-  expect(position).toMatch(/Loan payable MAD 5,000\.00/);
+  expect(position).toMatch(/Agent Clearing \(collections\) MAD 28,000\.00 Dr/);
+  expect(position).toMatch(/Loan to him MAD 3,000\.00 Dr/);
+  expect(position).toMatch(/Loan from him MAD 5,000\.00 Cr/);
 
   await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
   const card = page.getByTestId('outstanding-agent').filter({ hasText: AGENT }).first();

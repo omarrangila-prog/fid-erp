@@ -100,8 +100,8 @@ test('the agent ledger shows all three, each once', async ({ page }) => {
   // other browser tests give the same agent cheques to hold, which move his
   // net position but not his loans.
   const position = (await page.getByTestId('agent-position').innerText()).replace(/\s+/g, ' ');
-  expect(position, 'loan from him').toMatch(/Loan payable MAD 17,500\.00/);
-  expect(position, 'loan to him').toMatch(/Loan receivable MAD 20,000\.00/);
+  expect(position, 'loan from him').toMatch(/Loan from him MAD 17,500\.00 Cr/);
+  expect(position, 'loan to him').toMatch(/Loan to him MAD 20,000\.00 Dr/);
   // Each loan is its own line on his one ledger.
   await page.getByTestId('agent-tab-loans').click();
   await expect(page.getByTestId('agent-ledger')).toContainText(/Loan received from/);

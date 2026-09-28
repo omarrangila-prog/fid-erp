@@ -660,6 +660,9 @@ export async function getTrialBalance(tx: Tx, companyId: string, upTo?: Date) {
     LEFT JOIN journal_entries je ON je."id" = jl."journalEntryId" AND je."status" = 'POSTED'
       AND (${upTo ?? null}::date IS NULL OR je."entryDate" <= ${upTo ?? null}::date)
     WHERE a."companyId" = ${companyId}
+      -- A filter in a LEFT JOIN's condition keeps the line and only drops the
+      -- entry: without this, a later or unposted entry's lines still counted.
+      AND (jl."id" IS NULL OR je."id" IS NOT NULL)
     GROUP BY a."id", a."code", a."name", a."type"
     HAVING COALESCE(SUM(jl."debitUsd"), 0) <> 0 OR COALESCE(SUM(jl."creditUsd"), 0) <> 0
     ORDER BY a."code"

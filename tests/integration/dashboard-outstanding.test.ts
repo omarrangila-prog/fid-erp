@@ -109,6 +109,11 @@ describe('still to be paid or collected', () => {
     expect(radouan.agentName).toBe('RADOUAN MOHAMMED');
     expect(Number(radouan.holdingLocal)).toBeCloseTo(500_000, 2);
     expect(Number(radouan.commissionLocal)).toBeCloseTo(200_000, 2);
-    expect(Number(radouan.loanFromLocal)).toBeCloseTo(27_500, 2);
+    const loanFrom = radouan.parts.find((p) => p.key === 'loanFrom')!;
+    expect(loanFrom.direction).toBe('FID_OWES');
+    expect(Number(loanFrom.balanceLocal)).toBeCloseTo(-27_500, 2);
+    // The card's two sides come to his ledger's balance.
+    expect(Number(radouan.owesFidLocal.minus(radouan.fidOwesLocal))).toBeCloseTo(Number(radouan.netLocal), 2);
+    expect(Number(radouan.netLocal)).toBeCloseTo(500_000 - 200_000 - 27_500, 2);
   }, 300_000);
 });

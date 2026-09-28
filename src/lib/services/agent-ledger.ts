@@ -1,5 +1,6 @@
 import { transaction, prisma } from '@/lib/db';
 import type { Tx } from '@/lib/db';
+import { LIVE_ENTRY_SQL } from '@/lib/services/journal-visibility';
 import { Decimal, dec, toMoney, toRate, convertToUsd, convertFromUsd } from '@/lib/money';
 import { ACCOUNT_KEYS, DOC_TYPES } from '@/lib/constants';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
@@ -417,10 +418,14 @@ export async function getAgentPositions(
            COALESCE(SUM(CASE WHEN acc."systemKey" = 'AGENT_COMMISSION_PAYABLE'
                              THEN jl."creditLocal" - jl."debitLocal" END), 0)::text AS "commissionLocal"
     FROM agents a
-    LEFT JOIN journal_lines jl ON jl."agentId" = a."id"
-    LEFT JOIN journal_entries je ON je."id" = jl."journalEntryId" AND je."status" = 'POSTED'
-    LEFT JOIN accounts acc ON acc."id" = jl."accountId"
-      AND acc."systemKey" IN ('AGENT_CLEARING', 'AGENT_COMMISSION_PAYABLE')
+    -- Live entries only, as on his ledger: the entry filter has to sit inside
+    -- the join, or a LEFT JOIN keeps every line whatever its entry's state.
+    LEFT JOIN (
+      journal_lines jl
+      JOIN journal_entries je ON je."id" = jl."journalEntryId" AND ${LIVE_ENTRY_SQL}
+      JOIN accounts acc ON acc."id" = jl."accountId"
+        AND acc."systemKey" IN ('AGENT_CLEARING', 'AGENT_COMMISSION_PAYABLE')
+    ) ON jl."agentId" = a."id"
     WHERE a."companyId" = ${companyId}
       AND a."status" = 'ACTIVE'
       AND (${agentId ?? null}::text IS NULL OR a."id" = ${agentId ?? null})

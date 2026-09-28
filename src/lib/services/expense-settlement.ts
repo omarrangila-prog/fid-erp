@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import { dec, toMoney, type Decimal } from '@/lib/money';
 import { getCommissionPaidByExpense } from '@/lib/services/agent-commission';
 import { supplierGrossPayable } from '@/lib/services/tax';
+import { LIVE_ENTRY_SQL } from '@/lib/services/journal-visibility';
 
 /**
  * Whether a cost has been paid, and from where — one answer for every screen.
@@ -19,8 +20,14 @@ import { supplierGrossPayable } from '@/lib/services/tax';
  *   owed to a supplier,    settled by posted payments allocated to it; a
  *   or to nobody yet       bounced or cancelled cheque settles nothing.
  *
+ * A journal voucher can settle too: one that debits Accrued Expenses, or an
+ * agent's commission payable, has paid what those accounts hold. It names no
+ * cost, so it goes to the oldest still owed — the same way unnamed commission
+ * settlements always have — and the costs then read paid exactly when the
+ * ledger says the money has gone.
+ *
  * What remains decides the status: nothing left is Paid, something paid but
- * not all is Partially paid, nothing paid is Unpaid. Whether a cost is paid
+ * not all is Partially settled, nothing paid is Unpaid. Whether a cost is paid
  * never changes whether it is a cost — an unpaid clearing bill is in the
  * shipment's landed cost from the day it is booked.
  *
@@ -33,7 +40,7 @@ export type ExpensePaymentStatus = 'PAID' | 'PARTIAL' | 'UNPAID';
 
 export const EXPENSE_PAYMENT_LABEL: Record<ExpensePaymentStatus, string> = {
   PAID: 'Paid',
-  PARTIAL: 'Partially paid',
+  PARTIAL: 'Partially settled',
   UNPAID: 'Unpaid',
 };
 
@@ -51,6 +58,8 @@ export type ExpenseSettlement = {
   paidFrom: string | null;
   /** Owed to an agent rather than a supplier: settled through the agent's account. */
   owedToAgent: boolean;
+  /** Of what is paid, the part settled by journal vouchers, in the company's currency. */
+  journalLocal: Decimal;
 };
 
 type SettlementInput = {
@@ -69,8 +78,95 @@ type SettlementInput = {
   ledgerAgentId?: string | null;
   ledgerAgent?: { agentName: string } | null;
   payableToAgentId: string | null;
+  vendorId?: string | null;
   vendor?: { country: string | null } | null;
 };
+
+/**
+ * Journal vouchers that paid Accrued Expenses, applied to the costs booked
+ * there — owed to nobody in particular — in the company's currency, per cost.
+ *
+ * In the order things were posted: a voucher pays what was owed when it was
+ * posted, oldest cost first, after the payments allocated to each. A cost
+ * booked later, even back-dated, cannot have been paid by an earlier voucher,
+ * so booking one never turns a cost that reads Paid back into Unpaid. Money
+ * paid beyond what was owed waits as an advance for the next cost.
+ */
+export async function accruedJournalSettlements(companyId: string, companyCountry: string | null): Promise<Map<string, Decimal>> {
+  const applied = new Map<string, Decimal>();
+  const vouchers = await prisma.$queryRaw<Array<{ postedAt: Date; net: string }>>`
+    SELECT je."postedAt", COALESCE(SUM(jl."debitLocal" - jl."creditLocal"), 0)::text AS net
+    FROM journal_lines jl
+    JOIN journal_entries je ON je."id" = jl."journalEntryId"
+    JOIN accounts acc ON acc."id" = jl."accountId"
+    WHERE je."companyId" = ${companyId} AND ${LIVE_ENTRY_SQL}
+      AND je."sourceType" = 'MANUAL'
+      AND acc."systemKey" = 'ACCRUED_EXPENSES'
+    GROUP BY je."id", je."postedAt"
+    ORDER BY je."postedAt", je."id"`;
+  if (!vouchers.some((v) => dec(v.net).greaterThan('0.005'))) return applied;
+
+  const accrued = await prisma.expense.findMany({
+    where: { companyId, status: 'POSTED', cashBankAccountId: null, ledgerAccountId: null, ledgerAgentId: null, vendorId: null, payableToAgentId: null },
+    orderBy: [{ expenseDate: 'asc' }, { createdAt: 'asc' }, { expenseNumber: 'asc' }],
+    select: { id: true, amount: true, taxAmount: true, amountUsd: true, taxAmountUsd: true, amountLocal: true, postedAt: true, createdAt: true },
+  });
+  if (accrued.length === 0) return applied;
+  const allocations = await prisma.$queryRaw<Array<{ expenseId: string; amount: string }>>`
+    SELECT pa."expenseId", COALESCE(SUM(pa."amount"), 0)::text AS amount
+    FROM payment_allocations pa
+    JOIN payments p ON p."id" = pa."paymentId"
+    WHERE p."companyId" = ${companyId} AND p."status" = 'POSTED'
+      AND pa."expenseId" = ANY(${accrued.map((e) => e.id)})
+      AND NOT EXISTS (
+        SELECT 1 FROM cheques ch
+        WHERE ch."paymentId" = p."id" AND ch.status IN ('BOUNCED', 'CANCELLED')
+      )
+    GROUP BY pa."expenseId"`;
+  const allocated = new Map(allocations.map((a) => [a.expenseId, dec(a.amount)]));
+
+  // What each cost still owes after its own payments, in the company's currency.
+  const owing = new Map<string, Decimal>();
+  for (const e of accrued) {
+    const localPerUnit = dec(e.amount).isZero() ? dec(0) : dec(e.amountLocal).dividedBy(dec(e.amount));
+    const gross = supplierGrossPayable({
+      netAmount: e.amount,
+      taxAmount: e.taxAmount,
+      netAmountUsd: e.amountUsd,
+      taxAmountUsd: e.taxAmountUsd,
+      vendorCountry: null,
+      companyCountry,
+    }).amount;
+    owing.set(e.id, Decimal_max(toMoney(gross.minus(allocated.get(e.id) ?? 0).times(localPerUnit)), dec(0)));
+  }
+
+  // Costs and vouchers on one timeline; a cost joins the queue when posted.
+  const bookedAt = (e: (typeof accrued)[number]) => (e.postedAt ?? e.createdAt).getTime();
+  const events = [
+    ...accrued.map((e) => ({ at: bookedAt(e), cost: e.id, amount: dec(0) })),
+    ...vouchers.map((v) => ({ at: v.postedAt.getTime(), cost: null as string | null, amount: dec(v.net) })),
+  ].sort((a, b) => a.at - b.at || (a.cost ? -1 : 1));
+  const open: string[] = [];
+  const order = new Map(accrued.map((e, i) => [e.id, i]));
+  let available = dec(0);
+  const settleOpen = () => {
+    open.sort((a, b) => order.get(a)! - order.get(b)!);
+    for (const id of open) {
+      if (available.lessThanOrEqualTo('0.005')) break;
+      const still = owing.get(id)!.minus(applied.get(id) ?? 0);
+      const take = Decimal_min(available, still);
+      if (take.greaterThan(0)) applied.set(id, (applied.get(id) ?? dec(0)).plus(take));
+      available = available.minus(take);
+    }
+  };
+  for (const event of events) {
+    if (event.cost) open.push(event.cost);
+    else available = available.plus(event.amount);
+    settleOpen();
+  }
+  for (const [id, amount] of applied) applied.set(id, toMoney(amount));
+  return applied;
+}
 
 export async function getExpenseSettlements(
   companyId: string,
@@ -102,6 +198,9 @@ export async function getExpenseSettlements(
       : Promise.resolve([]),
     posted.some((e) => e.payableToAgentId) ? getCommissionPaidByExpense(companyId) : Promise.resolve(new Map<string, Decimal>()),
   ]);
+  const accruedJournals = posted.some((e) => owedIds.includes(e.id) && !e.vendorId)
+    ? await accruedJournalSettlements(companyId, company.country)
+    : new Map<string, Decimal>();
   const byExpense = new Map(allocations.map((a) => [a.expenseId, a]));
 
   const result = new Map<string, ExpenseSettlement>();
@@ -110,6 +209,7 @@ export async function getExpenseSettlements(
     let gross: Decimal;
     let paid: Decimal;
     let paidFrom: string | null = null;
+    let journalLocal = dec(0);
 
     if (e.cashBankAccountId || e.ledgerAccountId || e.ledgerAgentId) {
       gross = toMoney(dec(e.amount).plus(dec(e.taxAmount)));
@@ -136,6 +236,12 @@ export async function getExpenseSettlements(
       const row = byExpense.get(e.id);
       paid = toMoney(dec(row?.amount ?? 0));
       paidFrom = row?.accounts ?? null;
+      const byJournal = accruedJournals.get(e.id);
+      if (byJournal && !localPerUnit.isZero()) {
+        journalLocal = byJournal;
+        paid = toMoney(paid.plus(byJournal.dividedBy(localPerUnit)));
+        paidFrom = [paidFrom, 'Journal voucher'].filter(Boolean).join(', ');
+      }
     }
 
     const outstanding = Decimal_max(toMoney(gross.minus(paid)), dec(0));
@@ -159,6 +265,7 @@ export async function getExpenseSettlements(
       outstandingLocal: toMoney(grossLocal.minus(paidLocal)),
       paidFrom,
       owedToAgent: Boolean(e.payableToAgentId),
+      journalLocal,
     });
   }
   return result;

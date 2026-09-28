@@ -9,6 +9,7 @@ import { getCompanyContext } from '@/lib/services/company';
 import { resolveSubledgerLeg } from '@/lib/services/subledger';
 import type { PaymentMethod } from '@prisma/client';
 import { writeAudit } from '@/lib/services/audit';
+import { accruedJournalSettlements } from '@/lib/services/expense-settlement';
 import { supplierGrossPayable } from '@/lib/services/tax';
 import { resolveLedgerSettlement } from '@/lib/services/ledger-settlement';
 
@@ -136,6 +137,8 @@ export async function getExpenseOutstanding(
       ledgerAgentId: true,
       payableToAgentId: true,
       vendorId: true,
+      companyId: true,
+      amountLocal: true,
       vendor: { select: { country: true } },
       company: { select: { country: true } },
     },
@@ -166,9 +169,22 @@ export async function getExpenseOutstanding(
   const gross = isUnpaidBill ? payable.amount : new Decimal(0);
   const grossUsd = isUnpaidBill ? payable.amountUsd : new Decimal(0);
 
+  // A cost owed to nobody in particular can also have been paid by a journal
+  // voucher on Accrued Expenses — the same share the status engine gives it,
+  // so what can still be paid here is exactly what every screen calls owed.
+  let byJournal = new Decimal(0);
+  let byJournalUsd = new Decimal(0);
+  if (isUnpaidBill && !expense.vendorId && !dec(expense.amountLocal).isZero()) {
+    const local = (await accruedJournalSettlements(expense.companyId, expense.company.country)).get(expenseId);
+    if (local) {
+      byJournal = toMoney(local.times(dec(expense.amount)).dividedBy(dec(expense.amountLocal)));
+      byJournalUsd = gross.isZero() ? new Decimal(0) : toMoney(grossUsd.times(byJournal).dividedBy(gross));
+    }
+  }
+
   return {
-    amount: toMoney(gross.minus(dec(rows[0]?.amount ?? 0))),
-    amountUsd: toMoney(grossUsd.minus(dec(rows[0]?.amountUsd ?? 0))),
+    amount: toMoney(gross.minus(dec(rows[0]?.amount ?? 0)).minus(byJournal)),
+    amountUsd: toMoney(grossUsd.minus(dec(rows[0]?.amountUsd ?? 0)).minus(byJournalUsd)),
     currency: expense.currency,
   };
 }

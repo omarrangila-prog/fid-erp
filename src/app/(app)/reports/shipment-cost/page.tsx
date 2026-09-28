@@ -296,7 +296,7 @@ function OrderSection({
                         <Badge tone={e.capitalised ? 'success' : 'neutral'}>{e.capitalised ? 'Yes' : 'No — a running cost'}</Badge>
                       </TD>
                       <TD className="text-xs text-ink-muted">
-                        {e.payment === 'PAID' ? (e.paidFrom ?? 'Paid') : e.payment === 'PARTIAL' ? `Partly paid${e.paidFrom ? ` · ${e.paidFrom}` : ''}` : 'Unpaid'}
+                        {e.payment === 'PAID' ? (e.paidFrom ?? 'Paid') : e.payment === 'PARTIAL' ? `Partially settled${e.paidFrom ? ` · ${e.paidFrom}` : ''}` : 'Unpaid'}
                       </TD>
                     </TR>
                   ))}

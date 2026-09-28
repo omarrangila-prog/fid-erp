@@ -322,7 +322,7 @@ export default async function DashboardPage() {
           through agents should not carry two permanently empty tiles, and a
           company that does needs to see this every morning.
         */}
-        {!data.agents.holdingUsd.isZero() ? (
+        {!data.agents.holdingLocal.isZero() ? (
           <KpiCard
             label="With Agents"
             currency={local}
@@ -339,7 +339,7 @@ export default async function DashboardPage() {
           />
         ) : null}
 
-        {!data.agents.commissionPayableUsd.isZero() ? (
+        {!data.agents.commissionPayableLocal.isZero() ? (
           <KpiCard
             label="Commission Owed"
             currency={local}
@@ -833,15 +833,24 @@ async function OutstandingSection({ companyId }: { companyId: string }) {
   const o = await getOutstandingSummary(companyId);
   const local = o.localCurrency;
   const soleAgent = o.agents.length === 1 ? o.agents[0].agentId : null;
-  const cards: Array<{ key: string; label: string; figure: { count: number; local: ReturnType<typeof dec>; usd: ReturnType<typeof dec> | null }; unit: string; href: string; tone: 'owed' | 'due' }> = [
+  const cards: Array<{
+    key: string;
+    label: string;
+    figure: { count: number; local: ReturnType<typeof dec>; usd: ReturnType<typeof dec> | null };
+    unit: string;
+    href: string;
+    tone: 'owed' | 'due';
+    /** Loans: each party on its own line, never netted against another. */
+    parties?: Array<{ name: string; amountLocal: ReturnType<typeof dec> }>;
+  }> = [
     { key: 'payables', label: 'Owed to suppliers', figure: o.supplierPayables, unit: 'order', href: '/finance/payables', tone: 'owed' },
     // One card for every cost still to pay; the ledger it opens splits them by shipment, party and age.
     { key: 'unpaid-expenses', label: 'Unpaid expenses', figure: o.unpaidExpenses, unit: 'cost', href: '/finance/unpaid-expenses', tone: 'owed' },
     // With one agent, each alert opens his ledger on the matching filter.
     { key: 'agent-collections', label: 'Held by agents for FID', figure: o.agentCollections, unit: 'agent', href: soleAgent ? `/agents/${soleAgent}?tab=COLLECTIONS` : '/ledgers/agents', tone: 'due' },
     { key: 'agent-commission', label: 'Agent commission unpaid', figure: o.agentCommission, unit: 'agent', href: soleAgent ? `/agents/${soleAgent}?tab=COMMISSION` : '/finance/agent-commission', tone: 'owed' },
-    { key: 'loans-payable', label: 'Loans FID owes', figure: o.loansPayable, unit: 'lender', href: '/ledgers', tone: 'owed' },
-    { key: 'loans-receivable', label: 'Loans owed to FID', figure: o.loansReceivable, unit: 'borrower', href: '/ledgers', tone: 'due' },
+    { key: 'loans-payable', label: 'Loans FID owes', figure: o.loansPayable, unit: 'lender', href: '/ledgers', tone: 'owed', parties: o.loanParties.filter((p) => p.side === 'payable') },
+    { key: 'loans-receivable', label: 'Loans owed to FID', figure: o.loansReceivable, unit: 'borrower', href: '/ledgers', tone: 'due', parties: o.loanParties.filter((p) => p.side === 'receivable') },
   ];
   return (
     <section className="space-y-3" data-testid="dashboard-outstanding">
@@ -852,9 +861,7 @@ async function OutstandingSection({ companyId }: { companyId: string }) {
       */}
       {o.agents.map((agent) => {
         const first = agent.agentName.split(/\s+/)[0];
-        const owesFid = agent.holdingLocal.plus(agent.loanToLocal);
-        const fidOwes = agent.commissionLocal.plus(agent.loanFromLocal);
-        const net = owesFid.minus(fidOwes);
+        const net = agent.netLocal;
         return (
           <div key={agent.agentId} className="rounded-xl border-2 border-forest-200 bg-forest-50/40 p-4" data-testid="outstanding-agent">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -865,22 +872,23 @@ async function OutstandingSection({ companyId }: { companyId: string }) {
             </div>
             <dl className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
               <div>
+                <dt className="text-ink-muted">Balance (as on his ledger)</dt>
+                <dd className="tnum text-sm font-semibold" data-testid="outstanding-agent-balance">
+                  {net.abs().lessThan('0.005')
+                    ? 'Nothing either way'
+                    : `${formatMoney(net.abs(), local)} ${net.isPositive() ? 'Dr' : 'Cr'}`}
+                </dd>
+                <dd className="text-[11px] text-ink-subtle">
+                  {net.abs().lessThan('0.005') ? '' : net.isPositive() ? `${first} owes FID` : `FID owes ${first}`}
+                </dd>
+              </div>
+              <div>
                 <dt className="text-ink-muted">{first} owes FID</dt>
-                <dd className="tnum text-sm font-semibold">{formatMoney(owesFid, local)}</dd>
+                <dd className="tnum text-sm font-semibold" data-testid="outstanding-agent-owes">{formatMoney(agent.owesFidLocal, local)}</dd>
               </div>
               <div>
                 <dt className="text-ink-muted">FID owes {first}</dt>
-                <dd className="tnum text-sm font-semibold">{formatMoney(fidOwes, local)}</dd>
-              </div>
-              <div>
-                <dt className="text-ink-muted">Net position</dt>
-                <dd className="tnum text-sm font-semibold">
-                  {net.abs().lessThan('0.005')
-                    ? 'Nothing either way'
-                    : net.isPositive()
-                      ? `${first} owes FID ${formatMoney(net, local)}`
-                      : `FID owes ${first} ${formatMoney(net.abs(), local)}`}
-                </dd>
+                <dd className="tnum text-sm font-semibold" data-testid="outstanding-agent-owed">{formatMoney(agent.fidOwesLocal, local)}</dd>
               </div>
               <div>
                 <dt className="text-ink-muted">Outstanding commission</dt>
@@ -888,8 +896,10 @@ async function OutstandingSection({ companyId }: { companyId: string }) {
               </div>
             </dl>
             <p className="mt-2 text-[11px] text-ink-subtle">
-              Collections held {formatMoney(agent.holdingLocal, local)} · Loan FID owes him {formatMoney(agent.loanFromLocal, local)} · Loan he owes FID{' '}
-              {formatMoney(agent.loanToLocal, local)}
+              {agent.parts
+                .filter((p) => p.direction !== 'NIL')
+                .map((p) => `${p.account} ${formatMoney(p.balanceLocal.abs(), local)} ${p.direction === 'OWES_FID' ? 'Dr' : 'Cr'}`)
+                .join(' · ')}
             </p>
           </div>
         );
@@ -957,6 +967,15 @@ async function OutstandingSection({ companyId }: { companyId: string }) {
                 <span className="block text-xs text-ink-subtle">
                   {nothing ? 'Nothing outstanding' : `${card.figure.count} ${card.unit}${card.figure.count === 1 ? '' : 's'}`}
                 </span>
+                {card.parties?.length ? (
+                  <span className="mt-1 block space-y-0.5 text-[11px] text-ink-muted" data-testid={`outstanding-${card.key}-parties`}>
+                    {card.parties.map((party) => (
+                      <span key={party.name} className="block truncate">
+                        {party.name} · {formatMoney(party.amountLocal, local)}
+                      </span>
+                    ))}
+                  </span>
+                ) : null}
               </span>
               <DualAmount
                 className={`shrink-0 text-right text-base ${

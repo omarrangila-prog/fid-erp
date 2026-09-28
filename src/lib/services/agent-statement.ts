@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db';
 import { dec, toMoney, type Decimal } from '@/lib/money';
-import { getAgentLedger, type AgentLedgerRow, type AgentLedgerSummary } from '@/lib/services/agent-account';
+import { getAgentLedger, agentRelationship, type AgentLedgerRow, type AgentLedgerSummary, type AgentRelationship } from '@/lib/services/agent-account';
 import { getExpenseSettlements } from '@/lib/services/expense-settlement';
 import { journalSourceHref } from '@/lib/journal-source';
 import { businessNumber } from '@/lib/short-number';
@@ -91,6 +91,8 @@ export type AgentStatement = {
     unpaidExpensesLocal: Decimal;
   };
   shipments: Array<{ id: string; reference: string }>;
+  /** His accounts, each on the side its balance falls on. */
+  relationship: AgentRelationship;
 };
 
 const RECEIVABLE_KINDS = new Set(['Agent Clearing', 'Loan to agent', 'Trade receivable', 'Other']);
@@ -302,13 +304,16 @@ export async function getAgentStatement(params: { companyId: string; agentId: st
   const unpaidExpensesLocal = toMoney(
     [...expenseStatus.values()].reduce((t: Decimal, s: { outstandingLocal: Decimal }) => t.plus(s.outstandingLocal), dec(0)),
   );
-  const owesFid = toMoney(summary.holdingLocal.plus(summary.loanToAgentLocal).plus(summary.tradeReceivableLocal).plus(summary.otherLocal));
-  const fidOwes = toMoney(summary.commissionLocal.plus(summary.loanFromAgentLocal));
+  // Each account on the side its balance falls on — the same calculation as the dashboard.
+  const relationship = agentRelationship(summary);
+  const owesFid = relationship.owesFidLocal;
+  const fidOwes = relationship.fidOwesLocal;
   const shipments = [...new Map(events.filter((e) => e.shipment).map((e) => [e.shipment!.id, e.shipment!])).values()];
 
   return {
     events,
     summary: { ...summary, owesFidLocal: owesFid, fidOwesLocal: fidOwes, unpaidExpensesLocal },
+    relationship,
     shipments,
   };
 }

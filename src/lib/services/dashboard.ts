@@ -5,7 +5,7 @@ import { getFinancialPosition } from '@/lib/services/reports';
 import { getCompanyProfitSummary, getMonthlyProfitability } from '@/lib/services/profitability';
 import { getReceivables, getPayables, summariseAgeing } from '@/lib/services/receivables';
 import { SHIPMENT_STATUSES_IN_TRANSIT } from '@/lib/constants';
-import { getAgentPositions } from '@/lib/services/agent-ledger';
+import { getAgentSummaries, agentRelationship } from '@/lib/services/agent-account';
 
 /**
  * Dashboard aggregation.
@@ -94,7 +94,7 @@ export async function getDashboard(params: { companyId: string; from?: Date; to?
       // What agents are holding and what they are owed. Before the agent
       // clearing account existed there was nowhere to ask this, because an
       // agent's cheque went straight into the bank.
-      getAgentPositions(params.companyId),
+      getAgentSummaries(params.companyId),
       getSalesSnapshot(params.companyId),
     ]);
 
@@ -121,14 +121,21 @@ export async function getDashboard(params: { companyId: string; from?: Date; to?
     overdueByCustomer.set(row.customerId, entry);
   }
 
-  const agentHoldingUsd = agents.reduce((sum, a) => sum.plus(a.holdingUsd), new Decimal(0));
-  const agentCommissionUsd = agents.reduce((sum, a) => sum.plus(a.commissionPayableUsd), new Decimal(0));
-  const agentHoldingLocal = agents.reduce((sum, a) => sum.plus(a.holdingLocal), new Decimal(0));
-  const agentCommissionLocal = agents.reduce((sum, a) => sum.plus(a.commissionPayableLocal), new Decimal(0));
+  // The agents' collections and commission as on their own ledgers: an
+  // account only counts on its usual side — a collections account in credit
+  // is not money "with" the agent, and is on his ledger card instead.
+  const agentRows = agents.map((a) => ({ ...a, relationship: agentRelationship(a.summary) }));
+  const holding = agentRows.filter((a) => a.relationship.collectionsHeldLocal.greaterThan('0.005'));
+  const owed = agentRows.filter((a) => a.relationship.commissionOutstandingLocal.greaterThan('0.005'));
+  const agentHoldingLocal = holding.reduce((sum, a) => sum.plus(a.relationship.collectionsHeldLocal), new Decimal(0));
+  const agentHoldingUsd = holding.reduce((sum, a) => sum.plus(a.holdingUsd), new Decimal(0));
+  const agentCommissionLocal = owed.reduce((sum, a) => sum.plus(a.relationship.commissionOutstandingLocal), new Decimal(0));
+  const agentCommissionUsd = owed.reduce((sum, a) => sum.plus(a.commissionUsd), new Decimal(0));
 
   return {
     agents: {
-      positions: agents.filter((a) => !a.holdingUsd.isZero() || !a.commissionPayableUsd.isZero()),
+      /** Agents holding collections, for the tile's note. */
+      positions: holding.map((a) => ({ agentId: a.agentId, agentName: a.agentName })),
       /** Money customers have paid that has not reached the company. */
       holdingUsd: toMoney(agentHoldingUsd),
       holdingLocal: toMoney(agentHoldingLocal),

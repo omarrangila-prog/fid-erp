@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getAgentSummaries, getAgentControlTotals, type AgentLedgerSummary } from '@/lib/services/agent-account';
-import { formatMoney } from '@/lib/format';
+import { formatDrCr, formatMoney } from '@/lib/format';
 import { RowActions } from '@/components/shared/row-actions';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrintButton } from '@/components/shared/print-button';
@@ -128,14 +128,15 @@ export default async function AgentLedgersPage() {
                         {agentName}
                       </Link>
                     </TD>
+                    {/* Each account as it stands, Dr or Cr: a collections account can be in credit. */}
                     <TD numeric className={summary.holdingLocal.greaterThan(0) ? 'font-semibold text-ink' : ''}>
-                      {formatMoney(summary.holdingLocal, local)}
+                      {formatDrCr(summary.holdingLocal, local)}
                     </TD>
-                    <TD numeric>{formatMoney(summary.commissionLocal, local)}</TD>
-                    <TD numeric>{formatMoney(summary.loanFromAgentLocal, local)}</TD>
-                    <TD numeric>{formatMoney(summary.loanToAgentLocal, local)}</TD>
+                    <TD numeric>{formatDrCr(summary.commissionLocal.negated(), local)}</TD>
+                    <TD numeric>{formatDrCr(summary.loanFromAgentLocal.negated(), local)}</TD>
+                    <TD numeric>{formatDrCr(summary.loanToAgentLocal, local)}</TD>
                     <TD numeric className="font-medium">
-                      {formatMoney(summary.netLocal.abs(), local)}
+                      {formatDrCr(summary.netLocal, local)}
                       {local === 'USD' ? null : (
                         <span
                           className="tnum block text-[11px] font-normal text-ink-subtle"
@@ -166,11 +167,11 @@ export default async function AgentLedgersPage() {
               <TFoot>
                 <TR className="hover:bg-transparent">
                   <TD>Total</TD>
-                  <TD numeric>{formatMoney(total((s) => s.holdingLocal), local)}</TD>
-                  <TD numeric>{formatMoney(total((s) => s.commissionLocal), local)}</TD>
-                  <TD numeric>{formatMoney(total((s) => s.loanFromAgentLocal), local)}</TD>
-                  <TD numeric>{formatMoney(total((s) => s.loanToAgentLocal), local)}</TD>
-                  <TD numeric>{formatMoney(total((s) => s.netLocal), local)}</TD>
+                  <TD numeric>{formatDrCr(total((s) => s.holdingLocal), local)}</TD>
+                  <TD numeric>{formatDrCr(total((s) => s.commissionLocal).negated(), local)}</TD>
+                  <TD numeric>{formatDrCr(total((s) => s.loanFromAgentLocal).negated(), local)}</TD>
+                  <TD numeric>{formatDrCr(total((s) => s.loanToAgentLocal), local)}</TD>
+                  <TD numeric>{formatDrCr(total((s) => s.netLocal), local)}</TD>
                   <TD numeric className="text-xs text-ink-muted">
                     {local === 'USD' ? '—' : formatMoney(total((s) => s.netUsd), 'USD')}
                   </TD>

@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
-import { formatMoney } from '@/lib/format';
+import { formatDrCr, formatMoney } from '@/lib/format';
 import { getAgentSummaries } from '@/lib/services/agent-account';
 import { PageHeader } from '@/components/shared/page-header';
 import { SimpleMasterTable, type SimpleRow, type SimpleColumnSpec } from '@/components/shared/simple-master';
@@ -78,19 +78,19 @@ export default async function AgentsPage() {
       })(),
       holding: (() => {
         const p = positionByAgent.get(a.id);
-        return p && Number(p.holdingLocal) !== 0 ? formatMoney(p.holdingLocal, localCurrency) : '—';
+        return p && Number(p.holdingLocal) !== 0 ? formatDrCr(p.holdingLocal, localCurrency) : '—';
       })(),
       payable: (() => {
         const p = positionByAgent.get(a.id);
-        return p && Number(p.commissionLocal) !== 0 ? formatMoney(p.commissionLocal, localCurrency) : '—';
+        return p && Number(p.commissionLocal) !== 0 ? formatDrCr(p.commissionLocal.negated(), localCurrency) : '—';
       })(),
       loanFrom: (() => {
         const p = positionByAgent.get(a.id);
-        return p && Number(p.loanFromAgentLocal) !== 0 ? formatMoney(p.loanFromAgentLocal, localCurrency) : '—';
+        return p && Number(p.loanFromAgentLocal) !== 0 ? formatDrCr(p.loanFromAgentLocal.negated(), localCurrency) : '—';
       })(),
       loanTo: (() => {
         const p = positionByAgent.get(a.id);
-        return p && Number(p.loanToAgentLocal) !== 0 ? formatMoney(p.loanToAgentLocal, localCurrency) : '—';
+        return p && Number(p.loanToAgentLocal) !== 0 ? formatDrCr(p.loanToAgentLocal, localCurrency) : '—';
       })(),
       status: a.status === 'ACTIVE' ? 'Active' : 'Inactive',
     },

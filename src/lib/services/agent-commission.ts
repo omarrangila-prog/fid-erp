@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db';
 import { Decimal, dec, toMoney } from '@/lib/money';
+import { LIVE_ENTRY_SQL } from '@/lib/services/journal-visibility';
 
 /**
  * Agent commission register.
@@ -7,8 +8,8 @@ import { Decimal, dec, toMoney } from '@/lib/money';
  * Commission is booked as an unpaid shipment expense the day it is agreed.
  * Paying the agent later is a settlement against the agent's payable, not a
  * line on the original voucher — so this register reconstructs Unpaid /
- * Partially Paid / Paid by applying posted commission settlements FIFO to the
- * expenses of that agent.
+ * Partially Paid / Paid by applying posted commission settlements, and journal
+ * vouchers on his commission payable, FIFO to the expenses of that agent.
  */
 
 export type CommissionStatus = 'UNPAID' | 'PARTIAL' | 'PAID';
@@ -60,6 +61,23 @@ export async function getCommissionPaidByExpense(companyId: string): Promise<Map
       select: { agentId: true, amountLocal: true, expenseId: true },
     }),
   ]);
+  /*
+   * A journal voucher that debits his commission payable pays it just as a
+   * settlement does — the ledger goes down, so the costs must read paid too.
+   * Only journal vouchers: settlements are counted above and a cost's own
+   * entry is the debt itself. A voucher that credits it adds to what is owed
+   * outside any cost, so it is netted off first.
+   */
+  const journals = await prisma.$queryRaw<Array<{ agentId: string; net: string }>>`
+    SELECT jl."agentId", COALESCE(SUM(jl."debitLocal" - jl."creditLocal"), 0)::text AS net
+    FROM journal_lines jl
+    JOIN journal_entries je ON je."id" = jl."journalEntryId"
+    JOIN accounts acc ON acc."id" = jl."accountId"
+    WHERE je."companyId" = ${companyId} AND ${LIVE_ENTRY_SQL}
+      AND je."sourceType" = 'MANUAL'
+      AND acc."systemKey" = 'AGENT_COMMISSION_PAYABLE'
+      AND jl."agentId" IS NOT NULL
+    GROUP BY jl."agentId"`;
 
   /*
    * A settlement made from the cost itself names that cost and settles it
@@ -83,6 +101,9 @@ export async function getCommissionPaidByExpense(companyId: string): Promise<Map
     }
     pool.set(settlement.agentId, (pool.get(settlement.agentId) ?? new Decimal(0)).plus(settlement.amountLocal));
   }
+  for (const row of journals) {
+    pool.set(row.agentId, (pool.get(row.agentId) ?? new Decimal(0)).plus(dec(row.net)));
+  }
 
   // What is settled, returned in USD as before, as the share of each cost
   // that the settlements in the company's currency cover.
@@ -93,7 +114,7 @@ export async function getCommissionPaidByExpense(companyId: string): Promise<Map
       paid.set(expense.id, new Decimal(0));
       continue;
     }
-    const available = pool.get(agentId) ?? new Decimal(0);
+    const available = Decimal.max(pool.get(agentId) ?? new Decimal(0), new Decimal(0));
     const settledHere = linked.get(expense.id) ?? new Decimal(0);
     const owedLocal = dec(expense.amountLocal);
     const stillOwed = Decimal.max(owedLocal.minus(settledHere), new Decimal(0));

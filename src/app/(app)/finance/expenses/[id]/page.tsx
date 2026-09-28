@@ -7,7 +7,6 @@ import { Banknote, HandCoins, Copy } from 'lucide-react';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, TRANSACTION_STATUS_META, PAYMENT_METHOD_LABELS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
-import { dec } from '@/lib/money';
 import { formatMoney, formatDate, formatDateTime, formatRate } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Metric, MetricGrid, DetailRow } from '@/components/shared/stat-card';
@@ -18,6 +17,7 @@ import { Callout } from '@/components/ui/feedback';
 import { VoucherActions } from '@/components/shared/voucher-actions';
 import { getWarehouseLabels } from '@/lib/services/stock';
 import { settledThrough } from '@/lib/ledger-target';
+import { getExpenseSettlements, EXPENSE_PAYMENT_LABEL } from '@/lib/services/expense-settlement';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,7 +45,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
       },
       container: { select: { containerNumber: true } },
       batch: { select: { batchNumber: true } },
-      vendor: { select: { id: true, vendorName: true } },
+      vendor: { select: { id: true, vendorName: true, country: true } },
       agent: { select: { id: true, agentName: true } },
       payableToAgent: { select: { id: true, agentName: true } },
       cashBankAccount: { select: { name: true } },
@@ -59,18 +59,15 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
 
   const warehouses = await getWarehouseLabels(user.activeCompany.id);
   /*
-   * Still owed, rather than merely booked as owed. A cost paid from cash or
-   * bank needs nothing more; one booked on credit is settled by a payment,
-   * and once payments cover it there is nothing left to pay. Offering to pay
-   * it again is how the same bill gets paid twice.
+   * Still owed, rather than merely booked as owed — from the one calculation
+   * every screen uses: payments allocated to it, commission settled to the
+   * agent, journal vouchers on the account it is held in. Offering to pay a
+   * settled cost again is how the same bill gets paid twice.
    */
-  const paidAgainst = await prisma.paymentAllocation.aggregate({
-    where: { expenseId: expense.id, payment: { status: 'POSTED' } },
-    _sum: { amount: true },
-  });
-  const owed = dec(expense.amount).plus(expense.taxAmount).minus(paidAgainst._sum.amount ?? 0);
+  const settlement =
+    expense.status === 'POSTED' ? (await getExpenseSettlements(user.activeCompany.id, [expense])).get(expense.id) : undefined;
   const paidOnTheSpot = Boolean(expense.cashBankAccountId || expense.ledgerAccountId || expense.ledgerAgentId);
-  const unpaid = expense.status === 'POSTED' && !paidOnTheSpot && owed.greaterThan(0);
+  const unpaid = expense.status === 'POSTED' && !paidOnTheSpot && settlement !== undefined && settlement.status !== 'PAID';
   const recordPayment = unpaid && !expense.payableToAgent && can(user, PERMISSIONS.PAYMENTS_CREATE);
   const payAgentCommission =
     unpaid && expense.payableToAgent && can(user, PERMISSIONS.AGENTS_VIEW);
@@ -88,6 +85,14 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
         meta={
           <>
             <StatusBadge status={expense.status} meta={TRANSACTION_STATUS_META} />
+            {settlement ? (
+              <Badge
+                tone={settlement.status === 'PAID' ? 'success' : settlement.status === 'PARTIAL' ? 'warning' : 'danger'}
+                data-testid="expense-payment-badge"
+              >
+                {EXPENSE_PAYMENT_LABEL[settlement.status]}
+              </Badge>
+            ) : null}
             <Badge tone={expense.capitaliseToLandedCost ? 'info' : 'neutral'}>
               {expense.capitaliseToLandedCost ? 'Landed cost' : 'Period cost'}
             </Badge>
@@ -236,19 +241,31 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
               {'batch' in expense ? (expense.batch?.batchNumber ?? 'Every batch') : 'Every batch'}
             </DetailRow>
             <DetailRow label="Warehouse">{warehouses.byExpense.get(expense.id) || '—'}</DetailRow>
-            {unpaid ? (
-              <DetailRow label="Settlement">
-                {expense.payableToAgent
-                  ? `Unpaid · owed to ${expense.payableToAgent.agentName}`
-                  : expense.vendor
-                    ? `Unpaid · owed to ${expense.vendor.vendorName}`
-                    : 'Unpaid'}
-              </DetailRow>
-            ) : (
+            {paidOnTheSpot ? (
               <>
                 <DetailRow label="Method">{PAYMENT_METHOD_LABELS[expense.paymentMethod]}</DetailRow>
                 <DetailRow label="Paid from">{settledThrough(expense, 'On credit')}</DetailRow>
               </>
+            ) : settlement ? (
+              <>
+                <DetailRow label="Payment status">
+                  <span data-testid="expense-payment-status">
+                    {EXPENSE_PAYMENT_LABEL[settlement.status]}
+                    {settlement.status !== 'PAID'
+                      ? ` · owed to ${expense.payableToAgent?.agentName ?? expense.vendor?.vendorName ?? 'nobody named yet (Accrued Expenses)'}`
+                      : ''}
+                  </span>
+                </DetailRow>
+                <DetailRow label="Paid">
+                  <span data-testid="expense-paid">{formatMoney(settlement.paid, expense.currency)}</span>
+                  {settlement.paidFrom ? <span className="text-ink-muted"> · {settlement.paidFrom}</span> : null}
+                </DetailRow>
+                <DetailRow label="Outstanding">
+                  <span data-testid="expense-outstanding">{formatMoney(settlement.outstanding, expense.currency)}</span>
+                </DetailRow>
+              </>
+            ) : (
+              <DetailRow label="Settlement">Not posted</DetailRow>
             )}
             {expense.vendor ? (
               <DetailRow label="Supplier">

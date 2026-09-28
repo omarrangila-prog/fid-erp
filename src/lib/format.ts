@@ -142,3 +142,13 @@ export function companyFlag(country: string | null | undefined): string {
   if (name.includes('morocco') || name.includes('maroc')) return '\u{1F1F2}\u{1F1E6}';
   return '';
 }
+
+/**
+ * A balance as a ledger shows it: the amount, then Dr or Cr. Pass it with a
+ * debit balance positive. Nil reads as the plain zero.
+ */
+export function formatDrCr(balance: DecimalInput, currency: string): string {
+  const value = dec(balance);
+  if (value.abs().lessThan('0.005')) return formatMoney(0, currency);
+  return `${formatMoney(value.abs(), currency)} ${value.isPositive() ? 'Dr' : 'Cr'}`;
+}

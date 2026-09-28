@@ -199,6 +199,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Roles & Permissions', href: '/admin/roles', icon: ShieldCheck, permissions: [PERMISSIONS.ROLES_MANAGE] },
       { label: 'Companies', href: '/admin/companies', icon: Building2, permissions: [PERMISSIONS.COMPANIES_MANAGE] },
       { label: 'Audit Log', href: '/admin/audit', icon: History, permissions: [PERMISSIONS.AUDIT_VIEW] },
+      { label: 'Consistency checks', href: '/admin/consistency', icon: ShieldCheck, permissions: [PERMISSIONS.AUDIT_VIEW] },
       { label: 'Backups', href: '/admin/backups', icon: DatabaseBackup, permissions: [PERMISSIONS.BACKUP_MANAGE] },
       { label: 'Tax Settings', href: '/settings/tax', icon: Percent, permissions: [PERMISSIONS.SETTINGS_MANAGE] },
       { label: 'Settings', href: '/settings', icon: Settings, permissions: [PERMISSIONS.SETTINGS_MANAGE] },

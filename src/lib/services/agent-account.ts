@@ -361,13 +361,97 @@ export async function getAgentNetBalances(
   return new Map(rows.map((r) => [r.agentId, { netLocal: toMoney(r.local), netUsd: toMoney(r.usd) }]));
 }
 
+export type AgentBalanceKey = 'holding' | 'loanTo' | 'trade' | 'other' | 'commission' | 'loanFrom';
+
+export type AgentBalancePart = {
+  key: AgentBalanceKey;
+  /** The account, in words. */
+  account: string;
+  /** Debit balance positive: the agent owes FID on this account. */
+  balanceLocal: Decimal;
+  direction: 'OWES_FID' | 'FID_OWES' | 'NIL';
+};
+
+/**
+ * One agent's position, worked out once for every screen that shows it.
+ *
+ * Each account he has with FID is put on the side its balance actually falls
+ * on, not the side it usually does. A collections account in credit — he has
+ * paid over more than he collected, or money he advanced was booked there —
+ * is something FID owes him; a loan-from-him account in debit — FID has
+ * repaid more than it borrowed there — is something he owes FID. Sorting by
+ * the account's usual side instead is how the dashboard came to show
+ * "owes FID −72,768.80" beside a correct net.
+ *
+ * So the two sides are never negative, and they always come to his ledger's
+ * closing balance: net = owes FID − FID owes. Collections held and
+ * commission outstanding are what those two accounts hold on their own
+ * usual side, for the cards that ask about just them.
+ */
+export type AgentRelationship = {
+  parts: AgentBalancePart[];
+  owesFidLocal: Decimal;
+  fidOwesLocal: Decimal;
+  /** Positive: the agent owes FID — the ledger's closing balance, Dr. */
+  netLocal: Decimal;
+  collectionsHeldLocal: Decimal;
+  commissionOutstandingLocal: Decimal;
+};
+
+const PART_ACCOUNT: Record<AgentBalanceKey, string> = {
+  holding: 'Agent Clearing (collections)',
+  loanTo: 'Loan to him',
+  trade: 'His own purchases (receivable)',
+  other: 'Other accounts',
+  commission: 'Commission payable',
+  loanFrom: 'Loan from him',
+};
+
+export function agentRelationship(summary: AgentLedgerSummary): AgentRelationship {
+  // Everything as a debit balance: positive, he owes FID.
+  const balances: Record<AgentBalanceKey, Decimal> = {
+    holding: dec(summary.holdingLocal),
+    loanTo: dec(summary.loanToAgentLocal),
+    trade: dec(summary.tradeReceivableLocal),
+    other: dec(summary.otherLocal),
+    commission: dec(summary.commissionLocal).negated(),
+    loanFrom: dec(summary.loanFromAgentLocal).negated(),
+  };
+  const parts: AgentBalancePart[] = (Object.keys(balances) as AgentBalanceKey[]).map((key) => {
+    const balanceLocal = toMoney(balances[key]);
+    return {
+      key,
+      account: PART_ACCOUNT[key],
+      balanceLocal,
+      direction: balanceLocal.abs().lessThan('0.005') ? 'NIL' : balanceLocal.isPositive() ? 'OWES_FID' : 'FID_OWES',
+    };
+  });
+  const owesFid = parts.filter((p) => p.direction === 'OWES_FID').reduce((t, p) => t.plus(p.balanceLocal), dec(0));
+  const fidOwes = parts.filter((p) => p.direction === 'FID_OWES').reduce((t, p) => t.plus(p.balanceLocal.abs()), dec(0));
+  return {
+    parts,
+    owesFidLocal: toMoney(owesFid),
+    fidOwesLocal: toMoney(fidOwes),
+    netLocal: toMoney(owesFid.minus(fidOwes)),
+    collectionsHeldLocal: toMoney(Decimal.max(balances.holding, dec(0))),
+    commissionOutstandingLocal: toMoney(Decimal.max(balances.commission.negated(), dec(0))),
+  };
+}
+
 /**
  * Every active agent's balances, bucketed the same way as their ledger, in one
  * query: holding, commission, loans each way, and the net — in the company's
  * currency, with the net in USD as an equivalent.
  */
 export async function getAgentSummaries(companyId: string): Promise<
-  Array<{ agentId: string; agentName: string; summary: AgentLedgerSummary }>
+  Array<{
+    agentId: string;
+    agentName: string;
+    summary: AgentLedgerSummary;
+    /** Collections account and commission payable in USD, each at its own day's rate (debit positive, credit positive). */
+    holdingUsd: Decimal;
+    commissionUsd: Decimal;
+  }>
 > {
   const rows = await prisma.$queryRawUnsafe<
     Array<{ agentId: string; agentName: string; bucket: string; local: string; usd: string }>
@@ -425,6 +509,8 @@ export async function getAgentSummaries(companyId: string): Promise<
     return {
       agentId,
       agentName,
+      holdingUsd: toMoney(buckets.holding?.usd ?? dec(0)),
+      commissionUsd: toMoney((buckets.commission?.usd ?? dec(0)).negated()),
       summary: {
         holdingLocal: toMoney(get('holding')),
         commissionLocal: toMoney(get('commission').negated()),

@@ -1,3 +1,4 @@
+import * as React from 'react';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { requirePageAccess, can } from '@/lib/auth/guards';
@@ -179,44 +180,68 @@ export default async function AgentLedgerPage({
         <Card>
           <CardHeader>
             <CardTitle>{firstName} owes FID</CardTitle>
-            <CardDescription>Customer money he holds, loans FID gave him, and coffee he bought himself.</CardDescription>
+            <CardDescription>Every account of his with a debit balance — money he holds or owes FID.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-1.5">
-            <p className="tnum text-2xl font-semibold text-ink">{formatMoney(ledger.summary.owesFidLocal, local)}</p>
+            <p className="tnum text-2xl font-semibold text-ink" data-testid="agent-owes-fid">
+              {formatMoney(ledger.relationship.owesFidLocal, local)}
+            </p>
             <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
-              <dt className="text-ink-muted">Collections held</dt>
-              <dd className="tnum text-right">{formatMoney(ledger.summary.holdingLocal, local)}</dd>
-              <dt className="text-ink-muted">Loan receivable</dt>
-              <dd className="tnum text-right">{formatMoney(ledger.summary.loanToAgentLocal, local)}</dd>
-              <dt className="text-ink-muted">Trade receivable</dt>
-              <dd className="tnum text-right">{formatMoney(ledger.summary.tradeReceivableLocal, local)}</dd>
+              {ledger.relationship.parts.filter((p) => p.direction === 'OWES_FID').length === 0 ? (
+                <dt className="col-span-2 text-ink-subtle">Nothing</dt>
+              ) : (
+                ledger.relationship.parts
+                  .filter((p) => p.direction === 'OWES_FID')
+                  .map((p) => (
+                    <React.Fragment key={p.key}>
+                      <dt className="text-ink-muted">{p.account}</dt>
+                      <dd className="tnum text-right">{formatMoney(p.balanceLocal, local)} Dr</dd>
+                    </React.Fragment>
+                  ))
+              )}
             </dl>
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle>FID owes {firstName}</CardTitle>
-            <CardDescription>Commission not yet paid, and money he lent FID.</CardDescription>
+            <CardDescription>Every account of his with a credit balance — commission, loans, money he advanced.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-1.5">
-            <p className="tnum text-2xl font-semibold text-ink">{formatMoney(ledger.summary.fidOwesLocal, local)}</p>
+            <p className="tnum text-2xl font-semibold text-ink" data-testid="agent-fid-owes">
+              {formatMoney(ledger.relationship.fidOwesLocal, local)}
+            </p>
             <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
-              <dt className="text-ink-muted">Commission payable</dt>
-              <dd className="tnum text-right">{formatMoney(ledger.summary.commissionLocal, local)}</dd>
-              <dt className="text-ink-muted">of which unpaid expenses</dt>
-              <dd className="tnum text-right">{formatMoney(ledger.summary.unpaidExpensesLocal, local)}</dd>
-              <dt className="text-ink-muted">Loan payable</dt>
-              <dd className="tnum text-right">{formatMoney(ledger.summary.loanFromAgentLocal, local)}</dd>
+              {ledger.relationship.parts
+                .filter((p) => p.direction === 'FID_OWES')
+                .map((p) => (
+                  <React.Fragment key={p.key}>
+                    <dt className="text-ink-muted">{p.account}</dt>
+                    <dd className="tnum text-right">{formatMoney(p.balanceLocal.abs(), local)} Cr</dd>
+                  </React.Fragment>
+                ))}
+              {ledger.summary.unpaidExpensesLocal.greaterThan(0) ? (
+                <>
+                  <dt className="text-ink-muted">of which unpaid expenses</dt>
+                  <dd className="tnum text-right">{formatMoney(ledger.summary.unpaidExpensesLocal, local)}</dd>
+                </>
+              ) : null}
+              {ledger.relationship.parts.filter((p) => p.direction === 'FID_OWES').length === 0 ? (
+                <dt className="col-span-2 text-ink-subtle">Nothing</dt>
+              ) : null}
             </dl>
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Operational net position</CardTitle>
-            <CardDescription>The two sides together — a view only; nothing is set off by it.</CardDescription>
+            <CardTitle>Balance — as on the ledger below</CardTitle>
+            <CardDescription>The two sides together: the ledger&rsquo;s closing balance. A view only; nothing is set off by it.</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="tnum text-2xl font-semibold text-ink">{formatMoney(ledger.summary.netLocal.abs(), local)}</p>
+            <p className="tnum text-2xl font-semibold text-ink" data-testid="agent-net-balance">
+              {formatMoney(ledger.relationship.netLocal.abs(), local)}
+              {ledger.relationship.netLocal.isZero() ? '' : ledger.relationship.netLocal.isPositive() ? ' Dr' : ' Cr'}
+            </p>
             <p className="text-xs text-ink-muted">
               {ledger.summary.netLocal.isZero()
                 ? 'Nothing outstanding either way'

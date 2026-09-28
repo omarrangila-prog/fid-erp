@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db';
 import { dec, toMoney, type Decimal } from '@/lib/money';
 import { getReceivables, getPayables } from '@/lib/services/receivables';
 import { getExpenseSettlements } from '@/lib/services/expense-settlement';
-import { getAgentSummaries } from '@/lib/services/agent-account';
+import { getAgentSummaries, agentRelationship, type AgentBalancePart } from '@/lib/services/agent-account';
 import { LIVE_ENTRY_SQL } from '@/lib/services/journal-visibility';
 
 /**
@@ -22,14 +22,16 @@ export type OutstandingFigure = { count: number; local: Decimal; usd: Decimal | 
 export type AgentOutstanding = {
   agentId: string;
   agentName: string;
-  /** Customer money he holds for the company. */
+  /** Customer money he holds for the company (the collections account, when in debit). */
   holdingLocal: Decimal;
-  /** Commission the company owes him. */
+  /** Commission the company owes him (when the account is in credit). */
   commissionLocal: Decimal;
-  /** What the company borrowed from him. */
-  loanFromLocal: Decimal;
-  /** What the company lent him. */
-  loanToLocal: Decimal;
+  /** Each of his accounts on the side its balance falls on — as on his ledger. */
+  parts: AgentBalancePart[];
+  owesFidLocal: Decimal;
+  fidOwesLocal: Decimal;
+  /** His ledger's closing balance: positive, he owes FID. */
+  netLocal: Decimal;
 };
 
 export type OutstandingSummary = {
@@ -49,6 +51,8 @@ export type OutstandingSummary = {
   agentCommission: OutstandingFigure;
   loansPayable: OutstandingFigure;
   loansReceivable: OutstandingFigure;
+  /** Every loan account with a balance, each on its own side: one party per line. */
+  loanParties: Array<{ accountId: string; name: string; side: 'payable' | 'receivable'; amountLocal: Decimal }>;
   agents: AgentOutstanding[];
 };
 
@@ -83,7 +87,7 @@ export async function getOutstandingSummary(companyId: string): Promise<Outstand
      * the company's currency, live entries only; the cash side of a loan is
      * never counted.
      */
-    prisma.$queryRaw<Array<{ side: string; accounts: bigint; balance: string }>>(Prisma.sql`
+    prisma.$queryRaw<Array<{ accountId: string; name: string; balance: string }>>(Prisma.sql`
       WITH loan_accounts AS (
         SELECT a."id" FROM accounts a
         WHERE a."companyId" = ${companyId}
@@ -95,15 +99,15 @@ export async function getOutstandingSummary(companyId: string): Promise<Outstand
         WHERE je."companyId" = ${companyId} AND je."sourceType" = 'MANUAL' AND je."sourceId" LIKE 'LOAN%'
           AND jl."cashBankAccountId" IS NULL
       )
-      SELECT CASE WHEN a."type" = 'LIABILITY' THEN 'payable' ELSE 'receivable' END AS side,
-             COUNT(DISTINCT a."id") AS accounts,
+      SELECT a."id" AS "accountId", a."name",
              COALESCE(SUM(jl."debitLocal" - jl."creditLocal"), 0)::text AS balance
       FROM accounts a
       JOIN loan_accounts la ON la."id" = a."id"
       JOIN journal_lines jl ON jl."accountId" = a."id"
       JOIN journal_entries je ON je."id" = jl."journalEntryId" AND ${LIVE_ENTRY_SQL}
       WHERE a."type" IN ('LIABILITY', 'ASSET')
-      GROUP BY 1`),
+      GROUP BY a."id", a."name"
+      ORDER BY a."name"`),
   ]);
 
   const summary: OutstandingSummary = {
@@ -120,6 +124,7 @@ export async function getOutstandingSummary(companyId: string): Promise<Outstand
     agentCommission: zero(),
     loansPayable: zero(),
     loansReceivable: zero(),
+    loanParties: [],
     agents: [],
   };
 
@@ -155,33 +160,38 @@ export async function getOutstandingSummary(companyId: string): Promise<Outstand
     bump(expense.kind === 'SHIPMENT' ? summary.shipmentExpensesUnpaid : summary.generalExpensesUnpaid, settled.outstandingLocal, usd);
   }
 
+  // The same calculation as his ledger page: one answer, whichever screen asks.
   for (const agent of agents) {
-    const s = agent.summary;
+    const relationship = agentRelationship(agent.summary);
     const row: AgentOutstanding = {
       agentId: agent.agentId,
       agentName: agent.agentName,
-      holdingLocal: toMoney(s.holdingLocal),
-      commissionLocal: toMoney(s.commissionLocal),
-      loanFromLocal: toMoney(s.loanFromAgentLocal),
-      loanToLocal: toMoney(s.loanToAgentLocal),
+      holdingLocal: relationship.collectionsHeldLocal,
+      commissionLocal: relationship.commissionOutstandingLocal,
+      parts: relationship.parts,
+      owesFidLocal: relationship.owesFidLocal,
+      fidOwesLocal: relationship.fidOwesLocal,
+      netLocal: relationship.netLocal,
     };
     if (row.holdingLocal.greaterThan('0.005')) bump(summary.agentCollections, row.holdingLocal);
     if (row.commissionLocal.greaterThan('0.005')) bump(summary.agentCommission, row.commissionLocal);
-    const any = [row.holdingLocal, row.commissionLocal, row.loanFromLocal, row.loanToLocal].some((v) => v.abs().greaterThan('0.005'));
-    if (any) summary.agents.push(row);
+    if (relationship.parts.some((p) => p.direction !== 'NIL')) summary.agents.push(row);
   }
 
+  /*
+   * Each loan account is one party, and stays one: its balance goes on the
+   * side it falls on. A lender FID has repaid more than it borrowed from now
+   * owes FID; that is never netted against what FID owes another lender —
+   * the Dubai company's loan and an agent's loan are different people's money.
+   */
   for (const row of loans) {
-    const balance = dec(row.balance);
-    // A payable carries a credit balance: what is owed is its negative.
-    const owed = row.side === 'payable' ? balance.negated() : balance;
-    if (owed.greaterThan('0.005')) {
-      const target = row.side === 'payable' ? summary.loansPayable : summary.loansReceivable;
-      target.count = Number(row.accounts);
-      target.local = toMoney(owed);
-    }
+    const balance = toMoney(dec(row.balance));
+    if (balance.abs().lessThan('0.005')) continue;
+    const side = balance.isNegative() ? 'payable' : 'receivable';
+    summary.loanParties.push({ accountId: row.accountId, name: row.name, side, amountLocal: balance.abs() });
+    bump(side === 'payable' ? summary.loansPayable : summary.loansReceivable, balance.abs());
   }
 
-  summary.agents.sort((a, b) => b.holdingLocal.plus(b.loanFromLocal).comparedTo(a.holdingLocal.plus(a.loanFromLocal)));
+  summary.agents.sort((a, b) => b.netLocal.abs().comparedTo(a.netLocal.abs()));
   return summary;
 }

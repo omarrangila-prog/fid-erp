@@ -491,7 +491,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                         <TD numeric>{formatMoney(line.amountUsd, 'USD')}</TD>
                         <TD>
                           <Badge tone={line.payment === 'PAID' ? 'success' : line.payment === 'PARTIAL' ? 'warning' : 'danger'}>
-                            {line.payment === 'PAID' ? 'Paid' : line.payment === 'PARTIAL' ? 'Partially paid' : 'Unpaid'}
+                            {line.payment === 'PAID' ? 'Paid' : line.payment === 'PARTIAL' ? 'Partially settled' : 'Unpaid'}
                           </Badge>
                         </TD>
                         <TD className="text-xs">{line.paidFrom ?? '—'}</TD>

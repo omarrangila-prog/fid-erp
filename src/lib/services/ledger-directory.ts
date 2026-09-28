@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db';
 import { Decimal, dec } from '@/lib/money';
 import { getCustomerBalances, getVendorBalances, getTrialBalanceReport, getFinancialPosition } from '@/lib/services/reports';
-import { getAgentNetBalances, getAgentSummaries } from '@/lib/services/agent-account';
+import { getAgentNetBalances, getAgentSummaries, agentRelationship } from '@/lib/services/agent-account';
 import { formatMoney } from '@/lib/format';
 import type { LedgerSection } from '@/lib/ledger-sections';
 
@@ -159,15 +159,11 @@ export async function getLedgerDirectory(companyId: string, localCurrency: strin
     const balance = summary?.netLocal ?? net?.netLocal ?? new Decimal(0);
     const first = a.agentName.split(' ')[0];
 
-    const owed = [
-      summary?.holdingLocal ?? new Decimal(0),
-      summary?.loanToAgentLocal ?? new Decimal(0),
-      summary?.tradeReceivableLocal ?? new Decimal(0),
-    ].reduce((t, v) => t.plus(v.greaterThan(0) ? v : 0), new Decimal(0));
-    const owing = [summary?.loanFromAgentLocal ?? new Decimal(0), summary?.commissionLocal ?? new Decimal(0)].reduce(
-      (t, v) => t.plus(v.greaterThan(0) ? v : 0),
-      new Decimal(0),
-    );
+    // The same two sides as his ledger page and the dashboard: every account
+    // on the side its balance falls on, so the two always come to the net.
+    const relationship = summary ? agentRelationship(summary) : null;
+    const owed = relationship?.owesFidLocal ?? new Decimal(0);
+    const owing = relationship?.fidOwesLocal ?? new Decimal(0);
 
     entries.push({
       key: `agent:${a.id}`,

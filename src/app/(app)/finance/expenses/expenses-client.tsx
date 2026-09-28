@@ -45,7 +45,7 @@ export type ExpenseRow = {
   owedUsd: number;
 };
 
-const PAYMENT_LABEL = { PAID: 'Paid', PARTIAL: 'Partially paid', UNPAID: 'Unpaid' } as const;
+const PAYMENT_LABEL = { PAID: 'Paid', PARTIAL: 'Partially settled', UNPAID: 'Unpaid' } as const;
 const PAYMENT_TONE = { PAID: 'success', PARTIAL: 'warning', UNPAID: 'danger' } as const;
 
 type Period = 'MONTH' | 'LAST_MONTH' | 'YEAR' | 'ALL';
