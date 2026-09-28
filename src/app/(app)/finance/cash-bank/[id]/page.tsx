@@ -9,6 +9,7 @@ import { businessNumber } from '@/lib/short-number';
 import { LedgerReport } from '@/components/ledger/ledger-report';
 import { getLedgerPrefs } from '@/lib/services/ledger-prefs';
 import type { LedgerColumnKey } from '@/lib/ledger-columns';
+import { windowLedger } from '@/lib/ledger-window';
 
 const CASH_LEDGER_COLUMNS: LedgerColumnKey[] = ['reference', 'jv', 'type', 'party'];
 import { PageHeader } from '@/components/shared/page-header';
@@ -28,8 +29,14 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   return { title: account?.name ?? 'Account' };
 }
 
-export default async function CashBookPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export default async function CashBookPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ from?: string; to?: string }>;
+}) {
+  const [{ id }, query] = await Promise.all([params, searchParams]);
   const user = await requirePageAccess(PERMISSIONS.CASHBANK_VIEW);
 
   const exists = await prisma.cashBankAccount.findFirst({
@@ -43,6 +50,32 @@ export default async function CashBookPage({ params }: { params: Promise<{ id: s
   const totalIn = book.rows.reduce((a, r) => a.plus(r.moneyIn), book.openingBalance.minus(book.openingBalance));
   const totalOut = book.rows.reduce((a, r) => a.plus(r.moneyOut), book.openingBalance.minus(book.openingBalance));
   const canManage = can(user, PERMISSIONS.CASHBANK_MANAGE);
+  // The dates asked for, and only the latest entries of them, travel to the browser.
+  const cashRows = windowLedger(
+    book.rows.map((row) => ({
+      key: `${row.entryId}-${row.entryNumber}`,
+      date: row.entryDate.toISOString().slice(0, 10),
+      reference: businessNumber(row.reference ?? row.entryNumber),
+      jv: businessNumber(row.entryNumber),
+      type: titleCase(row.sourceType),
+      memo: row.description,
+      party: row.counterparty,
+      debit: row.moneyIn.toString(),
+      credit: row.moneyOut.toString(),
+      balance: row.balance.toString(),
+      actions: (
+        <JournalSourceActions
+          sourceType={row.sourceType}
+          sourceId={row.sourceId}
+          entryNumber={row.entryNumber}
+          journalEntryId={row.entryId}
+          canDelete={can(user, PERMISSIONS.ACCOUNTING_POST)}
+        />
+      ),
+    })),
+    book.openingBalance.toString(),
+    { from: query.from, to: query.to },
+  );
 
   return (
     <div className="space-y-6">
@@ -101,28 +134,9 @@ export default async function CashBookPage({ params }: { params: Promise<{ id: s
         subject={book.account.name}
         currency={currency}
         balanceSide="debit"
-        opening={book.openingBalance.toString()}
-        rows={book.rows.map((row) => ({
-          key: `${row.entryId}-${row.entryNumber}`,
-          date: row.entryDate.toISOString().slice(0, 10),
-          reference: businessNumber(row.reference ?? row.entryNumber),
-          jv: businessNumber(row.entryNumber),
-          type: titleCase(row.sourceType),
-          memo: row.description,
-          party: row.counterparty,
-          debit: row.moneyIn.toString(),
-          credit: row.moneyOut.toString(),
-          balance: row.balance.toString(),
-          actions: (
-            <JournalSourceActions
-              sourceType={row.sourceType}
-              sourceId={row.sourceId}
-              entryNumber={row.entryNumber}
-              journalEntryId={row.entryId}
-              canDelete={can(user, PERMISSIONS.ACCOUNTING_POST)}
-            />
-          ),
-        }))}
+        opening={cashRows.opening}
+        rows={cashRows.rows}
+        window={cashRows.window}
         available={CASH_LEDGER_COLUMNS}
         initialPrefs={await getLedgerPrefs(user.id, 'cash-bank', CASH_LEDGER_COLUMNS)}
         companyName={user.activeCompany.name}

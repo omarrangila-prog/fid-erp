@@ -4,6 +4,7 @@ import * as React from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { LedgerReport, type LedgerReportRow } from '@/components/ledger/ledger-report';
 import type { LedgerColumnKey, LedgerPrefs } from '@/lib/ledger-columns';
+import type { LedgerWindow } from '@/lib/ledger-window';
 
 export type LedgerGroupView = {
   accountId: string;
@@ -17,6 +18,8 @@ export type LedgerGroupView = {
   /** Decimal string: the balance before the first row. */
   openingRaw: string;
   rows: LedgerReportRow[];
+  /** When the account had more entries than are sent: the period's own figures. */
+  window?: LedgerWindow;
 };
 
 const OPEN_KEY = 'fid.reports.general-ledger.open';
@@ -112,6 +115,7 @@ export function LedgerGroups({
                   balanceSide="debit"
                   opening={group.openingRaw}
                   rows={group.rows}
+                  window={group.window}
                   available={available}
                   initialPrefs={prefs}
                   companyName={companyName}

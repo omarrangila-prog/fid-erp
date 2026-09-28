@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, LayoutList, RotateCcw, Rows3, SlidersHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -22,6 +23,7 @@ import {
   type LedgerReportKey,
 } from '@/lib/ledger-columns';
 import { saveLedgerPrefsAction } from '@/server/actions/ledger-prefs-actions';
+import type { LedgerWindow } from '@/lib/ledger-window';
 
 /**
  * Every ledger in the system, drawn the same way.
@@ -101,6 +103,12 @@ export type LedgerReportProps = {
   emptyText?: string;
   /** 'document': just the ledger table, on screen and on paper — for a statement page with its own letterhead. */
   mode?: 'interactive' | 'document';
+  /**
+   * The rows were cut on the server (see windowLedger): its figures for the
+   * whole period, and the From/To it applied. Dates are then chosen through
+   * the page address, so earlier entries come from the server, not the phone.
+   */
+  window?: LedgerWindow;
 };
 
 const NIL = dec(0);
@@ -146,8 +154,9 @@ export function LedgerReport(props: LedgerReportProps) {
     ...normaliseLedgerPrefs(props.initialPrefs, available),
     saved: props.initialPrefs.saved,
   }));
-  const [from, setFrom] = React.useState('');
-  const [to, setTo] = React.useState('');
+  const serverWindow = props.window;
+  const [from, setFrom] = React.useState(serverWindow?.from ?? '');
+  const [to, setTo] = React.useState(serverWindow?.to ?? '');
   const [search, setSearch] = React.useState('');
   const [type, setType] = React.useState('');
   const [rowCurrency, setRowCurrency] = React.useState('');
@@ -157,6 +166,7 @@ export function LedgerReport(props: LedgerReportProps) {
   const [page, setPage] = React.useState(0);
   const [open, setOpen] = React.useState<string | null>(null);
   const [customizing, setCustomizing] = React.useState(false);
+  const router = useRouter();
 
   const balanceText = (value: Decimal) => {
     if (value.abs().lessThan('0.005')) return formatMoney(0, currency);
@@ -166,17 +176,29 @@ export function LedgerReport(props: LedgerReportProps) {
 
   // --- The numbers, for the dates chosen ----------------------------------
   const opening = dec(props.opening);
-  const before = from ? rows.filter((r) => r.date < from) : [];
-  const periodOpening = before.length ? dec(before[before.length - 1].balance) : opening;
-  const inPeriod = rows.filter((r) => (!from || r.date >= from) && (!to || r.date <= to));
-  const periodClosing = inPeriod.length
-    ? dec(inPeriod[inPeriod.length - 1].balance)
-    : to
-      ? (() => {
-          const upTo = rows.filter((r) => r.date <= to);
-          return upTo.length ? dec(upTo[upTo.length - 1].balance) : periodOpening;
-        })()
-      : periodOpening;
+  // Dates the server already applied are not applied again here.
+  const clientFrom = serverWindow ? '' : from;
+  const clientTo = serverWindow ? '' : to;
+  const before = clientFrom ? rows.filter((r) => r.date < clientFrom) : [];
+  const periodOpening = serverWindow
+    ? dec(serverWindow.opening)
+    : before.length
+      ? dec(before[before.length - 1].balance)
+      : opening;
+  const inPeriod = rows.filter((r) => (!clientFrom || r.date >= clientFrom) && (!clientTo || r.date <= clientTo));
+  const periodClosing = serverWindow
+    ? dec(serverWindow.closing)
+    : inPeriod.length
+      ? dec(inPeriod[inPeriod.length - 1].balance)
+      : clientTo
+        ? (() => {
+            const upTo = rows.filter((r) => r.date <= clientTo);
+            return upTo.length ? dec(upTo[upTo.length - 1].balance) : periodOpening;
+          })()
+        : periodOpening;
+  /** The balance just before the first row on screen: the period's opening, or what earlier rows bring forward. */
+  const firstBalance = serverWindow?.trimmed ? opening : periodOpening;
+  const broughtForward = serverWindow?.trimmed ? 'Brought forward' : 'Opening balance';
 
   const needle = search.trim().toLowerCase();
   const shown = inPeriod.filter(
@@ -194,8 +216,20 @@ export function LedgerReport(props: LedgerReportProps) {
           .includes(needle)),
   );
   const narrowed = shown.length !== inPeriod.length;
-  const totalDebit = shown.reduce((t, r) => t.plus(dec(r.debit)), NIL);
-  const totalCredit = shown.reduce((t, r) => t.plus(dec(r.credit)), NIL);
+  // The whole period's totals when nothing narrows it; otherwise the rows shown.
+  const totalDebit = serverWindow && !narrowed ? dec(serverWindow.totalDebit) : shown.reduce((t, r) => t.plus(dec(r.debit)), NIL);
+  const totalCredit = serverWindow && !narrowed ? dec(serverWindow.totalCredit) : shown.reduce((t, r) => t.plus(dec(r.credit)), NIL);
+
+  /** From/To on a windowed ledger: the server brings the rows for the new dates. */
+  const goToDates = (nextFrom: string, nextTo: string) => {
+    const params = new URLSearchParams(window.location.search);
+    if (nextFrom) params.set('from', nextFrom);
+    else params.delete('from');
+    if (nextTo) params.set('to', nextTo);
+    else params.delete('to');
+    const query = params.toString();
+    router.push(query ? `${window.location.pathname}?${query}` : window.location.pathname);
+  };
 
   const pages = Math.max(1, Math.ceil(shown.length / prefs.pageSize));
   const current = Math.min(page, pages - 1);
@@ -350,7 +384,7 @@ export function LedgerReport(props: LedgerReportProps) {
         </tr>
       </thead>
       <tbody>
-        {figuresRow('Opening balance', { balance: balanceText(periodOpening) }, 'ledger-opening', true)}
+        {figuresRow(broughtForward, { balance: balanceText(firstBalance) }, 'ledger-opening', true)}
         {shown.map((r) => (
           <tr key={r.key}>
             {printColumns.map((c) => (
@@ -408,11 +442,31 @@ export function LedgerReport(props: LedgerReportProps) {
             <>
               <label className="flex flex-col text-[11px] text-ink-muted">
                 From
-                <Input type="date" value={from} onChange={(e) => (setFrom(e.target.value), resetPage())} className="h-9 w-36" aria-label="From date" />
+                <Input
+                  type="date"
+                  value={from}
+                  onChange={(e) => {
+                    setFrom(e.target.value);
+                    resetPage();
+                    if (serverWindow) goToDates(e.target.value, to);
+                  }}
+                  className="h-9 w-36"
+                  aria-label="From date"
+                />
               </label>
               <label className="flex flex-col text-[11px] text-ink-muted">
                 To
-                <Input type="date" value={to} onChange={(e) => (setTo(e.target.value), resetPage())} className="h-9 w-36" aria-label="To date" />
+                <Input
+                  type="date"
+                  value={to}
+                  onChange={(e) => {
+                    setTo(e.target.value);
+                    resetPage();
+                    if (serverWindow) goToDates(from, e.target.value);
+                  }}
+                  className="h-9 w-36"
+                  aria-label="To date"
+                />
               </label>
             </>
           ) : null}
@@ -467,6 +521,14 @@ export function LedgerReport(props: LedgerReportProps) {
           </div>
         </div>
         {summary}
+        {serverWindow?.trimmed ? (
+          <p className="rounded-md border border-gold-300 bg-gold-50 px-3 py-2 text-xs text-ink" data-testid="ledger-window-note">
+            Showing the latest {serverWindow.sent.toLocaleString('en-US')} of {serverWindow.total.toLocaleString('en-US')} entries
+            {serverWindow.from || serverWindow.to ? ' in these dates' : ''}; the ones before them are carried in the
+            &ldquo;Brought forward&rdquo; line. The totals above are for the whole period.
+            {dateFilter ? ' Choose a From date to see earlier entries.' : ' Choose earlier dates above to see them.'}
+          </p>
+        ) : null}
       </div>
 
       {/* On screen: the table, or one card per row. */}
@@ -487,7 +549,7 @@ export function LedgerReport(props: LedgerReportProps) {
                 </tr>
               </thead>
               <tbody>
-                {figuresRow('Opening balance', { balance: balanceText(periodOpening) }, 'ledger-opening')}
+                {figuresRow(broughtForward, { balance: balanceText(firstBalance) }, 'ledger-opening')}
                 {pageRows.length === 0 ? (
                   <tr>
                     <td colSpan={columns.length + (hasDetails ? 1 : 0)} className="py-6 text-center text-ink-muted">
@@ -537,7 +599,7 @@ export function LedgerReport(props: LedgerReportProps) {
               </tbody>
               <tfoot>
                 {figuresRow(
-                  narrowed ? 'Totals of the rows shown' : 'Totals',
+                  narrowed ? 'Totals of the rows shown' : serverWindow?.trimmed ? 'Totals for the period' : 'Totals',
                   { debit: formatMoney(totalDebit, currency), credit: formatMoney(totalCredit, currency) },
                   'ledger-totals',
                 )}
@@ -616,6 +678,7 @@ export function LedgerReport(props: LedgerReportProps) {
           </p>
           <p className="text-[8.5pt]">
             {period} · {currency}
+            {serverWindow?.trimmed ? ` · latest ${serverWindow.sent} of ${serverWindow.total} entries, earlier ones brought forward` : ''}
           </p>
         </div>
         {documentTable}

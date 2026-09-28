@@ -20,6 +20,7 @@ import { getLedgerPrefs } from '@/lib/services/ledger-prefs';
 import { businessNumber } from '@/lib/short-number';
 import { dec, toMoney, type Decimal } from '@/lib/money';
 import type { LedgerColumnKey } from '@/lib/ledger-columns';
+import { windowLedger } from '@/lib/ledger-window';
 
 const UNPAID_LEDGER_COLUMNS: LedgerColumnKey[] = ['reference', 'type', 'party', 'shipment', 'status', 'createdBy'];
 
@@ -36,9 +37,9 @@ export const dynamic = 'force-dynamic';
 export default async function UnpaidExpensesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ settle?: string; view?: string }>;
+  searchParams: Promise<{ settle?: string; view?: string; from?: string; to?: string }>;
 }) {
-  const { settle, view } = await searchParams;
+  const { settle, view, from, to } = await searchParams;
   const user = await requirePageAccess(PERMISSIONS.EXPENSES_VIEW);
   const companyId = user.activeCompany.id;
   const local = user.activeCompany.localCurrency;
@@ -192,6 +193,8 @@ export default async function UnpaidExpensesPage({
     return { ...e.row, balance: running.toString() };
   });
   const unpaidPrefs = await getLedgerPrefs(user.id, 'unpaid-expenses', UNPAID_LEDGER_COLUMNS);
+  // The dates asked for, and only the latest entries of them, travel to the browser.
+  const sentLedger = windowLedger(ledgerRows, '0', { from, to });
 
   return (
     <div className="space-y-6">
@@ -255,8 +258,9 @@ export default async function UnpaidExpensesPage({
           subject={user.activeCompany.name}
           currency={local}
           balanceSide="credit"
-          opening="0"
-          rows={ledgerRows}
+          opening={sentLedger.opening}
+          rows={sentLedger.rows}
+          window={sentLedger.window}
           available={UNPAID_LEDGER_COLUMNS}
           initialPrefs={unpaidPrefs}
           companyName={user.activeCompany.name}

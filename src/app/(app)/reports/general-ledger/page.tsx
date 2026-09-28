@@ -31,6 +31,7 @@ import { businessNumber } from '@/lib/short-number';
 import { LedgerReport } from '@/components/ledger/ledger-report';
 import { getLedgerPrefs } from '@/lib/services/ledger-prefs';
 import type { LedgerColumnKey } from '@/lib/ledger-columns';
+import { windowLedger } from '@/lib/ledger-window';
 
 const GL_COLUMNS: LedgerColumnKey[] = ['reference', 'jv', 'type', 'party', 'currency'];
 
@@ -151,28 +152,36 @@ export default async function GeneralLedgerPage({
                 prefs={glPrefs}
                 available={GL_COLUMNS}
                 companyName={user.activeCompany.name}
-                groups={groups.map((g) => ({
-                  accountId: g.accountId,
-                  name: g.name,
-                  type: g.type,
-                  opening: formatMoney(g.openingUsd, 'USD'),
-                  closing: formatMoney(g.closingUsd, 'USD'),
-                  debit: formatMoney(g.debitUsd, 'USD'),
-                  credit: formatMoney(g.creditUsd, 'USD'),
-                  openingRaw: g.openingUsd.toString(),
-                  rows: g.lines.map((l, i) => ({
-                    key: `${l.entryId}-${i}`,
-                    date: l.entryDate.toISOString().slice(0, 10),
-                    reference: l.reference || null,
-                    referenceHref: journalSourceHref(l.sourceType, l.sourceId),
-                    type: titleCase(l.sourceType.replaceAll('_', ' ')),
-                    memo: l.description,
-                    party: l.party || null,
-                    debit: l.debitUsd.toString(),
-                    credit: l.creditUsd.toString(),
-                    balance: l.balanceUsd.toString(),
-                  })),
-                }))}
+                groups={groups.map((g) => {
+                  const sent = windowLedger(
+                    g.lines.map((l, i) => ({
+                      key: `${l.entryId}-${i}`,
+                      date: l.entryDate.toISOString().slice(0, 10),
+                      reference: l.reference || null,
+                      referenceHref: journalSourceHref(l.sourceType, l.sourceId),
+                      type: titleCase(l.sourceType.replaceAll('_', ' ')),
+                      memo: l.description,
+                      party: l.party || null,
+                      debit: l.debitUsd.toString(),
+                      credit: l.creditUsd.toString(),
+                      balance: l.balanceUsd.toString(),
+                    })),
+                    g.openingUsd.toString(),
+                    {},
+                  );
+                  return {
+                    accountId: g.accountId,
+                    name: g.name,
+                    type: g.type,
+                    opening: formatMoney(g.openingUsd, 'USD'),
+                    closing: formatMoney(g.closingUsd, 'USD'),
+                    debit: formatMoney(g.debitUsd, 'USD'),
+                    credit: formatMoney(g.creditUsd, 'USD'),
+                    openingRaw: sent.opening,
+                    rows: sent.rows,
+                    window: sent.window,
+                  };
+                })}
               />
             </CardContent>
           </Card>
@@ -299,16 +308,10 @@ export default async function GeneralLedgerPage({
                 rows: ledger.rows.map((row, index) => ({ row, index, balance: row.balance.toString() })),
               },
             ]
-        ).map((book) => (
-          <LedgerReport
-            key={book.currency}
-            report="general-ledger"
-            title="General ledger"
-            subject={`${ledger.account.name} · ${titleCase(ledger.account.type)} account`}
-            currency={book.currency}
-            balanceSide="debit"
-            opening={book.opening}
-            rows={book.rows.map(({ row, index, balance }) => ({
+        ).map((book) => {
+          // Only the latest entries of the dates asked for travel to the browser; the rest are brought forward.
+          const sent = windowLedger(
+            book.rows.map(({ row, index, balance }) => ({
               key: `${row.entryId}-${index}`,
               date: row.entryDate.toISOString().slice(0, 10),
               reference: row.reference ?? businessNumber(row.entryNumber),
@@ -329,15 +332,30 @@ export default async function GeneralLedgerPage({
                   canDelete={can(user, PERMISSIONS.ACCOUNTING_POST)}
                 />
               ),
-            }))}
-            available={GL_COLUMNS}
-            initialPrefs={glPrefs}
-            companyName={user.activeCompany.name}
-            periodLabel={from || to ? `${from ?? 'the start'} – ${to ?? 'today'}` : undefined}
-            dateFilter={false}
-            emptyText="No movements on this account in the selected period."
-          />
-        ))}
+            })),
+            book.opening,
+            {},
+          );
+          return (
+            <LedgerReport
+              key={book.currency}
+              report="general-ledger"
+              title="General ledger"
+              subject={`${ledger.account.name} · ${titleCase(ledger.account.type)} account`}
+              currency={book.currency}
+              balanceSide="debit"
+              opening={sent.opening}
+              rows={sent.rows}
+              window={{ ...sent.window, from, to }}
+              available={GL_COLUMNS}
+              initialPrefs={glPrefs}
+              companyName={user.activeCompany.name}
+              periodLabel={from || to ? `${from ?? 'the start'} – ${to ?? 'today'}` : undefined}
+              dateFilter={false}
+              emptyText="No movements on this account in the selected period."
+            />
+          );
+        })}
         </>
       )}
     </div>

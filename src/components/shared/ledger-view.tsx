@@ -7,6 +7,7 @@ import { JournalSourceActions } from '@/components/shared/journal-source-actions
 import { LedgerReport, type LedgerReportRow } from '@/components/ledger/ledger-report';
 import { businessNumber, shortDocumentNumber } from '@/lib/short-number';
 import type { LedgerColumnKey } from '@/lib/ledger-columns';
+import { windowLedger } from '@/lib/ledger-window';
 import type { LedgerDocument } from '@/lib/services/ledger-sql';
 
 function documentHref(doc: LedgerDocument): string {
@@ -118,6 +119,11 @@ export async function LedgerView({
     ),
   }));
 
+  // Only the latest entries of the dates asked for travel to the browser; the rest are brought forward.
+  // A printed statement carries every row of its dates.
+  const sent = windowLedger(rows, ledger.openingBalance.toString(), { maxRows: mode === 'document' ? Number.MAX_SAFE_INTEGER : undefined });
+  const windowed = { ...sent.window, from: extraQuery?.from, to: extraQuery?.to };
+
   return (
     <LedgerReport
       report={report}
@@ -127,8 +133,9 @@ export async function LedgerView({
       // A customer's running balance counts what they owe (Dr); a supplier's
       // counts what is owed to them (Cr).
       balanceSide={report === 'customer' ? 'debit' : 'credit'}
-      opening={ledger.openingBalance.toString()}
-      rows={rows}
+      opening={sent.opening}
+      rows={sent.rows}
+      window={windowed}
       available={AVAILABLE}
       initialPrefs={prefs}
       companyName={companyName}

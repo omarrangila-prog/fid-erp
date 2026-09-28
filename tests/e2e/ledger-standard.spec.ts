@@ -201,3 +201,24 @@ for (const width of [768, 1920]) {
     }
   });
 }
+
+test('choosing dates asks the server for them, and the balances follow', async ({ page }) => {
+  await open(page, LEDGERS[2]);
+  const summary = page.getByTestId('ledger-summary').first();
+  const closing = (await summary.locator('dd').last().innerText()).trim();
+  const rows = await page.getByTestId('ledger-row').count();
+  expect(rows).toBeGreaterThan(0);
+
+  // A date after every entry: nothing in the period, and the balance stands where it closed.
+  await page.getByLabel('From date').fill('2099-01-01');
+  await page.waitForURL(/from=2099-01-01/, { timeout: 30_000 });
+  await expect(page.getByTestId('ledger-row')).toHaveCount(0, { timeout: 30_000 });
+  await expect(summary.locator('dd').first()).toHaveText(closing);
+  await expect(summary.locator('dd').last()).toHaveText(closing);
+
+  // Cleared: every entry is back, still closing on the same figure.
+  await page.getByLabel('From date').fill('');
+  await page.waitForURL((url) => !url.searchParams.has('from'), { timeout: 30_000 });
+  await expect(page.getByTestId('ledger-row')).toHaveCount(rows, { timeout: 30_000 });
+  await expect(summary.locator('dd').last()).toHaveText(closing);
+});

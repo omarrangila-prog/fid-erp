@@ -12,6 +12,7 @@ import { LedgerReport, type LedgerReportRow } from '@/components/ledger/ledger-r
 import { getLedgerPrefs } from '@/lib/services/ledger-prefs';
 import { dec, toMoney, type Decimal } from '@/lib/money';
 import type { LedgerColumnKey } from '@/lib/ledger-columns';
+import { windowLedger } from '@/lib/ledger-window';
 
 const AGENT_LEDGER_COLUMNS: LedgerColumnKey[] = ['reference', 'jv', 'type', 'shipment', 'invoice', 'party', 'status', 'createdBy'];
 import Link from 'next/link';
@@ -44,7 +45,7 @@ export default async function AgentLedgerPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; from?: string; to?: string }>;
 }) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const filter = isAgentEventFilter(query.tab) ? query.tab : 'ALL';
@@ -165,6 +166,8 @@ export default async function AgentLedgerPage({
     ),
   }));
   const ledgerPrefs = await getLedgerPrefs(user.id, 'agent', AGENT_LEDGER_COLUMNS);
+  // The dates asked for, and only the latest entries of them, travel to the browser.
+  const sent = windowLedger(rows, '0', { from: query.from, to: query.to });
   const local = user.activeCompany.localCurrency;
   const canSettle = can(user, PERMISSIONS.RECEIPTS_POST);
 
@@ -336,8 +339,9 @@ export default async function AgentLedgerPage({
               subject={agent.agentName}
               currency={localCode}
               balanceSide="debit"
-              opening="0"
-              rows={rows}
+              opening={sent.opening}
+              rows={sent.rows}
+              window={sent.window}
               available={AGENT_LEDGER_COLUMNS}
               initialPrefs={ledgerPrefs}
               companyName={user.activeCompany.name}
