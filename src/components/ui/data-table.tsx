@@ -587,7 +587,7 @@ export function DataTable<T>({
                     {badge ? <div className="shrink-0">{badge.cell(row)}</div> : null}
                   </div>
                   {metas.length > 0 ? (
-                    <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2">
+                    <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-grid/40 pt-3">
                       {metas.map((column) => (
                         <div key={column.id} className="min-w-0">
                           <dt className="text-[11px] text-ink-subtle">{column.header}</dt>
@@ -602,7 +602,7 @@ export function DataTable<T>({
               );
 
               return (
-                <div key={getRowId(row)} className="rounded-xl border border-line bg-surface p-4">
+                <div key={getRowId(row)} className="rounded-xl border border-grid bg-surface p-4">
                   {href ? (
                     <Link href={href} className="block transition-colors active:bg-forest-50">
                       {body}

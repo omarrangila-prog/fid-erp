@@ -179,7 +179,7 @@ export async function ProfitabilityStatement({
       </CardHeader>
       <CardContent className="px-0 pb-0">
         <div className="overflow-x-auto border-t border-line" data-wide-sheet>
-          <table className="w-full min-w-[40rem] border-collapse text-sm" data-testid="profitability-statement">
+          <table className="data-grid grid-framed w-full min-w-[40rem] text-sm" data-testid="profitability-statement">
             <thead>
               <tr className="border-b border-line-strong text-[11px] uppercase tracking-wider text-ink-muted">
                 <th className="sticky left-0 z-10 bg-surface px-3 py-2 text-left font-semibold">Measure</th>
@@ -200,9 +200,9 @@ export async function ProfitabilityStatement({
                 <tr
                   key={m.key}
                   className={cn(
-                    'border-t border-line/70 hover:bg-surface-sunken/40',
+                    'hover:bg-surface-sunken/40',
                     m.emphasis === 'strong' && 'bg-surface-sunken/30 font-semibold',
-                    m.emphasis === 'final' && 'border-t-2 border-line-strong bg-surface-sunken/50 font-semibold',
+                    m.emphasis === 'final' && 'grid-total grid-final',
                   )}
                 >
                   <td className="sticky left-0 z-10 bg-surface px-3 py-1.5 text-left">

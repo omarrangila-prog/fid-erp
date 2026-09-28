@@ -303,7 +303,7 @@ export function PurchasesClient({
               {r.shipments.length === 1 ? 'The one container on this order' : `The ${r.shipments.length} containers on this order`}
               {r.containerCount !== r.shipments.length ? ` (${r.containerCount} containers on ${r.shipmentCount} ${r.shipmentCount === 1 ? 'shipment' : 'shipments'})` : ''}
             </p>
-            <table className="w-full min-w-[40rem] text-sm">
+            <table className="data-grid grid-framed w-full min-w-[40rem] text-sm">
               <thead>
                 <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
                   <th className="py-1.5 pr-3 font-medium">Shipment</th>

@@ -3,13 +3,17 @@ import { cn } from '@/lib/utils';
 
 /**
  * Table primitives. The wrapper scrolls horizontally on its own so a wide
- * financial table never forces the whole page sideways on a phone.
+ * financial table never forces the whole page sideways on a phone, and draws
+ * the outer frame; the table draws the lines between every row and column
+ * (the `data-grid` standard in globals.css), so every figure sits in its own
+ * cell.
  */
 export function TableWrap({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       className={cn(
-        'w-full overflow-x-auto overscroll-x-contain rounded-xl border border-line bg-surface shadow-card',
+        // `relative`: anything absolutely placed inside (a screen-reader label) scrolls with the table instead of widening the page.
+        'relative w-full overflow-x-auto overscroll-x-contain rounded-xl border border-grid bg-surface shadow-card',
         className,
       )}
       {...props}
@@ -18,15 +22,15 @@ export function TableWrap({ className, ...props }: React.HTMLAttributes<HTMLDivE
 }
 
 export function Table({ className, ...props }: React.TableHTMLAttributes<HTMLTableElement>) {
-  return <table className={cn('w-full min-w-max border-collapse text-sm', className)} {...props} />;
+  return <table className={cn('data-grid w-full min-w-max text-sm', className)} {...props} />;
 }
 
 export function THead({ className, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) {
-  return <thead className={cn('border-b border-line bg-surface', className)} {...props} />;
+  return <thead className={cn('bg-surface', className)} {...props} />;
 }
 
 export function TBody({ className, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) {
-  return <tbody className={cn('divide-y divide-line', className)} {...props} />;
+  return <tbody className={className} {...props} />;
 }
 
 export function TR({ className, ...props }: React.HTMLAttributes<HTMLTableRowElement>) {
@@ -42,7 +46,7 @@ export function TH({
     <th
       scope="col"
       className={cn(
-        'px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wide whitespace-nowrap text-ink-subtle',
+        'px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wide whitespace-nowrap text-ink',
         numeric && 'text-right',
         className,
       )}
@@ -67,7 +71,7 @@ export function TD({
 export function TFoot({ className, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) {
   return (
     <tfoot
-      className={cn('border-t-2 border-line-strong bg-surface-sunken font-semibold text-ink', className)}
+      className={cn('font-semibold text-ink', className)}
       {...props}
     />
   );

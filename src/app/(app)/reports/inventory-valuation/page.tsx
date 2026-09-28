@@ -81,7 +81,7 @@ export default async function InventoryValuationPage({ searchParams }: { searchP
         <Card>
           <CardContent className="px-2 pb-4 pt-2 sm:px-4">
             <StatementHeader company={user.activeCompany.name} title="Inventory Valuation Summary" period={`As at ${formatDate(new Date())}`} />
-            <table className="w-full max-w-3xl border-collapse text-sm">
+            <table className="data-grid grid-framed w-full max-w-3xl text-sm">
               <thead>
                 <tr className="border-b border-line-strong text-[11px] uppercase tracking-wider text-ink-muted">
                   <th className="px-3 py-2 text-left font-semibold">Item</th>

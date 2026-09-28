@@ -71,7 +71,7 @@ export default async function CustomerLedgerPrintPage({
         <PrintButton label="Print / Save as PDF" />
       </div>
 
-      <article className="rounded-xl border border-line bg-surface p-8 shadow-card print:rounded-none print:border-0 print:p-0 print:shadow-none">
+      <article className="rounded-xl border border-line bg-surface p-4 shadow-card sm:p-8 print:rounded-none print:border-0 print:p-0 print:shadow-none">
         <header className="flex flex-wrap items-start justify-between gap-6 border-b-2 border-forest-800 pb-5">
           <div className="flex items-start gap-3">
             <span className="grid size-11 shrink-0 place-items-center rounded-lg bg-forest-800 text-sm font-bold text-white">

@@ -493,7 +493,7 @@ export function CreditNoteForm({
         </CardHeader>
         <CardContent className="space-y-4">
           {computed.map(({ line, net, tax, total, source, overReturn }, index) => (
-            <div key={line.key} className="rounded-lg border border-line bg-canvas p-3 sm:p-4">
+            <div key={line.key} className="rounded-lg border border-grid bg-canvas p-3 sm:p-4">
               <div className="mb-3 flex items-center justify-between">
                 <span className="text-xs font-semibold text-ink-muted">Line {index + 1}</span>
                 {lines.length > 1 ? (

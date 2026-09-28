@@ -102,7 +102,7 @@ export function WarehouseStockPanel({ warehouses }: { warehouses: WarehouseStock
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[42rem] text-sm">
+            <table className="data-grid grid-framed w-full min-w-[42rem] text-sm">
               <thead>
                 <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
                   <th className="px-4 py-2 font-medium">Container</th>

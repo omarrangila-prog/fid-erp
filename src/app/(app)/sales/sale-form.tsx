@@ -570,7 +570,7 @@ export function SaleForm({
             const lineWarehouse = line.warehouseId;
             const itemOptions = itemsIn(lineWarehouse).map((item) => ({ value: item.id, label: item.name }));
             return (
-              <div key={line.key} className="space-y-3 border-b border-line pb-5 last:border-b-0 last:pb-0">
+              <div key={line.key} className="space-y-3 rounded-lg border border-grid p-3 sm:p-4">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">
                     Item {index + 1}

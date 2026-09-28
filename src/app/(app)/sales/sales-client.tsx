@@ -463,7 +463,7 @@ export function SalesClient({
       searchValue={(r) => `${r.invoiceNumber} ${r.customerName} ${r.jobNumber ?? ''} ${r.warehouseNames} ${r.references.join(' ')} ${r.items}`}
       expandedContent={(r) =>
         r.lineSources.length > 1 || r.references.length > 1 ? (
-          <table className="w-full text-xs">
+          <table className="data-grid grid-framed w-full text-xs">
             <thead>
               <tr className="text-left text-ink-muted">
                 <th className="py-1 pr-3 font-medium">ICUL/FID Reference</th>

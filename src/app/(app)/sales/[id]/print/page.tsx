@@ -78,7 +78,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
         <PrintButton label="Print invoice" />
       </div>
 
-      <article className="rounded-xl border border-line bg-surface p-8 shadow-card print:rounded-none print:border-0 print:p-0 print:shadow-none">
+      <article className="rounded-xl border border-line bg-surface p-4 shadow-card sm:p-8 print:rounded-none print:border-0 print:p-0 print:shadow-none">
         {/* --- Masthead ------------------------------------------------- */}
         <header className="flex flex-wrap items-start justify-between gap-6 border-b-2 border-forest-800 pb-5">
           <div className="flex items-start gap-3">
@@ -182,8 +182,9 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
         </section>
 
         {/* --- The coffee ------------------------------------------------ */}
-        <section className="py-5">
-          <table className="w-full text-left text-xs">
+        {/* Laid out for A4; on a phone the line table scrolls inside itself. */}
+        <section className="overflow-x-auto py-5 print:overflow-visible">
+          <table className="data-grid grid-framed w-full text-left text-xs">
             <thead>
               <tr className="border-b border-line-strong">
                 <th className="pb-2 pr-3 font-semibold uppercase tracking-wider text-ink-subtle">Description</th>
@@ -197,7 +198,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
                 <th className="pb-2 pl-3 text-right font-semibold uppercase tracking-wider text-ink-subtle">Amount</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-line">
+            <tbody>
               {invoice.lines.map((line) => (
                 <tr key={line.id} className="align-top">
                   <td className="py-3 pr-3">

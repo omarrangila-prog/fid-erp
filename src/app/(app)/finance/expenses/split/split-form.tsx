@@ -366,7 +366,7 @@ export function SplitExpenseForm({
           {lines.map((line, index) => (
             <div
               key={line.key}
-              className="grid gap-3 rounded-xl border border-line p-3 sm:grid-cols-2 lg:grid-cols-[2fr_2fr_1fr_1fr_1fr_auto]"
+              className="grid gap-3 rounded-xl border border-grid p-3 sm:grid-cols-2 lg:grid-cols-[2fr_2fr_1fr_1fr_1fr_auto]"
             >
               <Field label={index === 0 ? 'Category' : undefined}>
                 <Combobox

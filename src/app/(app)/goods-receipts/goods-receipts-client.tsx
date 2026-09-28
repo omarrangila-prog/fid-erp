@@ -156,7 +156,7 @@ export function GoodsReceiptsClient({
           <p className="mb-2 text-xs text-ink-muted">
             {r.lines.length === 1 ? 'What was received' : `The ${r.lines.length} lines received`}
           </p>
-          <table className="w-full min-w-[36rem] text-sm">
+          <table className="data-grid grid-framed w-full min-w-[36rem] text-sm">
             <thead>
               <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
                 <th className="py-1.5 pr-3 font-medium">Item</th>

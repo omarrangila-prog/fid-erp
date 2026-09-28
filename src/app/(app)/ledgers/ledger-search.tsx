@@ -200,7 +200,7 @@ export function LedgerSearch({ rows, initialQuery }: { rows: LedgerSearchRow[]; 
                   same money as the rows below, not more of it.
                 </p>
               ) : null}
-              <Card className="divide-y divide-line overflow-hidden p-0">
+              <Card className="divide-y divide-grid/40 overflow-hidden p-0">
                 {inSection.map((row) => {
                   const expandable = !advanced && (row.children?.length ?? 0) > 0;
                   const isOpen = Boolean(open[row.key]);

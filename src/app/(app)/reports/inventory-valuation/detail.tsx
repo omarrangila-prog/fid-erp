@@ -47,7 +47,7 @@ export function ValuationDetail({ groups, showCost }: { groups: Group[]; showCos
             </div>
             {shown ? (
               <div className="overflow-x-auto border-t border-line">
-                <table className="w-full min-w-[44rem] text-xs">
+                <table className="data-grid grid-framed w-full min-w-[44rem] text-xs">
                   <thead>
                     <tr className="text-left uppercase tracking-wider text-ink-muted">
                       <th className="px-3 py-1.5 font-medium">Date</th>

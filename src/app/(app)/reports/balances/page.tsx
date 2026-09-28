@@ -67,7 +67,7 @@ export default async function BalancesPage({ searchParams }: { searchParams: Pro
               period={`As at ${formatDate(new Date())}`}
               meta={<p className="text-xs text-ink-subtle">{formatMoney(totalUsd, 'USD')} in total at USD value</p>}
             />
-            <table className="w-full max-w-2xl border-collapse text-sm">
+            <table className="data-grid grid-framed w-full max-w-2xl text-sm">
               <thead>
                 <tr className="border-b border-line-strong text-[11px] uppercase tracking-wider text-ink-muted">
                   <th className="px-3 py-2 text-left font-semibold">{suppliers ? 'Supplier' : 'Customer'}</th>

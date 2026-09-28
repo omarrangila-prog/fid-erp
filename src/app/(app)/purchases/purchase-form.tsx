@@ -514,7 +514,7 @@ export function PurchaseForm({
             {lines.map((line, index) => {
               const math = totals.lines[index];
               return (
-                <div key={line.key} className="rounded-xl border border-line bg-forest-50/30 p-4">
+                <div key={line.key} className="rounded-xl border border-grid bg-forest-50/30 p-4">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <span className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">
                       Container {index + 1}

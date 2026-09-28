@@ -93,7 +93,7 @@ export function MetricGrid({ className, ...props }: React.HTMLAttributes<HTMLDLi
 /** Label/value row used on record detail pages. */
 export function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-line py-2 last:border-0">
+    <div className="flex items-start justify-between gap-4 border-b border-grid/40 py-2 last:border-0">
       <dt className="shrink-0 text-xs text-ink-muted">{label}</dt>
       <dd className="min-w-0 text-right text-sm text-ink">{children}</dd>
     </div>

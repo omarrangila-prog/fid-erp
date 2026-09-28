@@ -46,7 +46,7 @@ export function SalesByRows({ rows, showCost, totals }: { rows: SalesByRowView[]
   const columns = showCost ? 8 : 5;
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[44rem] border-collapse text-sm">
+      <table className="data-grid grid-framed w-full min-w-[44rem] text-sm">
         <thead>
           <tr className="border-b border-line-strong text-[11px] uppercase tracking-wider text-ink-muted">
             <th className="px-3 py-2 text-left font-semibold">Name</th>
@@ -103,7 +103,7 @@ export function SalesByRows({ rows, showCost, totals }: { rows: SalesByRowView[]
                 {shown ? (
                   <tr>
                     <td colSpan={columns} className="bg-surface-sunken/40 px-3 py-2">
-                      <table className="w-full text-xs">
+                      <table className="data-grid grid-framed w-full text-xs">
                         <thead>
                           <tr className="text-left uppercase tracking-wider text-ink-muted">
                             <th className="py-1 pr-3 font-medium">Invoice</th>

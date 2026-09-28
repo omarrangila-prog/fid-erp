@@ -185,7 +185,7 @@ export function StockClient({
           <p className="mb-2 text-xs text-ink-muted">
             {r.lots.length === 1 ? 'The batch behind this stock' : `The ${r.lots.length} batches behind this stock`}
           </p>
-          <table className="w-full min-w-[46rem] text-sm">
+          <table className="data-grid grid-framed w-full min-w-[46rem] text-sm">
             <thead>
               <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
                 <th className="py-1.5 pr-3 font-medium">Reference</th>

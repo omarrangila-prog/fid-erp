@@ -292,7 +292,7 @@ export function AnalyticsClient({
             </CardHeader>
             <CardContent>
               <div className="w-full overflow-x-auto">
-                <table className="w-full min-w-[44rem] text-left text-xs">
+                <table className="data-grid grid-framed w-full min-w-[44rem] text-left text-xs">
                   <thead className="sticky-head">
                     <tr className="border-b border-line text-[11px] uppercase tracking-wide text-ink-subtle">
                       <th className="pb-2 pr-3 font-semibold">{dimension.label}</th>
@@ -304,7 +304,7 @@ export function AnalyticsClient({
                       <th className="pb-2 pl-3 text-right font-semibold">Per KG</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-line">
+                  <tbody>
                     {rows.map((row) => (
                       <tr key={row.key} className="transition-colors hover:bg-forest-50/50">
                         <td className="py-2.5 pr-3">

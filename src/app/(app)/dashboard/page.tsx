@@ -679,7 +679,7 @@ export default async function DashboardPage() {
               <p className="py-6 text-center text-xs text-ink-subtle">Nothing posted yet.</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[34rem] text-left text-xs">
+                <table className="data-grid grid-framed w-full min-w-[34rem] text-left text-xs">
                   <thead>
                     <tr className="border-b border-line text-[11px] uppercase tracking-wide text-ink-subtle">
                       <th className="pb-2 pr-3 font-semibold">Date</th>
@@ -690,7 +690,7 @@ export default async function DashboardPage() {
                       <th className="pb-2 pl-3 font-semibold">Status</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-line">
+                  <tbody>
                     {activity.map((row, index) => (
                       <tr key={`${row.reference}-${index}`} className="transition-colors hover:bg-forest-50/50">
                         <td className="py-2.5 pr-3 whitespace-nowrap text-ink-muted">{formatDate(row.date)}</td>

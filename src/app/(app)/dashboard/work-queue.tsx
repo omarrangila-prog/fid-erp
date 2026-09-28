@@ -125,7 +125,7 @@ export function WorkQueue({
               Nothing yet. Whatever you enter appears here so you can check it.
             </p>
           ) : (
-            <ul className="divide-y divide-line">
+            <ul className="divide-y divide-grid/40">
               {recent.map((entry) => (
                 <li key={entry.id}>
                   <Link

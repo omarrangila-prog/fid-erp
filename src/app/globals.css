@@ -48,6 +48,12 @@
   --color-line: #e8e4dc;
   --color-line-strong: #d8d2c7;
 
+  /* --- Data grids: every table of figures, Excel-clear ------------------- */
+  --color-grid: #3f3f46; /* every row and column line */
+  --color-grid-strong: #18181b; /* under the header, above totals */
+  --color-grid-head: #eef1ee; /* header background */
+  --color-grid-total: #f1f4f1; /* totals and subtotals */
+
   /* --- Text: charcoal ----------------------------------------------------- */
   --color-ink: #22201c;
   --color-ink-muted: #5c574e;
@@ -151,8 +157,7 @@
     position: sticky;
     top: 0;
     z-index: 10;
-    background: var(--color-surface);
-    box-shadow: inset 0 -1px 0 var(--color-line);
+    background: var(--color-grid-head);
   }
 
   /* A column pinned while the rest of a wide table scrolls under it. */
@@ -161,9 +166,13 @@
     left: 0;
     z-index: 5;
     background: var(--color-surface);
+    box-shadow:
+      inset -2px 0 0 var(--color-grid-strong),
+      6px 0 8px -6px rgba(24, 24, 27, 0.35);
   }
   .sticky-head th.pin-left {
     z-index: 15;
+    background: var(--color-grid-head);
   }
 
   /*
@@ -177,10 +186,14 @@
     right: 0;
     z-index: 5;
     background: var(--color-surface);
-    box-shadow: inset 1px 0 0 var(--color-line);
+    /* A strong edge and a soft shadow: a fixed column, with the rest of the row scrolling beneath it. */
+    box-shadow:
+      inset 2px 0 0 var(--color-grid-strong),
+      -6px 0 8px -6px rgba(24, 24, 27, 0.35);
   }
   .sticky-head th.pin-right {
     z-index: 15;
+    background: var(--color-grid-head);
   }
   /* The row's own hover colour has to reach the pinned cells too, or they
      stay white while the rest of the row lights up. */
@@ -465,6 +478,74 @@
  * anything interactive are removed; the statement itself is what remains.
  */
 /* ---------------------------------------------------------------------------
+ * Data grids: the FID table standard.
+ *
+ * Every table of figures in the application — lists, details, costing,
+ * stock, reports, the permission matrix — gets the same partitions: a line
+ * between every row and every column in dark charcoal, a bold header on its
+ * own background with a strong line under it, and a strong line above any
+ * totals. The wrapper (TableWrap) draws the outer frame; a table standing on
+ * its own adds `grid-framed` to draw it itself. Borders sit on the cells
+ * (separate borders, no spacing) so they survive sticky headers, sideways
+ * scrolling and printing.
+ *
+ * Structure only: nothing here touches a figure.
+ * ------------------------------------------------------------------------- */
+.data-grid {
+  border-collapse: separate !important;
+  border-spacing: 0;
+}
+.data-grid > thead > tr > th,
+.data-grid > thead > tr > td,
+.data-grid > tbody > tr > th,
+.data-grid > tbody > tr > td,
+.data-grid > tfoot > tr > th,
+.data-grid > tfoot > tr > td {
+  border-right: 1px solid var(--color-grid);
+  border-bottom: 1px solid var(--color-grid);
+}
+.data-grid > * > tr > :last-child {
+  border-right: 0;
+}
+.data-grid > thead > tr > th,
+.data-grid > thead > tr > td {
+  background: var(--color-grid-head);
+  color: #111;
+  font-weight: 700;
+  border-bottom: 2px solid var(--color-grid-strong);
+}
+.data-grid > tfoot > tr > * {
+  background: var(--color-grid-total);
+  font-weight: 700;
+}
+.data-grid > tfoot > tr:first-child > * {
+  border-top: 2px solid var(--color-grid-strong);
+}
+/* Totals and subtotals inside the body (statements, costing): a strong line above. */
+.data-grid > tbody > tr.grid-total > * {
+  border-top: 2px solid var(--color-grid-strong);
+  background: var(--color-grid-total);
+  font-weight: 700;
+}
+/* The frame's own edge is the wrapper's: no second line along the bottom. */
+.data-grid > tbody:last-child > tr:last-child > *,
+.data-grid > tfoot > tr:last-child > * {
+  border-bottom: 0;
+}
+/* A table with no wrapper draws its own frame. */
+.data-grid.grid-framed {
+  border: 1px solid var(--color-grid);
+}
+/* An empty cell keeps its place. */
+.data-grid td:empty::after {
+  content: '\00a0';
+}
+/* The bottom line of a statement — net profit, total equity and liabilities — underlined twice as strong. */
+.data-grid > tbody > tr.grid-final > * {
+  border-bottom: 3px double var(--color-grid-strong);
+}
+
+/* ---------------------------------------------------------------------------
  * Ledgers: one accounting report everywhere.
  *
  * Dark lines between every row and every column, like a spreadsheet, so the
@@ -478,13 +559,13 @@
 }
 .ledger-grid th,
 .ledger-grid td {
-  border-right: 1px solid #3f3f46;
-  border-bottom: 1px solid #3f3f46;
+  border-right: 1px solid var(--color-grid);
+  border-bottom: 1px solid var(--color-grid);
   padding: 0.45rem 0.6rem;
   vertical-align: top;
 }
 .ledger-grid tr > :first-child {
-  border-left: 1px solid #3f3f46;
+  border-left: 1px solid var(--color-grid);
 }
 .ledger-scroll .ledger-grid tr > :first-child {
   border-left: 0;
@@ -496,13 +577,13 @@
   position: sticky;
   top: 0;
   z-index: 2;
-  background: #eef1ee;
+  background: var(--color-grid-head);
   color: #111;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  border-bottom: 2px solid #18181b;
+  border-bottom: 2px solid var(--color-grid-strong);
 }
 .ledger-grid .ledger-sticky-col {
   position: sticky;
@@ -512,7 +593,7 @@
 }
 .ledger-grid thead th.ledger-sticky-col {
   z-index: 3;
-  background: #eef1ee;
+  background: var(--color-grid-head);
 }
 .ledger-grid tbody tr.ledger-row:hover td {
   background: #f4f7f4;
@@ -523,14 +604,14 @@
 .ledger-grid .ledger-opening td,
 .ledger-grid .ledger-closing td,
 .ledger-grid .ledger-totals td {
-  background: #f1f4f1;
+  background: var(--color-grid-total);
   font-weight: 600;
 }
 .ledger-grid tfoot .ledger-totals td {
-  border-top: 2px solid #18181b;
+  border-top: 2px solid var(--color-grid-strong);
 }
 .ledger-grid tfoot .ledger-closing td {
-  border-bottom: 2px solid #18181b;
+  border-bottom: 2px solid var(--color-grid-strong);
 }
 
 @media print {
@@ -605,6 +686,18 @@
   /* An explanation is for somebody learning the screen, not for the record. */
   [data-callout] {
     display: none !important;
+  }
+
+  /* Every data grid on paper: black lines, nothing lost. */
+  .data-grid > * > tr > th,
+  .data-grid > * > tr > td {
+    border-color: #000 !important;
+  }
+  .data-grid.grid-framed {
+    border-color: #000 !important;
+  }
+  .data-grid > thead > tr > th {
+    background: #e6e6e6 !important;
   }
 
   /* A ledger on paper: black lines, the whole width of the sheet, nothing pinned. */

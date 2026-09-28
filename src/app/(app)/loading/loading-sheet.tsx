@@ -607,7 +607,7 @@ export function LoadingSheet({
   function renderOrderLines(group: OrderGroup) {
     return (
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[56rem] text-sm" data-testid="order-lines">
+        <table className="data-grid grid-framed w-full min-w-[56rem] text-sm" data-testid="order-lines">
           <thead>
             <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
               <th className="py-1.5 pr-3 font-medium">Item</th>

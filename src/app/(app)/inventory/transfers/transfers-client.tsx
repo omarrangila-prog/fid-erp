@@ -259,7 +259,7 @@ export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canM
         rowHref={(r) => `/inventory/transfers/${r.id}`}
         expandedContent={(r) =>
           r.lines.length > 1 ? (
-            <table className="w-full text-xs">
+            <table className="data-grid grid-framed w-full text-xs">
               <thead>
                 <tr className="text-left text-ink-muted">
                   <th className="py-1 pr-3 font-medium">ICUL/FID Reference</th>

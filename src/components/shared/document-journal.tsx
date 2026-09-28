@@ -96,7 +96,7 @@ export async function DocumentJournal({
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[34rem] text-sm">
+                <table className="data-grid grid-framed w-full min-w-[34rem] text-sm">
                   <thead>
                     <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
                       <th className="py-1.5 pr-3 font-medium">Account</th>

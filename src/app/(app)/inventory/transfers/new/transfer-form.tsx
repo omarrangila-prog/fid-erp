@@ -247,7 +247,7 @@ export function TransferForm({
               <div
                 key={line.key}
                 className={`grid gap-3 rounded-lg border p-3 sm:grid-cols-[1fr_10rem_auto] sm:items-end ${
-                  over ? 'border-red-300 bg-red-50/40' : 'border-line'
+                  over ? 'border-red-300 bg-red-50/40' : 'border-grid'
                 }`}
               >
                 <Field label={`Batch ${index + 1}`} required>

@@ -404,7 +404,8 @@ export function LedgerReport(props: LedgerReportProps) {
 
   if (props.mode === 'document') {
     return (
-      <div className="ledger-document" data-testid="ledger-document">
+      // A document is laid out for A4; on a phone its table scrolls inside itself.
+      <div className="ledger-document relative overflow-x-auto print:overflow-visible" data-testid="ledger-document">
         {documentTable}
       </div>
     );
@@ -536,7 +537,7 @@ export function LedgerReport(props: LedgerReportProps) {
         {rows.length === 0 ? (
           <p className="rounded-lg border border-ink/70 px-4 py-6 text-center text-sm text-ink-muted">{emptyText}</p>
         ) : prefs.view === 'table' ? (
-          <div className="ledger-scroll max-h-[75vh] overflow-auto rounded-lg border border-ink/80 bg-surface" data-testid="ledger-scroll">
+          <div className="ledger-scroll relative max-h-[75vh] overflow-auto rounded-lg border border-ink/80 bg-surface" data-testid="ledger-scroll">
             <table className="ledger-grid min-w-full text-sm" data-testid="ledger-table">
               <thead>
                 <tr>

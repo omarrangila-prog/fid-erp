@@ -502,7 +502,7 @@ export function JournalForm({
           {lines.map((line, index) => (
             <div
               key={line.key}
-              className="grid gap-3 rounded-lg border border-line bg-paper p-3 sm:grid-cols-12 sm:items-end"
+              className="grid gap-3 rounded-lg border border-grid bg-paper p-3 sm:grid-cols-12 sm:items-end"
             >
               <div className="sm:col-span-4">
                 <Field label={index === 0 ? 'Account' : ''} htmlFor={`acct-${line.key}`} required={index === 0}>

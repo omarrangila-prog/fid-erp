@@ -293,7 +293,7 @@ export function Statement({
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[32rem] border-collapse">
+      <table className="data-grid grid-framed w-full min-w-[32rem]">
         <thead>
           <tr className="border-b border-line-strong">
             <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-ink-muted"> </th>
@@ -348,7 +348,7 @@ export function Statement({
                         </tr>
                       ))
                   : null}
-                <tr className="border-t border-line bg-surface-sunken/40">
+                <tr className="grid-total">
                   <td className="px-3 py-2 text-sm font-semibold uppercase tracking-wide">{section.total.label}</td>
                   {section.total.cells.map((c, i) => (
                     <React.Fragment key={i}>{cell(c, 'font-semibold')}</React.Fragment>
@@ -359,10 +359,7 @@ export function Statement({
                   .map((g) => (
                     <tr
                       key={g.label}
-                      className={cn(
-                        'border-t border-line-strong',
-                        g.emphasis === 'final' && 'border-b-2 border-b-forest-700 bg-forest-50/60',
-                      )}
+                      className={cn('grid-total', g.emphasis === 'final' && 'grid-final')}
                     >
                       <td className="px-3 py-2.5 text-sm font-bold uppercase tracking-wide">{g.label}</td>
                       {g.cells.map((c, i) => (

@@ -80,7 +80,7 @@ export default async function TracePage({ searchParams }: { searchParams: Promis
             </Card>
 
             <Section title="Containers, lots and batches" empty={t.batches.length === 0}>
-              <table className="w-full min-w-[44rem]">
+              <table className="data-grid grid-framed w-full min-w-[44rem]">
                 <thead><tr><th className={th}>Container</th><th className={th}>Lot</th><th className={th}>Batch</th><th className={th}>Item</th><th className={`${th} text-right`}>Ordered</th><th className={`${th} text-right`}>Received</th><th className={`${th} text-right`}>Sold</th><th className={th}>Status</th></tr></thead>
                 <tbody>
                   {t.batches.map((b) => {
@@ -103,7 +103,7 @@ export default async function TracePage({ searchParams }: { searchParams: Promis
             </Section>
 
             <Section title="Received into" empty={t.receipts.length === 0}>
-              <table className="w-full min-w-[32rem]">
+              <table className="data-grid grid-framed w-full min-w-[32rem]">
                 <thead><tr><th className={th}>Date</th><th className={th}>Warehouse</th><th className={th}>Batch</th><th className={`${th} text-right`}>KG</th></tr></thead>
                 <tbody>
                   {t.receipts.map((r, i) => (
@@ -119,7 +119,7 @@ export default async function TracePage({ searchParams }: { searchParams: Promis
             </Section>
 
             <Section title="Where it is now" empty={t.stock.length === 0}>
-              <table className="w-full min-w-[32rem]">
+              <table className="data-grid grid-framed w-full min-w-[32rem]">
                 <thead><tr><th className={th}>Warehouse</th><th className={th}>Item</th><th className={th}>Batch</th><th className={`${th} text-right`}>On hand</th><th className={`${th} text-right`}>Available</th></tr></thead>
                 <tbody>
                   {t.stock.map((s, i) => (
@@ -136,7 +136,7 @@ export default async function TracePage({ searchParams }: { searchParams: Promis
             </Section>
 
             <Section title="Warehouse transfers" empty={t.transfers.length === 0}>
-              <table className="w-full min-w-[36rem]">
+              <table className="data-grid grid-framed w-full min-w-[36rem]">
                 <thead><tr><th className={th}>Transfer</th><th className={th}>Date</th><th className={th}>From → To</th><th className={th}>Batch</th><th className={`${th} text-right`}>KG</th></tr></thead>
                 <tbody>
                   {t.transfers.map((x, i) => (
@@ -153,7 +153,7 @@ export default async function TracePage({ searchParams }: { searchParams: Promis
             </Section>
 
             <Section title="Sold to" description={t.customers.length > 0 ? t.customers.map((c) => c.customerName).join(', ') : undefined} empty={t.sales.length === 0}>
-              <table className="w-full min-w-[44rem]">
+              <table className="data-grid grid-framed w-full min-w-[44rem]">
                 <thead><tr><th className={th}>Invoice</th><th className={th}>Date</th><th className={th}>Customer</th><th className={th}>Item</th><th className={th}>Batch</th><th className={th}>Warehouse</th><th className={`${th} text-right`}>KG</th><th className={`${th} text-right`}>Amount</th></tr></thead>
                 <tbody>
                   {t.sales.map((s, i) => (

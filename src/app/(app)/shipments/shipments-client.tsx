@@ -362,7 +362,7 @@ export function ShipmentsClient({
           {plural(row.items.length, 'item', 'items')} · {plural(row.containers, 'container', 'containers')} ·{' '}
           {row.kgLabel}
         </p>
-        <table className="w-full min-w-[56rem] text-sm" data-testid="shipment-lines">
+        <table className="data-grid grid-framed w-full min-w-[56rem] text-sm" data-testid="shipment-lines">
           <thead>
             <tr className="text-left text-[11px] uppercase tracking-wider text-ink-subtle">
               <th className="py-1.5 pr-3 font-medium">Item</th>
