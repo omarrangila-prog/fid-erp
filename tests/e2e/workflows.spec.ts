@@ -78,7 +78,7 @@ test('the journal voucher refuses to post until debits equal credits', async ({ 
 
   // The button is never disabled — a dead button with no explanation was
   // read as "saving does nothing". It is pressable, and pressing it says why.
-  const post = page.getByRole('button', { name: /post voucher/i });
+  const post = page.getByRole('button', { name: /post entry/i });
   await expect(page.getByText(/not balanced/i)).toBeVisible();
 
   await page.locator('#jv-description').fill('E2E balance check');

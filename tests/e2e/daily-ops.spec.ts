@@ -334,7 +334,7 @@ test('the journal offers USD and MAD and posts a balanced USD voucher', async ({
   await page.getByLabel(/line 2 amount/i).fill('25');
   await expect(page.getByText(/^balanced$/i)).toBeVisible();
 
-  await page.getByRole('button', { name: /post voucher/i }).click();
+  await page.getByRole('button', { name: /post entry/i }).click();
   await page.waitForURL(/\/reports\/journal/, { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await expect(page.getByRole('main')).toContainText(/Daily ops USD opening/);
   // The client's own reference is kept and shown beside the memo.
@@ -367,7 +367,7 @@ test('a posted voucher is corrected: the old entry leaves the books, the new one
   await page.getByLabel(/line 1 amount/i).fill('40');
   await page.getByLabel(/line 2 amount/i).fill('40');
   await expect(page.getByText(/^balanced$/i)).toBeVisible();
-  await page.getByRole('button', { name: /post voucher|save/i }).first().click();
+  await page.getByRole('button', { name: /post entry|save/i }).first().click();
   await page.waitForURL(/\/reports\/journal/, { timeout: 60_000 });
 
   // The corrected voucher stands.

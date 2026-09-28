@@ -41,7 +41,7 @@ async function setPortsView(page: Page, on: boolean) {
   const box = page.getByTestId('grid-row-ports').getByRole('checkbox', { name: 'Ports: view' });
   if ((await box.isChecked()) !== on) await box.click();
   await page.getByTestId('save-role-grid').click();
-  await expect(page.getByText('Permissions saved.')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('Permissions saved.').first()).toBeVisible({ timeout: 30_000 });
 }
 
 test('unticking a page in the grid is refused on the server; ticking it gives it back', async ({ browser }) => {
