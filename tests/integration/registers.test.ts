@@ -133,7 +133,7 @@ describe('the sales register', () => {
     const [row] = await getSalesRegister({ companyId });
     expect(row.settled.toString()).toBe('50000');
     expect(row.outstanding.toString()).toBe('150000');
-    expect(row.status).toBe('Part paid');
+    expect(row.status).toBe('Partially Paid');
   }, 300_000);
 
   it('honours the period asked for', async () => {

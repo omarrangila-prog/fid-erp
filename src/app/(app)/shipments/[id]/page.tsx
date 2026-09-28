@@ -459,7 +459,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                   <THead>
                     <TR className="hover:bg-transparent">
                       <TH>Date</TH>
-                      <TH>Expense Category</TH>
+                      <TH>Category</TH>
                       <TH>Memo</TH>
                       <TH>Original Currency</TH>
                       <TH numeric>Original Amount</TH>
@@ -491,7 +491,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                         <TD numeric>{formatMoney(line.amountUsd, 'USD')}</TD>
                         <TD>
                           <Badge tone={line.payment === 'PAID' ? 'success' : line.payment === 'PARTIAL' ? 'warning' : 'danger'}>
-                            {line.payment === 'PAID' ? 'Paid' : line.payment === 'PARTIAL' ? 'Partially settled' : 'Unpaid'}
+                            {line.payment === 'PAID' ? 'Paid' : line.payment === 'PARTIAL' ? 'Partially Settled' : 'Unpaid'}
                           </Badge>
                         </TD>
                         <TD className="text-xs">{line.paidFrom ?? '—'}</TD>
@@ -747,7 +747,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                           ) : due ? (
                             <>
                               <Badge tone={due.status === 'PAID' ? 'success' : due.status === 'PARTIAL' ? 'warning' : 'danger'}>
-                                {due.status === 'PAID' ? 'Paid' : due.status === 'PARTIAL' ? 'Partly paid' : 'Unpaid'}
+                                {due.status === 'PAID' ? 'Paid' : due.status === 'PARTIAL' ? 'Partially Paid' : 'Unpaid'}
                               </Badge>
                               {due.status === 'PAID' ? null : (
                                 <span className="block text-[11px] text-ink-subtle">

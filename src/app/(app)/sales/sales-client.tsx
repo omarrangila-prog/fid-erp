@@ -106,11 +106,11 @@ export function SalesClient({
     {
       ...summarise('OUTSTANDING'),
       label: 'Outstanding',
-      hint: 'Unpaid and partly paid — what customers still owe',
+      hint: 'Unpaid and partially paid — still to collect',
       amount: 'outstanding' as const,
     },
     { ...summarise('PAID'), label: 'Paid', hint: 'Settled in full', amount: 'paid' as const },
-    { ...summarise('PARTIAL'), label: 'Partly paid', hint: 'Something received, something still owed', amount: 'outstanding' as const },
+    { ...summarise('PARTIAL'), label: 'Partially Paid', hint: 'Something received, the rest outstanding', amount: 'outstanding' as const },
     { ...summarise('UNPAID'), label: 'Unpaid', hint: 'Nothing received yet', amount: 'outstanding' as const },
   ];
   const money = (value: number) =>
@@ -382,7 +382,7 @@ export function SalesClient({
         <p className="text-xs text-ink-muted" data-testid="invoice-standing-active">
           Showing {visible.length === 1 ? 'the 1 invoice' : `the ${visible.length} invoices`} that are{' '}
           {standing === 'OUTSTANDING'
-            ? 'outstanding (unpaid or partly paid)'
+            ? 'outstanding (unpaid or partially paid)'
             : (SETTLEMENT_STATUS_META[standing]?.label.toLowerCase() ?? standing.toLowerCase())}
           .{' '}
           <button type="button" onClick={() => setStanding(null)} className="underline underline-offset-2 hover:text-ink">

@@ -78,7 +78,7 @@ test('a shipment cost saves and posts', async ({ page }) => {
     .first();
   await shipmentOption.click();
 
-  await form.getByRole('combobox', { name: /expense category/i }).click();
+  await form.getByRole('combobox', { name: /^category/i }).click();
   await page.getByRole('listbox').getByRole('option').first().click();
 
   await form.getByLabel(/^Amount/).first().fill('3');

@@ -460,7 +460,7 @@ export function ExpenseForm({
           ) : null}
 
           <Field
-            label="Expense Category"
+            label="Category"
             htmlFor="expenseCategory"
             required
             error={fieldIssues.expenseCategoryId}

@@ -651,7 +651,7 @@ export async function offsetAgentBalances(input: {
 }) {
   const amount = toMoney(input.amount);
   if (amount.lessThanOrEqualTo(0)) throw new BusinessRuleError('Enter an amount greater than zero.');
-  if (!input.reason?.trim()) throw new BusinessRuleError('Say why these balances are being settled against each other.');
+  if (!input.reason?.trim()) throw new BusinessRuleError('Say why these balances are being adjusted against each other.');
 
   return transaction(async (tx) => {
     const agent = await loadAgent(tx, input.companyId, input.agentId);
@@ -675,7 +675,7 @@ export async function offsetAgentBalances(input: {
     }
     if (amount.greaterThan(most.plus('0.005'))) {
       throw new BusinessRuleError(
-        `Only ${formatMoney(most, company.localCurrency)} can be settled against each other: ${agent.agentName} ` +
+        `Only ${formatMoney(most, company.localCurrency)} can be adjusted against each other: ${agent.agentName} ` +
           `holds ${formatMoney(holding, company.localCurrency)} and is owed ${formatMoney(loan, company.localCurrency)}.`,
       );
     }

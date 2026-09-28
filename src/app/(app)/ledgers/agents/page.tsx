@@ -67,8 +67,8 @@ export default async function AgentLedgersPage() {
       ) : (
         <>
           <Callout tone="info" title={`Every figure is in ${local}`}>
-            Each balance sits in its own account — money held for the company is an asset, commission and a loan from
-            the agent are liabilities — and is shown once. The net says who owes whom overall; its USD equivalent is
+            Each balance sits in its own account — customer collections the agent holds are receivable, commission and a
+            loan from the agent are payable — and is shown once. The net says which way the balance runs overall; its USD equivalent is
             given beside it at the rate of each day.
           </Callout>
 
@@ -80,14 +80,14 @@ export default async function AgentLedgersPage() {
           */}
           <Card>
             <CardContent className="space-y-2 pt-5" data-testid="agent-clearing-reconciliation">
-              <p className="text-sm font-semibold text-ink">Agent Clearing, and who is holding it</p>
+              <p className="text-sm font-semibold text-ink">Agent Collections, and who is holding them</p>
               <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
                 <div className="flex justify-between gap-4">
-                  <dt className="text-ink-muted">Agent Clearing account (balance sheet)</dt>
+                  <dt className="text-ink-muted">Agent Collections on the balance sheet</dt>
                   <dd className="tnum font-semibold">{formatMoney(control.clearingLocal, local)}</dd>
                 </div>
                 <div className="flex justify-between gap-4">
-                  <dt className="text-ink-muted">Held by the agents below</dt>
+                  <dt className="text-ink-muted">Collected by the agents below</dt>
                   <dd className="tnum font-semibold">{formatMoney(control.clearingTaggedLocal, local)}</dd>
                 </div>
               </dl>
@@ -114,8 +114,8 @@ export default async function AgentLedgersPage() {
               <THead>
                 <TR className="hover:bg-transparent">
                   <TH>Agent</TH>
-                  <TH numeric>Holding for us</TH>
-                  <TH numeric>Commission owed</TH>
+                  <TH numeric>Customer collections</TH>
+                  <TH numeric>Commission due</TH>
                   <TH numeric>Loan from agent</TH>
                   <TH numeric>Loan to agent</TH>
                   <TH numeric>Net position</TH>

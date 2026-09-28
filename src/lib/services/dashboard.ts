@@ -40,7 +40,7 @@ export async function getRecentActivity(companyId: string, limit = 6) {
       FROM receipts r JOIN customers c ON c."id" = r."customerId"
      WHERE r."companyId" = ${companyId} AND r."status" IN ('DRAFT', 'POSTED')
     UNION ALL
-    SELECT p."paymentDate", 'Payment', p."paymentNumber", COALESCE(v."vendorName", 'Accrued costs'),
+    SELECT p."paymentDate", 'Payment', p."paymentNumber", COALESCE(v."vendorName", 'Unpaid expenses'),
            p."amount"::text, p."currency", p."status"::text, '/finance/payments/' || p."id"
       FROM payments p LEFT JOIN vendors v ON v."id" = p."vendorId"
      WHERE p."companyId" = ${companyId} AND p."status" IN ('DRAFT', 'POSTED')

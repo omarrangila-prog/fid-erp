@@ -151,7 +151,7 @@ describe('a journal voucher that pays a cost pays it on every screen', () => {
     ]);
     const s = await statusOf(id);
     expect(s.status).toBe('PAID');
-    expect(s.paidFrom).toMatch(/Journal voucher/);
+    expect(s.paidFrom).toMatch(/Journal entry \(JV\)/);
     // And the Payments form has nothing left to pay on it: paying it twice is how books go wrong.
     expect(Number((await transaction((tx) => getExpenseOutstanding(tx, id))).amount)).toBeCloseTo(0, 2);
     await expect(

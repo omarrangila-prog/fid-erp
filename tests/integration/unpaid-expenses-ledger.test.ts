@@ -238,7 +238,7 @@ describe('F — set off against what RADOUAN holds', () => {
     expect(await balance(bankId)).toBeCloseTo(bank, 2);
     const r = await row('commission2');
     expect(r.status).toBe('SETTLED');
-    expect(r.history[0].through).toMatch(/Agent Clearing/);
+    expect(r.history[0].through).toMatch(/Agent Collections/);
   }, 300_000);
 
   it('a general cost can be set off against his holding in part, and the journal balances', async () => {

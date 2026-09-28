@@ -56,7 +56,7 @@ test('an unpaid cost is booked with nobody named, and paid later from cash', asy
 
   // A cost of running the business, not paid yet.
   await form.locator('label').filter({ hasText: /running the business/i }).click();
-  await form.getByRole('combobox', { name: /expense category/i }).click();
+  await form.getByRole('combobox', { name: /^category/i }).click();
   await page.getByRole('listbox').getByRole('option').first().click();
   await form.locator('label').filter({ hasText: /Book the cost now/i }).click();
 
@@ -80,7 +80,7 @@ test('an unpaid cost is booked with nobody named, and paid later from cash', asy
   await expect(main).toContainText(/Accrued Expenses/i);
 
   // Later: settle it from the cost itself — in cash, and the cost is not booked again.
-  await main.getByRole('link', { name: /^Settle$/ }).click();
+  await main.getByRole('link', { name: /^Settle Expense$/ }).click();
   await page.waitForURL(/\/finance\/unpaid-expenses\?settle=/, { waitUntil: 'domcontentloaded' });
   const dialog = page.getByTestId('settle-dialog');
   await expect(dialog).toBeVisible({ timeout: 45_000 });

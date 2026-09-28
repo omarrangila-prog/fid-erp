@@ -175,8 +175,8 @@ export default async function UnpaidExpensesPage({
           date,
           reference: businessNumber(r.expenseNumber),
           referenceHref: `/finance/expenses/${r.expenseId}`,
-          type: 'Settled — journal voucher',
-          memo: `${r.category} settled by a journal voucher on ${r.control}`,
+          type: 'Settled — journal entry (JV)',
+          memo: `${r.category} settled by a journal entry (JV) on ${r.control}`,
           party,
           shipment,
           debit: byJournal.toString(),
@@ -281,8 +281,8 @@ export default async function UnpaidExpensesPage({
             <Table data-testid="unpaid-reconciliation">
               <THead>
                 <TR className="hover:bg-transparent">
-                  <TH>Owed to</TH>
-                  <TH>Held on</TH>
+                  <TH>Payable to</TH>
+                  <TH>Recorded under</TH>
                   <TH numeric>Schedule</TH>
                   <TH numeric>Books</TH>
                   <TH />

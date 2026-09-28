@@ -11,6 +11,6 @@ export const AGEING_LABELS_CLIENT: Record<string, string> = {
 
 export const SETTLEMENT_STATUS_META: Record<string, { label: string; tone: BadgeTone }> = {
   UNPAID: { label: 'Unpaid', tone: 'danger' },
-  PARTIAL: { label: 'Partially paid', tone: 'warning' },
+  PARTIAL: { label: 'Partially Paid', tone: 'warning' },
   PAID: { label: 'Paid', tone: 'success' },
 };

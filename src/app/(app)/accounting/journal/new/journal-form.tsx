@@ -313,7 +313,7 @@ export function JournalForm({
      * does nothing when pressed is indistinguishable from a broken one.
      */
     if (!description.trim()) {
-      setError('Give the voucher a description, so the entry can be understood later.');
+      setError('Give the entry a memo, so it can be understood later.');
       return;
     }
     if (!complete) {
@@ -354,11 +354,11 @@ export function JournalForm({
         : await postJournalVoucherAction(body);
 
       if (result?.ok) {
-        toast.success(result.message || 'Journal voucher posted.');
+        toast.success(result.message || 'Journal entry posted.');
         opening();
         router.push('/reports/journal');
       } else {
-        setError(result?.error || 'The voucher could not be posted.');
+        setError(result?.error || 'The entry could not be posted.');
       }
     });
   }
@@ -380,7 +380,7 @@ export function JournalForm({
       )}
 
       <Callout tone="info" title="This posts straight to the ledger">
-        Use a journal voucher for corrections, opening balances and accruals — anything without a purchase, sale,
+        Use a journal entry (JV) for corrections, opening balances and unpaid costs — anything without a purchase, sale,
         receipt or payment behind it. Everything else should be entered on its own screen so stock and the
         sub-ledgers stay in step.
         {' '}
@@ -393,7 +393,7 @@ export function JournalForm({
 
       <Card>
         <CardHeader>
-          <CardTitle>Voucher details</CardTitle>
+          <CardTitle>Entry details</CardTitle>
           <CardDescription>The date decides which period the entry lands in.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -695,14 +695,14 @@ export function JournalForm({
               {balanced ? 'Balanced' : 'Not balanced'}
             </span>
             <Button onClick={submit} loading={busy}>
-              Post voucher
+              Post entry
             </Button>
           </div>
         </CardContent>
       </Card>
 
       {error ? (
-        <Callout tone="danger" title="The voucher was not posted">
+        <Callout tone="danger" title="The entry was not posted">
           {error}
         </Callout>
       ) : null}

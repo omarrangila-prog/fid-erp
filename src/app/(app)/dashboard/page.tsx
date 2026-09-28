@@ -301,7 +301,7 @@ export default async function DashboardPage() {
         ) : null}
 
         <KpiCard
-          label="Receivables"
+          label="Customer Receivables"
           currency={local}
           value={formatMoneyCompact(data.position.receivableLocal, local).replace(new RegExp(`^${local}\\s*`), '')}
           equivalent={eq(data.position.receivableUsd, 'Each invoice at its own rate')}
@@ -317,7 +317,7 @@ export default async function DashboardPage() {
         />
 
         <KpiCard
-          label="Payables"
+          label="Supplier Payables"
           currency={local}
           value={formatMoneyCompact(data.position.payableLocal, local).replace(new RegExp(`^${local}\\s*`), '')}
           equivalent={eq(data.position.payableUsd, 'Each order at its own rate')}
@@ -334,7 +334,7 @@ export default async function DashboardPage() {
         */}
         {!data.agents.holdingLocal.isZero() ? (
           <KpiCard
-            label="With Agents"
+            label="Agent Collections"
             currency={local}
             value={formatMoneyCompact(data.agents.holdingLocal, local).replace(new RegExp(`^${local}\\s*`), '')}
             equivalent={eq(data.agents.holdingUsd, 'Each collection at its own rate')}
@@ -342,8 +342,8 @@ export default async function DashboardPage() {
             tone="receivable"
             note={
               data.agents.positions.length === 1
-                ? `Held by ${data.agents.positions[0].agentName}`
-                : `Held by ${data.agents.positions.length} agents`
+                ? `Collected by ${data.agents.positions[0].agentName}`
+                : `Collected by ${data.agents.positions.length} agents`
             }
             href="/ledgers/agents"
           />
@@ -351,7 +351,7 @@ export default async function DashboardPage() {
 
         {!data.agents.commissionPayableLocal.isZero() ? (
           <KpiCard
-            label="Commission Owed"
+            label="Commission Due"
             currency={local}
             value={formatMoneyCompact(data.agents.commissionPayableLocal, local).replace(
               new RegExp(`^${local}\\s*`),
@@ -853,14 +853,14 @@ async function OutstandingSection({ companyId }: { companyId: string }) {
     /** Loans: each party on its own line, never netted against another. */
     parties?: Array<{ name: string; amountLocal: ReturnType<typeof dec> }>;
   }> = [
-    { key: 'payables', label: 'Owed to suppliers', figure: o.supplierPayables, unit: 'order', href: '/finance/payables', tone: 'owed' },
+    { key: 'payables', label: 'Supplier payables', figure: o.supplierPayables, unit: 'order', href: '/finance/payables', tone: 'owed' },
     // One card for every cost still to pay; the ledger it opens splits them by shipment, party and age.
     { key: 'unpaid-expenses', label: 'Unpaid expenses', figure: o.unpaidExpenses, unit: 'cost', href: '/finance/unpaid-expenses', tone: 'owed' },
     // With one agent, each alert opens his ledger on the matching filter.
-    { key: 'agent-collections', label: 'Held by agents for FID', figure: o.agentCollections, unit: 'agent', href: soleAgent ? `/agents/${soleAgent}?tab=COLLECTIONS` : '/ledgers/agents', tone: 'due' },
-    { key: 'agent-commission', label: 'Agent commission unpaid', figure: o.agentCommission, unit: 'agent', href: soleAgent ? `/agents/${soleAgent}?tab=COMMISSION` : '/finance/agent-commission', tone: 'owed' },
-    { key: 'loans-payable', label: 'Loans FID owes', figure: o.loansPayable, unit: 'lender', href: '/ledgers', tone: 'owed', parties: o.loanParties.filter((p) => p.side === 'payable') },
-    { key: 'loans-receivable', label: 'Loans owed to FID', figure: o.loansReceivable, unit: 'borrower', href: '/ledgers', tone: 'due', parties: o.loanParties.filter((p) => p.side === 'receivable') },
+    { key: 'agent-collections', label: 'Agent collections outstanding', figure: o.agentCollections, unit: 'agent', href: soleAgent ? `/agents/${soleAgent}?tab=COLLECTIONS` : '/ledgers/agents', tone: 'due' },
+    { key: 'agent-commission', label: 'Commission due', figure: o.agentCommission, unit: 'agent', href: soleAgent ? `/agents/${soleAgent}?tab=COMMISSION` : '/finance/agent-commission', tone: 'owed' },
+    { key: 'loans-payable', label: 'Loans payable', figure: o.loansPayable, unit: 'lender', href: '/ledgers', tone: 'owed', parties: o.loanParties.filter((p) => p.side === 'payable') },
+    { key: 'loans-receivable', label: 'Loans receivable', figure: o.loansReceivable, unit: 'borrower', href: '/ledgers', tone: 'due', parties: o.loanParties.filter((p) => p.side === 'receivable') },
   ];
   return (
     <section className="space-y-3" data-testid="dashboard-outstanding">
@@ -882,26 +882,26 @@ async function OutstandingSection({ companyId }: { companyId: string }) {
             </div>
             <dl className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
               <div>
-                <dt className="text-ink-muted">Balance (as on his ledger)</dt>
+                <dt className="text-ink-muted">Net agent position</dt>
                 <dd className="tnum text-sm font-semibold" data-testid="outstanding-agent-balance">
                   {net.abs().lessThan('0.005')
                     ? 'Nothing either way'
                     : `${formatMoney(net.abs(), local)} ${net.isPositive() ? 'Dr' : 'Cr'}`}
                 </dd>
                 <dd className="text-[11px] text-ink-subtle">
-                  {net.abs().lessThan('0.005') ? '' : net.isPositive() ? `${first} owes FID` : `FID owes ${first}`}
+                  {net.abs().lessThan('0.005') ? '' : net.isPositive() ? `Receivable from ${first}` : `Payable to ${first}`}
                 </dd>
               </div>
               <div>
-                <dt className="text-ink-muted">{first} owes FID</dt>
+                <dt className="text-ink-muted">Receivable from {first}</dt>
                 <dd className="tnum text-sm font-semibold" data-testid="outstanding-agent-owes">{formatMoney(agent.owesFidLocal, local)}</dd>
               </div>
               <div>
-                <dt className="text-ink-muted">FID owes {first}</dt>
+                <dt className="text-ink-muted">Payable to {first}</dt>
                 <dd className="tnum text-sm font-semibold" data-testid="outstanding-agent-owed">{formatMoney(agent.fidOwesLocal, local)}</dd>
               </div>
               <div>
-                <dt className="text-ink-muted">Outstanding commission</dt>
+                <dt className="text-ink-muted">Commission due</dt>
                 <dd className="tnum text-sm font-semibold">{formatMoney(agent.commissionLocal, local)}</dd>
               </div>
             </dl>
@@ -921,11 +921,11 @@ async function OutstandingSection({ companyId }: { companyId: string }) {
       <div className="rounded-xl border border-line bg-surface p-4" data-testid="outstanding-invoices">
         <Link href="/sales?standing=OUTSTANDING" className="flex items-center justify-between gap-3">
           <span className="min-w-0">
-            <span className="block text-sm font-medium text-ink">Outstanding customer invoices</span>
+            <span className="block text-sm font-medium text-ink">Outstanding invoices</span>
             <span className="block text-xs text-ink-subtle">
               {o.invoicesOutstanding.count === 0
                 ? 'Nothing outstanding'
-                : `${o.invoicesOutstanding.count} invoice${o.invoicesOutstanding.count === 1 ? '' : 's'} · unpaid and partly paid`}
+                : `${o.invoicesOutstanding.count} invoice${o.invoicesOutstanding.count === 1 ? '' : 's'} · unpaid and partially paid`}
             </span>
           </span>
           <span data-testid="outstanding-invoices-total" className="shrink-0">
@@ -943,8 +943,8 @@ async function OutstandingSection({ companyId }: { companyId: string }) {
         <div className="mt-3 grid gap-2 border-t border-line pt-3 text-xs sm:grid-cols-3">
           {(
             [
-              ['Fully unpaid', o.invoicesUnpaid, '/sales?standing=UNPAID', 'unpaid'],
-              ['Partly paid — remaining', o.invoicesPartial, '/sales?standing=PARTIAL', 'partial'],
+              ['Unpaid', o.invoicesUnpaid, '/sales?standing=UNPAID', 'unpaid'],
+              ['Partially paid — outstanding', o.invoicesPartial, '/sales?standing=PARTIAL', 'partial'],
               ['Overdue', o.invoicesOverdue, '/finance/receivables', 'overdue'],
             ] as const
           ).map(([label, figure, href, key]) => (
@@ -1032,12 +1032,12 @@ async function AgentOwnPanel({ user, agentId }: { user: SessionUser; agentId: st
   return (
     <div className="grid gap-3 sm:grid-cols-2" data-testid="agent-own-panel">
       <Link href={`/agents/${agentId}`} className="rounded-xl border-2 border-forest-200 bg-forest-50/40 p-4 hover:border-forest-400">
-        <span className="block text-xs text-ink-muted">My balance with FID (as on my ledger)</span>
+        <span className="block text-xs text-ink-muted">My net position with FID</span>
         <span className="tnum mt-1 block text-lg font-semibold text-ink" data-testid="agent-own-balance">
           {net.abs().lessThan('0.005') ? 'Nothing either way' : formatDrCr(net, local)}
         </span>
         <span className="block text-xs text-ink-subtle">
-          {net.abs().lessThan('0.005') ? '' : net.isPositive() ? 'I owe FID' : 'FID owes me'} · Open my ledger
+          {net.abs().lessThan('0.005') ? '' : net.isPositive() ? 'Payable to FID' : 'Receivable from FID'} · Open my ledger
         </span>
       </Link>
       <Link href="/sales?standing=OUTSTANDING" className="rounded-xl border border-line bg-surface p-4 hover:border-forest-300">

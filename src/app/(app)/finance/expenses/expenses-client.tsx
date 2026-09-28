@@ -45,7 +45,7 @@ export type ExpenseRow = {
   owedUsd: number;
 };
 
-const PAYMENT_LABEL = { PAID: 'Paid', PARTIAL: 'Partially settled', UNPAID: 'Unpaid' } as const;
+const PAYMENT_LABEL = { PAID: 'Paid', PARTIAL: 'Partially Settled', UNPAID: 'Unpaid' } as const;
 const PAYMENT_TONE = { PAID: 'success', PARTIAL: 'warning', UNPAID: 'danger' } as const;
 
 type Period = 'MONTH' | 'LAST_MONTH' | 'YEAR' | 'ALL';
@@ -143,7 +143,7 @@ export function ExpensesClient({
     },
     {
       id: 'faceValue',
-      header: 'Voucher amount',
+      header: 'Amount (original currency)',
       hideable: true,
       defaultHidden: true,
       exportValue: (r) => `${r.currency} ${r.amount}`,
@@ -160,7 +160,7 @@ export function ExpensesClient({
     },
     {
       id: 'payment',
-      header: 'Payment',
+      header: 'Payment status',
       mobile: 'badge',
       sortValue: (r) => (r.payment === 'UNPAID' ? 0 : r.payment === 'PARTIAL' ? 1 : r.payment === 'PAID' ? 2 : 3),
       exportValue: (r) => (r.payment ? PAYMENT_LABEL[r.payment] : ''),
@@ -176,7 +176,7 @@ export function ExpensesClient({
     { id: 'account', header: 'Paid from', mobile: 'meta', exportValue: (r) => r.account, cell: (r) => <span className="text-xs">{r.account}</span> },
     {
       id: 'owed',
-      header: 'Still to pay',
+      header: 'Outstanding',
       numeric: true,
       hideable: true,
       exportValue: (r) => r.outstandingLabel,
@@ -351,7 +351,7 @@ export function ExpensesClient({
       getRowId={(r) => r.id}
       rowHref={(r) => `/finance/expenses/${r.id}`}
       searchValue={(r) => `${r.number} ${r.category} ${r.job ?? ''} ${r.reference ?? ''} ${r.warehouseNames}`}
-      searchPlaceholder="Search voucher, category or job…"
+      searchPlaceholder="Search number, category or shipment…"
       emptyAction={emptyAction}
       emptyTitle="No expenses yet"
       emptyDescription="Record shipment and operating costs. Direct shipment costs raise the landed cost of the coffee."

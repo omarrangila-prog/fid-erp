@@ -221,7 +221,7 @@ export function JournalClient({
           .map((l) => `${l.accountCode} ${l.accountName}`)
           .join(' ')}`
       }
-      searchPlaceholder="Search by voucher, description, account or who posted it…"
+      searchPlaceholder="Search by JV number, memo, account or who posted it…"
       filters={[
         { id: 'source', label: 'Source', value: (r) => r.sourceTypeLabel },
         { id: 'currency', label: 'Currency', value: (r) => r.currency },

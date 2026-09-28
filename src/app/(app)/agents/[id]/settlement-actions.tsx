@@ -377,9 +377,9 @@ function SettlementSheet({
             </>
           ) : offset ? (
             <>
-              {agentName} holds <strong>{formatMoney(holdingLocal, localCurrency)}</strong> of customer money and is
-              owed <strong>{formatMoney(commissionLocal, localCurrency)}</strong> of commission. Up to the smaller of the
-              two can be settled here: his commission goes down and so does what he owes FID, by the same amount.
+              {agentName} holds <strong>{formatMoney(holdingLocal, localCurrency)}</strong> of customer collections and{' '}
+              <strong>{formatMoney(commissionLocal, localCurrency)}</strong> of commission is due to him. Up to the smaller of
+              the two can be settled here: his commission due goes down and so does what is receivable from him, by the same amount.
               Cash and bank are not touched. He then hands over the rest.
             </>
           ) : (

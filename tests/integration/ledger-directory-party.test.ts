@@ -118,8 +118,8 @@ describe('the general ledgers list', () => {
   it('says what he owes and what he is owed in words, not in debits', async () => {
     const party = (await directory()).find((e) => e.key === `agent:${agentId}`);
     const summary = Object.fromEntries((party?.summary ?? []).map((s) => [s.label, s.value]));
-    expect(summary['RADOUAN owes FID']).toBe('MAD 46,000.00');
-    expect(summary['FID owes RADOUAN']).toBe('MAD 27,000.00');
+    expect(summary['Receivable from RADOUAN']).toBe('MAD 46,000.00');
+    expect(summary['Payable to RADOUAN']).toBe('MAD 27,000.00');
     expect(summary['Net position']).toBe('MAD 19,000.00 receivable');
   }, 300_000);
 
@@ -169,7 +169,7 @@ describe('the general ledgers list', () => {
     // one beside the other can never invite adding them up.
     const held = entries
       .filter((e) => e.key.startsWith('agent:'))
-      .reduce((total, e) => total + Number(e.summary?.find((s) => /owes FID$/.test(s.label))?.value.replace(/[^\d.]/g, '') ?? 0), 0);
+      .reduce((total, e) => total + Number(e.summary?.find((s) => /^Receivable from /.test(s.label))?.value.replace(/[^\d.]/g, '') ?? 0), 0);
     expect(Math.abs(Number(clearing?.balance) - held)).toBeLessThan(0.01);
   }, 300_000);
 

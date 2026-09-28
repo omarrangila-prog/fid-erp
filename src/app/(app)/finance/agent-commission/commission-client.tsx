@@ -32,7 +32,7 @@ export type CommissionRow = {
 
 const STATUS: Record<CommissionRow['status'], { label: string; tone: 'warning' | 'progress' | 'success' }> = {
   UNPAID: { label: 'Unpaid', tone: 'warning' },
-  PARTIAL: { label: 'Partially settled', tone: 'progress' },
+  PARTIAL: { label: 'Partially Settled', tone: 'progress' },
   PAID: { label: 'Paid', tone: 'success' },
 };
 
@@ -40,7 +40,7 @@ export function AgentCommissionClient({ rows }: { rows: CommissionRow[] }) {
   const columns: DataColumn<CommissionRow>[] = [
     {
       id: 'number',
-      header: 'Voucher',
+      header: 'Number',
       mobile: 'title',
       sortValue: (r) => r.number,
       cell: (r) => (

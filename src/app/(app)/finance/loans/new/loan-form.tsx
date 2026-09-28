@@ -288,7 +288,7 @@ export function LoanForm({
           </Field>
           )}
 
-          <Field label={moneyIn ? 'Received into' : 'Paid from'} required>
+          <Field label={moneyIn ? 'Deposit to' : 'Paid from'} required>
             <Select
               value={cashBankAccountId}
               onChange={(e) => {

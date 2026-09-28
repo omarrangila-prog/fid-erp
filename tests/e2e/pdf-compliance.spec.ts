@@ -93,7 +93,7 @@ test('14.1–14.4 a direct shipment expense raises the shipment landed cost and 
   const form = page.getByRole('main');
   await form.getByRole('combobox', { name: /contract \/ shipment/i }).click();
   await page.getByRole('listbox').getByRole('option').first().click();
-  await form.getByRole('combobox', { name: /expense category/i }).click();
+  await form.getByRole('combobox', { name: /^category/i }).click();
   await page.getByRole('listbox').getByRole('option', { name: /Clearing|Freight|Transport/i }).first().click();
   await page.keyboard.press('Escape');
   await form.getByLabel(/expense date/i).fill('2026-07-02');
@@ -128,7 +128,7 @@ test('14.5–14.7 an overhead expense reaches the company P&L and attaches to no
   // The voucher opens on a shipment cost; this one belongs to the company.
   await chooseCard(form, /General company expense/i);
   await expect(form.getByRole('combobox', { name: /contract \/ shipment/i })).toHaveCount(0);
-  await form.getByRole('combobox', { name: /expense category/i }).click();
+  await form.getByRole('combobox', { name: /^category/i }).click();
   await page.getByRole('listbox').getByRole('option', { name: /Office Rent|Salary|Utilities/i }).first().click();
   await page.keyboard.press('Escape');
   await form.getByLabel(/expense date/i).fill('2026-07-03');

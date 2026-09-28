@@ -235,7 +235,7 @@ test('the agent is the subledger of Agent Clearing, not a second balance', async
   const simple = page.getByTestId('ledger-entry').filter({ hasText: /Agent Clearing/ });
   await expect(simple).toHaveCount(0, { timeout: 15_000 });
   // What it does find is the people holding the money.
-  await expect(page.getByTestId('ledger-entry').first()).toContainText(/owes FID/i);
+  await expect(page.getByTestId('ledger-entry').first()).toContainText(/Receivable from/i);
 
   await page.getByTestId('ledger-view-accounting').click();
   const controlRow = page.getByTestId('ledger-entry').filter({ hasText: /Agent Clearing/ }).first();
@@ -268,7 +268,7 @@ test('he hands over more than he collected: the excess is classified, never gues
 
   // He is holding MAD 46,000, and the page says so in the client's words.
   const main = page.getByRole('main');
-  await expect(main).toContainText(new RegExp(`${AGENT.split(' ')[0]}.*owes the company`, 'i'), { timeout: 30_000 });
+  await expect(main).toContainText(new RegExp(`Receivable from ${AGENT}: MAD`, 'i'), { timeout: 30_000 });
 
   // MAD 200,000 handed over: the form names the 154,000 and will not take it
   // until somebody says what it is.
@@ -290,7 +290,7 @@ test('he hands over more than he collected: the excess is classified, never gues
   await page.goto(agentUrl, { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle').catch(() => undefined);
   const summary = (await main.innerText()).replace(/\s+/g, ' ');
-  expect(summary).toMatch(/The company owes .* MAD 154,000\.00/i);
+  expect(summary).toMatch(/Payable to .*: MAD 154,000\.00/i);
   expect(summary).not.toMatch(/USD 200,000\.00/);
   console.log('  hand-over: MAD 46,000 settled, MAD 154,000 booked as his loan');
 
@@ -351,8 +351,8 @@ test('the ledger list shows him once, and opens to the accounts behind him', asy
 
   // What he owes and what FID owes him, said in words.
   const summary = (await row.getByTestId('ledger-party-summary').innerText()).replace(/\s+/g, ' ');
-  expect(summary).toMatch(new RegExp(`${AGENT.split(' ')[0]} owes FID: MAD [\\d,]+\\.\\d{2}`, 'i'));
-  expect(summary).toMatch(/FID owes .*: MAD [\d,]+\.\d{2}/i);
+  expect(summary).toMatch(new RegExp(`Receivable from ${AGENT.split(' ')[0]}: MAD [\\d,]+\\.\\d{2}`, 'i'));
+  expect(summary).toMatch(/Payable to .*: MAD [\d,]+\.\d{2}/i);
   expect(summary).toMatch(/Net position: MAD [\d,]+\.\d{2} (receivable|payable)/i);
   console.log('  ledger list:', summary);
 

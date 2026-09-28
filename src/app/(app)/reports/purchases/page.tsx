@@ -142,7 +142,7 @@ export default async function PurchaseReportPage({
                       <TD numeric className="font-medium">{formatMoney(row.outstanding, row.currency)}</TD>
                       <TD>
                         <Badge
-                          tone={row.status === 'Paid' ? 'success' : row.status === 'Part paid' ? 'warning' : 'neutral'}
+                          tone={row.status === 'Paid' ? 'success' : row.status === 'Partially Paid' ? 'warning' : 'neutral'}
                         >
                           {row.status}
                         </Badge>

@@ -31,7 +31,7 @@ const PAGES: Array<{ label: string; href: string; group: string }> = [
   { group: 'Sales', label: 'Invoices', href: '/sales' },
   { group: 'Sales', label: 'Customers', href: '/customers' },
   { group: 'Sales', label: 'Customer Ledger', href: '/ledgers/customers' },
-  { group: 'Sales', label: 'Payments Received', href: '/finance/receipts' },
+  { group: 'Sales', label: 'Receive Payment', href: '/finance/receipts' },
   { group: 'Sales', label: 'Credit Notes', href: '/sales/credit-notes' },
   { group: 'Sales', label: 'Receivables', href: '/finance/receivables' },
 

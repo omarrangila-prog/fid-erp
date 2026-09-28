@@ -124,7 +124,7 @@ test.describe('sidebar', () => {
       ['Sales', 'Invoices', '/sales'],
       ['Sales', 'Customers', '/customers'],
       ['Sales', 'Customer Ledger', '/ledgers/customers'],
-      ['Sales', 'Payments Received', '/finance/receipts'],
+      ['Sales', 'Receive Payment', '/finance/receipts'],
       ['Sales', 'Credit Notes', '/sales/credit-notes'],
       ['Purchases', 'Purchase Orders', '/purchases'],
       ['Purchases', 'Suppliers', '/vendors'],

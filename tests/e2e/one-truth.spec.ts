@@ -76,7 +76,7 @@ async function book(page: Page, params: { amount: string; memo: string; paid: bo
   await form.locator('label').filter({ hasText: /running the business/i }).click();
   await form.locator('label').filter({ hasText: params.paid ? /^Paid/ : /^Unpaid/ }).first().click();
   if (params.paid) await form.getByRole('combobox', { name: /^paid from/i }).selectOption('CASH');
-  await choose(page, form.getByRole('combobox', { name: /expense category/i }));
+  await choose(page, form.getByRole('combobox', { name: /^category/i }));
   await form.getByLabel(/^Amount/).fill(params.amount);
   await form.getByLabel(/^Memo/).fill(params.memo);
   await form.getByRole('button', { name: /save and post/i }).click();
@@ -131,10 +131,10 @@ test('booked unpaid reads Unpaid, MAD 20,000 on its page, the ledger and the das
 
 test('MAD 5,000 paid: Partially settled, MAD 15,000 left on every screen', async ({ page }) => {
   await settleInCash(page, OWED, '5000');
-  await expectExpense(page, owedUrl, /^Partially settled$/, '15,000.00');
+  await expectExpense(page, owedUrl, /^Partially Settled$/, '15,000.00');
   await page.goto('/finance/unpaid-expenses', { waitUntil: 'domcontentloaded' });
   const row = page.getByTestId('unpaid-schedule').getByRole('row').filter({ hasText: OWED }).first();
-  await expect(row).toContainText('Partially settled', { timeout: 45_000 });
+  await expect(row).toContainText('Partially Settled', { timeout: 45_000 });
   await expect(row).toContainText(/MAD 15,000\.00/);
   expect(await dashboardUnpaid(page)).toBeCloseTo(baseline + 15_000, 2);
 });
@@ -154,7 +154,7 @@ test('a journal voucher that pays Accrued Expenses lowers what every screen call
   const before = await dashboardUnpaid(page);
 
   await page.goto('/accounting/journal/new', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: 'General Entry', level: 1 })).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByRole('heading', { name: 'Journal Entry (JV)', level: 1 })).toBeVisible({ timeout: 45_000 });
   await page.waitForLoadState('networkidle').catch(() => undefined);
   const form = page.getByTestId('simple-entry');
   await choose(page, form.locator('#ge-debit'), 'Accrued Expenses');

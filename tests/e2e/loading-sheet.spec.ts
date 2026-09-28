@@ -70,7 +70,7 @@ test.describe('the loading sheet', () => {
     await page.goto('/loading');
     // The container was sold, so its consignee came from the invoice.
     await expect(page.getByText(/E2E Roastery Dubai/).locator('visible=true').first()).toBeVisible();
-    await expect(page.getByText(/Paid|Part paid|Overdue|Unpaid/).locator('visible=true').first()).toBeVisible();
+    await expect(page.getByText(/Paid|Partially Paid|Overdue|Unpaid/).locator('visible=true').first()).toBeVisible();
   });
 
   test('drills from a shipment into the customers it was sold to', async ({ page }) => {

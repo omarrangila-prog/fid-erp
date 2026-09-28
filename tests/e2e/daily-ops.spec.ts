@@ -249,7 +249,7 @@ test('the invoice standing cards filter the list to the invoices behind them', a
   // Each card says a figure and how many invoices are behind it.
   const summary = (await standing.innerText()).replace(/\s+/g, ' ');
   expect(summary).toMatch(/Paid/);
-  expect(summary).toMatch(/Partly paid/);
+  expect(summary).toMatch(/Partially Paid/);
   expect(summary).toMatch(/Unpaid/);
   expect(summary).toMatch(/USD [\d,]+\.\d{2}/);
   console.log(`  standing: ${summary.slice(0, 140)}`);
@@ -437,7 +437,7 @@ test('a plain MAD 7,400 shipment expense does not become 8,880', async ({ page }
 
   await chooseFirst(page, form.getByRole('combobox', { name: /contract \/ shipment/i }), 'E2E-PO-MA-1');
 
-  await chooseFirst(page, form.getByRole('combobox', { name: /expense category/i }));
+  await chooseFirst(page, form.getByRole('combobox', { name: /^category/i }));
 
   await form.getByLabel(/expense date/i).fill('2026-07-28');
   await form.locator('label').filter({ hasText: /already paid from cash/i }).click();
@@ -473,7 +473,7 @@ test('a plain MAD 7,400 shipment expense does not become 8,880', async ({ page }
   const costing = page.locator('#costing');
   await expect(costing).toContainText(/7,400/);
   await expect(costing).not.toContainText(/8,880/);
-  await expect(costing.getByRole('columnheader', { name: /Expense Category/i })).toBeVisible();
+  await expect(costing.getByRole('columnheader', { name: 'Category', exact: true })).toBeVisible();
   await expect(costing.getByRole('columnheader', { name: /FX Rate/i })).toBeVisible();
   await expect(costing.getByRole('columnheader', { name: /USD Equivalent/i })).toBeVisible();
   await expect(costing.getByTestId('shipment-expense-row').filter({ hasText: '7,400' })).toHaveCount(1);
@@ -504,7 +504,7 @@ test('a plain MAD 7,400 shipment expense does not become 8,880', async ({ page }
   await page.goto('/finance/expenses/new', { waitUntil: 'domcontentloaded' });
   const next = page.getByRole('main');
   await chooseFirst(page, next.getByRole('combobox', { name: /contract \/ shipment/i }), 'E2E-PO-MA-1');
-  await chooseFirst(page, next.getByRole('combobox', { name: /expense category/i }));
+  await chooseFirst(page, next.getByRole('combobox', { name: /^category/i }));
   await next.getByLabel(/expense date/i).fill('2026-07-29');
   await next.locator('label').filter({ hasText: /already paid from cash/i }).click();
   await next.getByLabel(/^Amount/).fill('1000');

@@ -32,9 +32,9 @@ const COLUMNS: SimpleColumnSpec[] = [
   { id: 'commission', header: 'Commission %', key: 'commission', kind: 'number', mobile: 'meta' },
   // Where FID and the agent stand, from his ledger: the whole position first,
   // then what makes it up. Each balance stays in its own account.
-  { id: 'position', header: 'Current position', key: 'position', mobile: 'meta' },
-  { id: 'holding', header: 'Collections held', key: 'holding', kind: 'number', mobile: 'meta' },
-  { id: 'payable', header: 'Commission outstanding', key: 'payable', kind: 'number', mobile: 'meta' },
+  { id: 'position', header: 'Net position', key: 'position', mobile: 'meta' },
+  { id: 'holding', header: 'Customer collections', key: 'holding', kind: 'number', mobile: 'meta' },
+  { id: 'payable', header: 'Commission due', key: 'payable', kind: 'number', mobile: 'meta' },
   { id: 'loanFrom', header: 'Loan payable', key: 'loanFrom', kind: 'number', hideable: true },
   { id: 'loanTo', header: 'Loan receivable', key: 'loanTo', kind: 'number', hideable: true },
   {
@@ -78,8 +78,8 @@ export default async function AgentsPage() {
         if (!p || p.netLocal.abs().lessThan('0.005')) return 'Nothing either way';
         const first = a.agentName.split(/\s+/)[0];
         return p.netLocal.isPositive()
-          ? `${first} owes FID ${formatMoney(p.netLocal, localCurrency)}`
-          : `FID owes ${first} ${formatMoney(p.netLocal.abs(), localCurrency)}`;
+          ? `Receivable from ${first} ${formatMoney(p.netLocal, localCurrency)}`
+          : `Payable to ${first} ${formatMoney(p.netLocal.abs(), localCurrency)}`;
       })(),
       holding: (() => {
         const p = positionByAgent.get(a.id);

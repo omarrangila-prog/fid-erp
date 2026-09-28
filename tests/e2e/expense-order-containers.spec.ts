@@ -60,7 +60,7 @@ async function openForm(page: Page) {
   await page.waitForLoadState('networkidle').catch(() => undefined);
   const form = page.getByRole('main');
   await choose(page, form.getByRole('combobox', { name: /contract \/ shipment/i }), ORDER);
-  await choose(page, form.getByRole('combobox', { name: /expense category/i }));
+  await choose(page, form.getByRole('combobox', { name: /^category/i }));
   return form;
 }
 

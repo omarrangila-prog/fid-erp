@@ -120,7 +120,7 @@ describe('one line per business event', () => {
       'Loan received from RADOUAN MOHAMMED',
       'Loan given to RADOUAN MOHAMMED',
       expect.stringMatching(/^Agent settlement — money handed over/),
-      'Commission set-off against Agent Clearing',
+      'Commission set-off against Agent Collections',
     ]);
   }, 300_000);
 
@@ -165,7 +165,7 @@ describe('one line per business event', () => {
     const { events } = await statement();
     const tagged = (f: string) => events.filter((e) => e.filters.includes(f as never)).map((e) => e.typeLabel);
     expect(tagged('LOANS')).toHaveLength(2);
-    expect(tagged('SET_OFFS')).toEqual(['Commission set-off against Agent Clearing']);
+    expect(tagged('SET_OFFS')).toEqual(['Commission set-off against Agent Collections']);
     expect(tagged('COLLECTIONS')).toHaveLength(2);
     expect(tagged('SHIPMENTS').length).toBeGreaterThanOrEqual(2);
     expect(tagged('UNPAID_EXPENSES')).toHaveLength(1);

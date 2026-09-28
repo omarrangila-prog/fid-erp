@@ -94,7 +94,7 @@ test('a commission booked on the shipment is one line on his ledger, with the sh
   await page.waitForLoadState('networkidle').catch(() => undefined);
   const form = page.getByRole('main');
   await choose(page, form.getByRole('combobox', { name: /contract \/ shipment/i }), 'E2E-PO-MA-1');
-  await choose(page, form.getByRole('combobox', { name: /expense category/i }));
+  await choose(page, form.getByRole('combobox', { name: /^category/i }));
   await form.getByLabel(/^Amount/).fill('12000');
   const rate = form.getByLabel(/Rate \(MAD per 1 USD\)/);
   if (await rate.count()) await rate.fill('9.85');
@@ -122,7 +122,7 @@ test('a commission booked on the shipment is one line on his ledger, with the sh
 });
 
 test('a loan each way and a hand-over are each one line', async ({ page }) => {
-  await loan(page, agentHref, /We received a loan/, '5000', /Received into/);
+  await loan(page, agentHref, /We received a loan/, '5000', /Deposit to/);
   await loan(page, agentHref, /We lent money out/, '3000', /Paid from/);
 
   await page.goto(agentHref, { waitUntil: 'domcontentloaded' });
@@ -179,9 +179,9 @@ test('after a reload, all of it is one chronological ledger, and the dashboard o
   await expect(page.getByTestId('ledger-row-details')).toContainText('Settled');
   // Held 50,000 − 10,000 handed over − 12,000 set off, plus 3,000 lent to him; FID owes him the 5,000 loan.
   const position = (await page.getByTestId('agent-position').innerText()).replace(/\s+/g, ' ');
-  expect(position).toMatch(/Agent Clearing \(collections\) MAD 28,000\.00 Dr/);
-  expect(position).toMatch(/Loan to him MAD 3,000\.00 Dr/);
-  expect(position).toMatch(/Loan from him MAD 5,000\.00 Cr/);
+  expect(position).toMatch(/Customer collections held MAD 28,000\.00 Dr/);
+  expect(position).toMatch(/Loan to agent MAD 3,000\.00 Dr/);
+  expect(position).toMatch(/Loan from agent MAD 5,000\.00 Cr/);
 
   await page.goto('/dashboard', { waitUntil: 'domcontentloaded' });
   const card = page.getByTestId('outstanding-agent').filter({ hasText: AGENT }).first();

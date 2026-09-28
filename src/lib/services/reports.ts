@@ -1431,7 +1431,7 @@ export async function getSalesRegister(params: {
       grossProfitUsd: toMoney(totalUsd.minus(cogs)),
       settled,
       outstanding,
-      status: outstanding.lessThanOrEqualTo(0) ? 'Paid' : settled.greaterThan(0) ? 'Part paid' : 'Unpaid',
+      status: outstanding.lessThanOrEqualTo(0) ? 'Paid' : settled.greaterThan(0) ? 'Partially Paid' : 'Unpaid',
     };
   });
 }
@@ -1540,7 +1540,7 @@ export async function getPurchaseRegister(params: {
       receivedKg: toMoney(receivedById.get(contract.id) ?? 0),
       settled,
       outstanding,
-      status: outstanding.lessThanOrEqualTo(0) ? 'Paid' : settled.greaterThan(0) ? 'Part paid' : 'Unpaid',
+      status: outstanding.lessThanOrEqualTo(0) ? 'Paid' : settled.greaterThan(0) ? 'Partially Paid' : 'Unpaid',
     };
   });
 }

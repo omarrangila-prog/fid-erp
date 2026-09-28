@@ -51,7 +51,7 @@ async function choose(page: Page, combobox: Locator, text?: string | RegExp) {
 
 async function open(page: Page) {
   await page.goto('/accounting/journal/new', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: 'General Entry', level: 1 })).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByRole('heading', { name: 'Journal Entry (JV)', level: 1 })).toBeVisible({ timeout: 45_000 });
   await page.waitForLoadState('networkidle').catch(() => undefined);
   return page.getByTestId('simple-entry');
 }
@@ -80,7 +80,7 @@ test('an expense paid from cash: MAD 1,000, both sides shown before posting', as
 
 test('a ledger adjustment moves no cash, and an account can be added without leaving the form', async ({ page }) => {
   const form = await open(page);
-  await form.getByLabel('Transaction type').selectOption({ label: 'Ledger adjustment' });
+  await form.getByLabel('Transaction type').selectOption({ label: 'Ledger adjustment / set-off' });
   await choose(page, form.locator('#ge-debit'), 'E2E Clearing Agent');
   // The credit side is a new account, added from the picker itself.
   await form.locator('#ge-credit').click();

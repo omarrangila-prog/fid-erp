@@ -59,7 +59,7 @@ async function loan(page: Page, what: RegExp, amount: string, into: RegExp) {
 test('A — a loan received from an agent posts', async ({ page }) => {
   test.setTimeout(180_000);
   await signIn(page);
-  const took = await loan(page, /We received a loan/, '27500', /Received into/);
+  const took = await loan(page, /We received a loan/, '27500', /Deposit to/);
   console.log(`  loan received posted in ${took} ms`);
   await page.reload();
   await expect(page.getByRole('main')).toBeVisible();
@@ -93,8 +93,8 @@ test('the agent ledger shows all three, each once', async ({ page }) => {
   // other browser tests give the same agent cheques to hold, which move his
   // net position but not his loans.
   const position = (await page.getByTestId('agent-position').innerText()).replace(/\s+/g, ' ');
-  expect(position, 'loan from him').toMatch(/Loan from him MAD 17,500\.00 Cr/);
-  expect(position, 'loan to him').toMatch(/Loan to him MAD 20,000\.00 Dr/);
+  expect(position, 'loan from him').toMatch(/Loan from agent MAD 17,500\.00 Cr/);
+  expect(position, 'loan to him').toMatch(/Loan to agent MAD 20,000\.00 Dr/);
   // Each loan is its own line on his one ledger.
   await page.getByTestId('ledger-quick-loans').click();
   await expect(page.getByTestId('agent-ledger')).toContainText(/Loan received from/);

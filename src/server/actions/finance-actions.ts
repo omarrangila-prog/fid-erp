@@ -162,8 +162,8 @@ export async function offsetAgentBalancesAction(payload: string): Promise<DocFor
       ok: true,
       id: posted.id,
       message: posted.created
-        ? `Settled against each other as ${posted.created.entryNumber}.`
-        : 'Already settled against each other.',
+        ? `Adjusted against each other as ${posted.created.entryNumber}.`
+        : 'Already adjusted against each other.',
     };
   } catch (error) {
     return toState(error);
@@ -621,7 +621,7 @@ export async function replaceJournalVoucherAction(entryId: string, payload: stri
       where: { id: entryId, companyId, sourceType: 'MANUAL', status: 'POSTED' },
       select: { id: true, entryNumber: true },
     });
-    if (!original) throw new NotFoundError('Journal voucher');
+    if (!original) throw new NotFoundError('Journal entry');
 
     await deletePostedEntry({
       companyId,
@@ -663,14 +663,14 @@ export async function replaceJournalVoucherAction(entryId: string, payload: stri
          * the old figures and the new ones are missing.
          */
         throw new BusinessRuleError(
-          `The voucher this replaces has been taken out of the books, but the correction could not be posted: ` +
-            `${error instanceof Error ? error.message : String(error)}. Write it as a new voucher.`,
+          `The entry this replaces has been taken out of the books, but the correction could not be posted: ` +
+            `${error instanceof Error ? error.message : String(error)}. Write it as a new journal entry.`,
         );
       });
     });
 
     revalidateAll(['/accounting/journal', '/reports', '/ledgers', '/ledgers/customers', '/ledgers/vendors', '/agents', '/dashboard']);
-    return { ok: true, id: entry.id, message: 'Voucher corrected. The entry it replaces is out of the books.' };
+    return { ok: true, id: entry.id, message: 'Entry corrected. The entry it replaces is out of the books.' };
   } catch (error) {
     return toState(error);
   }
@@ -719,7 +719,7 @@ export async function postJournalVoucherAction(payload: string): Promise<DocForm
     });
 
     revalidateAll(['/accounting/journal', '/reports', '/ledgers', '/ledgers/customers', '/ledgers/vendors', '/agents', '/dashboard']);
-    return { ok: true, id: entry.id, message: `Journal voucher ${businessNumber(entry.entryNumber)} posted.` };
+    return { ok: true, id: entry.id, message: `Journal entry ${businessNumber(entry.entryNumber)} posted.` };
   } catch (error) {
     return toState(error);
   }

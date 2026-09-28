@@ -8,7 +8,7 @@ import { SimpleEntryForm } from '@/app/(app)/accounting/journal/new/simple-entry
 import { GeneralEntryTabs } from '@/app/(app)/accounting/journal/new/general-entry-tabs';
 import { loadJournalFormOptions } from '@/app/(app)/accounting/journal/load-journal-options';
 
-export const metadata: Metadata = { title: 'General Entry' };
+export const metadata: Metadata = { title: 'Journal Entry (JV)' };
 export const dynamic = 'force-dynamic';
 
 export default async function NewJournalEntryPage() {
@@ -19,12 +19,12 @@ export default async function NewJournalEntryPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="General Entry"
-        description="Journal Voucher (JV) — choose the kind of entry and the two accounts; the debit and credit are posted for you."
+        title="Journal Entry (JV)"
+        description="Choose the kind of entry and the two accounts; the debit and credit are posted for you."
         breadcrumbs={[
           { label: 'Accounting' },
           { label: 'Journal', href: '/reports/journal' },
-          { label: 'General Entry' },
+          { label: 'Journal Entry (JV)' },
         ]}
       />
       <GeneralEntryTabs

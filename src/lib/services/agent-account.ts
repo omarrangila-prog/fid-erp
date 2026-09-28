@@ -399,12 +399,12 @@ export type AgentRelationship = {
 };
 
 const PART_ACCOUNT: Record<AgentBalanceKey, string> = {
-  holding: 'Agent Clearing (collections)',
-  loanTo: 'Loan to him',
-  trade: 'His own purchases (receivable)',
+  holding: 'Customer collections held',
+  loanTo: 'Loan to agent',
+  trade: 'Own purchases (receivable)',
   other: 'Other accounts',
-  commission: 'Commission payable',
-  loanFrom: 'Loan from him',
+  commission: 'Commission due',
+  loanFrom: 'Loan from agent',
 };
 
 export function agentRelationship(summary: AgentLedgerSummary): AgentRelationship {

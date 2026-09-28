@@ -168,7 +168,7 @@ export default async function SalesReportPage({
                       </TD>
                       <TD>
                         <Badge
-                          tone={row.status === 'Paid' ? 'success' : row.status === 'Part paid' ? 'warning' : 'neutral'}
+                          tone={row.status === 'Paid' ? 'success' : row.status === 'Partially Paid' ? 'warning' : 'neutral'}
                         >
                           {row.status}
                         </Badge>

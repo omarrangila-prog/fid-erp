@@ -142,7 +142,7 @@ test('a loan from Dubai reaches the Moroccan bank', async ({ page }) => {
     await expect(dialog).toBeHidden({ timeout: 45_000 });
   }
   // selectOption matches labels exactly, so find the option's own text first.
-  const intoAccount = page.getByLabel(/Received into/i);
+  const intoAccount = page.getByLabel(/Deposit to/i);
   const intoOptions = await intoAccount.locator('option').allTextContents();
   const madBank = intoOptions.find((o) => MAD_BANK.test(o));
   if (!madBank) throw new Error(`No Moroccan bank offered. Saw: ${intoOptions.join(' | ')}`);
@@ -287,7 +287,7 @@ test('part of the invoice is paid in cash, and only that reaches the drawer', as
   await page.getByLabel('Amount received').fill('50000');
 
   // Where the money landed.
-  const into = page.getByRole('combobox', { name: /Received into/i }).first();
+  const into = page.getByRole('combobox', { name: /Deposit to/i }).first();
   await expect(into).toBeVisible({ timeout: 30_000 });
   await into.click();
   await page.getByRole('listbox').getByRole('option', { name: /Cash in Hand/i }).first().click();

@@ -57,11 +57,11 @@ export function AgentOffsetAction({
   function submit() {
     setError(null);
     if (!form.amount || Number(form.amount) <= 0) {
-      setError('Enter the amount to settle against each other.');
+      setError('Enter the amount to adjust against each other.');
       return;
     }
     if (!form.reason.trim()) {
-      setError('Say why these balances are being settled against each other.');
+      setError('Say why these balances are being adjusted against each other.');
       return;
     }
     if (pending) return;
@@ -87,15 +87,15 @@ export function AgentOffsetAction({
         data-testid="agent-offset-open"
       >
         <ArrowLeftRight />
-        Settle against each other
+        Adjust against each other
       </Button>
 
       {open ? (
         <Sheet
           open
           onOpenChange={(next) => !next && setOpen(false)}
-          title="Settle the two balances against each other"
-          description={`Reduce what ${agentName} owes the company and what the company owes him by the same amount.`}
+          title="Adjust the two balances against each other"
+          description={`Reduce what is receivable from ${agentName} and what is payable to him by the same amount.`}
           width="md"
           footer={
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -142,9 +142,9 @@ export function AgentOffsetAction({
             </Field>
 
             <Callout tone="warning" title="What this posts">
-              {agentName} is holding {formatMoney(holding, localCurrency)} for the company, and the company owes him{' '}
-              {formatMoney(loan, localCurrency)}. This debits <strong>Loan from {agentName}</strong> and credits{' '}
-              <strong>Agent Clearing</strong>, so both fall by the amount entered. No money moves and no profit changes.
+              {agentName} holds {formatMoney(holding, localCurrency)} of customer collections, and{' '}
+              {formatMoney(loan, localCurrency)} is payable to him. This debits <strong>Loan from {agentName}</strong> and credits{' '}
+              <strong>Agent Collections</strong>, so both fall by the amount entered. No money moves and no profit changes.
               It is only ever posted when someone asks for it here.
             </Callout>
           </div>

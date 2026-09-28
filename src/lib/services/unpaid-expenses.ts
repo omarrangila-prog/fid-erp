@@ -39,14 +39,14 @@ export type AgeBucket = '0–30 days' | '31–60 days' | '61–90 days' | '90+ d
 
 export const UNPAID_STATUS_LABEL: Record<UnpaidStatus, string> = {
   UNPAID: 'Unpaid',
-  PARTIAL: 'Partially settled',
+  PARTIAL: 'Partially Settled',
   SETTLED: 'Settled',
 };
 
 export const CONTROL_LABEL: Record<UnpaidPartyKind, string> = {
-  GENERAL: 'Accrued Expenses',
-  SUPPLIER: 'Accounts Payable',
-  AGENT: 'Agent Commission Payable',
+  GENERAL: 'Unpaid Expenses',
+  SUPPLIER: 'Supplier Payables',
+  AGENT: 'Agent Commission Due',
 };
 
 export type SettlementEvent = {
@@ -244,7 +244,7 @@ export async function getUnpaidExpenseLedger(companyId: string, asOf: Date = new
       number: s.number,
       date: s.date,
       method: s.direction === 'COMMISSION_OFFSET' ? 'Set-off' : s.cash && /cash/i.test(s.cash) ? 'Cash' : 'Bank',
-      through: s.direction === 'COMMISSION_OFFSET' ? `Set off against ${s.agent} — Agent Clearing` : (s.cash ?? '—'),
+      through: s.direction === 'COMMISSION_OFFSET' ? `Set off against ${s.agent} — Agent Collections` : (s.cash ?? '—'),
       currency: s.currency,
       amount: toMoney(s.amount),
       memo: s.memo,
@@ -403,8 +403,8 @@ export async function getSetOffSources(companyId: string, currency: string, agen
     if (held.greaterThan('0.005')) {
       sources.push({
         value: `${AGENT_PREFIX}${agent.id}`,
-        label: `${agent.agentName} — Agent Clearing`,
-        hint: 'customer money the agent holds for FID',
+        label: `${agent.agentName} — Agent Collections`,
+        hint: 'customer collections the agent holds',
         available: toMoney(held).toFixed(2),
         currency: code,
       });

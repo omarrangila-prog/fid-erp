@@ -124,7 +124,7 @@ export function UnpaidExpensesClient({
     },
     {
       id: 'category',
-      header: 'Expense',
+      header: 'Category',
       mobile: 'title',
       sortValue: (r) => r.category,
       exportValue: (r) => r.category,
@@ -166,7 +166,7 @@ export function UnpaidExpensesClient({
     },
     {
       id: 'original',
-      header: 'Original',
+      header: 'Original amount',
       numeric: true,
       hideable: true,
       exportValue: (r) => r.gross,
@@ -213,7 +213,7 @@ export function UnpaidExpensesClient({
       cell: (r) =>
         canSettle && r.status !== 'SETTLED' ? (
           <Button size="sm" variant="outline" onClick={() => setSettling(r)} data-testid="settle-expense">
-            Settle
+            Settle Expense
           </Button>
         ) : null,
     },
@@ -426,7 +426,7 @@ function SettleDialog({
               <dd className="tnum font-semibold text-red-700">{row.outstanding}</dd>
             </div>
             <div className="col-span-3 text-ink-muted">
-              {row.shipmentReference ? `Shipment ${row.shipmentReference}` : 'General expense'} · held on {row.control}
+              {row.shipmentReference ? `Shipment ${row.shipmentReference}` : 'General expense'} · recorded under {row.control}
             </div>
           </dl>
 

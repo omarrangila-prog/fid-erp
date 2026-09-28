@@ -62,7 +62,7 @@ test('a shipment lists its sales invoices, and a corrected invoice shows as edit
   await expect(row).toContainText('INV ');
   await expect(row).toContainText('E2EU2000001');
   await expect(row).toContainText(/12,000/);
-  await expect(row).toContainText(/Partly paid|Unpaid|Paid/);
+  await expect(row).toContainText(/Partially Paid|Unpaid|Paid/);
 
   // Correct the invoice — saved as it is, which is still a correction.
   await row.getByRole('link').first().click();

@@ -139,14 +139,14 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
               <Button asChild>
                 <Link href={`/finance/unpaid-expenses?settle=${expense.id}`}>
                   <Banknote />
-                  Settle
+                  Settle Expense
                 </Link>
               </Button>
             ) : recordPayment ? (
               <Button asChild>
                 <Link href={`/finance/payments/new?expense=${expense.id}`}>
                   <Banknote />
-                  Record payment
+                  Settle Expense
                 </Link>
               </Button>
             ) : payAgentCommission && expense.payableToAgent ? (
@@ -177,10 +177,10 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
       ) : null}
 
       {expense.status === 'POSTED' && expense.taxAmount.greaterThan(0) ? (
-        <Callout tone="info" title="This voucher carries tax">
+        <Callout tone="info" title="This expense carries tax">
           {formatMoney(expense.amount, expense.currency)} net plus {formatMoney(expense.taxAmount, expense.currency)}{' '}
           tax left the account — {formatMoney(expense.amount.plus(expense.taxAmount), expense.currency)} in all. If no
-          tax was meant, delete this voucher and enter it again without a tax code.
+          tax was meant, delete this expense and enter it again without a tax code.
         </Callout>
       ) : null}
 
@@ -221,7 +221,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
 
       <Card>
         <CardHeader>
-          <CardTitle>Voucher</CardTitle>
+          <CardTitle>Details</CardTitle>
         </CardHeader>
         <CardContent>
           <dl className="sm:grid sm:grid-cols-2 sm:gap-x-8">
@@ -254,7 +254,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
                   <span data-testid="expense-payment-status">
                     {EXPENSE_PAYMENT_LABEL[settlement.status]}
                     {settlement.status !== 'PAID'
-                      ? ` · owed to ${expense.payableToAgent?.agentName ?? expense.vendor?.vendorName ?? 'nobody named yet (Accrued Expenses)'}`
+                      ? ` · payable to ${expense.payableToAgent?.agentName ?? expense.vendor?.vendorName ?? 'nobody named yet (Unpaid Expenses)'}`
                       : ''}
                   </span>
                 </DetailRow>

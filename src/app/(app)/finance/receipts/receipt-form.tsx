@@ -431,7 +431,7 @@ export function ReceiptForm({
 
           {!isCheque && !isAgentCollection && !isLedger ? (
             <Field
-              label="Received into"
+              label="Deposit to"
               required
               hint={
                 accountChoice.automatic

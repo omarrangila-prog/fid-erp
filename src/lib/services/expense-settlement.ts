@@ -40,7 +40,7 @@ export type ExpensePaymentStatus = 'PAID' | 'PARTIAL' | 'UNPAID';
 
 export const EXPENSE_PAYMENT_LABEL: Record<ExpensePaymentStatus, string> = {
   PAID: 'Paid',
-  PARTIAL: 'Partially settled',
+  PARTIAL: 'Partially Settled',
   UNPAID: 'Unpaid',
 };
 
@@ -240,7 +240,7 @@ export async function getExpenseSettlements(
       if (byJournal && !localPerUnit.isZero()) {
         journalLocal = byJournal;
         paid = toMoney(paid.plus(byJournal.dividedBy(localPerUnit)));
-        paidFrom = [paidFrom, 'Journal voucher'].filter(Boolean).join(', ');
+        paidFrom = [paidFrom, 'Journal entry (JV)'].filter(Boolean).join(', ');
       }
     }
 

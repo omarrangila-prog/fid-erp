@@ -125,7 +125,7 @@ export default async function ChequeDetailPage({ params }: { params: Promise<{ i
                     '—'
                   )}
                 </DetailRow>
-                <DetailRow label="Voucher">
+                <DetailRow label="Recorded on">
                   {cheque.receipt ? (
                     <Link href={`/finance/receipts/${cheque.receipt.id}`} className="text-forest-800 hover:text-gold-700">
                       Receipt

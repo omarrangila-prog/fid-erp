@@ -41,7 +41,7 @@ export default async function PaymentsPage() {
     number: p.paymentNumber,
     date: formatDate(p.paymentDate),
     dateSort: p.paymentDate.getTime(),
-    party: p.vendor?.vendorName ?? '— (accrued costs)',
+    party: p.vendor?.vendorName ?? '— (unpaid expenses)',
     account: settledThrough(p, 'Cheques issued'),
     method: PAYMENT_METHOD_LABELS[p.paymentMethod] ?? p.paymentMethod,
     currency: p.currency,

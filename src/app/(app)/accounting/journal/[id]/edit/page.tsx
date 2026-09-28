@@ -9,7 +9,7 @@ import { Callout } from '@/components/ui/feedback';
 import { JournalForm } from '@/app/(app)/accounting/journal/new/journal-form';
 import { loadJournalFormOptions } from '@/app/(app)/accounting/journal/load-journal-options';
 
-export const metadata: Metadata = { title: 'Edit Journal Voucher' };
+export const metadata: Metadata = { title: 'Edit Journal Entry (JV)' };
 export const dynamic = 'force-dynamic';
 
 /**
@@ -65,15 +65,15 @@ export default async function EditJournalVoucherPage({ params }: { params: Promi
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Edit journal voucher"
+        title="Edit journal entry (JV)"
         description="Saving takes the entry this replaces back out of the books and posts these figures in its place."
         breadcrumbs={[
           { label: 'Accounting' },
           { label: 'Journal', href: '/reports/journal' },
-          { label: 'Edit voucher' },
+          { label: 'Edit entry' },
         ]}
       />
-      <Callout tone="warning" title="This voucher is posted">
+      <Callout tone="warning" title="This entry is posted">
         The entry it replaces is mirrored when this is saved, so it stops counting in every ledger and report. Both it
         and the correction stay in the journal, where the change can be read.
       </Callout>

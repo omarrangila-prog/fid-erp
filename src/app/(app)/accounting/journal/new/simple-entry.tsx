@@ -48,15 +48,15 @@ const ALL_BUT_CASH = ['Customers', 'Suppliers', 'Agents', 'Loans & related parti
 const TYPES: EntryType[] = [
   { id: 'GENERAL', label: 'General entry', hint: 'Any two accounts.', debit: { label: 'Debit account', groups: 'ANY' }, credit: { label: 'Credit account', groups: 'ANY' } },
   { id: 'EXPENSE', label: 'Expense', hint: 'A cost paid from cash or a bank.', debit: { label: 'Expense account', groups: ['Expenses'] }, credit: { label: 'Paid from', groups: ['Cash & Bank'] } },
-  { id: 'RECEIVED', label: 'Money received', hint: 'Money into cash or a bank.', debit: { label: 'Received into', groups: ['Cash & Bank'] }, credit: { label: 'Received from', groups: ALL_BUT_CASH } },
+  { id: 'RECEIVED', label: 'Money received', hint: 'Money into cash or a bank.', debit: { label: 'Deposit to', groups: ['Cash & Bank'] }, credit: { label: 'Received from', groups: ALL_BUT_CASH } },
   { id: 'PAID', label: 'Money paid', hint: 'Money out of cash or a bank.', debit: { label: 'Paid to', groups: ALL_BUT_CASH }, credit: { label: 'Paid from', groups: ['Cash & Bank'] } },
   { id: 'TRANSFER', label: 'Transfer', hint: 'Between your own cash and bank accounts. No income, no cost.', debit: { label: 'Transfer to', groups: ['Cash & Bank'] }, credit: { label: 'Transfer from', groups: ['Cash & Bank'] } },
-  { id: 'LOAN_RECEIVED', label: 'Loan received', hint: 'Somebody lent FID money.', debit: { label: 'Received into', groups: ['Cash & Bank'] }, credit: { label: 'Loan from', groups: ['Loans & related parties', 'Agents', 'Other liabilities'] } },
+  { id: 'LOAN_RECEIVED', label: 'Loan received', hint: 'Somebody lent FID money.', debit: { label: 'Deposit to', groups: ['Cash & Bank'] }, credit: { label: 'Loan from', groups: ['Loans & related parties', 'Agents', 'Other liabilities'] } },
   { id: 'LOAN_GIVEN', label: 'Loan given', hint: 'FID lent somebody money.', debit: { label: 'Loan given to', groups: ['Loans & related parties', 'Agents', 'Other assets'] }, credit: { label: 'Paid from', groups: ['Cash & Bank'] } },
   { id: 'LOAN_REPAYMENT', label: 'Loan repayment', hint: 'FID repaying a loan it took.', debit: { label: 'Loan repaid to', groups: ['Loans & related parties', 'Agents', 'Other liabilities'] }, credit: { label: 'Paid from', groups: ['Cash & Bank'] } },
   { id: 'AGENT', label: 'Agent adjustment', hint: 'Between an agent’s balances. No cash moves.', debit: { label: 'Debit', groups: ['Agents', 'Loans & related parties', 'Expenses'] }, credit: { label: 'Credit', groups: ['Agents', 'Loans & related parties', 'Revenue'] } },
-  { id: 'ADJUSTMENT', label: 'Ledger adjustment', hint: 'One balance set against another. No cash or bank moves.', debit: { label: 'Debit (increase / reduce a liability)', groups: 'NON_CASH' }, credit: { label: 'Credit (reduce / increase a liability)', groups: 'NON_CASH' } },
-  { id: 'OWNER', label: 'Owner funding', hint: 'The owner putting money into the business.', debit: { label: 'Received into', groups: ['Cash & Bank'] }, credit: { label: 'Owner / capital account', groups: ['Owner & equity', 'Loans & related parties'] } },
+  { id: 'ADJUSTMENT', label: 'Ledger adjustment / set-off', hint: 'One balance set against another. No cash or bank moves.', debit: { label: 'Debit (increase / reduce a liability)', groups: 'NON_CASH' }, credit: { label: 'Credit (reduce / increase a liability)', groups: 'NON_CASH' } },
+  { id: 'OWNER', label: 'Owner funding', hint: 'The owner putting money into the business.', debit: { label: 'Deposit to', groups: ['Cash & Bank'] }, credit: { label: 'Owner / capital account', groups: ['Owner & equity', 'Loans & related parties'] } },
 ];
 
 export function SimpleEntryForm({
@@ -152,7 +152,7 @@ export function SimpleEntryForm({
     startTransition(async () => {
       const result = await postJournalVoucherAction(body);
       if (result?.ok) {
-        toast.success('General entry posted.');
+        toast.success('Journal entry posted.');
         router.push('/reports/journal');
       } else {
         setError(result?.error || 'The entry could not be posted.');
@@ -164,7 +164,7 @@ export function SimpleEntryForm({
     <div className="space-y-4" data-testid="simple-entry">
       <Card>
         <CardHeader>
-          <CardTitle>General Entry</CardTitle>
+          <CardTitle>Journal Entry (JV)</CardTitle>
           <CardDescription>{type.hint} The form posts the debit and credit for you.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

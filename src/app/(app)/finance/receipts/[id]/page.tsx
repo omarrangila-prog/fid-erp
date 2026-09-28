@@ -110,7 +110,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
       ) : null}
 
       {receipt.paymentMethod === 'AGENT_COLLECTION' ? (
-        <Callout tone="info" title="Held by the agent — not yet in cash or bank">
+        <Callout tone="info" title="Collected by the agent — not yet in cash or bank">
           This reduced the customer&rsquo;s outstanding. FID cash and bank have not increased. The amount is
           receivable from{' '}
           {receipt.agent ? (
@@ -191,7 +191,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
         <div className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Voucher</CardTitle>
+              <CardTitle>Details</CardTitle>
             </CardHeader>
             <CardContent>
               <dl>
@@ -209,9 +209,9 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                     </Link>
                   </DetailRow>
                 ) : null}
-                <DetailRow label="Account">
+                <DetailRow label="Deposit to">
                   {receipt.paymentMethod === 'AGENT_COLLECTION'
-                    ? 'Agent clearing'
+                    ? 'Agent collections'
                     : settledThrough(receipt, 'Cheques on hand')}
                 </DetailRow>
                 <DetailRow label="Reference">{receipt.reference ?? '—'}</DetailRow>

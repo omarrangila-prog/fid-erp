@@ -182,7 +182,7 @@ export async function loadJournalFormOptions(companyId: string) {
             {
               value: `agent:${agent.id}`,
               label: `${agent.agentName} — agent account`,
-              hint: 'collections he holds',
+              hint: 'customer collections the agent holds',
               keywords: `agent clearing ${agent.agentName}`,
               group: 'Agents',
               accountId: clearing.id,
@@ -196,8 +196,8 @@ export async function loadJournalFormOptions(companyId: string) {
         ? [
             {
               value: `commission:${agent.id}`,
-              label: `${agent.agentName} — commission payable`,
-              hint: 'commission owed to him',
+              label: `${agent.agentName} — commission due`,
+              hint: 'commission due to the agent',
               keywords: `agent commission payable ${agent.agentName}`,
               group: 'Agents',
               accountId: commission.id,

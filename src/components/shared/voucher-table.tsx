@@ -56,7 +56,7 @@ export function VoucherTable({
   const columns: DataColumn<VoucherRow>[] = [
     {
       id: 'number',
-      header: 'Voucher',
+      header: 'Number',
       mobile: 'title',
       sortValue: (r) => r.number,
       cell: (r) => <span className="font-medium">{r.number}</span>,
@@ -129,7 +129,7 @@ export function VoucherTable({
       getRowId={(r) => r.id}
       rowHref={(r) => `${basePath}/${r.id}`}
       searchValue={(r) => `${r.number} ${r.party} ${r.reference ?? ''} ${r.account} ${r.warehouseNames}`}
-      searchPlaceholder="Search voucher, party or reference…"
+      searchPlaceholder="Search number, party or reference…"
       filters={[
         { id: 'status', label: 'Status', value: (r) => r.status },
         { id: 'party', label: partyLabel, value: (r) => r.party },

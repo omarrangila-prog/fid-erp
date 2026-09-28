@@ -112,7 +112,7 @@ export type LoadingRow = {
 const PAYMENT_META: Record<string, { label: string; tone: BadgeTone }> = {
   NONE: { label: '—', tone: 'neutral' },
   UNPAID: { label: 'Unpaid', tone: 'warning' },
-  PARTIAL: { label: 'Part paid', tone: 'progress' },
+  PARTIAL: { label: 'Partially Paid', tone: 'progress' },
   PAID: { label: 'Paid', tone: 'success' },
   OVERDUE: { label: 'Overdue', tone: 'danger' },
 };

@@ -232,8 +232,8 @@ export default async function AgentLedgerPage({
       <div className="grid gap-4 lg:grid-cols-3" data-print-drop data-testid="agent-position">
         <Card>
           <CardHeader>
-            <CardTitle>{firstName} owes FID</CardTitle>
-            <CardDescription>Every account of his with a debit balance — money he holds or owes FID.</CardDescription>
+            <CardTitle>Receivable from {firstName}</CardTitle>
+            <CardDescription>Customer collections he holds, loans to him and his own purchases.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-1.5">
             <p className="tnum text-2xl font-semibold text-ink" data-testid="agent-owes-fid">
@@ -257,8 +257,8 @@ export default async function AgentLedgerPage({
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>FID owes {firstName}</CardTitle>
-            <CardDescription>Every account of his with a credit balance — commission, loans, money he advanced.</CardDescription>
+            <CardTitle>Payable to {firstName}</CardTitle>
+            <CardDescription>Commission due, loans from him and money he advanced.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-1.5">
             <p className="tnum text-2xl font-semibold text-ink" data-testid="agent-fid-owes">
@@ -287,7 +287,7 @@ export default async function AgentLedgerPage({
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Balance — as on the ledger below</CardTitle>
+            <CardTitle>Net position — as on the ledger below</CardTitle>
             <CardDescription>The two sides together: the ledger&rsquo;s closing balance. A view only; nothing is set off by it.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -299,8 +299,8 @@ export default async function AgentLedgerPage({
               {ledger.summary.netLocal.isZero()
                 ? 'Nothing outstanding either way'
                 : ledger.summary.netLocal.isPositive()
-                  ? `${firstName} owes FID`
-                  : `FID owes ${firstName}`}
+                  ? `Net receivable from ${firstName}`
+                  : `Net payable to ${firstName}`}
             </p>
           </CardContent>
         </Card>
@@ -312,8 +312,8 @@ export default async function AgentLedgerPage({
           ledger.summary.netLocal.isZero()
             ? 'Nothing outstanding either way'
             : ledger.summary.netLocal.isPositive()
-              ? `${agent.agentName} owes the company ${formatMoney(ledger.summary.netLocal, local)}`
-              : `The company owes ${agent.agentName} ${formatMoney(ledger.summary.netLocal.abs(), local)}`
+              ? `Receivable from ${agent.agentName}: ${formatMoney(ledger.summary.netLocal, local)}`
+              : `Payable to ${agent.agentName}: ${formatMoney(ledger.summary.netLocal.abs(), local)}`
         }
       >
         Kept in {local}, the currency the agent is paid and owed in. Equivalent{' '}
@@ -328,7 +328,7 @@ export default async function AgentLedgerPage({
           <CardDescription>
             Every business event with {firstName}, oldest first — collections, commission, loans, settlements, set-offs,
             shipment costs and journals — one line each, from the entries tagged to him. Debit and Credit are the lines on
-            his balances; the Balance runs over all of them — Dr when he owes FID, Cr when FID owes him.
+            his balances; the Balance runs over all of them — Dr is receivable from him, Cr is payable to him.
           </CardDescription>
         </CardHeader>
         <CardContent>

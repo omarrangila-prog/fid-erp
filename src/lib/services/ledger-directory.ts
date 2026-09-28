@@ -112,12 +112,12 @@ export async function getLedgerDirectory(companyId: string, localCurrency: strin
       detail: [c.country, c.phone].filter(Boolean).join(' · '),
       currency: own[0]?.currency ?? c.primaryCurrency,
       balance,
-      balanceMeaning: balance.isNegative() ? 'we owe them' : 'owes us',
+      balanceMeaning: balance.isNegative() ? 'paid in advance' : 'receivable',
       href: `/ledgers/customers/${c.id}`,
       keywords: [c.phone, c.email].filter(Boolean).join(' '),
       elsewhere: true,
       section: 'COUNTERPARTY',
-      amountLabel: balance.isNegative() ? 'Paid in advance' : 'Owes FID',
+      amountLabel: balance.isNegative() ? 'Paid in advance' : 'Receivable',
     });
   }
 
@@ -131,12 +131,12 @@ export async function getLedgerDirectory(companyId: string, localCurrency: strin
       detail: [v.country, v.phone].filter(Boolean).join(' · '),
       currency: own[0]?.currency ?? v.primaryCurrency,
       balance,
-      balanceMeaning: balance.isNegative() ? 'owes us' : 'we owe',
+      balanceMeaning: balance.isNegative() ? 'receivable' : 'payable',
       href: `/ledgers/vendors/${v.id}`,
       keywords: [v.phone, v.email].filter(Boolean).join(' '),
       elsewhere: true,
       section: 'COUNTERPARTY',
-      amountLabel: balance.isNegative() ? 'Owes FID' : 'FID owes',
+      amountLabel: balance.isNegative() ? 'Receivable' : 'Payable',
     });
   }
 
@@ -172,15 +172,15 @@ export async function getLedgerDirectory(companyId: string, localCurrency: strin
       detail: ['Agent / counterparty', a.phone].filter(Boolean).join(' · '),
       currency: localCurrency,
       balance,
-      balanceMeaning: balance.isNegative() ? 'we owe them' : 'owes us',
+      balanceMeaning: balance.isNegative() ? 'payable' : 'receivable',
       href: `/agents/${a.id}`,
       keywords: `agent counterparty loan clearing commission ${a.phone ?? ''}`,
       section: 'COUNTERPARTY',
       amountLabel: balance.isZero() ? 'Square' : balance.isPositive() ? 'Net receivable' : 'Net payable',
       usdEquivalent: localCurrency === 'USD' ? null : (summary?.netUsd ?? net?.netUsd ?? null),
       summary: [
-        { label: `${first} owes FID`, value: money(owed) },
-        { label: `FID owes ${first}`, value: money(owing) },
+        { label: `Receivable from ${first}`, value: money(owed) },
+        { label: `Payable to ${first}`, value: money(owing) },
         {
           label: 'Net position',
           value: balance.isZero()
@@ -259,8 +259,8 @@ export async function getLedgerDirectory(companyId: string, localCurrency: strin
           ? balance.isZero()
             ? 'Settled'
             : owed === balance.isPositive()
-              ? 'FID owes'
-              : 'Owed to FID'
+              ? 'Payable'
+              : 'Receivable'
           : account.type === 'LIABILITY'
             ? balance.isZero()
               ? 'No outstanding balance'
@@ -296,11 +296,9 @@ export async function getLedgerDirectory(companyId: string, localCurrency: strin
         ? 'at landed cost'
         : account.type === 'LIABILITY'
           ? balance.isNegative()
-            ? 'owed to us'
-            : 'we owe'
-          : account.type === 'ASSET'
-            ? 'held'
-            : '',
+            ? 'receivable'
+            : 'payable'
+          : '',
       href: `/reports/general-ledger?account=${account.id}`,
       keywords: `${account.type} ${account.systemKey ?? ''} ${inventory ? 'inventory stock' : ''} ${relatedParty ? 'loan related party' : ''}`,
       usdEquivalent: localCurrency === 'USD' ? null : usd,

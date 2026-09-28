@@ -35,7 +35,7 @@ export type AgentEventFilter =
 
 export const AGENT_EVENT_FILTERS: Record<AgentEventFilter, string> = {
   ALL: 'All activity',
-  COLLECTIONS: 'Collections',
+  COLLECTIONS: 'Customer collections',
   COMMISSION: 'Commission',
   LOANS: 'Loans',
   SETTLEMENTS: 'Settlements',
@@ -223,7 +223,7 @@ export async function getAgentStatement(params: { companyId: string; agentId: st
       if (has('Commission', 'credit')) {
         typeLabel = expense?.expenseCategory.name ?? 'Agent Commission';
         const s = expenseStatus.get(first.sourceId);
-        status = s ? (s.status === 'PAID' ? 'Settled' : s.status === 'PARTIAL' ? 'Partially settled' : 'Unpaid') : 'Unpaid';
+        status = s ? (s.status === 'PAID' ? 'Settled' : s.status === 'PARTIAL' ? 'Partially Settled' : 'Unpaid') : 'Unpaid';
         filters.add('COMMISSION').add('UNPAID_EXPENSES');
       } else if (has('Agent Clearing', 'credit')) {
         typeLabel = `${expense?.expenseCategory.name ?? 'Cost'} — paid from his collections`;
@@ -238,7 +238,7 @@ export async function getAgentStatement(params: { companyId: string; agentId: st
         shipment = { id: s.expense.shipment.id, reference: s.expense.shipment.purchaseContract.contractReference };
       }
       if (s?.direction === 'COMMISSION_OFFSET') {
-        typeLabel = 'Commission set-off against Agent Clearing';
+        typeLabel = 'Commission set-off against Agent Collections';
         filters.add('SET_OFFS').add('COMMISSION').add('SETTLEMENTS');
       } else if (s?.direction === 'COMMISSION') {
         typeLabel = `Commission settlement${how ? ` — ${how}` : ''}`;
@@ -255,7 +255,7 @@ export async function getAgentStatement(params: { companyId: string; agentId: st
       const settled = p?.allocations.map((a) => a.expense).find(Boolean);
       if (settled?.shipment) shipment = { id: settled.shipment.id, reference: settled.shipment.purchaseContract.contractReference };
       if (p?.ledgerAgentId && has('Agent Clearing', 'credit')) {
-        typeLabel = `Set-off against Agent Clearing${settled ? ` — ${settled.expenseCategory.name}` : ''}`;
+        typeLabel = `Set-off against Agent Collections${settled ? ` — ${settled.expenseCategory.name}` : ''}`;
         filters.add('SET_OFFS').add('SETTLEMENTS');
       } else {
         filters.add('SETTLEMENTS');
@@ -269,7 +269,7 @@ export async function getAgentStatement(params: { companyId: string; agentId: st
       else if (has('Loan from agent', 'debit')) typeLabel = `Loan repaid to ${name}`;
       else if (has('Loan to agent', 'debit')) typeLabel = `Loan given to ${name}`;
       else if (has('Loan to agent', 'credit')) typeLabel = `Loan repaid by ${name}`;
-      else if (has('Agent Clearing')) typeLabel = 'Journal — Agent Clearing';
+      else if (has('Agent Clearing')) typeLabel = 'Journal entry — Agent Collections';
       else typeLabel = 'Journal entry';
     }
     if (has('Loan from agent') || has('Loan to agent')) filters.add('LOANS');

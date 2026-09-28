@@ -57,7 +57,7 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
   return (
     <div className="space-y-6">
       <PageHeader
-        title={`Paid to ${payment.vendor?.vendorName ?? 'accrued costs'}`}
+        title={payment.vendor ? `Paid to ${payment.vendor.vendorName}` : 'Unpaid expenses settled'}
         description={[formatDate(payment.paymentDate), payment.reference].filter(Boolean).join(' · ')}
         breadcrumbs={[
           { label: 'Finance' },
@@ -169,7 +169,7 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
 
         <Card>
           <CardHeader>
-            <CardTitle>Voucher</CardTitle>
+            <CardTitle>Details</CardTitle>
           </CardHeader>
           <CardContent>
             <dl>
@@ -184,7 +184,7 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
               </DetailRow>
               <DetailRow label="Date">{formatDate(payment.paymentDate)}</DetailRow>
               <DetailRow label="Method">{PAYMENT_METHOD_LABELS[payment.paymentMethod]}</DetailRow>
-              <DetailRow label="Account">{settledThrough(payment, 'Cheques issued')}</DetailRow>
+              <DetailRow label="Paid from">{settledThrough(payment, 'Cheques issued')}</DetailRow>
               <DetailRow label="Reference">{payment.reference ?? '—'}</DetailRow>
               <DetailRow label="Warehouse">{warehouses.byPayment.get(payment.id) || '—'}</DetailRow>
               <DetailRow label={`Rate to ${user.activeCompany.localCurrency}`}>

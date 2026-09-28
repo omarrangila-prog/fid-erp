@@ -196,7 +196,7 @@ export function IntercompanyLoanForm({ companies }: { companies: LoanCompany[] }
               <p className="text-lg font-semibold tabular-nums text-ink">{done.rate}</p>
             </div>
             <div>
-              <p className="text-xs text-ink-muted">Received into {done.bank}</p>
+              <p className="text-xs text-ink-muted">Deposited to {done.bank}</p>
               <p className="text-lg font-semibold tabular-nums text-forest-800">{done.received}</p>
             </div>
             <div>

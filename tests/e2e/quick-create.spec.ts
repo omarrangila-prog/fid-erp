@@ -94,12 +94,12 @@ test('an expense keeps everything typed while a category and a bank account are 
 
   await quickCreate(
     page,
-    form.getByRole('combobox', { name: /expense category/i }),
+    form.getByRole('combobox', { name: /^category/i }),
     /Add New Category/i,
     /category name/i,
     category,
   );
-  await expect(form.getByRole('combobox', { name: /expense category/i })).toContainText(category);
+  await expect(form.getByRole('combobox', { name: /^category/i })).toContainText(category);
 
   await quickCreate(
     page,
@@ -162,7 +162,7 @@ test('a bank account opened from a receipt becomes a real ledger account', async
   // Bank transfer, so the form asks which account rather than assuming cash.
   await form.getByLabel(/payment method/i).selectOption('BANK_TRANSFER');
 
-  const picker = form.getByRole('combobox', { name: /received into/i });
+  const picker = form.getByRole('combobox', { name: /deposit to/i });
   await picker.click();
   await page
     .getByRole('dialog')

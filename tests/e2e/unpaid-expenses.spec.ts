@@ -69,7 +69,7 @@ async function bookUnpaid(page: Page, params: { amount: string; memo: string; pa
   await page.waitForLoadState('networkidle').catch(() => undefined);
   const form = page.getByRole('main');
   await choose(page, form.getByRole('combobox', { name: /contract \/ shipment/i }), 'E2E-PO-MA-1');
-  await choose(page, form.getByRole('combobox', { name: /expense category/i }));
+  await choose(page, form.getByRole('combobox', { name: /^category/i }));
   await form.getByLabel(/^Amount/).fill(params.amount);
   const rate = form.getByLabel(/Rate \(MAD per 1 USD\)/);
   if (await rate.count()) await rate.fill('9.85');
@@ -139,7 +139,7 @@ test('the rent is settled in two parts — bank, then cash — and reads partial
   await settle(page, RENT, { method: /^Bank$/, amount: '4000', account: true });
   await openLedger(page);
   const rent = ledgerRow(page, RENT);
-  await expect(rent).toContainText('Partially settled');
+  await expect(rent).toContainText('Partially Settled');
   await expect(rent).toContainText(/MAD 5,000\.00/);
 
   await settle(page, RENT, { method: /^Cash$/, account: true });

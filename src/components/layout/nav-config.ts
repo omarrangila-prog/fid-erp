@@ -91,7 +91,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Customers', href: '/customers', icon: Users, permissions: [PERMISSIONS.CUSTOMERS_VIEW] },
       // Customers keep their own ledger, separate from the general ledgers.
       { label: 'Customer Ledger', href: '/ledgers/customers', icon: BookOpen, permissions: [PERMISSIONS.LEDGERS_VIEW] },
-      { label: 'Payments Received', href: '/finance/receipts', icon: ArrowDownToLine, permissions: [PERMISSIONS.RECEIPTS_VIEW] },
+      { label: 'Receive Payment', href: '/finance/receipts', icon: ArrowDownToLine, permissions: [PERMISSIONS.RECEIPTS_VIEW] },
       { label: 'Credit Notes', href: '/sales/credit-notes', icon: FileMinus, permissions: [PERMISSIONS.CREDIT_NOTES_VIEW] },
       { label: 'Receivables', href: '/finance/receivables', icon: CircleDollarSign, permissions: [PERMISSIONS.RECEIVABLES_VIEW] },
     ],
@@ -146,7 +146,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Accounting',
     icon: BookOpen,
     items: [
-      { label: 'General Entry', href: '/accounting/journal/new', icon: BookPlus, permissions: [PERMISSIONS.ACCOUNTING_POST] },
+      { label: 'Journal Entry (JV)', href: '/accounting/journal/new', icon: BookPlus, permissions: [PERMISSIONS.ACCOUNTING_POST] },
       { label: 'General Journal', href: '/reports/journal', icon: LineChart, permissions: [PERMISSIONS.ACCOUNTING_VIEW] },
       // Every account that is not a customer or a supplier: cash, banks,
       // agents, loans, capital, income and expenses. Searchable by name.
@@ -228,14 +228,14 @@ export const QUICK_CREATE: QuickCreateItem[] = [
   { label: 'Sales invoice', href: '/sales/new', icon: ShoppingCart, group: 'Trade', hint: 'Sell stock to a customer', permission: PERMISSIONS.SALES_CREATE },
   { label: 'Warehouse transfer', href: '/inventory/transfers/new', icon: ArrowLeftRight, group: 'Trade', hint: 'Move stock between warehouses', permission: PERMISSIONS.INVENTORY_TRANSFER },
 
-  { label: 'Receipt', href: '/finance/receipts/new', icon: ArrowDownToLine, group: 'Money', hint: 'Money received from a customer', permission: PERMISSIONS.RECEIPTS_CREATE },
-  { label: 'Payment', href: '/finance/payments/new', icon: ArrowUpFromLine, group: 'Money', hint: 'Money paid to a supplier', permission: PERMISSIONS.PAYMENTS_CREATE },
+  { label: 'Receive payment', href: '/finance/receipts/new', icon: ArrowDownToLine, group: 'Money', hint: 'Money received from a customer', permission: PERMISSIONS.RECEIPTS_CREATE },
+  { label: 'Pay supplier', href: '/finance/payments/new', icon: ArrowUpFromLine, group: 'Money', hint: 'Money paid to a supplier', permission: PERMISSIONS.PAYMENTS_CREATE },
   { label: 'Expense', href: '/finance/expenses/new', icon: Receipt, group: 'Money', hint: 'Freight, clearing, bank charges', permission: PERMISSIONS.EXPENSES_CREATE },
 
   { label: 'Customer', href: '/customers?new=1', icon: Users, group: 'Records', hint: 'Someone you sell to', permission: PERMISSIONS.CUSTOMERS_CREATE },
   { label: 'Supplier', href: '/vendors?new=1', icon: Truck, group: 'Records', hint: 'Someone you buy from', permission: PERMISSIONS.VENDORS_CREATE },
   { label: 'Item', href: '/items?new=1', icon: Coffee, group: 'Records', hint: 'Coffee name, unit, origin, screen', permission: PERMISSIONS.ITEMS_CREATE },
-  { label: 'Journal voucher', href: '/accounting/journal/new', icon: BookPlus, group: 'Money', hint: 'A direct double-entry posting', permission: PERMISSIONS.ACCOUNTING_POST },
+  { label: 'Journal Entry (JV)', href: '/accounting/journal/new', icon: BookPlus, group: 'Money', hint: 'A direct double-entry posting', permission: PERMISSIONS.ACCOUNTING_POST },
   { label: 'Credit note', href: '/sales/credit-notes/new', icon: FileMinus, group: 'Money', hint: 'Reduce what a customer owes', permission: PERMISSIONS.CREDIT_NOTES_CREATE },
   { label: 'Stock count', href: '/inventory/stock-counts/new', icon: ClipboardCheck, group: 'Trade', hint: 'Verify a warehouse against the books', permission: PERMISSIONS.STOCK_COUNT_MANAGE },
 ];
@@ -257,7 +257,7 @@ export const MOBILE_PRIMARY: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, permissions: [PERMISSIONS.DASHBOARD_VIEW] },
   { label: 'Shipments', href: '/shipments', icon: Ship, permissions: [PERMISSIONS.SHIPMENTS_VIEW] },
   { label: 'Stock', href: '/inventory', icon: Boxes, permissions: [PERMISSIONS.INVENTORY_VIEW] },
-  { label: 'Payments Received', href: '/finance/receipts', icon: ArrowDownToLine, permissions: [PERMISSIONS.RECEIPTS_VIEW] },
+  { label: 'Receive Payment', href: '/finance/receipts', icon: ArrowDownToLine, permissions: [PERMISSIONS.RECEIPTS_VIEW] },
 ];
 
 export const MY_PAGES_LABEL = 'My pages';

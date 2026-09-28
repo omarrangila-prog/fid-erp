@@ -311,7 +311,7 @@ test('§17 a receipt can be collected by an agent', async ({ page }) => {
 
   await expect(form.getByRole('combobox', { name: /^Agent/ })).toBeVisible();
   await expect(form.getByLabel(/cheque number/i)).toBeVisible();
-  await expect(form.getByLabel(/received into/i)).toHaveCount(0);
+  await expect(form.getByLabel(/deposit to/i)).toHaveCount(0);
   await expect(form.getByText(/does not put money in the bank/i)).toBeVisible();
 
   await form.getByRole('combobox', { name: /^Agent/ }).click();
@@ -336,7 +336,7 @@ test('§19 the agent ledger says how much is sitting with whom', async ({ page }
   await page.goto('/ledgers/agents', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByRole('heading', { name: /Agent Balances/i }).first()).toBeVisible();
-  await expect(page.getByRole('main')).toContainText(/Holding for us|No agents yet/i);
+  await expect(page.getByRole('main')).toContainText(/Customer collections|No agents yet/i);
 });
 
 test('§4 three containers means three boxes', async ({ page }) => {
