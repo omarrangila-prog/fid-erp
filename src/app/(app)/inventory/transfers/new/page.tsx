@@ -7,12 +7,16 @@ import { getSellableStock } from '@/lib/services/stock';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrerequisiteGate, anyMissing, type Prerequisite } from '@/components/shared/prerequisite-gate';
 import { TransferForm, type TransferStock } from '@/app/(app)/inventory/transfers/new/transfer-form';
+import { redirect } from 'next/navigation';
+import { warehouseScope } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'New Warehouse Transfer' };
 export const dynamic = 'force-dynamic';
 
 export default async function NewTransferPage() {
   const user = await requirePageAccess(PERMISSIONS.INVENTORY_TRANSFER);
+  // Stock across every warehouse: someone limited to their own warehouses sees those on the stock page.
+  if (warehouseScope(user)) redirect('/inventory');
   const companyId = user.activeCompany.id;
 
   const [warehouses, stock, nextNumber] = await Promise.all([

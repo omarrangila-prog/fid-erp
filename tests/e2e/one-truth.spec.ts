@@ -6,13 +6,13 @@ import { chooseCompany } from './settle';
  *
  * A cost paid on the spot reads Paid; one booked unpaid reads Unpaid, then
  * Partially settled at MAD 5,000 of 20,000, then Paid — on its own page, on
- * the Unpaid Expenses ledger and on the dashboard, each step. A cost paid by a
- * journal voucher that never names it reads Paid too. And every agent's
+ * the Unpaid Expenses ledger and on the dashboard, each step. A journal
+ * voucher that pays Accrued Expenses without naming a cost lowers the unpaid
+ * total by exactly its amount, and the ledgers still agree. And every agent's
  * dashboard card shows the balance his own ledger shows, after a reload.
  */
 
 const ADMIN_PIN = process.env.ADMIN_PIN;
-const ADMIN_NAME = process.env.INITIAL_ADMIN_NAME ?? 'Ali Raza';
 const RUN = Date.now().toString(36).slice(-5);
 const PAID = `E2E truth paid ${RUN}`;
 const OWED = `E2E truth owed ${RUN}`;
@@ -24,7 +24,6 @@ test.setTimeout(300_000);
 
 async function signIn(page: Page) {
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: new RegExp(ADMIN_NAME, 'i') }).first().click();
   for (const digit of (ADMIN_PIN ?? '').split('')) {
     await page.getByRole('button', { name: digit, exact: true }).first().click();
   }
@@ -149,9 +148,10 @@ test('the other MAD 15,000: Paid, and gone from the unpaid total', async ({ page
   expect(await dashboardUnpaid(page)).toBeCloseTo(baseline, 2);
 });
 
-test('a journal voucher that pays Accrued Expenses pays the cost on its page too', async ({ page }) => {
+test('a journal voucher that pays Accrued Expenses lowers what every screen calls unpaid, by exactly its amount', async ({ page }) => {
   const url = await book(page, { amount: '3000', memo: BY_JV, paid: false });
   await expectExpense(page, url, /^Unpaid$/, '3,000.00');
+  const before = await dashboardUnpaid(page);
 
   await page.goto('/accounting/journal/new', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: 'General Entry', level: 1 })).toBeVisible({ timeout: 45_000 });
@@ -164,9 +164,11 @@ test('a journal voucher that pays Accrued Expenses pays the cost on its page too
   await page.getByTestId('post-entry').click();
   await page.waitForURL(/\/reports\/journal/, { timeout: 60_000 });
 
-  await expectExpense(page, url, /^Paid$/, '0.00');
-  await expect(page.getByRole('main')).toContainText(/Journal voucher/);
-  expect(await dashboardUnpaid(page)).toBeCloseTo(baseline, 2);
+  // A voucher names no cost, so it pays the oldest still owed; the costs
+  // then read paid by exactly what the ledger says went out.
+  expect(await dashboardUnpaid(page)).toBeCloseTo(before - 3_000, 2);
+  await page.goto('/finance/unpaid-expenses', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('unpaid-reconciliation')).not.toContainText('Differs', { timeout: 45_000 });
   await page.goto('/admin/consistency', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('consistency-summary')).toContainText(/All \d+ checks agree/, { timeout: 60_000 });
 });

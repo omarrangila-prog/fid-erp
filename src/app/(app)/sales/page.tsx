@@ -9,6 +9,7 @@ import { getReceivables } from '@/lib/services/receivables';
 import { getWarehouseLabels } from '@/lib/services/stock';
 import { PageHeader } from '@/components/shared/page-header';
 import { SalesClient, type SaleRow } from '@/app/(app)/sales/sales-client';
+import { invoiceScopeWhere } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Sales' };
 export const dynamic = 'force-dynamic';
@@ -31,7 +32,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
 
   const [invoices, receivables, warehouses] = await Promise.all([
     prisma.salesInvoice.findMany({
-      where: { companyId, status: { in: [...VISIBLE_DOCUMENT_STATUSES] } },
+      where: { companyId, status: { in: [...VISIBLE_DOCUMENT_STATUSES] }, ...invoiceScopeWhere(user) },
       orderBy: [{ invoiceDate: 'desc' }, { invoiceNumber: 'desc' }],
       include: {
         customer: { select: { id: true, customerName: true } },

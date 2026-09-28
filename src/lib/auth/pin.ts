@@ -1,26 +1,27 @@
 import 'server-only';
 import { prisma } from '@/lib/db';
 import { hashPassword, verifyPassword } from '@/lib/auth/password';
-import { BusinessRuleError } from '@/lib/errors';
+import { BusinessRuleError, ConflictError } from '@/lib/errors';
 
 /**
- * Quick PIN sign-in.
+ * PIN sign-in: the PIN alone says who you are.
  *
- * A four-digit PIN is 10,000 possibilities, so the only thing making it safe is
- * that guessing is expensive. Three defences do that work:
+ * The client wants one thing on the sign-in screen — a four-digit PIN. So the
+ * PIN is the credential and the identifier at once, and two rules follow:
  *
- *   - the PIN is stored as an Argon2id hash, never as the digits;
- *   - five wrong attempts lock the PIN for fifteen minutes, and the lock is
- *     per user, so one person's fumbling cannot lock out the office;
- *   - a locked PIN does not lock the account — password sign-in still works,
- *     which is what stops a lockout becoming a lost afternoon.
+ *   - Every PIN belongs to one person. Setting a PIN another account already
+ *     has is refused, so a PIN can never open somebody else's permissions.
+ *   - PINs are stored only as Argon2id hashes. A salted hash cannot be looked
+ *     up, so signing in checks the PIN against each account that has one —
+ *     a handful of people, a few milliseconds each — and the digits are never
+ *     kept, shown or logged anywhere.
  *
- * Every PIN belongs to exactly one person. It carries that person's roles and
- * companies and nobody else's, so the audit trail still names an individual.
+ * Ten thousand possibilities are few, so guessing is made expensive elsewhere:
+ * failed attempts are counted per device and per address, and globally, in
+ * the audit trail (`pin-throttle.ts`), where every Vercel instance sees them.
  */
 
-const MAX_ATTEMPTS = 5;
-const LOCK_MINUTES = 15;
+export const PIN_TAKEN_MESSAGE = 'This PIN is already assigned. Please choose another PIN.';
 
 export function validatePinFormat(pin: string): string | null {
   if (!/^\d{4}$/.test(pin)) return 'A PIN is exactly four digits.';
@@ -31,9 +32,26 @@ export function validatePinFormat(pin: string): string | null {
   return null;
 }
 
+/** Every account whose PIN is this one — disabled accounts included, so re-enabling one can never create a clash. */
+async function ownersOf(pin: string, activeOnly: boolean): Promise<string[]> {
+  const candidates = await prisma.user.findMany({
+    where: { pinHash: { not: null }, ...(activeOnly ? { isActive: true } : {}) },
+    select: { id: true, pinHash: true },
+  });
+  // Every hash is checked, match or not, so the time taken says nothing about which one matched.
+  const checks = await Promise.all(candidates.map(async (c) => ((await verifyPassword(c.pinHash!, pin)) ? c.id : null)));
+  return checks.filter((id): id is string => id !== null);
+}
+
+export async function isPinTaken(pin: string, exceptUserId?: string | null): Promise<boolean> {
+  return (await ownersOf(pin, false)).some((id) => id !== exceptUserId);
+}
+
+/** Sets or changes a user's PIN. The old one stops working at once. */
 export async function setPin(userId: string, pin: string): Promise<void> {
   const problem = validatePinFormat(pin);
   if (problem) throw new BusinessRuleError(problem);
+  if (await isPinTaken(pin, userId)) throw new ConflictError(PIN_TAKEN_MESSAGE);
 
   await prisma.user.update({
     where: { id: userId },
@@ -46,21 +64,6 @@ export async function setPin(userId: string, pin: string): Promise<void> {
   });
 }
 
-/**
- * Sets a PIN without the weak-PIN check.
- *
- * Only for initialisation, where the operator has chosen the codes deliberately
- * and knowingly. Anything a user picks inside the application goes through
- * `setPin`, which refuses the obvious ones.
- */
-export async function setPinUnchecked(userId: string, pin: string): Promise<void> {
-  if (!/^\d{4}$/.test(pin)) throw new BusinessRuleError('A PIN is exactly four digits.');
-  await prisma.user.update({
-    where: { id: userId },
-    data: { pinHash: await hashPassword(pin), pinSetAt: new Date(), pinFailedAttempts: 0, pinLockedUntil: null },
-  });
-}
-
 export async function clearPin(userId: string): Promise<void> {
   await prisma.user.update({
     where: { id: userId },
@@ -68,92 +71,27 @@ export async function clearPin(userId: string): Promise<void> {
   });
 }
 
-export type PinResult =
+export type PinIdentity =
   | { ok: true; userId: string }
-  | { ok: false; reason: 'INVALID' | 'LOCKED' | 'NO_PIN'; retryAfterMinutes?: number };
+  | { ok: false; reason: 'INVALID' | 'AMBIGUOUS'; userIds?: string[] };
 
 /**
- * Checks a PIN against one named user.
+ * Who this PIN belongs to, among active accounts.
  *
- * The user is identified first — by the account they picked on screen — so a
- * PIN can never grant somebody else's permissions by colliding with theirs.
+ * Exactly one match signs that person in. None is a wrong PIN. More than one
+ * can only be left over from before PINs had to be unique; nobody is signed
+ * in, because guessing between two people is how the wrong name ends up on a
+ * posting.
  */
-export async function verifyPin(userId: string, pin: string): Promise<PinResult> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { id: true, pinHash: true, pinFailedAttempts: true, pinLockedUntil: true, isActive: true },
-  });
-
-  if (!user || !user.isActive || !user.pinHash) {
-    return { ok: false, reason: 'NO_PIN' };
-  }
-
-  if (user.pinLockedUntil && user.pinLockedUntil.getTime() > Date.now()) {
-    return {
-      ok: false,
-      reason: 'LOCKED',
-      retryAfterMinutes: Math.ceil((user.pinLockedUntil.getTime() - Date.now()) / 60_000),
-    };
-  }
-
-  if (await verifyPassword(user.pinHash, pin)) {
-    if (user.pinFailedAttempts > 0 || user.pinLockedUntil) {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { pinFailedAttempts: 0, pinLockedUntil: null },
-      });
-    }
-    return { ok: true, userId: user.id };
-  }
-
-  const attempts = user.pinFailedAttempts + 1;
-  const locked = attempts >= MAX_ATTEMPTS;
-  await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      pinFailedAttempts: locked ? 0 : attempts,
-      pinLockedUntil: locked ? new Date(Date.now() + LOCK_MINUTES * 60_000) : null,
-    },
-  });
-
-  return locked
-    ? { ok: false, reason: 'LOCKED', retryAfterMinutes: LOCK_MINUTES }
-    : { ok: false, reason: 'INVALID' };
+export async function identifyByPin(pin: string): Promise<PinIdentity> {
+  if (!/^\d{4}$/.test(pin)) return { ok: false, reason: 'INVALID' };
+  const owners = await ownersOf(pin, true);
+  if (owners.length === 1) return { ok: true, userId: owners[0] };
+  if (owners.length > 1) return { ok: false, reason: 'AMBIGUOUS', userIds: owners };
+  return { ok: false, reason: 'INVALID' };
 }
 
-/**
- * The accounts offered on the PIN screen.
- *
- * Only people who have set a PIN appear, and only their name, role and company
- * — never an email address, which would hand a stranger half of a password
- * login for free.
- */
-export async function listPinAccounts() {
-  const users = await prisma.user.findMany({
-    where: { isActive: true, pinHash: { not: null } },
-    orderBy: { name: 'asc' },
-    select: {
-      id: true,
-      name: true,
-      isSuperAdmin: true,
-      roles: { select: { role: { select: { name: true } } } },
-      companies: { select: { company: { select: { name: true, country: true, code: true } } } },
-    },
-  });
-
-  const allCompanies = await prisma.company.findMany({
-    where: { status: 'ACTIVE' },
-    select: { name: true, country: true, code: true },
-    orderBy: { name: 'asc' },
-  });
-
-  return users.map((user) => {
-    const companies = user.isSuperAdmin ? allCompanies : user.companies.map((c) => c.company);
-    return {
-      id: user.id,
-      name: user.name,
-      role: user.isSuperAdmin ? 'Administrator' : (user.roles[0]?.role.name ?? 'No role'),
-      companies: companies.map((c) => ({ name: c.name, country: c.country, code: c.code })),
-    };
-  });
+/** Whether anyone can sign in with a PIN yet; a brand-new installation starts with a password. */
+export async function anyPinAccount(): Promise<boolean> {
+  return (await prisma.user.count({ where: { isActive: true, pinHash: { not: null } } })) > 0;
 }

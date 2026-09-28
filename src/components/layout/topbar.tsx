@@ -11,6 +11,7 @@ import {
 import { cn } from '@/lib/utils';
 import { initials } from '@/lib/format';
 import { searchAction, switchCompanyAction, logoutAction } from '@/server/actions/session-actions';
+import { isPinOnlyEmail } from '@/lib/pin-accounts';
 import { toast } from 'sonner';
 import { filterQuickCreate, navDestinations } from '@/components/layout/nav-config';
 import type { SearchResult } from '@/lib/services/search';
@@ -385,7 +386,10 @@ function CompanySwitcher({ companies, active }: { companies: TopbarCompany[]; ac
 function UserMenu({ user }: { user: TopbarUser }) {
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger className="flex shrink-0 items-center gap-2 rounded-lg p-1 pr-2 transition-colors hover:bg-forest-50">
+      <DropdownMenu.Trigger
+        className="flex shrink-0 items-center gap-2 rounded-lg p-1 pr-2 transition-colors hover:bg-forest-50"
+        data-testid="user-menu"
+      >
         <span className="grid size-9 shrink-0 place-items-center rounded-full bg-forest-800 text-xs font-semibold text-white">
           {initials(user.name)}
         </span>
@@ -407,7 +411,7 @@ function UserMenu({ user }: { user: TopbarUser }) {
         >
           <div className="border-b border-line px-3 py-2.5">
             <p className="truncate text-sm font-semibold text-ink">{user.name}</p>
-            <p className="truncate text-xs text-ink-muted">{user.email}</p>
+            {isPinOnlyEmail(user.email) ? null : <p className="truncate text-xs text-ink-muted">{user.email}</p>}
             <p className="mt-1 truncate text-[11px] text-ink-subtle">
               {user.isSuperAdmin ? 'Super Admin' : user.roleNames.join(', ') || 'No role assigned'}
             </p>
@@ -423,28 +427,33 @@ function UserMenu({ user }: { user: TopbarUser }) {
             </Link>
           </DropdownMenu.Item>
 
-          <DropdownMenu.Item asChild>
-            <Link
-              href="/account"
-              className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm outline-none transition-colors hover:bg-forest-50 data-[highlighted]:bg-forest-50"
-            >
-              <KeyRound className="size-4 text-ink-muted" />
-              Change password
-            </Link>
-          </DropdownMenu.Item>
+          {/* Everyone else signs in with a PIN the owner sets; only the owner keeps a password. */}
+          {user.isSuperAdmin ? (
+            <DropdownMenu.Item asChild>
+              <Link
+                href="/account"
+                className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm outline-none transition-colors hover:bg-forest-50 data-[highlighted]:bg-forest-50"
+              >
+                <KeyRound className="size-4 text-ink-muted" />
+                Change password
+              </Link>
+            </DropdownMenu.Item>
+          ) : null}
 
           <DropdownMenu.Separator className="my-1 h-px bg-line" />
 
-          <DropdownMenu.Item asChild>
-            <form action={logoutAction}>
-              <button
-                type="submit"
-                className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-red-600 outline-none transition-colors hover:bg-red-50 data-[highlighted]:bg-red-50"
-              >
-                <LogOut className="size-4" />
-                Sign out
-              </button>
-            </form>
+          <DropdownMenu.Item
+            onSelect={(event) => {
+              event.preventDefault();
+              // A full load of the PIN screen, not a client-side move: the
+              // previous person's pages must not stay behind in memory.
+              void logoutAction().finally(() => window.location.replace('/login'));
+            }}
+            className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-red-600 outline-none transition-colors hover:bg-red-50 data-[highlighted]:bg-red-50"
+            data-testid="logout"
+          >
+            <LogOut className="size-4" />
+            Logout
           </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>

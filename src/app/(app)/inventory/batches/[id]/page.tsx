@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { CostingSummary } from '@/components/shared/costing-table';
 import { getBatchCostings } from '@/lib/services/landed-cost';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, SHIPMENT_STATUS_META, COFFEE_TYPE_LABELS, COFFEE_PROCESS_LABELS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { StatusBadge, Badge } from '@/components/ui/badge';
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { shortDocumentNumber } from '@/lib/short-number';
+import { warehouseScope } from '@/lib/auth/scope';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +29,8 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 export default async function BatchDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requirePageAccess(PERMISSIONS.INVENTORY_VIEW);
+  // Stock across every warehouse: someone limited to their own warehouses sees those on the stock page.
+  if (warehouseScope(user)) redirect('/inventory');
   const companyId = user.activeCompany.id;
   const showCost = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
 

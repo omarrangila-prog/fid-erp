@@ -11,7 +11,6 @@ import { test, expect, type Page } from '@playwright/test';
  */
 
 const ADMIN_PIN = process.env.ADMIN_PIN;
-const ADMIN_NAME = process.env.INITIAL_ADMIN_NAME ?? 'Ali Raza';
 const MOROCCO = /FID Trading International SARL/i;
 
 test.skip(!ADMIN_PIN, 'Set ADMIN_PIN to run the report centre sweep.');
@@ -20,7 +19,6 @@ test.setTimeout(240_000);
 
 async function signIn(page: Page) {
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: new RegExp(ADMIN_NAME, 'i') }).first().click();
   for (const digit of (ADMIN_PIN ?? '').split('')) {
     await page.getByRole('button', { name: digit, exact: true }).first().click();
   }

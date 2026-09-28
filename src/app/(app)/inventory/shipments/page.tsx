@@ -12,12 +12,16 @@ import { StatusBadge } from '@/components/ui/badge';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/feedback';
 import { dec } from '@/lib/money';
+import { redirect } from 'next/navigation';
+import { warehouseScope } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Shipment Stock' };
 export const dynamic = 'force-dynamic';
 
 export default async function ShipmentStockPage() {
   const user = await requirePageAccess(PERMISSIONS.INVENTORY_VIEW);
+  // Stock across every warehouse: someone limited to their own warehouses sees those on the stock page.
+  if (warehouseScope(user)) redirect('/inventory');
   const showValue = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
   const [rows, ordinals, costings] = await Promise.all([
     getShipmentStock(user.activeCompany.id),

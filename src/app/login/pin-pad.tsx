@@ -1,72 +1,42 @@
 'use client';
 
 import * as React from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Delete, KeyRound, ChevronLeft } from 'lucide-react';
+import { Delete } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { pinLoginAction } from '@/server/actions/session-actions';
 
-export type PinAccount = {
-  id: string;
-  name: string;
-  role: string;
-  companies: Array<{ name: string; country: string; code: string }>;
-};
-
-function flagFor(country: string): string {
-  const name = country.toLowerCase();
-  if (name.includes('emirat') || name.includes('uae') || name.includes('dubai')) return '\u{1F1E6}\u{1F1EA}';
-  if (name.includes('morocco') || name.includes('maroc')) return '\u{1F1F2}\u{1F1E6}';
-  return '';
-}
-
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0] ?? '')
-    .join('')
-    .toUpperCase();
-}
-
 /**
- * PIN sign-in.
+ * The sign-in screen: one PIN, nothing else.
  *
- * Two steps on purpose: choose who you are, then enter your PIN. Identifying
- * the account first means a PIN can only ever open the person it belongs to,
- * rather than matching whoever happens to share those four digits — which is
- * what keeps the audit trail meaningful.
+ * No name to pick, no email, no password — the PIN says who you are, and the
+ * server works out the rest. Four digits sign in by themselves; Login does the
+ * same for anyone who prefers to press it. A wrong PIN says "Incorrect PIN"
+ * and nothing more.
  */
-export function PinPad({ accounts }: { accounts: PinAccount[] }) {
-  const router = useRouter();
-  const [selected, setSelected] = React.useState<PinAccount | null>(accounts.length === 1 ? accounts[0] : null);
+export function PinPad() {
   const [digits, setDigits] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
   const [pending, startTransition] = React.useTransition();
 
-  const submit = React.useCallback(
-    (pin: string, account: PinAccount) => {
-      startTransition(async () => {
-        const result = await pinLoginAction(account.id, pin);
-        if (result?.ok) {
-          router.push(result.data.redirectTo);
-          router.refresh();
-        } else {
-          setError(result?.error ?? 'That PIN is not correct.');
-          setDigits('');
-        }
-      });
-    },
-    [router],
-  );
+  const submit = React.useCallback((pin: string) => {
+    startTransition(async () => {
+      const result = await pinLoginAction(pin);
+      if (result?.ok) {
+        // A full load, so the new person's session starts from nothing cached.
+        window.location.replace(result.data.redirectTo);
+      } else {
+        setError(result?.error ?? 'Incorrect PIN');
+        setDigits('');
+      }
+    });
+  }, []);
 
   function press(digit: string) {
-    if (pending || !selected || digits.length >= 4) return;
+    if (pending || digits.length >= 4) return;
     setError(null);
     const next = digits + digit;
     setDigits(next);
-    if (next.length === 4) submit(next, selected);
+    if (next.length === 4) submit(next);
   }
 
   function backspace() {
@@ -75,90 +45,28 @@ export function PinPad({ accounts }: { accounts: PinAccount[] }) {
     setDigits((current) => current.slice(0, -1));
   }
 
-  // A physical keyboard should work as well as the on-screen pad.
+  // A physical keyboard works as well as the on-screen pad.
   React.useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (!selected || event.repeat) return;
+      if (event.repeat) return;
       if (/^[0-9]$/.test(event.key)) press(event.key);
       else if (event.key === 'Backspace') backspace();
+      else if (event.key === 'Enter' && digits.length === 4) submit(digits);
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-    // press/backspace close over pending; re-subscribing every render is fine.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keep the pad responsive without wrapping each key handler
-  }, [selected, digits, pending]);
-
-  if (!selected) {
-    return (
-      <div className="w-full max-w-sm space-y-6">
-        <div className="space-y-1.5 text-center">
-          <h2 className="text-xl font-semibold tracking-tight text-ink">Who is signing in?</h2>
-          <p className="text-sm text-ink-muted">Choose your name, then enter your PIN.</p>
-        </div>
-
-        <ul className="space-y-2">
-          {accounts.map((account) => (
-            <li key={account.id}>
-              <button
-                type="button"
-                onClick={() => setSelected(account)}
-                className="flex w-full items-center gap-3 rounded-xl border border-line bg-surface p-3 text-left shadow-card transition-colors hover:border-forest-300 hover:bg-forest-50/50"
-              >
-                <span className="grid size-11 shrink-0 place-items-center rounded-full bg-forest-800 text-sm font-semibold text-white">
-                  {initials(account.name)}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold text-ink">{account.name}</span>
-                  <span className="block truncate text-xs text-ink-muted">{account.role}</span>
-                </span>
-                <span className="shrink-0 text-right text-xs text-ink-subtle">
-                  {account.companies.map((company) => (
-                    <span key={company.code} className="block whitespace-nowrap">
-                      {flagFor(company.country)} {company.code}
-                    </span>
-                  ))}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-
-        <p className="text-center text-xs text-ink-subtle">
-          <Link href="/login/password" className="font-medium text-forest-700 hover:underline">
-            Sign in with a password instead
-          </Link>
-        </p>
-      </div>
-    );
-  }
+  }, [digits, pending]);
 
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
+  const keyClass =
+    'tnum h-16 rounded-xl border border-line bg-surface text-xl font-medium text-ink shadow-card transition-colors hover:border-forest-300 hover:bg-forest-50 active:bg-forest-100 disabled:opacity-50';
 
   return (
-    <div className="w-full max-w-sm space-y-6">
-      <div className="space-y-3 text-center">
-        {accounts.length > 1 ? (
-          <button
-            type="button"
-            onClick={() => {
-              setSelected(null);
-              setDigits('');
-              setError(null);
-            }}
-            className="inline-flex items-center gap-1 text-xs font-medium text-ink-muted hover:text-ink"
-          >
-            <ChevronLeft className="size-3.5" />
-            Not you?
-          </button>
-        ) : null}
-
-        <div>
-          <p className="text-lg font-semibold text-ink">{selected.name}</p>
-          <p className="text-xs text-ink-muted">
-            {selected.role} ·{' '}
-            {selected.companies.map((company) => `${flagFor(company.country)} ${company.name}`).join(' · ')}
-          </p>
-        </div>
+    <div className="w-full max-w-sm space-y-6" data-testid="pin-login">
+      <div className="space-y-1 text-center">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-forest-700">FID Trading</p>
+        <h1 className="text-xl font-semibold tracking-tight text-ink">Enter your PIN</h1>
       </div>
 
       {/* Four dots, filled as the PIN is entered. */}
@@ -181,34 +89,21 @@ export function PinPad({ accounts }: { accounts: PinAccount[] }) {
       </div>
 
       {error ? (
-        <p role="alert" className="text-center text-xs font-medium text-red-600">
+        <p role="alert" className="text-center text-sm font-medium text-red-600" data-testid="pin-error">
           {error}
         </p>
       ) : (
-        <p className="text-center text-xs text-ink-subtle">Enter your four-digit PIN</p>
+        <p className="text-center text-xs text-ink-subtle">{pending ? 'Signing in…' : 'Four digits'}</p>
       )}
 
       <div className="grid grid-cols-3 gap-3">
         {keys.map((key) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => press(key)}
-            disabled={pending}
-            aria-label={key}
-            className="tnum h-16 rounded-xl border border-line bg-surface text-xl font-medium text-ink shadow-card transition-colors hover:border-forest-300 hover:bg-forest-50 active:bg-forest-100 disabled:opacity-50"
-          >
+          <button key={key} type="button" onClick={() => press(key)} disabled={pending} aria-label={key} className={keyClass}>
             {key}
           </button>
         ))}
         <span />
-        <button
-          type="button"
-          onClick={() => press('0')}
-          disabled={pending}
-          aria-label="0"
-          className="tnum h-16 rounded-xl border border-line bg-surface text-xl font-medium text-ink shadow-card transition-colors hover:border-forest-300 hover:bg-forest-50 active:bg-forest-100 disabled:opacity-50"
-        >
+        <button type="button" onClick={() => press('0')} disabled={pending} aria-label="0" className={keyClass}>
           0
         </button>
         <button
@@ -222,15 +117,14 @@ export function PinPad({ accounts }: { accounts: PinAccount[] }) {
         </button>
       </div>
 
-      <p className="text-center text-xs text-ink-subtle">
-        <Link
-          href="/login/password"
-          className="inline-flex items-center gap-1 font-medium text-forest-700 hover:underline"
-        >
-          <KeyRound className="size-3.5" />
-          Forgotten your PIN? Use a password
-        </Link>
-      </p>
+      <button
+        type="button"
+        onClick={() => submit(digits)}
+        disabled={pending || digits.length !== 4}
+        className="h-12 w-full rounded-xl bg-forest-800 text-sm font-semibold text-white transition-colors hover:bg-forest-900 disabled:opacity-40"
+      >
+        Login
+      </button>
     </div>
   );
 }

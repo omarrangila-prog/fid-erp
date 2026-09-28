@@ -17,6 +17,7 @@ import {
   AgentCommissionClient,
   type CommissionRow,
 } from '@/app/(app)/finance/agent-commission/commission-client';
+import { agentScope } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Agent Commission' };
 export const dynamic = 'force-dynamic';
@@ -24,7 +25,9 @@ export const dynamic = 'force-dynamic';
 export default async function AgentCommissionPage() {
   const user = await requirePageAccess(PERMISSIONS.EXPENSES_VIEW);
   const [rows, warehouses] = await Promise.all([
-    getAgentCommissionRegister(user.activeCompany.id),
+    getAgentCommissionRegister(user.activeCompany.id).then((rows) =>
+      agentScope(user) ? rows.filter((r) => r.agentId === agentScope(user)) : rows,
+    ),
     getWarehouseLabels(user.activeCompany.id),
   ]);
 

@@ -37,7 +37,6 @@ async function signIn(page: Page) {
   // on a page that keeps polling aborts under load, and the whole spec fails
   // on the sign-in rather than on anything it set out to check.
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: /ali raza/i }).click();
   for (const digit of (ADMIN_PIN ?? '').split('')) {
     await page.getByRole('button', { name: digit, exact: true }).click();
   }

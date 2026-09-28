@@ -101,6 +101,7 @@ describe('Flow 8 — permissions are enforced, not merely hidden', () => {
       permissions: new Set<PermissionCode>(role.permissions),
       roleNames: [role.name],
       roleIds: [],
+      scope: { agentId: null, warehouseIds: [] },
       companies: [
         { id: ctx.dubai.id, code: 'FID-DXB', name: 'FID Dubai', country: 'United Arab Emirates', localCurrency: 'AED', baseCurrency: 'USD', timezone: 'Asia/Dubai' },
       ],
@@ -160,6 +161,7 @@ describe('Flow 9 — company isolation', () => {
       permissions: new Set<PermissionCode>([PERMISSIONS.SALES_VIEW]),
       roleNames: [],
       roleIds: [],
+      scope: { agentId: null, warehouseIds: [] },
       companies: [{ id: ctx.dubai.id, code: 'FID-DXB', name: 'FID Dubai', country: 'United Arab Emirates', localCurrency: 'AED', baseCurrency: 'USD', timezone: 'Asia/Dubai' }],
       activeCompany: { id: ctx.dubai.id, code: 'FID-DXB', name: 'FID Dubai', country: 'United Arab Emirates', localCurrency: 'AED', baseCurrency: 'USD', timezone: 'Asia/Dubai' },
     };

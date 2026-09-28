@@ -8,6 +8,7 @@ import { getInvoiceOutstanding } from '@/lib/services/receipt';
 import { formatMoney, formatDate, formatQuantityKg, companyFlag } from '@/lib/format';
 import { PrintButton } from '@/components/shared/print-button';
 import { AutoPrint } from '@/app/(app)/sales/[id]/print/auto-print';
+import { invoiceScopeWhere } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Invoice' };
 export const dynamic = 'force-dynamic';
@@ -27,7 +28,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
   const user = await requirePageAccess(PERMISSIONS.SALES_VIEW);
 
   const invoice = await prisma.salesInvoice.findFirst({
-    where: { id, companyId: user.activeCompany.id },
+    where: { id, companyId: user.activeCompany.id, ...invoiceScopeWhere(user) },
     include: {
       customer: true,
       shipment: {

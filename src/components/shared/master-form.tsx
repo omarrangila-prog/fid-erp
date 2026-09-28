@@ -24,7 +24,7 @@ import type { MasterFormState } from '@/server/actions/master-actions';
 
 export type FieldSpec =
   | {
-      kind: 'text' | 'email' | 'tel' | 'number' | 'money' | 'percent' | 'date';
+      kind: 'text' | 'email' | 'tel' | 'number' | 'money' | 'percent' | 'date' | 'pin';
       name: string;
       label: string;
       required?: boolean;
@@ -287,8 +287,10 @@ function MasterFormSheetBody({
                   <Input
                     id={field.name}
                     name={field.name}
-                    type={field.kind === 'date' ? 'date' : field.kind === 'tel' ? 'tel' : 'text'}
-                    inputMode={field.kind === 'number' || field.kind === 'percent' ? 'decimal' : undefined}
+                    type={field.kind === 'date' ? 'date' : field.kind === 'tel' ? 'tel' : field.kind === 'pin' ? 'password' : 'text'}
+                    inputMode={field.kind === 'number' || field.kind === 'percent' ? 'decimal' : field.kind === 'pin' ? 'numeric' : undefined}
+                    maxLength={field.kind === 'pin' ? 4 : undefined}
+                    autoComplete={field.kind === 'pin' ? 'new-password' : undefined}
                     placeholder={field.placeholder}
                     defaultValue={defaultValue == null ? '' : String(defaultValue)}
                     aria-invalid={Boolean(error)}

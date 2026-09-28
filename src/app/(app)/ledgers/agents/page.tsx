@@ -13,6 +13,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { Callout, EmptyState } from '@/components/ui/feedback';
 import { dec, type Decimal } from '@/lib/money';
+import { agentScope } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Agent Ledgers' };
 export const dynamic = 'force-dynamic';
@@ -29,7 +30,8 @@ export default async function AgentLedgersPage() {
   const user = await requirePageAccess(PERMISSIONS.LEDGERS_VIEW);
   const local = user.activeCompany.localCurrency;
   const [agents, control] = await Promise.all([
-    getAgentSummaries(user.activeCompany.id),
+    // An agent signing in for himself sees his own line only.
+    getAgentSummaries(user.activeCompany.id).then((rows) => (agentScope(user) ? rows.filter((r) => r.agentId === agentScope(user)) : rows)),
     getAgentControlTotals(user.activeCompany.id),
   ]);
 

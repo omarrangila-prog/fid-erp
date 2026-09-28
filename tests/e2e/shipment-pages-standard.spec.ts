@@ -8,7 +8,6 @@ import { test, expect, type Page } from '@playwright/test';
  */
 
 const ADMIN_PIN = process.env.ADMIN_PIN;
-const ADMIN_NAME = process.env.INITIAL_ADMIN_NAME ?? 'Ali Raza';
 const MOROCCO = /FID Trading International SARL/i;
 const SECTIONS = ['Shipment costing', 'Shipment profitability', 'Batches and containers', 'Logistics', 'Sales invoices from this shipment', 'Shipment costs', 'History'];
 
@@ -16,14 +15,8 @@ test.skip(!ADMIN_PIN, 'Set ADMIN_PIN to run.');
 
 async function signIn(page: Page) {
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
-  const tile = page.getByRole('button', { name: new RegExp(ADMIN_NAME, 'i') }).first();
-  const keypad = page.getByRole('button', { name: '1', exact: true });
-  await expect(tile).toBeVisible({ timeout: 60_000 });
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    await tile.click().catch(() => undefined);
-    if (await keypad.waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false)) break;
-    if (!(await tile.isVisible().catch(() => false))) break;
-  }
+  // The PIN alone signs in: no name to pick.
+  await expect(page.getByRole('button', { name: '1', exact: true })).toBeVisible({ timeout: 60_000 });
   for (const digit of (ADMIN_PIN ?? '').split('')) await page.getByRole('button', { name: digit, exact: true }).first().click();
   await page.waitForURL(/\/(dashboard|select-company)/, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   if (page.url().includes('select-company')) {

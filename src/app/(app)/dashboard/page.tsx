@@ -14,7 +14,7 @@ import { DualAmount } from '@/components/shared/dual-amount';
 import { getSetupStatus, toChecklistStep } from '@/lib/services/setup';
 import { getMonthlyPurchases } from '@/lib/services/profitability';
 import { dec } from '@/lib/money';
-import { formatMoney, formatMoneyCompact, formatQuantityKg, formatDate, daysUntil, formatDateTime } from '@/lib/format';
+import { formatDrCr, formatMoney, formatMoneyCompact, formatQuantityKg, formatDate, daysUntil, formatDateTime } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { StatCard } from '@/components/shared/stat-card';
 import { KpiCard } from '@/components/dashboard/kpi-card';
@@ -26,6 +26,11 @@ import { EmptyState } from '@/components/ui/feedback';
 import {
   ProfitTrendChart, AgeingChart, StockByItemChart, ShipmentStatusChart, PurchaseVsSalesChart,
 } from '@/components/dashboard/charts';
+import type { SessionUser } from '@/lib/auth/session';
+import { agentScope, customerScopeWhere } from '@/lib/auth/scope';
+import { getAgentSummaries, agentRelationship } from '@/lib/services/agent-account';
+import { getReceivables } from '@/lib/services/receivables';
+import { prisma } from '@/lib/db';
 
 export const metadata: Metadata = { title: 'Dashboard' };
 export const dynamic = 'force-dynamic';
@@ -89,7 +94,10 @@ export default async function DashboardPage() {
    * operator reporting rights tomorrow and they get the full dashboard without
    * anyone editing this.
    */
-  if (!can(user, PERMISSIONS.PROFITS_VIEW) && !can(user, PERMISSIONS.ACCOUNTING_VIEW)) {
+  // An agent signing in for himself always gets his own view: never the
+  // company's figures, whatever else he has been ticked for.
+  const ownAgent = agentScope(user);
+  if (ownAgent || (!can(user, PERMISSIONS.PROFITS_VIEW) && !can(user, PERMISSIONS.ACCOUNTING_VIEW))) {
     const recent = await getMyRecentEntries(companyId, user.id);
     return (
       <WorkQueue
@@ -105,7 +113,9 @@ export default async function DashboardPage() {
           when: formatDateTime(entry.at),
           status: entry.status,
         }))}
-      />
+      >
+        {ownAgent ? <AgentOwnPanel user={user} agentId={ownAgent} /> : null}
+      </WorkQueue>
     );
   }
 
@@ -993,5 +1003,50 @@ async function OutstandingSection({ companyId }: { companyId: string }) {
         })}
       </div>
     </section>
+  );
+}
+
+/**
+ * An agent's own position, for his own dashboard: the balance his ledger
+ * shows, from the same calculation as the owner's card, and what his
+ * customers still owe on their invoices.
+ */
+async function AgentOwnPanel({ user, agentId }: { user: SessionUser; agentId: string }) {
+  const companyId = user.activeCompany.id;
+  const local = user.activeCompany.localCurrency;
+  const [summaries, receivables, customers] = await Promise.all([
+    getAgentSummaries(companyId),
+    getReceivables({ companyId, onlyOutstanding: true }),
+    prisma.customer.findMany({ where: { companyId, ...customerScopeWhere(user) }, select: { id: true } }),
+  ]);
+  const own = summaries.find((s) => s.agentId === agentId);
+  const relationship = own ? agentRelationship(own.summary) : null;
+  const mine = new Set(customers.map((c) => c.id));
+  const owed = receivables.filter((r) => mine.has(r.customerId) && r.status !== 'PAID');
+  const owedLocal = owed.reduce(
+    (t, r) => t.plus(r.currency === local ? dec(r.outstandingAmount) : dec(r.outstandingAmountUsd).times(dec(r.rateLocalPerUsd))),
+    dec(0),
+  );
+  const net = relationship?.netLocal ?? dec(0);
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2" data-testid="agent-own-panel">
+      <Link href={`/agents/${agentId}`} className="rounded-xl border-2 border-forest-200 bg-forest-50/40 p-4 hover:border-forest-400">
+        <span className="block text-xs text-ink-muted">My balance with FID (as on my ledger)</span>
+        <span className="tnum mt-1 block text-lg font-semibold text-ink" data-testid="agent-own-balance">
+          {net.abs().lessThan('0.005') ? 'Nothing either way' : formatDrCr(net, local)}
+        </span>
+        <span className="block text-xs text-ink-subtle">
+          {net.abs().lessThan('0.005') ? '' : net.isPositive() ? 'I owe FID' : 'FID owes me'} · Open my ledger
+        </span>
+      </Link>
+      <Link href="/sales?standing=OUTSTANDING" className="rounded-xl border border-line bg-surface p-4 hover:border-forest-300">
+        <span className="block text-xs text-ink-muted">My customers still owe</span>
+        <span className="tnum mt-1 block text-lg font-semibold text-ink">{formatMoney(owedLocal, local)}</span>
+        <span className="block text-xs text-ink-subtle">
+          {owed.length} invoice{owed.length === 1 ? '' : 's'} unpaid or part paid
+        </span>
+      </Link>
+    </div>
   );
 }

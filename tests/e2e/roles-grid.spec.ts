@@ -21,7 +21,6 @@ test.setTimeout(240_000);
 async function pinIn(page: Page, name: string, pin: string) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: new RegExp(name, 'i') }).first().click();
   for (const digit of pin.split('')) {
     await page.getByRole('button', { name: digit, exact: true }).first().click();
   }

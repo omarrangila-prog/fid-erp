@@ -8,6 +8,8 @@ import { PageHeader } from '@/components/shared/page-header';
 import { SimpleMasterTable, type SimpleRow, type SimpleColumnSpec } from '@/components/shared/simple-master';
 import { STATUS_OPTIONS, type FieldSpec } from '@/components/shared/master-form';
 import { saveAgentAction } from '@/server/actions/master-actions';
+import { redirect } from 'next/navigation';
+import { agentScope } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Agents' };
 export const dynamic = 'force-dynamic';
@@ -47,6 +49,9 @@ const COLUMNS: SimpleColumnSpec[] = [
 
 export default async function AgentsPage() {
   const user = await requirePageAccess(PERMISSIONS.AGENTS_VIEW);
+  // An agent signing in for himself has one ledger: his own.
+  const own = agentScope(user);
+  if (own) redirect(`/agents/${own}`);
   const [agents, positions] = await Promise.all([
     prisma.agent.findMany({
       where: { companyId: user.activeCompany.id },

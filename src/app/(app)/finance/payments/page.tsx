@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { VoucherTable, type VoucherRow } from '@/components/shared/voucher-table';
 import { EmptyAction } from '@/components/shared/empty-action';
 import { settledThrough } from '@/lib/ledger-target';
+import { paymentScopeWhere } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Payments' };
 export const dynamic = 'force-dynamic';
@@ -22,7 +23,7 @@ export default async function PaymentsPage() {
 
   const [payments, warehouses] = await Promise.all([
     prisma.payment.findMany({
-      where: { companyId, status: { in: [...VISIBLE_DOCUMENT_STATUSES] } },
+      where: { companyId, status: { in: [...VISIBLE_DOCUMENT_STATUSES] }, ...paymentScopeWhere(user) },
       orderBy: [{ paymentDate: 'desc' }, { paymentNumber: 'desc' }],
       include: {
         vendor: { select: { vendorName: true } },

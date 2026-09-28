@@ -9,6 +9,7 @@ import { toDateInputValue } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { ReceiptForm, type OpenInvoice, type BankOption } from '@/app/(app)/finance/receipts/receipt-form';
 import { getLedgerSettlementAccounts } from '@/lib/services/ledger-settlement';
+import { agentScope, customerScopeWhere, receiptScopeWhere } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Edit Receipt' };
 export const dynamic = 'force-dynamic';
@@ -28,7 +29,7 @@ export default async function EditReceiptPage({ params }: { params: Promise<{ id
   const companyId = user.activeCompany.id;
 
   const receipt = await prisma.receipt.findFirst({
-    where: { id, companyId },
+    where: { id, companyId, ...receiptScopeWhere(user) },
     include: {
       allocations: { select: { salesInvoiceId: true, amount: true } },
       cheque: { select: { chequeNumber: true, chequeDate: true, bankName: true, beneficiary: true } },
@@ -39,7 +40,7 @@ export default async function EditReceiptPage({ params }: { params: Promise<{ id
 
   const [customers, accounts, receivables, agents, rates, settled, ledgerAccounts] = await Promise.all([
     prisma.customer.findMany({
-      where: { companyId, status: 'ACTIVE' },
+      where: { companyId, status: 'ACTIVE', ...customerScopeWhere(user) },
       orderBy: { customerName: 'asc' },
       select: { id: true, customerName: true, customerCode: true, primaryCurrency: true },
     }),
@@ -48,9 +49,16 @@ export default async function EditReceiptPage({ params }: { params: Promise<{ id
       orderBy: [{ accountType: 'asc' }, { name: 'asc' }],
       select: { id: true, name: true, code: true, currency: true, accountType: true },
     }),
-    getReceivables({ companyId, onlyOutstanding: true }),
+    // An agent collects for his own customers' invoices only.
+    getReceivables({ companyId, onlyOutstanding: true }).then(async (rows) => {
+      if (!agentScope(user)) return rows;
+      const mine = new Set(
+        (await prisma.customer.findMany({ where: { companyId, ...customerScopeWhere(user) }, select: { id: true } })).map((c) => c.id),
+      );
+      return rows.filter((row) => mine.has(row.customerId));
+    }),
     prisma.agent.findMany({
-      where: { companyId, status: 'ACTIVE' },
+      where: { companyId, status: 'ACTIVE', ...(agentScope(user) ? { id: agentScope(user)! } : {}) },
       orderBy: { agentName: 'asc' },
       select: { id: true, agentName: true },
     }),

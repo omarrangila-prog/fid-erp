@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { FormError } from '@/components/shared/form-error';
 import { GRID_ACTIONS, GRID_PAGES, OTHER_ACTION_LABEL } from '@/lib/permission-grid';
-import { saveRolePermissionsAction } from '@/server/actions/admin-actions';
+import type { ActionResult } from '@/server/actions/action-utils';
 
 /**
  * Tick a page's View, Create, Edit and Delete independently, and its other
@@ -15,12 +15,16 @@ import { saveRolePermissionsAction } from '@/server/actions/admin-actions';
  * page that cannot be opened cannot be edited either.
  */
 export function RoleGrid({
-  roleId,
+  save: saveCodes,
   granted,
+  baseline,
   permissions,
 }: {
-  roleId: string;
+  /** A server action already bound to the role or the person. */
+  save: (codes: string[]) => Promise<ActionResult<undefined>>;
   granted: string[];
+  /** For one person: what their role gives, so a tick that differs from it is marked. */
+  baseline?: string[];
   permissions: Array<{ code: string; description: string }>;
 }) {
   const router = useRouter();
@@ -28,6 +32,8 @@ export function RoleGrid({
   const [pending, startTransition] = React.useTransition();
   const [error, setError] = React.useState<string | null>(null);
   const known = new Map(permissions.map((p) => [p.code, p.description]));
+  const base = baseline ? new Set(baseline) : null;
+  const differs = (code: string) => base !== null && base.has(code) !== ticked.has(code);
 
   const toggle = (code: string, on: boolean) =>
     setTicked((prev) => {
@@ -52,7 +58,7 @@ export function RoleGrid({
   function save() {
     setError(null);
     startTransition(async () => {
-      const result = await saveRolePermissionsAction(roleId, [...ticked]);
+      const result = await saveCodes([...ticked]);
       if (result.ok) {
         toast.success('Permissions saved.');
         router.refresh();
@@ -97,14 +103,23 @@ export function RoleGrid({
                       return (
                         <TD key={action} className="text-center">
                           {known.has(code) ? (
-                            <input
-                              type="checkbox"
-                              aria-label={`${row.label}: ${action}`}
-                              title={known.get(code)}
-                              checked={ticked.has(code)}
-                              onChange={(e) => toggle(code, e.target.checked)}
-                              className="size-4 accent-forest-700"
-                            />
+                            <span className="relative inline-flex">
+                              <input
+                                type="checkbox"
+                                aria-label={`${row.label}: ${action}`}
+                                title={
+                                  differs(code)
+                                    ? `${known.get(code)} — changed for this person (the role says ${base!.has(code) ? 'yes' : 'no'})`
+                                    : known.get(code)
+                                }
+                                checked={ticked.has(code)}
+                                onChange={(e) => toggle(code, e.target.checked)}
+                                className="size-4 accent-forest-700"
+                              />
+                              {differs(code) ? (
+                                <span className="absolute -right-2 -top-1 size-1.5 rounded-full bg-gold-500" data-testid="grid-override" />
+                              ) : null}
+                            </span>
                           ) : (
                             <span className="text-ink-subtle">—</span>
                           )}

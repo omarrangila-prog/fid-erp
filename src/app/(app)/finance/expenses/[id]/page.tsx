@@ -18,6 +18,7 @@ import { VoucherActions } from '@/components/shared/voucher-actions';
 import { getWarehouseLabels } from '@/lib/services/stock';
 import { settledThrough } from '@/lib/ledger-target';
 import { getExpenseSettlements, EXPENSE_PAYMENT_LABEL } from '@/lib/services/expense-settlement';
+import { RecordHistory } from '@/components/shared/record-history';
 
 export const dynamic = 'force-dynamic';
 
@@ -166,6 +167,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
           </>
         }
       />
+      <RecordHistory entityType="Expense" entityId={expense.id} />
 
       {expense.status === 'REVERSED' ? (
         <Callout tone="danger" title="This expense was deleted">

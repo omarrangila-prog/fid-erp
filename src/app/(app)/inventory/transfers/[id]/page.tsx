@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getStockTransferDetail, TRANSFER_STATE_META, type TransferState } from '@/lib/services/stock-transfer';
@@ -16,6 +16,8 @@ import type { BadgeTone } from '@/lib/constants';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { NotFoundError } from '@/lib/errors';
 import { TransferActions } from '@/app/(app)/inventory/transfers/[id]/transfer-actions';
+import { warehouseScope } from '@/lib/auth/scope';
+import { RecordHistory } from '@/components/shared/record-history';
 
 export const metadata: Metadata = { title: 'Warehouse Transfer' };
 export const dynamic = 'force-dynamic';
@@ -30,6 +32,8 @@ const TONES: Record<string, BadgeTone> = { DRAFT: 'neutral', APPROVED: 'info', I
 export default async function TransferPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requirePageAccess(PERMISSIONS.INVENTORY_VIEW);
+  // Stock across every warehouse: someone limited to their own warehouses sees those on the stock page.
+  if (warehouseScope(user)) redirect('/inventory');
   const transfer = await getStockTransferDetail(user.activeCompany.id, id).catch((error) => {
     if (error instanceof NotFoundError) notFound();
     throw error;
@@ -58,6 +62,7 @@ export default async function TransferPage({ params }: { params: Promise<{ id: s
         meta={<Badge tone={reversed ? 'danger' : (TONES[state] ?? 'neutral')}>{stateLabel}</Badge>}
         actions={<TransferActions id={transfer.id} label={label} state={reversed ? 'CANCELLED' : state} canManage={can(user, PERMISSIONS.INVENTORY_TRANSFER)} />}
       />
+      <RecordHistory entityType="StockTransfer" entityId={transfer.id} />
 
       <Card>
         <CardContent className="grid gap-4 pt-5 sm:grid-cols-2 lg:grid-cols-4">

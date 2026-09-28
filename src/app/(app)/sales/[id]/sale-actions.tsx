@@ -14,7 +14,8 @@ export function canCancelSalesInvoice(
   status: string,
   perms: { canDelete: boolean; canReverse: boolean; canEdit?: boolean; canApprove?: boolean },
 ): boolean {
-  if (status === 'DRAFT') return perms.canDelete || Boolean(perms.canEdit);
+  // Deleting a draft takes Delete: Edit is a separate tick, as on the server.
+  if (status === 'DRAFT') return perms.canDelete;
   if (status === 'POSTED' || status === 'REVERSED') {
     return perms.canDelete || perms.canReverse || Boolean(perms.canApprove);
   }

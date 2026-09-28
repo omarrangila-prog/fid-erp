@@ -122,22 +122,12 @@ async function signIn(page: Page) {
    * waits for a button that will never exist. This is also what a person
    * meets if they click the instant the page appears.
    */
-  const tile = page.getByRole('button', { name: new RegExp(ADMIN_NAME, 'i') }).first();
+  // PIN-only sign-in shows the keypad at once; older builds asked for a name first.
   const keypad = page.getByRole('button', { name: '1', exact: true });
-  await expect(tile).toBeVisible({ timeout: 60_000 });
-
-  /*
-   * Click, then give the keypad time to arrive. Only try again if the tile is
-   * still on screen, which is the tell that the click was swallowed before
-   * hydration finished — once the user is chosen the tile is replaced, and
-   * clicking blindly a second time would undo the first.
-   */
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    await tile.click().catch(() => undefined);
-    const arrived = await keypad.waitFor({ state: 'visible', timeout: 15_000 }).then(() => true).catch(() => false);
-    if (arrived) break;
-    if (!(await tile.isVisible().catch(() => false))) break;
-  }
+  const tile = page.getByRole('button', { name: new RegExp(ADMIN_NAME, 'i') }).first();
+  await expect(keypad.or(tile).first()).toBeVisible({ timeout: 60_000 });
+  if (!(await keypad.isVisible().catch(() => false))) await tile.click();
+  await expect(keypad).toBeVisible({ timeout: 30_000 });
   await expect(keypad).toBeVisible({ timeout: 30_000 });
 
   for (const digit of (ADMIN_PIN ?? '').split('')) {

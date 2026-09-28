@@ -547,6 +547,32 @@ export const SYSTEM_ROLES: Array<{
     ],
   },
   {
+    code: 'AGENT',
+    name: 'Agent',
+    description:
+      'An agent signing in for himself: his own customers, invoices and collections, his own ledger and his assigned warehouse. Nothing company-wide, no accounting, no settings. Linked to his agent record on the user page.',
+    permissions: [
+      P.DASHBOARD_VIEW,
+      P.SALES_VIEW,
+      P.SALES_CREATE,
+      P.SALES_EDIT,
+      P.CUSTOMERS_VIEW,
+      P.CUSTOMERS_CREATE,
+      P.CUSTOMERS_EDIT,
+      P.RECEIPTS_VIEW,
+      P.RECEIPTS_CREATE,
+      P.PAYMENTS_VIEW,
+      P.PAYMENTS_CREATE,
+      P.SHIPMENTS_VIEW,
+      P.INVENTORY_VIEW,
+      P.WAREHOUSES_VIEW,
+      P.AGENTS_VIEW,
+      // Deliberately absent: every *_DELETE, *_POST, *_APPROVE and *_REVERSE,
+      // the books, the reports, costs and margins, and administration. The
+      // owner ticks any of them on for one person on that user's page.
+    ],
+  },
+  {
     code: 'READ_ONLY',
     name: 'Read Only',
     description: 'Sees everything operational including profitability, but cannot change anything.',

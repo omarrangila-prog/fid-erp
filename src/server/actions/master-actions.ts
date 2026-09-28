@@ -41,6 +41,7 @@ import {
 } from '@/lib/validation/masters';
 import { fail, run, type ActionResult } from '@/server/actions/action-utils';
 import { resolveMasterCode } from '@/lib/services/master-code';
+import { agentScope } from '@/lib/auth/scope';
 
 /**
  * Master data actions.
@@ -190,6 +191,14 @@ async function saveMaster<S extends z.ZodTypeAny>(
       if (!agent) throw new NotFoundError('Agent');
     }
 
+    // An agent signing in for himself works on his own customers only, and
+    // every customer he adds or edits stays his.
+    const ownAgent = delegate === 'customer' ? agentScope(user) : null;
+    if (ownAgent) {
+      if (before && before.agentId !== ownAgent) throw new NotFoundError(config.label);
+      data.agentId = ownAgent;
+    }
+
     const saved = id
       ? await model.update({ where: { id }, data })
       : await model.create({ data: { ...data, companyId } });
@@ -298,6 +307,8 @@ export async function quickCreateCustomerAction(
       data: {
         companyId,
         customerCode,
+        // Added by an agent for himself: his customer from the start.
+        ...(agentScope(user) ? { agentId: agentScope(user) } : {}),
         customerName: input.customerName,
         primaryCurrency: input.primaryCurrency.toUpperCase(),
         country: input.country ?? null,
@@ -1457,7 +1468,8 @@ export async function toggleMasterStatusAction(
       update: (args: unknown) => Promise<unknown>;
     };
 
-    const existing = await model.findFirst({ where: { id, companyId }, select: { id: true } });
+    const scoped = target === 'customer' && agentScope(user) ? { agentId: agentScope(user) } : {};
+    const existing = await model.findFirst({ where: { id, companyId, ...scoped }, select: { id: true } });
     if (!existing) throw new NotFoundError(config.label);
 
     await model.update({ where: { id }, data: { status } });

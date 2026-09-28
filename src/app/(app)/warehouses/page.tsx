@@ -9,6 +9,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { SimpleMasterTable, type SimpleRow, type SimpleColumnSpec } from '@/components/shared/simple-master';
 import { STATUS_OPTIONS, type FieldSpec } from '@/components/shared/master-form';
 import { saveWarehouseAction } from '@/server/actions/master-actions';
+import { warehouseScopeWhere } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Warehouses' };
 export const dynamic = 'force-dynamic';
@@ -53,7 +54,7 @@ export default async function WarehousesPage() {
   const showValue = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
 
   const [warehouses, stock] = await Promise.all([
-    prisma.warehouse.findMany({ where: { companyId }, orderBy: { name: 'asc' } }),
+    prisma.warehouse.findMany({ where: { companyId, ...warehouseScopeWhere(user) }, orderBy: { name: 'asc' } }),
     getWarehouseStock(companyId),
   ]);
 

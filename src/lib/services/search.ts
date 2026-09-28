@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { PERMISSIONS, VISIBLE_DOCUMENT_STATUSES, type PermissionCode } from '@/lib/constants';
 import { transferNumberLabel } from '@/lib/transfer-number';
@@ -24,6 +25,14 @@ export async function globalSearch(params: {
   permissions: Set<PermissionCode>;
   isSuperAdmin: boolean;
   limit?: number;
+  /** Whose records a narrowed person may find: the same filters as their lists. */
+  scope?: {
+    customers: Prisma.CustomerWhereInput;
+    invoices: Prisma.SalesInvoiceWhereInput;
+    receipts: Prisma.ReceiptWhereInput;
+    /** Limited to their own warehouses: stock search leads to pages they cannot open. */
+    warehouseLimited: boolean;
+  };
 }): Promise<SearchResult[]> {
   const q = params.query.trim();
   if (q.length < 2) return [];
@@ -35,7 +44,7 @@ export async function globalSearch(params: {
 
   if (can(PERMISSIONS.CUSTOMERS_VIEW)) {
     const rows = await prisma.customer.findMany({
-      where: { companyId: params.companyId, OR: [{ customerName: contains }, { customerCode: contains }] },
+      where: { companyId: params.companyId, OR: [{ customerName: contains }, { customerCode: contains }], ...params.scope?.customers },
       take: limit,
       select: { id: true, customerName: true, customerCode: true, primaryCurrency: true },
     });
@@ -99,7 +108,7 @@ export async function globalSearch(params: {
     );
   }
 
-  if (can(PERMISSIONS.INVENTORY_VIEW)) {
+  if (can(PERMISSIONS.INVENTORY_VIEW) && !params.scope?.warehouseLimited) {
     // Transfers by their WTO number, or by the ICUL/FID reference of what they moved.
     const sequence = /^\s*wto-?0*(\d+)\s*$/i.exec(q)?.[1];
     const transfers = await prisma.stockTransfer.findMany({
@@ -166,6 +175,7 @@ export async function globalSearch(params: {
         companyId: params.companyId,
         status: { in: [...VISIBLE_DOCUMENT_STATUSES] },
         OR: [{ invoiceNumber: contains }, { reference: contains }],
+        AND: [params.scope?.invoices ?? {}],
       },
       take: limit,
       select: { id: true, invoiceNumber: true, customer: { select: { customerName: true } }, currency: true },
@@ -201,7 +211,7 @@ export async function globalSearch(params: {
     );
   }
 
-  if (can(PERMISSIONS.INVENTORY_VIEW)) {
+  if (can(PERMISSIONS.INVENTORY_VIEW) && !params.scope?.warehouseLimited) {
     const batches = await prisma.batch.findMany({
       where: { companyId: params.companyId, batchNumber: contains },
       take: limit,
@@ -289,6 +299,7 @@ export async function globalSearch(params: {
         companyId: params.companyId,
         status: { in: [...VISIBLE_DOCUMENT_STATUSES] },
         OR: [{ receiptNumber: contains }, { reference: contains }],
+        AND: [params.scope?.receipts ?? {}],
       },
       take: limit,
       select: { id: true, receiptNumber: true, customer: { select: { customerName: true } }, currency: true },

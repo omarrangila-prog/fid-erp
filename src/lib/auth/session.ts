@@ -4,7 +4,10 @@ import { randomBytes, createHash } from 'node:crypto';
 import { cookies, headers } from 'next/headers';
 import { prisma } from '@/lib/db';
 import { UnauthenticatedError } from '@/lib/errors';
-import type { PermissionCode } from '@/lib/constants';
+import { ALL_PERMISSIONS, type PermissionCode } from '@/lib/constants';
+import { applyOverrides, parseOverrides, parseScope, permissionsKey, scopeKey, type UserScope } from '@/lib/user-access';
+
+const KNOWN_PERMISSIONS: ReadonlySet<string> = new Set(ALL_PERMISSIONS);
 
 const COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? 'fid_session';
 const TTL_HOURS = Number(process.env.SESSION_TTL_HOURS ?? 12);
@@ -37,6 +40,12 @@ export type SessionUser = {
   roleNames: string[];
   /** In the order they were given, for the role's own menu. */
   roleIds: string[];
+  /**
+   * Whose data this person sees, when narrowed: an agent signing in for
+   * himself sees his own agent's ledger, customers, invoices and collections,
+   * and only the warehouses listed. Empty means no narrowing.
+   */
+  scope: UserScope;
   companies: SessionCompany[];
   activeCompany: SessionCompany;
 };
@@ -93,17 +102,27 @@ async function loadCurrentUser(): Promise<SessionUser | null> {
   const token = cookieStore.get(COOKIE_NAME)?.value;
   if (!token) return null;
 
-  const session = await prisma.session.findUnique({
-    where: { token: digest(token) },
-    include: {
-      user: {
-        include: {
-          roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } },
-          companies: { include: { company: true } },
+  const tokenDigest = digest(token);
+  const [session, extras] = await Promise.all([
+    prisma.session.findUnique({
+      where: { token: tokenDigest },
+      include: {
+        user: {
+          include: {
+            roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } },
+            companies: { include: { company: true } },
+          },
         },
       },
-    },
-  });
+    }),
+    // This person's own permission changes and data scope, fetched alongside
+    // the session by its token rather than after it: one round trip, not two.
+    prisma.$queryRaw<Array<{ key: string; value: string }>>`
+      SELECT a."key", a."value"
+      FROM application_settings a
+      JOIN sessions s ON a."key" IN ('user_permissions:' || s."userId", 'user_scope:' || s."userId")
+      WHERE s."token" = ${tokenDigest} AND a."companyId" IS NULL`,
+  ]);
 
   if (!session || session.expiresAt < new Date() || !session.user.isActive) {
     return null;
@@ -111,12 +130,19 @@ async function loadCurrentUser(): Promise<SessionUser | null> {
 
   const user = session.user;
 
-  const permissions = new Set<PermissionCode>();
+  const rolePermissions = new Set<PermissionCode>();
   for (const userRole of user.roles) {
     for (const rp of userRole.role.permissions) {
-      permissions.add(rp.permission.code as PermissionCode);
+      rolePermissions.add(rp.permission.code as PermissionCode);
     }
   }
+  // Role first, then what the owner changed for this one person.
+  const permissions = applyOverrides(
+    rolePermissions,
+    parseOverrides(extras.find((e) => e.key === permissionsKey(user.id))?.value),
+    KNOWN_PERMISSIONS,
+  );
+  const scope = parseScope(extras.find((e) => e.key === scopeKey(user.id))?.value);
 
   // A Super Admin reaches every company; everyone else only their assignments.
   const companyRows = user.isSuperAdmin
@@ -158,6 +184,7 @@ async function loadCurrentUser(): Promise<SessionUser | null> {
     permissions,
     roleNames: user.roles.map((r) => r.role.name),
     roleIds: user.roles.map((r) => r.role.id),
+    scope,
     companies,
     activeCompany,
   };

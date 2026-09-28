@@ -7,12 +7,16 @@ import { formatDate } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Callout } from '@/components/ui/feedback';
 import { StockCountsClient, type StockCountRow } from '@/app/(app)/inventory/stock-counts/stock-counts-client';
+import { redirect } from 'next/navigation';
+import { warehouseScope } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Stock Counts' };
 export const dynamic = 'force-dynamic';
 
 export default async function StockCountsPage() {
   const user = await requirePageAccess(PERMISSIONS.STOCK_COUNT_VIEW);
+  // Stock across every warehouse: someone limited to their own warehouses sees those on the stock page.
+  if (warehouseScope(user)) redirect('/inventory');
 
   const counts = await prisma.stockCount.findMany({
     where: { companyId: user.activeCompany.id },

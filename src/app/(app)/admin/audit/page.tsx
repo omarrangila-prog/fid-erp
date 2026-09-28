@@ -44,7 +44,25 @@ const PAGE_SIZE = 100;
  * leaving it among the document changes filled page one with it, which is the
  * very thing this split exists to prevent.
  */
-const ACCESS_ACTIONS = ['USER_LOGIN', 'USER_LOGOUT', 'PIN_LOGIN', 'PIN_LOCKED', 'COMPANY_SWITCHED'];
+// Sign-ins, wrong PINs, and who changed whose access: with everyone entering
+// on their own PIN, these say who could do what, and when.
+const ACCESS_ACTIONS = [
+  'USER_LOGIN',
+  'USER_LOGOUT',
+  'PIN_LOGIN',
+  'PIN_LOCKED',
+  'PIN_LOGIN_FAILED',
+  'PIN_LOGIN_BLOCKED',
+  'PIN_RESET',
+  'USER_CREATED',
+  'USER_UPDATED',
+  'USER_ENABLED',
+  'USER_DISABLED',
+  'USER_PERMISSIONS_UPDATED',
+  'ROLE_PERMISSIONS_UPDATED',
+  'ROLE_CREATED',
+  'COMPANY_SWITCHED',
+];
 
 const VIEWS = [
   { key: 'all', label: 'Everything' },

@@ -1,3 +1,4 @@
+import type * as React from 'react';
 import Link from 'next/link';
 import {
   FileText, PackageCheck, ClipboardList, ShoppingCart, Receipt,
@@ -54,12 +55,15 @@ export function WorkQueue({
   companyName,
   permissions,
   recent,
+  children,
 }: {
   firstName: string;
   greeting: string;
   companyName: string;
   permissions: Set<string>;
   recent: RecentEntry[];
+  /** Anything of the person's own to show first — an agent's balance with FID. */
+  children?: React.ReactNode;
 }) {
   const tasks = TASKS.filter((task) => permissions.has(task.permission));
 
@@ -73,6 +77,8 @@ export function WorkQueue({
           You are working in {companyName}. Pick what you are entering.
         </p>
       </header>
+
+      {children}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {tasks.map((task) => {

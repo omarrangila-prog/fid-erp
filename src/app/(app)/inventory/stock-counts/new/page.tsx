@@ -5,6 +5,8 @@ import { prisma } from '@/lib/db';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrerequisiteGate, anyMissing, type Prerequisite } from '@/components/shared/prerequisite-gate';
 import { StockCountForm } from '@/app/(app)/inventory/stock-counts/new/count-form';
+import { redirect } from 'next/navigation';
+import { warehouseScope } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'New Stock Count' };
 export const dynamic = 'force-dynamic';
@@ -17,6 +19,8 @@ const CRUMBS = [
 
 export default async function NewStockCountPage() {
   const user = await requirePageAccess(PERMISSIONS.STOCK_COUNT_MANAGE);
+  // Stock across every warehouse: someone limited to their own warehouses sees those on the stock page.
+  if (warehouseScope(user)) redirect('/inventory');
   const companyId = user.activeCompany.id;
 
   const [warehouses, balances, openCounts] = await Promise.all([

@@ -15,6 +15,8 @@ import { Callout } from '@/components/ui/feedback';
 import { VoucherActions } from '@/components/shared/voucher-actions';
 import { getWarehouseLabels } from '@/lib/services/stock';
 import { settledThrough } from '@/lib/ledger-target';
+import { receiptScopeWhere } from '@/lib/auth/scope';
+import { RecordHistory } from '@/components/shared/record-history';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,7 +31,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
   const user = await requirePageAccess(PERMISSIONS.RECEIPTS_VIEW);
 
   const receipt = await prisma.receipt.findFirst({
-    where: { id, companyId: user.activeCompany.id },
+    where: { id, companyId: user.activeCompany.id, ...receiptScopeWhere(user) },
     include: {
       customer: true,
       agent: { select: { id: true, agentName: true } },
@@ -87,6 +89,7 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
           />
         }
       />
+      <RecordHistory entityType="Receipt" entityId={receipt.id} />
 
       {receipt.status === 'REVERSED' ? (
         <Callout tone="danger" title="This receipt was deleted">

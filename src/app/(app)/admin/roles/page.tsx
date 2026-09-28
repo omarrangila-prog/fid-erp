@@ -1,12 +1,13 @@
 import type { Metadata } from 'next';
 import { requirePageAccess } from '@/lib/auth/guards';
-import { PERMISSIONS, PERMISSION_DESCRIPTIONS, ALL_PERMISSIONS } from '@/lib/constants';
+import { PERMISSIONS, PERMISSION_DESCRIPTIONS, ALL_PERMISSIONS, SYSTEM_ROLES } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { PageHeader } from '@/components/shared/page-header';
 import { Callout } from '@/components/ui/feedback';
 import { SimpleMasterTable, type SimpleRow, type SimpleColumnSpec } from '@/components/shared/simple-master';
 import type { FieldSpec } from '@/components/shared/master-form';
 import { saveRoleAction } from '@/server/actions/admin-actions';
+import { AddStandardRoles } from '@/app/(app)/admin/roles/add-standard-roles';
 
 export const metadata: Metadata = { title: 'Roles & Permissions' };
 export const dynamic = 'force-dynamic';
@@ -79,6 +80,8 @@ export default async function RolesPage() {
     },
   }));
 
+  const missingStandard = SYSTEM_ROLES.filter((template) => !roles.some((r) => r.code === template.code));
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -93,6 +96,17 @@ export default async function RolesPage() {
         <strong>Approve</strong> is what posts a document to the ledgers. Editing a system role is allowed, but its code
         cannot be changed.
       </Callout>
+
+      {missingStandard.length ? (
+        <Callout tone="info" title="A standard role is not set up yet">
+          <span className="flex flex-wrap items-center justify-between gap-3">
+            <span>
+              {missingStandard.map((r) => `${r.name} — ${r.description}`).join(' ')} Adding it changes no existing role.
+            </span>
+            <AddStandardRoles missing={missingStandard.map((r) => r.name)} />
+          </span>
+        </Callout>
+      ) : null}
 
       <SimpleMasterTable
         rows={rows}

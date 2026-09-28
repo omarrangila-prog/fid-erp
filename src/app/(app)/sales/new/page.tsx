@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { PrerequisiteGate, anyMissing, type Prerequisite } from '@/components/shared/prerequisite-gate';
 import { SaleForm, type StockOption } from '@/app/(app)/sales/sale-form';
 import { suggestSalesInvoiceNumber } from '@/lib/services/numbering';
+import { customerScopeWhere, warehouseScope } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'New Sales Invoice' };
 export const dynamic = 'force-dynamic';
@@ -20,11 +21,15 @@ export default async function NewSalePage() {
 
   const [customers, stock, cashAccounts] = await Promise.all([
     prisma.customer.findMany({
-      where: { companyId, status: 'ACTIVE' },
+      where: { companyId, status: 'ACTIVE', ...customerScopeWhere(user) },
       orderBy: { customerName: 'asc' },
       select: { id: true, customerName: true, customerCode: true, primaryCurrency: true },
     }),
-    getSellableStock(companyId),
+    // Only the warehouses assigned to this person, when any are.
+    getSellableStock(companyId).then((rows) => {
+      const allowed = warehouseScope(user);
+      return allowed ? rows.filter((row) => allowed.includes(row.warehouseId)) : rows;
+    }),
     prisma.cashBankAccount.findMany({
       where: { companyId, status: 'ACTIVE' },
       orderBy: [{ accountType: 'asc' }, { name: 'asc' }],

@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyAction } from '@/components/shared/empty-action';
 import { StockClient, type StockRow } from '@/app/(app)/inventory/stock-client';
 import { Boxes, Truck, Package, Warehouse as WarehouseIcon, ArrowLeftRight, History, Layers } from 'lucide-react';
+import { warehouseScope, warehouseScopeWhere } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Current Stock' };
 export const dynamic = 'force-dynamic';
@@ -28,7 +29,8 @@ export default async function InventoryPage() {
 
   const [balances, warehouses, warehouseStock, inTransit, ordinals, costings] = await Promise.all([
     prisma.inventoryBalance.findMany({
-      where: { companyId },
+      // Only the warehouses assigned to this person, when any are.
+      where: { companyId, ...(warehouseScope(user) ? { warehouseId: { in: warehouseScope(user)! } } : {}) },
       include: {
         item: { select: { itemName: true, itemCode: true, originCountry: true, region: true } },
         warehouse: { select: { id: true, name: true } },
@@ -49,11 +51,14 @@ export default async function InventoryPage() {
       },
     }),
     prisma.warehouse.findMany({
-      where: { companyId, status: 'ACTIVE' },
+      where: { companyId, status: 'ACTIVE', ...warehouseScopeWhere(user) },
       orderBy: { name: 'asc' },
       select: { id: true, name: true },
     }),
-    getWarehouseStock(companyId),
+    getWarehouseStock(companyId).then((rows) => {
+      const allowed = warehouseScope(user);
+      return allowed ? rows.filter((row) => allowed.includes(row.warehouseId)) : rows;
+    }),
     prisma.batch.aggregate({
       where: { companyId, status: 'ACTIVE' },
       _sum: { inTransitQuantityKg: true },

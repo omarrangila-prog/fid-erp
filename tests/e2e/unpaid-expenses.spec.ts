@@ -18,7 +18,6 @@ import { chooseCompany } from './settle';
  */
 
 const ADMIN_PIN = process.env.ADMIN_PIN;
-const ADMIN_NAME = process.env.INITIAL_ADMIN_NAME ?? 'Ali Raza';
 const RUN = Date.now().toString(36).slice(-5);
 const COMMISSION = `E2E unpaid commission ${RUN}`;
 const RENT = `E2E unpaid rent ${RUN}`;
@@ -30,7 +29,6 @@ test.setTimeout(300_000);
 
 async function signIn(page: Page) {
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: new RegExp(ADMIN_NAME, 'i') }).first().click();
   for (const digit of (ADMIN_PIN ?? '').split('')) {
     await page.getByRole('button', { name: digit, exact: true }).first().click();
   }

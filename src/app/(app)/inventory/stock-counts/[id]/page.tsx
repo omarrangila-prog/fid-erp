@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { requirePageAccess, can } from '@/lib/auth/guards';
@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
 import { CountSheet, type CountLine } from '@/app/(app)/inventory/stock-counts/[id]/count-sheet';
 import type { BadgeTone } from '@/lib/constants';
+import { warehouseScope } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Stock Count' };
 export const dynamic = 'force-dynamic';
@@ -24,6 +25,8 @@ const STATUS_TONES: Record<string, BadgeTone> = {
 
 export default async function StockCountPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requirePageAccess(PERMISSIONS.STOCK_COUNT_VIEW);
+  // Stock across every warehouse: someone limited to their own warehouses sees those on the stock page.
+  if (warehouseScope(user)) redirect('/inventory');
   const { id } = await params;
 
   const count = await prisma.stockCount.findFirst({

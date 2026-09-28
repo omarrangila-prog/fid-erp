@@ -9,12 +9,16 @@ import { formatMoney, formatQuantityKg } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { EmptyAction } from '@/components/shared/empty-action';
 import { BatchesClient, type BatchRow } from '@/app/(app)/inventory/batches/batches-client';
+import { redirect } from 'next/navigation';
+import { warehouseScope } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Batch / Lot Stock' };
 export const dynamic = 'force-dynamic';
 
 export default async function BatchesPage() {
   const user = await requirePageAccess(PERMISSIONS.INVENTORY_VIEW);
+  // Stock across every warehouse: someone limited to their own warehouses sees those on the stock page.
+  if (warehouseScope(user)) redirect('/inventory');
   const showValue = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
 
   const [batches, ordinals, costings] = await Promise.all([

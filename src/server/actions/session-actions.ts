@@ -1,11 +1,13 @@
 'use server';
 
-import { redirect } from 'next/navigation';
-import { headers } from 'next/headers';
+import { headers, cookies } from 'next/headers';
+import { randomBytes } from 'node:crypto';
 import { prisma } from '@/lib/db';
 import { hashPassword, verifyPassword, validatePasswordStrength } from '@/lib/auth/password';
 import { checkLoginAllowed, recordFailedLogin, clearLoginAttempts } from '@/lib/auth/rate-limit';
-import { verifyPin } from '@/lib/auth/pin';
+import { identifyByPin } from '@/lib/auth/pin';
+import { customerScopeWhere, invoiceScopeWhere, isScoped, receiptScopeWhere, warehouseScope } from '@/lib/auth/scope';
+import { checkPinThrottle, recordPinFailure } from '@/lib/auth/pin-throttle';
 import {
   createSession,
   destroySession,
@@ -60,7 +62,9 @@ export async function loginAction(
 
   const passwordOk = await verifyPassword(user?.passwordHash ?? DUMMY_HASH, password);
 
-  if (!user || !passwordOk || !user.isActive) {
+  // Everyone signs in with a PIN. The password route stays only as the
+  // owner's way back in — if every PIN were locked, or on a new installation.
+  if (!user || !passwordOk || !user.isActive || !user.isSuperAdmin) {
     recordFailedLogin(email, address);
     return { ok: false, error: GENERIC_LOGIN_FAILURE, code: 'UNAUTHENTICATED' };
   }
@@ -117,6 +121,10 @@ export async function loginAction(
   return { ok: true, data: { redirectTo: companyCount > 1 ? '/select-company' : '/dashboard' } };
 }
 
+/**
+ * Signs out. The browser then loads the PIN screen afresh (not a client-side
+ * navigation), so nothing of the previous person's pages stays in memory.
+ */
 export async function logoutAction(): Promise<void> {
   const user = await requireUser().catch(() => null);
   if (user) {
@@ -129,7 +137,6 @@ export async function logoutAction(): Promise<void> {
     });
   }
   await destroySession();
-  redirect('/login');
 }
 
 /**
@@ -176,6 +183,14 @@ export async function searchAction(query: string): Promise<SearchResult[]> {
     query,
     permissions: user.permissions,
     isSuperAdmin: user.isSuperAdmin,
+    scope: isScoped(user)
+      ? {
+          customers: customerScopeWhere(user),
+          invoices: invoiceScopeWhere(user),
+          receipts: receiptScopeWhere(user),
+          warehouseLimited: warehouseScope(user) !== null,
+        }
+      : undefined,
   });
 }
 
@@ -220,52 +235,64 @@ export async function changePasswordAction(
 }
 
 // ---------------------------------------------------------------------------
-// Quick PIN sign-in
+// PIN sign-in
 // ---------------------------------------------------------------------------
 
-/**
- * Signs in with a four-digit PIN against one named account.
- *
- * The account is chosen on screen first, so a PIN can only ever open the person
- * it belongs to — it cannot collide into somebody else's permissions. Failures
- * are counted per user by `verifyPin` and per address here, and every outcome
- * is written to the audit trail.
- */
-export async function pinLoginAction(
-  userId: string,
-  pin: string,
-): Promise<ActionResult<{ redirectTo: string }>> {
-  const address = (await headers()).get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+const DEVICE_COOKIE = 'fid_device';
+const INCORRECT_PIN = 'Incorrect PIN';
 
-  const verdict = checkLoginAllowed(`pin:${userId}`, address);
-  if (!verdict.allowed) {
-    const minutes = Math.ceil(verdict.retryAfterSeconds / 60);
+/** A long-lived random id for this browser, so failed PINs can be counted per device. */
+async function deviceId(): Promise<string> {
+  const store = await cookies();
+  const existing = store.get(DEVICE_COOKIE)?.value;
+  if (existing && /^[\w-]{16,64}$/.test(existing)) return existing;
+  const id = randomBytes(18).toString('base64url');
+  store.set(DEVICE_COOKIE, id, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 60 * 60 * 24 * 365,
+  });
+  return id;
+}
+
+/**
+ * Signs in with the PIN alone: the PIN says who you are.
+ *
+ * A wrong PIN is answered "Incorrect PIN" and nothing else — not whose it
+ * might have been, not whether anyone has it. Guessing is throttled per
+ * device, per address and overall (`pin-throttle.ts`), and every attempt, good
+ * or bad, is in the audit trail with where it came from.
+ */
+export async function pinLoginAction(pin: string): Promise<ActionResult<{ redirectTo: string }>> {
+  const requestHeaders = await headers();
+  const source = {
+    address: requestHeaders.get('x-forwarded-for')?.split(',')[0]?.trim() || requestHeaders.get('x-real-ip') || null,
+    device: await deviceId(),
+    userAgent: requestHeaders.get('user-agent'),
+  };
+
+  const verdict = await checkPinThrottle(source);
+  if (verdict.blocked) {
+    await recordPinFailure(source, 'BLOCKED');
     return {
       ok: false,
-      error: `Too many attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}, or sign in with a password.`,
+      error: `Too many incorrect PINs. Try again in ${verdict.retryAfterMinutes} minute${verdict.retryAfterMinutes === 1 ? '' : 's'}.`,
       code: 'RATE_LIMITED',
     };
   }
 
-  const result = await verifyPin(userId, pin);
-
-  if (!result.ok) {
-    recordFailedLogin(`pin:${userId}`, address);
-    if (result.reason === 'LOCKED') {
-      await recordAudit({ userId, action: 'PIN_LOCKED', entityType: 'User', entityId: userId });
-      return {
-        ok: false,
-        error: `Too many wrong PINs. This PIN is locked for ${result.retryAfterMinutes ?? 15} minutes — you can still sign in with a password.`,
-        code: 'PIN_LOCKED',
-      };
-    }
-    return { ok: false, error: 'That PIN is not correct.', code: 'UNAUTHENTICATED' };
+  const identity = await identifyByPin(String(pin ?? ''));
+  if (!identity.ok) {
+    await recordPinFailure(source, identity.reason === 'AMBIGUOUS' ? 'SHARED_PIN' : 'WRONG_PIN');
+    return identity.reason === 'AMBIGUOUS'
+      ? { ok: false, error: 'This PIN cannot be used to sign in. Ask the owner to set you a new PIN.', code: 'UNAUTHENTICATED' }
+      : { ok: false, error: INCORRECT_PIN, code: 'UNAUTHENTICATED' };
   }
 
-  clearLoginAttempts(`pin:${userId}`, address);
-
   const user = await prisma.user.findUniqueOrThrow({
-    where: { id: result.userId },
+    where: { id: identity.userId },
     include: { companies: true },
   });
 
@@ -275,7 +302,7 @@ export async function pinLoginAction(
   if (companyCount === 0) {
     return {
       ok: false,
-      error: 'Your account is not assigned to any company. Ask an administrator to grant you access.',
+      error: 'Your account is not assigned to any company. Ask the owner to give you access.',
       code: 'FORBIDDEN',
     };
   }
@@ -287,7 +314,17 @@ export async function pinLoginAction(
       : user.companies[0]?.companyId ?? null);
 
   await createSession(user.id, activeCompanyId);
-  await recordAudit({ userId: user.id, action: 'PIN_LOGIN', entityType: 'User', entityId: user.id });
+  await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+  await recordAudit({
+    companyId: null,
+    userId: user.id,
+    action: 'PIN_LOGIN',
+    entityType: 'User',
+    entityId: user.id,
+    ipAddress: source.address,
+    userAgent: source.userAgent?.slice(0, 500) ?? null,
+  });
+  pruneExpiredSessions().catch(() => undefined);
 
   return {
     ok: true,

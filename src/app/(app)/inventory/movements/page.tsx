@@ -9,6 +9,8 @@ import { Callout } from '@/components/ui/feedback';
 import { EmptyAction } from '@/components/shared/empty-action';
 import { ServerPagination } from '@/components/shared/server-pagination';
 import { MovementsClient, type MovementRow } from '@/app/(app)/inventory/movements/movements-client';
+import { redirect } from 'next/navigation';
+import { warehouseScope } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Stock Movements' };
 export const dynamic = 'force-dynamic';
@@ -29,6 +31,8 @@ export default async function MovementsPage({
   searchParams: Promise<{ page?: string }>;
 }) {
   const user = await requirePageAccess(PERMISSIONS.INVENTORY_VIEW);
+  // Stock across every warehouse: someone limited to their own warehouses sees those on the stock page.
+  if (warehouseScope(user)) redirect('/inventory');
   const companyId = user.activeCompany.id;
 
   // The movement ledger only ever grows, so it is paged in the database.

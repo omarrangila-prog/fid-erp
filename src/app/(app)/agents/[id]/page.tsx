@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Callout } from '@/components/ui/feedback';
 import { AgentSettlementActions } from '@/app/(app)/agents/[id]/settlement-actions';
 import { AgentOffsetAction } from '@/app/(app)/agents/[id]/offset-action';
+import { assertAgentVisible } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Agent Ledger' };
 export const dynamic = 'force-dynamic';
@@ -43,6 +44,7 @@ export default async function AgentLedgerPage({
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const filter = isAgentEventFilter(query.tab) ? query.tab : 'ALL';
   const user = await requirePageAccess(PERMISSIONS.AGENTS_VIEW);
+  assertAgentVisible(user, id);
   const companyId = user.activeCompany.id;
 
   const agent = await prisma.agent.findFirst({

@@ -7,6 +7,7 @@ import { formatMoney, formatDate } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { getRateDefaults } from '@/lib/services/exchange-rate';
 import { CustomersClient, type CustomerRow } from '@/app/(app)/customers/customers-client';
+import { agentScope, customerScopeWhere } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Customers' };
 export const dynamic = 'force-dynamic';
@@ -23,13 +24,14 @@ export default async function CustomersPage({
 
   const [customers, agents, receivables, traded, rates] = await Promise.all([
     prisma.customer.findMany({
-      where: { companyId },
+      where: { companyId, ...customerScopeWhere(user) },
       orderBy: { customerName: 'asc' },
       include: { _count: { select: { salesInvoices: true } } },
     }),
     // For the one case where a customer and an agent are the same person.
     prisma.agent.findMany({
-      where: { companyId, status: 'ACTIVE' },
+      // An agent's own customers are his: he can only name himself.
+      where: { companyId, status: 'ACTIVE', ...(agentScope(user) ? { id: agentScope(user)! } : {}) },
       orderBy: { agentName: 'asc' },
       select: { id: true, agentName: true },
     }),

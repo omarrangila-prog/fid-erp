@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { VoucherTable, type VoucherRow } from '@/components/shared/voucher-table';
 import { EmptyAction } from '@/components/shared/empty-action';
 import { settledThrough } from '@/lib/ledger-target';
+import { receiptScopeWhere } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Receipts' };
 export const dynamic = 'force-dynamic';
@@ -22,7 +23,7 @@ export default async function ReceiptsPage() {
 
   const [receipts, warehouses] = await Promise.all([
     prisma.receipt.findMany({
-      where: { companyId, status: { in: [...VISIBLE_DOCUMENT_STATUSES] } },
+      where: { companyId, status: { in: [...VISIBLE_DOCUMENT_STATUSES] }, ...receiptScopeWhere(user) },
       orderBy: [{ receiptDate: 'desc' }, { receiptNumber: 'desc' }],
       include: {
         customer: { select: { customerName: true } },

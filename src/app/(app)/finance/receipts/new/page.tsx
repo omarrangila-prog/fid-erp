@@ -9,6 +9,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { PrerequisiteGate, anyMissing, type Prerequisite } from '@/components/shared/prerequisite-gate';
 import { ReceiptForm, type OpenInvoice, type BankOption } from '@/app/(app)/finance/receipts/receipt-form';
 import { getLedgerSettlementAccounts } from '@/lib/services/ledger-settlement';
+import { agentScope, customerScopeWhere } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'New Receipt' };
 export const dynamic = 'force-dynamic';
@@ -24,7 +25,7 @@ export default async function NewReceiptPage({
 
   const [customers, accounts, receivables, agents, ledgerAccounts] = await Promise.all([
     prisma.customer.findMany({
-      where: { companyId, status: 'ACTIVE' },
+      where: { companyId, status: 'ACTIVE', ...customerScopeWhere(user) },
       orderBy: { customerName: 'asc' },
       select: { id: true, customerName: true, customerCode: true, primaryCurrency: true },
     }),
@@ -33,10 +34,17 @@ export default async function NewReceiptPage({
       orderBy: [{ accountType: 'asc' }, { name: 'asc' }],
       select: { id: true, name: true, code: true, currency: true, accountType: true },
     }),
-    getReceivables({ companyId, onlyOutstanding: true }),
+    // An agent collects for his own customers' invoices only.
+    getReceivables({ companyId, onlyOutstanding: true }).then(async (rows) => {
+      if (!agentScope(user)) return rows;
+      const mine = new Set(
+        (await prisma.customer.findMany({ where: { companyId, ...customerScopeWhere(user) }, select: { id: true } })).map((c) => c.id),
+      );
+      return rows.filter((row) => mine.has(row.customerId));
+    }),
     // Who can collect a customer payment that has not yet reached FID.
     prisma.agent.findMany({
-      where: { companyId, status: 'ACTIVE' },
+      where: { companyId, status: 'ACTIVE', ...(agentScope(user) ? { id: agentScope(user)! } : {}) },
       orderBy: { agentName: 'asc' },
       select: { id: true, agentName: true },
     }),

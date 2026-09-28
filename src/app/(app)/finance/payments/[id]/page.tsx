@@ -15,6 +15,8 @@ import { Callout } from '@/components/ui/feedback';
 import { VoucherActions } from '@/components/shared/voucher-actions';
 import { getWarehouseLabels } from '@/lib/services/stock';
 import { settledThrough } from '@/lib/ledger-target';
+import { paymentScopeWhere } from '@/lib/auth/scope';
+import { RecordHistory } from '@/components/shared/record-history';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,7 +31,7 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
   const user = await requirePageAccess(PERMISSIONS.PAYMENTS_VIEW);
 
   const payment = await prisma.payment.findFirst({
-    where: { id, companyId: user.activeCompany.id },
+    where: { id, companyId: user.activeCompany.id, ...paymentScopeWhere(user) },
     include: {
       vendor: true,
       cashBankAccount: true,
@@ -79,6 +81,7 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
           />
         }
       />
+      <RecordHistory entityType="Payment" entityId={payment.id} />
 
       {payment.status === 'REVERSED' ? (
         <Callout tone="danger" title="This payment was deleted">

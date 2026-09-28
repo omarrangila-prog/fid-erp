@@ -72,6 +72,7 @@ import {
   undoLoading,
 } from '@/lib/services/shipment';
 import { fail, ok, type ActionResult } from '@/server/actions/action-utils';
+import { assertCustomerInScope, assertInvoiceInScope, assertWarehousesInScope } from '@/lib/auth/scope';
 
 /**
  * Trading actions.
@@ -251,6 +252,10 @@ export async function saveSalesInvoiceAction(id: string | null, payload: string)
   try {
     const user = await requirePermission(id ? PERMISSIONS.SALES_EDIT : PERMISSIONS.SALES_CREATE);
     const input = salesInvoiceSchema.parse(parseJson(payload));
+    // An agent works on his own customers' invoices, from his own warehouses.
+    if (id) await assertInvoiceInScope(user, id);
+    await assertCustomerInScope(user, input.customerId);
+    assertWarehousesInScope(user, input.lines.map((line) => line.warehouseId));
 
     const result = id
       ? await updateSalesInvoice(id, { companyId: user.activeCompany.id, ...input }, user.id)
@@ -277,6 +282,7 @@ export async function postSalesInvoiceAction(id: string): Promise<ActionResult<u
   try {
     const user = await requirePermission(PERMISSIONS.SALES_APPROVE);
     const companyId = user.activeCompany.id;
+    await assertInvoiceInScope(user, id);
 
     // A cash sale's receipt is raised inside postSalesInvoice, in the same
     // transaction, so there is nothing to do here beyond posting.
@@ -297,6 +303,7 @@ export async function postSalesInvoiceAction(id: string): Promise<ActionResult<u
 export async function reverseSalesInvoiceAction(id: string, reason: string): Promise<ActionResult<undefined>> {
   try {
     const user = await requirePermission(PERMISSIONS.SALES_REVERSE);
+    await assertInvoiceInScope(user, id);
     await reverseSalesInvoice({ id, companyId: user.activeCompany.id, userId: user.id, reason });
     revalidatePath('/sales');
     revalidatePath(`/sales/${id}`);
@@ -319,14 +326,10 @@ export async function deleteSalesInvoiceAction(
       where: { id, companyId },
       select: { status: true },
     });
-    if (!invoice) {
-      if (!canAny(user, [PERMISSIONS.SALES_DELETE, PERMISSIONS.SALES_EDIT])) {
-        assertPermission(user, PERMISSIONS.SALES_DELETE);
-      }
-    } else if (invoice.status === 'DRAFT') {
-      if (!canAny(user, [PERMISSIONS.SALES_DELETE, PERMISSIONS.SALES_EDIT])) {
-        assertPermission(user, PERMISSIONS.SALES_DELETE);
-      }
+    // Deleting takes Delete. Edit is a separate tick: a person allowed to
+    // change an invoice is not thereby allowed to remove it.
+    if (!invoice || invoice.status === 'DRAFT') {
+      assertPermission(user, PERMISSIONS.SALES_DELETE);
     } else if (invoice.status === 'POSTED' || invoice.status === 'REVERSED') {
       if (!canAny(user, [PERMISSIONS.SALES_DELETE, PERMISSIONS.SALES_REVERSE, PERMISSIONS.SALES_APPROVE])) {
         assertPermission(user, PERMISSIONS.SALES_REVERSE);
@@ -335,6 +338,7 @@ export async function deleteSalesInvoiceAction(
       assertPermission(user, PERMISSIONS.SALES_DELETE);
     }
 
+    await assertInvoiceInScope(user, id);
     const result = await cancelSalesInvoice({
       id,
       companyId,

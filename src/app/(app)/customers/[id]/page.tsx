@@ -21,6 +21,7 @@ import { shortDocumentNumber } from '@/lib/short-number';
 import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
 import { DualAmount } from '@/components/shared/dual-amount';
 import { settledThrough } from '@/lib/ledger-target';
+import { agentScope, customerScopeWhere } from '@/lib/auth/scope';
 
 export const dynamic = 'force-dynamic';
 
@@ -36,7 +37,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
   const companyId = user.activeCompany.id;
 
   const customer = await prisma.customer.findFirst({
-    where: { id, companyId },
+    where: { id, companyId, ...customerScopeWhere(user) },
     include: {
       salesInvoices: {
         orderBy: { invoiceDate: 'desc' },
@@ -80,7 +81,8 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
     getReceivables({ companyId, customerId: id, onlyOutstanding: true }),
     getShipmentOrdinals(companyId),
     prisma.agent.findMany({
-      where: { companyId, status: 'ACTIVE' },
+      // An agent's own customers are his: he can only name himself.
+      where: { companyId, status: 'ACTIVE', ...(agentScope(user) ? { id: agentScope(user)! } : {}) },
       orderBy: { agentName: 'asc' },
       select: { id: true, agentName: true },
     }),

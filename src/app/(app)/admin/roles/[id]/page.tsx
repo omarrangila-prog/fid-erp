@@ -5,6 +5,7 @@ import { PERMISSIONS, PERMISSION_DESCRIPTIONS, ALL_PERMISSIONS } from '@/lib/con
 import { prisma } from '@/lib/db';
 import { PageHeader } from '@/components/shared/page-header';
 import { RoleGrid } from '@/app/(app)/admin/roles/[id]/role-grid';
+import { saveRolePermissionsAction } from '@/server/actions/admin-actions';
 import { RoleMenu } from '@/app/(app)/admin/roles/[id]/role-menu';
 import { getRoleMenu } from '@/lib/services/role-menu';
 
@@ -30,7 +31,7 @@ export default async function RolePermissionsPage({ params }: { params: Promise<
         breadcrumbs={[{ label: 'Administration' }, { label: 'Roles', href: '/admin/roles' }, { label: role.name }]}
       />
       <RoleGrid
-        roleId={role.id}
+        save={saveRolePermissionsAction.bind(null, role.id)}
         granted={role.permissions.map((p) => p.permission.code)}
         permissions={ALL_PERMISSIONS.map((code) => ({ code, description: PERMISSION_DESCRIPTIONS[code]?.description ?? code }))}
       />

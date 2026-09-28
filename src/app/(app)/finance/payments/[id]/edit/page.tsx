@@ -9,6 +9,7 @@ import { toDateInputValue } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { PaymentForm, type OpenContract } from '@/app/(app)/finance/payments/payment-form';
 import { getLedgerSettlementAccounts } from '@/lib/services/ledger-settlement';
+import { paymentScopeWhere } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Edit Payment' };
 export const dynamic = 'force-dynamic';
@@ -27,7 +28,7 @@ export default async function EditPaymentPage({ params }: { params: Promise<{ id
   const companyId = user.activeCompany.id;
 
   const payment = await prisma.payment.findFirst({
-    where: { id, companyId },
+    where: { id, companyId, ...paymentScopeWhere(user) },
     include: {
       allocations: { select: { purchaseContractId: true, expenseId: true, amount: true } },
       cheque: { select: { chequeNumber: true, chequeDate: true, bankName: true } },

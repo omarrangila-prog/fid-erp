@@ -12,7 +12,6 @@ import { chooseCompany } from './settle';
  */
 
 const ADMIN_PIN = process.env.ADMIN_PIN;
-const ADMIN_NAME = process.env.INITIAL_ADMIN_NAME ?? 'Ali Raza';
 const ORDER = 'E2E-PO-MA-3C';
 const RUN = Date.now().toString(36).slice(-5);
 
@@ -22,7 +21,6 @@ test.setTimeout(240_000);
 
 async function signIn(page: Page) {
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: new RegExp(ADMIN_NAME, 'i') }).first().click();
   for (const digit of (ADMIN_PIN ?? '').split('')) {
     await page.getByRole('button', { name: digit, exact: true }).first().click();
   }

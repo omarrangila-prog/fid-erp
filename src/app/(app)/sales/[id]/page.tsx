@@ -21,6 +21,8 @@ import { Callout } from '@/components/ui/feedback';
 import { AttachmentPanel } from '@/components/attachments/attachment-panel';
 import { loadAttachments } from '@/components/attachments/load';
 import { SaleActions } from '@/app/(app)/sales/[id]/sale-actions';
+import { invoiceScopeWhere } from '@/lib/auth/scope';
+import { RecordHistory } from '@/components/shared/record-history';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,7 +39,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
   const showProfit = can(user, PERMISSIONS.PROFITS_VIEW);
 
   const invoice = await prisma.salesInvoice.findFirst({
-    where: { id, companyId },
+    where: { id, companyId, ...invoiceScopeWhere(user) },
     include: {
       customer: true,
       shipment: {
@@ -170,6 +172,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
           </>
         }
       />
+      <RecordHistory entityType="SalesInvoice" entityId={invoice.id} />
 
       {invoice.status === 'REVERSED' ? (
         <Callout tone="danger" title="This invoice was deleted">

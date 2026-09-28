@@ -59,6 +59,7 @@ import { businessNumber } from '@/lib/short-number';
 import { fail, ok, type ActionResult } from '@/server/actions/action-utils';
 import type { DocFormState } from '@/server/actions/trading-actions';
 import { settleUnpaidExpense } from '@/lib/services/unpaid-expenses';
+import { agentScope, assertCustomerInScope, assertInScope, assertPaymentInScope, assertReceiptInScope } from '@/lib/auth/scope';
 
 /**
  * Finance actions. As with trading, these validate and delegate — the posting
@@ -101,6 +102,11 @@ export async function saveReceiptAction(id: string | null, payload: string): Pro
   try {
     const user = await requirePermission(PERMISSIONS.RECEIPTS_CREATE);
     const { clientKey, ...input } = receiptSchema.parse(parseJson(payload));
+    // An agent records collections for his own customers, as himself.
+    if (id) await assertReceiptInScope(user, id);
+    await assertCustomerInScope(user, input.customerId);
+    const ownAgent = agentScope(user);
+    if (ownAgent && input.agentId && input.agentId !== ownAgent) assertInScope(false, 'agent');
     const data = { companyId: user.activeCompany.id, ...input, cheque: input.cheque ?? null };
 
     // A second submit of the same form returns the receipt the first created.
@@ -217,6 +223,7 @@ export async function recordAgentSettlementAction(payload: string): Promise<DocF
 export async function postReceiptAction(id: string): Promise<ActionResult<undefined>> {
   try {
     const user = await requirePermission(PERMISSIONS.RECEIPTS_POST);
+    await assertReceiptInScope(user, id);
     await postReceipt({ id, companyId: user.activeCompany.id, userId: user.id });
     revalidateAll([...paths.receipts, `/finance/receipts/${id}`]);
     return { ok: true, data: undefined };
@@ -228,6 +235,7 @@ export async function postReceiptAction(id: string): Promise<ActionResult<undefi
 export async function reverseReceiptAction(id: string, reason: string): Promise<ActionResult<undefined>> {
   try {
     const user = await requirePermission(PERMISSIONS.RECEIPTS_POST);
+    await assertReceiptInScope(user, id);
     await reverseReceipt({ id, companyId: user.activeCompany.id, userId: user.id, reason });
     revalidateAll([...paths.receipts, `/finance/receipts/${id}`]);
     return { ok: true, data: undefined };
@@ -239,6 +247,7 @@ export async function reverseReceiptAction(id: string, reason: string): Promise<
 export async function deleteReceiptAction(id: string): Promise<ActionResult<undefined>> {
   try {
     const user = await requirePermission(PERMISSIONS.RECEIPTS_DELETE);
+    await assertReceiptInScope(user, id);
     await deleteDraftReceipt({ id, companyId: user.activeCompany.id, userId: user.id });
     revalidateAll(paths.receipts);
     return { ok: true, data: undefined };
@@ -255,6 +264,7 @@ export async function savePaymentAction(id: string | null, payload: string): Pro
   try {
     const user = await requirePermission(PERMISSIONS.PAYMENTS_CREATE);
     const { clientKey, ...input } = paymentSchema.parse(parseJson(payload));
+    if (id) await assertPaymentInScope(user, id);
     const data = { companyId: user.activeCompany.id, ...input, cheque: input.cheque ?? null };
 
     const result = id
@@ -306,6 +316,7 @@ export async function settleUnpaidExpenseAction(payload: string): Promise<DocFor
 export async function postPaymentAction(id: string): Promise<ActionResult<undefined>> {
   try {
     const user = await requirePermission(PERMISSIONS.PAYMENTS_POST);
+    await assertPaymentInScope(user, id);
     await postPayment({ id, companyId: user.activeCompany.id, userId: user.id });
     revalidateAll([...paths.payments, `/finance/payments/${id}`]);
     return { ok: true, data: undefined };
@@ -317,6 +328,7 @@ export async function postPaymentAction(id: string): Promise<ActionResult<undefi
 export async function reversePaymentAction(id: string, reason: string): Promise<ActionResult<undefined>> {
   try {
     const user = await requirePermission(PERMISSIONS.PAYMENTS_POST);
+    await assertPaymentInScope(user, id);
     await reversePayment({ id, companyId: user.activeCompany.id, userId: user.id, reason });
     revalidateAll([...paths.payments, `/finance/payments/${id}`]);
     return { ok: true, data: undefined };
@@ -328,6 +340,7 @@ export async function reversePaymentAction(id: string, reason: string): Promise<
 export async function deletePaymentAction(id: string): Promise<ActionResult<undefined>> {
   try {
     const user = await requirePermission(PERMISSIONS.PAYMENTS_DELETE);
+    await assertPaymentInScope(user, id);
     await deleteDraftPayment({ id, companyId: user.activeCompany.id, userId: user.id });
     revalidateAll(paths.payments);
     return { ok: true, data: undefined };

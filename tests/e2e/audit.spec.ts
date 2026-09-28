@@ -15,7 +15,6 @@ import { test, expect, type Page, type ConsoleMessage } from '@playwright/test';
  */
 
 const ADMIN_PIN = process.env.ADMIN_PIN;
-const ADMIN_NAME = process.env.INITIAL_ADMIN_NAME ?? 'Ali Raza';
 
 test.skip(!ADMIN_PIN, 'Set ADMIN_PIN to run the audit.');
 test.describe.configure({ mode: 'serial' });
@@ -66,7 +65,6 @@ async function signIn(page: Page) {
   // on a page that keeps polling aborts under load, and the whole spec fails
   // on the sign-in rather than on anything it set out to check.
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: new RegExp(ADMIN_NAME, 'i') }).click();
   for (const digit of (ADMIN_PIN ?? '').split('')) {
     await page.getByRole('button', { name: digit, exact: true }).click();
   }

@@ -26,6 +26,7 @@ import { getWarehouseLabels } from '@/lib/services/stock';
 import { getOrderOverview } from '@/lib/services/shipment';
 import { OrderShipments } from '@/app/(app)/purchases/[id]/order-shipments';
 import { SplitLineDialog, SplitRowButton } from '@/app/(app)/purchases/[id]/split-line-dialog';
+import { RecordHistory } from '@/components/shared/record-history';
 
 export const dynamic = 'force-dynamic';
 
@@ -178,6 +179,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
           </>
         }
       />
+      <RecordHistory entityType="PurchaseContract" entityId={contract.id} />
 
       {contract.status === 'REVERSED' ? (
         <Callout tone="danger" title="This contract was deleted">

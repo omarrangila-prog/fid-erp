@@ -10,6 +10,7 @@ import { getSellableStock } from '@/lib/services/stock';
 import { formatQuantityKg, toDateInputValue } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { SaleForm, type StockOption } from '@/app/(app)/sales/sale-form';
+import { customerScopeWhere, invoiceScopeWhere, warehouseScope } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Edit Sales Invoice' };
 export const dynamic = 'force-dynamic';
@@ -20,7 +21,7 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
   const companyId = user.activeCompany.id;
 
   const invoice = await prisma.salesInvoice.findFirst({
-    where: { id, companyId },
+    where: { id, companyId, ...invoiceScopeWhere(user) },
     include: {
       lines: {
         orderBy: { lineNumber: 'asc' },
@@ -38,11 +39,15 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
 
   const [customers, stock, cashAccounts] = await Promise.all([
     prisma.customer.findMany({
-      where: { companyId, status: 'ACTIVE' },
+      where: { companyId, status: 'ACTIVE', ...customerScopeWhere(user) },
       orderBy: { customerName: 'asc' },
       select: { id: true, customerName: true, customerCode: true, primaryCurrency: true, paymentTermDays: true },
     }),
-    getSellableStock(companyId),
+    // Only the warehouses assigned to this person, when any are.
+    getSellableStock(companyId).then((rows) => {
+      const allowed = warehouseScope(user);
+      return allowed ? rows.filter((row) => allowed.includes(row.warehouseId)) : rows;
+    }),
     prisma.cashBankAccount.findMany({
       where: { companyId, status: 'ACTIVE' },
       orderBy: [{ accountType: 'asc' }, { name: 'asc' }],

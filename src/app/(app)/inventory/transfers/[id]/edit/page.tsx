@@ -11,6 +11,7 @@ import { NotFoundError } from '@/lib/errors';
 import { dec } from '@/lib/money';
 import { PageHeader } from '@/components/shared/page-header';
 import { TransferForm, type TransferStock } from '@/app/(app)/inventory/transfers/new/transfer-form';
+import { warehouseScope } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Edit Warehouse Transfer' };
 export const dynamic = 'force-dynamic';
@@ -19,6 +20,8 @@ export const dynamic = 'force-dynamic';
 export default async function EditTransferPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requirePageAccess(PERMISSIONS.INVENTORY_TRANSFER);
+  // Stock across every warehouse: someone limited to their own warehouses sees those on the stock page.
+  if (warehouseScope(user)) redirect('/inventory');
   const companyId = user.activeCompany.id;
   const transfer = await getStockTransferDetail(companyId, id).catch((error) => {
     if (error instanceof NotFoundError) notFound();

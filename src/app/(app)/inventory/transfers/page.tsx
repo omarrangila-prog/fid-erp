@@ -8,12 +8,16 @@ import { formatQuantityKg, formatDate, titleCase } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Callout } from '@/components/ui/feedback';
 import { TransfersClient, type TransferRow } from '@/app/(app)/inventory/transfers/transfers-client';
+import { redirect } from 'next/navigation';
+import { warehouseScope } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Warehouse Transfers' };
 export const dynamic = 'force-dynamic';
 
 export default async function TransfersPage() {
   const user = await requirePageAccess(PERMISSIONS.INVENTORY_VIEW);
+  // Stock across every warehouse: someone limited to their own warehouses sees those on the stock page.
+  if (warehouseScope(user)) redirect('/inventory');
 
   const transfers = await prisma.stockTransfer.findMany({
     where: { companyId: user.activeCompany.id },
