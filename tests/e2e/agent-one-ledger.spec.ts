@@ -104,16 +104,19 @@ test('a commission booked on the shipment is one line on his ledger, with the sh
   await page.waitForURL(/\/finance\/expenses\/(?!new)[\w-]+/, { waitUntil: 'domcontentloaded', timeout: 60_000 });
 
   agentHref = await openLedger(page);
-  const lines = page.getByTestId('agent-ledger').locator('tbody tr').filter({ hasText: MEMO });
+  const lines = page.getByTestId('agent-ledger').getByTestId('ledger-row').filter({ hasText: MEMO });
   await expect(lines).toHaveCount(1);
   const line = lines.first();
-  await expect(line).toContainText('E2E-PO-MA-1');
-  await expect(line).toContainText(/JV \d+/);
   await expect(line).toContainText(/EXP \d+/);
-  await expect(line).toContainText('Unpaid');
   // Standard columns: a commission owed to him is a credit on his ledger.
-  await expect(line.getByTestId('agent-ledger-credit')).toHaveText('MAD 12,000.00');
-  await expect(line.getByTestId('agent-ledger-debit')).toHaveText('—');
+  await expect(line.locator('td[data-col="credit"]')).toHaveText('MAD 12,000.00');
+  await expect(line.locator('td[data-col="debit"]')).toHaveText('—');
+  // The shipment, the journal and the status are in the row's details.
+  await line.click();
+  const details = page.getByTestId('ledger-row-details');
+  await expect(details).toContainText('E2E-PO-MA-1');
+  await expect(details).toContainText(/JV \d+/);
+  await expect(details).toContainText('Unpaid');
   // The collection the fixture recorded is there too, in his words.
   await expect(page.getByTestId('agent-ledger')).toContainText('Customer Collection');
 });
@@ -150,11 +153,11 @@ test('the commission set off against what he holds is one line that lowers both 
   await expect(page.getByText('Adjustment posted.').first()).toBeVisible({ timeout: 90_000 });
 
   await page.goto(agentHref, { waitUntil: 'domcontentloaded' });
-  const setOff = page.getByTestId('agent-ledger').locator('tbody tr').filter({ hasText: 'Commission set-off' });
+  const setOff = page.getByTestId('agent-ledger').getByTestId('ledger-row').filter({ hasText: 'Commission set-off' });
   await expect(setOff).toHaveCount(1, { timeout: 30_000 });
   // Commission payable debited and his collections credited: both sides, one line.
-  await expect(setOff.first().getByTestId('agent-ledger-debit')).toHaveText('MAD 12,000.00');
-  await expect(setOff.first().getByTestId('agent-ledger-credit')).toHaveText('MAD 12,000.00');
+  await expect(setOff.first().locator('td[data-col="debit"]')).toHaveText('MAD 12,000.00');
+  await expect(setOff.first().locator('td[data-col="credit"]')).toHaveText('MAD 12,000.00');
 });
 
 test('after a reload, all of it is one chronological ledger, and the dashboard opens it', async ({ page }) => {
@@ -164,13 +167,16 @@ test('after a reload, all of it is one chronological ledger, and the dashboard o
   await expect(ledger).toBeVisible({ timeout: 45_000 });
   // The desktop table; the phone layout beside it is hidden but still on the page.
   const table = ledger.locator('table').first();
-  const types = (await table.getByTestId('agent-ledger-type').allInnerTexts()).map((t) => t.trim());
+  // Each memo cell carries the kind of event under it (or is the kind, when there is no memo).
+  const types = (await table.locator('td[data-col="memo"]').allInnerTexts()).map((t) => t.trim());
   const at = (pattern: RegExp) => types.findIndex((t) => pattern.test(t));
   // The fixture's collection first; the rest in the order they were entered.
   expect(at(/Customer Collection/)).toBe(0);
   expect(at(/Commission set-off/)).toBeGreaterThan(at(/Agent settlement/));
   expect(types.filter((t) => /Commission set-off/.test(t))).toHaveLength(1);
-  await expect(table.locator(':scope > tbody > tr').filter({ hasText: MEMO }).first()).toContainText('Settled');
+  const commission = table.getByTestId('ledger-row').filter({ hasText: MEMO }).first();
+  await commission.click();
+  await expect(page.getByTestId('ledger-row-details')).toContainText('Settled');
   // Held 50,000 − 10,000 handed over − 12,000 set off, plus 3,000 lent to him; FID owes him the 5,000 loan.
   const position = (await page.getByTestId('agent-position').innerText()).replace(/\s+/g, ' ');
   expect(position).toMatch(/Agent Clearing \(collections\) MAD 28,000\.00 Dr/);

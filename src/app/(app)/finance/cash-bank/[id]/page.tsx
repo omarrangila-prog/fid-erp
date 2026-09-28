@@ -4,15 +4,17 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getCashBook } from '@/lib/services/reports';
-import { formatMoney, formatDate, titleCase } from '@/lib/format';
-import { DualAmount } from '@/components/shared/dual-amount';
+import { formatMoney, titleCase } from '@/lib/format';
+import { businessNumber } from '@/lib/short-number';
+import { LedgerReport } from '@/components/ledger/ledger-report';
+import { getLedgerPrefs } from '@/lib/services/ledger-prefs';
+import type { LedgerColumnKey } from '@/lib/ledger-columns';
+
+const CASH_LEDGER_COLUMNS: LedgerColumnKey[] = ['reference', 'jv', 'type', 'party'];
 import { PageHeader } from '@/components/shared/page-header';
 import { Metric, MetricGrid } from '@/components/shared/stat-card';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
-import { EmptyState } from '@/components/ui/feedback';
 import { JournalSourceActions } from '@/components/shared/journal-source-actions';
 import { EditCashBankAccountButton } from '@/app/(app)/finance/cash-bank/account-button';
 import { ledgerHref } from '@/lib/ledger-currency';
@@ -92,109 +94,40 @@ export default async function CashBookPage({ params }: { params: Promise<{ id: s
         <Metric label="Closing balance" value={formatMoney(book.closingBalance, currency)} />
       </MetricGrid>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{book.account.accountType === 'BANK' ? 'Bank book' : 'Cash book'}</CardTitle>
-          <CardDescription>
-            Opening + receipts − payments = closing, all in {currency}. This cash book and the{' '}
-            {currency} general ledger for this account must agree.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="px-0 pb-0">
-          {book.rows.length === 0 ? (
-            <div className="p-5">
-              <EmptyState title="No movements yet" description="Posted receipts, payments and expenses appear here." />
-            </div>
-          ) : (
-            <TableWrap className="rounded-none border-0 border-t">
-              <Table>
-                <THead>
-                  <TR className="hover:bg-transparent">
-                    <TH>Date</TH>
-                    <TH>Entry</TH>
-                    <TH>Memo</TH>
-                    <TH>Counterparty</TH>
-                    <TH numeric>In</TH>
-                    <TH numeric>Out</TH>
-                    <TH numeric>Balance</TH>
-                    <TH className="text-right">Actions</TH>
-                  </TR>
-                </THead>
-                <TBody>
-                  <TR className="bg-forest-50/40 hover:bg-forest-50/40">
-                    <TD colSpan={7} className="text-xs font-medium text-ink-muted">
-                      Opening balance
-                    </TD>
-                    <TD numeric className="font-semibold">
-                      {formatMoney(book.openingBalance, currency)}
-                    </TD>
-                  </TR>
-                  {book.rows.map((row) => (
-                    <TR key={`${row.entryId}-${row.entryNumber}`}>
-                      <TD>{formatDate(row.entryDate)}</TD>
-                      <TD className="text-xs">{row.entryNumber}</TD>
-                      <TD>
-                        <span className="block">{row.description}</span>
-                        <span className="block text-xs text-ink-subtle">{titleCase(row.sourceType)}</span>
-                      </TD>
-                      <TD>{row.counterparty ?? '—'}</TD>
-                      <TD numeric className={row.moneyIn.greaterThan(0) ? 'text-gold-700' : 'text-ink-subtle'}>
-                        {row.moneyIn.greaterThan(0) ? (
-                          <DualAmount
-                            amount={row.moneyIn}
-                            currency={currency}
-                            localCurrency={user.activeCompany.localCurrency}
-                            amountUsd={row.movementUsd}
-                            amountLocal={row.movementLocal}
-                            rateSource="This entry's own rate"
-                            primaryClassName="font-normal"
-                          />
-                        ) : (
-                          '—'
-                        )}
-                      </TD>
-                      <TD numeric className={row.moneyOut.greaterThan(0) ? 'text-red-600' : 'text-ink-subtle'}>
-                        {row.moneyOut.greaterThan(0) ? (
-                          <DualAmount
-                            amount={row.moneyOut}
-                            currency={currency}
-                            localCurrency={user.activeCompany.localCurrency}
-                            amountUsd={row.movementUsd}
-                            amountLocal={row.movementLocal}
-                            rateSource="This entry's own rate"
-                            primaryClassName="font-normal"
-                          />
-                        ) : (
-                          '—'
-                        )}
-                      </TD>
-                      <TD numeric className="font-medium">{formatMoney(row.balance, currency)}</TD>
-                      <TD>
-                        <JournalSourceActions
-                          sourceType={row.sourceType}
-                          sourceId={row.sourceId}
-                          entryNumber={row.entryNumber}
-                          journalEntryId={row.entryId}
-                          canDelete={can(user, PERMISSIONS.ACCOUNTING_POST)}
-                        />
-                      </TD>
-                    </TR>
-                  ))}
-                </TBody>
-                <TFoot>
-                  <tr>
-                    <TD colSpan={4}>Closing balance</TD>
-                    <TD numeric>{formatMoney(totalIn, currency)}</TD>
-                    <TD numeric>{formatMoney(totalOut, currency)}</TD>
-                    <TD numeric>{formatMoney(book.closingBalance, currency)}</TD>
-                    <TD />
-                  </tr>
-                </TFoot>
-              </Table>
-            </TableWrap>
-          )}
-        </CardContent>
-      </Card>
+      {/* The same ledger as every other: Debit is money in, Credit is money out. */}
+      <LedgerReport
+        report="cash-bank"
+        title={book.account.accountType === 'BANK' ? 'Bank ledger' : 'Cash ledger'}
+        subject={book.account.name}
+        currency={currency}
+        balanceSide="debit"
+        opening={book.openingBalance.toString()}
+        rows={book.rows.map((row) => ({
+          key: `${row.entryId}-${row.entryNumber}`,
+          date: row.entryDate.toISOString().slice(0, 10),
+          reference: businessNumber(row.reference ?? row.entryNumber),
+          jv: businessNumber(row.entryNumber),
+          type: titleCase(row.sourceType),
+          memo: row.description,
+          party: row.counterparty,
+          debit: row.moneyIn.toString(),
+          credit: row.moneyOut.toString(),
+          balance: row.balance.toString(),
+          actions: (
+            <JournalSourceActions
+              sourceType={row.sourceType}
+              sourceId={row.sourceId}
+              entryNumber={row.entryNumber}
+              journalEntryId={row.entryId}
+              canDelete={can(user, PERMISSIONS.ACCOUNTING_POST)}
+            />
+          ),
+        }))}
+        available={CASH_LEDGER_COLUMNS}
+        initialPrefs={await getLedgerPrefs(user.id, 'cash-bank', CASH_LEDGER_COLUMNS)}
+        companyName={user.activeCompany.name}
+        emptyText="Posted receipts, payments and expenses appear here."
+      />
     </div>
   );
 }

@@ -6,12 +6,17 @@ import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getAgentPositions } from '@/lib/services/agent-ledger';
 import { getAgentStatement, AGENT_EVENT_FILTERS, isAgentEventFilter } from '@/lib/services/agent-statement';
-import { equivalentText } from '@/lib/dual-currency';
 import { shortDocumentNumber } from '@/lib/short-number';
-import { AgentStatementClient, type StatementRow } from '@/app/(app)/agents/[id]/agent-statement-client';
+import { equivalentText } from '@/lib/dual-currency';
+import { LedgerReport, type LedgerReportRow } from '@/components/ledger/ledger-report';
+import { getLedgerPrefs } from '@/lib/services/ledger-prefs';
+import { dec, toMoney, type Decimal } from '@/lib/money';
+import type { LedgerColumnKey } from '@/lib/ledger-columns';
+
+const AGENT_LEDGER_COLUMNS: LedgerColumnKey[] = ['reference', 'jv', 'type', 'shipment', 'invoice', 'party', 'status', 'createdBy'];
 import Link from 'next/link';
 import { getRateDefaults } from '@/lib/services/exchange-rate';
-import { formatMoney, formatDate } from '@/lib/format';
+import { formatMoney } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrintButton } from '@/components/shared/print-button';
 import { PrintHeader } from '@/components/shared/print-header';
@@ -72,51 +77,94 @@ export default async function AgentLedgerPage({
   const position = positions[0];
   const ledger = statement;
   const firstName = agent.agentName.split(/\s+/)[0] ?? agent.agentName;
-  const rows: StatementRow[] = statement.events.map((e) => ({
-    id: e.journalEntryId,
-    journalNumber: e.journalNumber,
-    documentNumber: e.documentNumber,
-    date: formatDate(e.date),
-    dateIso: e.date.toISOString().slice(0, 10),
-    typeLabel: e.typeLabel,
-    filters: e.filters,
-    shipment: e.shipment,
-    customerName: e.customerName,
-    documents: e.documents.map((d) => ({ id: d.id, number: shortDocumentNumber(d.number) })),
-    memo: e.memo,
-    amount: formatMoney(e.amount, e.currency),
-    amountEquivalent: equivalentText({
-      amount: e.amount,
-      currency: e.currency,
-      localCurrency: user.activeCompany.localCurrency,
-      amountLocal: e.currency === user.activeCompany.localCurrency ? null : e.amountLocal,
-      rateLocalPerUsd: e.lines[0]?.debitLocal.plus(e.lines[0].creditLocal).isZero() || e.lines[0]?.usd.isZero()
-        ? null
-        : e.lines[0].debitLocal.plus(e.lines[0].creditLocal).dividedBy(e.lines[0].usd),
-    }),
-    receivableChange: Number(e.receivableChangeLocal),
-    payableChange: Number(e.payableChangeLocal),
-    debit: e.lines.reduce((t, l) => t + Number(l.debitLocal), 0),
-    credit: e.lines.reduce((t, l) => t + Number(l.creditLocal), 0),
-    netChange: Number(e.receivableChangeLocal.minus(e.payableChangeLocal)),
-    runningNet: Number(e.runningNetLocal),
-    status: e.status,
+  const localCode = user.activeCompany.localCurrency;
+  const sum = (values: Decimal[]) => values.reduce((t, v) => t.plus(v), dec(0));
+  // One line per business event, in the shared ledger layout: Debit and Credit
+  // are the lines on his own balances, in the company's currency, and the
+  // Balance runs over all of them — Dr when he owes FID, Cr when FID owes him.
+  const rows: LedgerReportRow[] = statement.events.map((e) => ({
+    key: e.journalEntryId,
+    date: e.date.toISOString().slice(0, 10),
+    reference: e.documentNumber ?? e.journalNumber,
+    referenceHref: e.sourceHref,
+    jv: e.journalNumber,
+    type: e.typeLabel,
+    memo: e.memo ?? e.typeLabel,
+    memoNote: e.memo ? e.typeLabel : null,
+    shipment: e.shipment ? { label: e.shipment.reference, href: `/shipments/${e.shipment.id}` } : null,
+    invoices: e.documents.map((d) => ({ label: shortDocumentNumber(d.number), href: `/sales/${d.id}` })),
+    party: e.customerName,
+    status: e.status || null,
     createdBy: e.createdBy,
-    sourceHref: e.sourceHref,
-    lines: e.lines.map((l) => ({
-      account: l.accountName,
-      kind: l.accountKind,
-      currency: l.currency,
-      debit: l.debit.greaterThan(0) ? formatMoney(l.debit, l.currency) : '—',
-      credit: l.credit.greaterThan(0) ? formatMoney(l.credit, l.currency) : '—',
-      debitLocal: l.debitLocal.greaterThan(0) ? formatMoney(l.debitLocal, user.activeCompany.localCurrency) : '—',
-      creditLocal: l.creditLocal.greaterThan(0) ? formatMoney(l.creditLocal, user.activeCompany.localCurrency) : '—',
-      rate:
-        l.currency !== user.activeCompany.localCurrency && l.debit.plus(l.credit).greaterThan(0)
-          ? l.debitLocal.plus(l.creditLocal).dividedBy(l.debit.plus(l.credit)).toFixed(4)
-          : null,
-    })),
+    tags: e.filters,
+    debit: toMoney(sum(e.lines.map((l) => l.debitLocal))).toString(),
+    credit: toMoney(sum(e.lines.map((l) => l.creditLocal))).toString(),
+    balance: e.runningNetLocal.toString(),
+    // The amount as it was entered, with the dollar figure only as an equivalent.
+    facts: [
+      { label: 'Amount', value: formatMoney(e.amount, e.currency) },
+      ...(() => {
+        const eq = equivalentText({
+          amount: e.amount,
+          currency: e.currency,
+          localCurrency: localCode,
+          amountLocal: e.currency === localCode ? null : e.amountLocal,
+          rateLocalPerUsd:
+            e.lines[0]?.debitLocal.plus(e.lines[0].creditLocal).isZero() || e.lines[0]?.usd.isZero()
+              ? null
+              : e.lines[0].debitLocal.plus(e.lines[0].creditLocal).dividedBy(e.lines[0].usd),
+        });
+        return eq ? [{ label: 'Equivalent', value: eq.text }] : [];
+      })(),
+    ],
+    details: (
+      <div className="space-y-2">
+        <table className="ledger-grid w-full text-xs">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th>Which balance</th>
+              <th className="text-right">Debit</th>
+              <th className="text-right">Credit</th>
+              <th className="text-right">Debit {localCode}</th>
+              <th className="text-right">Credit {localCode}</th>
+              <th className="text-right">FX</th>
+            </tr>
+          </thead>
+          <tbody>
+            {e.lines.map((l, i) => (
+              <tr key={i}>
+                <td>{l.accountName}</td>
+                <td>{l.accountKind}</td>
+                <td className="tnum text-right">{l.debit.greaterThan(0) ? formatMoney(l.debit, l.currency) : '—'}</td>
+                <td className="tnum text-right">{l.credit.greaterThan(0) ? formatMoney(l.credit, l.currency) : '—'}</td>
+                <td className="tnum text-right">{l.debitLocal.greaterThan(0) ? formatMoney(l.debitLocal, localCode) : '—'}</td>
+                <td className="tnum text-right">{l.creditLocal.greaterThan(0) ? formatMoney(l.creditLocal, localCode) : '—'}</td>
+                <td className="tnum text-right">
+                  {l.currency !== localCode && l.debit.plus(l.credit).greaterThan(0)
+                    ? l.debitLocal.plus(l.creditLocal).dividedBy(l.debit.plus(l.credit)).toFixed(4)
+                    : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="text-ink-subtle">
+          Only the lines on {firstName}&rsquo;s own balances are shown; the other side of the entry (cash, bank, stock, costs) is
+          on the journal{e.sourceHref ? (
+            <>
+              {' '}·{' '}
+              <Link href={e.sourceHref} className="text-forest-800 hover:text-gold-700">
+                Open {e.documentNumber ?? e.journalNumber}
+              </Link>
+            </>
+          ) : null}
+          .
+        </p>
+      </div>
+    ),
   }));
+  const ledgerPrefs = await getLedgerPrefs(user.id, 'agent', AGENT_LEDGER_COLUMNS);
   const local = user.activeCompany.localCurrency;
   const canSettle = can(user, PERMISSIONS.RECEIPTS_POST);
 
@@ -281,13 +329,23 @@ export default async function AgentLedgerPage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <AgentStatementClient
-            rows={rows}
-            filters={AGENT_EVENT_FILTERS}
-            initialFilter={filter}
-            localCurrency={local}
-            agentFirstName={firstName}
-          />
+          <div data-testid="agent-ledger">
+            <LedgerReport
+              report="agent"
+              title="Agent ledger"
+              subject={agent.agentName}
+              currency={localCode}
+              balanceSide="debit"
+              opening="0"
+              rows={rows}
+              available={AGENT_LEDGER_COLUMNS}
+              initialPrefs={ledgerPrefs}
+              companyName={user.activeCompany.name}
+              quickFilters={Object.entries(AGENT_EVENT_FILTERS).map(([key, label]) => ({ key, label }))}
+              initialQuickFilter={filter}
+              emptyText="A collection, a commission, a settlement or a loan with this agent will appear here."
+            />
+          </div>
         </CardContent>
       </Card>
     </div>

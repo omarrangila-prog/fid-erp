@@ -93,7 +93,7 @@ async function expectExpense(page: Page, url: string, status: RegExp, outstandin
 
 async function settleInCash(page: Page, memo: string, amount?: string) {
   await page.goto('/finance/unpaid-expenses', { waitUntil: 'domcontentloaded' });
-  const row = page.getByRole('row').filter({ hasText: memo }).first();
+  const row = page.getByTestId('unpaid-schedule').getByRole('row').filter({ hasText: memo }).first();
   await expect(row).toBeVisible({ timeout: 45_000 });
   await row.getByTestId('settle-expense').click();
   const dialog = page.getByTestId('settle-dialog');
@@ -125,7 +125,7 @@ test('booked unpaid reads Unpaid, MAD 20,000 on its page, the ledger and the das
   owedUrl = await book(page, { amount: '20000', memo: OWED, paid: false });
   await expectExpense(page, owedUrl, /^Unpaid$/, '20,000.00');
   await page.goto('/finance/unpaid-expenses', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('row').filter({ hasText: OWED }).first()).toContainText('Unpaid', { timeout: 45_000 });
+  await expect(page.getByTestId('unpaid-schedule').getByRole('row').filter({ hasText: OWED }).first()).toContainText('Unpaid', { timeout: 45_000 });
   expect(await dashboardUnpaid(page)).toBeCloseTo(baseline + 20_000, 2);
 });
 
@@ -133,7 +133,7 @@ test('MAD 5,000 paid: Partially settled, MAD 15,000 left on every screen', async
   await settleInCash(page, OWED, '5000');
   await expectExpense(page, owedUrl, /^Partially settled$/, '15,000.00');
   await page.goto('/finance/unpaid-expenses', { waitUntil: 'domcontentloaded' });
-  const row = page.getByRole('row').filter({ hasText: OWED }).first();
+  const row = page.getByTestId('unpaid-schedule').getByRole('row').filter({ hasText: OWED }).first();
   await expect(row).toContainText('Partially settled', { timeout: 45_000 });
   await expect(row).toContainText(/MAD 15,000\.00/);
   expect(await dashboardUnpaid(page)).toBeCloseTo(baseline + 15_000, 2);
@@ -144,7 +144,7 @@ test('the other MAD 15,000: Paid, and gone from the unpaid total', async ({ page
   await expectExpense(page, owedUrl, /^Paid$/, '0.00');
   await page.goto('/finance/unpaid-expenses', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('unpaid-total')).toBeVisible({ timeout: 45_000 });
-  await expect(page.getByRole('row').filter({ hasText: OWED })).toHaveCount(0);
+  await expect(page.getByTestId('unpaid-schedule').getByRole('row').filter({ hasText: OWED })).toHaveCount(0);
   expect(await dashboardUnpaid(page)).toBeCloseTo(baseline, 2);
 });
 
@@ -193,9 +193,9 @@ test('every agent’s dashboard card shows the balance on his own ledger, before
       if (reload) await page.reload({ waitUntil: 'domcontentloaded' });
       const ledger = (await page.getByTestId('agent-net-balance').innerText({ timeout: 45_000 })).trim();
       expect(ledger, href).toBe(balance);
-      // And the ledger's last line closes on the same figure.
-      const last = page.getByTestId('agent-ledger').locator('table').first().getByTestId('agent-ledger-direction').last();
-      expect((await last.innerText()).trim(), href).toBe(balance);
+      // And the ledger closes on the same figure.
+      const closing = page.getByTestId('agent-ledger').getByTestId('ledger-summary').locator('dd').last();
+      expect((await closing.innerText()).trim(), href).toBe(balance);
     }
   }
   console.log(`  ${RUN}: ${seen.map((s) => s.balance).join(', ')} — dashboard = ledger`);

@@ -1,43 +1,43 @@
 'use client';
 
 import * as React from 'react';
-import Link from 'next/link';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { journalSourceHref } from '@/lib/journal-source';
-import { cn } from '@/lib/utils';
+import { LedgerReport, type LedgerReportRow } from '@/components/ledger/ledger-report';
+import type { LedgerColumnKey, LedgerPrefs } from '@/lib/ledger-columns';
 
 export type LedgerGroupView = {
   accountId: string;
   name: string;
   type: string;
+  /** Formatted, for the heading line. */
   opening: string;
   closing: string;
   debit: string;
   credit: string;
-  lines: Array<{
-    entryId: string;
-    date: string;
-    type: string;
-    sourceType: string;
-    sourceId: string;
-    reference: string;
-    party: string;
-    description: string;
-    debit: string;
-    credit: string;
-    balance: string;
-  }>;
+  /** Decimal string: the balance before the first row. */
+  openingRaw: string;
+  rows: LedgerReportRow[];
 };
 
 const OPEN_KEY = 'fid.reports.general-ledger.open';
 
 /**
- * The printed general ledger: one register per account — date, type,
- * reference, party, description, debit, credit, running balance — with the
- * opening balance above and the closing balance below. Each account opens
- * and closes, and the reader's choice is remembered.
+ * The printed general ledger: one register per account, each the same ledger
+ * table as everywhere else — opening balance, the rows, totals and closing
+ * balance — in the columns this person chose for the general ledger. Each
+ * account opens and closes, and the reader's choice is remembered.
  */
-export function LedgerGroups({ groups }: { groups: LedgerGroupView[] }) {
+export function LedgerGroups({
+  groups,
+  prefs,
+  available,
+  companyName,
+}: {
+  groups: LedgerGroupView[];
+  prefs: LedgerPrefs;
+  available: LedgerColumnKey[];
+  companyName: string;
+}) {
   const [open, setOpen] = React.useState<Record<string, boolean>>({});
   React.useEffect(() => {
     try {
@@ -85,7 +85,7 @@ export function LedgerGroups({ groups }: { groups: LedgerGroupView[] }) {
       {groups.map((group) => {
         const shown = open[group.accountId] ?? true;
         return (
-          <section key={group.accountId} className="rounded-lg border border-line">
+          <section key={group.accountId} className="rounded-lg border border-ink/70">
             <button
               type="button"
               onClick={() => toggle(group.accountId)}
@@ -102,60 +102,20 @@ export function LedgerGroups({ groups }: { groups: LedgerGroupView[] }) {
               </span>
             </button>
             {shown ? (
-              <div className="overflow-x-auto border-t border-line">
-                <table className="w-full min-w-[48rem] text-sm">
-                  <thead>
-                    <tr className="text-left text-[11px] uppercase tracking-wider text-ink-muted">
-                      <th className="px-3 py-1.5 font-medium">Date</th>
-                      <th className="px-3 py-1.5 font-medium">Type</th>
-                      <th className="px-3 py-1.5 font-medium">Reference</th>
-                      <th className="px-3 py-1.5 font-medium">Party</th>
-                      <th className="px-3 py-1.5 font-medium">Description</th>
-                      <th className="px-3 py-1.5 text-right font-medium">Debit</th>
-                      <th className="px-3 py-1.5 text-right font-medium">Credit</th>
-                      <th className="px-3 py-1.5 text-right font-medium">Balance</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="bg-surface-sunken/40 text-xs text-ink-muted">
-                      <td className="px-3 py-1.5" colSpan={7}>
-                        Opening balance
-                      </td>
-                      <td className="tnum px-3 py-1.5 text-right">{group.opening}</td>
-                    </tr>
-                    {group.lines.map((line) => {
-                      const href = journalSourceHref(line.sourceType, line.sourceId);
-                      return (
-                        <tr key={`${line.entryId}-${line.balance}-${line.debit}-${line.credit}`} className="border-t border-line/60 hover:bg-surface-sunken/40">
-                          <td className="whitespace-nowrap px-3 py-1.5">{line.date}</td>
-                          <td className="px-3 py-1.5 text-xs">{line.type}</td>
-                          <td className="px-3 py-1.5 text-xs">
-                            {href ? (
-                              <Link href={href} className="text-forest-800 hover:text-gold-700 hover:underline">
-                                {line.reference || 'Open'}
-                              </Link>
-                            ) : (
-                              line.reference || '—'
-                            )}
-                          </td>
-                          <td className="px-3 py-1.5">{line.party || '—'}</td>
-                          <td className="max-w-[24rem] truncate px-3 py-1.5 text-ink-muted">{line.description}</td>
-                          <td className={cn('tnum px-3 py-1.5 text-right', line.debit === '—' && 'text-ink-subtle')}>{line.debit}</td>
-                          <td className={cn('tnum px-3 py-1.5 text-right', line.credit === '—' && 'text-ink-subtle')}>{line.credit}</td>
-                          <td className="tnum px-3 py-1.5 text-right">{line.balance}</td>
-                        </tr>
-                      );
-                    })}
-                    <tr className="border-t border-line-strong bg-surface-sunken/40 font-semibold">
-                      <td className="px-3 py-2" colSpan={5}>
-                        Closing balance
-                      </td>
-                      <td className="tnum px-3 py-2 text-right">{group.debit}</td>
-                      <td className="tnum px-3 py-2 text-right">{group.credit}</td>
-                      <td className="tnum px-3 py-2 text-right">{group.closing}</td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div className="overflow-x-auto border-t border-ink/70 p-2">
+                <LedgerReport
+                  mode="document"
+                  report="general-ledger"
+                  title="General ledger"
+                  subject={group.name}
+                  currency="USD"
+                  balanceSide="debit"
+                  opening={group.openingRaw}
+                  rows={group.rows}
+                  available={available}
+                  initialPrefs={prefs}
+                  companyName={companyName}
+                />
               </div>
             ) : null}
           </section>

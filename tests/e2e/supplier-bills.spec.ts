@@ -94,7 +94,7 @@ test('an unpaid cost is booked with nobody named, and paid later from cash', asy
 
   // The payment it wrote clears Accrued Expenses, and names the cost it settles.
   await page.goto('/finance/unpaid-expenses?view=settled', { waitUntil: 'domcontentloaded' });
-  const row = page.getByRole('row').filter({ hasText: 'Office rent, invoice to follow' }).first();
+  const row = page.getByTestId('unpaid-schedule').getByRole('row').filter({ hasText: 'Office rent, invoice to follow' }).first();
   await expect(row).toContainText('Settled', { timeout: 30_000 });
   await row.getByRole('button', { name: 'Show detail' }).click();
   await page.getByRole('main').getByRole('link', { name: /Cash/ }).first().click();

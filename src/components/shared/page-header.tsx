@@ -47,7 +47,8 @@ export function PageHeader({
           {description ? <p className="max-w-2xl text-sm text-ink-muted">{description}</p> : null}
           {meta ? <div className="flex flex-wrap items-center gap-2 pt-1">{meta}</div> : null}
         </div>
-        {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
+        {/* Buttons wrap onto a second line rather than push the page wider than a tablet. */}
+        {actions ? <div className="flex min-w-0 flex-wrap items-center gap-2 sm:max-w-[65%] sm:justify-end">{actions}</div> : null}
       </div>
     </header>
   );

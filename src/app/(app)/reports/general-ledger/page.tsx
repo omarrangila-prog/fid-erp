@@ -10,15 +10,14 @@ import {
   parseLedgerViewCurrency,
   resolveLedgerViewCurrency,
   pickCashBankCurrency,
-  ledgerCurrencyLabel,
   ledgerDisplayCurrency,
+  ledgerCurrencyLabel,
 } from '@/lib/ledger-currency';
 import { formatMoney, formatDate, titleCase } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { CustomizePanel } from '@/components/reports/customize-panel';
 import { PrintButton } from '@/components/shared/print-button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
+import { Card, CardContent } from '@/components/ui/card';
 import { Callout, EmptyState } from '@/components/ui/feedback';
 import { exportHref } from '@/components/shared/excel-link';
 import { ExportLinks } from '@/components/shared/export-links';
@@ -27,6 +26,13 @@ import { AccountPicker } from '@/app/(app)/reports/general-ledger/account-picker
 import { JournalSourceActions } from '@/components/shared/journal-source-actions';
 import { describeLedgerBalance } from '@/lib/ledger-meaning';
 import { dec } from '@/lib/money';
+import { journalSourceHref } from '@/lib/journal-source';
+import { businessNumber } from '@/lib/short-number';
+import { LedgerReport } from '@/components/ledger/ledger-report';
+import { getLedgerPrefs } from '@/lib/services/ledger-prefs';
+import type { LedgerColumnKey } from '@/lib/ledger-columns';
+
+const GL_COLUMNS: LedgerColumnKey[] = ['reference', 'jv', 'type', 'party', 'currency'];
 
 export const metadata: Metadata = { title: 'General Ledger' };
 export const dynamic = 'force-dynamic';
@@ -94,6 +100,8 @@ export default async function GeneralLedgerPage({
       })
     : null;
 
+  const glPrefs = await getLedgerPrefs(user.id, 'general-ledger', GL_COLUMNS);
+
   // What it actually opened in, for the export link and the picker.
   const selectedCurrency = ledger?.viewCurrency ?? requestedCurrency ?? 'REPORTING';
 
@@ -140,6 +148,9 @@ export default async function GeneralLedgerPage({
                 meta={<p className="text-xs text-ink-subtle">{groups.length} accounts with activity · every line at its USD value</p>}
               />
               <LedgerGroups
+                prefs={glPrefs}
+                available={GL_COLUMNS}
+                companyName={user.activeCompany.name}
                 groups={groups.map((g) => ({
                   accountId: g.accountId,
                   name: g.name,
@@ -148,18 +159,18 @@ export default async function GeneralLedgerPage({
                   closing: formatMoney(g.closingUsd, 'USD'),
                   debit: formatMoney(g.debitUsd, 'USD'),
                   credit: formatMoney(g.creditUsd, 'USD'),
-                  lines: g.lines.map((l) => ({
-                    entryId: l.entryId,
-                    date: formatDate(l.entryDate),
+                  openingRaw: g.openingUsd.toString(),
+                  rows: g.lines.map((l, i) => ({
+                    key: `${l.entryId}-${i}`,
+                    date: l.entryDate.toISOString().slice(0, 10),
+                    reference: l.reference || null,
+                    referenceHref: journalSourceHref(l.sourceType, l.sourceId),
                     type: titleCase(l.sourceType.replaceAll('_', ' ')),
-                    sourceType: l.sourceType,
-                    sourceId: l.sourceId,
-                    reference: l.reference ?? '',
-                    party: l.party ?? '',
-                    description: l.description,
-                    debit: l.debitUsd.isZero() ? '—' : formatMoney(l.debitUsd, 'USD'),
-                    credit: l.creditUsd.isZero() ? '—' : formatMoney(l.creditUsd, 'USD'),
-                    balance: formatMoney(l.balanceUsd, 'USD'),
+                    memo: l.description,
+                    party: l.party || null,
+                    debit: l.debitUsd.toString(),
+                    credit: l.creditUsd.toString(),
+                    balance: l.balanceUsd.toString(),
                   })),
                 }))}
               />
@@ -228,48 +239,18 @@ export default async function GeneralLedgerPage({
             </div>
           );
         })() : (() => {
-          const meaning = describeLedgerBalance(
-            ledger.closingBalance,
-            ledger.account.type,
-            ledger.account.name,
-          );
-          const { totalDebit, totalCredit } = ledger;
+          // The figures are in the ledger below; this says which way round the balance is.
+          const meaning = describeLedgerBalance(ledger.closingBalance, ledger.account.type, ledger.account.name);
           return (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <Card>
-                <CardContent className="pt-5">
-                  <p className="text-xs text-ink-muted">Opening balance</p>
-                  <p className="text-lg font-semibold tabular-nums text-ink">
-                    {formatMoney(ledger.openingBalance, ledgerDisplayCurrency(ledger.viewCurrency))}
-                  </p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-5">
-                  <p className="text-xs text-ink-muted">Total debit</p>
-                  <p className="text-lg font-semibold tabular-nums text-ink">
-                    {formatMoney(totalDebit, ledgerDisplayCurrency(ledger.viewCurrency))}
-                  </p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="pt-5">
-                  <p className="text-xs text-ink-muted">Total credit</p>
-                  <p className="text-lg font-semibold tabular-nums text-ink">
-                    {formatMoney(totalCredit, ledgerDisplayCurrency(ledger.viewCurrency))}
-                  </p>
-                </CardContent>
-              </Card>
-              <Card className={meaning.settled ? undefined : 'border-forest-300 bg-forest-50/40'}>
-                <CardContent className="pt-5">
-                  <p className="text-xs text-ink-muted">{meaning.label}</p>
-                  <p className="text-lg font-semibold tabular-nums text-forest-800">
-                    {formatMoney(meaning.amount, ledgerDisplayCurrency(ledger.viewCurrency))}
-                  </p>
-                  <p className="mt-1 text-[11px] text-ink-subtle">{meaning.sentence}</p>
-                </CardContent>
-              </Card>
-            </div>
+            <Card className={meaning.settled ? undefined : 'border-forest-300 bg-forest-50/40'} data-testid="ledger-meaning">
+              <CardContent className="pt-5">
+                <p className="text-xs text-ink-muted">{meaning.label}</p>
+                <p className="text-lg font-semibold tabular-nums text-forest-800">
+                  {formatMoney(meaning.amount, ledgerDisplayCurrency(ledger.viewCurrency))}
+                </p>
+                <p className="mt-1 text-[11px] text-ink-subtle">{meaning.sentence}</p>
+              </CardContent>
+            </Card>
           );
         })()}
 
@@ -289,102 +270,74 @@ export default async function GeneralLedgerPage({
           </Callout>
         ) : null}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>
-              {ledger.account.name}
-            </CardTitle>
-              <CardDescription>
-                {titleCase(ledger.account.type)} account · {ledgerCurrencyLabel(ledger.viewCurrency, ledger.mixedCurrencies)}
-                {ledger.account.currency && ledger.account.currency !== ledger.viewCurrency && !ledger.mixedCurrencies
-                  ? ` · native ${ledger.account.currency}`
-                  : ''}
-              </CardDescription>
-          </CardHeader>
-          <CardContent className="px-0 pb-0">
-            <TableWrap className="rounded-none border-0 border-t">
-              <Table>
-                <THead>
-                  <TR className="hover:bg-transparent">
-                    <TH>Date</TH>
-                    <TH>Entry</TH>
-                    <TH>Memo</TH>
-                    <TH>Source</TH>
-                    {ledger.mixedCurrencies ? <TH>Currency</TH> : null}
-                    <TH numeric>Debit</TH>
-                    <TH numeric>Credit</TH>
-                    {ledger.mixedCurrencies ? null : <TH numeric>Balance</TH>}
-                    <TH className="text-right">Actions</TH>
-                  </TR>
-                </THead>
-                <TBody>
-                  {ledger.mixedCurrencies ? null : (
-                    <TR className="bg-forest-50/40 hover:bg-forest-50/40">
-                      <TD colSpan={6} className="text-xs font-medium text-ink-muted">
-                        Opening balance
-                      </TD>
-                      <TD numeric className="font-semibold">
-                        {formatMoney(ledger.openingBalance, ledgerDisplayCurrency(ledger.viewCurrency))}
-                      </TD>
-                      <TD />
-                    </TR>
-                  )}
-                  {ledger.rows.length === 0 ? (
-                    <TR>
-                      <TD colSpan={ledger.mixedCurrencies ? 8 : 8} className="py-8 text-center text-xs text-ink-subtle">
-                        No movements on this account in the selected period.
-                      </TD>
-                    </TR>
-                  ) : (
-                    ledger.rows.map((row, index) => (
-                      <TR key={`${row.entryId}-${index}`}>
-                        <TD>{formatDate(row.entryDate)}</TD>
-                        <TD className="text-xs">{row.entryNumber}</TD>
-                        <TD>
-                          <span className="block">{row.description}</span>
-                          {row.reference ? (
-                            <span className="block text-xs text-ink-subtle">{row.reference}</span>
-                          ) : null}
-                        </TD>
-                        <TD className="text-xs">{titleCase(row.sourceType)}</TD>
-                        {ledger.mixedCurrencies ? <TD className="text-xs">{row.currency}</TD> : null}
-                        <TD numeric>
-                          {row.debit.greaterThan(0) ? formatMoney(row.debit, row.currency) : '—'}
-                        </TD>
-                        <TD numeric>
-                          {row.credit.greaterThan(0) ? formatMoney(row.credit, row.currency) : '—'}
-                        </TD>
-                        {ledger.mixedCurrencies ? null : (
-                          <TD numeric className="font-medium">
-                            {formatMoney(row.balance, ledgerDisplayCurrency(ledger.viewCurrency))}
-                          </TD>
-                        )}
-                        <TD>
-                          <JournalSourceActions
-                            sourceType={row.sourceType}
-                            sourceId={row.sourceId}
-                            entryNumber={row.entryNumber}
-                            journalEntryId={row.entryId}
-                            canDelete={can(user, PERMISSIONS.ACCOUNTING_POST)}
-                          />
-                        </TD>
-                      </TR>
-                    ))
-                  )}
-                </TBody>
-                {ledger.mixedCurrencies ? null : (
-                  <TFoot>
-                    <tr>
-                      <TD colSpan={6}>Closing balance</TD>
-                      <TD numeric>{formatMoney(ledger.closingBalance, ledgerDisplayCurrency(ledger.viewCurrency))}</TD>
-                      <TD />
-                    </tr>
-                  </TFoot>
-                )}
-              </Table>
-            </TableWrap>
-          </CardContent>
-        </Card>
+        <p className="text-sm text-ink-muted" data-testid="ledger-currency-label">
+          <span className="font-semibold text-ink">{ledger.account.name}</span> · {titleCase(ledger.account.type)} account ·{' '}
+          {ledgerCurrencyLabel(ledger.viewCurrency, ledger.mixedCurrencies)}
+          {ledger.account.currency && ledger.account.currency !== ledger.viewCurrency && !ledger.mixedCurrencies
+            ? ` · native ${ledger.account.currency}`
+            : ''}
+        </p>
+        {(ledger.mixedCurrencies
+          ? // A running account in several currencies: one ledger per currency, never added together.
+            [...new Set(ledger.rows.map((row) => row.currency))].sort().map((code) => {
+              let running = dec(0);
+              return {
+                currency: code,
+                opening: '0',
+                rows: ledger.rows
+                  .filter((row) => row.currency === code)
+                  .map((row, index) => {
+                    running = running.plus(dec(row.debit)).minus(dec(row.credit));
+                    return { row, index, balance: running.toString() };
+                  }),
+              };
+            })
+          : [
+              {
+                currency: ledgerDisplayCurrency(ledger.viewCurrency),
+                opening: ledger.openingBalance.toString(),
+                rows: ledger.rows.map((row, index) => ({ row, index, balance: row.balance.toString() })),
+              },
+            ]
+        ).map((book) => (
+          <LedgerReport
+            key={book.currency}
+            report="general-ledger"
+            title="General ledger"
+            subject={`${ledger.account.name} · ${titleCase(ledger.account.type)} account`}
+            currency={book.currency}
+            balanceSide="debit"
+            opening={book.opening}
+            rows={book.rows.map(({ row, index, balance }) => ({
+              key: `${row.entryId}-${index}`,
+              date: row.entryDate.toISOString().slice(0, 10),
+              reference: row.reference ?? businessNumber(row.entryNumber),
+              referenceHref: journalSourceHref(row.sourceType, row.sourceId),
+              jv: businessNumber(row.entryNumber),
+              type: titleCase(row.sourceType),
+              memo: row.description,
+              currency: row.currency,
+              debit: row.debit.toString(),
+              credit: row.credit.toString(),
+              balance,
+              actions: (
+                <JournalSourceActions
+                  sourceType={row.sourceType}
+                  sourceId={row.sourceId}
+                  entryNumber={row.entryNumber}
+                  journalEntryId={row.entryId}
+                  canDelete={can(user, PERMISSIONS.ACCOUNTING_POST)}
+                />
+              ),
+            }))}
+            available={GL_COLUMNS}
+            initialPrefs={glPrefs}
+            companyName={user.activeCompany.name}
+            periodLabel={from || to ? `${from ?? 'the start'} – ${to ?? 'today'}` : undefined}
+            dateFilter={false}
+            emptyText="No movements on this account in the selected period."
+          />
+        ))}
         </>
       )}
     </div>

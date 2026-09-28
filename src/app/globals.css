@@ -464,6 +464,75 @@
  * layout drifting away from what is on screen. Navigation, toolbars and
  * anything interactive are removed; the statement itself is what remains.
  */
+/* ---------------------------------------------------------------------------
+ * Ledgers: one accounting report everywhere.
+ *
+ * Dark lines between every row and every column, like a spreadsheet, so the
+ * eye can follow one row across the page on a phone as well as a desk. The
+ * header stays put while the rows scroll under it, and the date column stays
+ * pinned while the figures scroll sideways.
+ * ------------------------------------------------------------------------- */
+.ledger-grid {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.ledger-grid th,
+.ledger-grid td {
+  border-right: 1px solid #3f3f46;
+  border-bottom: 1px solid #3f3f46;
+  padding: 0.45rem 0.6rem;
+  vertical-align: top;
+}
+.ledger-grid tr > :first-child {
+  border-left: 1px solid #3f3f46;
+}
+.ledger-scroll .ledger-grid tr > :first-child {
+  border-left: 0;
+}
+.ledger-scroll .ledger-grid tr > :last-child {
+  border-right: 0;
+}
+.ledger-grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #eef1ee;
+  color: #111;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-bottom: 2px solid #18181b;
+}
+.ledger-grid .ledger-sticky-col {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--color-surface, #fff);
+}
+.ledger-grid thead th.ledger-sticky-col {
+  z-index: 3;
+  background: #eef1ee;
+}
+.ledger-grid tbody tr.ledger-row:hover td {
+  background: #f4f7f4;
+}
+.ledger-grid tr.ledger-row-open td {
+  background: #f4f7f4;
+}
+.ledger-grid .ledger-opening td,
+.ledger-grid .ledger-closing td,
+.ledger-grid .ledger-totals td {
+  background: #f1f4f1;
+  font-weight: 600;
+}
+.ledger-grid tfoot .ledger-totals td {
+  border-top: 2px solid #18181b;
+}
+.ledger-grid tfoot .ledger-closing td {
+  border-bottom: 2px solid #18181b;
+}
+
 @media print {
   @page {
     margin: 12mm 10mm;
@@ -536,6 +605,32 @@
   /* An explanation is for somebody learning the screen, not for the record. */
   [data-callout] {
     display: none !important;
+  }
+
+  /* A ledger on paper: black lines, the whole width of the sheet, nothing pinned. */
+  .ledger-grid-print {
+    width: 100% !important;
+    table-layout: auto;
+    font-size: 8pt;
+  }
+  .ledger-grid-print th,
+  .ledger-grid-print td {
+    border-color: #000 !important;
+    padding: 2pt 4pt !important;
+    position: static !important;
+    background: #fff !important;
+  }
+  .ledger-grid-print thead th {
+    border-bottom: 1.5pt solid #000 !important;
+    background: #e6e6e6 !important;
+  }
+  .ledger-grid-print td[class*="min-w"] {
+    min-width: 0 !important;
+    max-width: none !important;
+    white-space: normal !important;
+  }
+  .ledger-grid-print tr {
+    break-inside: avoid;
   }
 
   /*

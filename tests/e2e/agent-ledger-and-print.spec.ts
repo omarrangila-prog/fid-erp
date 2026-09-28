@@ -166,13 +166,16 @@ test('the agent ledger shows the collection once, in MAD, with USD only as an eq
   const ledger = page.getByTestId('agent-ledger');
   await expect(ledger).toBeVisible({ timeout: 30_000 });
   // The desktop table; the phone layout beside it is hidden but still on the page.
-  const lines = ledger.locator('table').first().locator(':scope > tbody > tr').filter({ hasText: /46,000\.00/ });
+  const lines = ledger.getByTestId('ledger-row').filter({ hasText: /46,000\.00/ });
   await expect(lines).toHaveCount(1);
   const line = lines.first();
-  await expect(line.getByTestId('agent-ledger-type')).toContainText(/Customer (Cheque )?Collection/);
-  await expect(line).toContainText(/INV \d+/);
+  await expect(line.locator('td[data-col="memo"]')).toContainText(/Customer (Cheque )?Collection/);
   await expect(line).toContainText(/Agent collection from Radouan/);
-  const text = (await line.textContent()) ?? '';
+  // The invoice and the dollar equivalent are in the row's details.
+  await line.click();
+  const details = page.getByTestId('ledger-row-details');
+  await expect(details).toContainText(/INV \d+/);
+  const text = `${(await line.textContent()) ?? ''} ${(await details.textContent()) ?? ''}`;
   expect((await money(text, 'MAD')).filter((n) => n === 46000).length).toBeGreaterThanOrEqual(1);
   const usd = await money(text, 'USD');
   expect(usd.length).toBe(1);
@@ -186,13 +189,16 @@ test('the agent ledger shows the collection once, in MAD, with USD only as an eq
   await page.goto(`/ledgers/customers/${customerId}?currency=MAD`, { waitUntil: 'domcontentloaded' });
   const main = page.getByRole('main');
   await expect(main).toContainText(/Partial Payment/, { timeout: 30_000 });
-  const types = await main.getByTestId('ledger-type').allTextContents();
-  expect(types.filter((t) => /Partial Payment/.test(t)).length).toBe(2);
-  expect(types.filter((t) => /^Invoice$/.test(t.trim())).length).toBe(1);
+  // The type filter slices the same ledger: two partial payments, one invoice.
+  const typeFilter = main.getByLabel('Filter by type');
+  await typeFilter.selectOption('Partial Payment');
+  await expect(main.getByTestId('ledger-row')).toHaveCount(2);
+  await typeFilter.selectOption('Invoice');
+  await expect(main.getByTestId('ledger-row')).toHaveCount(1);
+  await typeFilter.selectOption('');
   await expect(main).toContainText(/Cash received from Bani/);
   await expect(main).toContainText(/Collected by/);
-  await expect(main).toContainText(/Memo/);
-  await expect(main.getByRole('columnheader', { name: /^Invoice$/ })).toBeVisible();
+  await expect(main.getByRole('columnheader', { name: /^Memo$/ })).toBeVisible();
   console.log('  customer ledger: Invoice, Partial Payment ×2, memos and collector shown');
 
   // A customer typed into General Ledgers is sent to the Customer Ledger.
@@ -289,15 +295,15 @@ test('he hands over more than he collected: the excess is classified, never gues
   console.log('  hand-over: MAD 46,000 settled, MAD 154,000 booked as his loan');
 
   // The filters slice the same ledger: the loan on its own, the collections and the hand-over together.
-  await page.getByTestId('agent-tab-loans').click();
+  await page.getByTestId('ledger-quick-loans').click();
   await page.waitForLoadState('networkidle').catch(() => undefined);
   await expect(page.getByTestId('agent-ledger')).toContainText(/154,000\.00/, { timeout: 20_000 });
   await expect(page.getByTestId('agent-ledger')).not.toContainText(/46,000\.00/);
-  const direction = await page.getByTestId('agent-ledger').locator('table').first().getByTestId('agent-ledger-direction').first().innerText();
+  const direction = await page.getByTestId('agent-ledger').getByTestId('ledger-row').first().locator('td[data-col="balance"]').innerText();
   // The standard balance column: Dr when he owes FID, Cr when FID owes him.
   expect(direction).toMatch(/MAD [\d,]+\.\d{2} (Dr|Cr)/);
 
-  await page.getByTestId('agent-tab-collections').click();
+  await page.getByTestId('ledger-quick-collections').click();
   await page.waitForLoadState('networkidle').catch(() => undefined);
   const clearing = page.getByTestId('agent-ledger');
   await expect(clearing).toContainText(/46,000\.00/, { timeout: 20_000 });

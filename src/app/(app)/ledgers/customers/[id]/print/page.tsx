@@ -4,9 +4,10 @@ import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getCustomerLedger, ledgerKindToSourceType, resolvePartyLedgerQuery } from '@/lib/services/ledger';
-import { formatMoney, formatDate, companyFlag, titleCase } from '@/lib/format';
+import { formatMoney, formatDate, companyFlag } from '@/lib/format';
 import { PrintButton } from '@/components/shared/print-button';
 import { AutoPrint } from '@/app/(app)/sales/[id]/print/auto-print';
+import { LedgerView } from '@/components/shared/ledger-view';
 
 export const metadata: Metadata = { title: 'Customer statement' };
 export const dynamic = 'force-dynamic';
@@ -119,68 +120,21 @@ export default async function CustomerLedgerPrintPage({
           </dl>
         </section>
 
-        <table className="mt-5 w-full border-collapse text-xs">
-          <thead>
-            <tr className="bg-forest-800 text-white">
-              <th className="border border-forest-800 px-2 py-2 text-left font-semibold">Date</th>
-              <th className="border border-forest-800 px-2 py-2 text-left font-semibold">Reference</th>
-              <th className="border border-forest-800 px-2 py-2 text-left font-semibold">Description</th>
-              <th className="border border-forest-800 px-2 py-2 text-right font-semibold">Debit</th>
-              <th className="border border-forest-800 px-2 py-2 text-right font-semibold">Credit</th>
-              <th className="border border-forest-800 px-2 py-2 text-right font-semibold">Balance</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr className="bg-forest-50">
-              <td className="border border-line px-2 py-1.5" colSpan={5}>
-                Opening balance
-              </td>
-              <td className="tnum border border-line px-2 py-1.5 text-right font-semibold">
-                {formatMoney(ledger.openingBalance, currency)}
-              </td>
-            </tr>
-            {ledger.rows.map((row, index) => {
-              const debit = row.debit;
-              const credit = row.credit;
-              const amountCurrency = row.currency;
-              return (
-                <tr key={`${row.journalEntryId}-${index}`}>
-                  <td className="border border-line px-2 py-1.5 whitespace-nowrap">{formatDate(row.entryDate)}</td>
-                  <td className="border border-line px-2 py-1.5 font-medium">{row.reference ?? '—'}</td>
-                  <td className="border border-line px-2 py-1.5">
-                    {row.description}
-                    <span className="block text-[10px] text-ink-subtle">{titleCase(row.sourceType)}</span>
-                  </td>
-                  <td className="tnum border border-line px-2 py-1.5 text-right">
-                    {debit.greaterThan(0) ? formatMoney(debit, amountCurrency) : '—'}
-                  </td>
-                  <td className="tnum border border-line px-2 py-1.5 text-right">
-                    {credit.greaterThan(0) ? formatMoney(credit, amountCurrency) : '—'}
-                  </td>
-                  <td className="tnum border border-line px-2 py-1.5 text-right font-medium">
-                    {formatMoney(row.balance, currency)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-          <tfoot>
-            <tr className="bg-forest-50 font-semibold">
-              <td className="border border-line px-2 py-2" colSpan={3}>
-                Totals / closing
-              </td>
-              <td className="tnum border border-line px-2 py-2 text-right">
-                {formatMoney(ledger.totalDebit, currency)}
-              </td>
-              <td className="tnum border border-line px-2 py-2 text-right">
-                {formatMoney(ledger.totalCredit, currency)}
-              </td>
-              <td className="tnum border border-line px-2 py-2 text-right">
-                {formatMoney(ledger.closingBalance, currency)}
-              </td>
-            </tr>
-          </tfoot>
-        </table>
+        <div className="mt-5">
+          {/* The same ledger table as the screen, in the columns this person chose. */}
+          <LedgerView
+            ledger={ledger}
+            basePath={`/ledgers/customers/${id}`}
+            partyCurrency={customer.primaryCurrency}
+            localCurrency={user.activeCompany.localCurrency}
+            emptyDescription="Nothing in this period."
+            report="customer"
+            subject={customer.customerName}
+            userId={user.id}
+            companyName={companyName}
+            mode="document"
+          />
+        </div>
 
         <p className="mt-6 text-[11px] text-ink-subtle">
           Outstanding balance is the amount still due. Debits are invoices; credits are receipts and credit notes.

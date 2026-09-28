@@ -15,6 +15,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { UnpaidExpensesClient, type UnpaidRow } from '@/app/(app)/finance/unpaid-expenses/unpaid-client';
+import { LedgerReport, type LedgerReportRow } from '@/components/ledger/ledger-report';
+import { getLedgerPrefs } from '@/lib/services/ledger-prefs';
+import { businessNumber } from '@/lib/short-number';
+import { dec, toMoney, type Decimal } from '@/lib/money';
+import type { LedgerColumnKey } from '@/lib/ledger-columns';
+
+const UNPAID_LEDGER_COLUMNS: LedgerColumnKey[] = ['reference', 'type', 'party', 'shipment', 'status', 'createdBy'];
 
 export const metadata: Metadata = { title: 'Unpaid Expenses' };
 export const dynamic = 'force-dynamic';
@@ -99,7 +106,92 @@ export default async function UnpaidExpensesPage({
   const buckets: AgeBucket[] = ['0–30 days', '31–60 days', '61–90 days', '90+ days'];
   const totalUsd = ledger.rows
     .filter((r) => r.status !== 'SETTLED' && r.rateLocalPerUsd.greaterThan(0))
-    .reduce((sum, r) => sum + Number(r.outstandingLocal) / Number(r.rateLocalPerUsd), 0);
+    .reduce((sum, r) => sum.plus(r.outstandingLocal.dividedBy(r.rateLocalPerUsd)), dec(0));
+
+  /*
+   * The same costs as an accounting ledger: each cost booked is a credit to
+   * what is owed, each settlement a debit, and the balance runs to the total
+   * still owed. In the company's currency, at each cost's own rate.
+   */
+  const events: Array<{ order: string; row: LedgerReportRow; movement: Decimal }> = [];
+  // Sorted by date; within a day, each cost in the ledger's own order, booked before it is settled.
+  for (const [position, r] of ledger.rows.entries()) {
+    const seq = String(position).padStart(6, '0');
+    const perUnit = r.gross.isZero() ? dec(0) : r.grossLocal.dividedBy(r.gross);
+    const party = r.party.name;
+    const shipment = r.shipmentReference && r.shipmentId ? { label: r.shipmentReference, href: `/shipments/${r.shipmentId}` } : null;
+    const date = r.expenseDate.toISOString().slice(0, 10);
+    events.push({
+      order: `${date}-0-${seq}`,
+      movement: r.grossLocal,
+      row: {
+        key: `b-${r.expenseId}`,
+        date,
+        reference: businessNumber(r.expenseNumber),
+        referenceHref: `/finance/expenses/${r.expenseId}`,
+        type: 'Cost booked',
+        memo: [r.category, r.memo].filter(Boolean).join(' — '),
+        party,
+        shipment,
+        status: UNPAID_STATUS_LABEL[r.status],
+        debit: '0',
+        credit: r.grossLocal.toString(),
+        balance: '0',
+      },
+    });
+    let settledHere = dec(0);
+    for (const ev of r.history) {
+      const amount = toMoney(r.currency === local ? ev.amount : ev.amount.times(perUnit));
+      settledHere = settledHere.plus(amount);
+      const evDate = ev.date.toISOString().slice(0, 10);
+      events.push({
+        order: `${evDate}-1-${ev.number}`,
+        movement: amount.negated(),
+        row: {
+          key: `s-${ev.id}-${r.expenseId}`,
+          date: evDate,
+          reference: businessNumber(ev.number),
+          referenceHref: ev.href,
+          type: `Settled — ${ev.method}`,
+          memo: `${r.category} (${businessNumber(r.expenseNumber)}) settled by ${ev.method.toLowerCase()} · ${ev.through}`,
+          party,
+          shipment,
+          createdBy: ev.by,
+          debit: amount.toString(),
+          credit: '0',
+          balance: '0',
+        },
+      });
+    }
+    // Paid by a journal voucher on the account it is held in: it names no cost, so no date of its own here.
+    const byJournal = toMoney(r.settledLocal.minus(settledHere));
+    if (byJournal.greaterThan('0.005')) {
+      events.push({
+        order: `${date}-2-${seq}`,
+        movement: byJournal.negated(),
+        row: {
+          key: `j-${r.expenseId}`,
+          date,
+          reference: businessNumber(r.expenseNumber),
+          referenceHref: `/finance/expenses/${r.expenseId}`,
+          type: 'Settled — journal voucher',
+          memo: `${r.category} settled by a journal voucher on ${r.control}`,
+          party,
+          shipment,
+          debit: byJournal.toString(),
+          credit: '0',
+          balance: '0',
+        },
+      });
+    }
+  }
+  events.sort((a, b) => a.order.localeCompare(b.order));
+  let running = dec(0);
+  const ledgerRows = events.map((e) => {
+    running = toMoney(running.plus(e.movement));
+    return { ...e.row, balance: running.toString() };
+  });
+  const unpaidPrefs = await getLedgerPrefs(user.id, 'unpaid-expenses', UNPAID_LEDGER_COLUMNS);
 
   return (
     <div className="space-y-6">
@@ -122,7 +214,7 @@ export default async function UnpaidExpensesPage({
                     amount={t.outstandingLocal}
                     currency={local}
                     localCurrency={local}
-                    amountUsd={totalUsd.toFixed(2)}
+                    amountUsd={toMoney(totalUsd).toString()}
                     rateSource="Each cost at its own rate"
                   />
                 </span>
@@ -138,6 +230,7 @@ export default async function UnpaidExpensesPage({
         </CardContent>
       </Card>
 
+      <div data-testid="unpaid-schedule">
       <UnpaidExpensesClient
         rows={rows}
         localCurrency={local}
@@ -148,6 +241,28 @@ export default async function UnpaidExpensesPage({
         setOffSources={Object.fromEntries(sources)}
         defaultRates={{ local: rates.local, byCurrency: rates.byCurrency }}
       />
+      </div>
+
+      <section className="space-y-2">
+        <h2 className="text-sm font-semibold text-ink">Unpaid expenses ledger</h2>
+        <p className="text-xs text-ink-muted">
+          The same costs as an accounting ledger: each cost booked is a credit to what is owed, each settlement a debit. The
+          balance is what is still owed.
+        </p>
+        <LedgerReport
+          report="unpaid-expenses"
+          title="Unpaid expenses ledger"
+          subject={user.activeCompany.name}
+          currency={local}
+          balanceSide="credit"
+          opening="0"
+          rows={ledgerRows}
+          available={UNPAID_LEDGER_COLUMNS}
+          initialPrefs={unpaidPrefs}
+          companyName={user.activeCompany.name}
+          emptyText="No cost has been booked to be paid later."
+        />
+      </section>
 
       <Card>
         <CardHeader>

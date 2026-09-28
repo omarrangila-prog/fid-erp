@@ -1,14 +1,12 @@
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import { formatMoney, formatDate } from '@/lib/format';
-import { DualAmount } from '@/components/shared/dual-amount';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
-import { EmptyState } from '@/components/ui/feedback';
+import { formatMoney } from '@/lib/format';
 import { ledgerCurrencyTabs, type LedgerResult } from '@/lib/services/ledger';
+import { getLedgerPrefs } from '@/lib/services/ledger-prefs';
 import { JournalSourceActions } from '@/components/shared/journal-source-actions';
-import { MemoCell } from '@/components/shared/memo-cell';
+import { LedgerReport, type LedgerReportRow } from '@/components/ledger/ledger-report';
 import { businessNumber, shortDocumentNumber } from '@/lib/short-number';
+import type { LedgerColumnKey } from '@/lib/ledger-columns';
 import type { LedgerDocument } from '@/lib/services/ledger-sql';
 
 function documentHref(doc: LedgerDocument): string {
@@ -23,23 +21,28 @@ function documentName(doc: LedgerDocument): string {
   return shortDocumentNumber(doc.number);
 }
 
+const AVAILABLE: LedgerColumnKey[] = ['reference', 'jv', 'type', 'invoice', 'shipment', 'currency', 'status'];
+
 /**
- * Party ledger filtered by the currency the voucher was actually raised in.
- *
- * USD shows USD transactions and the USD balance. MAD shows MAD transactions
- * and the MAD balance. The two are never added into one total.
+ * A customer's or supplier's ledger, in the one ledger layout the whole
+ * application uses (see LedgerReport), filtered by the currency the vouchers
+ * were raised in: USD shows USD transactions and balance, MAD shows MAD, and
+ * the two are never added into one total.
  */
-export function LedgerView({
+export async function LedgerView({
   ledger,
   basePath,
   extraQuery,
   partyCurrency,
   localCurrency,
   emptyDescription,
-  documentHeader = 'Invoice',
   canDelete = false,
+  report,
+  subject,
+  userId,
+  companyName,
+  mode,
 }: {
-  documentHeader?: string;
   ledger: LedgerResult;
   basePath: string;
   extraQuery?: Record<string, string | undefined>;
@@ -48,23 +51,17 @@ export function LedgerView({
   emptyDescription: string;
   /** Whether a posting on this ledger can be taken back out of the books here. */
   canDelete?: boolean;
+  report: 'customer' | 'supplier';
+  subject: string;
+  userId: string;
+  companyName: string;
+  /** 'document' for a printed statement: the table only. */
+  mode?: 'interactive' | 'document';
 }) {
   const currencies = ledgerCurrencyTabs(localCurrency, partyCurrency);
   const selected = ledger.currencyFilter ?? ledger.viewCurrency;
   const currency = ledger.viewCurrency;
-  // Each amount carries its own equivalent in the same cell, at the entry's
-  // own rate, so no separate equivalents column is needed.
-  const dual = (amount: LedgerResult['rows'][number]['debit'], rowCurrency: string, usd: typeof amount, localAmount: typeof amount) => (
-    <DualAmount
-      amount={amount}
-      currency={rowCurrency}
-      localCurrency={localCurrency}
-      amountUsd={usd}
-      amountLocal={localAmount}
-      rateSource="This entry's own rate"
-      primaryClassName="font-normal"
-    />
-  );
+  const prefs = await getLedgerPrefs(userId, report, AVAILABLE);
 
   const hrefFor = (code: string) => {
     const params = new URLSearchParams();
@@ -77,121 +74,87 @@ export function LedgerView({
     return `${basePath}?${params.toString()}`;
   };
 
+  // Amounts in the currency being viewed: the voucher's own when it is that
+  // currency, otherwise its equivalent at the voucher's own rate.
+  const inView = (own: LedgerResult['rows'][number]['debit'], rowCurrency: string, usd: typeof own, local: typeof own) =>
+    rowCurrency === currency ? own : currency === 'USD' ? usd : currency === localCurrency ? local : own;
+
+  const rows: LedgerReportRow[] = ledger.rows.map((row, index) => ({
+    key: `${row.journalEntryId}-${index}`,
+    date: row.entryDate.toISOString().slice(0, 10),
+    reference: businessNumber(row.reference ?? row.entryNumber),
+    jv: businessNumber(row.entryNumber),
+    type: row.typeLabel,
+    memo: row.memo ?? row.description,
+    memoNote: row.collectedBy ? `Collected by ${row.collectedBy}` : null,
+    invoices: row.documents.map((doc) => ({ label: documentName(doc), href: documentHref(doc) })),
+    shipment: row.shipmentNumber ? { label: row.shipmentNumber } : null,
+    currency: row.currency,
+    debit: inView(row.debit, row.currency, row.debitUsd, row.debitLocal).toString(),
+    credit: inView(row.credit, row.currency, row.creditUsd, row.creditLocal).toString(),
+    balance: row.balance.toString(),
+    // The voucher's own amount, and its equivalent at the voucher's own rate.
+    facts: [
+      {
+        label: 'Amount',
+        value: formatMoney(row.debit.greaterThan(0) ? row.debit : row.credit, row.currency),
+      },
+      {
+        label: row.currency === 'USD' ? `Equivalent (${localCurrency})` : 'Equivalent (USD)',
+        value:
+          row.currency === 'USD'
+            ? formatMoney(row.debitLocal.greaterThan(0) ? row.debitLocal : row.creditLocal, localCurrency)
+            : formatMoney(row.debitUsd.greaterThan(0) ? row.debitUsd : row.creditUsd, 'USD'),
+      },
+    ],
+    actions: (
+      <JournalSourceActions
+        sourceType={row.sourceType}
+        sourceId={row.sourceId}
+        entryNumber={row.entryNumber}
+        journalEntryId={row.journalEntryId}
+        canDelete={canDelete}
+      />
+    ),
+  }));
+
   return (
-    <Card>
-      <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <CardTitle>Ledger</CardTitle>
-          <CardDescription>
-            Choose a currency to see only that currency’s transactions and balance. USD and MAD are never mixed into
-            one total.
-          </CardDescription>
-        </div>
-        <div className="inline-flex shrink-0 rounded-lg border border-line-strong p-0.5">
-          {currencies.map((code) => (
-            <Link
-              key={code}
-              href={hrefFor(code)}
-              title={`Show ${code} transactions only`}
-              className={cn(
-                'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                selected === code ? 'bg-forest-800 text-white' : 'text-ink-muted hover:text-ink',
-              )}
-            >
-              {code}
-            </Link>
-          ))}
-        </div>
-      </CardHeader>
-
-      <CardContent className="px-0 pb-0">
-        {ledger.rows.length === 0 ? (
-          <div className="p-5">
-            <EmptyState title={`No ${currency} ledger entries`} description={emptyDescription} />
-          </div>
-        ) : (
-          <TableWrap className="rounded-none border-0 border-t">
-            <Table>
-              <THead>
-                <TR className="hover:bg-transparent">
-                  <TH>Date</TH>
-                  <TH>Type</TH>
-                  <TH>{documentHeader}</TH>
-                  <TH>Reference</TH>
-                  <TH>Memo</TH>
-                  <TH>Currency</TH>
-                  <TH numeric>Debit</TH>
-                  <TH numeric>Credit</TH>
-                  <TH numeric>Balance</TH>
-                  <TH className="text-right" data-print="hide">Actions</TH>
-                </TR>
-              </THead>
-              <TBody>
-                <TR className="bg-forest-50/40 hover:bg-forest-50/40">
-                  <TD colSpan={8} className="text-xs font-medium text-ink-muted">
-                    Opening balance ({currency})
-                  </TD>
-                  <TD numeric className="font-semibold">
-                    {formatMoney(ledger.openingBalance, currency)}
-                  </TD>
-                  <TD data-print="hide" />
-                </TR>
-
-                {ledger.rows.map((row, index) => (
-                  <TR key={`${row.journalEntryId}-${index}`}>
-                    <TD className="whitespace-nowrap">{formatDate(row.entryDate)}</TD>
-                    <TD className="whitespace-nowrap text-xs font-medium" data-testid="ledger-type">
-                      {row.typeLabel}
-                    </TD>
-                    <TD className="whitespace-nowrap text-xs">
-                      {row.documents.length === 0
-                        ? '—'
-                        : row.documents.map((doc, i) => (
-                            <span key={doc.id}>
-                              {i > 0 ? ', ' : ''}
-                              <Link href={documentHref(doc)} className="font-medium text-forest-800 hover:text-gold-700">
-                                {documentName(doc)}
-                              </Link>
-                            </span>
-                          ))}
-                    </TD>
-                    <TD className="whitespace-nowrap text-xs">
-                      {businessNumber(row.reference ?? row.entryNumber)}
-                    </TD>
-                    <TD>
-                      <MemoCell memo={row.memo} note={row.collectedBy ? `Collected by ${row.collectedBy}` : null} />
-                    </TD>
-                    <TD className="text-xs">{row.currency}</TD>
-                    <TD numeric>{row.debit.greaterThan(0) ? dual(row.debit, row.currency, row.debitUsd, row.debitLocal) : '—'}</TD>
-                    <TD numeric>{row.credit.greaterThan(0) ? dual(row.credit, row.currency, row.creditUsd, row.creditLocal) : '—'}</TD>
-                    <TD numeric className="font-medium">
-                      {formatMoney(row.balance, currency)}
-                    </TD>
-                    <TD data-print="hide">
-                      <JournalSourceActions
-                        sourceType={row.sourceType}
-                        sourceId={row.sourceId}
-                        entryNumber={row.entryNumber}
-                        journalEntryId={row.journalEntryId}
-                        canDelete={canDelete}
-                      />
-                    </TD>
-                  </TR>
-                ))}
-              </TBody>
-              <TFoot>
-                <tr>
-                  <TD colSpan={6}>Closing balance ({currency})</TD>
-                  <TD numeric>{formatMoney(ledger.totalDebit, currency)}</TD>
-                  <TD numeric>{formatMoney(ledger.totalCredit, currency)}</TD>
-                  <TD numeric>{formatMoney(ledger.closingBalance, currency)}</TD>
-                  <TD data-print="hide" />
-                </tr>
-              </TFoot>
-            </Table>
-          </TableWrap>
-        )}
-      </CardContent>
-    </Card>
+    <LedgerReport
+      report={report}
+      title={report === 'customer' ? 'Customer ledger' : 'Supplier ledger'}
+      subject={subject}
+      currency={currency}
+      // A customer's running balance counts what they owe (Dr); a supplier's
+      // counts what is owed to them (Cr).
+      balanceSide={report === 'customer' ? 'debit' : 'credit'}
+      opening={ledger.openingBalance.toString()}
+      rows={rows}
+      available={AVAILABLE}
+      initialPrefs={prefs}
+      companyName={companyName}
+      periodLabel={extraQuery?.from || extraQuery?.to ? `${extraQuery?.from ?? 'the start'} – ${extraQuery?.to ?? 'today'}` : undefined}
+      dateFilter={false}
+      mode={mode}
+      emptyText={emptyDescription}
+      toolbar={
+        currencies.length > 1 ? (
+          <span className="inline-flex shrink-0 rounded-lg border border-line-strong p-0.5">
+            {currencies.map((code) => (
+              <Link
+                key={code}
+                href={hrefFor(code)}
+                title={`Show ${code} transactions only`}
+                className={cn(
+                  'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                  selected === code ? 'bg-forest-800 text-white' : 'text-ink-muted hover:text-ink',
+                )}
+              >
+                {code}
+              </Link>
+            ))}
+          </span>
+        ) : null
+      }
+    />
   );
 }

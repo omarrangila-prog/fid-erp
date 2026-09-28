@@ -81,7 +81,8 @@ async function bookUnpaid(page: Page, params: { amount: string; memo: string; pa
 }
 
 function ledgerRow(page: Page, memo: string) {
-  return page.getByRole('row').filter({ hasText: memo }).first();
+  // The schedule, not the ledger beneath it, which lists every cost ever booked.
+  return page.getByTestId('unpaid-schedule').getByRole('row').filter({ hasText: memo }).first();
 }
 
 async function openLedger(page: Page, view: 'outstanding' | 'all' = 'outstanding') {
