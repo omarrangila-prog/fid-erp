@@ -141,6 +141,7 @@ export function GoodsReceiptsClient({
   return (
     <>
     <DataTable
+      share={{ report: 'goods-receipts', title: 'Goods Receipts' }}
       prefsKey="goods-receipts"
       data={rows}
       columns={columns}

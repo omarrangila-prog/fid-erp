@@ -42,7 +42,9 @@ export function StatementHeader({
     <div className="space-y-1 py-4 text-center">
       <p className="text-sm font-medium text-ink-muted">{company}</p>
       <h2 className="text-xl font-semibold uppercase tracking-wide text-ink">{title}</h2>
-      <p className="text-sm text-ink-muted">{period}</p>
+      <p className="text-sm text-ink-muted" data-share-period>
+        {period}
+      </p>
       <p className="text-[11px] uppercase tracking-wider text-ink-subtle">{basis}</p>
       {meta}
     </div>

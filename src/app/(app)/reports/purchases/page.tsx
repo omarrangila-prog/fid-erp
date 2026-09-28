@@ -11,6 +11,7 @@ import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/feedback';
 import { ExportLinks } from '@/components/shared/export-links';
+import { ReportShareButton } from '@/components/share/report-share-button';
 import { exportHref } from '@/components/shared/excel-link';
 import { PrintHeader } from '@/components/shared/print-header';
 import { DateRangePicker } from '@/components/shared/date-range';
@@ -56,7 +57,12 @@ export default async function PurchaseReportPage({
         title="Purchase Report"
         description="Every purchase in the period, how much of it has landed, and how much is still owed to the supplier."
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Purchases' }]}
-        actions={<ExportLinks href={exportHref('purchase-register', { from, to })} />}
+        actions={
+          <>
+            <ExportLinks href={exportHref('purchase-register', { from, to })} />
+            <ReportShareButton report="purchase-report" />
+          </>
+        }
       />
       <PrintHeader title="Purchase Report" companyName={user.activeCompany.name} country={user.activeCompany.country} />
 

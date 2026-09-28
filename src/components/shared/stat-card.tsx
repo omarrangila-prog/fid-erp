@@ -80,7 +80,9 @@ export function Metric({
   return (
     <div className="min-w-0">
       <dt className="text-xs text-ink-muted">{label}</dt>
-      <dd className={cn('tnum mt-0.5 text-sm font-semibold', toneClass)}>{value}</dd>
+      <dd className={cn('tnum mt-0.5 text-sm font-semibold', toneClass)} data-share-fact={label}>
+        {value}
+      </dd>
       {hint ? <p className="text-[11px] text-ink-subtle">{hint}</p> : null}
     </div>
   );
@@ -95,7 +97,9 @@ export function DetailRow({ label, children }: { label: string; children: React.
   return (
     <div className="flex items-start justify-between gap-4 border-b border-grid/40 py-2 last:border-0">
       <dt className="shrink-0 text-xs text-ink-muted">{label}</dt>
-      <dd className="min-w-0 text-right text-sm text-ink">{children}</dd>
+      <dd className="min-w-0 text-right text-sm text-ink" data-share-fact={label}>
+        {children}
+      </dd>
     </div>
   );
 }

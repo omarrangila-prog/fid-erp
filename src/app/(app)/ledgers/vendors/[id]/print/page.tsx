@@ -6,6 +6,7 @@ import { prisma } from '@/lib/db';
 import { getVendorLedger, ledgerKindToSourceType, resolvePartyLedgerQuery } from '@/lib/services/ledger';
 import { formatMoney, formatDate, companyFlag } from '@/lib/format';
 import { PrintButton } from '@/components/shared/print-button';
+import { ReportShareButton } from '@/components/share/report-share-button';
 import { AutoPrint } from '@/app/(app)/sales/[id]/print/auto-print';
 import { LedgerView } from '@/components/shared/ledger-view';
 
@@ -68,7 +69,10 @@ export default async function VendorLedgerPrintPage({
         <p className="text-sm text-ink-muted">
           Use <span className="font-medium text-ink">Print</span> and choose “Save as PDF” to send this statement.
         </p>
-        <PrintButton label="Print / Save as PDF" />
+        <div className="flex flex-wrap gap-2">
+          <PrintButton label="Print / Save as PDF" />
+          <ReportShareButton report="supplier-statement" subject={vendor.vendorName} />
+        </div>
       </div>
 
       <article className="rounded-xl border border-line bg-surface p-4 shadow-card sm:p-8 print:rounded-none print:border-0 print:p-0 print:shadow-none">

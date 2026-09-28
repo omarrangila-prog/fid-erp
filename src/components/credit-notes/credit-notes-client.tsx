@@ -204,6 +204,7 @@ export function CreditNotesClient({
   return (
     <>
       <DataTable
+        share={{ report: 'credit-notes', title: 'Credit Notes' }}
       prefsKey="credit-notes"
         data={rows}
         columns={columns}

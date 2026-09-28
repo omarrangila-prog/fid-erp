@@ -7,6 +7,7 @@ import { dec, toMoney } from '@/lib/money';
 import { getInvoiceOutstanding } from '@/lib/services/receipt';
 import { formatMoney, formatDate, formatQuantityKg, companyFlag } from '@/lib/format';
 import { PrintButton } from '@/components/shared/print-button';
+import { ReportShareButton } from '@/components/share/report-share-button';
 import { AutoPrint } from '@/app/(app)/sales/[id]/print/auto-print';
 import { invoiceScopeWhere } from '@/lib/auth/scope';
 
@@ -75,7 +76,10 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
           Use <span className="font-medium text-ink">Print</span> and choose “Save as PDF” to send this to the
           customer.
         </p>
-        <PrintButton label="Print invoice" />
+        <div className="flex flex-wrap gap-2">
+          <PrintButton label="Print invoice" />
+          <ReportShareButton report="invoice" subject={`${invoice.customer.customerName} · ${invoice.invoiceNumber}`} label="Share invoice" />
+        </div>
       </div>
 
       <article className="rounded-xl border border-line bg-surface p-4 shadow-card sm:p-8 print:rounded-none print:border-0 print:p-0 print:shadow-none">

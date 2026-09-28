@@ -16,6 +16,22 @@ import { defineConfig, devices } from '@playwright/test';
  */
 const testDatabaseUrl = process.env.TEST_DATABASE_URL ?? '';
 
+/*
+ * The developer the share-activity tests sign in as. The PIN is drawn afresh
+ * for each run — four digits, none of the easy ones and none of the PINs the
+ * other accounts use — and passed to the fixture, the server and the specs
+ * through the environment, so it is never written down.
+ */
+function drawPin(taken: Array<string | undefined>): string {
+  for (;;) {
+    const pin = String(Math.floor(1000 + Math.random() * 9000));
+    if (/^(\d)\1{3}$/.test(pin) || ['1234', '4321', '0123', '9876'].includes(pin) || taken.includes(pin)) continue;
+    return pin;
+  }
+}
+process.env.E2E_DEVELOPER_EMAIL ??= 'developer@e2e.fid.invalid';
+process.env.E2E_DEVELOPER_PIN ??= drawPin([process.env.ADMIN_PIN, process.env.DUBAI_STAFF_PIN, process.env.MOROCCO_STAFF_PIN]);
+
 export default defineConfig({
   testDir: './tests/e2e',
   globalSetup: './tests/e2e/global-setup.ts',
@@ -24,7 +40,7 @@ export default defineConfig({
     url: 'http://localhost:3000/login',
     reuseExistingServer: false,
     timeout: 120_000,
-    env: { ...process.env, DATABASE_URL: testDatabaseUrl },
+    env: { ...process.env, DATABASE_URL: testDatabaseUrl, DEVELOPER_USERS: process.env.E2E_DEVELOPER_EMAIL ?? '' },
   },
   timeout: 90_000,
   expect: { timeout: 10_000 },

@@ -452,6 +452,7 @@ export function ShipmentsClient({
   return (
     <>
       <DataTable
+        share={{ report: 'shipments', title: 'Shipments' }}
         prefsKey="shipments-grouped"
         data={rows}
         columns={columns}

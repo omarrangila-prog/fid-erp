@@ -41,6 +41,8 @@ import {
   type LucideIcon,
   Scale,
   Star,
+  Share2,
+  Activity,
 } from 'lucide-react';
 import { PERMISSIONS, type PermissionCode } from '@/lib/constants';
 
@@ -50,7 +52,12 @@ export type NavItem = {
   icon: LucideIcon;
   /** The user needs at least one of these to see the item. */
   permissions: PermissionCode[];
+  /** Shown only to the developer named on the server — not even to the owner. */
+  developerOnly?: boolean;
 };
+
+/** Added to the permissions handed to the menu when the signed-in user is the developer. */
+export const DEVELOPER_MENU_MARK = 'developer.menu';
 
 export type NavGroup = {
   label: string;
@@ -201,6 +208,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Audit Log', href: '/admin/audit', icon: History, permissions: [PERMISSIONS.AUDIT_VIEW] },
       { label: 'Consistency checks', href: '/admin/consistency', icon: ShieldCheck, permissions: [PERMISSIONS.AUDIT_VIEW] },
       { label: 'Backups', href: '/admin/backups', icon: DatabaseBackup, permissions: [PERMISSIONS.BACKUP_MANAGE] },
+      { label: 'Shared Links', href: '/admin/shared-links', icon: Share2, permissions: [PERMISSIONS.USERS_MANAGE] },
+      { label: 'Share Activity', href: '/admin/share-activity', icon: Activity, permissions: [], developerOnly: true },
       { label: 'Tax Settings', href: '/settings/tax', icon: Percent, permissions: [PERMISSIONS.SETTINGS_MANAGE] },
       { label: 'Settings', href: '/settings', icon: Settings, permissions: [PERMISSIONS.SETTINGS_MANAGE] },
     ],
@@ -265,7 +274,9 @@ export const MY_PAGES_LABEL = 'My pages';
 /** Every page the menu offers, once each, for choosing a role's own menu. */
 export function allNavItems(): Array<{ href: string; label: string; group: string }> {
   const seen = new Set<string>();
-  return NAV_GROUPS.flatMap((group) => group.items.map((item) => ({ href: item.href, label: item.label, group: group.label }))).filter(
+  return NAV_GROUPS.flatMap((group) =>
+    group.items.filter((item) => !item.developerOnly).map((item) => ({ href: item.href, label: item.label, group: group.label })),
+  ).filter(
     (item) => !seen.has(item.href) && Boolean(seen.add(item.href)),
   );
 }
@@ -288,7 +299,9 @@ export function filterNav(groups: NavGroup[], permissions: string[], isSuperAdmi
   return groups
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => isSuperAdmin || item.permissions.some((p) => granted.has(p))),
+      items: group.items.filter((item) =>
+        item.developerOnly ? granted.has(DEVELOPER_MENU_MARK) : isSuperAdmin || item.permissions.some((p) => granted.has(p)),
+      ),
     }))
     .filter((group) => group.items.length > 0);
 }

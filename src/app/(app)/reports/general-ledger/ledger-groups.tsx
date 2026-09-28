@@ -88,7 +88,7 @@ export function LedgerGroups({
       {groups.map((group) => {
         const shown = open[group.accountId] ?? true;
         return (
-          <section key={group.accountId} className="rounded-lg border border-ink/70">
+          <section key={group.accountId} className="rounded-lg border border-ink/70" data-share-heading={group.name}>
             <button
               type="button"
               onClick={() => toggle(group.accountId)}

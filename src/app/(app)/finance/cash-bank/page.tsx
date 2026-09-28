@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { ReportShareButton } from '@/components/share/report-share-button';
 import { Wallet, Landmark, Coins } from 'lucide-react';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
@@ -32,6 +33,7 @@ export default async function CashBankPage() {
         breadcrumbs={[{ label: 'Finance' }, { label: 'Cash & Bank' }]}
         actions={
           <div className="flex flex-wrap gap-2">
+            <ReportShareButton report="cash-bank" />
             {can(user, PERMISSIONS.ACCOUNTING_POST) ? (
               <TransferFundsButton
                 accounts={position.accounts.map((account) => ({

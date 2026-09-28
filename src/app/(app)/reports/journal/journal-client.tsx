@@ -210,6 +210,7 @@ export function JournalClient({
 
   return (
     <DataTable
+      share={{ report: 'general-journal', title: 'General Journal' }}
       prefsKey="journal"
       data={rows}
       columns={columns}

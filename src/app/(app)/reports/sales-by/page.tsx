@@ -11,6 +11,7 @@ import { exportHref } from '@/components/shared/excel-link';
 import { CustomizePanel } from '@/components/reports/customize-panel';
 import { DateRangePicker } from '@/components/shared/date-range';
 import { PrintButton } from '@/components/shared/print-button';
+import { ReportShareButton } from '@/components/share/report-share-button';
 import { PrintHeader } from '@/components/shared/print-header';
 import { Card, CardContent } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/feedback';
@@ -69,6 +70,7 @@ export default async function SalesByPage({
             <ExportLinks href={exportHref('sales-by', { by, from: fromStr, to: toStr })} print={false} />
             <CustomizePanel report={title} fields={['period']} />
             <PrintButton />
+            <ReportShareButton report="sales-by" />
           </>
         }
       />

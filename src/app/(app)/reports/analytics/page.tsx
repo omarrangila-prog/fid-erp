@@ -7,6 +7,7 @@ import {
 } from '@/lib/services/profitability';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrintButton } from '@/components/shared/print-button';
+import { ReportShareButton } from '@/components/share/report-share-button';
 import { PrintHeader } from '@/components/shared/print-header';
 import { AnalyticsClient, type Dimension, type Slice } from '@/app/(app)/reports/analytics/analytics-client';
 
@@ -91,7 +92,12 @@ export default async function AnalyticsPage() {
         title="Analysis"
         description="One question — where the money comes from — asked along whichever axis matters today."
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Analysis' }]}
-        actions={<PrintButton />}
+        actions={
+          <>
+            <PrintButton />
+            <ReportShareButton report="analytics" />
+          </>
+        }
       />
       <PrintHeader
         title="Profitability analysis"

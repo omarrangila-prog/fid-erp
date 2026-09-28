@@ -21,6 +21,7 @@ import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/
 import { Callout } from '@/components/ui/feedback';
 import { cn } from '@/lib/utils';
 import { PrintButton } from '@/components/shared/print-button';
+import { ReportShareButton } from '@/components/share/report-share-button';
 import { exportHref } from '@/components/shared/excel-link';
 import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
@@ -61,6 +62,7 @@ export default async function ProfitabilityPage({ searchParams }: { searchParams
             <FavouriteStar href="/profitability" label="Shipment Profitability" />
             <ExportLinks href={exportHref('profitability', { view: active })} />
             <PrintButton />
+            <ReportShareButton report="shipment-profitability" />
           </>
         }
       />

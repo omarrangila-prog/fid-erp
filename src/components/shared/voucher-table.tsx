@@ -124,6 +124,7 @@ export function VoucherTable({
 
   return (
     <DataTable
+      share={kind === 'receipt' ? { report: 'receipts', title: 'Payments Received' } : kind === 'payment' ? { report: 'payments', title: 'Payments Made' } : undefined}
       data={rows}
       columns={columns}
       getRowId={(r) => r.id}

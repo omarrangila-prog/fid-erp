@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { AsOfPicker } from '@/components/shared/date-range';
 import { Card, CardContent } from '@/components/ui/card';
 import { PrintButton } from '@/components/shared/print-button';
+import { ReportShareButton } from '@/components/share/report-share-button';
 import { exportHref } from '@/components/shared/excel-link';
 import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
@@ -142,6 +143,7 @@ export default async function BalanceSheetPage({
             <CustomizePanel report="Balance Sheet" fields={['asOf', 'compare', 'zero']} />
             <ExportLinks href={exportHref('balance-sheet', { asOf })} />
             <PrintButton />
+            <ReportShareButton report="balance-sheet" />
           </>
         }
       />

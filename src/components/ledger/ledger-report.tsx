@@ -24,6 +24,17 @@ import {
 } from '@/lib/ledger-columns';
 import { saveLedgerPrefsAction } from '@/server/actions/ledger-prefs-actions';
 import type { LedgerWindow } from '@/lib/ledger-window';
+import { ShareDialog, ShareTrigger, WhatsAppIcon, type ShareChoice, type ShareSpec } from '@/components/share/share-dialog';
+import { shareReportLabel, type ShareReportKey, type ShareSection } from '@/lib/share/model';
+
+const SHARE_REPORT: Record<LedgerReportKey, ShareReportKey> = {
+  customer: 'customer-ledger',
+  supplier: 'supplier-ledger',
+  agent: 'agent-ledger',
+  'cash-bank': 'cash-bank-ledger',
+  'general-ledger': 'general-ledger',
+  'unpaid-expenses': 'unpaid-expenses',
+};
 
 /**
  * Every ledger in the system, drawn the same way.
@@ -166,6 +177,9 @@ export function LedgerReport(props: LedgerReportProps) {
   const [page, setPage] = React.useState(0);
   const [open, setOpen] = React.useState<string | null>(null);
   const [customizing, setCustomizing] = React.useState(false);
+  const [selecting, setSelecting] = React.useState(false);
+  const [selected, setSelected] = React.useState<Set<string>>(() => new Set());
+  const [share, setShare] = React.useState<{ id: number; spec: ShareSpec } | null>(null);
   const router = useRouter();
 
   const balanceText = (value: Decimal) => {
@@ -337,6 +351,7 @@ export function LedgerReport(props: LedgerReportProps) {
     const lead = first < 0 ? cols.length : first;
     return (
       <tr className={className}>
+        {selecting && !printing ? <td data-print="hide" /> : null}
         {/* The label stays readable while the figures scroll, without covering them. */}
         <td colSpan={Math.max(1, lead)} className="font-semibold">
           <span className={cn('inline-block whitespace-nowrap', !printing && 'sticky left-3')}>{label}</span>
@@ -371,6 +386,153 @@ export function LedgerReport(props: LedgerReportProps) {
 
   const period =
     from || to ? `${from ? formatDate(new Date(`${from}T00:00:00Z`)) : 'the start'} – ${to ? formatDate(new Date(`${to}T00:00:00Z`)) : 'today'}` : (periodLabel ?? 'All dates');
+
+  // --- Sharing: the same rows, columns and figures, as text --------------------
+  const cellText = (key: LedgerColumnKey, r: LedgerReportRow): string => {
+    switch (key) {
+      case 'date':
+        return formatDate(new Date(`${r.date}T00:00:00.000Z`));
+      case 'memo':
+        return [r.memo || r.type || '—', r.memoNote].filter(Boolean).join('\n');
+      case 'shipment':
+        return r.shipment?.label ?? '—';
+      case 'invoice':
+        return r.invoices?.map((i) => i.label).join(', ') || '—';
+      case 'currency':
+        return r.currency ?? currency;
+      case 'debit':
+      case 'credit': {
+        const value = dec(key === 'debit' ? r.debit : r.credit);
+        return value.isZero() ? '—' : formatMoney(value, currency);
+      }
+      case 'balance':
+        return balanceText(dec(r.balance));
+      default:
+        return r[key] ?? '—';
+    }
+  };
+
+  /** The balance just before a row, from the running balances the server worked out. */
+  const balanceBefore = (row: LedgerReportRow | undefined, fallback: Decimal) => {
+    if (!row) return fallback;
+    const index = rows.findIndex((x) => x.key === row.key);
+    return index > 0 ? dec(rows[index - 1].balance) : opening;
+  };
+
+  const openShare = (scope?: string) => {
+    const offered = [...new Set<LedgerColumnKey>([...prefs.columns, ...CORE_LEDGER_COLUMNS, ...available])];
+    const filterWords = [
+      quickFilters?.length && quick && quick !== quickFilters[0].key ? (quickFilters.find((f) => f.key === quick)?.label ?? null) : null,
+      needle ? `Search: ${search.trim()}` : null,
+      type ? `Type: ${type}` : null,
+      rowCurrency ? `Currency: ${rowCurrency}` : null,
+      shipment ? `Shipment: ${shipment}` : null,
+      status ? `Status: ${status}` : null,
+    ].filter((w): w is string => Boolean(w));
+    const sum = (list: LedgerReportRow[], side: 'debit' | 'credit') => list.reduce((t, r) => t.plus(dec(r[side])), NIL);
+    const first = current * prefs.pageSize + 1;
+
+    const spec: ShareSpec = {
+      report: SHARE_REPORT[report],
+      title: shareReportLabel(SHARE_REPORT[report]),
+      subject,
+      period,
+      scopes: [
+        { key: 'filtered', label: narrowed ? `Current filtered report (${shown.length} rows)` : `Current report (${shown.length} rows)`, hint: 'Exactly what the table shows, every page of it.' },
+        ...(pages > 1 ? [{ key: 'view', label: `Current page only (rows ${first}–${first + pageRows.length - 1})` }] : []),
+        ...(narrowed ? [{ key: 'all', label: `Full period, without the filters (${inPeriod.length} rows)` }] : []),
+        ...(inPeriod.length > 1 ? [{ key: 'range', label: 'A date range', hint: 'Within the dates loaded on this page.' }] : []),
+        ...(selected.size ? [{ key: 'selected', label: `Selected rows (${selected.size})` }] : []),
+      ],
+      defaultScope: scope ?? 'filtered',
+      columns: offered.map((c) => ({ key: c, label: LEDGER_COLUMN_LABEL[c], checked: prefs.columns.includes(c) })),
+      extras: [
+        { key: 'opening', label: 'Opening balance', checked: true },
+        { key: 'closing', label: 'Closing balance', checked: true },
+        { key: 'totals', label: 'Totals', checked: true },
+      ],
+      dateRange: { min: inPeriod[0]?.date, max: inPeriod[inPeriod.length - 1]?.date },
+      onChooseRows: () => {
+        setSelecting(true);
+        setPrefs((p) => ({ ...p, view: 'table' }));
+      },
+      build: (choice: ShareChoice) => {
+        let list: LedgerReportRow[];
+        let openBal = firstBalance;
+        let close = periodClosing;
+        let debit = totalDebit;
+        let credit = totalCredit;
+        let openingLabel = broughtForward;
+        let scopeLabel = narrowed ? 'Current filtered report' : 'Current report';
+        if (choice.scope === 'view') {
+          list = pageRows;
+          openBal = balanceBefore(list[0], firstBalance);
+          close = list.length ? dec(list[list.length - 1].balance) : openBal;
+          [debit, credit] = [sum(list, 'debit'), sum(list, 'credit')];
+          openingLabel = 'Balance before these rows';
+          scopeLabel = `Current page (rows ${first}–${first + list.length - 1})`;
+        } else if (choice.scope === 'all') {
+          list = inPeriod;
+          if (!serverWindow) [debit, credit] = [sum(list, 'debit'), sum(list, 'credit')];
+          else [debit, credit] = [dec(serverWindow.totalDebit), dec(serverWindow.totalCredit)];
+          scopeLabel = 'Full period, without filters';
+        } else if (choice.scope === 'range') {
+          list = inPeriod.filter((r) => (!choice.from || r.date >= choice.from) && (!choice.to || r.date <= choice.to));
+          const earlier = inPeriod.filter((r) => choice.from && r.date < choice.from);
+          openBal = earlier.length ? dec(earlier[earlier.length - 1].balance) : balanceBefore(inPeriod[0], firstBalance);
+          close = list.length ? dec(list[list.length - 1].balance) : openBal;
+          [debit, credit] = [sum(list, 'debit'), sum(list, 'credit')];
+          openingLabel = 'Opening balance';
+          scopeLabel = 'Date range';
+        } else if (choice.scope === 'selected') {
+          list = shown.filter((r) => selected.has(r.key));
+          openBal = balanceBefore(list[0], firstBalance);
+          close = list.length ? dec(list[list.length - 1].balance) : openBal;
+          [debit, credit] = [sum(list, 'debit'), sum(list, 'credit')];
+          openingLabel = 'Balance before the first selected row';
+          scopeLabel = `${list.length} selected row${list.length === 1 ? '' : 's'}`;
+        } else {
+          list = shown;
+        }
+
+        const cols = (choice.columns.length ? choice.columns : CORE_LEDGER_COLUMNS) as LedgerColumnKey[];
+        const figure = (label: string, figures: Partial<Record<LedgerColumnKey, string>>, kind: 'opening' | 'total' | 'closing') => {
+          const at = cols.findIndex((c) => figures[c] !== undefined);
+          if (at < 0) return null;
+          const lead = Math.max(1, at);
+          return {
+            kind,
+            cells: [{ text: label, ...(lead > 1 ? { span: lead } : {}) }, ...cols.slice(lead).map((c) => ({ text: figures[c] ?? '' }))],
+          };
+        };
+        const section: ShareSection = {
+          columns: cols.map((c) => ({ label: LEDGER_COLUMN_LABEL[c], numeric: numeric(c) })),
+          rows: [
+            choice.extras.opening ? figure(openingLabel, { balance: balanceText(openBal) }, 'opening') : null,
+            ...list.map((r) => ({ cells: cols.map((c) => ({ text: cellText(c, r) })) })),
+            choice.extras.totals ? figure('Totals', { debit: formatMoney(debit, currency), credit: formatMoney(credit, currency) }, 'total') : null,
+            choice.extras.closing ? figure('Closing balance', { balance: balanceText(close) }, 'closing') : null,
+          ].filter((r): r is NonNullable<typeof r> => r !== null),
+        };
+        return {
+          filters: filterWords,
+          scopeLabel,
+          facts: [
+            ...(choice.extras.opening ? [{ label: openingLabel, value: balanceText(openBal) }] : []),
+            ...(choice.extras.totals
+              ? [
+                  { label: 'Total debit', value: formatMoney(debit, currency) },
+                  { label: 'Total credit', value: formatMoney(credit, currency) },
+                ]
+              : []),
+            ...(choice.extras.closing ? [{ label: 'Closing balance', value: balanceText(close) }] : []),
+          ],
+          sections: [section],
+        };
+      },
+    };
+    setShare((s) => ({ id: (s?.id ?? 0) + 1, spec }));
+  };
 
   const documentTable = (
     <table className="ledger-grid ledger-grid-print w-full">
@@ -519,6 +681,7 @@ export function LedgerReport(props: LedgerReportProps) {
               <SlidersHorizontal /> Customize report
             </Button>
             <PrintButton />
+            <ShareTrigger onClick={() => openShare()} />
           </div>
         </div>
         {summary}
@@ -541,6 +704,26 @@ export function LedgerReport(props: LedgerReportProps) {
             <table className="ledger-grid min-w-full text-sm" data-testid="ledger-table">
               <thead>
                 <tr>
+                  {selecting ? (
+                    <th className="ledger-head w-8" data-print="hide">
+                      <input
+                        type="checkbox"
+                        aria-label="Select every row on this page"
+                        className="size-4 accent-forest-700"
+                        checked={pageRows.length > 0 && pageRows.every((r) => selected.has(r.key))}
+                        onChange={(e) =>
+                          setSelected((prev) => {
+                            const next = new Set(prev);
+                            for (const r of pageRows) {
+                              if (e.target.checked) next.add(r.key);
+                              else next.delete(r.key);
+                            }
+                            return next;
+                          })
+                        }
+                      />
+                    </th>
+                  ) : null}
                   {columns.map((c) => (
                     <th key={c} className={cn(cellClass(c), 'ledger-head')} data-col={c}>
                       {LEDGER_COLUMN_LABEL[c]}
@@ -553,7 +736,7 @@ export function LedgerReport(props: LedgerReportProps) {
                 {figuresRow(broughtForward, { balance: balanceText(firstBalance) }, 'ledger-opening')}
                 {pageRows.length === 0 ? (
                   <tr>
-                    <td colSpan={columns.length + (hasDetails ? 1 : 0)} className="py-6 text-center text-ink-muted">
+                    <td colSpan={columns.length + (hasDetails ? 1 : 0) + (selecting ? 1 : 0)} className="py-6 text-center text-ink-muted">
                       No entries match these filters.
                     </td>
                   </tr>
@@ -565,6 +748,11 @@ export function LedgerReport(props: LedgerReportProps) {
                         className={cn('ledger-row', hasDetails && 'cursor-pointer', open === r.key && 'ledger-row-open')}
                         onClick={hasDetails ? () => setOpen(open === r.key ? null : r.key) : undefined}
                       >
+                        {selecting ? (
+                          <td className="w-8 text-center" data-print="hide" onClick={(e) => e.stopPropagation()}>
+                            <SelectBox checked={selected.has(r.key)} label={`Select ${r.memo || r.reference || r.date}`} onChange={(on) => setSelected((prev) => toggled(prev, r.key, on))} />
+                          </td>
+                        ) : null}
                         {columns.map((c) => (
                           <td key={c} className={cellClass(c)} data-col={c}>
                             {cell(c, r)}
@@ -589,7 +777,7 @@ export function LedgerReport(props: LedgerReportProps) {
                       </tr>
                       {open === r.key ? (
                         <tr className="ledger-details">
-                          <td colSpan={columns.length + 1}>
+                          <td colSpan={columns.length + 1 + (selecting ? 1 : 0)}>
                             <RowDetails row={r} currency={currency} balance={balanceText(dec(r.balance))} />
                           </td>
                         </tr>
@@ -613,7 +801,10 @@ export function LedgerReport(props: LedgerReportProps) {
             {pageRows.map((r) => (
               <li key={r.key} className="overflow-hidden rounded-lg border border-ink/80 bg-surface text-sm" data-testid="ledger-card">
                 <div className="flex items-start justify-between gap-3 border-b border-ink/70 px-3 py-2">
-                  <span className="min-w-0">
+                  {selecting ? (
+                    <SelectBox checked={selected.has(r.key)} label={`Select ${r.memo || r.reference || r.date}`} onChange={(on) => setSelected((prev) => toggled(prev, r.key, on))} />
+                  ) : null}
+                  <span className="min-w-0 flex-1">
                     <span className="block text-xs font-semibold">{formatDate(new Date(`${r.date}T00:00:00.000Z`))}</span>
                     <span className="line-clamp-2 block text-ink">{r.memo || r.type || '—'}</span>
                   </span>
@@ -685,6 +876,28 @@ export function LedgerReport(props: LedgerReportProps) {
         {documentTable}
       </div>
 
+      {selecting ? (
+        <div
+          className="fixed inset-x-3 bottom-20 z-40 mx-auto flex max-w-xl flex-wrap items-center justify-between gap-2 rounded-xl border border-forest-300 bg-surface px-4 py-3 shadow-xl sm:bottom-6"
+          data-print="hide"
+          data-testid="ledger-selection-bar"
+        >
+          <span className="text-sm font-medium text-ink">
+            {selected.size} row{selected.size === 1 ? '' : 's'} selected
+          </span>
+          <span className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => (setSelecting(false), setSelected(new Set()))}>
+              Cancel
+            </Button>
+            <Button size="sm" disabled={selected.size === 0} onClick={() => openShare('selected')} data-testid="ledger-share-selected">
+              <WhatsAppIcon className="fill-white" /> Share selected
+            </Button>
+          </span>
+        </div>
+      ) : null}
+
+      {share ? <ShareDialog key={share.id} open onOpenChange={(o) => !o && setShare(null)} spec={share.spec} /> : null}
+
       <CustomizeSheet
         open={customizing}
         onOpenChange={setCustomizing}
@@ -694,6 +907,27 @@ export function LedgerReport(props: LedgerReportProps) {
         onApply={setPrefs}
       />
     </section>
+  );
+}
+
+function toggled(prev: Set<string>, key: string, on: boolean): Set<string> {
+  const next = new Set(prev);
+  if (on) next.add(key);
+  else next.delete(key);
+  return next;
+}
+
+function SelectBox({ checked, label, onChange }: { checked: boolean; label: string; onChange: (on: boolean) => void }) {
+  return (
+    <input
+      type="checkbox"
+      checked={checked}
+      aria-label={label}
+      onChange={(e) => onChange(e.target.checked)}
+      onClick={(e) => e.stopPropagation()}
+      className="size-4 shrink-0 accent-forest-700"
+      data-testid="ledger-select-row"
+    />
   );
 }
 

@@ -409,6 +409,7 @@ export function ItemsClient({
   return (
     <>
       <DataTable
+        share={{ report: 'items', title: 'Items' }}
       prefsKey="items"
         data={rows}
         columns={columns}

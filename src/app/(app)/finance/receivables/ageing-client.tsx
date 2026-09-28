@@ -157,6 +157,11 @@ export function AgeingClient({
 
   return (
     <DataTable
+      share={{
+        report: settlePath.includes('payments') ? 'payables' : 'receivables',
+        title: settlePath.includes('payments') ? 'Payables' : 'Receivables',
+        filters: [...(bucket !== 'ALL' ? [`Age: ${bucket}`] : []), ...(party !== 'ALL' ? [`${partyLabel}: ${party}`] : [])],
+      }}
       prefsKey="ageing"
       data={filtered}
       columns={columns}

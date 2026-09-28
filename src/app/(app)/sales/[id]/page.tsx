@@ -13,6 +13,7 @@ import { DualAmount } from '@/components/shared/dual-amount';
 import { formatMoney, formatQuantityKg, formatDate, formatDateTime, formatRate, formatPercent } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
+import { ReportShareButton } from '@/components/share/report-share-button';
 import { Metric, MetricGrid, DetailRow } from '@/components/shared/stat-card';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { StatusBadge, Badge } from '@/components/ui/badge';
@@ -159,6 +160,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                 Print invoice
               </Link>
             </Button>
+            <ReportShareButton report="invoice" subject={`${invoice.customer.customerName} · ${shortDocumentNumber(invoice.invoiceNumber)}`} label="Share invoice" />
             <SaleActions
             id={invoice.id}
             status={invoice.status}

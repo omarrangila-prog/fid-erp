@@ -14,6 +14,8 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { downloadExcel, type ExcelColumnType } from '@/lib/export-excel';
 import { toast } from 'sonner';
+import { ShareTrigger } from '@/components/share/share-dialog';
+import { RowSelectBox, useTableShare, type TableShareConfig } from '@/components/share/table-share';
 
 export type DataColumn<T> = {
   id: string;
@@ -106,6 +108,7 @@ export function DataTable<T>({
   exportFileName,
   exportTitle,
   exportHref,
+  share,
 }: {
   data: T[];
   columns: DataColumn<T>[];
@@ -160,6 +163,11 @@ export function DataTable<T>({
    * name. Omit and the table keeps nothing.
    */
   prefsKey?: string;
+  /**
+   * Turns on Share on WhatsApp for this list: the report it is, for the
+   * share's heading. Leave it off lists nobody would send anybody.
+   */
+  share?: TableShareConfig;
 }) {
   const [query, setQuery] = React.useState('');
   const [page, setPage] = React.useState(0);
@@ -269,6 +277,22 @@ export function DataTable<T>({
 
   const hideableColumns = columns.filter((c) => c.hideable);
 
+  const tableShare = useTableShare({
+    config: share,
+    data,
+    filtered: sorted,
+    pageRows,
+    // What prints is what shares: never the buttons.
+    columns: columns.filter((c) => !c.printHidden && c.mobile !== 'action' && c.id !== 'actions'),
+    visibleIds: new Set(visibleColumns.map((c) => c.id)),
+    getRowId,
+    filterWords: [
+      ...(query.trim() ? [`Search: ${query.trim()}`] : []),
+      ...(filters ?? []).flatMap((f) => (filterValues[f.id] ? [`${f.label}: ${f.format ? f.format(filterValues[f.id]) : filterValues[f.id]}`] : [])),
+    ],
+    hasFooter: showFooter && columns.some((c) => c.footer !== undefined),
+  });
+
   /**
    * Exports what is on screen — the current search, sort and column choices —
    * rather than the whole table. Someone who has filtered to one supplier and
@@ -308,7 +332,7 @@ export function DataTable<T>({
 
   return (
     <div className="space-y-3">
-      {(searchValue || toolbar || hideableColumns.length > 0) && (
+      {(searchValue || toolbar || hideableColumns.length > 0 || share) && (
         <div data-table-toolbar className="flex flex-col gap-2 sm:flex-row sm:items-center">
           {searchValue ? (
             <div className="relative flex-1 sm:max-w-xs">
@@ -353,7 +377,7 @@ export function DataTable<T>({
               </select>
             ))}
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {toolbar}
 
             {canExport ? (
@@ -377,6 +401,8 @@ export function DataTable<T>({
                 </Button>
               )
             ) : null}
+
+            {share ? <ShareTrigger onClick={() => tableShare.open()} className="h-10 [@media(pointer:coarse)]:min-h-11" /> : null}
 
             <Button
               variant="outline"
@@ -442,6 +468,15 @@ export function DataTable<T>({
             <Table>
               <THead className="sticky-head">
                 <TR className="hover:bg-transparent">
+                  {tableShare.selecting ? (
+                    <TH className="w-8 print:hidden">
+                      <RowSelectBox
+                        label="Select every row on this page"
+                        checked={pageRows.length > 0 && pageRows.every((r) => tableShare.selected.has(getRowId(r)))}
+                        onChange={(on) => pageRows.forEach((r) => tableShare.toggle(getRowId(r), on))}
+                      />
+                    </TH>
+                  ) : null}
                   {expandedContent ? <TH className="w-8 print:hidden" /> : null}
                   {visibleColumns.map((column) => (
                     <TH
@@ -489,6 +524,11 @@ export function DataTable<T>({
                   return (
                     <React.Fragment key={rowId}>
                     <TR className={cn(href && 'cursor-pointer', compact && '[&>td]:py-1.5')}>
+                      {tableShare.selecting ? (
+                        <TD className="w-8 print:hidden">
+                          <RowSelectBox label="Select this row" checked={tableShare.selected.has(rowId)} onChange={(on) => tableShare.toggle(rowId, on)} />
+                        </TD>
+                      ) : null}
                       {expandedContent ? (
                         <TD className="w-8 print:hidden">
                           <button
@@ -540,7 +580,7 @@ export function DataTable<T>({
                     </TR>
                     {expandedContent && isOpen ? (
                       <TR className="hover:bg-transparent">
-                        <TD colSpan={visibleColumns.length + 1} className="bg-surface-sunken/50 p-0">
+                        <TD colSpan={visibleColumns.length + 1 + (tableShare.selecting ? 1 : 0)} className="bg-surface-sunken/50 p-0">
                           {expandedContent(row)}
                         </TD>
                       </TR>
@@ -552,6 +592,7 @@ export function DataTable<T>({
               {showFooter ? (
                 <TFoot>
                   <tr>
+                    {tableShare.selecting ? <TD className="w-8 print:hidden" /> : null}
                     {expandedContent ? <TD className="w-8 print:hidden" /> : null}
                     {visibleColumns.map((column) => (
                       <TD key={column.id} numeric={column.numeric} data-print={column.printHidden ? 'hide' : undefined}>
@@ -603,6 +644,12 @@ export function DataTable<T>({
 
               return (
                 <div key={getRowId(row)} className="rounded-xl border border-grid bg-surface p-4">
+                  {tableShare.selecting ? (
+                    <label className="mb-2 flex items-center gap-2 text-xs text-ink-muted">
+                      <RowSelectBox label="Select this row" checked={tableShare.selected.has(getRowId(row))} onChange={(on) => tableShare.toggle(getRowId(row), on)} />
+                      Include in the share
+                    </label>
+                  ) : null}
                   {href ? (
                     <Link href={href} className="block transition-colors active:bg-forest-50">
                       {body}
@@ -687,6 +734,7 @@ export function DataTable<T>({
           ) : null}
         </>
       )}
+      {tableShare.elements}
     </div>
   );
 }

@@ -654,6 +654,7 @@ export function LoadingSheet({
   return (
     <>
       <DataTable
+        share={{ report: 'loading-sheet', title: 'Loading Sheet' }}
       prefsKey="loading-sheet-orders"
         data={groups}
         columns={groupColumns}

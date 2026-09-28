@@ -171,6 +171,7 @@ export function BatchesClient({
 
   return (
     <DataTable
+      share={{ report: 'batch-stock', title: 'Batches / Containers' }}
       prefsKey="batches"
       data={rows}
       columns={columns}

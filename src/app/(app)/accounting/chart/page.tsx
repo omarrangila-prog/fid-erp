@@ -15,6 +15,7 @@ import { Callout } from '@/components/ui/feedback';
 import { AddLedgerAccountButton } from '@/app/(app)/accounting/chart/add-account-button';
 import { AccountRowActions } from '@/app/(app)/accounting/chart/account-row-actions';
 import { PrintButton } from '@/components/shared/print-button';
+import { ReportShareButton } from '@/components/share/report-share-button';
 import { PrintHeader } from '@/components/shared/print-header';
 
 export const metadata: Metadata = { title: 'Chart of Accounts' };
@@ -55,6 +56,7 @@ export default async function ChartOfAccountsPage() {
         actions={
           <>
             <PrintButton />
+            <ReportShareButton report="chart-of-accounts" />
             {canPost ? <AddLedgerAccountButton /> : null}
           </>
         }

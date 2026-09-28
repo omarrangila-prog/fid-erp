@@ -8,6 +8,11 @@ import { MobileNav } from '@/components/layout/mobile-nav';
 import { Topbar } from '@/components/layout/topbar';
 import { RecentTabs } from '@/components/layout/recent-tabs';
 import { PageTransition } from '@/components/layout/page-transition';
+import { ShareProvider } from '@/components/share/share-context';
+import { DEVELOPER_MENU_MARK } from '@/components/layout/nav-config';
+import { isDeveloper } from '@/lib/auth/developer';
+import { can } from '@/lib/auth/guards';
+import { PERMISSIONS } from '@/lib/constants';
 
 /**
  * The authenticated shell.
@@ -26,7 +31,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const sidebarCollapsed = (await cookies()).get('fid_sidebar')?.value === 'collapsed';
 
   // Only serialisable data crosses into the client components.
-  const permissions = [...user.permissions];
+  // The developer mark only decides whether the menu lists the developer's page; the page checks for itself.
+  const permissions = [...user.permissions, ...(isDeveloper(user) ? [DEVELOPER_MENU_MARK] : [])];
   const companies = user.companies.map((c) => ({
     id: c.id,
     code: c.code,
@@ -91,7 +97,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
         {/* The bottom padding clears the mobile tab bar. */}
         <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 px-3 pb-24 pt-5 sm:px-5 lg:px-8 lg:pb-10">
-          <PageTransition>{children}</PageTransition>
+          <ShareProvider
+            value={{
+              company: user.activeCompany.name,
+              userName: user.name,
+              canNeverExpire: user.isSuperAdmin || can(user, PERMISSIONS.USERS_MANAGE),
+            }}
+          >
+            <PageTransition>{children}</PageTransition>
+          </ShareProvider>
         </main>
       </div>
 

@@ -7,6 +7,7 @@ import { formatDrCr, formatMoney } from '@/lib/format';
 import { RowActions } from '@/components/shared/row-actions';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrintButton } from '@/components/shared/print-button';
+import { ReportShareButton } from '@/components/share/report-share-button';
 import { PrintHeader } from '@/components/shared/print-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -50,6 +51,7 @@ export default async function AgentLedgersPage() {
               <Link href="/finance/agent-commission">Commission register</Link>
             </Button>
             <PrintButton />
+            <ReportShareButton report="agent-balances" />
           </>
         }
       />

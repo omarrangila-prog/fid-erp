@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Callout } from '@/components/ui/feedback';
 import { PrintButton } from '@/components/shared/print-button';
+import { ReportShareButton } from '@/components/share/report-share-button';
 import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
 import { cn } from '@/lib/utils';
@@ -42,6 +43,7 @@ export default async function ReconciliationPage() {
           <>
             <ExportLinks href={'/api/export/reconciliation'} />
             <PrintButton />
+            <ReportShareButton report="reconciliation" />
           </>
         }
       />

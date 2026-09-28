@@ -7,6 +7,7 @@ import { formatQuantityKg, formatDate, formatMoney } from '@/lib/format';
 import { toQuantity, Decimal } from '@/lib/money';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrintButton } from '@/components/shared/print-button';
+import { ReportShareButton } from '@/components/share/report-share-button';
 import { Badge } from '@/components/ui/badge';
 import { Callout, EmptyState } from '@/components/ui/feedback';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -73,7 +74,12 @@ export default async function AllocationsPage() {
         title="Stock Allocation"
         description="Each purchase, and every customer it was sold to."
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Allocation' }]}
-        actions={<PrintButton />}
+        actions={
+          <>
+            <PrintButton />
+            <ReportShareButton report="allocations" />
+          </>
+        }
       />
 
       <Callout tone="info" title="One purchase, many customers">

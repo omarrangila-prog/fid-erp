@@ -22,6 +22,8 @@ import { markShipmentLoaded } from '@/lib/services/shipment';
 import { createPayment, postPayment } from '@/lib/services/payment';
 import { createExpense, postExpense } from '@/lib/services/expense';
 import { enableTax } from '@/lib/services/tax';
+import { hashPassword } from '@/lib/auth/password';
+import { randomBytes } from 'node:crypto';
 
 const url = process.env.DATABASE_URL ?? '';
 const databaseName = url.replace(/\?.*$/, '').split('/').pop() ?? '';
@@ -363,8 +365,41 @@ async function seedThreeContainerOrder() {
   console.log('FID-MA: E2E-PO-MA-3C, three containers');
 }
 
+/**
+ * The developer, for the share-activity page: a Moroccan data-entry account
+ * the test server is told is the developer (DEVELOPER_USERS). Its PIN is
+ * drawn when the suite starts (playwright.config.ts), never written down.
+ */
+async function seedDeveloper() {
+  const pin = process.env.E2E_DEVELOPER_PIN;
+  const email = process.env.E2E_DEVELOPER_EMAIL;
+  if (!pin || !email) return;
+  const company = await prisma.company.findUniqueOrThrow({ where: { code: 'FID-MA' } });
+  const role = await prisma.role.findUniqueOrThrow({ where: { code: 'DATA_ENTRY' } });
+  const user =
+    (await prisma.user.findUnique({ where: { email } })) ??
+    (await prisma.user.create({
+      data: {
+        email,
+        name: 'E2E Developer',
+        passwordHash: await hashPassword(randomBytes(24).toString('base64url')),
+        isSuperAdmin: false,
+        defaultCompanyId: company.id,
+        roles: { create: { roleId: role.id } },
+        companies: { create: { companyId: company.id } },
+      },
+    }));
+  // As the seed sets the staff PINs: hashed at once, never stored as digits.
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { pinHash: await hashPassword(pin), pinSetAt: new Date(), pinFailedAttempts: 0, pinLockedUntil: null },
+  });
+  console.log('E2E Developer: ready');
+}
+
 async function main() {
   if (process.argv.includes('--reset')) await reset();
+  await seedDeveloper();
   await seedTrade({
     companyCode: 'FID-DXB',
     currency: 'AED',

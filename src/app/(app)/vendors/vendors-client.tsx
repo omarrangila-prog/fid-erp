@@ -224,6 +224,7 @@ export function VendorsClient({
   return (
     <>
       <DataTable
+        share={{ report: 'suppliers', title: 'Suppliers' }}
       prefsKey="vendors"
         data={rows}
           filters={[

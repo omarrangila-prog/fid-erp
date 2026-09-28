@@ -338,6 +338,12 @@ export function ExpensesClient({
         </p>
       ) : null}
     <DataTable
+      share={{
+        report: 'expenses',
+        title: 'Expenses',
+        period: periodLabel,
+        filters: standing ? [standing === 'OWED' ? 'Outstanding (unpaid and partially settled)' : PAYMENT_LABEL[standing]] : [],
+      }}
       prefsKey="expenses"
       data={visible}
       filters={[

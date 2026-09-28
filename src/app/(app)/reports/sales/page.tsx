@@ -11,6 +11,7 @@ import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/feedback';
 import { ExportLinks } from '@/components/shared/export-links';
+import { ReportShareButton } from '@/components/share/report-share-button';
 import { exportHref } from '@/components/shared/excel-link';
 import { PrintHeader } from '@/components/shared/print-header';
 import { DateRangePicker } from '@/components/shared/date-range';
@@ -61,7 +62,12 @@ export default async function SalesReportPage({
         title="Sales Report"
         description="Every sale in the period, what it cost, what it earned and what is still owed on it."
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Sales' }]}
-        actions={<ExportLinks href={exportHref('sales-register', { from, to, ref })} />}
+        actions={
+          <>
+            <ExportLinks href={exportHref('sales-register', { from, to, ref })} />
+            <ReportShareButton report="sales-report" />
+          </>
+        }
       />
       <PrintHeader title="Sales Report" companyName={user.activeCompany.name} country={user.activeCompany.country} />
 

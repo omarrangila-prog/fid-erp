@@ -249,6 +249,7 @@ export function CustomersClient({
   return (
     <>
       <DataTable
+        share={{ report: 'customers', title: 'Customers' }}
       prefsKey="customers"
         data={rows}
           filters={[

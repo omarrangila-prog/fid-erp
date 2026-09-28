@@ -13,6 +13,7 @@ import { HandCoins, BookOpen, Printer } from 'lucide-react';
 import { RowActions, viewAction, editAction } from '@/components/shared/row-actions';
 import { deleteSalesInvoiceAction } from '@/server/actions/trading-actions';
 import { cn } from '@/lib/utils';
+import { formatDate } from '@/lib/format';
 
 export type SaleRow = {
   id: string;
@@ -448,6 +449,18 @@ export function SalesClient({
       ) : null}
 
       <DataTable
+
+        share={{
+        report: standing === 'OUTSTANDING' ? 'outstanding-invoices' : 'sales-invoices',
+        title: standing === 'OUTSTANDING' ? 'Outstanding Invoices' : 'Sales Invoices',
+        period: from || to ? `${from ? formatDate(from) : 'the start'} – ${to ? formatDate(to) : 'today'}` : undefined,
+        filters:
+          standing === 'OUTSTANDING'
+            ? ['Unpaid and partially paid']
+            : standing
+              ? [SETTLEMENT_STATUS_META[standing]?.label ?? standing]
+              : [],
+      }}
       prefsKey="sales"
       data={visible}
       filters={[

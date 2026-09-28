@@ -286,6 +286,7 @@ export function PurchasesClient({
 
   return (
     <DataTable
+      share={{ report: 'purchase-orders', title: 'Purchase Orders' }}
       prefsKey="purchases"
       data={rows}
       filters={[

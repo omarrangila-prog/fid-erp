@@ -173,6 +173,11 @@ export function MovementsClient({
 
   return (
     <DataTable
+      share={{
+        report: 'stock-movement',
+        title: 'Stock Movements',
+        filters: [...(type !== 'ALL' ? [`Type: ${type}`] : []), ...(warehouse !== 'ALL' ? [`Warehouse: ${warehouse}`] : [])],
+      }}
       prefsKey="movements"
       data={filtered}
       columns={columns}

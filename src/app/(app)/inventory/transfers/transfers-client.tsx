@@ -247,6 +247,7 @@ export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canM
         />
       ) : null}
       <DataTable
+        share={{ report: 'transfers', title: 'Warehouse Transfers' }}
       prefsKey="transfers"
         data={rows}
         columns={columns}

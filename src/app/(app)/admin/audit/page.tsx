@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS, type BadgeTone } from '@/lib/constants';
 import { prisma } from '@/lib/db';
+import { SHARE_ENTITY } from '@/lib/share/model';
 import { formatDateTime, titleCase } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { AuditClient, type AuditRow } from '@/app/(app)/admin/audit/audit-client';
@@ -92,6 +93,8 @@ export default async function AuditPage({
    * company's figures into the other's trail.
    */
   const where = {
+    // Report shares have their own log, which is the developer's alone.
+    entityType: { not: SHARE_ENTITY },
     ...(view === 'access'
       ? { OR: [{ companyId: user.activeCompany.id }, { companyId: null }], action: { in: ACCESS_ACTIONS as never } }
       : view === 'documents'

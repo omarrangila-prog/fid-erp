@@ -17,6 +17,7 @@ import { formatMoney, formatDate, titleCase } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { CustomizePanel } from '@/components/reports/customize-panel';
 import { PrintButton } from '@/components/shared/print-button';
+import { ReportShareButton } from '@/components/share/report-share-button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Callout, EmptyState } from '@/components/ui/feedback';
 import { exportHref } from '@/components/shared/excel-link';
@@ -118,6 +119,7 @@ export default async function GeneralLedgerPage({
             <CustomizePanel report="General Ledger" fields={['period']} />
             <ExportLinks href={exportHref('general-ledger', { account: selectedId, from, to, currency: selectedCurrency })} />
             <PrintButton />
+            <ReportShareButton report="general-ledger" />
           </>
         }
       />

@@ -7,6 +7,7 @@ import { Decimal, toMoney, toQuantity } from '@/lib/money';
 import { formatMoney, formatQuantityKg, formatDate } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrintButton } from '@/components/shared/print-button';
+import { ReportShareButton } from '@/components/share/report-share-button';
 import { PrintHeader } from '@/components/shared/print-header';
 import { Badge } from '@/components/ui/badge';
 import { Callout, EmptyState } from '@/components/ui/feedback';
@@ -75,7 +76,12 @@ export default async function StockAgeingPage() {
         title="Stock Ageing"
         description="How long each parcel has been in the warehouse, oldest first."
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Stock Ageing' }]}
-        actions={<PrintButton />}
+        actions={
+          <>
+            <PrintButton />
+            <ReportShareButton report="stock-ageing" />
+          </>
+        }
       />
 
       <Callout tone="info" title="Why this matters for coffee">

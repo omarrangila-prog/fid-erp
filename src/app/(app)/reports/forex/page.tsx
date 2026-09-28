@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { Callout, EmptyState } from '@/components/ui/feedback';
 import { PrintButton } from '@/components/shared/print-button';
+import { ReportShareButton } from '@/components/share/report-share-button';
 import { exportHref } from '@/components/shared/excel-link';
 import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
@@ -49,6 +50,7 @@ export default async function ForexGainLossPage({
           <>
             <ExportLinks href={exportHref('forex', { from, to })} />
             <PrintButton />
+            <ReportShareButton report="forex" />
           </>
         }
       />

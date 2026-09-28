@@ -254,6 +254,8 @@ export function UnpaidExpensesClient({
       </div>
 
       <DataTable
+
+        share={{ report: 'unpaid-expenses', title: 'Unpaid Expenses' }}
         data={shown}
         columns={columns}
         getRowId={(r) => r.id}

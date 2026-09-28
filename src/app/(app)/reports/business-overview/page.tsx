@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PrintButton } from '@/components/shared/print-button';
+import { ReportShareButton } from '@/components/share/report-share-button';
 import { PrintHeader } from '@/components/shared/print-header';
 import { cn } from '@/lib/utils';
 
@@ -45,7 +46,12 @@ export default async function BusinessOverviewPage() {
             <Badge tone="info">Local {user.activeCompany.localCurrency} · Group USD</Badge>
           </>
         }
-        actions={<PrintButton />}
+        actions={
+          <>
+            <PrintButton />
+            <ReportShareButton report="business-overview" />
+          </>
+        }
       />
       <PrintHeader
         title="Business Overview"

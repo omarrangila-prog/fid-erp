@@ -28,6 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { StatusBadge, Badge } from '@/components/ui/badge';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import { ReportShareButton } from '@/components/share/report-share-button';
 import { ShipmentWorkflow } from '@/app/(app)/shipments/[id]/shipment-workflow';
 import { Plus } from 'lucide-react';
 
@@ -281,6 +282,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
         }
         actions={
           <>
+            <ReportShareButton report="shipment" subject={shipment.purchaseContract.contractReference} />
             {can(user, PERMISSIONS.EXPENSES_CREATE) ? (
               <Button asChild variant="outline">
                 <Link href={`/finance/expenses/new?job=${shipment.id}`}>

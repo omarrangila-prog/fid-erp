@@ -131,6 +131,7 @@ export function AgentCommissionClient({ rows }: { rows: CommissionRow[] }) {
 
   return (
     <DataTable
+      share={{ report: 'agent-commission', title: 'Agent Commission' }}
       prefsKey="agent-commission"
       data={rows}
       columns={columns}

@@ -194,6 +194,7 @@ export function ChequesClient({
   return (
     <>
       <DataTable
+        share={{ report: 'cheques', title: 'Cheque Register' }}
       prefsKey="cheques"
         data={rows}
         columns={columns}
