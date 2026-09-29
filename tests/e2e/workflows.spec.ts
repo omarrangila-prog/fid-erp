@@ -75,6 +75,8 @@ test('the journal voucher refuses to post until debits equal credits', async ({ 
   await signInToDubai(page);
   await page.goto('/accounting/journal/new');
   await page.getByRole('button', { name: /advanced journal entry/i }).click();
+  // A new voucher starts in the company's currency; this one is written in USD.
+  await page.getByLabel(/^Currency/).selectOption('USD');
 
   // The button is never disabled — a dead button with no explanation was
   // read as "saving does nothing". It is pressable, and pressing it says why.

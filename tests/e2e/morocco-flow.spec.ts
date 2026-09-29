@@ -200,7 +200,8 @@ test('an invoice with money owing offers to record a payment', async ({ page }) 
   await page.waitForURL(/\/sales\/[\w-]+$/, { waitUntil: 'domcontentloaded' });
 
   // Recording a payment is one click from the invoice, as §24 asks.
-  const record = page.getByRole('link', { name: /Receive Payment/i });
+  // The invoice's own button, not the menu item of the same name.
+  const record = page.getByRole('main').getByRole('link', { name: /Receive Payment/i }).first();
   await expect(record).toBeVisible();
 
   await record.click();

@@ -142,7 +142,8 @@ test('14.5–14.7 an overhead expense reaches the company P&L and attaches to no
 
   // 14.6 on the company statement.
   const expensesAfter = await companyExpenses(page, YEAR.from, YEAR.to);
-  expect(expensesAfter - expensesBefore).toBeCloseTo(900, 2);
+  // The statement leads with the company's own currency: the MAD 9,000 as entered.
+  expect(expensesAfter - expensesBefore).toBeCloseTo(9_000, 2);
 
   // 14.7 and nowhere near a shipment's cost.
   const overheadAfter = await statementFigure(page, /Share of company overheads/).catch(() => 0);
@@ -194,7 +195,8 @@ test('14.9/14.10 the P&L answers any date range, including one day', async ({ pa
   await expect(page.getByRole('heading', { name: /^Profit and Loss$/ })).toBeVisible({ timeout: 45_000 });
   await expect(page.locator('main').getByText(/3 Jul 2026|Jul 3, 2026/).first()).toBeVisible({ timeout: 45_000 });
   const dayExpenses = money(await page.getByRole('row').filter({ hasText: /^Total expenses/ }).first().locator('td, th').last().textContent());
-  expect(dayExpenses).toBeCloseTo(900, 2);
+  // In the company's own currency, as the statement now leads: the MAD 9,000 overhead booked that day.
+  expect(dayExpenses).toBeCloseTo(9_000, 2);
   expect(Number.isNaN(yearRevenue)).toBe(false);
 
   // Quarterly and monthly columns, and a comparison.
@@ -270,7 +272,8 @@ test('14.15–14.17 currency, shipment and warehouse filters change the figures'
 test('14.18–14.20 the exports carry the same totals as the screen', async ({ page }) => {
   await page.goto(`/reports/profit-loss?from=${YEAR.from}&to=${YEAR.to}`, { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /^Profit and Loss$/ })).toBeVisible({ timeout: 45_000 });
-  const screenIncome = money(await page.getByRole('row').filter({ hasText: /^Total income/ }).first().locator('td, th').last().textContent());
+  // The total cell reads MAD first, the USD equivalent under it; the MAD figure is the one compared.
+  const screenIncome = money((await page.getByRole('row').filter({ hasText: /^Total income/ }).first().locator('td, th').last().innerText()).split('\n')[0]);
 
   const excel = page.getByRole('link', { name: /^Excel$/ }).first();
   await expect(excel).toBeVisible();
@@ -286,7 +289,9 @@ test('14.18–14.20 the exports carry the same totals as the screen', async ({ p
   expect(text).toMatch(/2026/);
   const incomeLine = text.split('\n').find((line) => /total income/i.test(line));
   expect(incomeLine, 'the export names the same total as the screen').toBeTruthy();
-  expect(money(incomeLine)).toBeCloseTo(screenIncome, 2);
+  // The export leads with the books' currency, the USD equivalent in the next column.
+  const firstFigure = (incomeLine ?? '').split(',').map((cell) => cell.replace(/"/g, '').trim()).find((cell) => /^-?[\d.]+$/.test(cell));
+  expect(money(firstFigure)).toBeCloseTo(screenIncome, 2);
 
   // PDF is the print stylesheet through the browser's own dialogue.
   await expect(page.getByRole('button', { name: /Print|PDF/i }).first()).toBeVisible();
