@@ -75,6 +75,9 @@ export default async function UnpaidExpensesPage({
     partyId: r.party.id,
     partyName: r.party.name,
     control: r.control,
+    transferred: r.transferredLocal.greaterThan('0.005')
+      ? `${formatMoney(r.transferredLocal, local)} moved to ${r.transferredTo.join(', ') || 'another account'} by a journal entry — still unpaid, owed there`
+      : null,
     currency: r.currency,
     rateLocalPerUsd: r.rateLocalPerUsd.toString(),
     gross: formatMoney(r.gross, r.currency),

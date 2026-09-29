@@ -6,7 +6,7 @@ import { dec, sum, toMoney, type Decimal } from '@/lib/money';
 import { formatMoney } from '@/lib/format';
 import { getExpenseSettlements, type ExpensePaymentStatus } from '@/lib/services/expense-settlement';
 import { createPayment, postPayment } from '@/lib/services/payment';
-import { createAgentSettlement, postAgentSettlement, getAgentPosition, agentHoldingIn } from '@/lib/services/agent-ledger';
+import { createAgentSettlement, postAgentSettlement, agentSetOffAvailable } from '@/lib/services/agent-ledger';
 import { assertLedgerSettlementAccount, getLedgerSettlementAccounts } from '@/lib/services/ledger-settlement';
 import { LIVE_ENTRY_SQL } from '@/lib/services/journal-visibility';
 import { AGENT_PREFIX } from '@/lib/ledger-target';
@@ -84,6 +84,10 @@ export type UnpaidExpenseRow = {
   settledLocal: Decimal;
   outstanding: Decimal;
   outstandingLocal: Decimal;
+  /** Of what is still owed, the part a journal voucher moved to another party's account — still unpaid, owed there. */
+  transferredLocal: Decimal;
+  transferredTo: string[];
+  transferredToKeys: string[];
   status: UnpaidStatus;
   ageDays: number;
   bucket: AgeBucket;
@@ -299,6 +303,9 @@ export async function getUnpaidExpenseLedger(companyId: string, asOf: Date = new
       settledLocal: s.paidLocal,
       outstanding: s.outstanding,
       outstandingLocal: s.outstandingLocal,
+      transferredLocal: s.transferredLocal,
+      transferredTo: s.transferredTo,
+      transferredToKeys: s.transferredToKeys,
       status: STATUS_OF[s.status],
       ageDays,
       bucket: bucketOf(ageDays),
@@ -319,7 +326,17 @@ export async function getUnpaidExpenseLedger(companyId: string, asOf: Date = new
     const row = balances.find((b) => b.systemKey === key);
     return toMoney(row?.balance ?? 0);
   };
-  const scheduleOf = (kind: UnpaidPartyKind) => toMoney(sum(open.filter((r) => r.party.kind === kind).map((r) => r.outstandingLocal)));
+  // A cost whose debt a voucher moved to another party's account is still owed, but no longer in its control account.
+  // Moved into an agent's commission due, it is reconciled against that account instead.
+  const movedToCommission = toMoney(
+    sum(open.filter((r) => r.transferredToKeys.length > 0 && r.transferredToKeys.every((k) => k === 'AGENT_COMMISSION_PAYABLE')).map((r) => r.transferredLocal)),
+  );
+  const scheduleOf = (kind: UnpaidPartyKind) =>
+    toMoney(
+      sum(open.filter((r) => r.party.kind === kind).map((r) => r.outstandingLocal.minus(r.transferredLocal))).plus(
+        kind === 'AGENT' ? movedToCommission : 0,
+      ),
+    );
   const accruedGl = glOf(ACCOUNT_KEYS.ACCRUED_EXPENSES);
   const commissionGl = glOf('AGENT_COMMISSION_PAYABLE');
 
@@ -381,10 +398,10 @@ export type SettleUnpaidExpenseInput = {
 export type SetOffSource = { value: string; label: string; hint: string; available: string; currency: string };
 
 /**
- * The balances a cost can be set off against: money an agent holds for FID,
- * and ledger accounts with a debit balance in that currency. For a cost owed
- * to an agent, only what that agent holds — a commission is set off against
- * his own collections.
+ * The balances a cost can be set off against: what an agent owes FID across
+ * his accounts (the customer money he holds, a loan in debit, anything else —
+ * his ledger's closing balance), and ledger accounts with a debit balance in
+ * that currency. For a cost owed to an agent, only that agent.
  */
 export async function getSetOffSources(companyId: string, currency: string, agentId?: string | null): Promise<SetOffSource[]> {
   const company = await prisma.company.findUniqueOrThrow({ where: { id: companyId }, select: { localCurrency: true } });
@@ -396,16 +413,15 @@ export async function getSetOffSources(companyId: string, currency: string, agen
   });
   const sources: SetOffSource[] = [];
   for (const agent of agents) {
-    const position = await getAgentPosition(prisma as never, companyId, agent.id);
-    const held = agentHoldingIn(position, code, company.localCurrency, dec(1));
     // A dollar-rate-free reading is only meaningful in USD or the local currency.
     if (code !== 'USD' && code !== company.localCurrency.toUpperCase()) continue;
-    if (held.greaterThan('0.005')) {
+    const available = await agentSetOffAvailable(prisma as never, companyId, agent.id, code, company.localCurrency, dec(1));
+    if (available.greaterThan('0.005')) {
       sources.push({
         value: `${AGENT_PREFIX}${agent.id}`,
-        label: `${agent.agentName} — Agent Collections`,
-        hint: 'customer collections the agent holds',
-        available: toMoney(held).toFixed(2),
+        label: `${agent.agentName} — Agent receivable`,
+        hint: 'what the agent owes FID across his accounts',
+        available: toMoney(available).toFixed(2),
         currency: code,
       });
     }
@@ -472,6 +488,15 @@ export async function settleUnpaidExpense(input: SettleUnpaidExpenseInput, userI
         `Only ${formatMoney(owed.outstanding, expense.currency)} is still owed on this cost, so no more than that can be settled.`,
       );
     }
+    // A part moved to another party's account by a voucher is owed there now, and is settled there.
+    if (owed.transferredLocal.greaterThan('0.005') && !owed.outstandingLocal.isZero()) {
+      const here = toMoney(owed.outstanding.times(Decimal_max(owed.outstandingLocal.minus(owed.transferredLocal), dec(0))).dividedBy(owed.outstandingLocal));
+      if (amount.greaterThan(here.plus('0.005'))) {
+        throw new BusinessRuleError(
+          `${formatMoney(owed.outstanding.minus(here), expense.currency)} of this cost was moved to ${owed.transferredTo.join(', ') || 'another account'} by a journal entry; settle that part there. ${formatMoney(here, expense.currency)} can be settled here.`,
+        );
+      }
+    }
     const company = await tx.company.findUniqueOrThrow({ where: { id: input.companyId }, select: { localCurrency: true } });
     const currency = expense.currency;
     const label = `${expense.expenseCategory.name} ${expense.expenseNumber}`;
@@ -489,11 +514,10 @@ export async function settleUnpaidExpense(input: SettleUnpaidExpenseInput, userI
         if (input.setOffAgainst && input.setOffAgainst !== `${AGENT_PREFIX}${expense.payableToAgentId}`) {
           throw new BusinessRuleError('A cost owed to an agent is set off against what that agent holds.');
         }
-        const position = await getAgentPosition(tx, input.companyId, expense.payableToAgentId);
-        const held = agentHoldingIn(position, currency, company.localCurrency, dec(input.rateToUsd));
-        if (amount.greaterThan(held.plus('0.01'))) {
+        const available = await agentSetOffAvailable(tx, input.companyId, expense.payableToAgentId, currency, company.localCurrency, dec(input.rateToUsd));
+        if (amount.greaterThan(available.plus('0.01'))) {
           throw new BusinessRuleError(
-            `${expense.payableToAgent?.agentName ?? 'The agent'} holds ${formatMoney(held, currency)} for FID, so no more than that can be set off.`,
+            `${expense.payableToAgent?.agentName ?? 'The agent'} owes FID ${formatMoney(available, currency)} across his accounts, so no more than that can be set off.`,
           );
         }
       }

@@ -102,6 +102,22 @@ export function todayInputValue(): string {
   return `${year}-${month}-${day}`;
 }
 
+/**
+ * Today's calendar date where the company is, as a date the books compare
+ * with (midnight UTC of that day). A statement "as at today" read off the
+ * server's UTC clock left out everything dated today for the first hours of
+ * each day in Morocco and Dubai, while Cash & Bank already counted it.
+ */
+export function companyToday(timeZone: string | null | undefined, now = new Date()): Date {
+  let day: string;
+  try {
+    day = new Intl.DateTimeFormat('en-CA', { timeZone: timeZone || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  } catch {
+    day = now.toISOString().slice(0, 10);
+  }
+  return new Date(`${day}T00:00:00.000Z`);
+}
+
 /** Whole days from today until `value`. Negative when the date has passed. */
 export function daysUntil(value: Date | string | null | undefined): number | null {
   if (!value) return null;

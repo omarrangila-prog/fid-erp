@@ -125,8 +125,11 @@ export function JournalForm({
   const [entryDate, setEntryDate] = React.useState(initial?.entryDate ?? today);
   const [description, setDescription] = React.useState(initial?.description ?? '');
   const [reference, setReference] = React.useState(initial?.reference ?? '');
-  const [currency, setCurrency] = React.useState(initial?.lines[0]?.currency ?? 'USD');
-  const [rateToUsd, setRateToUsd] = React.useState(initial?.lines[0]?.rateToUsd ?? '1');
+  // A new voucher starts in the company's own currency, as the simple entry does: a dirham
+  // amount typed into a form that silently defaulted to USD would be posted as dollars.
+  const startRate = localCurrency === 'USD' ? '1' : (ratesByCurrency[localCurrency] ?? defaultLocalRate);
+  const [currency, setCurrency] = React.useState(initial?.lines[0]?.currency ?? localCurrency);
+  const [rateToUsd, setRateToUsd] = React.useState(initial?.lines[0]?.rateToUsd ?? startRate);
   const [localRate, setLocalRate] = React.useState(initial?.rateLocalPerUsd ?? defaultLocalRate);
   const [customerId, setCustomerId] = React.useState<string | null>(null);
   const [accountOptions, setAccountOptions] = React.useState(accounts);
@@ -135,7 +138,7 @@ export function JournalForm({
   const [lines, setLines] = React.useState<Line[]>(() =>
     initial
       ? initial.lines.map((line, index) => ({ ...line, key: `line-${index}` }))
-      : [emptyLine(0), emptyLine(1)],
+      : [emptyLine(0, localCurrency, startRate), emptyLine(1, localCurrency, startRate)],
   );
   const [error, setError] = React.useState<string | null>(null);
   const nextKey = React.useRef(initial ? initial.lines.length : 2);

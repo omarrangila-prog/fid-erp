@@ -116,7 +116,8 @@ export function ReceiptForm({
   );
 
   const preselected = invoices.find((i) => i.id === preselectedInvoiceId);
-  const initialCurrency = preselected?.currency ?? 'USD';
+  // Before a customer is chosen, the company's own currency — never a silent USD.
+  const initialCurrency = preselected?.currency ?? localCurrency;
   const rateFor = React.useCallback(
     (currency: string) =>
       currency === 'USD' ? '1' : (ratesByCurrency?.[currency] ?? defaultLocalRate),

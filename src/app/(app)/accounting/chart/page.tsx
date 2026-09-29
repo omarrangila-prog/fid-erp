@@ -92,8 +92,8 @@ export default async function ChartOfAccountsPage() {
                     <TH>Type</TH>
                     <TH>Currency</TH>
                     <TH>Status</TH>
-                    <TH numeric>Debit USD</TH>
-                    <TH numeric>Credit USD</TH>
+                    <TH numeric>Debit</TH>
+                    <TH numeric>Credit</TH>
                     <TH numeric>Balance</TH>
                     <TH className="text-right print:hidden">Actions</TH>
                   </TR>
@@ -138,16 +138,17 @@ export default async function ChartOfAccountsPage() {
                         </Badge>
                       </TD>
                       <TD numeric className="text-ink-muted">
-                        {account.debitUsd.greaterThan(0) ? formatMoney(account.debitUsd, 'USD') : '—'}
+                        {account.debitLocal.greaterThan(0) ? formatMoney(account.debitLocal, localCurrency) : '—'}
                       </TD>
                       <TD numeric className="text-ink-muted">
-                        {account.creditUsd.greaterThan(0) ? formatMoney(account.creditUsd, 'USD') : '—'}
+                        {account.creditLocal.greaterThan(0) ? formatMoney(account.creditLocal, localCurrency) : '—'}
                       </TD>
                       <TD numeric>
-                        <span className="tnum block">{formatMoney(account.balanceUsd, 'USD')}</span>
+                        {/* The books' own currency first; the USD equivalent under it, each line at its own rate. */}
+                        <span className="tnum block">{formatMoney(account.balanceLocal, localCurrency)}</span>
                         {localCurrency === 'USD' ? null : (
-                          <span className="tnum block text-[11px] text-ink-subtle" title={`${localCurrency} books`}>
-                            {formatMoney(account.balanceLocal, localCurrency)}
+                          <span className="tnum block text-[11px] text-ink-subtle" title="USD equivalent: each transaction at its own rate">
+                            ≈ {formatMoney(account.balanceUsd, 'USD')}
                           </span>
                         )}
                       </TD>

@@ -265,6 +265,14 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
                 <DetailRow label="Outstanding">
                   <span data-testid="expense-outstanding">{formatMoney(settlement.outstanding, expense.currency)}</span>
                 </DetailRow>
+                {settlement.transferredLocal.greaterThan('0.005') ? (
+                  <DetailRow label="Moved by journal entry">
+                    <span data-testid="expense-transferred">
+                      {formatMoney(settlement.transferredLocal, user.activeCompany.localCurrency)} to{' '}
+                      {settlement.transferredTo.join(', ') || 'another account'} — still unpaid, owed there
+                    </span>
+                  </DetailRow>
+                ) : null}
               </>
             ) : (
               <DetailRow label="Settlement">Not posted</DetailRow>

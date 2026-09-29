@@ -60,6 +60,15 @@ export type ExpenseSettlement = {
   owedToAgent: boolean;
   /** Of what is paid, the part settled by journal vouchers, in the company's currency. */
   journalLocal: Decimal;
+  /**
+   * Of what is still owed, the part a journal voucher moved to another party's
+   * account (a supplier, an agent's commission due, a loan) — still unpaid,
+   * now owed there. In the company's currency.
+   */
+  transferredLocal: Decimal;
+  transferredTo: string[];
+  /** System keys of the accounts it moved to. */
+  transferredToKeys: string[];
 };
 
 type SettlementInput = {
@@ -83,35 +92,66 @@ type SettlementInput = {
 };
 
 /**
- * Journal vouchers that paid Accrued Expenses, applied to the costs booked
+ * Journal vouchers against Accrued Expenses, applied to the costs booked
  * there — owed to nobody in particular — in the company's currency, per cost.
  *
- * In the order things were posted: a voucher pays what was owed when it was
- * posted, oldest cost first, after the payments allocated to each. A cost
+ * A voucher that debits Accrued Expenses does one of two different things,
+ * told apart by where its credit goes:
+ *
+ *   settles — the credit is to something that is not a liability: cash, a
+ *   bank, an agent's collections, a receivable, a written-back cost. The
+ *   liability is gone; the cost is (partly) paid.
+ *
+ *   transfers — the credit is to another liability: a supplier, an agent's
+ *   commission due, a loan from somebody. The debt has only moved to that
+ *   party's account; nothing is paid, and the cost stays Unpaid, marked as
+ *   transferred.
+ *
+ * In the order things were posted: a voucher acts on what was owed when it
+ * was posted, oldest cost first, after the payments allocated to each. A cost
  * booked later, even back-dated, cannot have been paid by an earlier voucher,
  * so booking one never turns a cost that reads Paid back into Unpaid. Money
  * paid beyond what was owed waits as an advance for the next cost.
  */
-export async function accruedJournalSettlements(companyId: string, companyCountry: string | null): Promise<Map<string, Decimal>> {
-  const applied = new Map<string, Decimal>();
-  const vouchers = await prisma.$queryRaw<Array<{ postedAt: Date; net: string }>>`
-    SELECT je."postedAt", COALESCE(SUM(jl."debitLocal" - jl."creditLocal"), 0)::text AS net
+export type AccruedJournalAllocation = {
+  settled: Map<string, Decimal>;
+  /** `keys`: the system keys of the accounts it moved to (e.g. AGENT_COMMISSION_PAYABLE), for reconciling them. */
+  transferred: Map<string, { amount: Decimal; to: string[]; keys: string[] }>;
+};
+
+export async function accruedJournalAllocation(companyId: string, companyCountry: string | null): Promise<AccruedJournalAllocation> {
+  const settledBy = new Map<string, Decimal>();
+  const transferredBy = new Map<string, { amount: Decimal; to: Set<string>; keys: Set<string> }>();
+  const result = (): AccruedJournalAllocation => ({
+    settled: new Map([...settledBy].map(([id, v]) => [id, toMoney(v)])),
+    transferred: new Map([...transferredBy].map(([id, v]) => [id, { amount: toMoney(v.amount), to: [...v.to], keys: [...v.keys] }])),
+  });
+  const vouchers = await prisma.$queryRaw<Array<{ postedAt: Date; accrued: string; otherLiabilities: string; liabilityNames: string | null; liabilityKeys: string | null }>>`
+    SELECT je."postedAt",
+           COALESCE(SUM(CASE WHEN acc."systemKey" = 'ACCRUED_EXPENSES' THEN jl."debitLocal" - jl."creditLocal" ELSE 0 END), 0)::text AS accrued,
+           COALESCE(SUM(CASE WHEN acc."type" = 'LIABILITY' AND COALESCE(acc."systemKey", '') <> 'ACCRUED_EXPENSES'
+                             THEN jl."creditLocal" - jl."debitLocal" ELSE 0 END), 0)::text AS "otherLiabilities",
+           string_agg(DISTINCT CASE WHEN acc."type" = 'LIABILITY' AND COALESCE(acc."systemKey", '') <> 'ACCRUED_EXPENSES' AND jl."creditLocal" > 0
+                                    THEN acc."name" END, ', ') AS "liabilityNames",
+           string_agg(DISTINCT CASE WHEN acc."type" = 'LIABILITY' AND COALESCE(acc."systemKey", '') <> 'ACCRUED_EXPENSES' AND jl."creditLocal" > 0
+                                    THEN COALESCE(acc."systemKey", 'OTHER') END, ',') AS "liabilityKeys"
     FROM journal_lines jl
     JOIN journal_entries je ON je."id" = jl."journalEntryId"
     JOIN accounts acc ON acc."id" = jl."accountId"
     WHERE je."companyId" = ${companyId} AND ${LIVE_ENTRY_SQL}
       AND je."sourceType" = 'MANUAL'
-      AND acc."systemKey" = 'ACCRUED_EXPENSES'
+      AND EXISTS (SELECT 1 FROM journal_lines x JOIN accounts xa ON xa."id" = x."accountId"
+                  WHERE x."journalEntryId" = je."id" AND xa."systemKey" = 'ACCRUED_EXPENSES')
     GROUP BY je."id", je."postedAt"
     ORDER BY je."postedAt", je."id"`;
-  if (!vouchers.some((v) => dec(v.net).greaterThan('0.005'))) return applied;
+  if (!vouchers.some((v) => dec(v.accrued).greaterThan('0.005'))) return result();
 
   const accrued = await prisma.expense.findMany({
     where: { companyId, status: 'POSTED', cashBankAccountId: null, ledgerAccountId: null, ledgerAgentId: null, vendorId: null, payableToAgentId: null },
     orderBy: [{ expenseDate: 'asc' }, { createdAt: 'asc' }, { expenseNumber: 'asc' }],
     select: { id: true, amount: true, taxAmount: true, amountUsd: true, taxAmountUsd: true, amountLocal: true, postedAt: true, createdAt: true },
   });
-  if (accrued.length === 0) return applied;
+  if (accrued.length === 0) return result();
   const allocations = await prisma.$queryRaw<Array<{ expenseId: string; amount: string }>>`
     SELECT pa."expenseId", COALESCE(SUM(pa."amount"), 0)::text AS amount
     FROM payment_allocations pa
@@ -142,30 +182,69 @@ export async function accruedJournalSettlements(companyId: string, companyCountr
 
   // Costs and vouchers on one timeline; a cost joins the queue when posted.
   const bookedAt = (e: (typeof accrued)[number]) => (e.postedAt ?? e.createdAt).getTime();
-  const events = [
-    ...accrued.map((e) => ({ at: bookedAt(e), cost: e.id, amount: dec(0) })),
-    ...vouchers.map((v) => ({ at: v.postedAt.getTime(), cost: null as string | null, amount: dec(v.net) })),
+  type Event = { at: number; cost: string | null; settle: Decimal; transfer: Decimal; to: string[]; keys: string[] };
+  const events: Event[] = [
+    ...accrued.map((e) => ({ at: bookedAt(e), cost: e.id, settle: dec(0), transfer: dec(0), to: [] as string[], keys: [] as string[] })),
+    ...vouchers.map((v) => {
+      const net = dec(v.accrued);
+      // Of what came off Accrued Expenses, the part that went to another liability only moved.
+      const transfer = net.greaterThan(0) ? Decimal_min(net, Decimal_max(dec(v.otherLiabilities), dec(0))) : dec(0);
+      return {
+        at: v.postedAt.getTime(),
+        cost: null,
+        settle: net.minus(transfer),
+        transfer,
+        to: v.liabilityNames ? v.liabilityNames.split(', ') : [],
+        keys: v.liabilityKeys ? v.liabilityKeys.split(',') : [],
+      };
+    }),
   ].sort((a, b) => a.at - b.at || (a.cost ? -1 : 1));
   const open: string[] = [];
   const order = new Map(accrued.map((e, i) => [e.id, i]));
   let available = dec(0);
-  const settleOpen = () => {
+  let moving = dec(0);
+  let movingTo: string[] = [];
+  let movingKeys: string[] = [];
+  const left = (id: string) => owing.get(id)!.minus(settledBy.get(id) ?? 0).minus(transferredBy.get(id)?.amount ?? 0);
+  const applyOpen = () => {
     open.sort((a, b) => order.get(a)! - order.get(b)!);
     for (const id of open) {
       if (available.lessThanOrEqualTo('0.005')) break;
-      const still = owing.get(id)!.minus(applied.get(id) ?? 0);
-      const take = Decimal_min(available, still);
-      if (take.greaterThan(0)) applied.set(id, (applied.get(id) ?? dec(0)).plus(take));
+      const take = Decimal_min(available, left(id));
+      if (take.greaterThan(0)) settledBy.set(id, (settledBy.get(id) ?? dec(0)).plus(take));
       available = available.minus(take);
+    }
+    for (const id of open) {
+      if (moving.lessThanOrEqualTo('0.005')) break;
+      const take = Decimal_min(moving, left(id));
+      if (take.greaterThan(0)) {
+        const was = transferredBy.get(id) ?? { amount: dec(0), to: new Set<string>(), keys: new Set<string>() };
+        was.amount = was.amount.plus(take);
+        for (const name of movingTo) was.to.add(name);
+        for (const key of movingKeys) was.keys.add(key);
+        transferredBy.set(id, was);
+      }
+      moving = moving.minus(take);
     }
   };
   for (const event of events) {
     if (event.cost) open.push(event.cost);
-    else available = available.plus(event.amount);
-    settleOpen();
+    else {
+      available = available.plus(event.settle);
+      moving = moving.plus(event.transfer);
+      if (event.transfer.greaterThan(0)) {
+        movingTo = event.to;
+        movingKeys = event.keys;
+      }
+    }
+    applyOpen();
   }
-  for (const [id, amount] of applied) applied.set(id, toMoney(amount));
-  return applied;
+  return result();
+}
+
+/** What journal vouchers genuinely settled, per cost — transfers to another payable excluded. */
+export async function accruedJournalSettlements(companyId: string, companyCountry: string | null): Promise<Map<string, Decimal>> {
+  return (await accruedJournalAllocation(companyId, companyCountry)).settled;
 }
 
 export async function getExpenseSettlements(
@@ -198,9 +277,9 @@ export async function getExpenseSettlements(
       : Promise.resolve([]),
     posted.some((e) => e.payableToAgentId) ? getCommissionPaidByExpense(companyId) : Promise.resolve(new Map<string, Decimal>()),
   ]);
-  const accruedJournals = posted.some((e) => owedIds.includes(e.id) && !e.vendorId)
-    ? await accruedJournalSettlements(companyId, company.country)
-    : new Map<string, Decimal>();
+  const journals: AccruedJournalAllocation = posted.some((e) => owedIds.includes(e.id) && !e.vendorId)
+    ? await accruedJournalAllocation(companyId, company.country)
+    : { settled: new Map(), transferred: new Map() };
   const byExpense = new Map(allocations.map((a) => [a.expenseId, a]));
 
   const result = new Map<string, ExpenseSettlement>();
@@ -210,6 +289,9 @@ export async function getExpenseSettlements(
     let paid: Decimal;
     let paidFrom: string | null = null;
     let journalLocal = dec(0);
+    let transferredLocal = dec(0);
+    let transferredTo: string[] = [];
+    let transferredToKeys: string[] = [];
 
     if (e.cashBankAccountId || e.ledgerAccountId || e.ledgerAgentId) {
       gross = toMoney(dec(e.amount).plus(dec(e.taxAmount)));
@@ -236,11 +318,18 @@ export async function getExpenseSettlements(
       const row = byExpense.get(e.id);
       paid = toMoney(dec(row?.amount ?? 0));
       paidFrom = row?.accounts ?? null;
-      const byJournal = accruedJournals.get(e.id);
+      const byJournal = journals.settled.get(e.id);
       if (byJournal && !localPerUnit.isZero()) {
         journalLocal = byJournal;
         paid = toMoney(paid.plus(byJournal.dividedBy(localPerUnit)));
         paidFrom = [paidFrom, 'Journal entry (JV)'].filter(Boolean).join(', ');
+      }
+      // Moved to another party's account by a voucher: not paid, and it says where it went.
+      const moved = journals.transferred.get(e.id);
+      if (moved) {
+        transferredLocal = moved.amount;
+        transferredTo = moved.to;
+        transferredToKeys = moved.keys;
       }
     }
 
@@ -266,6 +355,9 @@ export async function getExpenseSettlements(
       paidFrom,
       owedToAgent: Boolean(e.payableToAgentId),
       journalLocal,
+      transferredLocal,
+      transferredTo,
+      transferredToKeys,
     });
   }
   return result;

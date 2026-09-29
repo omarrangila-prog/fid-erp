@@ -103,6 +103,11 @@ export type TrialBalanceRow = {
   /** What moved through it during the period, gross — not netted. */
   periodDebitUsd: Decimal;
   periodCreditUsd: Decimal;
+  /** The same two in the company's own currency, each line at its own rate. */
+  openingDebitLocal: Decimal;
+  openingCreditLocal: Decimal;
+  periodDebitLocal: Decimal;
+  periodCreditLocal: Decimal;
 };
 
 /**
@@ -135,9 +140,12 @@ export async function getTrialBalanceReport(params: { companyId: string; from?: 
 
     const opening = openingBy.get(row.accountId);
     const openingNet = opening ? dec(opening.debitUsd).minus(dec(opening.creditUsd)) : new Decimal(0);
+    const openingNetLocal = opening ? dec(opening.debitLocal).minus(dec(opening.creditLocal)) : new Decimal(0);
     const movement = movementBy.get(row.accountId);
     const periodDebit = movement ? dec(movement.debitUsd) : new Decimal(0);
     const periodCredit = movement ? dec(movement.creditUsd) : new Decimal(0);
+    const periodDebitLocal = movement ? dec(movement.debitLocal) : new Decimal(0);
+    const periodCreditLocal = movement ? dec(movement.creditLocal) : new Decimal(0);
 
     // An account that neither holds a balance nor moved is not on the report.
     if (netUsd.isZero() && netLocal.isZero() && openingNet.isZero() && periodDebit.isZero() && periodCredit.isZero()) {
@@ -157,6 +165,10 @@ export async function getTrialBalanceReport(params: { companyId: string; from?: 
       openingCreditUsd: openingNet.lessThan(0) ? toMoney(openingNet.abs()) : new Decimal(0),
       periodDebitUsd: toMoney(periodDebit),
       periodCreditUsd: toMoney(periodCredit),
+      openingDebitLocal: openingNetLocal.greaterThan(0) ? toMoney(openingNetLocal) : new Decimal(0),
+      openingCreditLocal: openingNetLocal.lessThan(0) ? toMoney(openingNetLocal.abs()) : new Decimal(0),
+      periodDebitLocal: toMoney(periodDebitLocal),
+      periodCreditLocal: toMoney(periodCreditLocal),
     });
   }
 
@@ -170,6 +182,10 @@ export async function getTrialBalanceReport(params: { companyId: string; from?: 
       openingCreditUsd: acc.openingCreditUsd.plus(r.openingCreditUsd),
       periodDebitUsd: acc.periodDebitUsd.plus(r.periodDebitUsd),
       periodCreditUsd: acc.periodCreditUsd.plus(r.periodCreditUsd),
+      openingDebitLocal: acc.openingDebitLocal.plus(r.openingDebitLocal),
+      openingCreditLocal: acc.openingCreditLocal.plus(r.openingCreditLocal),
+      periodDebitLocal: acc.periodDebitLocal.plus(r.periodDebitLocal),
+      periodCreditLocal: acc.periodCreditLocal.plus(r.periodCreditLocal),
     }),
     {
       debitUsd: new Decimal(0),
@@ -180,6 +196,10 @@ export async function getTrialBalanceReport(params: { companyId: string; from?: 
       openingCreditUsd: new Decimal(0),
       periodDebitUsd: new Decimal(0),
       periodCreditUsd: new Decimal(0),
+      openingDebitLocal: new Decimal(0),
+      openingCreditLocal: new Decimal(0),
+      periodDebitLocal: new Decimal(0),
+      periodCreditLocal: new Decimal(0),
     },
   );
 
@@ -194,9 +214,15 @@ export async function getTrialBalanceReport(params: { companyId: string; from?: 
       openingCreditUsd: toMoney(totals.openingCreditUsd),
       periodDebitUsd: toMoney(totals.periodDebitUsd),
       periodCreditUsd: toMoney(totals.periodCreditUsd),
+      openingDebitLocal: toMoney(totals.openingDebitLocal),
+      openingCreditLocal: toMoney(totals.openingCreditLocal),
+      periodDebitLocal: toMoney(totals.periodDebitLocal),
+      periodCreditLocal: toMoney(totals.periodCreditLocal),
     },
     differenceUsd: toMoney(totals.debitUsd.minus(totals.creditUsd)),
+    differenceLocal: toMoney(totals.debitLocal.minus(totals.creditLocal)),
     isBalanced: toMoney(totals.debitUsd).equals(toMoney(totals.creditUsd)),
+    isBalancedLocal: toMoney(totals.debitLocal).equals(toMoney(totals.creditLocal)),
     hasOpening: Boolean(params.from),
   };
 }
@@ -413,6 +439,9 @@ export async function getBalanceSheet(params: { companyId: string; asOf: Date })
     equity: equitySection,
     balancesUsd: assetSection.totalUsd.equals(toMoney(liabilitySection.totalUsd.plus(equitySection.totalUsd))),
     differenceUsd: toMoney(assetSection.totalUsd.minus(liabilitySection.totalUsd).minus(equitySection.totalUsd)),
+    // The same equation in the company's own currency, the statement's primary figures.
+    balancesLocal: assetSection.totalLocal.equals(toMoney(liabilitySection.totalLocal.plus(equitySection.totalLocal))),
+    differenceLocal: toMoney(assetSection.totalLocal.minus(liabilitySection.totalLocal).minus(equitySection.totalLocal)),
   };
 }
 
@@ -1628,6 +1657,10 @@ export type LedgerGroupLine = {
   debitUsd: Decimal;
   creditUsd: Decimal;
   balanceUsd: Decimal;
+  /** The same in the company's own currency — the books' figures, each line at its own rate. */
+  debitLocal: Decimal;
+  creditLocal: Decimal;
+  balanceLocal: Decimal;
 };
 
 export type LedgerGroup = {
@@ -1639,6 +1672,10 @@ export type LedgerGroup = {
   debitUsd: Decimal;
   creditUsd: Decimal;
   closingUsd: Decimal;
+  openingLocal: Decimal;
+  debitLocal: Decimal;
+  creditLocal: Decimal;
+  closingLocal: Decimal;
 };
 
 /**
@@ -1662,8 +1699,9 @@ export async function getGeneralLedgerByAccount(params: {
   });
 
   const openings = params.from
-    ? await prisma.$queryRaw<Array<{ accountId: string; net: string }>>`
-        SELECT jl."accountId", COALESCE(SUM(jl."debitUsd" - jl."creditUsd"), 0)::text AS net
+    ? await prisma.$queryRaw<Array<{ accountId: string; net: string; netLocal: string }>>`
+        SELECT jl."accountId", COALESCE(SUM(jl."debitUsd" - jl."creditUsd"), 0)::text AS net,
+               COALESCE(SUM(jl."debitLocal" - jl."creditLocal"), 0)::text AS "netLocal"
         FROM journal_lines jl
         JOIN journal_entries je ON je."id" = jl."journalEntryId"
         WHERE je."companyId" = ${params.companyId} AND ${LIVE_ENTRY_SQL}
@@ -1688,12 +1726,15 @@ export async function getGeneralLedgerByAccount(params: {
       description: string;
       debitUsd: string;
       creditUsd: string;
+      debitLocal: string;
+      creditLocal: string;
     }>
   >`
     SELECT jl."accountId", je."id" AS "entryId", je."entryDate", je."sourceType"::text AS "sourceType", je."sourceId",
            NULL::text AS "reference", COALESCE(c."customerName", v."vendorName", ag."agentName") AS party,
            COALESCE(NULLIF(jl."description", ''), je."description") AS description,
-           jl."debitUsd"::text AS "debitUsd", jl."creditUsd"::text AS "creditUsd"
+           jl."debitUsd"::text AS "debitUsd", jl."creditUsd"::text AS "creditUsd",
+           jl."debitLocal"::text AS "debitLocal", jl."creditLocal"::text AS "creditLocal"
     FROM journal_lines jl
     JOIN journal_entries je ON je."id" = jl."journalEntryId"
     LEFT JOIN customers c ON c."id" = jl."customerId"
@@ -1710,24 +1751,34 @@ export async function getGeneralLedgerByAccount(params: {
   `;
 
   const openingBy = new Map(openings.map((o) => [o.accountId, dec(o.net)]));
+  const openingLocalBy = new Map(openings.map((o) => [o.accountId, dec(o.netLocal)]));
   const linesBy = new Map<string, typeof lines>();
   for (const line of lines) linesBy.set(line.accountId, [...(linesBy.get(line.accountId) ?? []), line]);
 
   const groups: LedgerGroup[] = [];
   for (const account of accounts) {
     const opening = openingBy.get(account.id) ?? new Decimal(0);
+    const openingLocal = openingLocalBy.get(account.id) ?? new Decimal(0);
     const own = linesBy.get(account.id) ?? [];
-    if (opening.isZero() && own.length === 0) continue;
+    if (opening.isZero() && openingLocal.isZero() && own.length === 0) continue;
 
     let running = opening;
     let debit = new Decimal(0);
     let credit = new Decimal(0);
+    let runningLocal = openingLocal;
+    let debitLocal = new Decimal(0);
+    let creditLocal = new Decimal(0);
     const shaped: LedgerGroupLine[] = own.map((line) => {
       const d = dec(line.debitUsd);
       const c = dec(line.creditUsd);
       running = running.plus(d).minus(c);
       debit = debit.plus(d);
       credit = credit.plus(c);
+      const dl = dec(line.debitLocal);
+      const cl = dec(line.creditLocal);
+      runningLocal = runningLocal.plus(dl).minus(cl);
+      debitLocal = debitLocal.plus(dl);
+      creditLocal = creditLocal.plus(cl);
       return {
         entryId: line.entryId,
         entryDate: line.entryDate,
@@ -1739,6 +1790,9 @@ export async function getGeneralLedgerByAccount(params: {
         debitUsd: toMoney(d),
         creditUsd: toMoney(c),
         balanceUsd: toMoney(running),
+        debitLocal: toMoney(dl),
+        creditLocal: toMoney(cl),
+        balanceLocal: toMoney(runningLocal),
       };
     });
 
@@ -1751,6 +1805,10 @@ export async function getGeneralLedgerByAccount(params: {
       debitUsd: toMoney(debit),
       creditUsd: toMoney(credit),
       closingUsd: toMoney(running),
+      openingLocal: toMoney(openingLocal),
+      debitLocal: toMoney(debitLocal),
+      creditLocal: toMoney(creditLocal),
+      closingLocal: toMoney(runningLocal),
     });
   }
   return groups;

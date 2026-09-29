@@ -258,7 +258,7 @@ describe('F — set off against what RADOUAN holds', () => {
 
   it('cannot set off more than the balance holds', async () => {
     const other = await prisma.agent.create({ data: { companyId, agentCode: 'AG-EMPTY', agentName: 'Agent with nothing' } });
-    await expect(settle('rent', { method: 'SET_OFF', amount: '9000', setOffAgainst: `agent:${other.id}` })).rejects.toThrow(/holding/);
+    await expect(settle('rent', { method: 'SET_OFF', amount: '9000', setOffAgainst: `agent:${other.id}` })).rejects.toThrow(/owes FID .* across his accounts/);
     expect(Number((await row('rent')).outstanding)).toBeCloseTo(9_000, 2);
   }, 300_000);
 });

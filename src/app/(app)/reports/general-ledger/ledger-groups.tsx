@@ -35,7 +35,10 @@ export function LedgerGroups({
   prefs,
   available,
   companyName,
+  currency,
 }: {
+  /** The currency every account is shown in: the company's own. */
+  currency: string;
   groups: LedgerGroupView[];
   prefs: LedgerPrefs;
   available: LedgerColumnKey[];
@@ -111,7 +114,7 @@ export function LedgerGroups({
                   report="general-ledger"
                   title="General ledger"
                   subject={group.name}
-                  currency="USD"
+                  currency={currency}
                   balanceSide="debit"
                   opening={group.openingRaw}
                   rows={group.rows}

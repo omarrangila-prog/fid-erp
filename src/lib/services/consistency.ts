@@ -7,7 +7,7 @@ import { getAgentSummaries, getAgentControlTotals } from '@/lib/services/agent-a
 import { getAgentStatement } from '@/lib/services/agent-statement';
 import { getUnpaidExpenseLedger } from '@/lib/services/unpaid-expenses';
 import { getReceivables } from '@/lib/services/receivables';
-import { getFinancialPosition } from '@/lib/services/reports';
+import { getBalanceSheet, getFinancialPosition, getTrialBalanceReport } from '@/lib/services/reports';
 import { getInventoryValuation } from '@/lib/services/stock';
 
 /**
@@ -27,7 +27,7 @@ import { getInventoryValuation } from '@/lib/services/stock';
  */
 
 export type ConsistencyCheck = {
-  area: 'Agents' | 'Expenses' | 'Invoices' | 'Loans' | 'Cash & bank' | 'Inventory';
+  area: 'Agents' | 'Expenses' | 'Invoices' | 'Loans' | 'Cash & bank' | 'Inventory' | 'Statements';
   label: string;
   left: { label: string; value: Decimal };
   right: { label: string; value: Decimal };
@@ -245,6 +245,98 @@ export async function runConsistencyChecks(companyId: string): Promise<{
       severity: 'error',
     }),
   );
+
+  // --- Customer receivables: the control account against its customers ----
+  // A line on the control with no customer on it would be receivable nobody owes —
+  // the one way the control and the customer ledgers could quietly part company.
+  const [arSplit] = await prisma.$queryRaw<Array<{ tagged: string; untagged: string }>>(Prisma.sql`
+    SELECT COALESCE(SUM(CASE WHEN jl."customerId" IS NOT NULL THEN jl."debitLocal" - jl."creditLocal" ELSE 0 END), 0)::text AS tagged,
+           COALESCE(SUM(CASE WHEN jl."customerId" IS NULL THEN jl."debitLocal" - jl."creditLocal" ELSE 0 END), 0)::text AS untagged
+    FROM journal_lines jl
+    JOIN journal_entries je ON je."id" = jl."journalEntryId"
+    JOIN accounts a ON a."id" = jl."accountId"
+    WHERE je."companyId" = ${companyId} AND ${LIVE_ENTRY_SQL} AND a."systemKey" = 'ACCOUNTS_RECEIVABLE'`);
+  checks.push(
+    check({
+      area: 'Invoices',
+      label: 'Accounts Receivable control = the customers’ own ledgers (added once, never twice)',
+      left: { label: 'Accounts Receivable (GL)', value: toMoney(dec(ar?.balance ?? 0)) },
+      right: { label: 'Sum of customer ledgers', value: toMoney(dec(arSplit?.tagged ?? 0)) },
+      currency: local,
+      severity: 'error',
+      note: 'The control and the customer ledgers are one balance seen twice; the dashboard shows it once.',
+    }),
+  );
+
+  // --- The books themselves -------------------------------------------------
+  const [unbalanced] = await prisma.$queryRaw<Array<{ entries: string }>>(Prisma.sql`
+    SELECT COUNT(*)::text AS entries FROM (
+      SELECT je."id"
+      FROM journal_entries je
+      JOIN journal_lines jl ON jl."journalEntryId" = je."id"
+      WHERE je."companyId" = ${companyId} AND ${LIVE_ENTRY_SQL}
+      GROUP BY je."id"
+      HAVING ABS(SUM(jl."debitLocal" - jl."creditLocal")) > 0.004 OR ABS(SUM(jl."debitUsd" - jl."creditUsd")) > 0.004
+    ) x`);
+  checks.push(
+    check({
+      area: 'Statements',
+      label: `Every posted journal entry balances, in ${local} and in USD`,
+      left: { label: 'Unbalanced entries', value: dec(unbalanced?.entries ?? 0) },
+      right: { label: 'Expected', value: dec(0) },
+      currency: 'entries',
+      severity: 'error',
+    }),
+  );
+  const [sheet, trial] = await Promise.all([
+    // Every dated entry, as the Cash & Bank page counts them — including any dated later than today.
+    getBalanceSheet({ companyId, asOf: new Date('9999-12-31T00:00:00.000Z') }),
+    getTrialBalanceReport({ companyId }),
+  ]);
+  checks.push(
+    check({
+      area: 'Statements',
+      label: `Balance Sheet: assets = liabilities + equity (${local})`,
+      left: { label: 'Assets', value: sheet.assets.totalLocal },
+      right: { label: 'Liabilities + equity', value: toMoney(sheet.liabilities.totalLocal.plus(sheet.equity.totalLocal)) },
+      currency: local,
+      severity: 'error',
+    }),
+    check({
+      area: 'Statements',
+      label: 'Balance Sheet: assets = liabilities + equity (USD equivalent)',
+      left: { label: 'Assets', value: sheet.assets.totalUsd },
+      right: { label: 'Liabilities + equity', value: toMoney(sheet.liabilities.totalUsd.plus(sheet.equity.totalUsd)) },
+      currency: 'USD',
+      severity: 'error',
+    }),
+    check({
+      area: 'Statements',
+      label: `Trial Balance: debits = credits (${local})`,
+      left: { label: 'Debits', value: trial.totals.debitLocal },
+      right: { label: 'Credits', value: trial.totals.creditLocal },
+      currency: local,
+      severity: 'error',
+    }),
+  );
+  // The same drawer, read by the Cash & Bank page and by the Balance Sheet, in the currency it is kept in.
+  for (const account of position.accounts) {
+    if (account.currency !== local) continue;
+    const line = sheet.assets.lines.find((l) => l.accountId === account.glAccountId);
+    if (!line && account.balance.isZero()) continue;
+    if ((byGl.get(account.glAccountId)?.names.length ?? 0) > 1) continue;
+    checks.push(
+      check({
+        area: 'Cash & bank',
+        label: `${account.name}: Cash & Bank page = Balance Sheet line (${local})`,
+        left: { label: 'Cash & Bank page', value: account.balance },
+        right: { label: 'Balance Sheet', value: line?.amountLocal ?? dec(0) },
+        currency: local,
+        severity: 'error',
+        note: 'Both in the account’s own currency; the USD shown under each is the equivalent at every movement’s own rate.',
+      }),
+    );
+  }
 
   return { localCurrency: local, checks, failures: checks.filter((c) => !c.ok && c.severity === 'error').length };
 }

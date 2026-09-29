@@ -147,18 +147,18 @@ export default async function TrialBalancePage({
           for. */}
       <ReportSummary
         figures={[
-          { label: 'Total debit', value: formatMoney(trial.totals.debitUsd, 'USD'), hint: formatMoney(trial.totals.debitLocal, local) },
-          { label: 'Total credit', value: formatMoney(trial.totals.creditUsd, 'USD'), hint: formatMoney(trial.totals.creditLocal, local) },
+          { label: 'Total debit', value: formatMoney(trial.totals.debitLocal, local), hint: `≈ ${formatMoney(trial.totals.debitUsd, 'USD')}` },
+          { label: 'Total credit', value: formatMoney(trial.totals.creditLocal, local), hint: `≈ ${formatMoney(trial.totals.creditUsd, 'USD')}` },
           {
             label: 'Difference',
-            value: formatMoney(dec(trial.totals.debitUsd).minus(trial.totals.creditUsd), 'USD'),
+            value: formatMoney(dec(trial.totals.debitLocal).minus(trial.totals.creditLocal), local),
             lead: true,
-            tone: trial.isBalanced ? 'default' : 'negative',
+            tone: trial.isBalancedLocal && trial.isBalanced ? 'default' : 'negative',
             hint: `${trial.rows.length} accounts with a balance`,
           },
         ]}
         status={
-          trial.isBalanced
+          trial.isBalancedLocal && trial.isBalanced
             ? { label: 'Balanced', ok: true, detail: 'Every debit has a matching credit.' }
             : {
                 label: 'Attention required',
@@ -212,13 +212,17 @@ export default async function TrialBalancePage({
                     {trial.hasOpening ? (
                       <>
                         <TD numeric className="text-ink-muted">
-                          {row.openingDebitUsd.greaterThan(0) ? formatMoney(row.openingDebitUsd, 'USD') : '—'}
+                          <BookSides usd={row.openingDebitUsd} local={row.openingDebitLocal} localCurrency={local} />
                         </TD>
                         <TD numeric className="text-ink-muted">
-                          {row.openingCreditUsd.greaterThan(0) ? formatMoney(row.openingCreditUsd, 'USD') : '—'}
+                          <BookSides usd={row.openingCreditUsd} local={row.openingCreditLocal} localCurrency={local} />
                         </TD>
-                        <TD numeric>{row.periodDebitUsd.greaterThan(0) ? formatMoney(row.periodDebitUsd, 'USD') : '—'}</TD>
-                        <TD numeric>{row.periodCreditUsd.greaterThan(0) ? formatMoney(row.periodCreditUsd, 'USD') : '—'}</TD>
+                        <TD numeric>
+                          <BookSides usd={row.periodDebitUsd} local={row.periodDebitLocal} localCurrency={local} />
+                        </TD>
+                        <TD numeric>
+                          <BookSides usd={row.periodCreditUsd} local={row.periodCreditLocal} localCurrency={local} />
+                        </TD>
                       </>
                     ) : null}
                     <TD numeric>
@@ -235,10 +239,18 @@ export default async function TrialBalancePage({
                   <TD colSpan={2}>Total</TD>
                   {trial.hasOpening ? (
                     <>
-                      <TD numeric>{formatMoney(trial.totals.openingDebitUsd, 'USD')}</TD>
-                      <TD numeric>{formatMoney(trial.totals.openingCreditUsd, 'USD')}</TD>
-                      <TD numeric>{formatMoney(trial.totals.periodDebitUsd, 'USD')}</TD>
-                      <TD numeric>{formatMoney(trial.totals.periodCreditUsd, 'USD')}</TD>
+                      <TD numeric>
+                        <BookSides usd={trial.totals.openingDebitUsd} local={trial.totals.openingDebitLocal} localCurrency={local} always />
+                      </TD>
+                      <TD numeric>
+                        <BookSides usd={trial.totals.openingCreditUsd} local={trial.totals.openingCreditLocal} localCurrency={local} always />
+                      </TD>
+                      <TD numeric>
+                        <BookSides usd={trial.totals.periodDebitUsd} local={trial.totals.periodDebitLocal} localCurrency={local} always />
+                      </TD>
+                      <TD numeric>
+                        <BookSides usd={trial.totals.periodCreditUsd} local={trial.totals.periodCreditLocal} localCurrency={local} always />
+                      </TD>
                     </>
                   ) : null}
                   <TD numeric>
@@ -258,10 +270,10 @@ export default async function TrialBalancePage({
 }
 
 /**
- * One side of an account in both sets of books, in one cell: the dollar book
- * above, the company's-currency book beneath. Both are what the entries
- * stored — the local figure is the books' own, not a conversion of the
- * dollars.
+ * One side of an account in one cell: the company's own currency — the
+ * books' figure — above, and the USD equivalent beneath, each line at its own
+ * rate. Both are what the entries stored; neither is a conversion of the
+ * other at today's rate.
  */
 function BookSides({
   usd,
@@ -274,15 +286,15 @@ function BookSides({
   localCurrency: string;
   always?: boolean;
 }) {
-  const showUsd = always || usd.greaterThan(0);
-  const showLocal = localCurrency !== 'USD' && (always || local.greaterThan(0));
-  if (!showUsd && !showLocal) return <>—</>;
+  const showLocal = always || local.greaterThan(0);
+  const showUsd = localCurrency !== 'USD' && (always || usd.greaterThan(0));
+  if (!showLocal && !showUsd) return <>—</>;
   return (
     <span className="inline-block">
-      <span className="tnum block">{showUsd ? formatMoney(usd, 'USD') : '—'}</span>
-      {showLocal ? (
-        <span className="tnum block text-[11px] font-normal text-ink-subtle" title={`${localCurrency} books`}>
-          {formatMoney(local, localCurrency)}
+      <span className="tnum block">{showLocal ? formatMoney(local, localCurrency) : '—'}</span>
+      {showUsd ? (
+        <span className="tnum block text-[11px] font-normal text-ink-subtle" title="USD equivalent: each transaction at its own rate">
+          ≈ {formatMoney(usd, 'USD')}
         </span>
       ) : null}
     </span>

@@ -5,6 +5,7 @@ import { requirePermission, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { toErrorResponse, NotFoundError } from '@/lib/errors';
 import { prisma } from '@/lib/db';
+import { dec } from '@/lib/money';
 import {
   buildWorkbook,
   buildStatementWorkbook,
@@ -213,9 +214,10 @@ function pnlSection(title: string, lines: PnlLine[], total: { usd: unknown; loca
       kind: 'line',
       label: line.name,
       code: line.code,
-      values: [Number(line.amountUsd), Number(line.amountLocal)],
+      // The company's own currency first, as on screen; the USD equivalent beside it.
+      values: [Number(line.amountLocal), Number(line.amountUsd)],
     })),
-    { kind: 'total', label: `Total ${title.toLowerCase()}`, values: [Number(total.usd), Number(total.local)] },
+    { kind: 'total', label: `Total ${title.toLowerCase()}`, values: [Number(total.local), Number(total.usd)] },
     { kind: 'spacer' },
   ];
 }
@@ -915,16 +917,16 @@ const REPORTS: Record<string, Report> = {
       return buildWorkbook({
         companyName: user.activeCompany.name,
         title: 'Trial Balance',
-        subtitle: trial.isBalanced ? asAt(asOf) : `${asAt(asOf)} — OUT OF BALANCE`,
+        subtitle: trial.isBalanced && trial.isBalancedLocal ? asAt(asOf) : `${asAt(asOf)} — OUT OF BALANCE`,
         rows: trial.rows,
-        totals: [`Debit USD`, `Credit USD`, `Debit ${local}`, `Credit ${local}`],
+        totals: [`Debit ${local}`, `Credit ${local}`, `Debit USD equivalent`, `Credit USD equivalent`],
         columns: [
           { header: 'Account', value: (r) => r.name, width: 36 },
           { header: 'Type', value: (r) => r.type },
-          { header: 'Debit USD', value: (r) => Number(r.debitUsd), type: 'money' },
-          { header: 'Credit USD', value: (r) => Number(r.creditUsd), type: 'money' },
           { header: `Debit ${local}`, value: (r) => Number(r.debitLocal), type: 'money' },
           { header: `Credit ${local}`, value: (r) => Number(r.creditLocal), type: 'money' },
+          { header: 'Debit USD equivalent', value: (r) => Number(r.debitUsd), type: 'money' },
+          { header: 'Credit USD equivalent', value: (r) => Number(r.creditUsd), type: 'money' },
         ],
       });
     },
@@ -948,7 +950,7 @@ const REPORTS: Record<string, Report> = {
         {
           kind: 'total',
           label: 'Gross profit',
-          values: [Number(t.grossProfitUsd), Number(t.grossProfitLocal)],
+          values: [Number(t.grossProfitLocal), Number(t.grossProfitUsd)],
         },
         { kind: 'note', label: `Gross margin ${Number(pnl.grossMarginPct).toFixed(1)}% of revenue` },
         { kind: 'spacer' },
@@ -963,7 +965,7 @@ const REPORTS: Record<string, Report> = {
       }
 
       rows.push(
-        { kind: 'grand', label: 'Net profit', values: [Number(t.netProfitUsd), Number(t.netProfitLocal)] },
+        { kind: 'grand', label: 'Net profit', values: [Number(t.netProfitLocal), Number(t.netProfitUsd)] },
         { kind: 'note', label: `Net margin ${Number(pnl.netMarginPct).toFixed(1)}% of revenue` },
       );
 
@@ -973,8 +975,8 @@ const REPORTS: Record<string, Report> = {
         subtitle: period(from, to),
         labelHeader: 'Account',
         columns: [
-          { header: 'USD', type: 'money' },
           { header: local, type: 'money' },
+          { header: 'USD equivalent', type: 'money' },
         ],
         rows,
       });
@@ -1000,8 +1002,8 @@ const REPORTS: Record<string, Report> = {
           kind: 'grand',
           label: 'Liabilities and equity',
           values: [
-            Number(sheet.liabilities.totalUsd) + Number(sheet.equity.totalUsd),
-            Number(sheet.liabilities.totalLocal) + Number(sheet.equity.totalLocal),
+            Number(sheet.liabilities.totalLocal.plus(sheet.equity.totalLocal)),
+            Number(sheet.liabilities.totalUsd.plus(sheet.equity.totalUsd)),
           ],
         },
       ];
@@ -1010,9 +1012,9 @@ const REPORTS: Record<string, Report> = {
       // the one thing a reader must not have to work out for themselves.
       rows.push({
         kind: 'note',
-        label: sheet.balancesUsd
+        label: sheet.balancesLocal
           ? 'Assets equal liabilities plus equity.'
-          : `OUT OF BALANCE by USD ${Number(sheet.differenceUsd).toFixed(2)} — this needs investigating.`,
+          : `OUT OF BALANCE by ${local} ${sheet.differenceLocal.toFixed(2)} — this needs investigating.`,
       });
 
       return buildStatementWorkbook({
@@ -1021,8 +1023,8 @@ const REPORTS: Record<string, Report> = {
         subtitle: asAt(asOf),
         labelHeader: 'Account',
         columns: [
-          { header: 'USD', type: 'money' },
           { header: local, type: 'money' },
+          { header: 'USD equivalent', type: 'money' },
         ],
         rows,
       });
@@ -1181,7 +1183,7 @@ const REPORTS: Record<string, Report> = {
       const groupBy = requested && allowed.includes(requested) ? requested : 'type';
 
       const rows = await getExpenseReport({ companyId: user.activeCompany.id, from, to, groupBy });
-      const total = rows.reduce((sum, row) => sum + Number(row.amountUsd), 0);
+      const total = Number(rows.reduce((sum, row) => sum.plus(dec(row.amountUsd)), dec(0)));
 
       return buildWorkbook({
         companyName: user.activeCompany.name,
@@ -1308,7 +1310,7 @@ const REPORTS: Record<string, Report> = {
           {
             kind: 'total',
             label: 'Total cash and bank',
-            values: [null, '', position.accounts.reduce((sum, a) => sum + Number(a.balanceUsd), 0)],
+            values: [null, '', Number(position.accounts.reduce((sum, a) => sum.plus(a.balanceUsd), dec(0)))],
           },
           { kind: 'spacer' },
           { kind: 'section', label: 'Owed to and by the business' },

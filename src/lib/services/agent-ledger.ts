@@ -101,6 +101,41 @@ export function agentHoldingIn(position: AgentPosition, currency: string, localC
   return convertFromUsd(position.holdingUsd, rateToUsd, code);
 }
 
+/**
+ * How much can be set off against an agent: what he owes FID across all his
+ * accounts — customer money he holds, loans FID made him, anything else in
+ * debit — less what FID owes him on them. That is his ledger's closing
+ * balance, the same figure his page, the dashboard and the agent summary
+ * show. Never less than the customer money he holds, so nothing that could
+ * be set off before stops being possible.
+ *
+ * Holding alone is too narrow: an agent who holds nothing but owes FID on a
+ * loan account still owes FID, and a cost FID owes him can be set against it.
+ */
+export async function agentSetOffAvailable(
+  tx: Tx,
+  companyId: string,
+  agentId: string,
+  currency: string,
+  localCurrency: string,
+  rateToUsd: Decimal,
+): Promise<Decimal> {
+  const position = await getAgentPosition(tx, companyId, agentId);
+  const held = agentHoldingIn(position, currency, localCurrency, rateToUsd);
+  const [row] = await tx.$queryRaw<Array<{ local: string | null; usd: string | null }>>`
+    SELECT SUM(jl."debitLocal" - jl."creditLocal")::text AS local, SUM(jl."debitUsd" - jl."creditUsd")::text AS usd
+    FROM journal_lines jl
+    JOIN journal_entries je ON je."id" = jl."journalEntryId" AND ${LIVE_ENTRY_SQL}
+    WHERE je."companyId" = ${companyId} AND jl."agentId" = ${agentId}
+      -- As on his ledger: the company's own cash and bank lines are not his balance.
+      AND jl."cashBankAccountId" IS NULL`;
+  const code = currency.toUpperCase();
+  const netUsd = dec(row?.usd ?? 0);
+  const net =
+    code === 'USD' ? netUsd : code === localCurrency.toUpperCase() ? dec(row?.local ?? 0) : convertFromUsd(netUsd, rateToUsd, code);
+  return Decimal.max(held, net, 0);
+}
+
 function assertNotOverCollecting(params: {
   agentName: string;
   position: AgentPosition;
@@ -228,8 +263,7 @@ export async function postAgentSettlement(params: { id: string; companyId: strin
 
     await tx.$queryRaw`SELECT "id" FROM agents WHERE "id" = ${settlement.agentId} AND "companyId" = ${params.companyId} FOR UPDATE`;
 
-    if (collecting || offset) {
-      // An offset uses up money he holds exactly as a hand-over does.
+    if (collecting) {
       assertNotOverCollecting({
         agentName: settlement.agent.agentName,
         position: await getAgentPosition(tx, params.companyId, settlement.agentId),
@@ -238,6 +272,22 @@ export async function postAgentSettlement(params: { id: string; companyId: strin
         amount: dec(settlement.amount),
         rateToUsd: dec(settlement.rateToUsd),
       });
+    }
+    if (offset) {
+      // A set-off is against what he owes FID across his accounts, not only the customer money in his hands.
+      const available = await agentSetOffAvailable(
+        tx,
+        params.companyId,
+        settlement.agentId,
+        settlement.currency,
+        company.localCurrency,
+        dec(settlement.rateToUsd),
+      );
+      if (dec(settlement.amount).greaterThan(available.plus('0.01'))) {
+        throw new BusinessRuleError(
+          `${settlement.agent.agentName} owes FID ${formatMoney(available, settlement.currency)} across his accounts, so no more than that can be set off.`,
+        );
+      }
     }
     if (!collecting) {
       const position = await getAgentPosition(tx, params.companyId, settlement.agentId);

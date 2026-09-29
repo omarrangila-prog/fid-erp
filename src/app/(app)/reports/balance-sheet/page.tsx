@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getBalanceSheet, type BalanceSheetLine } from '@/lib/services/reports';
-import { formatMoney, formatDate } from '@/lib/format';
+import { formatMoney, formatDate, companyToday } from '@/lib/format';
 import { Decimal, dec } from '@/lib/money';
 import { PageHeader } from '@/components/shared/page-header';
 import { AsOfPicker } from '@/components/shared/date-range';
@@ -43,7 +43,7 @@ export default async function BalanceSheetPage({
   const user = await requirePageAccess(PERMISSIONS.ACCOUNTING_VIEW);
   const local = user.activeCompany.localCurrency;
 
-  const asOfDate = query.asOf ? new Date(`${query.asOf}T00:00:00.000Z`) : new Date();
+  const asOfDate = query.asOf ? new Date(`${query.asOf}T00:00:00.000Z`) : companyToday(user.activeCompany.timezone);
   const compare = (['previous', 'year'].includes(query.compare ?? '') ? query.compare : 'none') as 'none' | 'previous' | 'year';
   const showZero = query.zero === '1';
 
@@ -62,13 +62,22 @@ export default async function BalanceSheetPage({
   ]);
   const asOf = asOfDate.toISOString().slice(0, 10);
 
-  const money = (value: Decimal, muted = false): StatementCell => ({ value: formatMoney(value, 'USD'), muted });
-  const changeCells = (now: Decimal, then: Decimal): StatementCell[] => {
-    const delta = now.minus(then);
-    const pct = then.isZero() ? null : delta.dividedBy(then.abs()).times(100);
+  // The company's own currency first — the ledgers' figures — and the USD equivalent under it, each
+  // transaction at its own rate: never the other way round.
+  type Pair = { local: Decimal; usd: Decimal };
+  const zero: Pair = { local: new Decimal(0), usd: new Decimal(0) };
+  const plus = (a: Pair, b: Pair): Pair => ({ local: a.local.plus(b.local), usd: a.usd.plus(b.usd) });
+  const money = (value: Pair, muted = false): StatementCell => ({
+    value: formatMoney(value.local, local),
+    secondary: `≈ ${formatMoney(value.usd, 'USD')}`,
+    muted,
+  });
+  const changeCells = (now: Pair, then: Pair): StatementCell[] => {
+    const delta = now.local.minus(then.local);
+    const pct = then.local.isZero() ? null : delta.dividedBy(then.local.abs()).times(100);
     return [
       money(then, true),
-      { value: formatMoney(delta, 'USD'), tone: delta.isNegative() ? 'negative' : delta.isZero() ? undefined : 'positive' },
+      { value: formatMoney(delta, local), tone: delta.isNegative() ? 'negative' : delta.isZero() ? undefined : 'positive' },
       { value: pct === null ? (delta.isZero() ? '—' : 'new') : `${pct.greaterThanOrEqualTo(0) ? '+' : ''}${pct.toFixed(1)}%`, muted: true },
     ];
   };
@@ -86,18 +95,21 @@ export default async function BalanceSheetPage({
         const ordered = new Map<string, BalanceSheetLine>();
         for (const line of now.filter((l) => l.group === group)) ordered.set(line.accountId || line.name, line);
         for (const line of then?.filter((l) => l.group === group) ?? []) if (!ordered.has(line.accountId || line.name)) ordered.set(line.accountId || line.name, line);
-        const amount = (list: BalanceSheetLine[] | undefined, key: string) =>
-          dec(list?.find((l) => (l.accountId || l.name) === key)?.amountUsd ?? 0);
+        const amount = (list: BalanceSheetLine[] | undefined, key: string): Pair => {
+          const line = list?.find((l) => (l.accountId || l.name) === key);
+          return { local: dec(line?.amountLocal ?? 0), usd: dec(line?.amountUsd ?? 0) };
+        };
+        const isZero = (p: Pair) => p.local.isZero() && p.usd.isZero();
         const lines = [...ordered.entries()]
-          .filter(([key]) => showZero || !amount(now, key).isZero() || (then ? !amount(then, key).isZero() : false))
+          .filter(([key]) => showZero || !isZero(amount(now, key)) || (then ? !isZero(amount(then, key)) : false))
           .map(([key, line]) => ({
             key: `${keyPrefix}-${key}`,
             label: line.name,
             href: line.accountId ? `/reports/general-ledger?account=${line.accountId}&to=${asOf}` : undefined,
             cells: [money(amount(now, key)), ...(then ? changeCells(amount(now, key), amount(then, key)) : [])],
           }));
-        const totalNow = lines.reduce((a, l) => a.plus(amount(now, l.key.slice(keyPrefix.length + 1))), new Decimal(0));
-        const totalThen = then ? lines.reduce((a, l) => a.plus(amount(then, l.key.slice(keyPrefix.length + 1))), new Decimal(0)) : null;
+        const totalNow = lines.reduce((a, l) => plus(a, amount(now, l.key.slice(keyPrefix.length + 1))), zero);
+        const totalThen = then ? lines.reduce((a, l) => plus(a, amount(then, l.key.slice(keyPrefix.length + 1))), zero) : null;
         return {
           key: `${keyPrefix}-${group}`,
           title: group,
@@ -115,7 +127,7 @@ export default async function BalanceSheetPage({
   const equitySections = sectionsFor(sheet.equity.lines, before?.equity.lines, ['Equity'], 'equity');
   const sections = [...assetSections, ...liabilitySections, ...equitySections];
 
-  const totalRow = (label: string, now: Decimal, then: Decimal | undefined, after: string, emphasis: 'strong' | 'final') => ({
+  const totalRow = (label: string, now: Pair, then: Pair | undefined, after: string, emphasis: 'strong' | 'final') => ({
     after,
     label,
     emphasis,
@@ -124,7 +136,8 @@ export default async function BalanceSheetPage({
   const lastAsset = assetSections.at(-1)?.key ?? '';
   const lastLiability = liabilitySections.at(-1)?.key ?? '';
   const lastEquity = equitySections.at(-1)?.key ?? '';
-  const liabilitiesAndEquity = sheet.liabilities.totalUsd.plus(sheet.equity.totalUsd);
+  const pair = (s: { totalLocal: Decimal; totalUsd: Decimal }): Pair => ({ local: s.totalLocal, usd: s.totalUsd });
+  const liabilitiesAndEquity = plus(pair(sheet.liabilities), pair(sheet.equity));
 
   return (
     <div className="space-y-4">
@@ -133,8 +146,8 @@ export default async function BalanceSheetPage({
         description="What the company owns, owes and is worth, as at any date."
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Balance Sheet' }]}
         meta={
-          <Badge tone={sheet.balancesUsd ? 'success' : 'danger'}>
-            {sheet.balancesUsd ? 'Assets = Liabilities + Equity' : 'Attention required'}
+          <Badge tone={sheet.balancesLocal && sheet.balancesUsd ? 'success' : 'danger'}>
+            {sheet.balancesLocal && sheet.balancesUsd ? 'Assets = Liabilities + Equity' : 'Attention required'}
           </Badge>
         }
         actions={
@@ -167,22 +180,22 @@ export default async function BalanceSheetPage({
             columns={columns}
             sections={sections}
             grandTotals={[
-              totalRow('Total assets', sheet.assets.totalUsd, before?.assets.totalUsd, lastAsset, 'strong'),
-              totalRow('Total liabilities', sheet.liabilities.totalUsd, before?.liabilities.totalUsd, lastLiability, 'strong'),
-              totalRow('Total equity', sheet.equity.totalUsd, before?.equity.totalUsd, lastEquity, 'strong'),
+              totalRow('Total assets', pair(sheet.assets), before ? pair(before.assets) : undefined, lastAsset, 'strong'),
+              totalRow('Total liabilities', pair(sheet.liabilities), before ? pair(before.liabilities) : undefined, lastLiability, 'strong'),
+              totalRow('Total equity', pair(sheet.equity), before ? pair(before.equity) : undefined, lastEquity, 'strong'),
               totalRow(
                 'Total liabilities and equity',
                 liabilitiesAndEquity,
-                before ? before.liabilities.totalUsd.plus(before.equity.totalUsd) : undefined,
+                before ? plus(pair(before.liabilities), pair(before.equity)) : undefined,
                 lastEquity,
                 'final',
               ),
             ]}
           />
-          <p className={`mt-3 px-3 text-xs ${sheet.balancesUsd ? 'text-ink-subtle' : 'font-medium text-red-700'}`}>
-            {sheet.balancesUsd
-              ? `Assets ${formatMoney(sheet.assets.totalUsd, 'USD')} = liabilities ${formatMoney(sheet.liabilities.totalUsd, 'USD')} + equity ${formatMoney(sheet.equity.totalUsd, 'USD')}. In ${local}: assets ${formatMoney(sheet.assets.totalLocal, local)}.`
-              : `Assets and liabilities plus equity differ by ${formatMoney(sheet.differenceUsd, 'USD')}. The posting engine refuses unbalanced entries, so this points at data written outside the application.`}
+          <p className={`mt-3 px-3 text-xs ${sheet.balancesLocal ? 'text-ink-subtle' : 'font-medium text-red-700'}`} data-testid="balance-sheet-equation">
+            {sheet.balancesLocal
+              ? `Assets ${formatMoney(sheet.assets.totalLocal, local)} = liabilities ${formatMoney(sheet.liabilities.totalLocal, local)} + equity ${formatMoney(sheet.equity.totalLocal, local)}. Figures in ${local}, the currency the books are kept in; ≈ USD under each is the equivalent at every transaction's own rate.`
+              : `Assets and liabilities plus equity differ by ${formatMoney(sheet.differenceLocal, local)}. The posting engine refuses unbalanced entries, so this points at data written outside the application.`}
           </p>
         </CardContent>
       </Card>

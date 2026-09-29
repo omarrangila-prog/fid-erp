@@ -4,7 +4,7 @@ import { ACCOUNT_KEYS } from '@/lib/constants';
 import { dec, type Decimal } from '@/lib/money';
 import { formatMoney } from '@/lib/format';
 import { AGENT_PREFIX } from '@/lib/ledger-target';
-import { getAgentPosition, agentHoldingIn } from '@/lib/services/agent-ledger';
+import { agentSetOffAvailable } from '@/lib/services/agent-ledger';
 import type { JournalLineInput } from '@/lib/services/accounting';
 
 /**
@@ -141,7 +141,8 @@ export type LedgerTarget = { ledgerAccountId?: string | null; ledgerAgentId?: st
 /**
  * The journal line for the other side, checked. `taking` is the amount being
  * taken off an agent's account (a credit to Agent Clearing), which may not
- * exceed what he holds in that currency; a debit to it has no limit.
+ * exceed what he owes FID in that currency (see agentSetOffAvailable); a
+ * debit to it has no limit.
  */
 export async function resolveLedgerSettlement(
   tx: Tx,
@@ -158,11 +159,10 @@ export async function resolveLedgerSettlement(
     if (!agent) throw new NotFoundError('Agent');
     if (agent.status !== 'ACTIVE') throw new BusinessRuleError(`${agent.agentName} is inactive.`);
     if (taking) {
-      const position = await getAgentPosition(tx, companyId, agent.id);
-      const held = agentHoldingIn(position, currency, taking.localCurrency, dec(taking.rateToUsd));
-      if (dec(taking.amount).greaterThan(held.plus('0.01'))) {
+      const available = await agentSetOffAvailable(tx, companyId, agent.id, currency, taking.localCurrency, dec(taking.rateToUsd));
+      if (dec(taking.amount).greaterThan(available.plus('0.01'))) {
         throw new BusinessRuleError(
-          `${agent.agentName} is holding ${formatMoney(held, currency)} for FID, so no more than that can be set off against his account.`,
+          `${agent.agentName} owes FID ${formatMoney(available, currency)} across his accounts, so no more than that can be set off against his account.`,
         );
       }
     }

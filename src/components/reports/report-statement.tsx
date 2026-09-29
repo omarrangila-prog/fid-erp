@@ -200,7 +200,13 @@ export function FavouriteStar({ href, label }: { href: string; label?: string })
 // Statement table: sections that open and close, rows that drill down
 // ---------------------------------------------------------------------------
 
-export type StatementCell = { value: string; muted?: boolean; tone?: 'positive' | 'negative' };
+export type StatementCell = {
+  value: string;
+  /** Smaller, underneath: the USD equivalent of a figure kept in the company's currency. */
+  secondary?: string;
+  muted?: boolean;
+  tone?: 'positive' | 'negative';
+};
 
 export type StatementLine = {
   key: string;
@@ -289,7 +295,16 @@ export function Statement({
         extra,
       )}
     >
-      {c.value}
+      {c.secondary ? (
+        <>
+          <span className="block">{c.value}</span>
+          <span className="block text-[11px] font-normal text-ink-subtle" title="USD equivalent: each transaction at its own rate">
+            {c.secondary}
+          </span>
+        </>
+      ) : (
+        c.value
+      )}
     </td>
   );
 

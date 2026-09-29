@@ -34,6 +34,8 @@ export type UnpaidRow = {
   partyId: string | null;
   partyName: string;
   control: string;
+  /** Moved to another party's account by a journal entry: still unpaid, owed there. */
+  transferred: string | null;
   currency: string;
   rateLocalPerUsd: string;
   gross: string;
@@ -161,6 +163,11 @@ export function UnpaidExpensesClient({
             <span className="text-ink-muted">{r.partyName}</span>
           )}
           <span className="block text-[11px] text-ink-subtle">{r.control}</span>
+          {r.transferred ? (
+            <span className="block text-[11px] font-medium text-amber-800" data-testid="unpaid-transferred">
+              {r.transferred}
+            </span>
+          ) : null}
         </span>
       ),
     },

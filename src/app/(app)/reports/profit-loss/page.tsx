@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getProfitAndLossByColumns, type PnlLine, type ProfitAndLoss } from '@/lib/services/reports';
-import { formatMoney, formatDate, formatPercent } from '@/lib/format';
+import { formatMoney, formatDate, formatPercent, companyToday } from '@/lib/format';
 import { Decimal, dec } from '@/lib/money';
 import { PageHeader } from '@/components/shared/page-header';
 import { DateRangePicker } from '@/components/shared/date-range';
@@ -49,7 +49,7 @@ export default async function ProfitLossPage({
   const local = user.activeCompany.localCurrency;
 
   const fromDate = query.from ? new Date(`${query.from}T00:00:00.000Z`) : startOfYear();
-  const toDate = query.to ? new Date(`${query.to}T00:00:00.000Z`) : new Date();
+  const toDate = query.to ? new Date(`${query.to}T00:00:00.000Z`) : companyToday(user.activeCompany.timezone);
   const columnsBy = (['month', 'quarter', 'year'].includes(query.columns ?? '') ? query.columns : 'total') as 'total' | 'month' | 'quarter' | 'year';
   const compare = (['previous', 'year'].includes(query.compare ?? '') ? query.compare : 'none') as 'none' | 'previous' | 'year';
   const showZero = query.zero === '1';
@@ -67,30 +67,40 @@ export default async function ProfitLossPage({
     ...(before ? [compare === 'year' ? 'Previous year' : 'Previous period', 'Change', '% change'] : []),
   ];
 
-  const money = (value: Decimal, muted = false): StatementCell => ({ value: formatMoney(value, 'USD'), muted });
-  const changeCells = (now: Decimal, then: Decimal): StatementCell[] => {
-    const delta = now.minus(then);
-    const pct = then.isZero() ? null : delta.dividedBy(then.abs()).times(100);
+  // The company's own currency first — the ledgers' figures — and the USD equivalent under it, each
+  // transaction at its own rate: never the other way round.
+  type Pair = { local: Decimal; usd: Decimal };
+  const money = (value: Pair, muted = false): StatementCell => ({
+    value: formatMoney(value.local, local),
+    secondary: `≈ ${formatMoney(value.usd, 'USD')}`,
+    muted,
+  });
+  const changeCells = (now: Pair, then: Pair): StatementCell[] => {
+    const delta = now.local.minus(then.local);
+    const pct = then.local.isZero() ? null : delta.dividedBy(then.local.abs()).times(100);
     return [
       money(then, true),
-      { value: formatMoney(delta, 'USD'), tone: delta.isNegative() ? 'negative' : delta.isZero() ? undefined : 'positive' },
+      { value: formatMoney(delta, local), tone: delta.isNegative() ? 'negative' : delta.isZero() ? undefined : 'positive' },
       { value: pct === null ? (delta.isZero() ? '—' : 'new') : `${pct.greaterThanOrEqualTo(0) ? '+' : ''}${pct.toFixed(1)}%`, muted: true },
     ];
   };
 
   /** One statement section from the matching group on each column's statement. */
-  const section = (key: string, title: string, pick: (p: ProfitAndLoss) => PnlLine[], totalOf: (p: ProfitAndLoss) => Decimal, totalLabel: string): StatementSectionData => {
+  const section = (key: string, title: string, pick: (p: ProfitAndLoss) => PnlLine[], totalOf: (p: ProfitAndLoss) => Pair, totalLabel: string): StatementSectionData => {
     // Union of accounts across every column, in the order the total statement lists them.
     const ordered = new Map<string, PnlLine>();
     for (const line of pick(total)) ordered.set(line.accountId, line);
     for (const col of report.byColumn) for (const line of pick(col)) if (!ordered.has(line.accountId)) ordered.set(line.accountId, line);
     if (before) for (const line of pick(before)) if (!ordered.has(line.accountId)) ordered.set(line.accountId, line);
 
-    const amountIn = (p: ProfitAndLoss | null, accountId: string) =>
-      dec(p ? (pick(p).find((l) => l.accountId === accountId)?.amountUsd ?? 0) : 0);
+    const amountIn = (p: ProfitAndLoss | null, accountId: string): Pair => {
+      const line = p ? pick(p).find((l) => l.accountId === accountId) : undefined;
+      return { local: dec(line?.amountLocal ?? 0), usd: dec(line?.amountUsd ?? 0) };
+    };
+    const isZero = (v: Pair) => v.local.isZero() && v.usd.isZero();
 
     const lines: StatementLine[] = [...ordered.values()]
-      .filter((line) => showZero || !amountIn(total, line.accountId).isZero() || (before ? !amountIn(before, line.accountId).isZero() : false))
+      .filter((line) => showZero || !isZero(amountIn(total, line.accountId)) || (before ? !isZero(amountIn(before, line.accountId)) : false))
       .map((line) => ({
         key: line.accountId,
         label: line.name,
@@ -118,15 +128,15 @@ export default async function ProfitLossPage({
   };
 
   const sections: StatementSectionData[] = [
-    section('income', 'Income', (p) => p.revenue, (p) => p.totals.revenueUsd, 'Total income'),
-    section('cogs', 'Cost of goods sold', (p) => p.costOfSales, (p) => p.totals.costOfSalesUsd, 'Total cost of goods sold'),
-    section('expenses', 'Expenses', (p) => p.operatingExpenses, (p) => p.totals.operatingExpensesUsd, 'Total expenses'),
+    section('income', 'Income', (p) => p.revenue, (p) => ({ local: p.totals.revenueLocal, usd: p.totals.revenueUsd }), 'Total income'),
+    section('cogs', 'Cost of goods sold', (p) => p.costOfSales, (p) => ({ local: p.totals.costOfSalesLocal, usd: p.totals.costOfSalesUsd }), 'Total cost of goods sold'),
+    section('expenses', 'Expenses', (p) => p.operatingExpenses, (p) => ({ local: p.totals.operatingExpensesLocal, usd: p.totals.operatingExpensesUsd }), 'Total expenses'),
     ...(total.otherItems.length > 0 || (before?.otherItems.length ?? 0) > 0
-      ? [section('other', 'Other income and expenses', (p) => p.otherItems, (p) => p.totals.otherUsd, 'Total other')]
+      ? [section('other', 'Other income and expenses', (p) => p.otherItems, (p) => ({ local: p.totals.otherLocal, usd: p.totals.otherUsd }), 'Total other')]
       : []),
   ];
 
-  const grand = (label: string, of: (p: ProfitAndLoss) => Decimal, after: string, emphasis: 'strong' | 'final') => ({
+  const grand = (label: string, of: (p: ProfitAndLoss) => Pair, after: string, emphasis: 'strong' | 'final') => ({
     after,
     label,
     emphasis,
@@ -181,14 +191,14 @@ export default async function ProfitLossPage({
             columns={columns}
             sections={sections}
             grandTotals={[
-              grand('Gross profit', (p) => p.totals.grossProfitUsd, 'cogs', 'strong'),
-              grand('Net profit', (p) => p.totals.netProfitUsd, sections[sections.length - 1].key, 'final'),
+              grand('Gross profit', (p) => ({ local: p.totals.grossProfitLocal, usd: p.totals.grossProfitUsd }), 'cogs', 'strong'),
+              grand('Net profit', (p) => ({ local: p.totals.netProfitLocal, usd: p.totals.netProfitUsd }), sections[sections.length - 1].key, 'final'),
             ]}
           />
           <p className="mt-3 px-3 text-xs text-ink-subtle">
-            Gross margin {formatPercent(total.grossMarginPct)} · net margin {formatPercent(total.netMarginPct)} · in {local}: net{' '}
-            {formatMoney(total.totals.netProfitLocal, local)}. Every figure comes from posted journal lines; click an account to
-            see them.
+            Gross margin {formatPercent(total.grossMarginPct)} · net margin {formatPercent(total.netMarginPct)}. Figures in {local}, the
+            currency the books are kept in; ≈ USD under each is the equivalent at every transaction&rsquo;s own rate. Every figure
+            comes from posted journal lines; click an account to see them.
           </p>
         </CardContent>
       </Card>

@@ -106,6 +106,9 @@ export async function getOutstandingSummary(companyId: string): Promise<Outstand
       JOIN journal_lines jl ON jl."accountId" = a."id"
       JOIN journal_entries je ON je."id" = jl."journalEntryId" AND ${LIVE_ENTRY_SQL}
       WHERE a."type" IN ('LIABILITY', 'ASSET')
+        -- An agent's own loan account is part of his relationship and shown on his
+        -- card; listing it here as well would show the same money twice.
+        AND a."agentId" IS NULL
       GROUP BY a."id", a."name"
       ORDER BY a."name"`),
   ]);

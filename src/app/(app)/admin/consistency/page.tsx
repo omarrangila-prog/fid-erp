@@ -2,6 +2,10 @@ import type { Metadata } from 'next';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { formatMoney } from '@/lib/format';
+import type { Decimal } from '@/lib/money';
+
+/** A money figure in its currency, or a plain count for a check that counts things. */
+const figure = (value: Decimal, unit: string) => (unit === 'entries' ? value.toFixed(0) : formatMoney(value, unit));
 import { runConsistencyChecks, type ConsistencyCheck } from '@/lib/services/consistency';
 import { PageHeader } from '@/components/shared/page-header';
 import { Badge } from '@/components/ui/badge';
@@ -80,14 +84,14 @@ function CheckRow({ check }: { check: ConsistencyCheck }) {
       </TD>
       <TD numeric>
         <span className="block text-[11px] text-ink-subtle">{check.left.label}</span>
-        <span className="tnum">{formatMoney(check.left.value, check.currency)}</span>
+        <span className="tnum">{figure(check.left.value, check.currency)}</span>
       </TD>
       <TD numeric>
         <span className="block text-[11px] text-ink-subtle">{check.right.label}</span>
-        <span className="tnum">{formatMoney(check.right.value, check.currency)}</span>
+        <span className="tnum">{figure(check.right.value, check.currency)}</span>
       </TD>
       <TD numeric className={check.ok ? 'text-ink-subtle' : 'font-semibold text-red-700'}>
-        {check.ok ? '—' : formatMoney(check.difference, check.currency)}
+        {check.ok ? '—' : figure(check.difference, check.currency)}
       </TD>
       <TD>
         {check.ok ? (

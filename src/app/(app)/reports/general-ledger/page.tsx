@@ -148,9 +148,15 @@ export default async function GeneralLedgerPage({
                 company={user.activeCompany.name}
                 title="General Ledger"
                 period={from || to ? `${from ? formatDate(new Date(`${from}T00:00:00.000Z`)) : 'Start'} – ${to ? formatDate(new Date(`${to}T00:00:00.000Z`)) : 'Today'}` : 'All dates'}
-                meta={<p className="text-xs text-ink-subtle">{groups.length} accounts with activity · every line at its USD value</p>}
+                meta={
+                  <p className="text-xs text-ink-subtle">
+                    {groups.length} accounts with activity · in {user.activeCompany.localCurrency}, the currency the books are kept in, every
+                    line at its own rate · open an account to read it in its own currency
+                  </p>
+                }
               />
               <LedgerGroups
+                currency={user.activeCompany.localCurrency}
                 prefs={glPrefs}
                 available={GL_COLUMNS}
                 companyName={user.activeCompany.name}
@@ -164,21 +170,21 @@ export default async function GeneralLedgerPage({
                       type: titleCase(l.sourceType.replaceAll('_', ' ')),
                       memo: l.description,
                       party: l.party || null,
-                      debit: l.debitUsd.toString(),
-                      credit: l.creditUsd.toString(),
-                      balance: l.balanceUsd.toString(),
+                      debit: l.debitLocal.toString(),
+                      credit: l.creditLocal.toString(),
+                      balance: l.balanceLocal.toString(),
                     })),
-                    g.openingUsd.toString(),
+                    g.openingLocal.toString(),
                     {},
                   );
                   return {
                     accountId: g.accountId,
                     name: g.name,
                     type: g.type,
-                    opening: formatMoney(g.openingUsd, 'USD'),
-                    closing: formatMoney(g.closingUsd, 'USD'),
-                    debit: formatMoney(g.debitUsd, 'USD'),
-                    credit: formatMoney(g.creditUsd, 'USD'),
+                    opening: formatMoney(g.openingLocal, user.activeCompany.localCurrency),
+                    closing: formatMoney(g.closingLocal, user.activeCompany.localCurrency),
+                    debit: formatMoney(g.debitLocal, user.activeCompany.localCurrency),
+                    credit: formatMoney(g.creditLocal, user.activeCompany.localCurrency),
                     openingRaw: sent.opening,
                     rows: sent.rows,
                     window: sent.window,
