@@ -87,7 +87,7 @@ export function CustomizePanel({
     <>
       <Button type="button" variant="outline" size="sm" onClick={openPanel} className="print:hidden">
         <SlidersHorizontal className="size-4" />
-        Customize
+        Customize Report
       </Button>
       <Sheet
         open={open}

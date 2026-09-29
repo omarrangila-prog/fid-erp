@@ -678,7 +678,7 @@ export function LedgerReport(props: LedgerReportProps) {
               </button>
             </div>
             <Button size="sm" variant="outline" onClick={() => setCustomizing(true)} data-testid="ledger-customize">
-              <SlidersHorizontal /> Customize report
+              <SlidersHorizontal /> Customize Report
             </Button>
             <PrintButton />
             <ShareTrigger onClick={() => openShare()} />
@@ -1040,7 +1040,7 @@ function CustomizeSheet({
     });
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title="Customize report" description="Choose the columns and their order. Saved for you, for this ledger; printing follows it.">
+    <Sheet open={open} onOpenChange={onOpenChange} title="Customize Report" description="Choose the columns and their order. Saved for you, for this ledger; printing follows it.">
       <div className="space-y-4" data-testid="ledger-customize-panel">
         <ol className="space-y-1">
           {draft.map((c, index) => (

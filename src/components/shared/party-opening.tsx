@@ -43,7 +43,7 @@ export function PartyOpeningSheet({
     {
       kind: 'money',
       name: 'amount',
-      label: party === 'CUSTOMER' ? 'Owed to us' : 'Owed by us',
+      label: party === 'CUSTOMER' ? 'Receivable (owed to FID)' : 'Payable (owed by FID)',
       required: true,
       currency,
       hint: 'The balance outstanding on the date below.',

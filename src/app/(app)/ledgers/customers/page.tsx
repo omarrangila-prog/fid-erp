@@ -78,7 +78,7 @@ export default async function CustomerLedgersPage() {
                       actions={[
                         { label: 'Open ledger', href: `/ledgers/customers/${customer.id}`, icon: 'ledger' },
                           { label: 'New invoice', href: `/sales/new?customer=${customer.id}`, icon: 'document' },
-                          { label: 'Record payment', href: `/finance/receipts/new?customer=${customer.id}`, icon: 'moneyIn' },
+                          { label: 'Receive Payment', href: `/finance/receipts/new?customer=${customer.id}`, icon: 'moneyIn' },
                       ]}
                     />
                   </TD>

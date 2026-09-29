@@ -1314,8 +1314,8 @@ const REPORTS: Record<string, Report> = {
           },
           { kind: 'spacer' },
           { kind: 'section', label: 'Owed to and by the business' },
-          { kind: 'line', label: 'Owed by customers', values: [null, '', Number(position.receivableUsd)] },
-          { kind: 'line', label: 'Owed to suppliers', values: [null, '', -Number(position.payableUsd)] },
+          { kind: 'line', label: 'Customer receivables', values: [null, '', Number(position.receivableUsd)] },
+          { kind: 'line', label: 'Supplier payables', values: [null, '', -Number(position.payableUsd)] },
           {
             kind: 'line',
             label: 'Cheques on hand, not yet banked',

@@ -220,7 +220,7 @@ export function CustomersClient({
               onSelect: () => setOpening(r),
             },
             { label: 'New invoice', href: `/sales/new?customer=${r.id}`, icon: FileText },
-            { label: 'Record payment', href: `/finance/receipts/new?customer=${r.id}`, icon: HandCoins },
+            { label: 'Receive Payment', href: `/finance/receipts/new?customer=${r.id}`, icon: HandCoins },
           ]}
           destructive={{
             status: r.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE',

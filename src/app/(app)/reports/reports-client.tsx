@@ -209,7 +209,7 @@ export function ReportsClient({ reports, saved = [] }: { reports: ReportEntry[];
         <section className="space-y-3" data-testid="saved-reports">
           <div>
             <h2 className="text-sm font-semibold text-ink">My custom reports</h2>
-            <p className="text-xs text-ink-muted">Reports you saved with their period, columns and filters. Open any report, choose Customize, and save it here.</p>
+            <p className="text-xs text-ink-muted">Reports you saved with their period, columns and filters. Open any report, choose Customize Report, and save it here.</p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {savedMatches.map((report) => (

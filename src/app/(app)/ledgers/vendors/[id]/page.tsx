@@ -90,7 +90,7 @@ export default async function VendorLedgerPage({
             <Button asChild>
               <Link href="/finance/payments/new">
                 <HandCoins />
-                Record payment
+                Pay Supplier
               </Link>
             </Button>
           ) : undefined

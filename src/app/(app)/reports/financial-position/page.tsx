@@ -103,7 +103,7 @@ export default async function FinancialPositionPage() {
         <div className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Owed to us and by us</CardTitle>
+              <CardTitle>Receivables and payables</CardTitle>
               <CardDescription>In USD, the group reporting currency.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">

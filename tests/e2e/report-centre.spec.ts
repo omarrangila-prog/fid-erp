@@ -76,7 +76,7 @@ test('a report is customized in one panel and saved under a name', async ({ page
   await page.goto('/reports/profit-loss', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /^Profit and Loss$/ })).toBeVisible({ timeout: 30_000 });
 
-  await page.getByRole('button', { name: /^Customize$/ }).click();
+  await page.getByRole('button', { name: /^Customize Report$/ }).click();
   const panel = page.getByRole('dialog');
   await expect(panel.getByRole('heading', { name: /Customize Profit & Loss/ })).toBeVisible();
   await panel.getByLabel('From').fill('2026-01-01');

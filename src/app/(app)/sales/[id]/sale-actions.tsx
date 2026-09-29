@@ -104,7 +104,7 @@ export function SaleActions({
         <Button asChild>
           <Link href={`/finance/receipts/new?invoice=${id}`}>
             <Banknote />
-            Record payment
+            Receive Payment
           </Link>
         </Button>
       ) : null}

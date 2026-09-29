@@ -410,7 +410,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                 tone={costSheet.grossProfitUsd.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
                 hint={formatPercent(costSheet.profitPct)}
               />
-              <Metric label="Remaining" value={formatQuantityKg(costSheet.remainingKg)} tone="muted" />
+              <Metric label="Remaining stock" value={formatQuantityKg(costSheet.remainingKg)} tone="muted" />
             </MetricGrid>
 
             {/* §7: where the shipment's money went, line by line. The shared
@@ -536,7 +536,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
           <CardContent>
             <MetricGrid className="lg:grid-cols-5">
               <Metric label="Sold" value={formatQuantityKg(profit.soldQuantityKg)} />
-              <Metric label="Remaining" value={formatQuantityKg(profit.remainingQuantityKg)} tone="muted" />
+              <Metric label="Remaining stock" value={formatQuantityKg(profit.remainingQuantityKg)} tone="muted" />
               <Metric label="Sales revenue" value={<DualAmount amount={profit.salesRevenueLocal} currency={local} localCurrency={local} amountUsd={profit.salesRevenueUsd} rateSource="Each invoice at its own rate" />} />
               <Metric label="Landed cost of sales" value={<DualAmount amount={profit.allocatedLandedCostLocal} currency={local} localCurrency={local} amountUsd={profit.allocatedLandedCostUsd} rateSource="At the rates the cost was incurred at" />} tone="muted" />
               <Metric

@@ -93,7 +93,7 @@ export default async function AgeingPage({ searchParams }: { searchParams: Promi
 
       {rows.length === 0 ? (
         <EmptyState
-          title={payables ? 'Nothing owed to suppliers' : 'Nothing outstanding'}
+          title={payables ? 'No supplier payables' : 'Nothing outstanding'}
           description={payables ? 'Every supplier bill is settled.' : 'Every customer invoice is paid.'}
         />
       ) : (

@@ -186,7 +186,7 @@ test('the sales invoice takes a due date, not a payment term', async ({ page }) 
 
 test('an invoice with money owing offers to record a payment', async ({ page }) => {
   // Via receivables rather than the sales list: this page lists only invoices
-  // that still have something outstanding, and "Record payment" is offered
+  // that still have something outstanding, and "Receive Payment" is offered
   // only on those — picking any posted invoice lands on a settled one.
   await page.goto('/finance/receivables', { waitUntil: 'domcontentloaded' });
 
@@ -200,7 +200,7 @@ test('an invoice with money owing offers to record a payment', async ({ page }) 
   await page.waitForURL(/\/sales\/[\w-]+$/, { waitUntil: 'domcontentloaded' });
 
   // Recording a payment is one click from the invoice, as §24 asks.
-  const record = page.getByRole('link', { name: /Record payment/i });
+  const record = page.getByRole('link', { name: /Receive Payment/i });
   await expect(record).toBeVisible();
 
   await record.click();

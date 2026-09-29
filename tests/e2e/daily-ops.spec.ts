@@ -179,7 +179,7 @@ test('Record Payment opens from an outstanding invoice', async ({ page }) => {
   }
   await invoiceLink.click();
   await page.waitForURL(/\/sales\/[\w-]+$/, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('link', { name: /Record payment/i }).click();
+  await page.getByRole('link', { name: /Receive Payment/i }).click();
   await page.waitForURL(/\/finance\/receipts\/new/, { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('main').getByLabel(/amount/i).first()).toBeEditable();
   await expect(page.getByRole('heading', { name: /this page could|something went wrong/i })).toHaveCount(0);

@@ -58,7 +58,7 @@ export async function ProfitabilityStatement({
     { key: 'purchasedKg', label: 'Purchased', of: (r) => r.purchaseQuantityKg, kind: 'kg', group: 'Quantity' },
     { key: 'receivedKg', label: 'Received', of: (r) => r.receivedQuantityKg, kind: 'kg' },
     { key: 'soldKg', label: 'Sold', of: (r) => r.soldQuantityKg, kind: 'kg' },
-    { key: 'remainingKg', label: 'Remaining (purchased less sold)', of: (r) => r.remainingQuantityKg, kind: 'kg' },
+    { key: 'remainingKg', label: 'Remaining stock (purchased less sold)', of: (r) => r.remainingQuantityKg, kind: 'kg' },
     { key: 'onHandKg', label: 'On hand in the warehouses', of: (r) => r.onHandQuantityKg, kind: 'kg' },
     { key: 'closingValue', label: 'Closing stock value', of: (r) => r.closingStockValueUsd, kind: 'usd' },
 

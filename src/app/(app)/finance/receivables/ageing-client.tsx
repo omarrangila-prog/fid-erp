@@ -44,7 +44,7 @@ export function AgeingClient({
   rows: AgeingRow[];
   partyLabel: string;
   documentLabel: string;
-  /** Where "Record payment" goes: a receipt for a debtor, a payment for a creditor. */
+  /** Where "Receive Payment" / "Pay Supplier" goes: a receipt for a debtor, a payment for a creditor. */
   settlePath?: string;
   canExport: boolean;
   /** The server route that builds the .xlsx for this list. */
@@ -62,7 +62,7 @@ export function AgeingClient({
     [rows, bucket, party],
   );
 
-  const settleLabel = settlePath.includes('payments') ? 'Pay' : 'Record payment';
+  const settleLabel = settlePath.includes('payments') ? 'Pay Supplier' : 'Receive Payment';
   const settleHref = (row: AgeingRow) => `${settlePath}?document=${row.id}`;
 
   const columns: DataColumn<AgeingRow>[] = [

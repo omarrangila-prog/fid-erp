@@ -108,7 +108,7 @@ export function CostingTable({
         </TBody>
         <TFoot>
           <tr>
-            <TD colSpan={showWarehouse ? 5 : 4}>Whole job</TD>
+            <TD colSpan={showWarehouse ? 5 : 4}>Whole shipment</TD>
             <TD numeric>{formatQuantityKg(totalKg)}</TD>
             <TD numeric>{formatMoney(totalPurchase, 'USD')}</TD>
             <TD numeric>{both(totalExpenseLocal, totalExpenseUsd)}</TD>

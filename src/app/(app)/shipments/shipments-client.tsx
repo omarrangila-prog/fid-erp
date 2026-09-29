@@ -232,7 +232,7 @@ export function ShipmentsClient({
           } satisfies DataColumn<ShipmentGroupRow>,
           {
             id: 'remaining',
-            header: 'Remaining KG',
+            header: 'Remaining stock (KG)',
             hideable: true,
             defaultHidden: true,
             numeric: true,

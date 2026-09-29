@@ -323,7 +323,7 @@ export function SalesClient({
                   viewAction(`/sales/${r.id}`),
                   editAction(`/sales/${r.id}/edit`, canEdit && r.status !== 'REVERSED'),
                   {
-                    label: 'Record payment',
+                    label: 'Receive Payment',
                     href: `/finance/receipts/new?invoice=${r.id}`,
                     icon: HandCoins,
                     show: r.status === 'POSTED' && r.settlement !== 'PAID',

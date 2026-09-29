@@ -75,7 +75,7 @@ export default async function VendorLedgersPage() {
                       actions={[
                         { label: 'Open ledger', href: `/ledgers/vendors/${vendor.id}`, icon: 'ledger' },
                         { label: 'New contract', href: `/purchases/new?vendor=${vendor.id}`, icon: 'document' },
-                        { label: 'Record payment', href: `/finance/payments/new?vendor=${vendor.id}`, icon: 'moneyOut' },
+                        { label: 'Pay Supplier', href: `/finance/payments/new?vendor=${vendor.id}`, icon: 'moneyOut' },
                       ]}
                     />
                   </TD>

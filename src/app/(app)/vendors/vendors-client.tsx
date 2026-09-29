@@ -195,7 +195,7 @@ export function VendorsClient({
               onSelect: () => setOpening(r),
             },
             { label: 'New contract', href: `/purchases/new?vendor=${r.id}`, icon: FileText },
-            { label: 'Record payment', href: `/finance/payments/new?vendor=${r.id}`, icon: HandCoins },
+            { label: 'Pay Supplier', href: `/finance/payments/new?vendor=${r.id}`, icon: HandCoins },
           ]}
           destructive={{
             status: r.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE',
