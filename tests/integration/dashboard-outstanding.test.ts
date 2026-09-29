@@ -100,7 +100,11 @@ describe('still to be paid or collected', () => {
     expect(o.generalExpensesUnpaid.count).toBe(1);
     expect(Number(o.agentCollections.local)).toBeCloseTo(500_000, 2);
     expect(Number(o.agentCommission.local)).toBeCloseTo(200_000, 2);
-    expect(Number(o.loansPayable.local)).toBeCloseTo(27_500, 2);
+    // The loan is from the agent: it is on his card, part of what FID owes
+    // him, and not listed under loans as well — the same money once.
+    expect(Number(o.loansPayable.local)).toBeCloseTo(0, 2);
+    const agent = o.agents.find((a) => a.agentId === agentId)!;
+    expect(Number(agent.fidOwesLocal)).toBeCloseTo(200_000 + 27_500, 2);
   }, 300_000);
 
   it('gives RADOUAN a card of his own', async () => {

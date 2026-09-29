@@ -103,7 +103,8 @@ test('a new transfer shows the next WTO number, and the list carries it', async 
 
 test('Stock on Hand shows bags that follow the kilograms, never negative', async ({ page }) => {
   await page.goto('/inventory', { waitUntil: 'domcontentloaded' });
-  const table = page.getByRole('table').first();
+  // Bags are counted where the stock sits: the warehouse and batch table.
+  const table = page.getByTestId('warehouse-stock').getByRole('table').first();
   await expect(table).toBeVisible({ timeout: 45_000 });
 
   const headers = (await table.getByRole('columnheader').allTextContents()).map((h) => h.trim());

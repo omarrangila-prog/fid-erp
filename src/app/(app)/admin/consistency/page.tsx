@@ -1,11 +1,12 @@
 import type { Metadata } from 'next';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
-import { formatMoney } from '@/lib/format';
+import { formatMoney, formatQuantityKg } from '@/lib/format';
 import type { Decimal } from '@/lib/money';
 
 /** A money figure in its currency, or a plain count for a check that counts things. */
-const figure = (value: Decimal, unit: string) => (unit === 'entries' ? value.toFixed(0) : formatMoney(value, unit));
+const figure = (value: Decimal, unit: string) =>
+  unit === 'entries' ? value.toFixed(0) : unit === 'KG' ? formatQuantityKg(value) : formatMoney(value, unit);
 import { runConsistencyChecks, type ConsistencyCheck } from '@/lib/services/consistency';
 import { PageHeader } from '@/components/shared/page-header';
 import { Badge } from '@/components/ui/badge';

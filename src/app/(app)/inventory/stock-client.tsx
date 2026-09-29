@@ -171,8 +171,8 @@ export function StockClient({
   return (
     <DataTable
       share={{
-        report: warehouse === 'ALL' ? 'stock-on-hand' : 'warehouse-stock',
-        title: warehouse === 'ALL' ? 'Stock on Hand' : 'Warehouse Stock',
+        report: 'warehouse-stock',
+        title: 'Stock by Warehouse & Batch',
         subject: warehouse === 'ALL' ? undefined : warehouses.find((w) => w.id === warehouse)?.name,
       }}
       prefsKey="stock"

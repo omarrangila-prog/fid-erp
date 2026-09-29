@@ -1,3 +1,4 @@
+import { getItemProfitabilityChecks } from '@/lib/services/item-profitability';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { dec, toMoney, type Decimal } from '@/lib/money';
@@ -334,6 +335,23 @@ export async function runConsistencyChecks(companyId: string): Promise<{
         currency: local,
         severity: 'error',
         note: 'Both in the account’s own currency; the USD shown under each is the equivalent at every movement’s own rate.',
+      }),
+    );
+  }
+
+  // --- Stock on Hand by item: against Current Stock, the invoices, Shipment
+  // Profitability and Outstanding Invoices -----------------------------------
+  for (const item of await getItemProfitabilityChecks(companyId)) {
+    // The identities that hold by construction are the item page's business; these are the cross-checks.
+    if (['stock-equation', 'profit', 'collected'].includes(item.key)) continue;
+    checks.push(
+      check({
+        area: 'Inventory',
+        label: `Stock on Hand by item: ${item.label}`,
+        left: { label: 'Stock on Hand', value: item.shownValue },
+        right: { label: item.sourceLabel, value: item.sourceValue },
+        currency: item.unit === 'KG' ? 'KG' : item.unit === 'USD' ? 'USD' : local,
+        severity: 'error',
       }),
     );
   }

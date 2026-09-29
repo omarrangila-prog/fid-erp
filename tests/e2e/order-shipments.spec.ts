@@ -362,11 +362,12 @@ test('stock, batches, items and the loading sheet each show three lines under th
   // Stock is one row per coffee per warehouse, and this coffee now holds
   // stock from three orders, so the row says "+2 more" and the breakdown
   // underneath names them all. Open every row until ours is on the page.
-  const detailButtons = page.locator('main table').getByRole('button', { name: /Show detail/i });
+  const stock = page.getByTestId('warehouse-stock');
+  const detailButtons = stock.locator('table').getByRole('button', { name: /Show detail/i });
   await expect(detailButtons.first()).toBeVisible({ timeout: 30_000 });
   const detailCount = await detailButtons.count();
   for (let i = 0; i < detailCount; i++) {
-    await page.locator('main table').getByRole('button', { name: /Show detail/i }).first().click();
+    await stock.locator('table').getByRole('button', { name: /Show detail/i }).first().click();
     if (((await page.locator('main').textContent()) ?? '').includes(REFERENCE)) break;
   }
   const stockText = (await page.locator('main').textContent()) ?? '';

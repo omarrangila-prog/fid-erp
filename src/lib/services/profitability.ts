@@ -293,17 +293,19 @@ export async function getShipmentProfitability(params: {
                   JOIN inventory_balances ib ON ib."batchId" = b."id"
                  WHERE b."shipmentId" = s."id"), 0)::text AS "closingStockValueLocal",
       -- The same path in the company's own currency, at each invoice's rate.
-      (COALESCE((SELECT SUM(sil."lineTotalUsd" * si."rateLocalPerUsd")
+      -- An invoice already in that currency counts at its own amount, as its
+      -- journal did: to dollars at one rate and back at another moved it.
+      (COALESCE((SELECT SUM(CASE WHEN si."currency" = co."localCurrency" THEN sil."lineTotal" ELSE sil."lineTotalUsd" * si."rateLocalPerUsd" END)
                    FROM sales_invoice_lines sil
                    JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
                    JOIN batches b5 ON b5."id" = sil."batchId"
                   WHERE b5."shipmentId" = s."id" AND si."status" = 'POSTED'), 0)
-       - COALESCE((SELECT SUM(cnl."lineTotalUsd" * cn."rateLocalPerUsd")
+       - COALESCE((SELECT SUM(CASE WHEN cn."currency" = co."localCurrency" THEN cnl."lineTotal" ELSE cnl."lineTotalUsd" * cn."rateLocalPerUsd" END)
                      FROM credit_note_lines cnl
                      JOIN credit_notes cn ON cn."id" = cnl."creditNoteId"
                      JOIN batches b6 ON b6."id" = cnl."batchId"
                     WHERE b6."shipmentId" = s."id" AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'), 0)
-       - COALESCE((SELECT SUM(cnl."lineTotalUsd" * cn."rateLocalPerUsd" * (SELECT COALESCE(SUM(sil2."lineTotalUsd"), 0) FROM sales_invoice_lines sil2
+       - COALESCE((SELECT SUM(CASE WHEN cn."currency" = co."localCurrency" THEN cnl."lineTotal" ELSE cnl."lineTotalUsd" * cn."rateLocalPerUsd" END * (SELECT COALESCE(SUM(sil2."lineTotalUsd"), 0) FROM sales_invoice_lines sil2
                             JOIN batches b7 ON b7."id" = sil2."batchId"
                            WHERE sil2."salesInvoiceId" = cn."salesInvoiceId" AND b7."shipmentId" = s."id")
                          / NULLIF((SELECT SUM(sil3."lineTotalUsd") FROM sales_invoice_lines sil3
@@ -439,11 +441,14 @@ export async function getCompanyProfitSummary(params: { companyId: string; from?
     SELECT
       -- The same figures in the company's currency, each document at its own
       -- rate: the invoice's for sales and their cost, the expense's for costs.
-      (COALESCE((SELECT SUM(si."subtotalUsd" * si."rateLocalPerUsd") FROM sales_invoices si
+      -- An invoice in the company's own currency counts at its own amount.
+      (COALESCE((SELECT SUM(CASE WHEN si."currency" = (SELECT c."localCurrency" FROM companies c WHERE c."id" = si."companyId")
+                                 THEN si."subtotal" ELSE si."subtotalUsd" * si."rateLocalPerUsd" END) FROM sales_invoices si
                  WHERE si."companyId" = ${params.companyId} AND si."status" = 'POSTED'
                    AND (${params.from ?? null}::date IS NULL OR si."invoiceDate" >= ${params.from ?? null}::date)
                    AND (${params.to ?? null}::date IS NULL OR si."invoiceDate" <= ${params.to ?? null}::date)), 0)
-      - COALESCE((SELECT SUM(cn."subtotalAmountUsd" * cn."rateLocalPerUsd") FROM credit_notes cn
+      - COALESCE((SELECT SUM(CASE WHEN cn."currency" = (SELECT c."localCurrency" FROM companies c WHERE c."id" = cn."companyId")
+                                   THEN cn."subtotalAmount" ELSE cn."subtotalAmountUsd" * cn."rateLocalPerUsd" END) FROM credit_notes cn
                  WHERE cn."companyId" = ${params.companyId} AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'
                    AND (${params.from ?? null}::date IS NULL OR cn."creditDate" >= ${params.from ?? null}::date)
                    AND (${params.to ?? null}::date IS NULL OR cn."creditDate" <= ${params.to ?? null}::date)), 0))::text AS "revenueLocal",

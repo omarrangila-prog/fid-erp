@@ -21,6 +21,12 @@ const SPECS: Record<string, { label: string; description: string; kind: SettingS
       'When disabled, a sale that exceeds the available quantity in the selected batch and warehouse is refused. Leave this off unless you are deliberately correcting historical data.',
     kind: 'boolean',
   },
+  [SETTING_KEYS.LOW_STOCK_PERCENT]: {
+    label: 'Low stock level (%)',
+    description:
+      'Stock on Hand marks an item Low Stock when what is left to sell falls below this share of what was received. 10 means below 10%.',
+    kind: 'number',
+  },
   [SETTING_KEYS.ETA_ALERT_DAYS]: {
     label: 'ETA alert thresholds',
     description:

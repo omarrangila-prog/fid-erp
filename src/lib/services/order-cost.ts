@@ -196,7 +196,9 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
       SELECT b."id" AS "batchId", b."shipmentId",
              COALESCE(SUM(sil."lineTotalUsd"), 0)::text AS "revenueUsd",
              COALESCE(SUM(sil."costTotalUsd"), 0)::text AS "cogsUsd",
-             COALESCE(SUM(sil."lineTotalUsd" * si."rateLocalPerUsd"), 0)::text AS "revenueLocal"
+             -- An invoice in the company's own currency counts at its own amount, as its journal did.
+             COALESCE(SUM(CASE WHEN si."currency" = (SELECT c."localCurrency" FROM companies c WHERE c."id" = si."companyId")
+                               THEN sil."lineTotal" ELSE sil."lineTotalUsd" * si."rateLocalPerUsd" END), 0)::text AS "revenueLocal"
       FROM sales_invoice_lines sil
       JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
       JOIN batches b ON b."id" = sil."batchId"

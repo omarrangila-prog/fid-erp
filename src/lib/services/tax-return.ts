@@ -130,12 +130,14 @@ export async function getTaxReturn(params: {
   //
   // Local currency comes from each document's own rateLocalPerUsd, the rate
   // captured when it was posted — the same rate its journal entry used, so the
-  // return and the ledger are comparing like with like.
+  // return and the ledger are comparing like with like. A document already in
+  // the local currency is taken at its own amount, as its journal took it:
+  // sending it to dollars at one rate and back at another moved the figure.
   const salesRows = await prisma.$queryRaw<BandRow[]>`
     WITH doc AS (
       SELECT tc."code", tc."name", tc."treatment"::text AS treatment, sil."taxRatePct"::text AS "ratePct",
-             sil."lineTotalUsd" * si."rateLocalPerUsd" AS net,
-             sil."taxAmountUsd" * si."rateLocalPerUsd" AS tax,
+             (CASE WHEN si."currency" = ${company.localCurrency} THEN sil."lineTotal" ELSE sil."lineTotalUsd" * si."rateLocalPerUsd" END) AS net,
+             (CASE WHEN si."currency" = ${company.localCurrency} THEN sil."taxAmount" ELSE sil."taxAmountUsd" * si."rateLocalPerUsd" END) AS tax,
              si."id" AS doc_id
       FROM sales_invoice_lines sil
       JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
@@ -147,8 +149,8 @@ export async function getTaxReturn(params: {
       UNION ALL
       -- Invoices reversed during the period, undoing what they charged.
       SELECT tc."code", tc."name", tc."treatment"::text, sil."taxRatePct"::text,
-             -sil."lineTotalUsd" * si."rateLocalPerUsd",
-             -sil."taxAmountUsd" * si."rateLocalPerUsd",
+             -(CASE WHEN si."currency" = ${company.localCurrency} THEN sil."lineTotal" ELSE sil."lineTotalUsd" * si."rateLocalPerUsd" END),
+             -(CASE WHEN si."currency" = ${company.localCurrency} THEN sil."taxAmount" ELSE sil."taxAmountUsd" * si."rateLocalPerUsd" END),
              si."id"
       FROM sales_invoice_lines sil
       JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
@@ -159,8 +161,8 @@ export async function getTaxReturn(params: {
         AND si."reversedAt"::date <= ${params.to}::date
       UNION ALL
       SELECT tc."code", tc."name", tc."treatment"::text, cnl."taxRatePct"::text,
-             -cnl."lineTotalUsd" * cn."rateLocalPerUsd",
-             -cnl."taxAmountUsd" * cn."rateLocalPerUsd",
+             -(CASE WHEN cn."currency" = ${company.localCurrency} THEN cnl."lineTotal" ELSE cnl."lineTotalUsd" * cn."rateLocalPerUsd" END),
+             -(CASE WHEN cn."currency" = ${company.localCurrency} THEN cnl."taxAmount" ELSE cnl."taxAmountUsd" * cn."rateLocalPerUsd" END),
              cn."id"
       FROM credit_note_lines cnl
       JOIN credit_notes cn ON cn."id" = cnl."creditNoteId"
@@ -172,8 +174,8 @@ export async function getTaxReturn(params: {
         AND cn."creditDate" <= ${params.to}::date
       UNION ALL
       SELECT tc."code", tc."name", tc."treatment"::text, cnl."taxRatePct"::text,
-             cnl."lineTotalUsd" * cn."rateLocalPerUsd",
-             cnl."taxAmountUsd" * cn."rateLocalPerUsd",
+             (CASE WHEN cn."currency" = ${company.localCurrency} THEN cnl."lineTotal" ELSE cnl."lineTotalUsd" * cn."rateLocalPerUsd" END),
+             (CASE WHEN cn."currency" = ${company.localCurrency} THEN cnl."taxAmount" ELSE cnl."taxAmountUsd" * cn."rateLocalPerUsd" END),
              cn."id"
       FROM credit_note_lines cnl
       JOIN credit_notes cn ON cn."id" = cnl."creditNoteId"
@@ -197,8 +199,8 @@ export async function getTaxReturn(params: {
   const purchaseRows = await prisma.$queryRaw<BandRow[]>`
     WITH doc AS (
       SELECT tc."code", tc."name", tc."treatment"::text AS treatment, pcl."taxRatePct"::text AS "ratePct",
-             (pcl."lineTotal" / NULLIF(pc."rateToUsd", 0)) * pc."rateLocalPerUsd" AS net,
-             pcl."taxAmountUsd" * pc."rateLocalPerUsd" AS tax,
+             (CASE WHEN pc."currency" = ${company.localCurrency} THEN pcl."lineTotal" ELSE (pcl."lineTotal" / NULLIF(pc."rateToUsd", 0)) * pc."rateLocalPerUsd" END) AS net,
+             (CASE WHEN pc."currency" = ${company.localCurrency} THEN pcl."taxAmount" ELSE pcl."taxAmountUsd" * pc."rateLocalPerUsd" END) AS tax,
              pc."id" AS doc_id
       FROM purchase_contract_lines pcl
       JOIN purchase_contracts pc ON pc."id" = pcl."purchaseContractId"
@@ -209,8 +211,8 @@ export async function getTaxReturn(params: {
         AND pc."contractDate" <= ${params.to}::date
       UNION ALL
       SELECT tc."code", tc."name", tc."treatment"::text, pcl."taxRatePct"::text,
-             -(pcl."lineTotal" / NULLIF(pc."rateToUsd", 0)) * pc."rateLocalPerUsd",
-             -pcl."taxAmountUsd" * pc."rateLocalPerUsd",
+             -(CASE WHEN pc."currency" = ${company.localCurrency} THEN pcl."lineTotal" ELSE (pcl."lineTotal" / NULLIF(pc."rateToUsd", 0)) * pc."rateLocalPerUsd" END),
+             -(CASE WHEN pc."currency" = ${company.localCurrency} THEN pcl."taxAmount" ELSE pcl."taxAmountUsd" * pc."rateLocalPerUsd" END),
              pc."id"
       FROM purchase_contract_lines pcl
       JOIN purchase_contracts pc ON pc."id" = pcl."purchaseContractId"
@@ -221,8 +223,8 @@ export async function getTaxReturn(params: {
         AND pc."reversedAt"::date <= ${params.to}::date
       UNION ALL
       SELECT tc."code", tc."name", tc."treatment"::text, e."taxRatePct"::text,
-             e."amountUsd" * e."rateLocalPerUsd",
-             e."taxAmountUsd" * e."rateLocalPerUsd",
+             (CASE WHEN e."currency" = ${company.localCurrency} THEN e."amount" ELSE e."amountUsd" * e."rateLocalPerUsd" END),
+             (CASE WHEN e."currency" = ${company.localCurrency} THEN e."taxAmount" ELSE e."taxAmountUsd" * e."rateLocalPerUsd" END),
              e."id"
       FROM expenses e
       LEFT JOIN tax_codes tc ON tc."id" = e."taxCodeId"
@@ -232,8 +234,8 @@ export async function getTaxReturn(params: {
         AND e."expenseDate" <= ${params.to}::date
       UNION ALL
       SELECT tc."code", tc."name", tc."treatment"::text, e."taxRatePct"::text,
-             -e."amountUsd" * e."rateLocalPerUsd",
-             -e."taxAmountUsd" * e."rateLocalPerUsd",
+             -(CASE WHEN e."currency" = ${company.localCurrency} THEN e."amount" ELSE e."amountUsd" * e."rateLocalPerUsd" END),
+             -(CASE WHEN e."currency" = ${company.localCurrency} THEN e."taxAmount" ELSE e."taxAmountUsd" * e."rateLocalPerUsd" END),
              e."id"
       FROM expenses e
       LEFT JOIN tax_codes tc ON tc."id" = e."taxCodeId"
@@ -243,8 +245,8 @@ export async function getTaxReturn(params: {
         AND e."reversedAt"::date <= ${params.to}::date
       UNION ALL
       SELECT tc."code", tc."name", tc."treatment"::text, cnl."taxRatePct"::text,
-             -cnl."lineTotalUsd" * cn."rateLocalPerUsd",
-             -cnl."taxAmountUsd" * cn."rateLocalPerUsd",
+             -(CASE WHEN cn."currency" = ${company.localCurrency} THEN cnl."lineTotal" ELSE cnl."lineTotalUsd" * cn."rateLocalPerUsd" END),
+             -(CASE WHEN cn."currency" = ${company.localCurrency} THEN cnl."taxAmount" ELSE cnl."taxAmountUsd" * cn."rateLocalPerUsd" END),
              cn."id"
       FROM credit_note_lines cnl
       JOIN credit_notes cn ON cn."id" = cnl."creditNoteId"
@@ -256,8 +258,8 @@ export async function getTaxReturn(params: {
         AND cn."creditDate" <= ${params.to}::date
       UNION ALL
       SELECT tc."code", tc."name", tc."treatment"::text, cnl."taxRatePct"::text,
-             cnl."lineTotalUsd" * cn."rateLocalPerUsd",
-             cnl."taxAmountUsd" * cn."rateLocalPerUsd",
+             (CASE WHEN cn."currency" = ${company.localCurrency} THEN cnl."lineTotal" ELSE cnl."lineTotalUsd" * cn."rateLocalPerUsd" END),
+             (CASE WHEN cn."currency" = ${company.localCurrency} THEN cnl."taxAmount" ELSE cnl."taxAmountUsd" * cn."rateLocalPerUsd" END),
              cn."id"
       FROM credit_note_lines cnl
       JOIN credit_notes cn ON cn."id" = cnl."creditNoteId"

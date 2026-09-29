@@ -935,6 +935,8 @@ export const DEFAULT_ETA_ALERT_DAYS = [7, 3, 0];
 
 export const SETTING_KEYS = {
   ALLOW_NEGATIVE_STOCK: 'inventory.allowNegativeStock',
+  /** An item is low on stock below this share of what it received, in percent. */
+  LOW_STOCK_PERCENT: 'inventory.lowStockPercent',
   ETA_ALERT_DAYS: 'alerts.etaDays',
   DEFAULT_PAYMENT_TERM_DAYS: 'sales.defaultPaymentTermDays',
   LANDED_COST_BASIS: 'costing.landedCostBasis',

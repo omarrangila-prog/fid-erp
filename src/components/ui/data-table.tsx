@@ -109,6 +109,8 @@ export function DataTable<T>({
   exportTitle,
   exportHref,
   share,
+  columnsLabel = 'Columns',
+  sortOptions,
 }: {
   data: T[];
   columns: DataColumn<T>[];
@@ -168,6 +170,14 @@ export function DataTable<T>({
    * share's heading. Leave it off lists nobody would send anybody.
    */
   share?: TableShareConfig;
+  /** What the column picker is called — a report says "Customize Report". */
+  columnsLabel?: string;
+  /**
+   * Named orders offered in a "Sort by" list ("Highest profit"), each one a
+   * column and a direction — the same sort a header click makes, and kept
+   * the same way.
+   */
+  sortOptions?: Array<{ label: string; columnId: string; direction: 'asc' | 'desc' }>;
 }) {
   const [query, setQuery] = React.useState('');
   const [page, setPage] = React.useState(0);
@@ -377,6 +387,26 @@ export function DataTable<T>({
               </select>
             ))}
 
+          {sortOptions && sortOptions.length > 0 ? (
+            <select
+              aria-label="Sort by"
+              value={sort ? `${sort.columnId}:${sort.direction}` : ''}
+              onChange={(event) => {
+                const [columnId, direction] = event.target.value.split(':');
+                setSort(columnId ? { columnId, direction: direction === 'asc' ? 'asc' : 'desc' } : null);
+                setPage(0);
+              }}
+              className="h-9 rounded-lg border border-line bg-surface px-2 text-sm text-ink"
+            >
+              <option value="">Sort by: default</option>
+              {sortOptions.map((option) => (
+                <option key={option.label} value={`${option.columnId}:${option.direction}`}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          ) : null}
+
           <div className="flex flex-wrap items-center gap-2">
             {toolbar}
 
@@ -419,16 +449,18 @@ export function DataTable<T>({
             {hideableColumns.length > 0 ? (
               <Popover.Root>
                 <Popover.Trigger asChild>
-                  <Button variant="outline" size="md" className="shrink-0">
+                  <Button variant="outline" size="md" className="shrink-0" aria-label={columnsLabel}>
                     <SlidersHorizontal />
-                    <span className="hidden sm:inline">Columns</span>
+                    <span className="hidden sm:inline">{columnsLabel}</span>
                   </Button>
                 </Popover.Trigger>
                 <Popover.Portal>
                   <Popover.Content
                     align="end"
                     sideOffset={4}
-                    className="animate-in-soft z-50 w-56 rounded-lg border border-line bg-surface p-1 shadow-lg"
+                    collisionPadding={8}
+                    // A long list scrolls inside the screen instead of running off the bottom of it.
+                    className="animate-in-soft z-50 max-h-[var(--radix-popover-content-available-height)] w-56 overflow-y-auto overscroll-contain rounded-lg border border-line bg-surface p-1 shadow-lg"
                   >
                     {hideableColumns.map((column) => (
                       <label
