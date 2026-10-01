@@ -32,6 +32,7 @@ import {
   correctPurchaseContract,
   editContainer,
   addContainerToOrder,
+  removeContainerFromOrder,
 } from '@/lib/services/purchase';
 import { editApprovedPurchase } from '@/lib/services/purchase-edit';
 import {
@@ -70,6 +71,7 @@ import {
   markOrderArrived,
   markShipmentArrived,
   undoLoading,
+  undoArrival,
 } from '@/lib/services/shipment';
 import { fail, ok, type ActionResult } from '@/server/actions/action-utils';
 import { assertCustomerInScope, assertInvoiceInScope, assertWarehousesInScope } from '@/lib/auth/scope';
@@ -558,6 +560,43 @@ export async function undoLoadingAction(shipmentId: string, reason: string): Pro
     return { ok: true, id: shipmentId, message: 'Back to pending loading. Correct the details and mark it loaded again.' };
   } catch (error) {
     return toState(error);
+  }
+}
+
+/** Back from Arrived to Loaded, for a container marked arrived by mistake. */
+export async function undoArrivalAction(shipmentId: string, reason: string): Promise<DocFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.SHIPMENTS_UPDATE);
+    const result = await undoArrival({ companyId: user.activeCompany.id, shipmentId, userId: user.id, reason });
+    revalidatePath('/loading');
+    revalidatePath('/shipments');
+    revalidatePath(`/shipments/${shipmentId}`);
+    revalidatePath('/purchases');
+    revalidatePath(`/purchases/${result.contractId}`);
+    revalidatePath('/dashboard');
+    return { ok: true, id: shipmentId, message: 'Back to Loaded — the arrival is undone.' };
+  } catch (error) {
+    return toState(error);
+  }
+}
+
+/**
+ * Take one container off an approved order: the supplier is owed its value
+ * less, and its shipment, batch and lot go. The same permission as adding or
+ * correcting a container.
+ */
+export async function removeContainerAction(shipmentId: string, reason: string): Promise<ActionResult<{ contractId: string }>> {
+  try {
+    const user = await requirePermission(PERMISSIONS.PURCHASES_APPROVE);
+    const result = await removeContainerFromOrder({ companyId: user.activeCompany.id, shipmentId, userId: user.id, reason });
+    revalidatePath('/loading');
+    revalidatePath('/shipments');
+    revalidatePath('/purchases');
+    revalidatePath(`/purchases/${result.contractId}`);
+    revalidatePath('/dashboard');
+    return ok({ contractId: result.contractId });
+  } catch (error) {
+    return fail(error);
   }
 }
 

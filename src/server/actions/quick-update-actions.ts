@@ -64,6 +64,8 @@ export type QuickOrder = {
   canReceive: boolean;
   /** Deleting the shipment reverses its purchase order, so it needs that permission. */
   canDelete: boolean;
+  /** Taking one container off the order changes what the supplier is owed: the add/correct-container permission. */
+  canRemove: boolean;
 };
 
 /** The order's containers, as the loading sheet reads them. */
@@ -115,6 +117,7 @@ export async function getQuickUpdateAction(contractId: string): Promise<ActionRe
       canUpdate: can(user, PERMISSIONS.SHIPMENTS_UPDATE),
       canReceive: can(user, PERMISSIONS.PURCHASES_APPROVE),
       canDelete: can(user, PERMISSIONS.PURCHASES_REVERSE) && order.contract.approved,
+      canRemove: can(user, PERMISSIONS.PURCHASES_APPROVE) && order.contract.approved,
     });
   } catch (error) {
     return fail(error);

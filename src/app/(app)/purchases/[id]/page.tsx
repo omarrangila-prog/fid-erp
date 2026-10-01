@@ -427,6 +427,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
           contractId={contract.id}
           canMarkArrived={can(user, PERMISSIONS.SHIPMENTS_UPDATE)}
           canReceive={contract.status === 'POSTED' && can(user, PERMISSIONS.PURCHASES_APPROVE)}
+          canRemove={contract.status === 'POSTED' && can(user, PERMISSIONS.PURCHASES_APPROVE)}
           summary={{
             reference: order.reference,
             totalShipments: order.totalShipments,

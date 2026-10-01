@@ -137,7 +137,7 @@ describe('Quick Update', () => {
     expect(r3[0]).toMatchObject({ ok: true, skipped: true });
 
     const s = await summary(threeId);
-    expect(s.documentsLabel).toBe('2 Complete · 1 Pending');
+    expect(s.documentsLabel).toBe('2 Complete · 1 Not Started');
     const rows = await getLoadingSheet(companyId, { contractId: threeId });
     const third = rows.find((r) => r.shipmentId === three[2])!;
     expect(third.documentNote?.notes).toMatch(/waiting for release/);

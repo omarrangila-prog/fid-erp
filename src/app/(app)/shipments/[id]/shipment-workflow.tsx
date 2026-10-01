@@ -14,6 +14,8 @@ import {
   SHIPMENT_STATUS_TRANSITIONS,
   SHIPMENT_STATUS_REQUIREMENTS,
   DOCUMENT_STATUS_META,
+  DOCUMENT_STATUS_HINT,
+  documentStatusOptions,
 } from '@/lib/constants';
 import {
   changeShipmentStatusAction,
@@ -279,9 +281,9 @@ export function ShipmentWorkflow({
 
           <Field label="Document status" required>
             <Select value={targetDocStatus} onChange={(e) => setTargetDocStatus(e.target.value)}>
-              {Object.entries(DOCUMENT_STATUS_META).map(([value, meta]) => (
+              {documentStatusOptions(documentStatus).map((value) => (
                 <option key={value} value={value}>
-                  {meta.label}
+                  {DOCUMENT_STATUS_META[value]?.label ?? value} — {DOCUMENT_STATUS_HINT[value] ?? ''}
                 </option>
               ))}
             </Select>

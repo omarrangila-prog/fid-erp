@@ -1193,6 +1193,62 @@ export async function downstreamOn(tx: Tx, companyId: string, shipmentId: string
 }
 
 /**
+ * Undo "Arrived": back to Loaded, for a container marked arrived by mistake.
+ *
+ * The arrival date (and any clearance or delivery date after it) is cleared
+ * and the move is written to the container's history and the audit log.
+ * Refused once a goods receipt exists for it — received coffee has arrived,
+ * whatever anyone presses — so the receipt is reversed first.
+ */
+export async function undoArrival(input: { companyId: string; shipmentId: string; userId: string; reason?: string | null }) {
+  return transaction(async (tx) => {
+    const shipment = await tx.shipment.findFirst({
+      where: { id: input.shipmentId, companyId: input.companyId },
+      select: { id: true, status: true, ataDate: true, clearanceDate: true, deliveryDate: true, purchaseContractId: true, batches: { select: { id: true, receivedQuantityKg: true } } },
+    });
+    if (!shipment) throw new NotFoundError('Shipment');
+    if (!SHIPMENT_STATUSES_LANDED.includes(shipment.status)) throw new BusinessRuleError('This container is not marked arrived.');
+    if (shipment.status === 'CLOSED') throw new BusinessRuleError('This shipment is closed. It cannot be moved back.');
+
+    const batchIds = shipment.batches.map((b) => b.id);
+    const [receiptLines, movements] = await Promise.all([
+      tx.goodsReceiptLine.count({ where: { batchId: { in: batchIds }, goodsReceipt: { status: { in: ['DRAFT', 'POSTED'] } } } }),
+      tx.inventoryTransaction.count({ where: { OR: [{ shipmentId: shipment.id }, { batchId: { in: batchIds } }] } }),
+    ]);
+    if (shipment.batches.some((b) => dec(b.receivedQuantityKg).greaterThan(0)) || movements > 0) {
+      throw new BusinessRuleError('This container has been received, so it has arrived. Reverse the goods receipt first, then undo the arrival.');
+    }
+    if (receiptLines > 0) {
+      throw new BusinessRuleError('A goods receipt has been started for this container. Delete the draft receipt first, then undo the arrival.');
+    }
+
+    await tx.shipment.update({
+      where: { id: shipment.id },
+      data: { status: 'LOADED', ataDate: null, clearanceDate: null, deliveryDate: null, updatedById: input.userId },
+    });
+    await tx.shipmentStatusHistory.create({
+      data: {
+        shipmentId: shipment.id,
+        fromStatus: shipment.status,
+        toStatus: 'LOADED',
+        changedById: input.userId,
+        notes: input.reason?.trim() ? `Arrival undone: ${input.reason.trim()}` : 'Arrival undone — marked arrived by mistake.',
+      },
+    });
+    await writeAudit(tx, {
+      companyId: input.companyId,
+      userId: input.userId,
+      action: 'SHIPMENT_ARRIVAL_UNDONE',
+      entityType: 'Shipment',
+      entityId: shipment.id,
+      before: { status: shipment.status, ataDate: shipment.ataDate, clearanceDate: shipment.clearanceDate, deliveryDate: shipment.deliveryDate },
+      after: { status: 'LOADED', reason: input.reason ?? null },
+    });
+    return { contractId: shipment.purchaseContractId };
+  });
+}
+
+/**
  * Undo "Loaded": back to Pending loading so the loading details can be
  * corrected and the shipment marked loaded again. Only while nothing
  * downstream exists; the shipping details are kept so they need not be
@@ -1208,7 +1264,7 @@ export async function undoLoading(input: { companyId: string; shipmentId: string
     if (!['LOADED', 'IN_TRANSIT', 'AWAITING_LOADING'].includes(shipment.status)) {
       throw new BusinessRuleError(
         SHIPMENT_STATUSES_LANDED.includes(shipment.status)
-          ? 'This shipment has arrived. Undo the arrival first (Mark loaded again from the shipment), then undo the loading.'
+          ? 'This shipment has arrived. Undo the arrival first, then undo the loading.'
           : 'This shipment is not marked loaded.',
       );
     }

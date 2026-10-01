@@ -1579,7 +1579,7 @@ type AdjustableContract = {
  */
 async function postOrderAdjustment(
   tx: Tx,
-  params: { contract: AdjustableContract; deltaSubtotal: Decimal; deltaTax: Decimal; shipmentId: string; userId: string; description: string },
+  params: { contract: AdjustableContract; deltaSubtotal: Decimal; deltaTax: Decimal; shipmentId: string | null; userId: string; description: string },
 ) {
   const { contract, deltaSubtotal, deltaTax } = params;
   if (deltaSubtotal.isZero() && deltaTax.isZero()) return;
@@ -1613,7 +1613,7 @@ async function postOrderAdjustment(
         description: up ? 'More coffee on the order, in transit' : 'Less coffee on the order, in transit',
         purchaseContractId: contract.id,
         vendorId: contract.vendorId,
-        shipmentId: params.shipmentId,
+        ...(params.shipmentId ? { shipmentId: params.shipmentId } : {}),
       },
       ...(taxOnSupplier
         ? [
@@ -1637,7 +1637,7 @@ async function postOrderAdjustment(
         description: `Payable to ${contract.vendor.vendorName} corrected`,
         vendorId: contract.vendorId,
         purchaseContractId: contract.id,
-        shipmentId: params.shipmentId,
+        ...(params.shipmentId ? { shipmentId: params.shipmentId } : {}),
       },
     ],
   });
@@ -1825,6 +1825,229 @@ export async function addContainerToOrder(input: AddContainerInput) {
     });
 
     return { lineId: line.id, shipmentId: shipment.id, batchId: batch.id, lineNumber };
+  });
+}
+
+export type RemoveContainerInput = {
+  companyId: string;
+  shipmentId: string;
+  userId: string;
+  reason: string;
+};
+
+/**
+ * Take one container off an approved order.
+ *
+ * The reverse of adding one. "The order had four containers; only three are
+ * coming." The supplier is owed exactly that container's value less, posted
+ * as its own entry against the order — the original posting and this one
+ * both stay in the journal — and the container's own records (its row on the
+ * order, its shipment, batch and lot, and its container number) are removed,
+ * so it leaves the loading sheet, the order and every list at once. A full
+ * copy of what was removed, with who and why, goes to the audit log.
+ *
+ * Only while nothing else in the books depends on it. It is refused when the
+ * container has been received, sold or reserved; when anything — a receipt,
+ * an expense, an invoice, a payment, a transfer, a count — names it; when
+ * costs or freight have been spread onto it; when it is the order's only
+ * container (delete the shipment instead); and when the supplier has already
+ * been paid more than the order would be worth without it.
+ */
+export async function removeContainerFromOrder(input: RemoveContainerInput) {
+  const reason = input.reason?.trim() ?? '';
+  if (reason.length < 3) throw new BusinessRuleError('Say why this container is being removed.');
+
+  return transaction(async (tx) => {
+    const found = await tx.shipment.findFirst({
+      where: { id: input.shipmentId, companyId: input.companyId },
+      select: { purchaseContractId: true },
+    });
+    if (!found) throw new NotFoundError('Container');
+    // One change to an order at a time.
+    await tx.$queryRaw`SELECT "id" FROM purchase_contracts WHERE "id" = ${found.purchaseContractId} AND "companyId" = ${input.companyId} FOR UPDATE`;
+
+    const shipment = await tx.shipment.findUniqueOrThrow({
+      where: { id: input.shipmentId },
+      include: {
+        purchaseContract: { include: { vendor: true, company: true } },
+        batches: { include: { lot: true, container: true } },
+        containerList: { select: { id: true, containerNumber: true } },
+        statusHistory: { orderBy: { changedAt: 'asc' }, select: { fromStatus: true, toStatus: true, notes: true, changedAt: true, changedById: true } },
+        docStatusHistory: { orderBy: { changedAt: 'asc' }, select: { fromStatus: true, toStatus: true, notes: true, changedAt: true, changedById: true } },
+      },
+    });
+    const contract = shipment.purchaseContract;
+    if (contract.status !== 'POSTED') throw new BusinessRuleError('Change the draft order directly.');
+
+    const others = await tx.shipment.count({
+      where: { purchaseContractId: contract.id, companyId: input.companyId, id: { not: shipment.id }, batches: { some: { status: 'ACTIVE' } } },
+    });
+    if (others === 0) {
+      throw new BusinessRuleError('This is the only container on the order. Delete the shipment instead — that deletes the whole order.');
+    }
+
+    const active = shipment.batches.filter((b) => b.status === 'ACTIVE');
+    if (shipment.batches.length !== 1 || active.length !== 1 || !shipment.purchaseContractLineId || active[0].purchaseContractLineId !== shipment.purchaseContractLineId) {
+      throw new BusinessRuleError('This container carries more than one coffee row. Correct it on the purchase order instead.');
+    }
+    const batch = active[0];
+    const lineId = shipment.purchaseContractLineId;
+    const [lineShipments, lineBatches] = await Promise.all([
+      tx.shipment.count({ where: { purchaseContractLineId: lineId, id: { not: shipment.id } } }),
+      tx.batch.count({ where: { purchaseContractLineId: lineId, id: { not: batch.id } } }),
+    ]);
+    if (lineShipments > 0 || lineBatches > 0) {
+      throw new BusinessRuleError('This container shares its row on the order with other containers. Correct it on the purchase order instead.');
+    }
+
+    if (dec(batch.receivedQuantityKg).greaterThan(0) || dec(batch.soldQuantityKg).greaterThan(0) || dec(batch.allocatedQuantityKg).greaterThan(0)) {
+      throw new BusinessRuleError('This container has already been received. Reverse the goods receipt first; stock is never removed by changing the order.');
+    }
+    if (dec(batch.capitalisedCostUsd).greaterThan(0)) {
+      throw new BusinessRuleError('Costs have been spread onto this container. Reverse or re-spread those costs first.');
+    }
+
+    // Everything that names the container, its batch or its container number.
+    const containerIds = [...new Set([...shipment.containerList.map((c) => c.id), ...(batch.containerId ? [batch.containerId] : [])])];
+    const [movements, receiptLines, receipts, invoiceLines, invoices, creditLines, transferLines, countLines, expenses, payments, customerReceipts, overheads] = await Promise.all([
+      tx.inventoryTransaction.count({ where: { OR: [{ shipmentId: shipment.id }, { batchId: batch.id }, ...(containerIds.length ? [{ containerId: { in: containerIds } }] : [])] } }),
+      tx.goodsReceiptLine.count({ where: { OR: [{ batchId: batch.id }, { purchaseContractLineId: lineId }, ...(containerIds.length ? [{ containerId: { in: containerIds } }] : [])] } }),
+      tx.goodsReceipt.count({ where: { shipmentId: shipment.id } }),
+      tx.salesInvoiceLine.count({ where: { OR: [{ shipmentId: shipment.id }, { batchId: batch.id }, { lotId: batch.lotId }, ...(containerIds.length ? [{ containerId: { in: containerIds } }] : [])] } }),
+      tx.salesInvoice.count({ where: { shipmentId: shipment.id } }),
+      tx.creditNoteLine.count({ where: { batchId: batch.id } }),
+      tx.stockTransferLine.count({ where: { OR: [{ batchId: batch.id }, ...(containerIds.length ? [{ containerId: { in: containerIds } }] : [])] } }),
+      tx.stockCountLine.count({ where: { batchId: batch.id } }),
+      tx.expense.count({ where: { OR: [{ shipmentId: shipment.id }, { batchId: batch.id }, ...(containerIds.length ? [{ containerId: { in: containerIds } }] : [])] } }),
+      tx.payment.count({ where: { shipmentId: shipment.id } }),
+      tx.receipt.count({ where: { shipmentId: shipment.id } }),
+      tx.overheadAllocationLine.count({ where: { shipmentId: shipment.id } }),
+    ]);
+    if (movements > 0 || receiptLines > 0 || receipts > 0) {
+      throw new BusinessRuleError('A goods receipt has been started for this container. Delete or reverse it first.');
+    }
+    if (invoiceLines > 0 || invoices > 0 || creditLines > 0) throw new BusinessRuleError('A sales invoice or credit note names this container. Reverse it first.');
+    if (transferLines > 0 || countLines > 0) throw new BusinessRuleError('A stock transfer or count names this container. Remove it from there first.');
+    if (expenses > 0) throw new BusinessRuleError('An expense is booked to this container. Move or delete that expense first.');
+    if (payments > 0 || customerReceipts > 0) throw new BusinessRuleError('A payment or receipt names this container. Move or reverse it first.');
+    if (overheads > 0) throw new BusinessRuleError('Overheads have been allocated to this container. Withdraw that allocation first.');
+
+    // Entries in the books that carry this container's own tag. Only the
+    // order's own adjustments may — a container added or corrected after
+    // approval — and those keep their amounts and the order's tag; anything
+    // else naming it is a reason to stop.
+    const tagged = await tx.journalLine.findMany({
+      where: { OR: [{ shipmentId: shipment.id }, { batchId: batch.id }] },
+      select: { id: true, journalEntry: { select: { sourceType: true, sourceId: true } } },
+    });
+    if (tagged.some((l) => !(l.journalEntry.sourceType === 'PURCHASE_CONTRACT' && l.journalEntry.sourceId === contract.id))) {
+      throw new BusinessRuleError('Entries in the books other than the order itself name this container. Reverse those first.');
+    }
+
+    const line = await tx.purchaseContractLine.findUniqueOrThrow({ where: { id: lineId } });
+    if (dec(line.freightAllocated).plus(line.otherChargesAllocated).greaterThan(0)) {
+      throw new BusinessRuleError('This order spreads freight or other charges over its containers. Correct the order (Edit order) so those charges are spread again.');
+    }
+
+    // The money: the supplier is owed this container's value less.
+    const toUsd = (amount: Decimal) => toMoney(contract.currency === 'USD' ? amount : amount.dividedBy(contract.rateToUsd));
+    const lineSubtotal = dec(line.lineSubtotal);
+    const lineTax = dec(line.taxAmount);
+    const newSubtotal = toMoney(dec(contract.subtotal).minus(lineSubtotal));
+    const newTax = toMoney(dec(contract.taxAmount).minus(lineTax));
+    const newTotal = toMoney(dec(contract.totalValue).minus(lineSubtotal));
+    const payableAfter = supplierGrossPayable({
+      netAmount: newTotal,
+      taxAmount: newTax,
+      netAmountUsd: toUsd(newTotal),
+      taxAmountUsd: toUsd(newTax),
+      vendorCountry: contract.vendor.country,
+      companyCountry: contract.company.country,
+    }).amount;
+    const paid = dec((await tx.paymentAllocation.aggregate({ where: { purchaseContractId: contract.id }, _sum: { amount: true } }))._sum.amount ?? 0);
+    if (paid.greaterThan(payableAfter)) {
+      throw new BusinessRuleError(
+        `The supplier has already been paid ${contract.currency} ${toMoney(paid).toFixed(2)}, more than the order would be worth without this container (${contract.currency} ${toMoney(payableAfter).toFixed(2)}). Record a debit note with the supplier instead.`,
+      );
+    }
+
+    const containerNumbers = [...new Set([...shipment.containerList.map((c) => c.containerNumber), batch.container?.containerNumber].filter((n): n is string => Boolean(n)))];
+    const before = {
+      contractReference: contract.contractReference,
+      lineNumber: line.lineNumber,
+      shipmentNumber: shipment.shipmentNumber,
+      jobNumber: shipment.jobNumber,
+      status: shipment.status,
+      documentStatus: shipment.documentStatus,
+      etaDate: shipment.etaDate,
+      loadingDate: shipment.loadingDate,
+      bookingNumber: shipment.bookingNumber,
+      billOfLading: shipment.billOfLading,
+      containerNumbers,
+      lotNumber: batch.lot.lotNumber,
+      batchNumber: batch.batchNumber,
+      quantityKg: dec(line.quantityKg).toString(),
+      bags: line.bags,
+      unitPriceKg: dec(line.unitPriceKg).toString(),
+      lineSubtotal: lineSubtotal.toString(),
+      taxAmount: lineTax.toString(),
+      statusHistory: shipment.statusHistory,
+      documentHistory: shipment.docStatusHistory,
+      untaggedJournalLines: tagged.map((l) => l.id),
+    };
+
+    await postOrderAdjustment(tx, {
+      contract,
+      deltaSubtotal: lineSubtotal.negated(),
+      deltaTax: lineTax.negated(),
+      shipmentId: null,
+      userId: input.userId,
+      description: `${contract.contractReference}: container ${containerNumbers.join(', ') || line.lineNumber} removed — ${dec(line.quantityKg).toString()} KG — ${reason}`,
+    });
+
+    await tx.purchaseContract.update({
+      where: { id: contract.id },
+      data: {
+        subtotal: newSubtotal,
+        taxAmount: newTax,
+        taxAmountUsd: toUsd(newTax),
+        totalValue: newTotal,
+        totalValueUsd: toUsd(newTotal),
+        totalBags: Math.max(0, contract.totalBags - line.bags),
+        containers: Math.max(0, contract.containers - Math.max(shipment.containers, 1)),
+      },
+    });
+
+    // The order's own adjustments keep their amounts and the order's tag; the
+    // container they named is going. The line ids are in the audit entry.
+    if (tagged.length > 0) {
+      await tx.journalLine.updateMany({ where: { id: { in: tagged.map((l) => l.id) } }, data: { shipmentId: null, batchId: null } });
+    }
+
+    await tx.inventoryBalance.deleteMany({ where: { batchId: batch.id } });
+    await tx.batch.delete({ where: { id: batch.id } });
+    const lotStillUsed = await tx.batch.count({ where: { lotId: batch.lotId } });
+    if (lotStillUsed === 0) await tx.lot.delete({ where: { id: batch.lotId } });
+    for (const containerId of containerIds) {
+      const stillUsed = await tx.batch.count({ where: { containerId } });
+      if (stillUsed === 0) await tx.container.delete({ where: { id: containerId } });
+      else await tx.container.update({ where: { id: containerId }, data: { shipmentId: null } });
+    }
+    // Its history goes with it; the audit entry above keeps a copy.
+    await tx.shipment.delete({ where: { id: shipment.id } });
+    await tx.purchaseContractLine.delete({ where: { id: line.id } });
+
+    await writeAudit(tx, {
+      companyId: input.companyId,
+      userId: input.userId,
+      action: 'CONTAINER_REMOVED',
+      entityType: 'PurchaseContract',
+      entityId: contract.id,
+      before,
+      after: { subtotal: newSubtotal.toString(), totalValue: newTotal.toString(), containers: Math.max(0, contract.containers - Math.max(shipment.containers, 1)), reason },
+    });
+
+    return { contractId: contract.id, containerNumbers };
   });
 }
 

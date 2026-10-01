@@ -134,9 +134,12 @@ test('from the Loading Sheet only: own ETAs, 2 of 3 loaded, documents, one arriv
   // Documents, straight from the row.
   await containerRow(panel, THREE.containers[0]).getByLabel(/^Documents /).selectOption({ label: 'Complete' });
   await expect(panel.locator('[data-summary="documents"]')).toContainText('1 Complete', { timeout: 30_000 });
-  await containerRow(panel, THREE.containers[1]).getByLabel(/^Documents /).selectOption({ label: 'Awaiting Approval' });
-  await expect(panel.locator('[data-summary="documents"]')).toContainText('1 Awaiting Approval', { timeout: 30_000 });
-  await expect(panel.locator('[data-summary="documents"]')).toContainText('1 Pending');
+  await containerRow(panel, THREE.containers[1]).getByLabel(/^Documents /).selectOption({ label: 'In Progress' });
+  await expect(panel.locator('[data-summary="documents"]')).toContainText('1 In Progress', { timeout: 30_000 });
+  await expect(panel.locator('[data-summary="documents"]')).toContainText('1 Not Started');
+  // The six positions the client asked for, in their order.
+  const offered = (await containerRow(panel, THREE.containers[2]).getByLabel(/^Documents /).locator('option').allInnerTexts()).map((o) => o.trim());
+  expect(offered).toEqual(['Not Started', 'Pending', 'In Progress', 'Prepared', 'Received', 'Complete']);
 
   // Container 1 arrives.
   const first = containerRow(panel, THREE.containers[0]);
@@ -188,6 +191,64 @@ test('the purchase order list shows the same counts and opens the same panel', a
   await expect(row).toContainText('1 / 3 Received');
   const panel = await openQuick(page, row, 3);
   await expect(panel.locator('[data-summary="arrival"]')).toHaveText('1 / 3 Arrived');
+});
+
+test('a container marked arrived by mistake goes back to Not arrived; a received one cannot', async () => {
+  const row = await sheetRow(page, THREE.reference);
+  const panel = await openQuick(page, row, 3);
+  const second = containerRow(panel, THREE.containers[1]);
+  await second.getByRole('button', { name: /Mark arrived/ }).click();
+  await second.getByRole('button', { name: /^Save$/ }).click();
+  await expect(panel.locator('[data-summary="arrival"]')).toHaveText('2 / 3 Arrived', { timeout: 45_000 });
+
+  await containerRow(panel, THREE.containers[1]).getByRole('button', { name: /^Undo arrival$/ }).click();
+  await page.getByRole('dialog', { name: /back to Not arrived/ }).getByRole('button', { name: /^Undo arrival$/ }).click();
+  await expect(panel.locator('[data-summary="arrival"]')).toHaveText('1 / 3 Arrived', { timeout: 45_000 });
+  await expect(containerRow(panel, THREE.containers[1])).toHaveAttribute('data-stage', 'LOADED');
+  // Container 1 is received: it has arrived, whatever anyone presses.
+  await expect(containerRow(panel, THREE.containers[0]).getByRole('button', { name: /^Undo arrival$/ })).toHaveCount(0);
+});
+
+test('a container is corrected from the panel with the same form the order uses', async () => {
+  const row = await sheetRow(page, THREE.reference);
+  const panel = await openQuick(page, row, 3);
+  await containerRow(panel, THREE.containers[1]).getByRole('button', { name: /^Edit$/ }).click();
+  const dialog = page.getByRole('dialog', { name: new RegExp(`Correct ${THREE.containers[1]}`) });
+  await dialog.getByLabel('Lot number').fill(`LFIX-${STAMP}`);
+  await dialog.getByLabel('Reason').fill('Supplier corrected the lot');
+  await dialog.getByRole('button', { name: /^Save correction$/ }).click();
+  await expect(containerRow(panel, THREE.containers[1])).toContainText(`LFIX-${STAMP}`, { timeout: 45_000 });
+  // A received container is not corrected here — its coffee is stock now.
+  await expect(containerRow(panel, THREE.containers[0]).getByRole('button', { name: /^Edit$/ })).toHaveCount(0);
+});
+
+test('one container is taken off the order; the other two stay as they were', async () => {
+  const row = await sheetRow(page, THREE.reference);
+  const panel = await openQuick(page, row, 3);
+  // A received container cannot be removed, so it offers no button.
+  await expect(containerRow(panel, THREE.containers[0]).getByRole('button', { name: /^Remove container$/ })).toHaveCount(0);
+
+  await containerRow(panel, THREE.containers[2]).getByRole('button', { name: /^Remove container$/ }).click();
+  const confirm = page.getByRole('dialog', { name: /Remove container/ });
+  await confirm.getByLabel(/Why is this container being removed/).fill('Supplier is shipping only two');
+  await confirm.getByRole('button', { name: /^Remove container$/ }).click();
+  await expect(panel.locator('tr[data-container]')).toHaveCount(2, { timeout: 45_000 });
+  await expect(panel.locator('[data-summary="loading"]')).toHaveText('2 / 2 Loaded');
+  await expect(panel.locator('[data-summary="arrival"]')).toHaveText('1 / 2 Arrived');
+  await expect(panel.locator('[data-summary="receipt"]')).toHaveText('1 / 2 Received');
+
+  const fresh = await sheetRow(page, THREE.reference);
+  await expect(fresh.locator('[data-summary="loading"]')).toHaveText('2 / 2 Loaded');
+  await expect(fresh).not.toContainText(THREE.containers[2]);
+
+  // The row's own buttons follow the stage: one container still sailing, one received.
+  await expect(fresh.getByRole('button', { name: /^Arrive$/ })).toBeVisible();
+  await expect(fresh.getByRole('button', { name: /^ETA$/ })).toBeVisible();
+  await expect(fresh.getByRole('button', { name: /^Load$/ })).toHaveCount(0);
+  await fresh.getByRole('button', { name: /More actions/i }).click();
+  await expect(page.getByRole('menuitem', { name: /^View Receipt$/ })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: /^Docs$/ })).toBeVisible();
+  await page.keyboard.press('Escape');
 });
 
 test('a two-container order shows two containers, and is deleted from its row', async () => {

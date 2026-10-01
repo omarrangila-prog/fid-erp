@@ -8,7 +8,7 @@ import { Sheet } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input, Select, Textarea } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
-import { DOCUMENT_STATUS_META } from '@/lib/constants';
+import { DOCUMENT_STATUS_META, DOCUMENT_STATUS_HINT, documentStatusOptions } from '@/lib/constants';
 import { changeDocumentStatusAction } from '@/server/actions/trading-actions';
 
 /** Who the documents are waiting on — the question the client asks first. */
@@ -19,12 +19,13 @@ const WORKING_WITH = ['Supplier', 'Shipping line', 'Clearing agent', 'Bank', 'Cu
  * Shipping line · Original B/L · Ref BL-123 · Received 01 Oct 2026 · waiting
  * for the release". One line in the document history, readable as it is.
  */
-export function composeDocumentNote(parts: { workingWith?: string; document?: string; reference?: string; receivedOn?: string; memo?: string }): string {
+export function composeDocumentNote(parts: { workingWith?: string; responsible?: string; document?: string; reference?: string; receivedOn?: string; memo?: string }): string {
   const received = parts.receivedOn
     ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${parts.receivedOn}T00:00:00Z`))
     : '';
   return [
     parts.workingWith ? `Working with: ${parts.workingWith}` : '',
+    parts.responsible?.trim() ? `Responsible: ${parts.responsible.trim()}` : '',
     parts.document?.trim() ?? '',
     parts.reference?.trim() ? `Ref ${parts.reference.trim()}` : '',
     received ? `Received ${received}` : '',
@@ -58,13 +59,14 @@ export function DocumentStatusDialog({
   const [toStatus, setToStatus] = React.useState(currentStatus);
   const [notes, setNotes] = React.useState('');
   const [workingWith, setWorkingWith] = React.useState('');
+  const [responsible, setResponsible] = React.useState('');
   const [documentName, setDocumentName] = React.useState('');
   const [reference, setReference] = React.useState('');
   const [receivedOn, setReceivedOn] = React.useState('');
 
   function submit() {
     setError(null);
-    const note = composeDocumentNote({ workingWith, document: documentName, reference, receivedOn, memo: notes });
+    const note = composeDocumentNote({ workingWith, responsible, document: documentName, reference, receivedOn, memo: notes });
     startTransition(async () => {
       const result = await changeDocumentStatusAction(shipmentId, JSON.stringify({ toStatus, notes: note }));
       if (result?.ok) {
@@ -105,12 +107,12 @@ export function DocumentStatusDialog({
         <Field
           label="Document position"
           required
-          hint="Pending, with the supplier, received, approved or complete — independent of Loaded / Arrived."
+          hint="Not started, pending, in progress, prepared, received or complete — independent of Loaded / Arrived."
         >
           <Select value={toStatus} onChange={(e) => setToStatus(e.target.value)}>
-            {Object.entries(DOCUMENT_STATUS_META).map(([value, meta]) => (
+            {documentStatusOptions(currentStatus).map((value) => (
               <option key={value} value={value}>
-                {meta.label}
+                {DOCUMENT_STATUS_META[value]?.label ?? value} — {DOCUMENT_STATUS_HINT[value] ?? ''}
               </option>
             ))}
           </Select>
@@ -126,6 +128,9 @@ export function DocumentStatusDialog({
                 </option>
               ))}
             </Select>
+          </Field>
+          <Field label="Responsible person" htmlFor="docWho" hint="Who is following them up.">
+            <Input id="docWho" value={responsible} onChange={(e) => setResponsible(e.target.value)} />
           </Field>
           <Field label="Document" htmlFor="docName" hint="Original B/L, phyto, certificate of origin…">
             <Input id="docName" value={documentName} onChange={(e) => setDocumentName(e.target.value)} />

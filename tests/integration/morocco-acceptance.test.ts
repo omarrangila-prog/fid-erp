@@ -25,7 +25,7 @@ import { getTrialBalanceReport, getProfitAndLoss, getBalanceSheet } from '@/lib/
 import { reconcile } from '@/lib/services/reconciliation';
 import { buildCsv, buildWorkbook } from '@/lib/services/workbook';
 import { getShipmentProfitability } from '@/lib/services/profitability';
-import { DOCUMENT_STATUS_META } from '@/lib/constants';
+import { DOCUMENT_STATUS_META, DOCUMENT_STATUS_CHOICES, documentStatusOptions } from '@/lib/constants';
 import { dec, sum } from '@/lib/money';
 
 /**
@@ -210,13 +210,26 @@ describe('3 — separate container numbers', () => {
 });
 
 describe('4 — document status works independently of cargo', () => {
-  it('uses the Morocco labels and records a change without recreating the PO', async () => {
-    expect(DOCUMENT_STATUS_META.DRAFT_PENDING.label).toBe('Pending');
-    expect(DOCUMENT_STATUS_META.ORIGINALS_WITH_SUPPLIER.label).toBe('With Supplier');
+  it('uses the client\'s six positions and records a change without recreating the PO', async () => {
+    // Not Started, Pending, In Progress, Prepared, Received, Complete — the
+    // stored values are the workflow's own, unchanged; only the words are.
+    expect(DOCUMENT_STATUS_CHOICES.map((value) => DOCUMENT_STATUS_META[value].label)).toEqual([
+      'Not Started',
+      'Pending',
+      'In Progress',
+      'Prepared',
+      'Received',
+      'Complete',
+    ]);
+    expect(DOCUMENT_STATUS_META.DRAFT_PENDING.label).toBe('Not Started');
+    expect(DOCUMENT_STATUS_META.ORIGINALS_WITH_SUPPLIER.label).toBe('Pending');
+    expect(DOCUMENT_STATUS_META.UNDER_APPROVAL.label).toBe('In Progress');
+    expect(DOCUMENT_STATUS_META.APPROVED.label).toBe('Prepared');
     expect(DOCUMENT_STATUS_META.DRAFT_RECEIVED.label).toBe('Received');
-    expect(DOCUMENT_STATUS_META.UNDER_APPROVAL.label).toBe('Awaiting Approval');
-    expect(DOCUMENT_STATUS_META.APPROVED.label).toBe('Approved');
     expect(DOCUMENT_STATUS_META.COMPLETED.label).toBe('Complete');
+    // An older position still reads, and is offered only on the record that has it.
+    expect(documentStatusOptions('WITH_BANK')).toContain('WITH_BANK');
+    expect(documentStatusOptions('COMPLETED')).not.toContain('WITH_BANK');
 
     await changeDocumentStatus({
       shipmentId,

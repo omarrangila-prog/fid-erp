@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Ship, Anchor, PackageCheck, FileText, Boxes, CalendarClock, Calculator, Undo2, Zap } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ui/confirm';
-import { undoLoadingAction, reversePurchaseContractAction } from '@/server/actions/trading-actions';
+import { undoLoadingAction, undoArrivalAction, removeContainerAction, reversePurchaseContractAction } from '@/server/actions/trading-actions';
 import { RowActions, type DestructiveAction, type RowAction } from '@/components/shared/row-actions';
 import { Button } from '@/components/ui/button';
 import { QuickUpdatePanel, type QuickIntent } from '@/components/shipments/quick-update-panel';
@@ -182,6 +182,7 @@ export function LoadingSheet({
   canUpdate,
   canReceive,
   canDelete = false,
+  canRemove = false,
   shippingLines,
   ports = [],
   warehouses,
@@ -195,6 +196,8 @@ export function LoadingSheet({
   canReceive: boolean;
   /** Deleting a shipment reverses its purchase order; the server checks this too. */
   canDelete?: boolean;
+  /** Taking one container off an order: the add/correct-container permission. */
+  canRemove?: boolean;
   shippingLines: Array<{ id: string; name: string }>;
   ports?: string[];
   warehouses: Array<{ id: string; name: string; code: string }>;
@@ -208,6 +211,7 @@ export function LoadingSheet({
   const [documentsRow, setDocumentsRow] = React.useState<LoadingRow | null>(null);
   const [containersRow, setContainersRow] = React.useState<LoadingRow | null>(null);
   const [undoRow, setUndoRow] = React.useState<LoadingRow | null>(null);
+  const [undoArrivalRow, setUndoArrivalRow] = React.useState<LoadingRow | null>(null);
   const [quick, setQuick] = React.useState<{ contractId: string; label: string; intent: QuickIntent } | null>(null);
   const router = useRouter();
 
@@ -271,6 +275,13 @@ export function LoadingSheet({
               icon: Undo2,
               show: canUpdate && sailing,
               onSelect: () => setUndoRow(r),
+            },
+            {
+              label: 'Undo arrival',
+              icon: Undo2,
+              show: canUpdate && landed && r.receivedKg === 0,
+              onSelect: () => setUndoArrivalRow(r),
+              overflowOnly: true,
             },
             {
               label: 'Receive PO',
@@ -492,25 +503,46 @@ export function LoadingSheet({
     };
   }
 
+  /** One container off a multi-container order — the order's other containers stay as they are. */
+  function removeContainer(r: LoadingRow): DestructiveAction {
+    return {
+      status: 'POSTED',
+      noun: 'container',
+      cancelLabel: 'Remove container',
+      show: canRemove && r.receivedKg === 0,
+      description:
+        'The container is taken off the order: the supplier is owed its value less, posted as its own entry against the order (the original stays in the journal), and its row, shipment, batch and lot are removed. A full copy goes to the audit log. Refused once anything has been received, costed, sold or paid against it.',
+      run: async (reason) => {
+        const result = await removeContainerAction(r.shipmentId, reason ?? '');
+        return result.ok ? { ok: true } : { ok: false, error: result.error };
+      },
+    };
+  }
+
   function openQuick(g: OrderGroup, intent: QuickIntent = null) {
     setQuick({ contractId: g.contractId, label: g.contractReference, intent });
   }
 
-  /** What the order needs next, most pressing first; Quick Update does the rest. */
+  /**
+   * What the order needs next, in short buttons that follow its stage: Load
+   * while containers wait to load; ETA, Docs and Arrive while they sail;
+   * Receive once they land; View Receipt once they are in. Each opens Quick
+   * Update ready to do it; the rest are under More.
+   */
   function orderActions(g: OrderGroup) {
     const summary = summaryOf(g);
     const actions: RowAction[] = [];
-    if (canReceive && summary.arrived > summary.received) actions.push({ label: 'Receive arrived', icon: PackageCheck, onSelect: () => openQuick(g, 'receive') });
-    if (canUpdate && summary.loaded > summary.arrived) actions.push({ label: 'Mark containers arrived', icon: Anchor, onSelect: () => openQuick(g, 'arrive') });
-    if (canUpdate && summary.loaded < summary.total) actions.push({ label: 'Load containers', icon: Ship, onSelect: () => openQuick(g, 'load') });
-    if (canUpdate) actions.push({ label: 'Update ETAs', icon: CalendarClock, onSelect: () => openQuick(g, 'eta') });
-    if (canUpdate) actions.push({ label: 'Update documents', icon: FileText, onSelect: () => openQuick(g, 'documents') });
+    if (canReceive && summary.arrived > summary.received) actions.push({ label: 'Receive', icon: PackageCheck, onSelect: () => openQuick(g, 'receive') });
+    if (canUpdate && summary.loaded > summary.arrived) actions.push({ label: 'Arrive', icon: Anchor, onSelect: () => openQuick(g, 'arrive') });
+    if (canUpdate && summary.loaded < summary.total) actions.push({ label: 'Load', icon: Ship, onSelect: () => openQuick(g, 'load') });
+    if (canUpdate && summary.arrived < summary.total) actions.push({ label: 'ETA', icon: CalendarClock, onSelect: () => openQuick(g, 'eta') });
+    if (canUpdate) actions.push({ label: 'Docs', icon: FileText, onSelect: () => openQuick(g, 'documents') });
     actions.push(
-      { label: 'View receipt', href: `/purchases/${g.contractId}`, icon: PackageCheck, show: g.shipments.some((r) => r.receivedKg > 0), overflowOnly: true },
+      { label: 'View Receipt', href: `/purchases/${g.contractId}`, icon: PackageCheck, show: g.shipments.some((r) => r.receivedKg > 0) },
       { label: 'Purchase order', href: `/purchases/${g.contractId}`, icon: FileText, overflowOnly: true },
       { label: 'Trace this reference', href: `/trace?ref=${encodeURIComponent(g.contractReference)}`, icon: Boxes, overflowOnly: true },
     );
-    return <RowActions inline={1} actions={actions} destructive={deleteShipment(g)} />;
+    return <RowActions inline={2} actions={actions} destructive={deleteShipment(g)} />;
   }
 
   const groupColumns: DataColumn<OrderGroup>[] = [
@@ -638,7 +670,9 @@ export function LoadingSheet({
             <Badge tone={ARRIVAL_STATE_META[summary.arrivalState].tone} data-summary="arrival">
               {summary.arrivalLabel}
             </Badge>
-            {summary.arrivalState === 'PARTIALLY_ARRIVED' ? <span className="block text-[11px] text-ink-subtle">Partially arrived</span> : null}
+            {summary.arrivalState !== 'NOT_ARRIVED' ? (
+              <span className="block text-[11px] text-ink-subtle">{ARRIVAL_STATE_META[summary.arrivalState].label}</span>
+            ) : null}
           </span>
         );
       },
@@ -776,7 +810,9 @@ export function LoadingSheet({
                   <td className={cn('py-1.5 pr-3 text-xs', line && line.receivedKg > 0 ? 'text-forest-800' : 'text-ink-muted')}>
                     {line ? (line.receivedKg >= line.quantityKg - 0.001 && line.receivedKg > 0 ? 'Received' : line.receivedKg > 0 ? `${line.received} received` : 'Not received') : '—'}
                   </td>
-                  <td className="py-1.5 text-right">{index === 0 ? shipmentActions(row) : null}</td>
+                  <td className="py-1.5 text-right">
+                    {index === 0 ? shipmentActions(row, group.shipments.length > 1 ? removeContainer(row) : undefined) : null}
+                  </td>
                 </tr>
               )),
             )}
@@ -851,6 +887,23 @@ export function LoadingSheet({
             router.refresh();
           }}
         />
+
+      <ConfirmDialog
+        open={undoArrivalRow !== null}
+        onOpenChange={(open) => {
+          if (!open) setUndoArrivalRow(null);
+        }}
+        title="Move this container back to Not arrived?"
+        description="For a container marked arrived by mistake. It goes back to Loaded and its arrival date is cleared; the change is kept in its history. Refused once a goods receipt exists for it."
+        confirmLabel="Undo arrival"
+        onConfirm={async () => {
+          if (!undoArrivalRow) return;
+          const result = await undoArrivalAction(undoArrivalRow.shipmentId, '');
+          if (!result || !result.ok) throw new Error(result?.error ?? 'The arrival could not be undone.');
+          toast.success(result.message ?? 'Back to Not arrived.');
+          router.refresh();
+        }}
+      />
 
       {arrivingRow ? (
         <ArrivedDialog

@@ -4,14 +4,14 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Anchor, Boxes, CalendarClock, Eye, FileText, History, PackageCheck, Ship, Trash2, Loader2 } from 'lucide-react';
+import { Anchor, Boxes, CalendarClock, Eye, FileText, History, PackageCheck, Pencil, Ship, Trash2, Loader2 } from 'lucide-react';
 import { Sheet } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input, Select } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { ConfirmDialog } from '@/components/ui/confirm';
-import { DOCUMENT_STATUS_META } from '@/lib/constants';
+import { DOCUMENT_STATUS_META, DOCUMENT_STATUS_HINT, DOCUMENT_STATUS_CHOICES, documentStatusOptions } from '@/lib/constants';
 import { CONTAINER_STAGE_META, containerStage, type ContainerStage } from '@/lib/container-stage';
 import { summariseContainers, ARRIVAL_STATE_META, RECEIPT_STATE_META, documentLabel } from '@/lib/container-summary';
 import { receivableBatches } from '@/lib/receivable-batches';
@@ -23,11 +23,12 @@ import {
   getContainerHistoryAction,
 } from '@/server/actions/quick-update-actions';
 import type { QuickOrder, QuickContainer, ContainerHistoryRow } from '@/server/actions/quick-update-actions';
-import { undoLoadingAction, reversePurchaseContractAction } from '@/server/actions/trading-actions';
+import { undoLoadingAction, undoArrivalAction, removeContainerAction, reversePurchaseContractAction } from '@/server/actions/trading-actions';
 import { MarkLoadedDialog } from '@/app/(app)/loading/mark-loaded-dialog';
 import { DocumentStatusDialog, composeDocumentNote } from '@/app/(app)/loading/document-status-dialog';
 import { ManageContainersDialog } from '@/app/(app)/loading/manage-containers-dialog';
 import { GoodsReceiptDialog } from '@/app/(app)/purchases/[id]/goods-receipt-dialog';
+import { EditContainerDialog, type EditableContainer } from '@/components/shipments/edit-container-dialog';
 
 /** What the row's button asked for, so the panel opens ready to do it. */
 export type QuickIntent = 'load' | 'eta' | 'documents' | 'arrive' | 'receive' | null;
@@ -110,7 +111,7 @@ function QuickUpdateBody({
     notes: '',
   });
   const [bulkEta, setBulkEta] = React.useState('');
-  const [bulkDocs, setBulkDocs] = React.useState({ toStatus: 'DRAFT_PENDING', workingWith: '', document: '', reference: '', receivedOn: '', memo: '' });
+  const [bulkDocs, setBulkDocs] = React.useState({ toStatus: 'DRAFT_PENDING', workingWith: '', responsible: '', document: '', reference: '', receivedOn: '', memo: '' });
   const [bulkAta, setBulkAta] = React.useState(todayInputValue());
 
   // One-container dialogs
@@ -123,6 +124,9 @@ function QuickUpdateBody({
   const [historyFor, setHistoryFor] = React.useState<string | null>(null);
   const [history, setHistory] = React.useState<ContainerHistoryRow[] | null>(null);
   const [deleting, setDeleting] = React.useState(false);
+  const [unArriving, setUnArriving] = React.useState<QuickContainer | null>(null);
+  const [editing, setEditing] = React.useState<EditableContainer | null>(null);
+  const [removing, setRemoving] = React.useState<QuickContainer | null>(null);
   const intentApplied = React.useRef(false);
 
   const receive = React.useCallback((result: Awaited<ReturnType<typeof getQuickUpdateAction>>) => {
@@ -301,15 +305,16 @@ function QuickUpdateBody({
           onChange={(e) => void apply([c.shipmentId], { op: 'documents', toStatus: e.target.value }, 'Documents updated')}
           className="h-9 text-xs"
         >
-          {Object.entries(DOCUMENT_STATUS_META).map(([value, meta]) => (
+          {documentStatusOptions(c.documentStatus).map((value) => (
             <option key={value} value={value}>
-              {meta.label}
+              {DOCUMENT_STATUS_META[value]?.label ?? value}
             </option>
           ))}
         </Select>
       ) : (
         <Badge tone={DOCUMENT_STATUS_META[c.documentStatus]?.tone ?? 'neutral'}>{documentLabel(c.documentStatus)}</Badge>
       )}
+      <p className="text-[11px] leading-snug text-ink-muted">{DOCUMENT_STATUS_HINT[c.documentStatus] ?? ''}</p>
       {c.documentNote?.notes ? (
         <p className="text-[11px] leading-snug text-ink-subtle" title={`${c.documentNote.changedBy}, ${formatDateTime(c.documentNote.changedAt)}`}>
           {c.documentNote.notes}
@@ -329,6 +334,15 @@ function QuickUpdateBody({
         <span className="block">
           <Badge tone="progress">Arrived</Badge>
           {c.ataIso ? <span className="mt-0.5 block text-[11px] text-ink-subtle">{formatDate(c.ataIso)}</span> : null}
+          {canUpdate && Number(c.receivedKg) === 0 ? (
+            <button
+              type="button"
+              onClick={() => setUnArriving(c)}
+              className="mt-0.5 block text-[11px] font-medium text-forest-700 underline-offset-2 hover:underline"
+            >
+              Undo arrival
+            </button>
+          ) : null}
         </span>
       );
     }
@@ -410,6 +424,25 @@ function QuickUpdateBody({
         <History />
         History
       </Button>
+      {order?.canRemove && Number(c.receivedKg) === 0 && c.lines.length === 1 ? (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() =>
+            setEditing({
+              shipmentId: c.shipmentId,
+              label: nameOf(c),
+              quantityKg: c.lines[0].orderedKg,
+              containerNumber: c.lines[0].containerNumber,
+              lotNumber: c.lines[0].lotNumber,
+              batchNumber: c.lines[0].batchNumber,
+            })
+          }
+        >
+          <Pencil />
+          Edit
+        </Button>
+      ) : null}
       {canUpdate && isLoaded(c) && !fully(c) ? (
         <Button size="sm" variant="ghost" onClick={() => setContainersOne(c)}>
           <Boxes />
@@ -422,6 +455,12 @@ function QuickUpdateBody({
           Open
         </Link>
       </Button>
+      {order?.canRemove && containers.length > 1 && Number(c.receivedKg) === 0 ? (
+        <Button size="sm" variant="ghost" className="text-red-700 hover:bg-red-50" onClick={() => setRemoving(c)}>
+          <Trash2 />
+          Remove container
+        </Button>
+      ) : null}
     </div>
   );
 
@@ -530,7 +569,7 @@ function QuickUpdateBody({
         applyLabel="Update documents"
         onCancel={() => setBulk(null)}
         onApply={async () => {
-          const notes = composeDocumentNote({ workingWith: bulkDocs.workingWith, document: bulkDocs.document, reference: bulkDocs.reference, receivedOn: bulkDocs.receivedOn, memo: bulkDocs.memo });
+          const notes = composeDocumentNote({ workingWith: bulkDocs.workingWith, responsible: bulkDocs.responsible, document: bulkDocs.document, reference: bulkDocs.reference, receivedOn: bulkDocs.receivedOn, memo: bulkDocs.memo });
           const done = await apply(selectedIds, { op: 'documents', toStatus: bulkDocs.toStatus, notes }, 'Documents updated');
           if (done) setBulk(null);
         }}
@@ -538,9 +577,9 @@ function QuickUpdateBody({
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Status" htmlFor="qDocStatus" required>
             <Select id="qDocStatus" value={bulkDocs.toStatus} onChange={(e) => setBulkDocs((d) => ({ ...d, toStatus: e.target.value }))}>
-              {Object.entries(DOCUMENT_STATUS_META).map(([value, meta]) => (
+              {DOCUMENT_STATUS_CHOICES.map((value) => (
                 <option key={value} value={value}>
-                  {meta.label}
+                  {DOCUMENT_STATUS_META[value].label} — {DOCUMENT_STATUS_HINT[value]}
                 </option>
               ))}
             </Select>
@@ -554,6 +593,9 @@ function QuickUpdateBody({
                 </option>
               ))}
             </Select>
+          </Field>
+          <Field label="Responsible person" htmlFor="qDocWho">
+            <Input id="qDocWho" value={bulkDocs.responsible} onChange={(e) => setBulkDocs((d) => ({ ...d, responsible: e.target.value }))} />
           </Field>
           <Field label="Document" htmlFor="qDocName">
             <Input id="qDocName" value={bulkDocs.document} onChange={(e) => setBulkDocs((d) => ({ ...d, document: e.target.value }))} placeholder="Original B/L" />
@@ -918,6 +960,57 @@ function QuickUpdateBody({
           const result = await undoLoadingAction(undoOne.shipmentId, '');
           if (!result || !result.ok) throw new Error(result?.error ?? 'The loading could not be undone.');
           toast.success(`${nameOf(undoOne)} is back to Not loaded.`);
+          await refreshAll();
+        }}
+      />
+
+      <EditContainerDialog
+        container={editing}
+        onClose={() => setEditing(null)}
+        onSaved={async () => {
+          setEditing(null);
+          await refreshAll();
+        }}
+      />
+
+      <ConfirmDialog
+        open={unArriving !== null}
+        onOpenChange={(open) => {
+          if (!open) setUnArriving(null);
+        }}
+        title={unArriving ? `Move ${nameOf(unArriving)} back to Not arrived?` : ''}
+        description="For a container marked arrived by mistake. It goes back to Loaded and its arrival date is cleared; the change is kept in its history. Refused once a goods receipt exists for it."
+        confirmLabel="Undo arrival"
+        onConfirm={async () => {
+          if (!unArriving) return;
+          const result = await undoArrivalAction(unArriving.shipmentId, '');
+          if (!result || !result.ok) throw new Error(result?.error ?? 'The arrival could not be undone.');
+          toast.success(`${nameOf(unArriving)} is back to Not arrived.`);
+          await refreshAll();
+        }}
+      />
+
+      <ConfirmDialog
+        open={removing !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemoving(null);
+        }}
+        title={removing ? `Remove container ${nameOf(removing)} from ${contractLabel}?` : ''}
+        description="The container is taken off the order: the supplier is owed its value less, posted as its own entry against the order (the original stays in the journal), and its row, shipment, batch and lot are removed. A full copy goes to the audit log. Refused once anything has been received, costed, sold or paid against it."
+        confirmLabel="Remove container"
+        variant="danger"
+        requireReason
+        reasonLabel="Why is this container being removed?"
+        onConfirm={async (reason) => {
+          if (!removing) return;
+          const result = await removeContainerAction(removing.shipmentId, reason);
+          if (!result.ok) throw new Error(result.error);
+          toast.success(`Container ${nameOf(removing)} removed from the order.`);
+          setSelected((prev) => {
+            const next = new Set(prev);
+            next.delete(removing.shipmentId);
+            return next;
+          });
           await refreshAll();
         }}
       />

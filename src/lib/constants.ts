@@ -615,17 +615,46 @@ export const SHIPMENT_STATUS_META: Record<string, { label: string; tone: BadgeTo
  * them, FID checks them, they are approved, they travel, and they end up with
  * whoever needs them to release the coffee.
  */
+/**
+ * Where the shipping documents are, in the six words the client asked for.
+ *
+ * The stored values are the workflow's own and are not renamed; each of the
+ * six is one of them. The last three are positions earlier screens offered:
+ * an old record still reads correctly, but they are no longer offered.
+ */
 export const DOCUMENT_STATUS_META: Record<string, { label: string; tone: BadgeTone }> = {
-  DRAFT_PENDING: { label: 'Pending', tone: 'neutral' },
-  ORIGINALS_WITH_SUPPLIER: { label: 'With Supplier', tone: 'progress' },
+  DRAFT_PENDING: { label: 'Not Started', tone: 'neutral' },
+  ORIGINALS_WITH_SUPPLIER: { label: 'Pending', tone: 'warning' },
+  UNDER_APPROVAL: { label: 'In Progress', tone: 'progress' },
+  APPROVED: { label: 'Prepared', tone: 'info' },
   DRAFT_RECEIVED: { label: 'Received', tone: 'info' },
-  UNDER_APPROVAL: { label: 'Awaiting Approval', tone: 'warning' },
-  APPROVED: { label: 'Approved', tone: 'info' },
   COMPLETED: { label: 'Complete', tone: 'success' },
   DISPATCHED: { label: 'Sent', tone: 'progress' },
   WITH_BANK: { label: 'With Bank', tone: 'progress' },
   WITH_CUSTOMER: { label: 'With Customer', tone: 'info' },
 };
+
+/** The positions offered when the documents move, in order. */
+export const DOCUMENT_STATUS_CHOICES = ['DRAFT_PENDING', 'ORIGINALS_WITH_SUPPLIER', 'UNDER_APPROVAL', 'APPROVED', 'DRAFT_RECEIVED', 'COMPLETED'] as const;
+
+/** What each position answers — "have the documents been prepared?" — so no one has to guess. */
+export const DOCUMENT_STATUS_HINT: Record<string, string> = {
+  DRAFT_PENDING: 'Nothing done on the documents yet',
+  ORIGINALS_WITH_SUPPLIER: 'Waiting for the documents to come',
+  UNDER_APPROVAL: 'Being prepared or checked',
+  APPROVED: 'Prepared and approved, not yet received',
+  DRAFT_RECEIVED: 'The documents have been received',
+  COMPLETED: 'All documents complete',
+  DISPATCHED: 'Sent on',
+  WITH_BANK: 'With the bank',
+  WITH_CUSTOMER: 'With the customer',
+};
+
+/** The positions to offer: the six, plus the record's own if it is an older one, so it still shows. */
+export function documentStatusOptions(current?: string | null): string[] {
+  const choices: string[] = [...DOCUMENT_STATUS_CHOICES];
+  return current && !choices.includes(current) ? [...choices, current] : choices;
+}
 
 export const TRANSACTION_STATUS_META: Record<string, { label: string; tone: BadgeTone }> = {
   DRAFT: { label: 'Draft', tone: 'neutral' },

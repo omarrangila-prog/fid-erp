@@ -15,8 +15,8 @@ import { Input } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { CONTAINER_STAGE_META, type ContainerStage } from '@/lib/container-stage';
 import { formatQuantityKg, todayInputValue } from '@/lib/format';
-import { markOrderArrivedAction, markContainerArrivedAction, undoLoadingAction, editContainerAction } from '@/server/actions/trading-actions';
-import { Textarea } from '@/components/ui/input';
+import { markOrderArrivedAction, markContainerArrivedAction, undoLoadingAction, undoArrivalAction, removeContainerAction } from '@/server/actions/trading-actions';
+import { EditContainerDialog, type EditableContainer } from '@/components/shipments/edit-container-dialog';
 
 /** Fired by a row's "Receive goods"; the toolbar that owns the receipt sheet listens. */
 export const RECEIVE_GOODS_EVENT = 'fid:receive-goods';
@@ -92,12 +92,15 @@ export function OrderShipments({
   rows,
   canMarkArrived,
   canReceive = false,
+  canRemove = false,
 }: {
   contractId: string;
   summary: OrderSummary;
   rows: OrderShipmentRow[];
   canMarkArrived: boolean;
   canReceive?: boolean;
+  /** Take one container off the order (the add/correct-container permission). */
+  canRemove?: boolean;
 }) {
   const router = useRouter();
   const [confirmOpen, setConfirmOpen] = React.useState(false);
@@ -107,45 +110,15 @@ export function OrderShipments({
   const [arrivingRow, setArrivingRow] = React.useState<OrderShipmentRow | null>(null);
   const [rowAtaDate, setRowAtaDate] = React.useState(todayInputValue());
   const [undoRow, setUndoRow] = React.useState<OrderShipmentRow | null>(null);
-  const [editRow, setEditRow] = React.useState<OrderShipmentRow | null>(null);
-  const [edit, setEdit] = React.useState({ quantityKg: '', containerNumber: '', lotNumber: '', batchNumber: '', reason: '' });
-  const [editBusy, setEditBusy] = React.useState(false);
+  const [unArriveRow, setUnArriveRow] = React.useState<OrderShipmentRow | null>(null);
+  const shipmentCount = new Set(rows.map((r) => r.shipmentId)).size;
+  const [editing, setEditing] = React.useState<EditableContainer | null>(null);
 
   async function undo() {
     if (!undoRow) return;
     const result = await undoLoadingAction(undoRow.shipmentId, '');
     if (!result || !result.ok) throw new Error(result?.error ?? 'The loading could not be undone.');
     toast.success(result.message ?? 'Back to pending loading.');
-    router.refresh();
-  }
-
-  function openEdit(row: OrderShipmentRow) {
-    setEdit({
-      quantityKg: row.orderedKg.replace(/[^\d.]/g, ''),
-      containerNumber: row.containerNumber ?? '',
-      lotNumber: row.lotNumber ?? '',
-      batchNumber: row.batchNumber ?? '',
-      reason: '',
-    });
-    setEditRow(row);
-  }
-
-  async function saveEdit() {
-    if (!editRow) return;
-    setEditBusy(true);
-    const result = await editContainerAction(
-      JSON.stringify({
-        shipmentId: editRow.shipmentId,
-        quantityKg: edit.quantityKg.trim() || undefined,
-        containerNumber: edit.containerNumber.trim() || undefined,
-        lotNumber: edit.lotNumber.trim() || undefined,
-        batchNumber: edit.batchNumber.trim() || undefined,
-        reason: edit.reason.trim() || undefined,
-      }),
-    );
-    setEditBusy(false);
-    if (!result.ok) throw new Error(result.error);
-    toast.success(`Shipment ${editRow.ordinal} corrected.`);
     router.refresh();
   }
 
@@ -263,6 +236,18 @@ export function OrderShipments({
                   <TD>
                     <RowActions
                       inline={2}
+                      destructive={{
+                        status: 'POSTED',
+                        noun: 'container',
+                        cancelLabel: 'Remove container',
+                        show: canRemove && shipmentCount > 1 && row.batchesOnShipment === 1 && !row.received && Number(row.receivedKg.replace(/[^\d.]/g, '')) === 0,
+                        description:
+                          'The container is taken off the order: the supplier is owed its value less, posted as its own entry against the order (the original stays in the journal), and its row, shipment, batch and lot are removed. A full copy goes to the audit log. Refused once anything has been received, costed, sold or paid against it.',
+                        run: async (reason) => {
+                          const result = await removeContainerAction(row.shipmentId, reason ?? '');
+                          return result.ok ? { ok: true } : { ok: false, error: result.error };
+                        },
+                      }}
                       actions={[
                         {
                           label: 'Mark arrived',
@@ -280,10 +265,24 @@ export function OrderShipments({
                           onSelect: () => setUndoRow(row),
                         },
                         {
+                          label: 'Undo arrival',
+                          icon: Undo2,
+                          show: canMarkArrived && row.stage === 'ARRIVED' && !row.received,
+                          onSelect: () => setUnArriveRow(row),
+                        },
+                        {
                           label: 'Edit',
                           icon: Pencil,
                           show: canMarkArrived && !row.received,
-                          onSelect: () => openEdit(row),
+                          onSelect: () =>
+                            setEditing({
+                              shipmentId: row.shipmentId,
+                              label: `Shipment ${row.ordinal}`,
+                              quantityKg: row.orderedKg,
+                              containerNumber: row.containerNumber,
+                              lotNumber: row.lotNumber,
+                              batchNumber: row.batchNumber,
+                            }),
                         },
                         {
                           label: 'Receive goods',
@@ -326,36 +325,23 @@ export function OrderShipments({
       />
 
       <ConfirmDialog
-        open={editRow !== null}
+        open={unArriveRow !== null}
         onOpenChange={(open) => {
-          if (!open) setEditRow(null);
+          if (!open) setUnArriveRow(null);
         }}
-        title={editRow ? `Correct shipment ${editRow.ordinal}` : ''}
-        description="Kilograms, container, lot and batch on this container only. The supplier is owed the difference at the row's price; old and new values are kept."
-        confirmLabel={editBusy ? 'Saving…' : 'Save correction'}
-        onConfirm={saveEdit}
-        body={
-          <div className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Quantity (KG)" htmlFor="editKg" required>
-                <Input id="editKg" inputMode="decimal" className="tnum text-right" value={edit.quantityKg} onChange={(e) => setEdit((p) => ({ ...p, quantityKg: e.target.value }))} />
-              </Field>
-              <Field label="Container number" htmlFor="editCtr">
-                <Input id="editCtr" className="font-mono" value={edit.containerNumber} onChange={(e) => setEdit((p) => ({ ...p, containerNumber: e.target.value }))} />
-              </Field>
-              <Field label="Lot number" htmlFor="editLot">
-                <Input id="editLot" value={edit.lotNumber} onChange={(e) => setEdit((p) => ({ ...p, lotNumber: e.target.value }))} />
-              </Field>
-              <Field label="Batch number" htmlFor="editBatch">
-                <Input id="editBatch" value={edit.batchNumber} onChange={(e) => setEdit((p) => ({ ...p, batchNumber: e.target.value }))} />
-              </Field>
-            </div>
-            <Field label="Reason" htmlFor="editReason" hint="Kept with the old and new values.">
-              <Textarea id="editReason" value={edit.reason} onChange={(e) => setEdit((p) => ({ ...p, reason: e.target.value }))} placeholder="Correction before final receipt" />
-            </Field>
-          </div>
-        }
+        title={unArriveRow ? `Move shipment ${unArriveRow.ordinal} back to Not arrived?` : ''}
+        description="For a container marked arrived by mistake. It goes back to Loaded and its arrival date is cleared; the change is kept in its history. Refused once a goods receipt exists for it."
+        confirmLabel="Undo arrival"
+        onConfirm={async () => {
+          if (!unArriveRow) return;
+          const result = await undoArrivalAction(unArriveRow.shipmentId, '');
+          if (!result || !result.ok) throw new Error(result?.error ?? 'The arrival could not be undone.');
+          toast.success(`Shipment ${unArriveRow.ordinal} is back to Not arrived.`);
+          router.refresh();
+        }}
       />
+
+      <EditContainerDialog container={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); router.refresh(); }} />
 
       <ConfirmDialog
         open={arrivingRow !== null}
