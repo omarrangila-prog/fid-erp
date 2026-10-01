@@ -97,6 +97,8 @@ export default async function LoadingPage() {
       etaDate: row.etaDate ? formatDate(row.etaDate) : '—',
       etaSort: row.etaDate?.getTime() ?? Number.MAX_SAFE_INTEGER,
       etaIso: row.etaDate ? row.etaDate.toISOString().slice(0, 10) : null,
+      ataIso: row.ataDate ? row.ataDate.toISOString().slice(0, 10) : null,
+      documentNote: row.documentNote?.notes ?? null,
       portOfLoading: row.portOfLoading,
       portOfDischarge: row.portOfDischarge,
       remarks: row.remarks,
@@ -147,11 +149,9 @@ export default async function LoadingPage() {
       />
 
       <Callout tone="info" title="One page for every live shipment">
-        Approving a purchase order creates one follow-up row, even when that order has several coffees.
-        Container quantity belongs to the shipment, not to each item line. Mark it loaded, update the ETA,
-        Container quantity belongs to the shipment, not to each item line. After a consignment is marked loaded,
-        update the document status, then mark it arrived, then receive it container by container — without opening
-        the purchase order.
+        Approving a purchase order creates one row here, with every container underneath it. Press Quick Update on a
+        row to mark containers loaded, change each container&rsquo;s ETA and documents, mark them arrived and receive
+        them — one at a time or several together — without opening the purchase order.
       </Callout>
 
       <LoadingSheet
@@ -160,6 +160,7 @@ export default async function LoadingPage() {
         canExport={can(user, PERMISSIONS.REPORTS_EXPORT)}
         canUpdate={can(user, PERMISSIONS.SHIPMENTS_UPDATE)}
         canReceive={can(user, PERMISSIONS.PURCHASES_APPROVE)}
+        canDelete={can(user, PERMISSIONS.PURCHASES_REVERSE)}
         shippingLines={shippingLines}
         ports={ports.map((p) => p.name)}
         warehouses={warehouses.map((w) => ({ id: w.id, name: w.name, code: w.code }))}

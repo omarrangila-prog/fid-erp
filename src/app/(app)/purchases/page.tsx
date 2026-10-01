@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, VISIBLE_DOCUMENT_STATUSES, SHIPMENT_STATUSES_LANDED } from '@/lib/constants';
 import { containerStage } from '@/lib/container-stage';
+import { summariseContainers, ARRIVAL_STATE_META, RECEIPT_STATE_META } from '@/lib/container-summary';
 import { prisma } from '@/lib/db';
 import { dec, toQuantity } from '@/lib/money';
 import { getPayables } from '@/lib/services/receivables';
@@ -30,6 +31,7 @@ export default async function PurchasesPage() {
           select: {
             id: true,
             status: true,
+            documentStatus: true,
             etaDate: true,
             ataDate: true,
             quantityKg: true,
@@ -78,6 +80,25 @@ export default async function PurchasesPage() {
     const outstandingUsd = Number(payable?.outstandingAmountUsd ?? 0);
 
     const itemNames = [...new Set(c.lines.map((l) => l.item.itemName))].join(', ');
+
+    // The containers' daily position, counted the way the loading sheet counts it.
+    const ops =
+      c.status === 'POSTED' && c.shipments.length > 0
+        ? summariseContainers(
+            c.shipments.map((s) => {
+              const ordered = s.batches.reduce((a, b) => a.plus(dec(b.orderedQuantityKg)), dec(0));
+              const got = s.batches.reduce((a, b) => a.plus(dec(b.receivedQuantityKg)), dec(0));
+              const all = got.greaterThan(0) && got.greaterThanOrEqualTo(ordered.minus('0.001'));
+              return {
+                stage: containerStage(s.status, all),
+                containers: containersOn(s),
+                documentStatus: s.documentStatus,
+                etaIso: s.etaDate ? s.etaDate.toISOString().slice(0, 10) : null,
+                partlyReceived: got.greaterThan(0) && !all,
+              };
+            }),
+          )
+        : null;
 
     return {
       id: c.id,
@@ -142,6 +163,21 @@ export default async function PurchasesPage() {
       outstandingUsd,
       outstandingLabel: outstandingUsd > 0 ? formatMoney(outstandingUsd, 'USD') : '—',
       warehouseNames: warehouses.byContract.get(c.id) ?? '',
+      ops: ops
+        ? {
+            loadingLabel: ops.loadingLabel,
+            loadingTone: ops.loaded === ops.total ? 'success' : ops.loaded > 0 ? 'info' : 'neutral',
+            loadedShare: ops.total ? ops.loaded / ops.total : 0,
+            documentsLabel: ops.documentsLabel,
+            documents: ops.documents.map((d) => ({ label: d.label, count: d.count, tone: d.tone })),
+            etaLabel: ops.etaLabel,
+            etaVaries: ops.etaVaries,
+            arrivalTone: ARRIVAL_STATE_META[ops.arrivalState].tone,
+            receiptLabel: ops.receiptLabel,
+            receiptTone: RECEIPT_STATE_META[ops.receiptState].tone,
+            receivedShare: ops.total ? ops.received / ops.total : 0,
+          }
+        : null,
     };
   });
 
@@ -156,6 +192,9 @@ export default async function PurchasesPage() {
         rows={rows}
         canCreate={can(user, PERMISSIONS.PURCHASES_CREATE)}
         canEdit={can(user, PERMISSIONS.PURCHASES_EDIT)}
+        canQuickUpdate={can(user, PERMISSIONS.SHIPMENTS_VIEW)}
+        canDeleteDraft={can(user, PERMISSIONS.PURCHASES_DELETE)}
+        canReverse={can(user, PERMISSIONS.PURCHASES_REVERSE)}
         showCost={showCost}
       />
     </div>

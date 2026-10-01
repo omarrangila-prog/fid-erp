@@ -5,11 +5,13 @@ import Link from 'next/link';
 import { Plus } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { CONTAINER_STAGE_META, type ContainerStage } from '@/lib/container-stage';
-import { Ship, PackageCheck, BookOpen } from 'lucide-react';
+import { Ship, PackageCheck, BookOpen, Zap } from 'lucide-react';
 import { RowActions, viewAction, editAction } from '@/components/shared/row-actions';
 import { Button } from '@/components/ui/button';
 import { Badge, StatusBadge } from '@/components/ui/badge';
-import { TRANSACTION_STATUS_META } from '@/lib/constants';
+import { TRANSACTION_STATUS_META, type BadgeTone } from '@/lib/constants';
+import { QuickUpdatePanel } from '@/components/shipments/quick-update-panel';
+import { deletePurchaseContractAction, reversePurchaseContractAction } from '@/server/actions/trading-actions';
 
 export type PurchaseShipmentRow = {
   /** The batch, or the shipment when it has none yet. */
@@ -61,6 +63,20 @@ export type PurchaseRow = {
   outstandingLabel: string;
   outstandingUsd: number;
   warehouseNames: string;
+  /** The containers' daily position — loaded, documents, ETA, received — or null before approval. */
+  ops: {
+    loadingLabel: string;
+    loadingTone: BadgeTone;
+    loadedShare: number;
+    documentsLabel: string;
+    documents: Array<{ label: string; count: number; tone: BadgeTone }>;
+    etaLabel: string;
+    etaVaries: boolean;
+    arrivalTone: BadgeTone;
+    receiptLabel: string;
+    receiptTone: BadgeTone;
+    receivedShare: number;
+  } | null;
 };
 
 /**
@@ -78,12 +94,22 @@ export function PurchasesClient({
   canCreate,
   showCost,
   canEdit = false,
+  canQuickUpdate = false,
+  canDeleteDraft = false,
+  canReverse = false,
 }: {
   rows: PurchaseRow[];
   canCreate: boolean;
   showCost: boolean;
   canEdit?: boolean;
+  /** May open Quick Update; what it may change inside is checked again there. */
+  canQuickUpdate?: boolean;
+  canDeleteDraft?: boolean;
+  /** Deleting an approved order (and its shipment) reverses it. */
+  canReverse?: boolean;
 }) {
+  const [quick, setQuick] = React.useState<{ id: string; label: string } | null>(null);
+
   const columns: DataColumn<PurchaseRow>[] = [
     {
       id: 'contract',
@@ -248,6 +274,56 @@ export function PurchasesClient({
       },
     },
     {
+      id: 'loadStatus',
+      header: 'Load Status',
+      mobile: 'meta',
+      sortValue: (r) => r.ops?.loadedShare ?? -1,
+      exportValue: (r) => r.ops?.loadingLabel ?? '',
+      cell: (r) => (r.ops ? <Badge tone={r.ops.loadingTone}>{r.ops.loadingLabel}</Badge> : <span className="text-ink-subtle">—</span>),
+    },
+    {
+      id: 'documents',
+      header: 'Documents',
+      hideable: true,
+      exportValue: (r) => r.ops?.documentsLabel ?? '',
+      cell: (r) => {
+        if (!r.ops) return <span className="text-ink-subtle">—</span>;
+        if (r.ops.documents.length === 1) return <Badge tone={r.ops.documents[0].tone}>{r.ops.documents[0].label}</Badge>;
+        return (
+          <span className="block min-w-28 text-xs">
+            {r.ops.documents.map((d) => (
+              <span key={d.label} className="block whitespace-nowrap">
+                <span className="tnum font-semibold">{d.count}</span> {d.label}
+              </span>
+            ))}
+          </span>
+        );
+      },
+    },
+    {
+      id: 'eta',
+      header: 'ETA',
+      hideable: true,
+      exportValue: (r) => r.ops?.etaLabel ?? '',
+      cell: (r) =>
+        r.ops ? (
+          <span className="block whitespace-nowrap">
+            {r.ops.etaLabel}
+            {r.ops.etaVaries ? <span className="block text-[11px] text-ink-subtle">Multiple ETAs</span> : null}
+          </span>
+        ) : (
+          <span className="text-ink-subtle">—</span>
+        ),
+    },
+    {
+      id: 'receipt',
+      header: 'Receipt',
+      mobile: 'meta',
+      sortValue: (r) => r.ops?.receivedShare ?? -1,
+      exportValue: (r) => r.ops?.receiptLabel ?? '',
+      cell: (r) => (r.ops ? <Badge tone={r.ops.receiptTone}>{r.ops.receiptLabel}</Badge> : <span className="text-ink-subtle">—</span>),
+    },
+    {
       id: 'shipments',
       header: 'Shipments',
       numeric: true,
@@ -264,7 +340,26 @@ export function PurchasesClient({
       mobile: 'action',
       pin: 'right',
       cell: (r) => (
+        <div className="flex items-center justify-end gap-1">
+          {canQuickUpdate && r.status === 'POSTED' && r.shipmentCount > 0 ? (
+            <Button size="sm" variant="accent" className="shrink-0" onClick={() => setQuick({ id: r.id, label: r.contractReference })} data-testid="quick-update-open">
+              <Zap />
+              Quick Update
+            </Button>
+          ) : null}
         <RowActions
+          destructive={{
+            status: r.status,
+            noun: r.status === 'DRAFT' ? 'purchase order' : 'shipment',
+            cancelLabel: 'Delete shipment',
+            show: r.status === 'DRAFT' ? canDeleteDraft : r.status === 'POSTED' && canReverse,
+            description:
+              'The whole shipment — this purchase order and every container on it — is taken back out of the books: the supplier payable is reversed and the batches retired. Both entries stay in the journal and the audit log keeps who did it and why. Refused once anything has been received, sold, paid for or costed.',
+            run: async (reason) => {
+              const result = r.status === 'DRAFT' ? await deletePurchaseContractAction(r.id) : await reversePurchaseContractAction(r.id, reason ?? '');
+              return result.ok ? { ok: true } : { ok: false, error: result.error };
+            },
+          }}
           actions={[
             viewAction(`/purchases/${r.id}`),
             editAction(`/purchases/${r.id}/edit`, canEdit && r.status === 'DRAFT'),
@@ -280,11 +375,13 @@ export function PurchasesClient({
             { label: 'Supplier ledger', href: '/ledgers/vendors', icon: BookOpen },
           ]}
         />
+        </div>
       ),
     },
   ];
 
   return (
+    <>
     <DataTable
       share={{ report: 'purchase-orders', title: 'Purchase Orders' }}
       prefsKey="purchases"
@@ -377,6 +474,17 @@ export function PurchasesClient({
         ) : undefined
       }
     />
+    {quick ? (
+      <QuickUpdatePanel
+        open
+        contractId={quick.id}
+        contractLabel={quick.label}
+        onOpenChange={(open) => {
+          if (!open) setQuick(null);
+        }}
+      />
+    ) : null}
+    </>
   );
 }
 

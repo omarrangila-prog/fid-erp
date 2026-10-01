@@ -5,10 +5,14 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Ship, Anchor, PackageCheck, FileText, Boxes, CalendarClock, Calculator, Undo2 } from 'lucide-react';
+import { Ship, Anchor, PackageCheck, FileText, Boxes, CalendarClock, Calculator, Undo2, Zap } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ui/confirm';
-import { undoLoadingAction } from '@/server/actions/trading-actions';
-import { RowActions } from '@/components/shared/row-actions';
+import { undoLoadingAction, reversePurchaseContractAction } from '@/server/actions/trading-actions';
+import { RowActions, type DestructiveAction, type RowAction } from '@/components/shared/row-actions';
+import { Button } from '@/components/ui/button';
+import { QuickUpdatePanel, type QuickIntent } from '@/components/shipments/quick-update-panel';
+import { summariseContainers, ARRIVAL_STATE_META, RECEIPT_STATE_META } from '@/lib/container-summary';
+import { receivableBatches as receivableRows } from '@/lib/receivable-batches';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -20,6 +24,7 @@ import { EtaDialog, ArrivedDialog } from '@/app/(app)/loading/eta-dialog';
 import { DocumentStatusDialog } from '@/app/(app)/loading/document-status-dialog';
 import { ManageContainersDialog } from '@/app/(app)/loading/manage-containers-dialog';
 import { GoodsReceiptDialog, type ReceivableBatch } from '@/app/(app)/purchases/[id]/goods-receipt-dialog';
+import { cn } from '@/lib/utils';
 
 /** Statuses from which "loaded" is still ahead rather than behind. */
 const NOT_YET_LOADED = ['CONTRACT_CREATED', 'AWAITING_LOADING'];
@@ -100,6 +105,10 @@ export type LoadingRow = {
   /** The ETA as `2026-04-18`, or null. Separate from `etaSort`, which is a
    *  sort key and carries a sentinel when there is no date. */
   etaIso: string | null;
+  /** When it arrived, `2026-10-12`, once it has. */
+  ataIso: string | null;
+  /** The last note left on the documents, if any. */
+  documentNote: string | null;
   remarks: string | null;
   saleStatus: 'UNSOLD' | 'PARTIALLY_SOLD' | 'FULLY_SOLD';
   paymentStatus: string;
@@ -134,39 +143,24 @@ function itemNames(row: LoadingRow) {
 }
 
 
+/** What is still to be received on one shipment, by the rule every screen shares. */
 function receivableBatches(row: LoadingRow): ReceivableBatch[] {
-  const lines = row.lines.filter((line) => Number(line.outstandingKg) > 0.001);
-
-  // Every container on the shipment handed to a line: its own where it has
-  // one, otherwise the line with the most coffee per container so far — the
-  // same rule the purchase order uses, so both screens show the same rows.
-  const containersByBatch = new Map<string, string[]>(lines.map((line) => [line.batchId, []]));
-  for (const containerNumber of row.containerNumbers) {
-    const owner = lines.find((line) => line.containerNumber === containerNumber);
-    const target =
-      owner ??
-      lines.reduce<LoadingLine | null>((best, line) => {
-        const perContainer = (l: LoadingLine) => l.quantityKg / ((containersByBatch.get(l.batchId)?.length ?? 0) + 1);
-        return !best || perContainer(line) > perContainer(best) ? line : best;
-      }, null);
-    if (target) containersByBatch.get(target.batchId)?.push(containerNumber);
-  }
-
-  return lines.map((line) => ({
-    batchId: line.batchId,
-    batchNumber: line.batchNumber,
+  return receivableRows({
+    status: row.status,
     shipmentOrdinal: row.shipmentOrdinal,
-    arrived: LANDED.includes(row.status),
-    itemName: line.itemName,
-    lotNumber: line.lotNumber,
-    containerNumber: line.containerNumber,
-    containerNumbers: containersByBatch.get(line.batchId) ?? [],
-    orderedKg: String(line.quantityKg),
-    receivedKg: String(line.receivedKg),
-    outstandingKg: line.outstandingKg,
-    bagWeightKg: line.bagWeightKg,
-    traceabilityPending: line.traceabilityPending,
-  }));
+    containerNumbers: row.containerNumbers,
+    lines: row.lines.map((line) => ({
+      batchId: line.batchId,
+      batchNumber: line.batchNumber,
+      itemName: line.itemName,
+      lotNumber: line.lotNumber,
+      containerNumber: line.containerNumber,
+      quantityKg: line.quantityKg,
+      receivedKg: line.receivedKg,
+      bagWeightKg: line.bagWeightKg,
+      traceabilityPending: line.traceabilityPending,
+    })),
+  });
 }
 
 /**
@@ -187,6 +181,7 @@ export function LoadingSheet({
   canExport,
   canUpdate,
   canReceive,
+  canDelete = false,
   shippingLines,
   ports = [],
   warehouses,
@@ -198,6 +193,8 @@ export function LoadingSheet({
   /** Whether this user may move a consignment along. */
   canUpdate: boolean;
   canReceive: boolean;
+  /** Deleting a shipment reverses its purchase order; the server checks this too. */
+  canDelete?: boolean;
   shippingLines: Array<{ id: string; name: string }>;
   ports?: string[];
   warehouses: Array<{ id: string; name: string; code: string }>;
@@ -211,6 +208,7 @@ export function LoadingSheet({
   const [documentsRow, setDocumentsRow] = React.useState<LoadingRow | null>(null);
   const [containersRow, setContainersRow] = React.useState<LoadingRow | null>(null);
   const [undoRow, setUndoRow] = React.useState<LoadingRow | null>(null);
+  const [quick, setQuick] = React.useState<{ contractId: string; label: string; intent: QuickIntent } | null>(null);
   const router = useRouter();
 
 
@@ -247,7 +245,7 @@ export function LoadingSheet({
   };
 
   /** Everything one container / shipment allows at its stage. */
-  function shipmentActions(r: LoadingRow) {
+  function shipmentActions(r: LoadingRow, destructive?: DestructiveAction) {
       const landed = LANDED.includes(r.status);
       const sailing = r.status === 'LOADED' || r.status === 'IN_TRANSIT';
       const canReceiveNow = landed && !r.fullyReceived && receivableBatches(r).length > 0;
@@ -299,6 +297,7 @@ export function LoadingSheet({
             { label: 'Purchase order', href: `/purchases/${r.contractId}`, icon: FileText, overflowOnly: true },
             { label: 'Shipment costing', href: `/shipments/${r.shipmentId}`, icon: Calculator, overflowOnly: true },
           ]}
+          destructive={destructive}
         />
       );
   }
@@ -449,10 +448,69 @@ export function LoadingSheet({
     );
   }
 
+  /** The order's containers in the words every screen uses: 2 / 3 Loaded, 1 / 3 Arrived… */
+  function summaryOf(g: OrderGroup) {
+    return summariseContainers(
+      g.shipments.map((r) => ({
+        stage: containerStage(r.status, r.fullyReceived),
+        containers: Math.max(r.containers, 1),
+        documentStatus: r.documentStatus,
+        etaIso: r.etaIso,
+        partlyReceived: r.receivedKg > 0 && !r.fullyReceived,
+      })),
+    );
+  }
+
   function documentsSummary(g: OrderGroup) {
-    const statuses = distinct(g.shipments.map((r) => r.documentStatus));
-    if (statuses.length === 1) return documents.cell!(g.shipments[0]);
-    return <span className="text-xs text-ink-muted">{statuses.map((st) => DOCUMENT_STATUS_META[st]?.label ?? st).join(' · ')}</span>;
+    if (g.shipments.length === 1) return documents.cell!(g.shipments[0]);
+    const summary = summaryOf(g);
+    if (summary.documents.length === 1) return <Badge tone={summary.documents[0].tone}>{summary.documents[0].label}</Badge>;
+    return (
+      <span className="block min-w-28 text-xs">
+        {summary.documents.map((d) => (
+          <span key={d.status} className="block whitespace-nowrap">
+            <span className="tnum font-semibold">{d.count}</span> {d.label}
+          </span>
+        ))}
+      </span>
+    );
+  }
+
+  /** Deleting the shipment deletes its purchase order: the same rules and the same trail as on the order. */
+  function deleteShipment(g: OrderGroup): DestructiveAction {
+    return {
+      status: 'POSTED',
+      noun: 'shipment',
+      cancelLabel: 'Delete shipment',
+      show: canDelete,
+      description:
+        'The whole shipment — its purchase order and every container on it — is taken back out of the books: the supplier payable is reversed and the batches retired. Both entries stay in the journal and the audit log keeps who did it and why. Refused once anything has been received, sold, paid for or costed.',
+      run: async (reason) => {
+        const result = await reversePurchaseContractAction(g.contractId, reason ?? '');
+        return result.ok ? { ok: true } : { ok: false, error: result.error };
+      },
+    };
+  }
+
+  function openQuick(g: OrderGroup, intent: QuickIntent = null) {
+    setQuick({ contractId: g.contractId, label: g.contractReference, intent });
+  }
+
+  /** What the order needs next, most pressing first; Quick Update does the rest. */
+  function orderActions(g: OrderGroup) {
+    const summary = summaryOf(g);
+    const actions: RowAction[] = [];
+    if (canReceive && summary.arrived > summary.received) actions.push({ label: 'Receive arrived', icon: PackageCheck, onSelect: () => openQuick(g, 'receive') });
+    if (canUpdate && summary.loaded > summary.arrived) actions.push({ label: 'Mark containers arrived', icon: Anchor, onSelect: () => openQuick(g, 'arrive') });
+    if (canUpdate && summary.loaded < summary.total) actions.push({ label: 'Load containers', icon: Ship, onSelect: () => openQuick(g, 'load') });
+    if (canUpdate) actions.push({ label: 'Update ETAs', icon: CalendarClock, onSelect: () => openQuick(g, 'eta') });
+    if (canUpdate) actions.push({ label: 'Update documents', icon: FileText, onSelect: () => openQuick(g, 'documents') });
+    actions.push(
+      { label: 'View receipt', href: `/purchases/${g.contractId}`, icon: PackageCheck, show: g.shipments.some((r) => r.receivedKg > 0), overflowOnly: true },
+      { label: 'Purchase order', href: `/purchases/${g.contractId}`, icon: FileText, overflowOnly: true },
+      { label: 'Trace this reference', href: `/trace?ref=${encodeURIComponent(g.contractReference)}`, icon: Boxes, overflowOnly: true },
+    );
+    return <RowActions inline={1} actions={actions} destructive={deleteShipment(g)} />;
   }
 
   const groupColumns: DataColumn<OrderGroup>[] = [
@@ -501,6 +559,7 @@ export function LoadingSheet({
       id: 'containers',
       header: 'Containers',
       numeric: true,
+      mobile: 'meta',
       sortValue: (g) => containerCount(g),
       exportValue: (g) => distinct(g.shipments.flatMap((r) => r.containerNumbers)).join(', ') || String(containerCount(g)),
       cell: (g) => {
@@ -522,6 +581,105 @@ export function LoadingSheet({
       cell: (g) => <span className="tnum whitespace-nowrap font-medium">{totalKg(g).toLocaleString('en-US', { maximumFractionDigits: 2 })} KG</span>,
     },
     {
+      // Loaded or not, container by container: "2 / 3 Loaded".
+      id: 'loadStatus',
+      header: 'Load Status',
+      mobile: 'meta',
+      sortValue: (g) => {
+        const summary = summaryOf(g);
+        return summary.total ? summary.loaded / summary.total : 0;
+      },
+      exportValue: (g) => summaryOf(g).loadingLabel,
+      cell: (g) => {
+        const summary = summaryOf(g);
+        return (
+          <Badge tone={summary.loaded === summary.total ? 'success' : summary.loaded > 0 ? 'info' : 'neutral'} data-summary="loading">
+            {summary.loadingLabel}
+          </Badge>
+        );
+      },
+    },
+    {
+      id: 'documents',
+      header: 'Documents',
+      hideable: true,
+      exportValue: (g) => summaryOf(g).documentsLabel,
+      cell: (g) => documentsSummary(g),
+    },
+    {
+      id: 'eta',
+      header: 'ETA',
+      mobile: 'meta',
+      sortValue: (g) => Math.min(...g.shipments.map((r) => r.etaSort)),
+      exportValue: (g) => etaSummary(g),
+      cell: (g) =>
+        g.shipments.length === 1 ? (
+          eta.cell!(g.shipments[0])
+        ) : (
+          <span className="block whitespace-nowrap" title="Expand, or use Quick Update, to see and change each container's ETA">
+            {etaSummary(g)}
+            {summaryOf(g).etaVaries ? <span className="block text-[11px] text-ink-subtle">Multiple ETAs</span> : null}
+          </span>
+        ),
+    },
+    {
+      id: 'arrival',
+      header: 'Arrival',
+      mobile: 'meta',
+      sortValue: (g) => {
+        const summary = summaryOf(g);
+        return summary.total ? summary.arrived / summary.total : 0;
+      },
+      exportValue: (g) => summaryOf(g).arrivalLabel,
+      cell: (g) => {
+        const summary = summaryOf(g);
+        return (
+          <span className="block whitespace-nowrap">
+            <Badge tone={ARRIVAL_STATE_META[summary.arrivalState].tone} data-summary="arrival">
+              {summary.arrivalLabel}
+            </Badge>
+            {summary.arrivalState === 'PARTIALLY_ARRIVED' ? <span className="block text-[11px] text-ink-subtle">Partially arrived</span> : null}
+          </span>
+        );
+      },
+    },
+    {
+      id: 'receipt',
+      header: 'Receipt',
+      mobile: 'meta',
+      sortValue: (g) => {
+        const summary = summaryOf(g);
+        return summary.total ? summary.received / summary.total : 0;
+      },
+      exportValue: (g) => summaryOf(g).receiptLabel,
+      cell: (g) => {
+        const summary = summaryOf(g);
+        return (
+          <Badge tone={RECEIPT_STATE_META[summary.receiptState].tone} data-summary="receipt">
+            {summary.receiptLabel}
+          </Badge>
+        );
+      },
+    },
+    {
+      id: 'warehouse',
+      header: 'Warehouse',
+      hideable: true,
+      exportValue: (g) => distinct(g.shipments.flatMap((r) => r.warehouseNames.split(', '))).join(', '),
+      cell: (g) => {
+        const names = distinct(g.shipments.flatMap((r) => r.warehouseNames.split(', ')));
+        return names.length > 0 ? <span className="text-xs">{names.join(', ')}</span> : <span className="text-xs text-ink-subtle">Not yet landed</span>;
+      },
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      mobile: 'badge',
+      sortValue: (g) => displayStatus(g.shipments[0]).label,
+      exportValue: (g) => distinct(g.shipments.map((r) => displayStatus(r).label)).join(', '),
+      cell: (g) => statusSummary(g),
+    },
+    {
       id: 'shippingLine',
       header: 'Shipping line',
       hideable: true,
@@ -540,36 +698,6 @@ export function LoadingSheet({
         </span>
       ),
     },
-    {
-      id: 'status',
-      header: 'Status',
-      mobile: 'badge',
-      sortValue: (g) => displayStatus(g.shipments[0]).label,
-      exportValue: (g) => distinct(g.shipments.map((r) => displayStatus(r).label)).join(', '),
-      cell: (g) => statusSummary(g),
-    },
-    {
-      id: 'eta',
-      header: 'ETA',
-      mobile: 'meta',
-      sortValue: (g) => Math.min(...g.shipments.map((r) => r.etaSort)),
-      exportValue: (g) => etaSummary(g),
-      cell: (g) =>
-        g.shipments.length === 1 ? (
-          eta.cell!(g.shipments[0])
-        ) : (
-          <span className="whitespace-nowrap" title="Expand to see and change each container's ETA">
-            {etaSummary(g)}
-          </span>
-        ),
-    },
-    {
-      id: 'documents',
-      header: 'Documents',
-      hideable: true,
-      exportValue: (g) => distinct(g.shipments.map((r) => DOCUMENT_STATUS_META[r.documentStatus]?.label ?? r.documentStatus)).join(', '),
-      cell: (g) => documentsSummary(g),
-    },
     // Morocco imports under its own name and sells on afterwards, so only Dubai's sheet names a consignee.
     ...(!isDubai ? [] : [{
       id: 'consignee',
@@ -586,20 +714,17 @@ export function LoadingSheet({
       id: 'actions',
       header: 'Actions',
       printHidden: true,
+      mobile: 'action',
       pin: 'right',
-      cell: (g) =>
-        g.shipments.length === 1 ? (
-          shipmentActions(g.shipments[0])
-        ) : (
-          <RowActions
-            inline={1}
-            actions={[
-              { label: 'Purchase order', href: `/purchases/${g.contractId}`, icon: FileText },
-              { label: 'Receive goods', href: `/purchases/${g.contractId}`, icon: PackageCheck, overflowOnly: true },
-              { label: 'Trace this reference', href: `/trace?ref=${encodeURIComponent(g.contractReference)}`, icon: Boxes, overflowOnly: true },
-            ]}
-          />
-        ),
+      cell: (g) => (
+        <div className="flex items-center justify-end gap-1">
+          <Button size="sm" variant="accent" className="shrink-0" onClick={() => openQuick(g)} data-testid="quick-update-open">
+            <Zap />
+            Quick Update
+          </Button>
+          {g.shipments.length === 1 ? shipmentActions(g.shipments[0], deleteShipment(g)) : orderActions(g)}
+        </div>
+      ),
     },
   ];
 
@@ -616,7 +741,9 @@ export function LoadingSheet({
               <th className="py-1.5 pr-3 font-medium">Batch</th>
               <th className="py-1.5 pr-3 text-right font-medium">KG</th>
               <th className="py-1.5 pr-3 font-medium">ETA</th>
+              <th className="py-1.5 pr-3 font-medium">Documents</th>
               <th className="py-1.5 pr-3 font-medium">Status</th>
+              <th className="py-1.5 pr-3 font-medium">Receipt</th>
               <th className="py-1.5 text-right font-medium">Actions</th>
             </tr>
           </thead>
@@ -637,7 +764,18 @@ export function LoadingSheet({
                   <td className="py-1.5 pr-3 text-xs">{line?.batchNumber ?? '—'}</td>
                   <td className="tnum py-1.5 pr-3 text-right">{line?.quantity ?? row.quantity}</td>
                   <td className="py-1.5 pr-3">{index === 0 ? eta.cell!(row) : <span className="text-xs text-ink-subtle">same shipment</span>}</td>
+                  <td className="py-1.5 pr-3">
+                    {index === 0 ? (
+                      <span className="block max-w-56">
+                        {documents.cell!(row)}
+                        {row.documentNote ? <span className="mt-0.5 block text-[11px] leading-snug text-ink-subtle">{row.documentNote}</span> : null}
+                      </span>
+                    ) : null}
+                  </td>
                   <td className="py-1.5 pr-3">{index === 0 ? status.cell!(row) : null}</td>
+                  <td className={cn('py-1.5 pr-3 text-xs', line && line.receivedKg > 0 ? 'text-forest-800' : 'text-ink-muted')}>
+                    {line ? (line.receivedKg >= line.quantityKg - 0.001 && line.receivedKg > 0 ? 'Received' : line.receivedKg > 0 ? `${line.received} received` : 'Not received') : '—'}
+                  </td>
                   <td className="py-1.5 text-right">{index === 0 ? shipmentActions(row) : null}</td>
                 </tr>
               )),
@@ -759,6 +897,18 @@ export function LoadingSheet({
           lines={containersRow.lines}
           knownNumbers={containersRow.containerNumbers}
           onClose={() => setContainersRow(null)}
+        />
+      ) : null}
+
+      {quick ? (
+        <QuickUpdatePanel
+          open
+          contractId={quick.contractId}
+          contractLabel={quick.label}
+          intent={quick.intent}
+          onOpenChange={(open) => {
+            if (!open) setQuick(null);
+          }}
         />
       ) : null}
 

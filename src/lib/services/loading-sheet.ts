@@ -118,6 +118,11 @@ export type LoadingSheetRow = {
   portOfDischarge: string | null;
   billOfLading: string | null;
   etaDate: Date | null;
+  /** When it actually arrived, once it has. */
+  ataDate: Date | null;
+  loadingDate: Date | null;
+  /** The last word on the documents: who moved them, when, and the note left. */
+  documentNote: { status: string; notes: string | null; changedBy: string; changedAt: Date } | null;
   remarks: string | null;
 
   /** Derived from the lines' own allocations, never stored. */
@@ -153,7 +158,7 @@ function rollUpPayment(allocations: Allocation[]): LoadingSheetRow['paymentStatu
   return 'UNPAID';
 }
 
-export async function getLoadingSheet(companyId: string): Promise<LoadingSheetRow[]> {
+export async function getLoadingSheet(companyId: string, options?: { contractId?: string }): Promise<LoadingSheetRow[]> {
   const company = await prisma.company.findUniqueOrThrow({
     where: { id: companyId },
     select: { name: true },
@@ -163,10 +168,19 @@ export async function getLoadingSheet(companyId: string): Promise<LoadingSheetRo
   await repairSharedContainerAssignments(prisma as Tx, companyId);
 
   const shipments = await prisma.shipment.findMany({
-    where: { companyId, purchaseContract: { status: 'POSTED' } },
+    where: {
+      companyId,
+      purchaseContract: { status: 'POSTED' },
+      ...(options?.contractId ? { purchaseContractId: options.contractId } : {}),
+    },
     orderBy: [{ createdAt: 'desc' }],
     include: {
       shippingLine: { select: { id: true, name: true } },
+      docStatusHistory: {
+        orderBy: { changedAt: 'desc' },
+        take: 1,
+        select: { toStatus: true, notes: true, changedAt: true, changedBy: { select: { name: true } } },
+      },
       customer: { select: { customerName: true } },
       containerList: { orderBy: { createdAt: 'asc' }, select: { id: true, containerNumber: true } },
       purchaseContract: {
@@ -392,6 +406,16 @@ export async function getLoadingSheet(companyId: string): Promise<LoadingSheetRo
         portOfDischarge: shipment.portOfDischarge,
         billOfLading: shipment.billOfLading,
         etaDate: shipment.etaDate,
+        ataDate: shipment.ataDate,
+        loadingDate: shipment.loadingDate,
+        documentNote: shipment.docStatusHistory[0]
+          ? {
+              status: shipment.docStatusHistory[0].toStatus,
+              notes: shipment.docStatusHistory[0].notes,
+              changedBy: shipment.docStatusHistory[0].changedBy.name,
+              changedAt: shipment.docStatusHistory[0].changedAt,
+            }
+          : null,
         remarks: shipment.notes,
 
         saleStatus,

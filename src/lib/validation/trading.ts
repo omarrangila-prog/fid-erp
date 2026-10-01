@@ -319,6 +319,31 @@ export const documentStatusSchema = z.object({
   notes: optionalText(600),
 });
 
+/**
+ * One change to several containers on one order, from Quick Update. Each kind
+ * carries only what its own service needs; the services decide the rest.
+ */
+export const quickUpdateSchema = z.object({
+  contractId: cuid,
+  shipmentIds: z.array(cuid).min(1, 'Tick at least one container.').max(60),
+  change: z.discriminatedUnion('op', [
+    z.object({ op: z.literal('eta'), etaDate: optionalDateString }),
+    z.object({ op: z.literal('documents'), toStatus: documentStatusSchema.shape.toStatus, notes: optionalText(600) }),
+    z.object({ op: z.literal('arrived'), ataDate: dateString('Arrival date') }),
+    z.object({
+      op: z.literal('loaded'),
+      loadingDate: dateString('Loading date'),
+      etaDate: optionalDateString,
+      shippingLineId: optionalCuid,
+      bookingNumber: optionalText(60),
+      billOfLading: optionalText(60),
+      portOfLoading: optionalText(120),
+      portOfDischarge: optionalText(120),
+      notes: optionalText(600),
+    }),
+  ]),
+});
+
 export const shipmentContainersSchema = z.object({
   lines: z
     .array(

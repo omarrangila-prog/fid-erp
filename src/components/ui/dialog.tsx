@@ -104,9 +104,11 @@ export function Sheet({
   description?: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
-  width?: 'md' | 'lg' | 'xl';
+  width?: 'md' | 'lg' | 'xl' | 'full';
 }) {
-  const widths = { md: 'sm:w-[32rem]', lg: 'sm:w-[42rem]', xl: 'sm:w-[54rem]' } as const;
+  // `full`: a working panel with a table in it — nearly the whole screen on a
+  // laptop, the whole screen on a phone.
+  const widths = { md: 'sm:w-[32rem]', lg: 'sm:w-[42rem]', xl: 'sm:w-[54rem]', full: 'sm:w-[min(84rem,100vw)] max-sm:max-h-[100dvh] max-sm:rounded-none max-sm:top-0' } as const;
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>

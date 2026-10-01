@@ -230,14 +230,21 @@ export async function changeDocumentStatus(input: {
       where: { id: input.shipmentId, companyId: input.companyId },
     });
     if (!shipment) throw new NotFoundError('Shipment');
-    if (shipment.documentStatus === input.toStatus) {
+    // The same position again is a progress note ("waiting for the original
+    // B/L"), which is worth keeping; the same position with nothing to say is
+    // a mistake, and says so.
+    const note = input.notes?.trim() || null;
+    if (shipment.documentStatus === input.toStatus && !note) {
       throw new BusinessRuleError('The documents are already in that status.');
     }
 
-    const updated = await tx.shipment.update({
-      where: { id: shipment.id },
-      data: { documentStatus: input.toStatus, updatedById: input.userId },
-    });
+    const updated =
+      shipment.documentStatus === input.toStatus
+        ? shipment
+        : await tx.shipment.update({
+            where: { id: shipment.id },
+            data: { documentStatus: input.toStatus, updatedById: input.userId },
+          });
 
     await tx.shipmentDocumentStatusHistory.create({
       data: {
@@ -245,7 +252,7 @@ export async function changeDocumentStatus(input: {
         fromStatus: shipment.documentStatus,
         toStatus: input.toStatus,
         changedById: input.userId,
-        notes: input.notes ?? null,
+        notes: note,
       },
     });
 
@@ -256,7 +263,7 @@ export async function changeDocumentStatus(input: {
       entityType: 'Shipment',
       entityId: shipment.id,
       before: { documentStatus: shipment.documentStatus },
-      after: { documentStatus: input.toStatus },
+      after: { documentStatus: input.toStatus, ...(note ? { notes: note } : {}) },
     });
 
     return updated;

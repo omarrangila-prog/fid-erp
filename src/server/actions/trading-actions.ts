@@ -165,6 +165,9 @@ export async function reversePurchaseContractAction(id: string, reason: string):
     await reversePurchaseContract({ id, companyId: user.activeCompany.id, userId: user.id, reason });
     revalidatePath('/purchases');
     revalidatePath(`/purchases/${id}`);
+    // A deleted order's shipment leaves the loading sheet and the shipment list too.
+    revalidatePath('/loading');
+    revalidatePath('/shipments');
     revalidatePath('/dashboard');
     return { ok: true, data: undefined };
   } catch (error) {
