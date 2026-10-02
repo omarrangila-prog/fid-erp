@@ -6,6 +6,7 @@ import { createSalesInvoice, postSalesInvoice } from '@/lib/services/sales';
 import { createReceipt, postReceipt } from '@/lib/services/receipt';
 import { getItemProfitability, getItemProfitabilityChecks } from '@/lib/services/item-profitability';
 import { getShipmentProfitability } from '@/lib/services/profitability';
+import { reverseGoodsReceipt } from '@/lib/services/goods-receipt';
 
 /**
  * Stock on Hand, by item — worked by hand and checked against the service.
@@ -246,6 +247,34 @@ describe('Stock on Hand by item', () => {
     expect(checks.map((c) => c.key)).toEqual(
       expect.arrayContaining(['stock-equation', 'stock-current', 'stock-warehouses', 'sold-kg', 'revenue', 'cogs-usd', 'cogs-local', 'outstanding']),
     );
+  }, 120_000);
+
+  it('leaves a deleted receipt out: the coffee came in and went back, and its order is not among the shipments', async () => {
+    const before = (await getItemProfitability({ companyId })).items.find((i) => i.itemId === itemC)!;
+    const contract = await createPurchaseContract(
+      {
+        companyId, contractDate: utcDate('2026-08-18'), vendorId: masters.vendor.id, currency: 'USD',
+        rateToUsd: '1', rateLocalPerUsd: '9.6', freightAmount: '0', contractReference: 'ICUL/FID/IP/DEL',
+        lines: [{ itemId: itemC, quantity: '2000', unit: 'KG', unitPrice: '5.00', bagWeightKg: '60', containerNumber: 'CONT-DEL', lotNumber: 'LOT-DEL', batchNumber: 'BATCH-DEL' }],
+      },
+      ctx.admin.id,
+    );
+    await postPurchaseContract({ id: contract.id, companyId, userId: ctx.admin.id });
+    const { grn } = await receiveEverything({ companyId, purchaseContractId: contract.id, warehouseId: first, userId: ctx.admin.id, receiptDate: utcDate('2026-08-20') });
+    await reverseGoodsReceipt({ id: grn.id, companyId, userId: ctx.admin.id, reason: 'Mistaken entry' });
+
+    const report = await getItemProfitability({ companyId });
+    const after = report.items.find((i) => i.itemId === itemC)!;
+    // Nothing moved for good, so nothing changes...
+    expect(n(after.receivedKg)).toBe(n(before.receivedKg));
+    expect(n(after.onHandKg)).toBe(n(before.onHandKg));
+    expect(n(after.availableKg)).toBe(n(before.availableKg));
+    // ...and the receipt that was taken back is not in the item's breakdown.
+    expect(JSON.stringify(after)).not.toContain('BATCH-DEL');
+    expect(JSON.stringify(after)).not.toContain('ICUL/FID/IP/DEL');
+    // The totals still agree with every other screen.
+    const checks = await getItemProfitabilityChecks(companyId);
+    for (const check of checks) expect(check.ok, `${check.label}: ${check.shown} vs ${check.source}`).toBe(true);
   }, 120_000);
 
   it('never shows one company’s coffee in the other', async () => {

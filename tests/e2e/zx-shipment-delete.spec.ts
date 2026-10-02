@@ -145,6 +145,18 @@ test('a received shipment is deleted from its page: the receipt is reversed for 
   await expect(page.getByRole('main')).not.toContainText(`B-${RECEIVED.containers[0]}`, { timeout: 45_000 });
   await page.goto('/purchases', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('row').filter({ hasText: RECEIVED.reference })).toHaveCount(0, { timeout: 45_000 });
+
+  // And to the person reading stock it was deleted, not "reversed": the
+  // receipt, its movements and the order's renamed reference are gone from
+  // the receipts list, Stock on Hand and the movement book (found live, 2 Oct).
+  for (const path of ['/goods-receipts', '/inventory', '/inventory/movements']) {
+    await page.goto(path, { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle').catch(() => undefined);
+    const main = page.getByRole('main');
+    await expect(main, path).toBeVisible({ timeout: 45_000 });
+    await expect(main, path).not.toContainText(/\brevers(ed|al)\b/i);
+    await expect(main, path).not.toContainText(RECEIVED.reference);
+  }
 });
 
 test('a shipment whose coffee has been sold says why it cannot go, and links to the sale', async () => {

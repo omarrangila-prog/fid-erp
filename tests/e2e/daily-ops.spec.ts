@@ -247,11 +247,12 @@ test('the invoice standing cards filter the list to the invoices behind them', a
   const standing = page.getByTestId('invoice-standing');
   await expect(standing).toBeVisible({ timeout: 30_000 });
 
-  // Each card says a figure and how many invoices are behind it.
+  // Two cards, each a figure and how many invoices are behind it: Unpaid
+  // (part-paid included) and Paid. There is no Partially Paid card.
   const summary = (await standing.innerText()).replace(/\s+/g, ' ');
   expect(summary).toMatch(/Paid/);
-  expect(summary).toMatch(/Partially Paid/);
   expect(summary).toMatch(/Unpaid/);
+  expect(summary).not.toMatch(/Partially Paid/);
   expect(summary).toMatch(/USD [\d,]+\.\d{2}/);
   console.log(`  standing: ${summary.slice(0, 140)}`);
 
@@ -263,13 +264,13 @@ test('the invoice standing cards filter the list to the invoices behind them', a
   await unpaid.click();
   await expect(page.getByTestId('invoice-standing-active')).toBeVisible({ timeout: 15_000 });
 
+  await expect(page.getByTestId('invoice-standing-active')).toContainText(/unpaid, including partially paid/);
   if (unpaidCount > 0) {
     const shown = page.locator('main table tbody tr');
     await expect(shown).toHaveCount(unpaidCount, { timeout: 15_000 });
-    // And every one of them really is unpaid.
-    const text = (await page.locator('main table tbody').innerText()).replace(/\s+/g, ' ');
-    expect(text).not.toMatch(/Partially Paid/);
-    console.log(`  unpaid card: ${unpaidCount} invoices, and the list shows exactly those`);
+    // And every one of them still owes money: nothing received, or part of it.
+    for (const row of await shown.allInnerTexts()) expect(row).toMatch(/Unpaid|Partially Paid/);
+    console.log(`  unpaid card: ${unpaidCount} invoices, unpaid and partly paid, and the list shows exactly those`);
   }
 
   // Clicking it again puts every invoice back.
@@ -277,15 +278,9 @@ test('the invoice standing cards filter the list to the invoices behind them', a
   await expect(page.getByTestId('invoice-standing-active')).toHaveCount(0, { timeout: 15_000 });
   await expect(page.locator('main table tbody tr')).toHaveCount(rowsBefore, { timeout: 15_000 });
 
-  // Outstanding is the unpaid and the partly paid together — a part payment still leaves money owed.
-  const count = async (id: string) =>
-    Number(((await page.getByTestId(id).innerText()).match(/(\d+) invoices?/) ?? ['', '0'])[1]);
-  const outstandingCount = await count('invoice-standing-outstanding');
-  expect(outstandingCount).toBe((await count('invoice-standing-unpaid')) + (await count('invoice-standing-partial')));
-  await page.getByTestId('invoice-standing-outstanding').click();
-  await expect(page.getByTestId('invoice-standing-active')).toContainText(/outstanding/);
-  if (outstandingCount > 0) await expect(page.locator('main table tbody tr')).toHaveCount(outstandingCount, { timeout: 15_000 });
-  console.log(`  outstanding card: ${outstandingCount} invoices, unpaid and partly paid`);
+  // A dashboard link can still open the part-paid ones alone.
+  await page.goto('/sales?standing=PARTIAL', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('invoice-standing-active')).toContainText(/partially paid/i, { timeout: 30_000 });
 });
 
 test('the journal can add an account without leaving the voucher', async ({ page }) => {

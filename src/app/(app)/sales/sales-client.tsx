@@ -103,16 +103,19 @@ export function SalesClient({
       outstandingUsd: matching.reduce((total, row) => total + row.outstandingUsdSort, 0),
     };
   };
+  // Two cards, as the client asked: Unpaid is every invoice still owing money,
+  // part-paid ones included — a part payment still leaves it unpaid — and Paid.
+  // A dashboard link can still open the list on nothing-received or part-paid
+  // alone (?standing=UNPAID / PARTIAL); the note above the list says which.
   const standings = [
     {
       ...summarise('OUTSTANDING'),
-      label: 'Outstanding',
+      key: 'unpaid',
+      label: 'Unpaid',
       hint: 'Unpaid and partially paid — still to collect',
       amount: 'outstanding' as const,
     },
-    { ...summarise('PAID'), label: 'Paid', hint: 'Settled in full', amount: 'paid' as const },
-    { ...summarise('PARTIAL'), label: 'Partially Paid', hint: 'Something received, the rest outstanding', amount: 'outstanding' as const },
-    { ...summarise('UNPAID'), label: 'Unpaid', hint: 'Nothing received yet', amount: 'outstanding' as const },
+    { ...summarise('PAID'), key: 'paid', label: 'Paid', hint: 'Settled in full', amount: 'paid' as const },
   ];
   const money = (value: number) =>
     `USD ${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -349,7 +352,7 @@ export function SalesClient({
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-testid="invoice-standing">
+      <div className="grid gap-3 sm:grid-cols-2" data-testid="invoice-standing">
         {standings.map((card) => {
           const active = standing === card.settlement;
           const figure = card.amount === 'paid' ? card.paidUsd : card.outstandingUsd;
@@ -359,7 +362,7 @@ export function SalesClient({
               type="button"
               onClick={() => setStanding(active ? null : card.settlement)}
               aria-pressed={active}
-              data-testid={`invoice-standing-${card.settlement.toLowerCase()}`}
+              data-testid={`invoice-standing-${card.key}`}
               className={cn(
                 'rounded-xl border p-4 text-left transition-colors',
                 active
@@ -383,8 +386,10 @@ export function SalesClient({
         <p className="text-xs text-ink-muted" data-testid="invoice-standing-active">
           Showing {visible.length === 1 ? 'the 1 invoice' : `the ${visible.length} invoices`} that are{' '}
           {standing === 'OUTSTANDING'
-            ? 'outstanding (unpaid or partially paid)'
-            : (SETTLEMENT_STATUS_META[standing]?.label.toLowerCase() ?? standing.toLowerCase())}
+            ? 'still outstanding — unpaid, including partially paid'
+            : standing === 'UNPAID'
+              ? 'unpaid with nothing received yet'
+              : (SETTLEMENT_STATUS_META[standing]?.label.toLowerCase() ?? standing.toLowerCase())}
           .{' '}
           <button type="button" onClick={() => setStanding(null)} className="underline underline-offset-2 hover:text-ink">
             Show every invoice

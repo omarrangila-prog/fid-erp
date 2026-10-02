@@ -44,18 +44,23 @@ export default async function MovementsPage({
   // coffee coming back. They cancel, and to the person reading the warehouse
   // book the sale never happened, so neither is listed. The rows stay in the
   // table; the audit log records who deleted the invoice and why.
-  const deletedInvoiceIds = (
-    await prisma.salesInvoice.findMany({
-      where: { companyId, status: { notIn: ['DRAFT', 'POSTED'] } },
-      select: { id: true },
-    })
-  ).map((i) => i.id);
+  // A deleted goods receipt or transfer is the same: the coffee in and the
+  // coffee back out again cancel. Listing the receipt without its undoing
+  // showed stock arriving that never stayed.
+  const deleted = { status: { in: ['REVERSED' as const, 'CANCELLED' as const] } };
+  const [deletedInvoiceIds, deletedReceiptIds, deletedTransferIds] = await Promise.all([
+    prisma.salesInvoice.findMany({ where: { companyId, status: { notIn: ['DRAFT', 'POSTED'] } }, select: { id: true } }),
+    prisma.goodsReceipt.findMany({ where: { companyId, ...deleted }, select: { id: true } }),
+    prisma.stockTransfer.findMany({ where: { companyId, ...deleted }, select: { id: true } }),
+  ]).then((lists) => lists.map((list) => list.map((d) => d.id)));
   const visibleMovements = {
     companyId,
     transactionType: { not: 'REVERSAL' as const },
-    // Neither the coffee going out on a deleted invoice, nor its coming back.
+    // Neither the coffee moving on a deleted document, nor its moving back.
     NOT: [
       { referenceType: 'SALES_INVOICE', referenceId: { in: deletedInvoiceIds } },
+      { referenceType: 'GOODS_RECEIPT', referenceId: { in: deletedReceiptIds } },
+      { referenceType: 'STOCK_TRANSFER', referenceId: { in: deletedTransferIds } },
       { referenceType: { endsWith: '_REVERSAL' } },
     ],
   };

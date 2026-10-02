@@ -386,6 +386,16 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
   if (filters.batchId) movementWhere.push(Prisma.sql`b."id" = ${filters.batchId}`);
   if (filters.containerId) movementWhere.push(Prisma.sql`b."containerId" = ${filters.containerId}`);
   if (to) movementWhere.push(Prisma.sql`it."transactionDate" <= ${to}::date`);
+  // A deleted goods receipt or transfer and its undoing cancel to nothing; to
+  // the person reading stock they never happened, and the deleted order's
+  // renamed reference ("… (reversed …)") must not appear among the item's
+  // shipments. Quantities are unchanged by leaving the pair out.
+  movementWhere.push(Prisma.sql`NOT (
+    (it."referenceType" IN ('GOODS_RECEIPT', 'GOODS_RECEIPT_REVERSAL')
+      AND it."referenceId" IN (SELECT gr."id" FROM goods_receipts gr WHERE gr."companyId" = ${companyId} AND gr."status" IN ('REVERSED', 'CANCELLED')))
+    OR (it."referenceType" IN ('STOCK_TRANSFER', 'STOCK_TRANSFER_REVERSAL')
+      AND it."referenceId" IN (SELECT st."id" FROM stock_transfers st WHERE st."companyId" = ${companyId} AND st."status" IN ('REVERSED', 'CANCELLED')))
+  )`);
   const inPeriod = from ? Prisma.sql`it."transactionDate" >= ${from}::date` : Prisma.sql`TRUE`;
 
   // Every movement type lands in exactly one column, so opening + received +

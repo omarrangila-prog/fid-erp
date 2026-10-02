@@ -19,8 +19,11 @@ export default async function GoodsReceiptsPage() {
   const companyId = user.activeCompany.id;
 
   const ordinals = await getShipmentOrdinals(companyId);
+  // A deleted receipt (taken back, by itself or with its shipment) is not on
+  // the list, as a deleted invoice is not on the invoice list. Its journal and
+  // the audit log keep who did it and why.
   const receipts = await prisma.goodsReceipt.findMany({
-    where: { companyId },
+    where: { companyId, status: { notIn: ['REVERSED', 'CANCELLED'] } },
     orderBy: [{ receiptDate: 'desc' }, { grnNumber: 'desc' }],
     include: {
       purchaseContract: { select: { id: true, contractNumber: true, contractReference: true } },

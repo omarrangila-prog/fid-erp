@@ -843,7 +843,7 @@ export async function reverseGoodsReceipt(params: {
         await postJournalEntry(tx, {
           companyId: params.companyId,
           entryDate: reversalDate,
-          description: `${receipt.grnNumber} reversed: costs added since the receipt go back to in transit with the coffee`,
+          description: `${receipt.grnNumber} deleted: costs added since the receipt go back to in transit with the coffee`,
           sourceType: 'LANDED_COST',
           sourceId: receipt.id,
           createdById: params.userId,

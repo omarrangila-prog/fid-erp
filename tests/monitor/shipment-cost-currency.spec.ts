@@ -9,24 +9,18 @@ import { test, expect, type Page } from '@playwright/test';
  */
 
 const ADMIN_PIN = process.env.ADMIN_PIN;
-const ADMIN_NAME = process.env.INITIAL_ADMIN_NAME ?? 'Ali Raza';
 const COMPANY = process.env.MONITOR_COMPANY ?? 'FID Trading International SARL';
 
 test.skip(!ADMIN_PIN, 'Set ADMIN_PIN to run the monitor.');
 
 async function signIn(page: Page) {
+  // PIN only: the keypad is the whole sign-in screen now — there is no tile
+  // per user to tap first. The digits wait for the page to be ready.
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
-  const tile = page.getByRole('button', { name: new RegExp(ADMIN_NAME, 'i') }).first();
-  await expect(tile).toBeVisible({ timeout: 60_000 });
-  await tile.click();
-  const keypad = page.getByRole('button', { name: '1', exact: true });
-  if (!(await keypad.isVisible().catch(() => false))) {
-    await page.waitForTimeout(2_000);
-    await tile.click();
-  }
-  await expect(keypad).toBeVisible({ timeout: 30_000 });
   for (const digit of (ADMIN_PIN ?? '').split('')) {
-    await page.getByRole('button', { name: digit, exact: true }).first().click();
+    const key = page.getByRole('button', { name: digit, exact: true }).first();
+    await expect(key).toBeEnabled({ timeout: 60_000 });
+    await key.click();
   }
   await page.waitForURL(/\/(dashboard|select-company)/, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   if (page.url().includes('select-company')) {
