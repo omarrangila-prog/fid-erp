@@ -45,6 +45,9 @@ async function signIn(page: Page) {
   if (page.url().includes('select-company')) {
     await page.getByRole('button', { name: new RegExp(COMPANY, 'i') }).first().click();
     await page.waitForURL(/\/dashboard/, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    // Signed in once the dashboard has drawn: going on while the sign-in's own
+    // redirect is still landing had the first page interrupted (2 Oct).
+    await expect(page.getByTestId('user-menu')).toBeVisible({ timeout: 60_000 });
     return;
   }
   const switcher = page.getByRole('button', { name: /FID Trading/ }).first();
@@ -56,6 +59,7 @@ async function signIn(page: Page) {
       await page.waitForLoadState('domcontentloaded');
     }
   }
+  await expect(page.getByTestId('user-menu')).toBeVisible({ timeout: 60_000 });
 }
 
 /** Where the system's own document numbering used to appear. */
