@@ -5,12 +5,13 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Ship, Anchor, PackageCheck, FileText, Boxes, CalendarClock, Calculator, Undo2, Zap } from 'lucide-react';
+import { Ship, Anchor, PackageCheck, FileText, Boxes, CalendarClock, Calculator, Undo2, Zap, Eye, Pencil } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ui/confirm';
-import { undoLoadingAction, undoArrivalAction, removeContainerAction, reversePurchaseContractAction } from '@/server/actions/trading-actions';
+import { undoLoadingAction, undoArrivalAction, removeContainerAction } from '@/server/actions/trading-actions';
 import { RowActions, type DestructiveAction, type RowAction } from '@/components/shared/row-actions';
 import { Button } from '@/components/ui/button';
 import { QuickUpdatePanel, type QuickIntent } from '@/components/shipments/quick-update-panel';
+import { DeleteShipmentDialog } from '@/components/shipments/delete-shipment-dialog';
 import { summariseContainers, ARRIVAL_STATE_META, RECEIPT_STATE_META } from '@/lib/container-summary';
 import { receivableBatches as receivableRows } from '@/lib/receivable-batches';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
@@ -143,6 +144,11 @@ function itemNames(row: LoadingRow) {
 }
 
 
+/** A child row's Delete removes one container; the parent row's deletes the shipment. */
+function destructiveIsContainer(destructive?: DestructiveAction): boolean {
+  return destructive?.noun === 'container';
+}
+
 /** What is still to be received on one shipment, by the rule every screen shares. */
 function receivableBatches(row: LoadingRow): ReceivableBatch[] {
   return receivableRows({
@@ -183,6 +189,7 @@ export function LoadingSheet({
   canReceive,
   canDelete = false,
   canRemove = false,
+  canEdit = false,
   shippingLines,
   ports = [],
   warehouses,
@@ -198,6 +205,8 @@ export function LoadingSheet({
   canDelete?: boolean;
   /** Taking one container off an order: the add/correct-container permission. */
   canRemove?: boolean;
+  /** Correcting an approved order before anything is received. */
+  canEdit?: boolean;
   shippingLines: Array<{ id: string; name: string }>;
   ports?: string[];
   warehouses: Array<{ id: string; name: string; code: string }>;
@@ -213,6 +222,7 @@ export function LoadingSheet({
   const [undoRow, setUndoRow] = React.useState<LoadingRow | null>(null);
   const [undoArrivalRow, setUndoArrivalRow] = React.useState<LoadingRow | null>(null);
   const [quick, setQuick] = React.useState<{ contractId: string; label: string; intent: QuickIntent } | null>(null);
+  const [deleting, setDeleting] = React.useState<{ contractId: string; label: string } | null>(null);
   const router = useRouter();
 
 
@@ -304,8 +314,15 @@ export function LoadingSheet({
             },
             // Who bought this container's coffee, and whether they have paid.
             { label: 'View sales', icon: FileText, show: r.allocations.length > 0, onSelect: () => setViewing(r), overflowOnly: true },
-            { label: 'View shipment', href: `/shipments/${r.shipmentId}`, icon: Ship, overflowOnly: true },
+            { label: 'View', href: `/shipments/${r.shipmentId}`, icon: Eye, overflowOnly: true },
             { label: 'Purchase order', href: `/purchases/${r.contractId}`, icon: FileText, overflowOnly: true },
+            {
+              label: 'Edit',
+              href: `/purchases/${r.contractId}/edit`,
+              icon: Pencil,
+              overflowOnly: true,
+              show: canEdit && !destructiveIsContainer(destructive),
+            },
             { label: 'Shipment costing', href: `/shipments/${r.shipmentId}`, icon: Calculator, overflowOnly: true },
           ]}
           destructive={destructive}
@@ -487,19 +504,15 @@ export function LoadingSheet({
     );
   }
 
-  /** Deleting the shipment deletes its purchase order: the same rules and the same trail as on the order. */
+  /** Delete Shipment: the one window and service every screen uses. */
   function deleteShipment(g: OrderGroup): DestructiveAction {
     return {
       status: 'POSTED',
       noun: 'shipment',
       cancelLabel: 'Delete shipment',
       show: canDelete,
-      description:
-        'The whole shipment — its purchase order and every container on it — is taken back out of the books: the supplier payable is reversed and the batches retired. Both entries stay in the journal and the audit log keeps who did it and why. Refused once anything has been received, sold, paid for or costed.',
-      run: async (reason) => {
-        const result = await reversePurchaseContractAction(g.contractId, reason ?? '');
-        return result.ok ? { ok: true } : { ok: false, error: result.error };
-      },
+      onSelect: () => setDeleting({ contractId: g.contractId, label: g.contractReference }),
+      run: async () => ({ ok: true }),
     };
   }
 
@@ -539,7 +552,14 @@ export function LoadingSheet({
     if (canUpdate) actions.push({ label: 'Docs', icon: FileText, onSelect: () => openQuick(g, 'documents') });
     actions.push(
       { label: 'View Receipt', href: `/purchases/${g.contractId}`, icon: PackageCheck, show: g.shipments.some((r) => r.receivedKg > 0) },
-      { label: 'Purchase order', href: `/purchases/${g.contractId}`, icon: FileText, overflowOnly: true },
+      { label: 'View', href: `/purchases/${g.contractId}`, icon: Eye, overflowOnly: true },
+      {
+        label: 'Edit',
+        href: `/purchases/${g.contractId}/edit`,
+        icon: Pencil,
+        overflowOnly: true,
+        show: canEdit,
+      },
       { label: 'Trace this reference', href: `/trace?ref=${encodeURIComponent(g.contractReference)}`, icon: Boxes, overflowOnly: true },
     );
     return <RowActions inline={2} actions={actions} destructive={deleteShipment(g)} />;
@@ -950,6 +970,17 @@ export function LoadingSheet({
           lines={containersRow.lines}
           knownNumbers={containersRow.containerNumbers}
           onClose={() => setContainersRow(null)}
+        />
+      ) : null}
+
+      {deleting ? (
+        <DeleteShipmentDialog
+          open
+          contractId={deleting.contractId}
+          label={deleting.label}
+          onOpenChange={(open) => {
+            if (!open) setDeleting(null);
+          }}
         />
       ) : null}
 

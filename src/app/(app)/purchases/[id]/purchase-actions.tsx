@@ -6,10 +6,10 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 import { CheckCircle2, Trash2, Pencil, PackagePlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { DeleteShipmentButton } from '@/components/shipments/delete-shipment-button';
 import { ConfirmDialog } from '@/components/ui/confirm';
 import {
   postPurchaseContractAction,
-  reversePurchaseContractAction,
   deletePurchaseContractAction,
 } from '@/server/actions/trading-actions';
 
@@ -23,8 +23,11 @@ export function PurchaseActions({
   canReceive,
   fullyReceived,
   onReceive,
+  reference,
 }: {
   id: string;
+  /** The order's reference, for the delete window's title. */
+  reference?: string;
   status: string;
   canApprove: boolean;
   canEdit: boolean;
@@ -37,7 +40,7 @@ export function PurchaseActions({
   onReceive: () => void;
 }) {
   const router = useRouter();
-  const [confirm, setConfirm] = React.useState<'approve' | 'reverse' | 'delete' | null>(null);
+  const [confirm, setConfirm] = React.useState<'approve' | 'delete' | null>(null);
   const [busy, setBusy] = React.useState(false);
 
   async function run(fn: () => Promise<{ ok: boolean; error?: string }>, success: string) {
@@ -99,10 +102,11 @@ export function PurchaseActions({
             </Button>
           ) : null}
           {canReverse ? (
-            <Button variant="outline" onClick={() => setConfirm('reverse')} disabled={busy}>
-              <Trash2 />
+            // The same Delete Shipment window as everywhere else: it undoes the
+            // receipts and costs it must, and here it offers to delete the order too.
+            <DeleteShipmentButton contractId={id} label={reference ?? 'this order'} defaultMode="delete-order" after="/purchases">
               Delete
-            </Button>
+            </DeleteShipmentButton>
           ) : null}
           {canReceive && !fullyReceived ? (
             <Button onClick={onReceive}>
@@ -121,18 +125,6 @@ export function PurchaseActions({
         confirmLabel="Approve and post"
         variant="accent"
         onConfirm={() => run(() => postPurchaseContractAction(id), 'Contract approved and posted.')}
-      />
-
-      <ConfirmDialog
-        open={confirm === 'reverse'}
-        onOpenChange={(open) => !open && setConfirm(null)}
-        title="Delete this contract?"
-        description="The supplier payable is taken back and the batches are retired; the contract disappears from every list and total. This is refused if goods have been received, sold, or paid for."
-        confirmLabel="Delete contract"
-        variant="danger"
-        requireReason
-        reasonLabel="Why is this being deleted?"
-        onConfirm={(reason) => run(() => reversePurchaseContractAction(id, reason), 'Contract deleted.')}
       />
 
       <ConfirmDialog

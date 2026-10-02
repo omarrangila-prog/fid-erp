@@ -201,11 +201,16 @@ export async function assertTraceabilityNumbersAreFree(
       if (seenContainers.has(containerNumber)) continue;
       seenContainers.add(containerNumber);
 
+      // A container on a deleted (reversed) order is free again: that order
+      // is gone from every list, and approving this one re-points the box.
       const container = await tx.container.findFirst({
         where: {
           companyId,
           containerNumber,
-          ...(excludeContractId ? { NOT: { purchaseContractId: excludeContractId } } : {}),
+          AND: [
+            ...(excludeContractId ? [{ NOT: { purchaseContractId: excludeContractId } }] : []),
+            { NOT: { purchaseContract: { status: 'REVERSED' } } },
+          ],
         },
         select: { containerNumber: true, purchaseContract: { select: { contractNumber: true } } },
       });
@@ -1901,7 +1906,7 @@ export async function removeContainerFromOrder(input: RemoveContainerInput) {
     }
 
     if (dec(batch.receivedQuantityKg).greaterThan(0) || dec(batch.soldQuantityKg).greaterThan(0) || dec(batch.allocatedQuantityKg).greaterThan(0)) {
-      throw new BusinessRuleError('This container has already been received. Reverse the goods receipt first; stock is never removed by changing the order.');
+      throw new BusinessRuleError('This container is already in stock, so it is part of the shipment now. Use Delete Shipment — it takes the coffee back out of stock for you — or keep it.');
     }
     if (dec(batch.capitalisedCostUsd).greaterThan(0)) {
       throw new BusinessRuleError('Costs have been spread onto this container. Reverse or re-spread those costs first.');

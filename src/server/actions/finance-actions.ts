@@ -49,8 +49,7 @@ import { allocateOverheadsSchema } from '@/lib/validation/finance';
 import {
   createRecurringFromExpense,
   generateFromRecurring,
-  setRecurringStatus,
-} from '@/lib/services/recurring-expense';
+  setRecurringStatus, deleteRecurring } from '@/lib/services/recurring-expense';
 import { dateString, optionalDateString, requiredText } from '@/lib/validation/common';
 import { getCompanyContext } from '@/lib/services/company';
 import { prisma, transaction } from '@/lib/db';
@@ -504,6 +503,18 @@ export async function setRecurringStatusAction(id: string, status: 'ACTIVE' | 'I
   try {
     const user = await requirePermission(PERMISSIONS.EXPENSES_CREATE);
     await setRecurringStatus({ id, companyId: user.activeCompany.id, status, userId: user.id });
+    revalidateAll(['/finance/expenses/recurring']);
+    return { ok: true, data: undefined };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+/** Delete a recurring schedule; the expenses already made from it stay. */
+export async function deleteRecurringAction(id: string): Promise<ActionResult<undefined>> {
+  try {
+    const user = await requirePermission(PERMISSIONS.EXPENSES_DELETE);
+    await deleteRecurring({ id, companyId: user.activeCompany.id, userId: user.id });
     revalidateAll(['/finance/expenses/recurring']);
     return { ok: true, data: undefined };
   } catch (error) {

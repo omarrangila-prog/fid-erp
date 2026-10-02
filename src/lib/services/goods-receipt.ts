@@ -9,6 +9,7 @@ import { receiveStock, recordMovement, lockBatch } from '@/lib/services/inventor
 import { getCompanyContext } from '@/lib/services/company';
 import { writeAudit } from '@/lib/services/audit';
 import { markArrivedOnReceipt } from '@/lib/services/shipment';
+import { getBatchCostings } from '@/lib/services/landed-cost';
 
 /**
  * GoodsReceiptService.
@@ -764,10 +765,17 @@ export async function reverseGoodsReceipt(params: {
 
     const receipt = await tx.goodsReceipt.findUniqueOrThrow({
       where: { id: params.id },
-      include: { lines: { include: { batch: true } }, warehouse: true },
+      include: { lines: { include: { batch: true } }, warehouse: true, purchaseContract: { select: { id: true, rateLocalPerUsd: true } } },
     });
 
     const reversalDate = new Date();
+
+    // What the receipt put into stock, read before it is mirrored.
+    const posting = await tx.journalEntry.findFirst({
+      where: { companyId: params.companyId, sourceType: 'PURCHASE_CONTRACT', sourceId: receipt.id, isReversal: false, reversedBy: { is: null } },
+      orderBy: { sourceSeq: 'desc' },
+      select: { lines: { select: { debitUsd: true, debitLocal: true, account: { select: { systemKey: true } } } } },
+    });
 
     for (const line of receipt.lines) {
       await lockBatch(tx, params.companyId, line.batchId);
@@ -808,6 +816,66 @@ export async function reverseGoodsReceipt(params: {
       entryDate: reversalDate,
       reason: params.reason,
     });
+
+    /*
+     * The coffee leaves stock at what it is carried at now, not at what it
+     * came in at.
+     *
+     * A cost capitalised after the receipt (freight billed late, clearing)
+     * went straight into stock. Mirroring the receipt alone took back only
+     * what it put in, and that cost stayed in Inventory with no coffee behind
+     * it while the batch went back to in transit. The difference goes back
+     * with the coffee, so stock in the ledger and on the batches still agree.
+     */
+    if (posting) {
+      const inventory = posting.lines.filter((l) => l.account.systemKey === ACCOUNT_KEYS.INVENTORY);
+      const postedUsd = sum(inventory.map((l) => dec(l.debitUsd)));
+      const postedLocal = sum(inventory.map((l) => dec(l.debitLocal)));
+      const costings = await getBatchCostings({ companyId: params.companyId, batchIds: [...new Set(receipt.lines.map((l) => l.batchId))] });
+      const perKg = new Map(costings.map((c) => [c.batchId, c]));
+      const carriedUsd = toMoney(sum(receipt.lines.map((l) => dec(l.quantityKg).times(dec(l.batch.landedUnitCostUsd)))));
+      const carriedLocal = toMoney(sum(receipt.lines.map((l) => dec(l.quantityKg).times(perKg.get(l.batchId)?.landedPerKgLocal ?? 0))));
+      const extraUsd = toMoney(carriedUsd.minus(postedUsd));
+      const extraLocal = toMoney(carriedLocal.minus(postedLocal));
+      if (extraUsd.abs().greaterThanOrEqualTo('0.01')) {
+        const company = await getCompanyContext(tx, params.companyId);
+        const out = extraUsd.isPositive();
+        await postJournalEntry(tx, {
+          companyId: params.companyId,
+          entryDate: reversalDate,
+          description: `${receipt.grnNumber} reversed: costs added since the receipt go back to in transit with the coffee`,
+          sourceType: 'LANDED_COST',
+          sourceId: receipt.id,
+          createdById: params.userId,
+          localCurrency: company.localCurrency,
+          rateLocalPerUsd: receipt.purchaseContract.rateLocalPerUsd,
+          lines: [
+            {
+              accountKey: ACCOUNT_KEYS.INVENTORY_IN_TRANSIT,
+              direction: out ? 'DEBIT' : 'CREDIT',
+              currency: 'USD',
+              amount: extraUsd.abs(),
+              rateToUsd: '1',
+              bookedLocal: extraLocal.abs(),
+              description: 'Costs carried on the coffee, back in transit',
+              purchaseContractId: receipt.purchaseContract.id,
+              shipmentId: receipt.shipmentId,
+            },
+            {
+              accountKey: ACCOUNT_KEYS.INVENTORY,
+              direction: out ? 'CREDIT' : 'DEBIT',
+              currency: 'USD',
+              amount: extraUsd.abs(),
+              rateToUsd: '1',
+              bookedLocal: extraLocal.abs(),
+              description: `Out of stock with ${receipt.grnNumber}`,
+              purchaseContractId: receipt.purchaseContract.id,
+              shipmentId: receipt.shipmentId,
+            },
+          ],
+        });
+      }
+    }
 
     const reversed = await tx.goodsReceipt.update({
       where: { id: receipt.id },

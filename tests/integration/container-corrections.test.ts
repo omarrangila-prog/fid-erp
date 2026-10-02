@@ -137,7 +137,7 @@ describe('remove one container from an order', () => {
   }, 180_000);
 
   it('is refused for a received container, the last container, costed coffee, and another company', async () => {
-    await expect(removeContainerFromOrder({ companyId, shipmentId: shipments[0], userId: ctx.admin.id, reason: 'Try a received one' })).rejects.toThrow(/received/);
+    await expect(removeContainerFromOrder({ companyId, shipmentId: shipments[0], userId: ctx.admin.id, reason: 'Try a received one' })).rejects.toThrow(/already in stock/);
 
     // Costs spread onto a container keep it on the order.
     const second = await prisma.batch.findFirstOrThrow({ where: { shipmentId: shipments[1] } });

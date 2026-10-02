@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { requirePageAccess } from '@/lib/auth/guards';
+import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { listRecurring } from '@/lib/services/recurring-expense';
@@ -67,7 +67,7 @@ export default async function RecurringExpensesPage() {
         </Callout>
       ) : null}
 
-      <RecurringClient rows={rows} />
+      <RecurringClient rows={rows} canDelete={can(user, PERMISSIONS.EXPENSES_DELETE)} />
     </div>
   );
 }

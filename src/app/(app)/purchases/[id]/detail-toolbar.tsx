@@ -57,6 +57,7 @@ export function PurchaseDetailToolbar({
         fullyReceived={fullyReceived}
         anyReceived={anyReceived}
         onReceive={() => setReceiving(true)}
+        reference={contractLabel}
       />
 
       <GoodsReceiptDialog

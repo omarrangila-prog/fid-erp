@@ -23,7 +23,8 @@ import {
   getContainerHistoryAction,
 } from '@/server/actions/quick-update-actions';
 import type { QuickOrder, QuickContainer, ContainerHistoryRow } from '@/server/actions/quick-update-actions';
-import { undoLoadingAction, undoArrivalAction, removeContainerAction, reversePurchaseContractAction } from '@/server/actions/trading-actions';
+import { undoLoadingAction, undoArrivalAction, removeContainerAction } from '@/server/actions/trading-actions';
+import { DeleteShipmentDialog } from '@/components/shipments/delete-shipment-dialog';
 import { MarkLoadedDialog } from '@/app/(app)/loading/mark-loaded-dialog';
 import { DocumentStatusDialog, composeDocumentNote } from '@/app/(app)/loading/document-status-dialog';
 import { ManageContainersDialog } from '@/app/(app)/loading/manage-containers-dialog';
@@ -1015,22 +1016,12 @@ function QuickUpdateBody({
         }}
       />
 
-      <ConfirmDialog
+      <DeleteShipmentDialog
         open={deleting}
+        contractId={contractId}
+        label={contractLabel}
         onOpenChange={setDeleting}
-        title={`Delete the shipment ${contractLabel}?`}
-        description="The whole shipment — its purchase order and every container on it — is taken back out of the books: the supplier payable is reversed and the batches retired. Both entries stay in the journal and the audit log keeps who did it and why. Refused once anything has been received, sold, paid for or costed."
-        confirmLabel="Delete shipment"
-        variant="danger"
-        requireReason
-        reasonLabel="Why is this shipment being deleted?"
-        onConfirm={async (reason) => {
-          const result = await reversePurchaseContractAction(contractId, reason);
-          if (!result.ok) throw new Error(result.error);
-          toast.success(`Shipment ${contractLabel} deleted.`);
-          onOpenChange(false);
-          router.refresh();
-        }}
+        onDeleted={() => onOpenChange(false)}
       />
     </>
   );

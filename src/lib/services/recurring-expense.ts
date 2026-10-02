@@ -205,3 +205,24 @@ export async function setRecurringStatus(params: {
     return updated;
   });
 }
+
+/**
+ * Delete a recurring schedule. It is only a template: the expenses already
+ * made from it are their own records and stay exactly as they are. A copy of
+ * the template goes to the audit log.
+ */
+export async function deleteRecurring(params: { id: string; companyId: string; userId: string }) {
+  return transaction(async (tx) => {
+    const existing = await tx.recurringExpense.findFirst({ where: { id: params.id, companyId: params.companyId } });
+    if (!existing) throw new NotFoundError('Recurring expense');
+    await writeAudit(tx, {
+      companyId: params.companyId,
+      userId: params.userId,
+      action: 'RECURRING_EXPENSE_DELETED',
+      entityType: 'RecurringExpense',
+      entityId: params.id,
+      before: { name: existing.name, frequency: existing.frequency, nextDate: existing.nextDate, template: existing.template, status: existing.status },
+    });
+    await tx.recurringExpense.delete({ where: { id: params.id } });
+  });
+}

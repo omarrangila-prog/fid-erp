@@ -57,6 +57,8 @@ export type AgentLedgerEvent = {
   documentNumber: string | null;
   date: Date;
   sourceType: string;
+  /** The document behind the entry, so a row can be opened or deleted where it stands. */
+  sourceId: string;
   sourceHref: string | null;
   typeLabel: string;
   filters: AgentEventFilter[];
@@ -282,6 +284,7 @@ export async function getAgentStatement(params: { companyId: string; agentId: st
       documentNumber: documentNumber && documentNumber !== businessNumber(first.entryNumber) ? documentNumber : null,
       date: first.entryDate,
       sourceType: source,
+      sourceId: first.sourceId,
       sourceHref: journalSourceHref(source, first.sourceId, { entryNumber: first.entryNumber }),
       typeLabel,
       filters: [...filters],

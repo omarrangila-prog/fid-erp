@@ -26,6 +26,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Callout } from '@/components/ui/feedback';
 import { AgentSettlementActions } from '@/app/(app)/agents/[id]/settlement-actions';
 import { AgentOffsetAction } from '@/app/(app)/agents/[id]/offset-action';
+import { JournalSourceActions } from '@/components/shared/journal-source-actions';
 import { assertAgentVisible } from '@/lib/auth/scope';
 
 export const metadata: Metadata = { title: 'Agent Ledger' };
@@ -83,6 +84,7 @@ export default async function AgentLedgerPage({
   // One line per business event, in the shared ledger layout: Debit and Credit
   // are the lines on his own balances, in the company's currency, and the
   // Balance runs over all of them — Dr when he owes FID, Cr when FID owes him.
+  const canDeleteEntries = can(user, PERMISSIONS.ACCOUNTING_POST);
   const rows: LedgerReportRow[] = statement.events.map((e) => ({
     key: e.journalEntryId,
     date: e.date.toISOString().slice(0, 10),
@@ -101,6 +103,17 @@ export default async function AgentLedgerPage({
     debit: toMoney(sum(e.lines.map((l) => l.debitLocal))).toString(),
     credit: toMoney(sum(e.lines.map((l) => l.creditLocal))).toString(),
     balance: e.runningNetLocal.toString(),
+    // View, edit at the source, and delete — the same as on every other ledger.
+    actions: (
+      <JournalSourceActions
+        sourceType={e.sourceType}
+        sourceId={e.sourceId}
+        entryNumber={e.journalNumber}
+        journalEntryId={e.journalEntryId}
+        canDelete={canDeleteEntries}
+        isReversal={e.sourceType === 'REVERSAL'}
+      />
+    ),
     // The amount as it was entered, with the dollar figure only as an equivalent.
     facts: [
       { label: 'Amount', value: formatMoney(e.amount, e.currency) },

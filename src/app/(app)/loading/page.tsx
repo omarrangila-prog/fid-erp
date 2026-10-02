@@ -162,6 +162,7 @@ export default async function LoadingPage() {
         canReceive={can(user, PERMISSIONS.PURCHASES_APPROVE)}
         canDelete={can(user, PERMISSIONS.PURCHASES_REVERSE)}
         canRemove={can(user, PERMISSIONS.PURCHASES_APPROVE)}
+        canEdit={can(user, PERMISSIONS.PURCHASES_EDIT)}
         shippingLines={shippingLines}
         ports={ports.map((p) => p.name)}
         warehouses={warehouses.map((w) => ({ id: w.id, name: w.name, code: w.code }))}

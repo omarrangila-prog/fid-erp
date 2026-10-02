@@ -260,16 +260,18 @@ test('a two-container order shows two containers, and is deleted from its row', 
 
   await row.getByRole('button', { name: /More actions/i }).click();
   await page.getByRole('menuitem', { name: /Delete shipment/ }).click();
-  await page.getByLabel(/Why is this shipment being deleted/).fill('Entered twice by mistake');
-  await page.getByRole('button', { name: /^Yes, delete$/ }).click();
-  await expect(page.getByText(/Shipment deleted/).first()).toBeVisible({ timeout: 45_000 });
+  const dialog = page.getByTestId('delete-shipment');
+  await expect(dialog.getByTestId('delete-safe')).toBeVisible({ timeout: 45_000 });
+  await dialog.getByText('Delete it too').click();
+  await dialog.getByLabel('Reason').selectOption('Duplicate shipment');
+  await page.getByTestId('confirm-delete-shipment').click();
+  await expect(page.getByText(/and its purchase order deleted/).first()).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole('row').filter({ hasText: TWO.reference })).toHaveCount(0, { timeout: 45_000 });
 
-  // The order with a receipt cannot be deleted: the server refuses and says why.
+  // The order with coffee in stock: the window says the receipt will be reversed for you.
   const received = await sheetRow(page, THREE.reference);
   await received.getByRole('button', { name: /More actions/i }).click();
   await page.getByRole('menuitem', { name: /Delete shipment/ }).click();
-  await page.getByLabel(/Why is this shipment being deleted/).fill('Trying to delete a received order');
-  await page.getByRole('button', { name: /^Yes, delete$/ }).click();
-  await expect(page.getByText(/Goods have been received/).first()).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByTestId('delete-shipment').getByTestId('delete-safe')).toContainText(/Goods receipt .* reversed/, { timeout: 45_000 });
+  await page.getByRole('button', { name: /^Cancel$/ }).click();
 });

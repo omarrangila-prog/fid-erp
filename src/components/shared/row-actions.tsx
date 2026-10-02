@@ -83,6 +83,11 @@ export type DestructiveAction = {
   cancelLabel?: string;
   /** Extra sentence explaining what deleting this particular thing does. */
   description?: string;
+  /**
+   * Opens a delete window of the record's own (a shipment's shows what it is
+   * tied to) instead of the standard confirmation. `run` is then unused.
+   */
+  onSelect?: () => void;
 };
 
 const DRAFT_STATUSES = new Set(['DRAFT', 'PENDING', 'NEW', '']);
@@ -167,6 +172,13 @@ export function RowActions({
                     disabled={busy}
                     className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-red-700 outline-none data-[highlighted]:bg-red-50 data-[disabled]:opacity-50"
                     onSelect={(event) => {
+                      // A delete window of its own: let the menu close first, so
+                      // cancelling the window lands back on the list, not the menu.
+                      if (destructive?.onSelect) {
+                        const open = destructive.onSelect;
+                        setTimeout(open, 0);
+                        return;
+                      }
                       event.preventDefault();
                       setConfirming(true);
                     }}
@@ -181,7 +193,7 @@ export function RowActions({
         ) : null}
       </div>
 
-      {destructive && showDestructive ? (
+      {destructive && showDestructive && !destructive.onSelect ? (
         <ConfirmDialog
           open={confirming}
           onOpenChange={setConfirming}

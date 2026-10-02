@@ -7,7 +7,7 @@ import { FilePlus2, Pause, Play } from 'lucide-react';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { RowActions } from '@/components/shared/row-actions';
-import { generateRecurringAction, setRecurringStatusAction } from '@/server/actions/finance-actions';
+import { generateRecurringAction, setRecurringStatusAction, deleteRecurringAction } from '@/server/actions/finance-actions';
 
 export type RecurringRow = {
   id: string;
@@ -24,7 +24,7 @@ export type RecurringRow = {
   lastCreatedId: string | null;
 };
 
-export function RecurringClient({ rows }: { rows: RecurringRow[] }) {
+export function RecurringClient({ rows, canDelete = false }: { rows: RecurringRow[]; canDelete?: boolean }) {
   const router = useRouter();
   const [pending, startTransition] = React.useTransition();
 
@@ -115,6 +115,16 @@ export function RecurringClient({ rows }: { rows: RecurringRow[] }) {
               ? { label: 'Pause', icon: Pause, onSelect: () => setStatus(r, 'INACTIVE') }
               : { label: 'Resume', icon: Play, onSelect: () => setStatus(r, 'ACTIVE') },
           ]}
+          destructive={{
+            status: 'DRAFT',
+            noun: 'recurring schedule',
+            show: canDelete,
+            deleteLabel: 'Delete',
+            run: async () => {
+              const result = await deleteRecurringAction(r.id);
+              return result.ok ? { ok: true } : { ok: false, error: result.error };
+            },
+          }}
         />
       ),
     },

@@ -3,7 +3,10 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
-import { Calculator, CalendarClock, Receipt, Search, Ship } from 'lucide-react';
+import { Calculator, CalendarClock, Pencil, Receipt, Search, Ship, Zap } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { QuickUpdatePanel } from '@/components/shipments/quick-update-panel';
+import { DeleteShipmentDialog } from '@/components/shipments/delete-shipment-dialog';
 import { RowActions, viewAction } from '@/components/shared/row-actions';
 import { Badge, StatusBadge } from '@/components/ui/badge';
 import { SHIPMENT_STATUS_META, DOCUMENT_STATUS_META, SETTLEMENT_STATUS_META, type BadgeTone } from '@/lib/constants';
@@ -106,14 +109,23 @@ export function ShipmentsClient({
   showCost = false,
   canAddExpense = false,
   canUpdateEta = false,
+  canQuickUpdate = false,
+  canEdit = false,
+  canDelete = false,
 }: {
   rows: ShipmentGroupRow[];
   emptyAction?: React.ReactNode;
   showCost?: boolean;
   canAddExpense?: boolean;
   canUpdateEta?: boolean;
+  canQuickUpdate?: boolean;
+  canEdit?: boolean;
+  /** Delete Shipment reverses the order: purchases.reverse, checked again on the server. */
+  canDelete?: boolean;
 }) {
   const [editingEta, setEditingEta] = React.useState<{ line: ShipmentLineRow; reference: string } | null>(null);
+  const [quick, setQuick] = React.useState<{ id: string; label: string } | null>(null);
+  const [deleting, setDeleting] = React.useState<{ id: string; label: string } | null>(null);
 
   const columns: DataColumn<ShipmentGroupRow>[] = [
     {
@@ -330,9 +342,17 @@ export function ShipmentsClient({
       mobile: 'action',
       pin: 'right',
       cell: (r) => (
+        <div className="flex items-center justify-end gap-1">
+        {canQuickUpdate ? (
+          <Button size="sm" variant="accent" className="shrink-0" onClick={() => setQuick({ id: r.id, label: r.contractReference })} data-testid="quick-update-open">
+            <Zap />
+            Quick Update
+          </Button>
+        ) : null}
         <RowActions
           actions={[
             viewAction(`/shipments/${r.firstShipmentId}`),
+            { label: 'Edit', href: `/purchases/${r.id}/edit`, icon: Pencil, show: canEdit, overflowOnly: true },
             { label: 'Costing', href: `/shipments/${r.firstShipmentId}#costing`, icon: Calculator },
             {
               label: 'Add expense',
@@ -349,7 +369,16 @@ export function ShipmentsClient({
             },
             { label: 'Loading sheet', href: '/loading', icon: Ship, overflowOnly: true },
           ]}
+          destructive={{
+            status: 'POSTED',
+            noun: 'shipment',
+            cancelLabel: 'Delete shipment',
+            show: canDelete,
+            onSelect: () => setDeleting({ id: r.id, label: r.contractReference }),
+            run: async () => ({ ok: true }),
+          }}
         />
+        </div>
       ),
     },
   ];
@@ -465,6 +494,12 @@ export function ShipmentsClient({
         emptyTitle="No shipments yet"
         emptyDescription="A shipment is opened automatically when a purchase order is approved."
       />
+      {quick ? (
+        <QuickUpdatePanel open contractId={quick.id} contractLabel={quick.label} onOpenChange={(open) => !open && setQuick(null)} />
+      ) : null}
+      {deleting ? (
+        <DeleteShipmentDialog open contractId={deleting.id} label={deleting.label} onOpenChange={(open) => !open && setDeleting(null)} />
+      ) : null}
       {editingEta ? (
         <EtaDialog
           shipmentId={editingEta.line.shipmentId}

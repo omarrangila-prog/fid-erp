@@ -11,7 +11,8 @@ import { Button } from '@/components/ui/button';
 import { Badge, StatusBadge } from '@/components/ui/badge';
 import { TRANSACTION_STATUS_META, type BadgeTone } from '@/lib/constants';
 import { QuickUpdatePanel } from '@/components/shipments/quick-update-panel';
-import { deletePurchaseContractAction, reversePurchaseContractAction } from '@/server/actions/trading-actions';
+import { deletePurchaseContractAction } from '@/server/actions/trading-actions';
+import { DeleteShipmentDialog } from '@/components/shipments/delete-shipment-dialog';
 
 export type PurchaseShipmentRow = {
   /** The batch, or the shipment when it has none yet. */
@@ -109,6 +110,7 @@ export function PurchasesClient({
   canReverse?: boolean;
 }) {
   const [quick, setQuick] = React.useState<{ id: string; label: string } | null>(null);
+  const [deleting, setDeleting] = React.useState<{ id: string; label: string } | null>(null);
 
   const columns: DataColumn<PurchaseRow>[] = [
     {
@@ -353,10 +355,10 @@ export function PurchasesClient({
             noun: r.status === 'DRAFT' ? 'purchase order' : 'shipment',
             cancelLabel: 'Delete shipment',
             show: r.status === 'DRAFT' ? canDeleteDraft : r.status === 'POSTED' && canReverse,
-            description:
-              'The whole shipment — this purchase order and every container on it — is taken back out of the books: the supplier payable is reversed and the batches retired. Both entries stay in the journal and the audit log keeps who did it and why. Refused once anything has been received, sold, paid for or costed.',
-            run: async (reason) => {
-              const result = r.status === 'DRAFT' ? await deletePurchaseContractAction(r.id) : await reversePurchaseContractAction(r.id, reason ?? '');
+            // An approved order: the Delete Shipment window, which undoes what it must.
+            ...(r.status === 'POSTED' ? { onSelect: () => setDeleting({ id: r.id, label: r.contractReference }) } : {}),
+            run: async () => {
+              const result = await deletePurchaseContractAction(r.id);
               return result.ok ? { ok: true } : { ok: false, error: result.error };
             },
           }}
@@ -474,6 +476,16 @@ export function PurchasesClient({
         ) : undefined
       }
     />
+    {deleting ? (
+      <DeleteShipmentDialog
+        open
+        contractId={deleting.id}
+        label={deleting.label}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null);
+        }}
+      />
+    ) : null}
     {quick ? (
       <QuickUpdatePanel
         open

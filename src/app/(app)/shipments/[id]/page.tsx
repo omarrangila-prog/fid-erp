@@ -30,6 +30,7 @@ import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/
 import { Button } from '@/components/ui/button';
 import { ReportShareButton } from '@/components/share/report-share-button';
 import { ShipmentWorkflow } from '@/app/(app)/shipments/[id]/shipment-workflow';
+import { DeleteShipmentButton } from '@/components/shipments/delete-shipment-button';
 import { Plus } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -55,6 +56,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
           id: true,
           contractNumber: true,
           contractReference: true,
+          status: true,
           currency: true,
           // Every shipment on the same order, so this one knows it is "2 of 3"
           // and the reader can step to its siblings without going back.
@@ -283,6 +285,9 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
         actions={
           <>
             <ReportShareButton report="shipment" subject={shipment.purchaseContract.contractReference} />
+            {can(user, PERMISSIONS.PURCHASES_REVERSE) && shipment.purchaseContract.status === 'POSTED' ? (
+              <DeleteShipmentButton contractId={shipment.purchaseContract.id} label={shipment.purchaseContract.contractReference} />
+            ) : null}
             {can(user, PERMISSIONS.EXPENSES_CREATE) ? (
               <Button asChild variant="outline">
                 <Link href={`/finance/expenses/new?job=${shipment.id}`}>

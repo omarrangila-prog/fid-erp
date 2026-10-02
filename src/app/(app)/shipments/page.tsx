@@ -271,6 +271,9 @@ export default async function ShipmentsPage() {
         showCost={showCost}
         canAddExpense={can(user, PERMISSIONS.EXPENSES_CREATE)}
         canUpdateEta={can(user, PERMISSIONS.SHIPMENTS_UPDATE)}
+        canQuickUpdate={can(user, PERMISSIONS.SHIPMENTS_VIEW)}
+        canEdit={can(user, PERMISSIONS.PURCHASES_EDIT)}
+        canDelete={can(user, PERMISSIONS.PURCHASES_REVERSE)}
         emptyAction={
           can(user, PERMISSIONS.PURCHASES_VIEW) ? (
             <EmptyAction href="/purchases" label="Open purchase contracts" tone="go" />
