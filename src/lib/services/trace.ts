@@ -12,7 +12,12 @@ import { Decimal, dec } from '@/lib/money';
  * name the original reference without anybody copying it.
  */
 
-export async function traceReference(companyId: string, reference: string) {
+/**
+ * `customerIds`, when given, narrows the sales shown to those customers — an
+ * agent sees who of his own bought the coffee, not everyone. The KG sold stays
+ * the whole figure: it is a fact about the stock, not about anyone's customer.
+ */
+export async function traceReference(companyId: string, reference: string, options?: { customerIds?: Set<string> | null }) {
   const q = reference.trim();
   if (q.length < 2) return null;
 
@@ -105,6 +110,8 @@ export async function traceReference(companyId: string, reference: string) {
     ]);
 
     const sum = (values: Decimal[]) => values.reduce((a, b) => a.plus(b), new Decimal(0));
+    const only = options?.customerIds;
+    const visibleSales = only ? sales.filter((s) => only.has(s.salesInvoice.customer.id)) : sales;
     traced.push({
       order,
       shipments,
@@ -112,14 +119,14 @@ export async function traceReference(companyId: string, reference: string) {
       receipts,
       stock,
       transfers,
-      sales,
+      sales: visibleSales,
       totals: {
         orderedKg: sum(batches.map((b) => dec(b.orderedQuantityKg))),
         receivedKg: sum(batches.map((b) => dec(b.receivedQuantityKg))),
         soldKg: sum(sales.map((s) => dec(s.quantityKg))),
         onHandKg: sum(stock.map((s) => dec(s.onHandKg))),
       },
-      customers: [...new Map(sales.map((s) => [s.salesInvoice.customer.id, s.salesInvoice.customer])).values()],
+      customers: [...new Map(visibleSales.map((s) => [s.salesInvoice.customer.id, s.salesInvoice.customer])).values()],
     });
   }
   return { reference: q, orders: traced };

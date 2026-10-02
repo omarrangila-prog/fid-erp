@@ -11,6 +11,7 @@ import { Input, Select } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { getShipmentDeletePreviewAction, deleteShipmentAction } from '@/server/actions/shipment-delete-actions';
 import type { DeletePreview, DeleteMode } from '@/lib/services/shipment-delete';
+import { safely } from '@/lib/safely';
 
 const REASONS = ['Mistaken entry', 'Duplicate shipment', 'Wrong purchase order', 'Test entry', 'Other'] as const;
 
@@ -66,7 +67,7 @@ function Body({
 
   React.useEffect(() => {
     let live = true;
-    getShipmentDeletePreviewAction(contractId).then((result) => {
+    safely(getShipmentDeletePreviewAction(contractId)).then((result) => {
       if (!live) return;
       if (result.ok) setPreview(result.data);
       else setError(result.error);
@@ -83,7 +84,7 @@ function Body({
     }
     setBusy(true);
     setError(null);
-    const result = await deleteShipmentAction(JSON.stringify({ contractId, mode, reason, memo: memo.trim() || undefined }));
+    const result = await safely(deleteShipmentAction(JSON.stringify({ contractId, mode, reason, memo: memo.trim() || undefined })));
     setBusy(false);
     if (!result.ok) {
       setError(result.error);

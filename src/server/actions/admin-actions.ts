@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { prisma, transaction } from '@/lib/db';
 import { requirePermission } from '@/lib/auth/guards';
-import { PERMISSIONS, ALL_PERMISSIONS, SYSTEM_ROLES } from '@/lib/constants';
+import { PERMISSIONS, ALL_PERMISSIONS, SYSTEM_ROLES, EDITABLE_SETTINGS } from '@/lib/constants';
 import { ConflictError, NotFoundError, BusinessRuleError } from '@/lib/errors';
 import { hashPassword } from '@/lib/auth/password';
 import { destroyAllSessionsForUser } from '@/lib/auth/session';
@@ -18,7 +18,7 @@ import { provisionCompany } from '@/lib/services/chart-of-accounts';
 import { setSetting } from '@/lib/services/settings';
 import { getRoleMenu, setRoleMenu } from '@/lib/services/role-menu';
 import { setClosedUntil } from '@/lib/services/period';
-import { formDataToObject, fieldErrors, requiredText, optionalText } from '@/lib/validation/common';
+import { formDataToObject, fieldErrors, requiredText, optionalText, calendarDay } from '@/lib/validation/common';
 import { fail, type ActionResult } from '@/server/actions/action-utils';
 import type { MasterFormState } from '@/server/actions/master-actions';
 
@@ -556,7 +556,25 @@ export async function saveCompanyAction(
 export async function saveSettingAction(key: string, value: string): Promise<ActionResult<undefined>> {
   try {
     const admin = await requirePermission(PERMISSIONS.SETTINGS_MANAGE);
-    await setSetting(admin.activeCompany.id, key, value);
+    const spec = EDITABLE_SETTINGS[key];
+    if (!spec) throw new BusinessRuleError('That setting cannot be changed here.');
+    const trimmed = value.trim();
+    if (spec.kind === 'boolean' && trimmed !== 'true' && trimmed !== 'false') {
+      throw new BusinessRuleError('Choose on or off.');
+    }
+    if (spec.kind === 'number') {
+      const n = Number(trimmed);
+      if (trimmed === '' || !Number.isFinite(n) || n < (spec.min ?? -Infinity) || n > (spec.max ?? Infinity)) {
+        throw new BusinessRuleError(`Enter a number from ${spec.min ?? 0} to ${spec.max ?? 100}.`);
+      }
+    }
+    if (spec.kind === 'csv') {
+      const parts = trimmed.split(',').map((p) => p.trim()).filter(Boolean);
+      if (parts.length === 0 || parts.some((p) => !/^\d+$/.test(p) || Number(p) < (spec.min ?? 0) || Number(p) > (spec.max ?? 365))) {
+        throw new BusinessRuleError(`Enter whole numbers of days from ${spec.min ?? 0} to ${spec.max ?? 365}, separated by commas.`);
+      }
+    }
+    await setSetting(admin.activeCompany.id, key, trimmed);
 
     await transaction((tx) =>
       writeAudit(tx, {
@@ -593,8 +611,8 @@ export async function setPeriodCloseAction(closedUntil: string | null): Promise<
 
     let date: Date | null = null;
     if (closedUntil) {
-      date = new Date(`${closedUntil}T00:00:00.000Z`);
-      if (Number.isNaN(date.getTime())) {
+      date = calendarDay(closedUntil);
+      if (!date) {
         throw new BusinessRuleError('That is not a valid date.');
       }
       if (date.getTime() > Date.now()) {

@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { requirePageAccess } from '@/lib/auth/guards';
+import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getSalesRegister } from '@/lib/services/reports';
-import { formatMoney, formatDate, formatQuantityKg } from '@/lib/format';
+import { formatMoney, formatDate, formatQuantityKg, dayParam } from '@/lib/format';
 import { dec, sum } from '@/lib/money';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -38,11 +38,14 @@ export default async function SalesReportPage({
 }) {
   const { from, to, ref } = await searchParams;
   const user = await requirePageAccess(PERMISSIONS.REPORTS_VIEW);
+  // Cost of goods and gross profit are profitability, which every role that
+  // can run reports is not shown — as on Sales by and the profit reports.
+  const showProfit = can(user, PERMISSIONS.PROFITS_VIEW);
 
   const rows = await getSalesRegister({
     companyId: user.activeCompany.id,
-    from: from ? new Date(`${from}T00:00:00.000Z`) : undefined,
-    to: to ? new Date(`${to}T23:59:59.999Z`) : undefined,
+    from: dayParam(from) ?? undefined,
+    to: dayParam(to) ? new Date(`${to}T23:59:59.999Z`) : undefined,
     reference: ref,
   });
 
@@ -92,12 +95,16 @@ export default async function SalesReportPage({
         </form>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className={`grid gap-3 sm:grid-cols-2 ${showProfit ? 'lg:grid-cols-5' : 'lg:grid-cols-3'}`}>
         {[
           { label: 'Coffee sold', value: formatQuantityKg(kg), tone: 'text-ink' },
           { label: 'Revenue', value: formatMoney(totalUsd, 'USD'), tone: 'text-ink' },
-          { label: 'Cost of goods', value: formatMoney(cogsUsd, 'USD'), tone: 'text-ink' },
-          { label: 'Gross profit', value: formatMoney(profitUsd, 'USD'), tone: 'text-gold-700' },
+          ...(showProfit
+            ? [
+                { label: 'Cost of goods', value: formatMoney(cogsUsd, 'USD'), tone: 'text-ink' },
+                { label: 'Gross profit', value: formatMoney(profitUsd, 'USD'), tone: 'text-gold-700' },
+              ]
+            : []),
           { label: 'Still owed', value: formatMoney(owedUsd, 'USD'), tone: 'text-forest-800' },
         ].map((card) => (
           <Card key={card.label}>

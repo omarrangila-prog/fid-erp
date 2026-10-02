@@ -6,6 +6,7 @@ import { getCompanyProfitSummary, getMonthlyProfitability } from '@/lib/services
 import { getReceivables, getPayables, summariseAgeing } from '@/lib/services/receivables';
 import { SHIPMENT_STATUSES_IN_TRANSIT } from '@/lib/constants';
 import { getAgentSummaries, agentRelationship } from '@/lib/services/agent-account';
+import { getCompanyDay } from '@/lib/services/company';
 
 /**
  * Dashboard aggregation.
@@ -98,8 +99,7 @@ export async function getDashboard(params: { companyId: string; from?: Date; to?
       getSalesSnapshot(params.companyId),
     ]);
 
-  const today = new Date();
-  const startOfToday = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  const startOfToday = (await getCompanyDay(prisma, params.companyId)).getTime();
 
   const overdue = receivables.filter((r) => r.dueDate && r.dueDate.getTime() < startOfToday);
   const dueToday = receivables.filter((r) => r.dueDate && r.dueDate.getTime() === startOfToday);
@@ -262,22 +262,26 @@ export async function getWarehouseStock(companyId: string) {
 
 /** Posted sales split the way the brief asks to see them: today, month, cash, credit. */
 async function getSalesSnapshot(companyId: string) {
-  const now = new Date();
-  const startOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  // The company's day and month, closed at both ends: an invoice dated
+  // tomorrow is not today's sale, nor one dated next month this month's.
+  const startOfToday = await getCompanyDay(prisma, companyId);
+  const startOfTomorrow = new Date(startOfToday.getTime() + 86_400_000);
+  const startOfMonth = new Date(Date.UTC(startOfToday.getUTCFullYear(), startOfToday.getUTCMonth(), 1));
+  const startOfNextMonth = new Date(Date.UTC(startOfToday.getUTCFullYear(), startOfToday.getUTCMonth() + 1, 1));
 
   const rows = await prisma.$queryRaw<
     Array<{ paymentType: string; todayUsd: string; monthUsd: string; todayCount: number; monthCount: number }>
   >`
     SELECT si."paymentType"::text AS "paymentType",
-           COALESCE(SUM(si."totalAmountUsd") FILTER (WHERE si."invoiceDate" >= ${startOfToday}), 0)::text AS "todayUsd",
+           COALESCE(SUM(si."totalAmountUsd") FILTER (WHERE si."invoiceDate" >= ${startOfToday} AND si."invoiceDate" < ${startOfTomorrow}), 0)::text AS "todayUsd",
            COALESCE(SUM(si."totalAmountUsd"), 0)::text AS "monthUsd",
-           COUNT(*) FILTER (WHERE si."invoiceDate" >= ${startOfToday})::int AS "todayCount",
+           COUNT(*) FILTER (WHERE si."invoiceDate" >= ${startOfToday} AND si."invoiceDate" < ${startOfTomorrow})::int AS "todayCount",
            COUNT(*)::int AS "monthCount"
       FROM sales_invoices si
      WHERE si."companyId" = ${companyId}
        AND si."status" = 'POSTED'
        AND si."invoiceDate" >= ${startOfMonth}
+       AND si."invoiceDate" < ${startOfNextMonth}
      GROUP BY si."paymentType"
   `;
 

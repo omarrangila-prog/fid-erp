@@ -7,6 +7,7 @@ import { PERMISSIONS } from '@/lib/constants';
 import { quickUpdateSchema } from '@/lib/validation/trading';
 import { applyQuickUpdate, getContainerHistory, getOrderQuickUpdate } from '@/lib/services/quick-update';
 import { fail, ok, type ActionResult } from '@/server/actions/action-utils';
+import { BusinessRuleError } from '@/lib/errors';
 
 /**
  * Quick Update from the loading sheet and the purchase order list.
@@ -134,7 +135,7 @@ export async function quickUpdateContainersAction(payload: string): Promise<Acti
     try {
       parsed = JSON.parse(payload);
     } catch {
-      throw new Error('The update could not be read. Please try again.');
+      throw new BusinessRuleError('The update could not be read. Please try again.');
     }
     const input = quickUpdateSchema.parse(parsed);
     const results = await applyQuickUpdate({

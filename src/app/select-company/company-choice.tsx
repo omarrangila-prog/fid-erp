@@ -1,11 +1,14 @@
 'use client';
 
 import * as React from 'react';
-import { useRouter } from 'next/navigation';
 import { ArrowRight, Loader2 } from 'lucide-react';
-import { switchCompanyAction } from '@/server/actions/session-actions';
-import { toast } from 'sonner';
+import { chooseCompanyFormAction } from '@/server/actions/session-actions';
 
+/**
+ * One company to choose. A form, not a click handler: it submits as soon as
+ * the screen is there, before the page's scripts have finished loading, and
+ * the server takes the user to the dashboard. An early tap is never lost.
+ */
 export function CompanyChoice({
   company,
 }: {
@@ -19,25 +22,13 @@ export function CompanyChoice({
     openInvoices: number;
   };
 }) {
-  const router = useRouter();
-  const [pending, startTransition] = React.useTransition();
-
-  function choose() {
-    startTransition(async () => {
-      const result = await switchCompanyAction(company.id);
-      if (!result.ok) {
-        toast.error(result.error);
-        return;
-      }
-      router.replace('/dashboard');
-      router.refresh();
-    });
-  }
+  const [state, formAction, pending] = React.useActionState(chooseCompanyFormAction, null);
 
   return (
+    <form action={formAction} className="contents">
+    <input type="hidden" name="companyId" value={company.id} />
     <button
-      type="button"
-      onClick={choose}
+      type="submit"
       disabled={pending}
       className="group flex flex-col gap-4 rounded-xl border border-line bg-surface p-5 text-left transition-colors hover:border-gold-500 hover:bg-surface/70 disabled:opacity-60"
     >
@@ -68,5 +59,11 @@ export function CompanyChoice({
         ))}
       </dl>
     </button>
+    {state?.error ? (
+      <p role="alert" className="text-xs text-red-700">
+        {state.error}
+      </p>
+    ) : null}
+    </form>
   );
 }

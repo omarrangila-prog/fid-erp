@@ -65,6 +65,7 @@ const money = (text: PairText | null) => (text ? <DualText primary={text.primary
 export function ItemStockClient({
   rows,
   showCost,
+  showProfit,
   showSales,
   canExport,
   canSell,
@@ -74,6 +75,8 @@ export function ItemStockClient({
 }: {
   rows: ItemStockRow[];
   showCost: boolean;
+  /** Cost of goods sold, profit and margin: "View profit" on top of cost. */
+  showProfit: boolean;
   showSales: boolean;
   canExport: boolean;
   canSell: boolean;
@@ -223,7 +226,7 @@ export function ItemStockClient({
           },
         ] satisfies DataColumn<ItemStockRow>[])
       : []),
-    ...(showCost
+    ...(showCost && showProfit
       ? ([
           {
             id: 'cogs',
@@ -238,7 +241,7 @@ export function ItemStockClient({
           },
         ] satisfies DataColumn<ItemStockRow>[])
       : []),
-    ...(showCost && showSales
+    ...(showCost && showProfit && showSales
       ? ([
           {
             id: 'profit',
@@ -324,7 +327,7 @@ export function ItemStockClient({
           { label: 'Highest outstanding', columnId: 'outstanding', direction: 'desc' as const },
         ]
       : []),
-    ...(showSales && showCost
+    ...(showSales && showCost && showProfit
       ? [
           { label: 'Highest profit', columnId: 'profit', direction: 'desc' as const },
           { label: 'Highest loss', columnId: 'profit', direction: 'asc' as const },

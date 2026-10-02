@@ -1,4 +1,5 @@
 import { formatBags } from '@/lib/bags';
+import { getCurrentUser } from '@/lib/auth/session';
 import type { Metadata } from 'next';
 import { CostingSummary } from '@/components/shared/costing-table';
 import { getBatchCostings } from '@/lib/services/landed-cost';
@@ -22,7 +23,12 @@ export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
-  const batch = await prisma.batch.findUnique({ where: { id }, select: { batchNumber: true } });
+  // Only this company's record, and only for someone signed in: the tab title must not
+  // name a record from the other company, or show anything before the page's own check.
+  const viewer = await getCurrentUser();
+  const batch = viewer
+    ? await prisma.batch.findFirst({ where: { id, companyId: viewer.activeCompany.id }, select: { batchNumber: true } })
+    : null;
   return { title: batch?.batchNumber ?? 'Batch' };
 }
 

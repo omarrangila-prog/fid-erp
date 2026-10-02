@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { requirePageAccess } from '@/lib/auth/guards';
+import { agentScope } from '@/lib/auth/scope';
+import { prisma } from '@/lib/db';
 import { PERMISSIONS, SHIPMENT_STATUS_META } from '@/lib/constants';
 import { traceReference } from '@/lib/services/trace';
 import { shortDocumentNumber } from '@/lib/short-number';
@@ -39,7 +41,12 @@ const td = 'py-1.5 pr-3 text-sm';
 export default async function TracePage({ searchParams }: { searchParams: Promise<{ ref?: string }> }) {
   const { ref } = await searchParams;
   const user = await requirePageAccess(PERMISSIONS.INVENTORY_VIEW);
-  const result = ref ? await traceReference(user.activeCompany.id, ref) : null;
+  // An agent sees his own customers among the buyers, as everywhere else.
+  const agentId = agentScope(user);
+  const customerIds = agentId
+    ? new Set((await prisma.customer.findMany({ where: { companyId: user.activeCompany.id, agentId }, select: { id: true } })).map((c) => c.id))
+    : null;
+  const result = ref ? await traceReference(user.activeCompany.id, ref, { customerIds }) : null;
 
   return (
     <div className="space-y-6">

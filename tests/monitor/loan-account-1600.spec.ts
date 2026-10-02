@@ -60,7 +60,8 @@ test('1600 shows what Morocco owes Dubai', async ({ page }) => {
   await page.waitForLoadState('networkidle').catch(() => undefined);
   await expect(page.getByText(/F I D TRADING LLC DUBAI/i).first()).toBeVisible({ timeout: 45_000 });
 
-  const body = (await page.locator('body').textContent()) ?? '';
+  // What is on screen — not the page's hidden data, which carries the empty-state text as a prop.
+  const body = await page.getByRole('main').innerText();
   console.log('  shows the loan entry:', /Loan from FID Trading/i.test(body));
   console.log('  shows 50,000:', /50[,\s.]?000/.test(body));
   console.log('  still says "no movements":', /No movements on this account/i.test(body));

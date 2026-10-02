@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getPurchaseRegister } from '@/lib/services/reports';
-import { formatMoney, formatDate, formatQuantityKg } from '@/lib/format';
+import { formatMoney, formatDate, formatQuantityKg, dayParam } from '@/lib/format';
 import { dec, sum } from '@/lib/money';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -38,8 +38,8 @@ export default async function PurchaseReportPage({
 
   const rows = await getPurchaseRegister({
     companyId: user.activeCompany.id,
-    from: from ? new Date(`${from}T00:00:00.000Z`) : undefined,
-    to: to ? new Date(`${to}T23:59:59.999Z`) : undefined,
+    from: dayParam(from) ?? undefined,
+    to: dayParam(to) ? new Date(`${to}T23:59:59.999Z`) : undefined,
   });
 
   const totalUsd = sum(rows.map((r) => dec(r.totalUsd)));

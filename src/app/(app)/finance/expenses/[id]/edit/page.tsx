@@ -10,11 +10,7 @@ import { loadExpenseFormOptions } from '@/app/(app)/finance/expenses/load-expens
 
 export const dynamic = 'force-dynamic';
 
-export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
-  const { id } = await params;
-  const expense = await prisma.expense.findUnique({ where: { id }, select: { expenseNumber: true } });
-  return { title: 'Edit Expense' };
-}
+export const metadata: Metadata = { title: 'Edit Expense' };
 
 export default async function EditExpensePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

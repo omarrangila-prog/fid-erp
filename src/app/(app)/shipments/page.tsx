@@ -3,7 +3,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { dec, sum, toMoney, toUnitCost, Decimal } from '@/lib/money';
-import { formatQuantityKg, formatDate, daysUntil, formatMoney } from '@/lib/format';
+import { formatQuantityKg, formatDate, daysUntil, companyToday, formatMoney } from '@/lib/format';
 import { getShipmentSettlement } from '@/lib/services/shipment';
 import { getShipmentCostingIndex, getBatchCostings } from '@/lib/services/landed-cost';
 import { getWarehouseLabels } from '@/lib/services/stock';
@@ -31,6 +31,7 @@ export const dynamic = 'force-dynamic';
  */
 export default async function ShipmentsPage() {
   const user = await requirePageAccess(PERMISSIONS.SHIPMENTS_VIEW);
+  const companyDay = companyToday(user.activeCompany.timezone);
   const companyId = user.activeCompany.id;
 
   const showCost = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
@@ -103,7 +104,7 @@ export default async function ShipmentsPage() {
           recordLabel: records.length > 1 ? `${recordIndex + 1} of ${records.length}` : null,
           etaDate: formatDate(s.etaDate),
           etaIso,
-          etaDays: daysUntil(s.etaDate),
+          etaDays: daysUntil(s.etaDate, companyDay),
           status: s.status,
           bookingNumber: s.bookingNumber,
           billOfLading: s.billOfLading,
@@ -217,7 +218,7 @@ export default async function ShipmentsPage() {
               ? formatDate(earliest)
               : `${formatDate(earliest)} – ${formatDate(latest)}`,
         etaSort: earliest?.getTime() ?? Number.MAX_SAFE_INTEGER,
-        etaDays: records.length === 1 ? daysUntil(first.etaDate) : null,
+        etaDays: records.length === 1 ? daysUntil(first.etaDate, companyDay) : null,
         statuses: records.map((s) => s.status),
         documentStatuses: records.map((s) => s.documentStatus),
         settlements: settlements.map((s) => s.status),

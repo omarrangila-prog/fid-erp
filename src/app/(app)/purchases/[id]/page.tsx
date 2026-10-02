@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { getCurrentUser } from '@/lib/auth/session';
 import { CostingTable } from '@/components/shared/costing-table';
 import { getBatchCostings } from '@/lib/services/landed-cost';
 import { DocumentJournal } from '@/components/shared/document-journal';
@@ -32,10 +33,11 @@ export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
-  const contract = await prisma.purchaseContract.findUnique({
-    where: { id },
-    select: { contractNumber: true },
-  });
+  // Only this company's order, and only for someone signed in.
+  const viewer = await getCurrentUser();
+  const contract = viewer
+    ? await prisma.purchaseContract.findFirst({ where: { id, companyId: viewer.activeCompany.id }, select: { contractNumber: true } })
+    : null;
   return { title: contract?.contractNumber ?? 'Purchase Contract' };
 }
 
@@ -428,6 +430,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
           canMarkArrived={can(user, PERMISSIONS.SHIPMENTS_UPDATE)}
           canReceive={contract.status === 'POSTED' && can(user, PERMISSIONS.PURCHASES_APPROVE)}
           canRemove={contract.status === 'POSTED' && can(user, PERMISSIONS.PURCHASES_APPROVE)}
+          canSeeCosting={can(user, PERMISSIONS.PURCHASE_COST_VIEW)}
           summary={{
             reference: order.reference,
             totalShipments: order.totalShipments,

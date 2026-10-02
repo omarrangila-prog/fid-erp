@@ -4,7 +4,7 @@ import { PERMISSIONS, VISIBLE_DOCUMENT_STATUSES } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { dec } from '@/lib/money';
 import { equivalentText } from '@/lib/dual-currency';
-import { formatMoney, formatQuantityKg, formatDate, daysUntil } from '@/lib/format';
+import { formatMoney, formatQuantityKg, formatDate, daysUntil, companyToday } from '@/lib/format';
 import { getReceivables } from '@/lib/services/receivables';
 import { getWarehouseLabels } from '@/lib/services/stock';
 import { PageHeader } from '@/components/shared/page-header';
@@ -28,6 +28,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   const initialStanding =
     standing === 'UNPAID' || standing === 'PARTIAL' || standing === 'PAID' || standing === 'OUTSTANDING' ? standing : null;
   const user = await requirePageAccess(PERMISSIONS.SALES_VIEW);
+  const companyDay = companyToday(user.activeCompany.timezone);
   const companyId = user.activeCompany.id;
 
   const [invoices, receivables, warehouses] = await Promise.all([
@@ -66,7 +67,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   const rows: SaleRow[] = invoices.map((inv) => {
     const quantity = inv.lines.reduce((a, l) => a.plus(dec(l.quantityKg)), dec(0));
     const receivable = receivableByInvoice.get(inv.id);
-    const days = daysUntil(inv.dueDate);
+    const days = daysUntil(inv.dueDate, companyDay);
 
     return {
       id: inv.id,

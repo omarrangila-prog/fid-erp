@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { getCurrentUser } from '@/lib/auth/session';
 import { CostingTable } from '@/components/shared/costing-table';
 import { getBatchCostings } from '@/lib/services/landed-cost';
 import Link from 'next/link';
@@ -37,7 +38,12 @@ export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
-  const shipment = await prisma.shipment.findUnique({ where: { id }, select: { shipmentNumber: true } });
+  // Only this company's record, and only for someone signed in: the tab title must not
+  // name a record from the other company, or show anything before the page's own check.
+  const viewer = await getCurrentUser();
+  const shipment = viewer
+    ? await prisma.shipment.findFirst({ where: { id, companyId: viewer.activeCompany.id }, select: { shipmentNumber: true } })
+    : null;
   return { title: shipment?.shipmentNumber ?? 'Shipment' };
 }
 

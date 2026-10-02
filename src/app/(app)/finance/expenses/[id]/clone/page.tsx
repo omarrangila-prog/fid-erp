@@ -10,11 +10,7 @@ import { loadExpenseFormOptions } from '@/app/(app)/finance/expenses/load-expens
 
 export const dynamic = 'force-dynamic';
 
-export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
-  const { id } = await params;
-  const expense = await prisma.expense.findUnique({ where: { id }, select: { expenseNumber: true } });
-  return { title: 'Clone Expense' };
-}
+export const metadata: Metadata = { title: 'Clone Expense' };
 
 /**
  * A new voucher that starts out looking like an old one.

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { getCurrentUser } from '@/lib/auth/session';
 import { bagsForKg, addBags } from '@/lib/bags';
 import { CostingTable } from '@/components/shared/costing-table';
 import { getBatchCostings } from '@/lib/services/landed-cost';
@@ -34,7 +35,12 @@ export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
-  const item = await prisma.coffeeItem.findUnique({ where: { id }, select: { itemName: true } });
+  // Only this company's record, and only for someone signed in: the tab title must not
+  // name a record from the other company, or show anything before the page's own check.
+  const viewer = await getCurrentUser();
+  const item = viewer
+    ? await prisma.coffeeItem.findFirst({ where: { id, companyId: viewer.activeCompany.id }, select: { itemName: true } })
+    : null;
   return { title: item?.itemName ?? 'Coffee' };
 }
 
@@ -47,6 +53,7 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
   const item = await prisma.coffeeItem.findFirst({
     where: { id, companyId },
     include: {
+      _count: { select: { shipments: true } },
       lots: { orderBy: { createdAt: 'desc' }, select: { id: true, lotNumber: true, cropYear: true, originCountry: true } },
       shipments: {
         orderBy: { createdAt: 'desc' },
@@ -195,7 +202,7 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
           </TabsTrigger>
           <TabsTrigger value="shipments">
             Shipments
-            <TabCount value={item.shipments.length} />
+            <TabCount value={item._count.shipments} />
           </TabsTrigger>
         </TabsList>
 
@@ -362,6 +369,7 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
           {item.shipments.length === 0 ? (
             <EmptyState title="No shipments yet" description="Jobs carrying this coffee appear here." />
           ) : (
+            <>
             <TableWrap>
               <Table>
                 <THead>
@@ -393,6 +401,12 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
                 </TBody>
               </Table>
             </TableWrap>
+            {item._count.shipments > item.shipments.length ? (
+              <p className="mt-2 text-xs text-ink-subtle">
+                Showing the latest {item.shipments.length} of {item._count.shipments} shipments.
+              </p>
+            ) : null}
+            </>
           )}
         </TabsContent>
       </Tabs>

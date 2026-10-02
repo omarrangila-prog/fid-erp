@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { requirePageAccess, can } from '@/lib/auth/guards';
+import { can, requirePageAccessAll } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
-import { formatDate, formatMoney, formatPercent, formatQuantityKg } from '@/lib/format';
+import { formatDate, formatMoney, formatPercent, formatQuantityKg, dayParam, companyToday } from '@/lib/format';
 import { Decimal } from '@/lib/money';
 import { getSalesBy, type SalesDimension } from '@/lib/services/reports';
 import { PageHeader } from '@/components/shared/page-header';
@@ -41,12 +41,13 @@ export default async function SalesByPage({
   searchParams: Promise<{ by?: string; from?: string; to?: string }>;
 }) {
   const query = await searchParams;
-  const user = await requirePageAccess(PERMISSIONS.SALES_VIEW);
+  const user = await requirePageAccessAll([PERMISSIONS.REPORTS_VIEW, PERMISSIONS.SALES_VIEW]);
   const showCost = can(user, PERMISSIONS.PROFITS_VIEW);
   const by = (DIMENSIONS.some((d) => d.key === query.by) ? query.by : 'customer') as SalesDimension;
-  const today = new Date();
-  const from = query.from ? new Date(`${query.from}T00:00:00.000Z`) : new Date(Date.UTC(today.getUTCFullYear(), 0, 1));
-  const to = query.to ? new Date(`${query.to}T00:00:00.000Z`) : today;
+  // Today on the company's own clock, not the server's.
+  const today = companyToday(user.activeCompany.timezone);
+  const from = dayParam(query.from) ?? new Date(Date.UTC(today.getUTCFullYear(), 0, 1));
+  const to = dayParam(query.to) ?? today;
 
   const rows = await getSalesBy({ companyId: user.activeCompany.id, from, to, by });
   const sum = (pick: (r: (typeof rows)[number]) => Decimal) => rows.reduce((a, r) => a.plus(pick(r)), new Decimal(0));

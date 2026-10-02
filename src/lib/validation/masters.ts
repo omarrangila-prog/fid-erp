@@ -139,7 +139,7 @@ export const cashBankAccountSchema = z.object({
   name: requiredText('Account name'),
   accountType: z.enum(['CASH', 'PETTY_CASH', 'BANK']),
   currency: currencyCode,
-  openingBalance: optionalDecimalString('Opening balance'),
+  openingBalance: optionalDecimalString('Opening balance', { allowNegative: true }),
   bankName: optionalText(120),
   accountNumber: optionalText(60),
   status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),

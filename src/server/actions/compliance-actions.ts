@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { requirePermission } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
+import { BusinessRuleError } from '@/lib/errors';
 import { fieldErrors } from '@/lib/validation/common';
 import {
   creditNoteSchema,
@@ -54,7 +55,7 @@ function parseJson(payload: string): unknown {
   try {
     return JSON.parse(payload);
   } catch {
-    throw new Error('The submitted form could not be read. Please try again.');
+    throw new BusinessRuleError('The submitted form could not be read. Please try again.');
   }
 }
 
@@ -394,11 +395,13 @@ export async function uploadAttachmentAction(formData: FormData): Promise<Action
     const entityId = String(formData.get('entityId') ?? '');
     const category = formData.get('category');
 
+    // Business errors, not bare ones: a bare Error reaches the user as
+    // "Something went wrong" instead of what to do about it.
     if (!(file instanceof File)) {
-      throw new Error('Choose a file to attach.');
+      throw new BusinessRuleError('Choose a file to attach.');
     }
     if (!entityType || !entityId) {
-      throw new Error('That document could not be identified.');
+      throw new BusinessRuleError('That document could not be identified.');
     }
 
     const attachment = await saveAttachment({
@@ -412,7 +415,6 @@ export async function uploadAttachmentAction(formData: FormData): Promise<Action
       uploadedById: user.id,
     });
 
-    revalidatePath(`/${entityType.toLowerCase()}`);
     return ok({ id: attachment.id }, `${attachment.fileName} attached.`);
   } catch (error) {
     return fail(error);

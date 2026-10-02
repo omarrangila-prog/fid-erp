@@ -1,4 +1,5 @@
 import type { Tx } from '@/lib/db';
+import { ownShipmentId } from '@/lib/services/company-scope';
 import { transaction } from '@/lib/db';
 import { Decimal, dec, toMoney, convertToUsd, convertFromUsd, sum } from '@/lib/money';
 import { ACCOUNT_KEYS, DOC_TYPES } from '@/lib/constants';
@@ -598,7 +599,7 @@ export async function createPayment(input: PaymentInput, userId: string) {
         ledgerAccountId: method === 'LEDGER_TRANSFER' && !input.ledgerAgentId ? (input.ledgerAccountId ?? null) : null,
         ledgerAgentId: method === 'LEDGER_TRANSFER' ? (input.ledgerAgentId ?? null) : null,
         paymentMethod: method,
-        shipmentId: input.shipmentId ?? null,
+        shipmentId: await ownShipmentId(tx, input.companyId, input.shipmentId),
         reference: input.reference ?? null,
         description: input.description ?? null,
         status: 'DRAFT',
@@ -701,7 +702,7 @@ export async function updatePayment(id: string, input: PaymentInput, userId: str
         ledgerAccountId: method === 'LEDGER_TRANSFER' && !input.ledgerAgentId ? (input.ledgerAccountId ?? null) : null,
         ledgerAgentId: method === 'LEDGER_TRANSFER' ? (input.ledgerAgentId ?? null) : null,
         paymentMethod: method,
-        shipmentId: input.shipmentId ?? null,
+        shipmentId: await ownShipmentId(tx, input.companyId, input.shipmentId),
         reference: input.reference ?? null,
         description: input.description ?? null,
         allocations: { create: allocations },

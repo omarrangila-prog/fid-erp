@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
-import { requirePageAccess, can } from '@/lib/auth/guards';
+import { can, requirePageAccessAll } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { dec } from '@/lib/money';
-import { formatMoney, formatQuantityKg } from '@/lib/format';
+import { formatMoney, formatQuantityKg, dayParam, companyToday } from '@/lib/format';
 import { getStockMovementSummary } from '@/lib/services/stock';
 import { PageHeader } from '@/components/shared/page-header';
 import { ExportLinks } from '@/components/shared/export-links';
@@ -35,13 +35,14 @@ export default async function StockMovementPage({
 }: {
   searchParams: Promise<{ from?: string; to?: string; warehouse?: string }>;
 }) {
-  const user = await requirePageAccess(PERMISSIONS.INVENTORY_VIEW);
+  const user = await requirePageAccessAll([PERMISSIONS.REPORTS_VIEW, PERMISSIONS.INVENTORY_VIEW]);
   const params = await searchParams;
   const companyId = user.activeCompany.id;
 
-  const today = new Date();
-  const from = params.from ? new Date(`${params.from}T00:00:00.000Z`) : new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
-  const to = params.to ? new Date(`${params.to}T00:00:00.000Z`) : today;
+  // Today on the company's own clock, not the server's.
+  const today = companyToday(user.activeCompany.timezone);
+  const from = dayParam(params.from) ?? new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+  const to = dayParam(params.to) ?? today;
 
   const [rows, warehouses] = await Promise.all([
     getStockMovementSummary({ companyId, from, to, warehouseId: params.warehouse || undefined }),

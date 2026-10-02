@@ -14,7 +14,7 @@ import { DualAmount } from '@/components/shared/dual-amount';
 import { getSetupStatus, toChecklistStep } from '@/lib/services/setup';
 import { getMonthlyPurchases } from '@/lib/services/profitability';
 import { dec } from '@/lib/money';
-import { formatDrCr, formatMoney, formatMoneyCompact, formatQuantityKg, formatDate, daysUntil, formatDateTime } from '@/lib/format';
+import { formatDrCr, formatMoney, formatMoneyCompact, formatQuantityKg, formatDate, daysUntil, companyToday, formatDateTime } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { StatCard } from '@/components/shared/stat-card';
 import { KpiCard } from '@/components/dashboard/kpi-card';
@@ -78,6 +78,7 @@ function DashboardActions({
 
 export default async function DashboardPage() {
   const user = await requirePageAccess(PERMISSIONS.DASHBOARD_VIEW);
+  const companyDay = companyToday(user.activeCompany.timezone);
   const companyId = user.activeCompany.id;
   const local = user.activeCompany.localCurrency;
 
@@ -771,7 +772,7 @@ export default async function DashboardPage() {
               <p className="py-6 text-center text-xs text-ink-subtle">Nothing on the water.</p>
             ) : (
               data.shipments.upcoming.map((s) => {
-                const days = daysUntil(s.etaDate);
+                const days = daysUntil(s.etaDate, companyDay);
                 return (
                   <Link
                     key={s.id}
@@ -952,7 +953,8 @@ async function OutstandingSection({ companyId }: { companyId: string }) {
               key={key}
               href={href}
               data-testid={`outstanding-invoices-${key}`}
-              className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 hover:bg-forest-50/60"
+              // 44px on a touch screen, so a finger lands on the right row.
+              className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 hover:bg-forest-50/60 [@media(pointer:coarse)]:min-h-11"
             >
               <span className="text-ink-muted">
                 {label} · {figure.count}

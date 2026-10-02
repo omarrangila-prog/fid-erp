@@ -1,4 +1,5 @@
 import type { Tx } from '@/lib/db';
+import { ownShipmentId } from '@/lib/services/company-scope';
 import { transaction } from '@/lib/db';
 import { Decimal, dec, toMoney, convertToUsd, convertFromUsd, sum } from '@/lib/money';
 import { ACCOUNT_KEYS, DOC_TYPES } from '@/lib/constants';
@@ -546,7 +547,7 @@ export async function createReceiptIn(tx: Tx, input: ReceiptInput, userId: strin
       ledgerAgentId: method === 'LEDGER_TRANSFER' ? (input.ledgerAgentId ?? null) : null,
       agentId: input.agentId ?? null,
       paymentMethod: method,
-      shipmentId: input.shipmentId ?? null,
+      shipmentId: await ownShipmentId(tx, input.companyId, input.shipmentId),
       reference: input.reference ?? null,
       description: input.description ?? null,
       status: 'DRAFT',
@@ -661,7 +662,7 @@ export async function updateReceipt(id: string, input: ReceiptInput, userId: str
         ledgerAgentId: method === 'LEDGER_TRANSFER' ? (input.ledgerAgentId ?? null) : null,
         agentId: input.agentId ?? null,
         paymentMethod: method,
-        shipmentId: input.shipmentId ?? null,
+        shipmentId: await ownShipmentId(tx, input.companyId, input.shipmentId),
         reference: input.reference ?? null,
         description: input.description ?? null,
         allocations: { create: allocations },

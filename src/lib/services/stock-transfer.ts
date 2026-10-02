@@ -444,6 +444,12 @@ export async function updateDraftStockTransfer(id: string, input: StockTransferI
     if (input.fromWarehouseId === input.toWarehouseId) {
       throw new BusinessRuleError('The source and destination warehouses must be different.');
     }
+    // The same check as a new transfer: both warehouses this company's, and in use.
+    for (const warehouseId of [input.fromWarehouseId, input.toWarehouseId]) {
+      const warehouse = await tx.warehouse.findFirst({ where: { id: warehouseId, companyId: input.companyId }, select: { name: true, status: true } });
+      if (!warehouse) throw new NotFoundError('Warehouse');
+      if (warehouse.status !== 'ACTIVE') throw new BusinessRuleError(`${warehouse.name} is inactive and cannot be used for a transfer.`);
+    }
     const reserved = existing.workflowState !== 'DRAFT';
     if (reserved) {
       // Let go of the old lines before the new ones are checked against

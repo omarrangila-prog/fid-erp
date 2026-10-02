@@ -17,6 +17,37 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     '/**': ['./certs/**'],
   },
+
+  /**
+   * Attachments are uploaded through a server action, which Next caps at 1 MB
+   * by default — a scanned bill of lading is often more. Vercel's own ceiling
+   * is 4.5 MB a request; the form keeps files to ATTACHMENT_MAX_BYTES (4 MB)
+   * so the multipart wrapping always fits.
+   */
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '4.5mb',
+    },
+  },
+
+  /**
+   * No other site may show these pages inside a frame of its own — the trick
+   * that lays an invisible ERP over a harmless-looking button (clickjacking).
+   * Nothing here frames itself, so same-origin framing is all that is kept.
+   */
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          { key: 'Content-Security-Policy', value: "frame-ancestors 'self'" },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { Callout } from '@/components/ui/feedback';
 import { splitContractLineAction } from '@/server/actions/trading-actions';
+import { safely } from '@/lib/safely';
 
 export type ItemChoice = { id: string; name: string; bagWeightKg: string };
 
@@ -64,7 +65,7 @@ export function SplitLineDialog({
     if (!(Number(add.quantityKg) > 0)) return setAddError('Enter the kilograms.');
     if (!(Number(add.unitPriceKg) > 0)) return setAddError(`Enter the price per KG in ${currency}.`);
     setAddBusy(true);
-    const result = await addContainerAction(
+    const result = await safely(addContainerAction(
       JSON.stringify({
         purchaseContractId: contractId,
         itemId: add.itemId,
@@ -75,7 +76,7 @@ export function SplitLineDialog({
         batchNumber: add.batchNumber.trim() || undefined,
         reason: add.reason.trim() || undefined,
       }),
-    );
+    ));
     setAddBusy(false);
     if (!result.ok) return setAddError(result.error);
     toast.success(`Container ${result.data.lineNumber} added to the order.`);
@@ -125,13 +126,13 @@ export function SplitLineDialog({
       return;
     }
     setBusy(true);
-    const result = await splitContractLineAction(
+    const result = await safely(splitContractLineAction(
       JSON.stringify({
         purchaseContractId: contractId,
         lineId: line.id,
         parts: parts.map((p) => ({ quantityKg: p.quantityKg.trim(), containerNumber: p.containerNumber.trim() || undefined })),
       }),
-    );
+    ));
     setBusy(false);
     if (!result.ok) {
       setError(result.error);

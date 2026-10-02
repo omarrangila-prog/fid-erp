@@ -200,6 +200,13 @@ export async function createCreditNote(input: CreditNoteInput, userId: string) {
     if (!input.reason.trim()) {
       throw new BusinessRuleError('State why the credit is being raised — it appears on the document and in the audit trail.');
     }
+    // The party is this company's, whatever the form sent.
+    if (input.customerId && !(await tx.customer.findFirst({ where: { id: input.customerId, companyId: input.companyId }, select: { id: true } }))) {
+      throw new NotFoundError('Customer');
+    }
+    if (input.vendorId && !(await tx.vendor.findFirst({ where: { id: input.vendorId, companyId: input.companyId }, select: { id: true } }))) {
+      throw new NotFoundError('Supplier');
+    }
 
     const lines = await resolveLines(tx, input);
     const subtotalAmount = toMoney(lines.reduce((sum, line) => sum.plus(line.lineTotal), new Decimal(0)));

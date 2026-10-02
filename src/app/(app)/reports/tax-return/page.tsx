@@ -4,7 +4,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getTaxSettings } from '@/lib/services/tax';
 import { getTaxReturn, listTaxReturns, suggestedTaxPeriod } from '@/lib/services/tax-return';
-import { formatDate, formatDateTime } from '@/lib/format';
+import { formatDate, formatDateTime, dayParam, companyToday } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrintButton } from '@/components/shared/print-button';
 import { ReportShareButton } from '@/components/share/report-share-button';
@@ -54,9 +54,9 @@ export default async function TaxReturnPage({
     );
   }
 
-  const suggested = await suggestedTaxPeriod(companyId, settings.periodMonths);
-  const from = params.from ? new Date(`${params.from}T00:00:00.000Z`) : suggested.from;
-  const to = params.to ? new Date(`${params.to}T00:00:00.000Z`) : suggested.to;
+  const suggested = await suggestedTaxPeriod(companyId, settings.periodMonths, companyToday(user.activeCompany.timezone));
+  const from = dayParam(params.from) ?? suggested.from;
+  const to = dayParam(params.to) ?? suggested.to;
 
   const [figures, history] = await Promise.all([
     getTaxReturn({ companyId, from, to }),

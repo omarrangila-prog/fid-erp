@@ -27,11 +27,14 @@ export const decimalString = (label: string, options?: { min?: number; allowZero
  * every form posted every field, and a trap the moment one stopped. A field
  * the caller omits entirely now lands on the same value as one left blank.
  */
-export const optionalDecimalString = (label: string) =>
+export const optionalDecimalString = (label: string, options?: { allowNegative?: boolean }) =>
   z
     .string()
     .trim()
     .refine((v) => v === '' || /^-?\d+(\.\d+)?$/.test(v), `${label} must be a number.`)
+    // A negative freight, rate or bag weight is a typo, and it posts.
+    // Only an opening balance may be below zero (an overdrawn bank).
+    .refine((v) => options?.allowNegative || !v.startsWith('-') || Number(v) === 0, `${label} cannot be negative.`)
     .optional()
     .transform((v) => (v === undefined || v === '' ? '0' : v));
 
@@ -41,20 +44,37 @@ export const currencyCode = z
   .toUpperCase()
   .length(3, 'Use a three-letter currency code such as USD, AED or MAD.');
 
+/**
+ * A day that exists, as midnight UTC.
+ *
+ * `Date.parse` was the check, and it is lenient: 31 February passed and was
+ * saved as 3 March, and "2026-1-5" passed and then failed the save. A year
+ * mistyped as 0202 or 20266 is refused too — it would post into a period
+ * nobody looks at.
+ */
+export function calendarDay(value: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}(T[\d:.]+(Z|[+-]\d{2}:?\d{2})?)?$/.test(value)) return null;
+  const day = value.slice(0, 10);
+  const date = new Date(`${day}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== day) return null;
+  const year = date.getUTCFullYear();
+  return year >= 1990 && year <= 2100 ? date : null;
+}
+
 export const dateString = (label: string) =>
   z
     .string()
     .trim()
     .min(1, `${label} is required.`)
-    .refine((v) => !Number.isNaN(Date.parse(v)), `${label} is not a valid date.`)
-    .transform((v) => new Date(`${v.slice(0, 10)}T00:00:00.000Z`));
+    .refine((v) => calendarDay(v) !== null, `${label} is not a valid date.`)
+    .transform((v) => calendarDay(v)!);
 
 export const optionalDateString = z
   .string()
   .trim()
   .optional()
-  .transform((v) => (!v ? null : new Date(`${v.slice(0, 10)}T00:00:00.000Z`)))
-  .refine((v) => v === null || !Number.isNaN(v.getTime()), 'That is not a valid date.');
+  .refine((v) => !v || calendarDay(v) !== null, 'That is not a valid date.')
+  .transform((v) => (!v ? null : calendarDay(v)!));
 
 export const requiredText = (label: string, max = 200) =>
   z.string().trim().min(1, `${label} is required.`).max(max, `${label} is too long.`);

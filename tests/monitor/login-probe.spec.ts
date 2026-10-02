@@ -8,9 +8,8 @@ import { test, expect } from '@playwright/test';
  * hangs can be told apart from a selector that is simply wrong.
  */
 
-const ADMIN_NAME = process.env.INITIAL_ADMIN_NAME ?? 'Ali Raza';
 
-test('the sign-in screen offers a PIN keypad after choosing a user', async ({ page }) => {
+test('the sign-in screen is the PIN keypad, and it loads cleanly', async ({ page }) => {
   const console_: string[] = [];
   const failures: string[] = [];
   page.on('console', (m) => {
@@ -23,30 +22,15 @@ test('the sign-in screen offers a PIN keypad after choosing a user', async ({ pa
   });
 
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('heading', { name: /who is signing in/i })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('heading', { name: 'Enter your PIN' })).toBeVisible({ timeout: 30_000 });
+  // Every digit, and the keys become usable once the page is ready. No PIN is typed.
+  for (const digit of ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']) {
+    await expect(page.getByRole('button', { name: digit, exact: true })).toBeEnabled({ timeout: 30_000 });
+  }
+  await page.waitForLoadState('networkidle').catch(() => undefined);
 
-  const tile = page.getByRole('button', { name: new RegExp(ADMIN_NAME, 'i') }).first();
-  await expect(tile).toBeVisible();
-  await tile.click();
-
-  // Give the next view a fair chance, then describe whatever is on screen.
-  await page.waitForTimeout(5_000);
-
-  const url = page.url();
-  const buttons = await page.getByRole('button').allInnerTexts();
-  const headings = await page.getByRole('heading').allInnerTexts();
-  const inputs = await page.locator('input').evaluateAll((els) =>
-    els.map((e) => {
-      const i = e as HTMLInputElement;
-      return `${i.type}${i.inputMode ? `/${i.inputMode}` : ''}${i.name ? ` name=${i.name}` : ''}${i.getAttribute('aria-label') ? ` aria=${i.getAttribute('aria-label')}` : ''}`;
-    }),
-  );
-
-  console.log('\n--- after clicking the user tile ---');
-  console.log('url      :', url);
-  console.log('headings :', JSON.stringify(headings));
-  console.log('buttons  :', JSON.stringify(buttons.map((b) => b.replace(/\s+/g, ' ').trim()).slice(0, 30)));
-  console.log('inputs   :', JSON.stringify(inputs));
   console.log('console  :', console_.length ? console_ : 'clean');
   console.log('network  :', failures.length ? failures : 'clean');
+  expect(console_, 'no console errors on the sign-in screen').toEqual([]);
+  expect(failures, 'no failed requests on the sign-in screen').toEqual([]);
 });

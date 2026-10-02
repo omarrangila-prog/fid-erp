@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
-import { toDateInputValue } from '@/lib/format';
+import { companyToday, toDateInputValue } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Callout } from '@/components/ui/feedback';
 import { JournalForm } from '@/app/(app)/accounting/journal/new/journal-form';
@@ -83,7 +83,7 @@ export default async function EditJournalVoucherPage({ params }: { params: Promi
         localCurrency={user.activeCompany.localCurrency}
         defaultLocalRate={rates.local}
         ratesByCurrency={rates.byCurrency}
-        today={toDateInputValue(new Date())}
+        today={toDateInputValue(companyToday(user.activeCompany.timezone))}
         initial={{
           entryId: entry.id,
           entryDate: toDateInputValue(entry.entryDate),

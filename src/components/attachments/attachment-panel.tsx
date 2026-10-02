@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/ui/confirm';
 import { uploadAttachmentAction, deleteAttachmentAction } from '@/server/actions/compliance-actions';
+import { ATTACHMENT_MAX_BYTES } from '@/lib/constants';
 
 export type AttachmentRow = {
   id: string;
@@ -44,6 +45,11 @@ export function AttachmentPanel({
   const [removing, setRemoving] = React.useState<AttachmentRow | null>(null);
 
   async function upload(file: File) {
+    if (file.size > ATTACHMENT_MAX_BYTES) {
+      toast.error(`${file.name} is ${(file.size / 1024 / 1024).toFixed(1)} MB. The limit is ${ATTACHMENT_MAX_BYTES / 1024 / 1024} MB — save it smaller or as a PDF and attach it again.`);
+      if (inputRef.current) inputRef.current.value = '';
+      return;
+    }
     setUploading(true);
     try {
       const formData = new FormData();
@@ -59,6 +65,8 @@ export function AttachmentPanel({
       } else {
         toast.error(result.error);
       }
+    } catch {
+      toast.error(`${file.name} did not reach the server. Check the connection and try again.`);
     } finally {
       setUploading(false);
       if (inputRef.current) inputRef.current.value = '';
@@ -72,7 +80,7 @@ export function AttachmentPanel({
           <Paperclip className="size-4 text-ink-subtle" />
           Attachments
         </CardTitle>
-        <CardDescription>PDF, image, spreadsheet or document, up to 20 MB each.</CardDescription>
+        <CardDescription>{`PDF, image, spreadsheet or document, up to ${ATTACHMENT_MAX_BYTES / 1024 / 1024} MB each.`}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {attachments.length === 0 ? (

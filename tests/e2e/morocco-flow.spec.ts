@@ -80,6 +80,23 @@ async function pickFirstOption(page: Page, timeout = 30_000) {
   throw new Error('the option list never settled enough to click');
 }
 
+/**
+ * A container still waiting to load: the test data's three-container order,
+ * which no suite loads. Its row opens to one line per container, each with its
+ * own "Mark loaded". Multi-container orders have no Mark loaded on the order
+ * row itself — loading is per container, or through Quick Update.
+ */
+async function openUnloadedContainer(page: Page) {
+  await page.goto('/loading', { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+  const order = page.getByRole('row').filter({ hasText: 'E2E-PO-MA-3C' }).first();
+  await expect(order).toBeVisible({ timeout: 45_000 });
+  await order.getByRole('button', { name: /Show detail/i }).click();
+  const markLoaded = page.getByTestId('order-lines').getByRole('button', { name: /Mark loaded/i }).first();
+  await expect(markLoaded).toBeVisible({ timeout: 30_000 });
+  return markLoaded;
+}
+
 test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await signInToMorocco(page);
@@ -111,12 +128,7 @@ test('the loading sheet offers one button to mark a consignment loaded', async (
   // The sheet fills itself from the contracts; nothing is typed here.
   await expect(page.getByRole('heading', { name: /Loading/i }).first()).toBeVisible();
 
-  const markLoaded = page.getByRole('button', { name: /Mark loaded/i }).first();
-  if ((await markLoaded.count()) === 0) {
-    test.skip(true, 'Every consignment in this company is already loaded.');
-    return;
-  }
-
+  const markLoaded = await openUnloadedContainer(page);
   await markLoaded.click();
 
   // The shipping information the purchase order deliberately stopped asking
@@ -135,7 +147,10 @@ test('the loading sheet offers one button to mark a consignment loaded', async (
   const shippingLine = page.getByLabel(/shipping line/i);
   if ((await shippingLine.locator('option').count()) > 1) {
     await shippingLine.selectOption({ index: 1 });
-    const firstContainer = page.getByLabel(/^Container 1$/);
+    // "Container number" when the booking holds one box, "Container 1" when
+    // it holds several. Left filled, it identifies the consignment and the
+    // save goes through.
+    const firstContainer = page.getByLabel(/^(Container 1|Container number)$/);
     if ((await firstContainer.count()) > 0) await firstContainer.fill('');
     await page.getByLabel(/booking number/i).fill('');
     await page.getByLabel(/bill of lading/i).fill('');
@@ -147,27 +162,21 @@ test('the loading sheet offers one button to mark a consignment loaded', async (
 test('a consignment with no lot asks for one when it is received', async ({ page }) => {
   await page.goto('/purchases', { waitUntil: 'domcontentloaded' });
 
-  // Find a contract that still has coffee to receive.
-  const receivable = page.getByRole('row').filter({ hasText: /Approved|Posted/i }).first();
-  if ((await receivable.count()) === 0) {
-    test.skip(true, 'No approved contract to receive against.');
-    return;
-  }
-
-  await receivable.click();
+  // A contract with coffee still to receive: the test data's three-container order.
+  const receivable = page.getByRole('row').filter({ hasText: 'E2E-PO-MA-3C' }).first();
+  await expect(receivable).toBeVisible({ timeout: 45_000 });
+  await receivable.getByRole('link', { name: /View/i }).first().click();
   await page.waitForURL(/\/purchases\/[\w-]+$/, { waitUntil: 'domcontentloaded' });
 
-  const receive = page.getByRole('button', { name: /Receive goods/i });
-  if ((await receive.count()) === 0) {
-    test.skip(true, 'This contract is already fully received.');
-    return;
-  }
-
+  const receive = page.getByRole('button', { name: /Receive goods/i }).first();
+  await expect(receive).toBeVisible({ timeout: 45_000 });
   await receive.click();
 
   // The receipt asks what arrived, and offers to record it arriving as more
-  // than one lot — the client's 42 MT landing as two lots of 21.
+  // than one lot — the client's 42 MT landing as two lots of 21. Lot and
+  // quantity are asked of the containers ticked as in.
   await expect(page.getByRole('heading', { name: /Receive goods/i })).toBeVisible();
+  await page.getByRole('checkbox', { name: 'Receive container 1' }).check();
   await expect(page.getByLabel(/^Lot number/i).first()).toBeVisible();
   await expect(page.getByRole('button', { name: /Arrived as another lot/i }).first()).toBeVisible();
 });
@@ -341,16 +350,9 @@ test('§19 the agent ledger says how much is sitting with whom', async ({ page }
 });
 
 test('§4 three containers means three boxes', async ({ page }) => {
-  await page.goto('/loading', { waitUntil: 'domcontentloaded' });
-
-  const markLoaded = page.getByRole('button', { name: /Mark loaded/i }).first();
-  if ((await markLoaded.count()) === 0) {
-    test.skip(true, 'Everything in this company is already loaded.');
-    return;
-  }
-
+  const markLoaded = await openUnloadedContainer(page);
   await markLoaded.click();
-  await expect(page.getByLabel(/container number/i)).toBeVisible();
+  await expect(page.getByLabel(/container number/i).first()).toBeVisible();
 
   await page.getByLabel(/how many containers/i).fill('3');
   await expect(page.getByLabel(/^Container 1$/)).toBeVisible();

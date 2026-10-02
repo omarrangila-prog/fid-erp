@@ -123,7 +123,7 @@ describe('Flow 8 — permissions are enforced, not merely hidden', () => {
     expect(can(user, PERMISSIONS.ACCOUNTING_VIEW)).toBe(false);
     expect(can(user, PERMISSIONS.PURCHASES_VIEW)).toBe(false);
 
-    expect(() => assertPermission(user, PERMISSIONS.PROFITS_VIEW)).toThrow(/do not have the "profits.view"/);
+    expect(() => assertPermission(user, PERMISSIONS.PROFITS_VIEW)).toThrow(/do not have permission to view margin, net profit and profitability/);
     expect(() => assertPermission(user, PERMISSIONS.PURCHASE_COST_VIEW)).toThrow(/permission/);
   });
 

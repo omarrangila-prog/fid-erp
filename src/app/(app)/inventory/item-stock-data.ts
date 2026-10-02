@@ -105,11 +105,14 @@ const toNumber = (value: Decimal | number) => (typeof value === 'number' ? value
 export function toItemStockRow(
   item: ItemNode,
   local: string,
-  access: { showCost: boolean; showSales: boolean },
+  access: { showCost: boolean; showSales: boolean; showProfit: boolean },
   query: string,
 ): ItemStockRow {
   const { showCost, showSales } = access;
-  const both = showCost && showSales;
+  // Cost of goods sold and profit are profitability, as on every other
+  // screen: they need "View profit" as well as the cost they are made from.
+  const showCogs = showCost && access.showProfit;
+  const both = showCogs && showSales;
   const warehouses = item.warehouses.filter((w) => !(w.receivedKg.isZero() && w.transferInKg.isZero() && w.transferOutKg.isZero() && w.stockSoldKg.isZero() && w.onHandKg.isZero()));
   const sum = (pick: (w: (typeof warehouses)[number]) => Decimal) => kg(warehouses.reduce((total, w) => total.plus(pick(w)), new Decimal(0)));
   return {
@@ -143,7 +146,7 @@ export function toItemStockRow(
       availableLabel: sum((w) => w.availableKg),
     },
     avgCost: showCost ? perKgText(item.avgCostPerKg, local) : null,
-    cogs: showCost ? pairText(item.cogs, local) : null,
+    cogs: showCogs ? pairText(item.cogs, local) : null,
     stockValue: showCost ? pairText(item.stockValue, local) : null,
     avgSell: showSales ? perKgText(item.avgSellPerKg, local) : null,
     revenue: showSales ? pairText(item.revenue, local) : null,
@@ -158,7 +161,7 @@ export function toItemStockRow(
       revenue: showSales ? toNumber(item.revenue.local) : 0,
       collected: showSales ? toNumber(item.collectedTotal.local) : 0,
       outstanding: showSales ? toNumber(item.outstanding.local) : 0,
-      cogs: showCost ? toNumber(item.cogs.local) : 0,
+      cogs: showCogs ? toNumber(item.cogs.local) : 0,
       profit: both ? toNumber(item.grossProfit.local) : 0,
       margin: both ? toNumber(item.marginPct ?? 0) : 0,
       stockValue: showCost ? toNumber(item.stockValue.local) : 0,

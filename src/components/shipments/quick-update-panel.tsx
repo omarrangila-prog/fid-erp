@@ -30,6 +30,7 @@ import { DocumentStatusDialog, composeDocumentNote } from '@/app/(app)/loading/d
 import { ManageContainersDialog } from '@/app/(app)/loading/manage-containers-dialog';
 import { GoodsReceiptDialog } from '@/app/(app)/purchases/[id]/goods-receipt-dialog';
 import { EditContainerDialog, type EditableContainer } from '@/components/shipments/edit-container-dialog';
+import { safely } from '@/lib/safely';
 
 /** What the row's button asked for, so the panel opens ready to do it. */
 export type QuickIntent = 'load' | 'eta' | 'documents' | 'arrive' | 'receive' | null;
@@ -161,7 +162,7 @@ function QuickUpdateBody({
   // Read on opening; the panel is mounted only while it is open.
   React.useEffect(() => {
     let live = true;
-    getQuickUpdateAction(contractId).then((result) => {
+    safely(getQuickUpdateAction(contractId)).then((result) => {
       if (live) receive(result);
     });
     return () => {
@@ -171,14 +172,14 @@ function QuickUpdateBody({
 
   /** After any change: this panel and the list behind it read the records again. */
   async function refreshAll() {
-    receive(await getQuickUpdateAction(contractId));
+    receive(await safely(getQuickUpdateAction(contractId)));
     router.refresh();
   }
 
   async function apply(ids: string[], change: Record<string, unknown>, label: string): Promise<boolean> {
     if (!order) return false;
     setBusy(true);
-    const result = await quickUpdateContainersAction(JSON.stringify({ contractId, shipmentIds: ids, change }));
+    const result = await safely(quickUpdateContainersAction(JSON.stringify({ contractId, shipmentIds: ids, change })));
     setBusy(false);
     if (!result.ok) {
       toast.error(result.error);
@@ -202,7 +203,7 @@ function QuickUpdateBody({
     }
     setHistoryFor(id);
     setHistory(null);
-    const result = await getContainerHistoryAction(id);
+    const result = await safely(getContainerHistoryAction(id));
     setHistory(result.ok ? result.data : []);
     if (!result.ok) toast.error(result.error);
   }
@@ -958,7 +959,7 @@ function QuickUpdateBody({
         confirmLabel="Undo loading"
         onConfirm={async () => {
           if (!undoOne) return;
-          const result = await undoLoadingAction(undoOne.shipmentId, '');
+          const result = await safely(undoLoadingAction(undoOne.shipmentId, ''));
           if (!result || !result.ok) throw new Error(result?.error ?? 'The loading could not be undone.');
           toast.success(`${nameOf(undoOne)} is back to Not loaded.`);
           await refreshAll();
@@ -984,7 +985,7 @@ function QuickUpdateBody({
         confirmLabel="Undo arrival"
         onConfirm={async () => {
           if (!unArriving) return;
-          const result = await undoArrivalAction(unArriving.shipmentId, '');
+          const result = await safely(undoArrivalAction(unArriving.shipmentId, ''));
           if (!result || !result.ok) throw new Error(result?.error ?? 'The arrival could not be undone.');
           toast.success(`${nameOf(unArriving)} is back to Not arrived.`);
           await refreshAll();
@@ -1004,7 +1005,7 @@ function QuickUpdateBody({
         reasonLabel="Why is this container being removed?"
         onConfirm={async (reason) => {
           if (!removing) return;
-          const result = await removeContainerAction(removing.shipmentId, reason);
+          const result = await safely(removeContainerAction(removing.shipmentId, reason));
           if (!result.ok) throw new Error(result.error);
           toast.success(`Container ${nameOf(removing)} removed from the order.`);
           setSelected((prev) => {

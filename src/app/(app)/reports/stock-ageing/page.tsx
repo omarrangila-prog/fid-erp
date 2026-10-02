@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { requirePageAccess, can } from '@/lib/auth/guards';
+import { can, requirePageAccessAll } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getStockAgeing, STOCK_AGEING_BUCKETS } from '@/lib/services/stock';
 import { Decimal, toMoney, toQuantity } from '@/lib/money';
@@ -29,7 +29,7 @@ const BUCKET_TONES: Record<string, BadgeTone> = {
 };
 
 export default async function StockAgeingPage() {
-  const user = await requirePageAccess(PERMISSIONS.INVENTORY_VIEW);
+  const user = await requirePageAccessAll([PERMISSIONS.REPORTS_VIEW, PERMISSIONS.INVENTORY_VIEW]);
   const showValue = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
   const rows = await getStockAgeing(user.activeCompany.id);
 

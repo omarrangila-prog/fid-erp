@@ -118,12 +118,15 @@ export function companyToday(timeZone: string | null | undefined, now = new Date
   return new Date(`${day}T00:00:00.000Z`);
 }
 
-/** Whole days from today until `value`. Negative when the date has passed. */
-export function daysUntil(value: Date | string | null | undefined): number | null {
+/**
+ * Whole days from today until `value`. Negative when the date has passed.
+ * On the server pass the company's day (`companyToday`): the UTC clock is a
+ * day behind Dubai for the first four hours of every morning.
+ */
+export function daysUntil(value: Date | string | null | undefined, today: Date = new Date()): number | null {
   if (!value) return null;
   const d = typeof value === 'string' ? new Date(value) : value;
   if (Number.isNaN(d.getTime())) return null;
-  const today = new Date();
   const a = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
   const b = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
   return Math.round((a - b) / 86_400_000);
@@ -167,4 +170,16 @@ export function formatDrCr(balance: DecimalInput, currency: string): string {
   const value = dec(balance);
   if (value.abs().lessThan('0.005')) return formatMoney(0, currency);
   return `${formatMoney(value.abs(), currency)} ${value.isPositive() ? 'Dr' : 'Cr'}`;
+}
+
+/**
+ * A yyyy-mm-dd from the address bar, as that day at midnight UTC — or null
+ * when it is missing or is not a real day ("2026-0", "2026-02-30", "abc").
+ * A shared or hand-edited link with a broken date used to become an Invalid
+ * Date and take the whole page down; now the page falls back to its default.
+ */
+export function dayParam(value: string | null | undefined): Date | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value ? null : date;
 }

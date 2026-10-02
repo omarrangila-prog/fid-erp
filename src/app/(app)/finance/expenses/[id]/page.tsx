@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { getCurrentUser } from '@/lib/auth/session';
 import { MakeRecurringButton } from '@/app/(app)/finance/expenses/[id]/make-recurring';
 import { DocumentJournal } from '@/components/shared/document-journal';
 import Link from 'next/link';
@@ -24,7 +25,12 @@ export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
-  const expense = await prisma.expense.findUnique({ where: { id }, select: { expenseNumber: true } });
+  // Only this company's record, and only for someone signed in: the tab title must not
+  // name a record from the other company, or show anything before the page's own check.
+  const viewer = await getCurrentUser();
+  const expense = viewer
+    ? await prisma.expense.findFirst({ where: { id, companyId: viewer.activeCompany.id }, select: { expenseNumber: true } })
+    : null;
   return { title: expense?.expenseNumber ?? 'Expense' };
 }
 

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
+import { agentScope } from '@/lib/auth/scope';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getLoadingSheet } from '@/lib/services/loading-sheet';
@@ -35,6 +36,15 @@ export default async function LoadingPage() {
       select: { name: true },
     }),
   ]);
+
+  // An agent sees the sales to his own customers here, not everyone's — the
+  // same rule as the sales list and the customer pages.
+  const agentId = agentScope(user);
+  const ownCustomers = agentId
+    ? new Set(
+        (await prisma.customer.findMany({ where: { companyId: user.activeCompany.id, agentId }, select: { id: true } })).map((c) => c.id),
+      )
+    : null;
 
   // Dubai trades container to container; Morocco buys a container and sells it
   // to many customers. The two paper sheets differ, so the two screens do too.
@@ -106,7 +116,7 @@ export default async function LoadingPage() {
       paymentStatus: row.paymentStatus,
       fullyReceived: receivedKg > 0 && receivedKg >= quantityKg - 0.001,
       warehouseNames: row.warehouseNames,
-      allocations: row.allocations.map((allocation) => ({
+      allocations: row.allocations.filter((allocation) => !ownCustomers || ownCustomers.has(allocation.customerId)).map((allocation) => ({
         customerId: allocation.customerId,
         customerName: allocation.customerName,
         invoiceId: allocation.invoiceId,

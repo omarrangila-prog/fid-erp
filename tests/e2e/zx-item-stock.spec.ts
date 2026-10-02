@@ -112,7 +112,8 @@ test('Stock on Hand lists every coffee with its stock, sales, money and profit, 
 
   // Profit is revenue less cost; the averages are the totals over the KG.
   expect(row.profit).toBeCloseTo(row.revenue - row.cogs, 1);
-  expect(row.avgSell * row.sold).toBeCloseTo(row.revenue, -1);
+  // The average is shown to two decimals, so it is only that close per KG.
+  expect(Math.abs(row.avgSell * row.sold - row.revenue)).toBeLessThanOrEqual(row.sold * 0.005 + 1);
   expect(row.collected + row.outstanding).toBeGreaterThan(0);
 
   // The warehouses add up to the company's available stock.

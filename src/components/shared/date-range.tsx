@@ -61,10 +61,13 @@ export function DateRangePicker({
    * asks most: how are we doing since we started.
    */
   function preset(kind: PresetKind) {
+    // The user's own calendar day, held as midnight UTC like every date in
+    // the books. Reading the UTC clock put "Today" on yesterday until 4am in
+    // Dubai.
     const now = new Date();
-    const year = now.getUTCFullYear();
-    const month = now.getUTCMonth();
-    const today = new Date(Date.UTC(year, month, now.getUTCDate()));
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const today = new Date(Date.UTC(year, month, now.getDate()));
     const daysAgo = (n: number) => new Date(today.getTime() - n * 86_400_000);
 
     let start: Date;

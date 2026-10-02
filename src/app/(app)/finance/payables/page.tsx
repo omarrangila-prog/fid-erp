@@ -3,7 +3,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getPayables, summariseAgeing, AGEING_LABELS } from '@/lib/services/receivables';
 import { getWarehouseLabels } from '@/lib/services/stock';
-import { formatMoney, formatDate, daysUntil } from '@/lib/format';
+import { formatMoney, formatDate, daysUntil, companyToday } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { StatCard } from '@/components/shared/stat-card';
 import { AgeingClient, type AgeingRow } from '@/app/(app)/finance/receivables/ageing-client';
@@ -13,6 +13,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function PayablesPage() {
   const user = await requirePageAccess(PERMISSIONS.PAYABLES_VIEW);
+  const companyDay = companyToday(user.activeCompany.timezone);
   const [payables, warehouses] = await Promise.all([
     getPayables({ companyId: user.activeCompany.id, onlyOutstanding: true }),
     getWarehouseLabels(user.activeCompany.id),
@@ -20,7 +21,7 @@ export default async function PayablesPage() {
   const ageing = summariseAgeing(payables);
 
   const rows: AgeingRow[] = payables.map((p) => {
-    const days = daysUntil(p.dueDate);
+    const days = daysUntil(p.dueDate, companyDay);
     return {
       id: p.contractId,
       documentNumber: p.contractNumber,

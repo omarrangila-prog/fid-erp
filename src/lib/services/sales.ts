@@ -1,4 +1,5 @@
 import type { Tx } from '@/lib/db';
+import { ownShipmentId } from '@/lib/services/company-scope';
 import { prisma, transaction } from '@/lib/db';
 import {
   Decimal,
@@ -329,7 +330,7 @@ export async function createSalesInvoice(input: SalesInvoiceInput, userId: strin
 
     // A single-shipment invoice gets linked automatically for profitability.
     const distinctShipments = [...new Set(lines.map((l) => l.shipmentId))];
-    const shipmentId = input.shipmentId ?? (distinctShipments.length === 1 ? distinctShipments[0] : null);
+    const shipmentId = (await ownShipmentId(tx, input.companyId, input.shipmentId)) ?? (distinctShipments.length === 1 ? distinctShipments[0] : null);
 
     const invoice = await tx.salesInvoice.create({
       data: {
@@ -493,7 +494,7 @@ export async function updateSalesInvoice(id: string, input: SalesInvoiceInput, u
     );
     await assertCashSaleIsComplete(tx, workingInput);
     const distinctShipments = [...new Set(lines.map((l) => l.shipmentId))];
-    const shipmentId = workingInput.shipmentId ?? (distinctShipments.length === 1 ? distinctShipments[0] : null);
+    const shipmentId = (await ownShipmentId(tx, workingInput.companyId, workingInput.shipmentId)) ?? (distinctShipments.length === 1 ? distinctShipments[0] : null);
 
     const invoiceNumber = await allocateSalesInvoiceNumber(tx, {
       companyId: input.companyId,

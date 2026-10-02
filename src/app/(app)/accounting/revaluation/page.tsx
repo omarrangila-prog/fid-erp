@@ -3,7 +3,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma, transaction } from '@/lib/db';
 import { previewRevaluation } from '@/lib/services/revaluation';
-import { formatMoney, toDateInputValue } from '@/lib/format';
+import { formatMoney, toDateInputValue, dayParam, companyToday } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { RevaluationClient, type PreviewLine } from '@/app/(app)/accounting/revaluation/revaluation-client';
 
@@ -20,7 +20,8 @@ export default async function RevaluationPage({
   const companyId = user.activeCompany.id;
   const local = user.activeCompany.localCurrency;
 
-  const asOf = params.asOf ?? toDateInputValue(new Date());
+  // A date from the address bar only when it is a real day; otherwise today.
+  const asOf = dayParam(params.asOf) ? params.asOf! : toDateInputValue(companyToday(user.activeCompany.timezone));
   const asOfDate = new Date(`${asOf}T00:00:00.000Z`);
 
   // Currencies actually used by this company's ledger, other than USD.

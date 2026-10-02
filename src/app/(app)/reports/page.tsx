@@ -77,7 +77,7 @@ const CATALOGUE: Catalogued[] = [
     keywords: 'purchase register contracts suppliers bought landed received', permission: PERMISSIONS.REPORTS_VIEW },
   { href: '/reports/shipment-cost', title: 'Shipment Costing', category: 'Shipment & profitability', pinned: true,
     description: 'What one shipment cost once freight, clearing and every other charge is in — per kilo, in both currencies.',
-    keywords: 'shipment cost landed cost per kg freight clearing job costing', permission: PERMISSIONS.SHIPMENTS_VIEW },
+    keywords: 'shipment cost landed cost per kg freight clearing job costing', permission: PERMISSIONS.PURCHASE_COST_VIEW },
   { href: '/reports/cash-book', title: 'Cash Book & Bank Book', category: 'Cash & bank', pinned: true,
     description: 'Every movement through one drawer or account: in, out, and what was left after each.',
     keywords: 'cash book bank book statement reconcile movements in out running balance', permission: PERMISSIONS.CASHBANK_VIEW },

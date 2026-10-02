@@ -10,6 +10,7 @@ import { Field } from '@/components/ui/field';
 import { Textarea } from '@/components/ui/input';
 import { Callout } from '@/components/ui/feedback';
 import { correctPurchaseContractAction } from '@/server/actions/trading-actions';
+import { safely } from '@/lib/safely';
 
 export function CorrectOrderForm({ id, reference, canCreate }: { id: string; reference: string; canCreate: boolean }) {
   const router = useRouter();
@@ -20,7 +21,7 @@ export function CorrectOrderForm({ id, reference, canCreate }: { id: string; ref
   async function submit() {
     setError(null);
     setBusy(true);
-    const result = await correctPurchaseContractAction(id, reason);
+    const result = await safely(correctPurchaseContractAction(id, reason));
     setBusy(false);
     if (!result.ok) {
       setError(result.error);

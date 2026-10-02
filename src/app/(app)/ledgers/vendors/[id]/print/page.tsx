@@ -4,7 +4,7 @@ import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getVendorLedger, ledgerKindToSourceType, resolvePartyLedgerQuery } from '@/lib/services/ledger';
-import { formatMoney, formatDate, companyFlag } from '@/lib/format';
+import { formatMoney, formatDate, companyFlag, dayParam } from '@/lib/format';
 import { PrintButton } from '@/components/shared/print-button';
 import { ReportShareButton } from '@/components/share/report-share-button';
 import { AutoPrint } from '@/app/(app)/sales/[id]/print/auto-print';
@@ -43,8 +43,8 @@ export default async function VendorLedgerPrintPage({
     localCurrency: user.activeCompany.localCurrency,
     partyCurrency: vendor.primaryCurrency,
   });
-  const from = query.from ? new Date(`${query.from}T00:00:00.000Z`) : undefined;
-  const to = query.to ? new Date(`${query.to}T00:00:00.000Z`) : undefined;
+  const from = dayParam(query.from) ?? undefined;
+  const to = dayParam(query.to) ?? undefined;
 
   const ledger = await getVendorLedger({
     companyId,

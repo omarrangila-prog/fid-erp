@@ -74,6 +74,7 @@ export async function POST(request: Request) {
 
     const workbook = await buildWorkbook<Array<string | number | null>>({
       companyName: user.activeCompany.name,
+      timeZone: user.activeCompany.timezone,
       title: body.title,
       subtitle: body.subtitle,
       rows: body.rows,
@@ -89,7 +90,7 @@ export async function POST(request: Request) {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Length': String(workbook.byteLength),
-        'Content-Disposition': `attachment; filename="${workbookFileName(body.title, user.activeCompany.code)}"`,
+        'Content-Disposition': `attachment; filename="${workbookFileName(body.title, user.activeCompany.code, 'xlsx', user.activeCompany.timezone)}"`,
         'Cache-Control': 'private, no-store',
       },
     });

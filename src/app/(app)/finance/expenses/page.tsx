@@ -4,7 +4,7 @@ import { Plus, Repeat, SplitSquareHorizontal } from 'lucide-react';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, VISIBLE_DOCUMENT_STATUSES } from '@/lib/constants';
 import { prisma } from '@/lib/db';
-import { formatMoney, formatDate } from '@/lib/format';
+import { formatMoney, formatDate, companyToday } from '@/lib/format';
 import { dec, type Decimal } from '@/lib/money';
 import { getWarehouseLabels } from '@/lib/services/stock';
 import { listDueRecurring } from '@/lib/services/recurring-expense';
@@ -32,8 +32,8 @@ export default async function ExpensesPage({
   const user = await requirePageAccess(PERMISSIONS.EXPENSES_VIEW);
   const companyId = user.activeCompany.id;
 
-  const today = new Date();
-  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  // Today on the company's own clock, so a recurring cost due today shows as due from midnight there.
+  const todayUtc = companyToday(user.activeCompany.timezone);
 
   const [expenses, warehouses, dueRecurring] = await Promise.all([
     prisma.expense.findMany({

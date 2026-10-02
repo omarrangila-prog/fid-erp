@@ -1,6 +1,7 @@
 import { prisma, type Tx } from '@/lib/db';
 import { Decimal, dec, toQuantity, toMoney } from '@/lib/money';
 import { repairSharedContainerAssignments } from '@/lib/services/shipment';
+import { companyToday } from '@/lib/format';
 
 function uniqueNames(names: Iterable<string>): string {
   return [...new Set(names)].filter(Boolean).sort((a, b) => a.localeCompare(b)).join(', ');
@@ -161,7 +162,7 @@ function rollUpPayment(allocations: Allocation[]): LoadingSheetRow['paymentStatu
 export async function getLoadingSheet(companyId: string, options?: { contractId?: string }): Promise<LoadingSheetRow[]> {
   const company = await prisma.company.findUniqueOrThrow({
     where: { id: companyId },
-    select: { name: true },
+    select: { name: true, timezone: true },
   });
 
   // Repair the known duplicate-container assignment without deleting anything.
@@ -239,7 +240,9 @@ export async function getLoadingSheet(companyId: string, options?: { contractId?
     },
   });
 
-  const today = new Date();
+  // Overdue from the day after the due date, by the company's calendar — as
+  // the receivables ageing counts it.
+  const today = companyToday(company.timezone);
 
   // Shipments in the order they were opened, per order, so "Shipment 2 of 3"
   // means the same thing here as it does on the purchase order.

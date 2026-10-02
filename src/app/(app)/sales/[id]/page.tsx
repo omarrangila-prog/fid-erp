@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { getCurrentUser } from '@/lib/auth/session';
 import { DocumentJournal } from '@/components/shared/document-journal';
 import { Printer } from 'lucide-react';
 import Link from 'next/link';
@@ -29,7 +30,12 @@ export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
-  const invoice = await prisma.salesInvoice.findUnique({ where: { id }, select: { invoiceNumber: true } });
+  // Only this company's record, and only for someone signed in: the tab title must not
+  // name a record from the other company, or show anything before the page's own check.
+  const viewer = await getCurrentUser();
+  const invoice = viewer
+    ? await prisma.salesInvoice.findFirst({ where: { id, companyId: viewer.activeCompany.id }, select: { invoiceNumber: true } })
+    : null;
   return { title: invoice?.invoiceNumber ?? 'Sales Invoice' };
 }
 

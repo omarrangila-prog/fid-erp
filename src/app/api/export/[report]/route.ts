@@ -3,7 +3,7 @@ import { getOrderCostSheets } from '@/lib/services/order-cost';
 import { NextResponse } from 'next/server';
 import { requirePermission, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
-import { toErrorResponse, NotFoundError } from '@/lib/errors';
+import { toErrorResponse, NotFoundError, ForbiddenError } from '@/lib/errors';
 import { prisma } from '@/lib/db';
 import { dec } from '@/lib/money';
 import {
@@ -59,6 +59,7 @@ import {
   getCogsReport,
 } from '@/lib/services/profitability';
 import type { SessionUser } from '@/lib/auth/session';
+import { calendarDay } from '@/lib/validation/common';
 
 /**
  * Excel export.
@@ -92,8 +93,7 @@ type Report = {
 function dateParam(query: URLSearchParams, key: string): Date | undefined {
   const raw = query.get(key);
   if (!raw) return undefined;
-  const parsed = new Date(`${raw}T00:00:00.000Z`);
-  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+  return calendarDay(raw) ?? undefined;
 }
 
 const startOfYear = () => new Date(Date.UTC(new Date().getUTCFullYear(), 0, 1));
@@ -286,6 +286,7 @@ const REPORTS: Record<string, Report> = {
 
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Loading Follow-Up',
         subtitle: `${rows.length} shipment${rows.length === 1 ? '' : 's'} on the book`,
         rows,
@@ -345,6 +346,7 @@ const REPORTS: Record<string, Report> = {
 
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Stock Allocation',
         subtitle: 'Each purchase and every customer it was sold to',
         rows,
@@ -374,6 +376,7 @@ const REPORTS: Record<string, Report> = {
       const rows = await getReceivables({ companyId: user.activeCompany.id, onlyOutstanding: true });
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Customer Receivables',
         subtitle: 'Outstanding invoices, oldest first',
         rows,
@@ -401,6 +404,7 @@ const REPORTS: Record<string, Report> = {
       const rows = await getPayables({ companyId: user.activeCompany.id, onlyOutstanding: true });
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Supplier Payables',
         subtitle: 'Outstanding contracts, oldest first',
         rows,
@@ -429,6 +433,7 @@ const REPORTS: Record<string, Report> = {
       const rows = await getBatchStock({ companyId: user.activeCompany.id });
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Stock on Hand',
         subtitle: 'Every batch in every warehouse',
         rows,
@@ -459,6 +464,7 @@ const REPORTS: Record<string, Report> = {
       const rows = await getStockAgeing(user.activeCompany.id);
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Stock Ageing',
         subtitle: 'How long each parcel has been in the warehouse, oldest first',
         rows,
@@ -503,6 +509,7 @@ const REPORTS: Record<string, Report> = {
         const titles = { customer: 'Customer', product: 'Coffee', batch: 'Batch', container: 'Container' } as const;
         return buildWorkbook({
           companyName: user.activeCompany.name,
+          timeZone: user.activeCompany.timezone,
           title: 'Profitability',
           subtitle: `By ${titles[view].toLowerCase()} · gross profit USD ${Number(summary.grossProfitUsd).toFixed(2)}`,
           rows,
@@ -524,6 +531,7 @@ const REPORTS: Record<string, Report> = {
         const rows = await getMonthlyProfitability({ companyId, months: 12 });
         return buildWorkbook({
           companyName: user.activeCompany.name,
+          timeZone: user.activeCompany.timezone,
           title: 'Profitability',
           subtitle: 'Last twelve months, USD',
           rows,
@@ -547,6 +555,7 @@ const REPORTS: Record<string, Report> = {
       if (view === 'statement') {
         return buildWorkbook({
           companyName: user.activeCompany.name,
+          timeZone: user.activeCompany.timezone,
           title: 'Shipment Profitability Statement',
           subtitle: `Net profit USD ${Number(summary.netProfitUsd).toFixed(2)}`,
           rows: rows.slice().reverse(),
@@ -595,6 +604,7 @@ const REPORTS: Record<string, Report> = {
 
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Profitability',
         subtitle: `${byContract ? 'By contract' : 'By job'} · net profit USD ${Number(summary.netProfitUsd).toFixed(2)}`,
         rows,
@@ -640,6 +650,7 @@ const REPORTS: Record<string, Report> = {
       const rows = payables ? await getPayablesAgeing(user.activeCompany.id) : await getReceivablesAgeing(user.activeCompany.id);
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: payables ? 'Accounts Payable Ageing' : 'Accounts Receivable Ageing',
         subtitle: `As at ${asDay(new Date())}`,
         rows,
@@ -670,6 +681,7 @@ const REPORTS: Record<string, Report> = {
       const rows = parties.flatMap((party) => party.lines.map((line) => ({ party, line })));
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: payables ? 'Accounts Payable Ageing — Detail' : 'Accounts Receivable Ageing — Detail',
         subtitle: `As at ${asDay(new Date())}`,
         rows,
@@ -700,6 +712,7 @@ const REPORTS: Record<string, Report> = {
       const rows = suppliers ? await getVendorBalances(user.activeCompany.id) : await getCustomerBalances(user.activeCompany.id);
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: suppliers ? 'Supplier Balances' : 'Customer Balances',
         subtitle: `As at ${asDay(new Date())}`,
         rows,
@@ -734,6 +747,7 @@ const REPORTS: Record<string, Report> = {
       };
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: titles[by],
         subtitle: period(from, to),
         rows,
@@ -743,9 +757,14 @@ const REPORTS: Record<string, Report> = {
           { header: 'Invoices', value: (r) => r.invoices, type: 'integer' as const },
           { header: 'Quantity (KG)', value: (r) => Number(r.quantityKg), type: 'quantity' as const },
           { header: 'Revenue (USD)', value: (r) => Number(r.revenueUsd), type: 'money' as const },
-          { header: 'Cost (USD)', value: (r) => Number(r.costUsd), type: 'money' as const },
-          { header: 'Gross profit (USD)', value: (r) => Number(r.grossProfitUsd), type: 'money' as const },
-          { header: 'Margin', value: (r) => Number(r.marginPct) / 100, type: 'percent' as const },
+          // As on screen: cost and profit only for those who may see profit.
+          ...(can(user, PERMISSIONS.PROFITS_VIEW)
+            ? [
+                { header: 'Cost (USD)', value: (r: (typeof rows)[number]) => Number(r.costUsd), type: 'money' as const },
+                { header: 'Gross profit (USD)', value: (r: (typeof rows)[number]) => Number(r.grossProfitUsd), type: 'money' as const },
+                { header: 'Margin', value: (r: (typeof rows)[number]) => Number(r.marginPct) / 100, type: 'percent' as const },
+              ]
+            : []),
         ],
       });
     },
@@ -762,6 +781,7 @@ const REPORTS: Record<string, Report> = {
       const rows = await getStockMovementSummary({ companyId: user.activeCompany.id, from, to, warehouseId });
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Daily Stock Movement',
         subtitle: period(from, to),
         rows,
@@ -794,8 +814,9 @@ const REPORTS: Record<string, Report> = {
         if (!sheet) throw new NotFoundError('Shipment');
         return buildWorkbook({
           companyName: user.activeCompany.name,
+          timeZone: user.activeCompany.timezone,
           title: 'Shipment Costing',
-          subtitle: `${sheet.contractReference} · ${sheet.items.length} items · ${sheet.containers} containers · landed ${sheet.localCurrency} ${Number(sheet.landedLocal).toLocaleString('en-US', { minimumFractionDigits: 2 })} · profit ${sheet.localCurrency} ${Number(sheet.grossProfitLocal).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+          subtitle: `${sheet.contractReference} · ${sheet.items.length} items · ${sheet.containers} containers · landed ${sheet.localCurrency} ${Number(sheet.landedLocal).toLocaleString('en-US', { minimumFractionDigits: 2 })}${can(user, PERMISSIONS.PROFITS_VIEW) ? ` · profit ${sheet.localCurrency} ${Number(sheet.grossProfitLocal).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : ''}`,
           rows: sheet.expenses,
           totals: ['Amount (USD)', `Amount (${sheet.localCurrency})`],
           columns: [
@@ -818,6 +839,7 @@ const REPORTS: Record<string, Report> = {
       if (!sheet) throw new NotFoundError('Shipment');
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Shipment Cost Report',
         subtitle: sheet.contractReference,
         rows: sheet.lines,
@@ -849,6 +871,7 @@ const REPORTS: Record<string, Report> = {
 
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Sales Report',
         subtitle: from && to ? period(from, to) : from ? `from ${asDay(from)}` : to ? `up to ${asDay(to)}` : 'All time',
         rows,
@@ -864,8 +887,13 @@ const REPORTS: Record<string, Report> = {
           { header: 'Paid', value: (r) => Number(r.settled), type: 'money' },
           { header: 'Outstanding', value: (r) => Number(r.outstanding), type: 'money' },
           { header: 'Total USD', value: (r) => Number(r.totalUsd), type: 'money' },
-          { header: 'Cost USD', value: (r) => Number(r.costOfGoodsUsd), type: 'money' },
-          { header: 'Gross profit USD', value: (r) => Number(r.grossProfitUsd), type: 'money' },
+          // As on screen: cost and profit only for those who may see profit.
+          ...(can(user, PERMISSIONS.PROFITS_VIEW)
+            ? [
+                { header: 'Cost USD', value: (r: (typeof rows)[number]) => Number(r.costOfGoodsUsd), type: 'money' as const },
+                { header: 'Gross profit USD', value: (r: (typeof rows)[number]) => Number(r.grossProfitUsd), type: 'money' as const },
+              ]
+            : []),
           { header: 'Status', value: (r) => r.status },
         ],
       });
@@ -882,6 +910,7 @@ const REPORTS: Record<string, Report> = {
 
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Purchase Report',
         subtitle: from && to ? period(from, to) : from ? `from ${asDay(from)}` : to ? `up to ${asDay(to)}` : 'All time',
         rows,
@@ -916,6 +945,7 @@ const REPORTS: Record<string, Report> = {
 
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Trial Balance',
         subtitle: trial.isBalanced && trial.isBalancedLocal ? asAt(asOf) : `${asAt(asOf)} — OUT OF BALANCE`,
         rows: trial.rows,
@@ -971,6 +1001,7 @@ const REPORTS: Record<string, Report> = {
 
       return buildStatementWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Profit and Loss',
         subtitle: period(from, to),
         labelHeader: 'Account',
@@ -1019,6 +1050,7 @@ const REPORTS: Record<string, Report> = {
 
       return buildStatementWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Balance Sheet',
         subtitle: asAt(asOf),
         labelHeader: 'Account',
@@ -1041,6 +1073,7 @@ const REPORTS: Record<string, Report> = {
 
       return buildStatementWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Cash Flow',
         subtitle: period(from, to),
         labelHeader: 'Movement',
@@ -1093,6 +1126,7 @@ const REPORTS: Record<string, Report> = {
 
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'General Ledger',
         subtitle:
           `${ledger.account.name} · opening USD ${Number(ledger.openingBalanceUsd).toFixed(2)}` +
@@ -1152,6 +1186,7 @@ const REPORTS: Record<string, Report> = {
 
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Journal',
         subtitle:
           (from && to ? `${period(from, to)} · ` : '') +
@@ -1187,6 +1222,7 @@ const REPORTS: Record<string, Report> = {
 
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Expense Report',
         subtitle: `${period(from, to)} · grouped by ${groupBy}`,
         rows: rows.map((row) => ({
@@ -1225,6 +1261,7 @@ const REPORTS: Record<string, Report> = {
 
       return buildStatementWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: `${figures.label} Return`,
         subtitle:
           `${period(figures.periodStart, figures.periodEnd)}` +
@@ -1292,6 +1329,7 @@ const REPORTS: Record<string, Report> = {
 
       return buildStatementWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Financial Position',
         subtitle: asOf ? asAt(asOf) : 'as at today',
         labelHeader: 'Item',
@@ -1352,6 +1390,7 @@ const REPORTS: Record<string, Report> = {
 
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Reconciliation',
         subtitle: result.healthy
           ? `All ${result.passed} checks agree`
@@ -1383,6 +1422,7 @@ const REPORTS: Record<string, Report> = {
 
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Forex Gain / Loss',
         subtitle: `${period(from, to)} · net USD ${Number(report.netUsd).toFixed(2)} (positive is a loss)`,
         rows: report.rows,
@@ -1409,6 +1449,7 @@ const REPORTS: Record<string, Report> = {
       const showCost = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Inventory Valuation',
         subtitle: showCost
           ? 'On-hand stock at each batch landed cost'
@@ -1444,6 +1485,7 @@ const REPORTS: Record<string, Report> = {
       const rows = await getCogsReport({ companyId: user.activeCompany.id, from, to });
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Cost of Goods Sold',
         subtitle: period(from, to),
         rows,
@@ -1471,6 +1513,7 @@ const REPORTS: Record<string, Report> = {
       const rows = await getAgentCommissionRegister(user.activeCompany.id);
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: 'Agent Commission',
         subtitle: 'Commission agreed on a shipment, whether or not it has been paid',
         rows,
@@ -1503,6 +1546,7 @@ const REPORTS: Record<string, Report> = {
           : 'all dates';
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: `Statement — ${data.customer.customerName}`,
         subtitle: `${data.customer.customerName} · ${data.view} · ${range}`,
         rows: data.ledger.rows,
@@ -1535,6 +1579,7 @@ const REPORTS: Record<string, Report> = {
           : 'all dates';
       return buildWorkbook({
         companyName: user.activeCompany.name,
+        timeZone: user.activeCompany.timezone,
         title: `Statement — ${data.vendor.vendorName}`,
         subtitle: `${data.vendor.vendorName} · ${data.view} · ${range}`,
         rows: data.ledger.rows,
@@ -1577,6 +1622,11 @@ export async function GET(request: Request, context: { params: Promise<{ report:
 
     const query = new URL(request.url).searchParams;
     const user = await requirePermission(definition.permission as never);
+    // Exporting is a permission of its own ("Export reports and lists"). The
+    // screens hid the buttons; the address could still be typed.
+    if (!can(user, PERMISSIONS.REPORTS_EXPORT)) {
+      throw new ForbiddenError('You do not have permission to export reports. Ask an administrator to allow it.');
+    }
 
     if (query.get('format') === 'csv') {
       /*
@@ -1596,7 +1646,7 @@ export async function GET(request: Request, context: { params: Promise<{ report:
         headers: {
           'Content-Type': 'text/csv; charset=utf-8',
           'Content-Length': String(body.byteLength),
-          'Content-Disposition': `attachment; filename="${workbookFileName(definition.title, user.activeCompany.code, 'csv')}"`,
+          'Content-Disposition': `attachment; filename="${workbookFileName(definition.title, user.activeCompany.code, 'csv', user.activeCompany.timezone)}"`,
           'Cache-Control': 'private, no-store',
         },
       });
@@ -1608,7 +1658,7 @@ export async function GET(request: Request, context: { params: Promise<{ report:
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Length': String(workbook.byteLength),
-        'Content-Disposition': `attachment; filename="${workbookFileName(definition.title, user.activeCompany.code)}"`,
+        'Content-Disposition': `attachment; filename="${workbookFileName(definition.title, user.activeCompany.code, 'xlsx', user.activeCompany.timezone)}"`,
         'Cache-Control': 'private, no-store',
       },
     });

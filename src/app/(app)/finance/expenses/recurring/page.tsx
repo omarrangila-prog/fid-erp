@@ -3,7 +3,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { listRecurring } from '@/lib/services/recurring-expense';
-import { formatDate, formatMoney } from '@/lib/format';
+import { companyToday, formatDate, formatMoney } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Callout } from '@/components/ui/feedback';
 import { RecurringClient, type RecurringRow } from '@/app/(app)/finance/expenses/recurring/recurring-client';
@@ -30,8 +30,9 @@ export default async function RecurringExpensesPage() {
   });
   const categoryName = new Map(categories.map((c) => [c.id, c.name]));
 
-  const today = new Date();
-  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  // Due by the company's calendar: the server's UTC clock is still on
+  // yesterday for the first four hours of a Dubai morning.
+  const todayUtc = companyToday(user.activeCompany.timezone);
 
   const rows: RecurringRow[] = templates.map((t) => {
     const body = t.template as { expenseCategoryId?: string; amount?: string; currency?: string };

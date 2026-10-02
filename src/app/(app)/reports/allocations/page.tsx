@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { requirePageAccess } from '@/lib/auth/guards';
+import { requirePageAccessAll } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getLoadingSheet } from '@/lib/services/loading-sheet';
 import { formatQuantityKg, formatDate, formatMoney } from '@/lib/format';
@@ -37,7 +37,7 @@ const SETTLEMENT_TONES: Record<string, BadgeTone> = {
  * position on each line comes from the receipts posted against that invoice.
  */
 export default async function AllocationsPage() {
-  const user = await requirePageAccess(PERMISSIONS.INVENTORY_VIEW);
+  const user = await requirePageAccessAll([PERMISSIONS.REPORTS_VIEW, PERMISSIONS.INVENTORY_VIEW]);
   const sheet = await getLoadingSheet(user.activeCompany.id);
 
   // Grouped by contract, because that is the thing the client bought.

@@ -6,7 +6,7 @@ import { requirePermission, assertPermission, canAny } from '@/lib/auth/guards';
 import { requireUser } from '@/lib/auth/session';
 import { prisma } from '@/lib/db';
 import { PERMISSIONS } from '@/lib/constants';
-import { fieldErrors } from '@/lib/validation/common';
+import { fieldErrors, calendarDay } from '@/lib/validation/common';
 import {
   purchaseContractSchema,
   goodsReceiptSchema,
@@ -75,6 +75,7 @@ import {
 } from '@/lib/services/shipment';
 import { fail, ok, type ActionResult } from '@/server/actions/action-utils';
 import { assertCustomerInScope, assertInvoiceInScope, assertWarehousesInScope } from '@/lib/auth/scope';
+import { BusinessRuleError } from '@/lib/errors';
 
 /**
  * Trading actions.
@@ -102,7 +103,7 @@ function parseJson(payload: string): unknown {
   try {
     return JSON.parse(payload);
   } catch {
-    throw new Error('The submitted form could not be read. Please try again.');
+    throw new BusinessRuleError('The submitted form could not be read. Please try again.');
   }
 }
 
@@ -450,8 +451,8 @@ export async function markShipmentLoadedAction(shipmentId: string, payload: stri
 export async function updateShipmentEtaAction(shipmentId: string, etaDate: string): Promise<DocFormState> {
   try {
     const user = await requirePermission(PERMISSIONS.SHIPMENTS_UPDATE);
-    const parsed = etaDate ? new Date(`${etaDate}T00:00:00.000Z`) : null;
-    if (etaDate && Number.isNaN(parsed?.getTime())) {
+    const parsed = etaDate ? calendarDay(etaDate) : null;
+    if (etaDate && !parsed) {
       return { ok: false, error: 'That is not a date the system can read.' };
     }
 
@@ -504,8 +505,8 @@ export async function markOrderArrivedAction(
 ): Promise<ActionResult<{ marked: number; total: number }>> {
   try {
     const user = await requirePermission(PERMISSIONS.SHIPMENTS_UPDATE);
-    const parsed = new Date(`${ataDate}T00:00:00.000Z`);
-    if (Number.isNaN(parsed.getTime())) {
+    const parsed = calendarDay(ataDate);
+    if (!parsed) {
       return fail('That is not a date the system can read.');
     }
 
@@ -714,8 +715,8 @@ export async function receiveContainersAction(
 export async function markContainerArrivedAction(shipmentId: string, ataDate: string): Promise<DocFormState> {
   try {
     const user = await requirePermission(PERMISSIONS.SHIPMENTS_UPDATE);
-    const parsed = new Date(`${ataDate}T00:00:00.000Z`);
-    if (Number.isNaN(parsed.getTime())) {
+    const parsed = calendarDay(ataDate);
+    if (!parsed) {
       return { ok: false, error: 'That is not a date the system can read.' };
     }
     const contract = await prisma.shipment.findFirst({
@@ -739,8 +740,8 @@ export async function markContainerArrivedAction(shipmentId: string, ataDate: st
 export async function markShipmentArrivedAction(shipmentId: string, ataDate: string): Promise<DocFormState> {
   try {
     const user = await requirePermission(PERMISSIONS.SHIPMENTS_UPDATE);
-    const parsed = new Date(`${ataDate}T00:00:00.000Z`);
-    if (Number.isNaN(parsed.getTime())) {
+    const parsed = calendarDay(ataDate);
+    if (!parsed) {
       return { ok: false, error: 'That is not a date the system can read.' };
     }
 

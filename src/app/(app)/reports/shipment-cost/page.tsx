@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
-import { requirePageAccess } from '@/lib/auth/guards';
+import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, SHIPMENT_STATUS_META } from '@/lib/constants';
 import { getOrderCostSheets, type OrderCostSheet } from '@/lib/services/order-cost';
 import { formatMoney, formatDate, formatQuantityKg } from '@/lib/format';
@@ -47,7 +47,11 @@ export default async function ShipmentCostPage({
   searchParams: Promise<{ open?: string; q?: string }>;
 }) {
   const { open, q } = await searchParams;
-  const user = await requirePageAccess(PERMISSIONS.SHIPMENTS_VIEW);
+  // What the coffee cost is purchase cost — the Excel version of this page
+  // already asked for it, while the page let anyone who sees shipments in.
+  // Profit and margin need "View profit" on top, as everywhere else.
+  const user = await requirePageAccess(PERMISSIONS.PURCHASE_COST_VIEW);
+  const showProfit = can(user, PERMISSIONS.PROFITS_VIEW);
   const companyId = user.activeCompany.id;
   const local = user.activeCompany.localCurrency;
 
@@ -112,12 +116,12 @@ export default async function ShipmentCostPage({
             </form>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 print:hidden">
+          <div className={cn('grid gap-3 sm:grid-cols-2 print:hidden', showProfit ? 'lg:grid-cols-4' : 'lg:grid-cols-3')}>
             {[
               { label: 'Coffee bought', value: formatQuantityKg(totals.kg) },
               { label: 'Costs added', value: formatMoney(totals.expenseLocal, local) },
               { label: 'Total landed cost', value: formatMoney(totals.landedLocal, local), sub: formatMoney(totals.landedUsd, 'USD') },
-              { label: 'Gross profit', value: formatMoney(totals.profitLocal, local), sub: formatMoney(totals.profitUsd, 'USD') },
+              ...(showProfit ? [{ label: 'Gross profit', value: formatMoney(totals.profitLocal, local), sub: formatMoney(totals.profitUsd, 'USD') }] : []),
             ].map((card) => (
               <Card key={card.label}>
                 <CardContent className="pt-5">
@@ -133,6 +137,7 @@ export default async function ShipmentCostPage({
             {sheets.map((sheet, index) => (
               <OrderSection
                 key={sheet.contractId}
+                showProfit={showProfit}
                 sheet={sheet}
                 ordinal={all.indexOf(sheet) + 1}
                 local={local}
@@ -151,11 +156,13 @@ function OrderSection({
   ordinal,
   local,
   defaultOpen,
+  showProfit,
 }: {
   sheet: OrderCostSheet;
   ordinal: number;
   local: string;
   defaultOpen: boolean;
+  showProfit: boolean;
 }) {
   const statuses = [...new Set(sheet.statuses)];
   const profitTone = sheet.grossProfitLocal.greaterThanOrEqualTo(0) ? 'text-gold-700' : 'text-red-600';
@@ -188,11 +195,13 @@ function OrderSection({
           {formatMoney(sheet.landedLocal, local)}
           <span className="block text-[11px] text-ink-subtle">{formatMoney(sheet.costPerKgLocal, local)} per KG</span>
         </span>
-        <span className={cn('tnum text-sm font-semibold', profitTone)}>
-          <span className="block text-[11px] font-normal text-ink-subtle">Profit</span>
-          {formatMoney(sheet.grossProfitLocal, local)}
-          <span className="block text-[11px] font-normal text-ink-subtle">{dec(sheet.marginPct).toFixed(1)}% margin</span>
-        </span>
+        {showProfit ? (
+          <span className={cn('tnum text-sm font-semibold', profitTone)}>
+            <span className="block text-[11px] font-normal text-ink-subtle">Profit</span>
+            {formatMoney(sheet.grossProfitLocal, local)}
+            <span className="block text-[11px] font-normal text-ink-subtle">{dec(sheet.marginPct).toFixed(1)}% margin</span>
+          </span>
+        ) : null}
         <span className="flex flex-wrap gap-1">
           {statuses.map((s) => (
             <StatusBadge key={s} status={s} meta={SHIPMENT_STATUS_META} />
@@ -374,11 +383,15 @@ function OrderSection({
                   ['Cost per KG', sheet.costPerKgLocal, sheet.costPerKgUsd],
                   ['Cost per MT', sheet.costPerMtLocal, sheet.costPerMtUsd],
                   ['Sales', sheet.revenueLocal, sheet.revenueUsd],
-                  ['Cost of what sold (COGS)', sheet.cogsLocal, sheet.cogsUsd],
-                  ['Profit / loss', sheet.grossProfitLocal, sheet.grossProfitUsd, 'profit'],
+                  ...(showProfit
+                    ? [
+                        ['Cost of what sold (COGS)', sheet.cogsLocal, sheet.cogsUsd],
+                        ['Profit / loss', sheet.grossProfitLocal, sheet.grossProfitUsd, 'profit'],
+                      ]
+                    : []),
                   // Only when there are such costs, so an ordinary shipment's
                   // costing stays six lines long.
-                  ...(dec(sheet.periodExpenseUsd).isZero()
+                  ...(!showProfit || dec(sheet.periodExpenseUsd).isZero()
                     ? []
                     : [
                         ['Costs not added to the coffee', sheet.periodExpenseLocal, sheet.periodExpenseUsd],
@@ -401,10 +414,12 @@ function OrderSection({
                     </TD>
                   </TR>
                 ))}
-                <TR>
-                  <TD>Margin</TD>
-                  <TD numeric>{dec(sheet.marginPct).toFixed(1)}%</TD>
-                </TR>
+                {showProfit ? (
+                  <TR>
+                    <TD>Margin</TD>
+                    <TD numeric>{dec(sheet.marginPct).toFixed(1)}%</TD>
+                  </TR>
+                ) : null}
                 <TR>
                   <TD>Remaining stock</TD>
                   <TD numeric>

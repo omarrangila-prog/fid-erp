@@ -4,7 +4,7 @@ import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getExpenseReport, getExpenseSplit, type ExpenseGrouping } from '@/lib/services/reports';
 import { dec } from '@/lib/money';
-import { formatMoney, formatDate } from '@/lib/format';
+import { formatMoney, formatDate, dayParam, companyToday } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { DateRangePicker } from '@/components/shared/date-range';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -35,8 +35,9 @@ export default async function ExpenseReportPage({
   const { from, to, groupBy } = await searchParams;
   const user = await requirePageAccess(PERMISSIONS.EXPENSES_VIEW);
 
-  const fromDate = from ? new Date(`${from}T00:00:00.000Z`) : new Date(Date.UTC(new Date().getUTCFullYear(), 0, 1));
-  const toDate = to ? new Date(`${to}T00:00:00.000Z`) : new Date();
+  const fromDate = dayParam(from) ?? new Date(Date.UTC(new Date().getUTCFullYear(), 0, 1));
+  // Today on the company's own clock, not the server's: Dubai is four hours ahead of UTC.
+  const toDate = dayParam(to) ?? companyToday(user.activeCompany.timezone);
   const grouping = (GROUPS.find((g) => g.key === groupBy)?.key ?? 'type') as ExpenseGrouping;
 
   const [rows, split] = await Promise.all([

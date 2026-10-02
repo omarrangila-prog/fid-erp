@@ -17,6 +17,18 @@ export function PinPad() {
   const [digits, setDigits] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
   const [pending, startTransition] = React.useTransition();
+  /*
+   * Until the page's scripts have loaded, a tap on a key goes nowhere. A PIN
+   * whose first digit was tapped too early registered as three digits plus
+   * whatever came next — a wrong PIN, counted against the lockout. So the
+   * keys stay visibly unavailable until they work, and no tap is half-counted.
+   */
+  const ready = React.useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+  const locked = pending || !ready;
 
   const submit = React.useCallback((pin: string) => {
     startTransition(async () => {
@@ -93,17 +105,17 @@ export function PinPad() {
           {error}
         </p>
       ) : (
-        <p className="text-center text-xs text-ink-subtle">{pending ? 'Signing in…' : 'Four digits'}</p>
+        <p className="text-center text-xs text-ink-subtle">{pending ? 'Signing in…' : ready ? 'Four digits' : 'Loading…'}</p>
       )}
 
       <div className="grid grid-cols-3 gap-3">
         {keys.map((key) => (
-          <button key={key} type="button" onClick={() => press(key)} disabled={pending} aria-label={key} className={keyClass}>
+          <button key={key} type="button" onClick={() => press(key)} disabled={locked} aria-label={key} className={keyClass}>
             {key}
           </button>
         ))}
         <span />
-        <button type="button" onClick={() => press('0')} disabled={pending} aria-label="0" className={keyClass}>
+        <button type="button" onClick={() => press('0')} disabled={locked} aria-label="0" className={keyClass}>
           0
         </button>
         <button

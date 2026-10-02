@@ -2,7 +2,7 @@ import 'server-only';
 import { redirect } from 'next/navigation';
 import { getCurrentUser, requireUser, type SessionUser } from '@/lib/auth/session';
 import { ForbiddenError, NotFoundError } from '@/lib/errors';
-import type { PermissionCode } from '@/lib/constants';
+import { PERMISSION_DESCRIPTIONS, type PermissionCode } from '@/lib/constants';
 
 /**
  * Server-side authorisation. Every service entry point and every route handler
@@ -23,10 +23,21 @@ export function canAll(user: SessionUser, permissions: PermissionCode[]): boolea
 }
 
 /** Loads the session and asserts a single permission. */
+/**
+ * The refusal, in words: "You do not have permission to post sales invoices."
+ * It used to name the code — `"sales.post"` — which reaches the user in a toast.
+ */
+function refusal(permission: PermissionCode): string {
+  const description = PERMISSION_DESCRIPTIONS[permission]?.description;
+  return description
+    ? `You do not have permission to ${description.charAt(0).toLowerCase()}${description.slice(1)}. Ask an administrator if you need it.`
+    : 'You do not have permission to perform this action.';
+}
+
 export async function requirePermission(permission: PermissionCode): Promise<SessionUser> {
   const user = await requireUser();
   if (!can(user, permission)) {
-    throw new ForbiddenError(`You do not have the "${permission}" permission.`);
+    throw new ForbiddenError(refusal(permission));
   }
   return user;
 }
@@ -41,7 +52,7 @@ export async function requireAnyPermission(permissions: PermissionCode[]): Promi
 
 export function assertPermission(user: SessionUser, permission: PermissionCode): void {
   if (!can(user, permission)) {
-    throw new ForbiddenError(`You do not have the "${permission}" permission.`);
+    throw new ForbiddenError(refusal(permission));
   }
 }
 
@@ -99,6 +110,15 @@ export async function requirePageAccess(permission: PermissionCode): Promise<Ses
   const user = await getCurrentUser();
   if (!user) redirect('/login');
   if (!can(user, permission)) redirect(`/unauthorized?permission=${encodeURIComponent(permission)}`);
+  return user;
+}
+
+/** As `requirePageAccess`, but every one of several permissions is needed. */
+export async function requirePageAccessAll(permissions: PermissionCode[]): Promise<SessionUser> {
+  const user = await getCurrentUser();
+  if (!user) redirect('/login');
+  const missing = permissions.find((p) => !can(user, p));
+  if (missing) redirect(`/unauthorized?permission=${encodeURIComponent(missing)}`);
   return user;
 }
 

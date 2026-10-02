@@ -55,8 +55,10 @@ export default async function ItemStockPage({
   if (!item) notFound();
 
   const showCost = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
+  // COGS, profit and margin are profitability: "View profit" on top of cost.
+  const showProfit = showCost && can(user, PERMISSIONS.PROFITS_VIEW);
   const showSales = can(user, PERMISSIONS.SALES_VIEW);
-  const both = showCost && showSales;
+  const both = showProfit && showSales;
   const scope = warehouseScope(user);
   const { values, filters } = parseStockFilters({ ...(await searchParams), item: id });
   const [report, options] = await Promise.all([
@@ -215,7 +217,7 @@ export default async function ItemStockPage({
         {showSales ? (
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
             <Figure testId="item-revenue" label="Sales revenue" value={pt(m.revenue)!.primary} equivalent={pt(m.revenue)!.equivalent} sub={`${m.invoiceCount} invoice${m.invoiceCount === 1 ? '' : 's'}`} />
-            {showCost ? (
+            {showProfit ? (
               <>
                 <Figure testId="item-cogs" label="COGS" value={pt(m.cogs)!.primary} equivalent={pt(m.cogs)!.equivalent} sub="Landed cost of the KG sold" />
                 <Figure
@@ -360,7 +362,7 @@ export default async function ItemStockPage({
                   <TH numeric>Remaining KG</TH>
                   {showCost ? <TH numeric>Landed cost/KG</TH> : null}
                   {showSales ? <TH numeric>Sales</TH> : null}
-                  {showCost ? <TH numeric>COGS</TH> : null}
+                  {showProfit ? <TH numeric>COGS</TH> : null}
                   {both ? <TH numeric>Profit / loss</TH> : null}
                 </TR>
               </THead>
@@ -380,7 +382,7 @@ export default async function ItemStockPage({
                     <TD numeric>{kg(s.availableKg)}</TD>
                     {showCost ? <TD numeric>{money(perKgText(s.avgCostPerKg, local))}</TD> : null}
                     {showSales ? <TD numeric>{money(pt(s.revenue))}</TD> : null}
-                    {showCost ? <TD numeric>{money(pt(s.cogs))}</TD> : null}
+                    {showProfit ? <TD numeric>{money(pt(s.cogs))}</TD> : null}
                     {both ? <TD numeric>{profitCell(s.grossProfit)}</TD> : null}
                   </TR>
                 ))}
@@ -395,7 +397,7 @@ export default async function ItemStockPage({
                   <TD numeric>{kg(m.availableKg)}</TD>
                   {showCost ? <TD numeric>{money(perKgText(m.avgCostPerKg, local))}</TD> : null}
                   {showSales ? <TD numeric>{money(pt(m.revenue))}</TD> : null}
-                  {showCost ? <TD numeric>{money(pt(m.cogs))}</TD> : null}
+                  {showProfit ? <TD numeric>{money(pt(m.cogs))}</TD> : null}
                   {both ? <TD numeric>{profitCell(m.grossProfit)}</TD> : null}
                 </TR>
               </TFoot>
@@ -413,19 +415,19 @@ export default async function ItemStockPage({
           {shipments.map((s) => (
             <details key={s.shipmentId} className="rounded-lg border border-line" data-level="shipment" data-ref={s.reference}>
               <summary className="cursor-pointer px-3 py-2 text-sm">
-                <DrillLine title={`${s.reference} · ${s.shipmentLabel}`} m={s} local={local} showCost={showCost} showSales={showSales} />
+                <DrillLine title={`${s.reference} · ${s.shipmentLabel}`} m={s} local={local} showCost={showCost} showProfit={showProfit} showSales={showSales} />
               </summary>
               <div className="space-y-2 border-t border-line p-2 pl-4">
                 {s.containers.map((c) => (
                   <details key={c.containerKey || 'none'} className="rounded-lg border border-line" data-level="container" data-ref={c.containerNumber ?? ''}>
                     <summary className="cursor-pointer px-3 py-2 text-sm">
-                      <DrillLine title={`Container ${c.containerNumber ?? '—'}`} m={c} local={local} showCost={showCost} showSales={showSales} />
+                      <DrillLine title={`Container ${c.containerNumber ?? '—'}`} m={c} local={local} showCost={showCost} showProfit={showProfit} showSales={showSales} />
                     </summary>
                     <div className="space-y-2 border-t border-line p-2 pl-4">
                       {c.batches.map((b) => (
                         <details key={b.batchId} className="rounded-lg border border-line" data-level="batch" data-ref={b.batchNumber}>
                           <summary className="cursor-pointer px-3 py-2 text-sm">
-                            <DrillLine title={`Batch ${b.batchNumber} · lot ${b.lotNumber}`} m={b} local={local} showCost={showCost} showSales={showSales} />
+                            <DrillLine title={`Batch ${b.batchNumber} · lot ${b.lotNumber}`} m={b} local={local} showCost={showCost} showProfit={showProfit} showSales={showSales} />
                           </summary>
                           <div className="space-y-3 border-t border-line p-2 pl-4">
                             <Link href={`/inventory/batches/${b.batchId}`} className="text-xs font-medium text-forest-800 hover:underline">
@@ -435,9 +437,9 @@ export default async function ItemStockPage({
                               const sold = linesFor(b.batchId, w.warehouseId);
                               return (
                                 <div key={w.warehouseId} className="rounded-lg border border-line/70 p-2" data-level="warehouse" data-ref={w.warehouseName}>
-                                  <DrillLine title={w.warehouseName} m={w} local={local} showCost={showCost} showSales={showSales} />
+                                  <DrillLine title={w.warehouseName} m={w} local={local} showCost={showCost} showProfit={showProfit} showSales={showSales} />
                                   {showSales && sold.length > 0 ? (
-                                    <SalesTable lines={sold} local={local} showCost={showCost} compact />
+                                    <SalesTable lines={sold} local={local} showCost={showProfit} compact />
                                   ) : null}
                                 </div>
                               );
@@ -465,7 +467,7 @@ export default async function ItemStockPage({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <SalesTable lines={lines} local={local} showCost={showCost} />
+            <SalesTable lines={lines} local={local} showCost={showProfit} />
           </CardContent>
         </Card>
       ) : null}
@@ -502,12 +504,14 @@ function DrillLine({
   m,
   local,
   showCost,
+  showProfit,
   showSales,
 }: {
   title: string;
   m: ItemMeasures;
   local: string;
   showCost: boolean;
+  showProfit: boolean;
   showSales: boolean;
 }) {
   const profit = profitText(m.grossProfit, local);
@@ -519,8 +523,8 @@ function DrillLine({
     ['Remaining', kg(m.availableKg)],
     ...(showCost && m.avgCostPerKg ? [['Landed/KG', perKgText(m.avgCostPerKg, local)!.primary] as [string, string]] : []),
     ...(showSales ? [['Sales', formatMoney(m.revenue.local, local)] as [string, string]] : []),
-    ...(showCost ? [['COGS', formatMoney(m.cogs.local, local)] as [string, string]] : []),
-    ...(showCost && showSales ? [[profit.loss ? 'Loss' : 'Profit', formatMoney(m.grossProfit.local.abs(), local), profit.loss ? 'loss' : 'profit'] as [string, string, string]] : []),
+    ...(showProfit ? [['COGS', formatMoney(m.cogs.local, local)] as [string, string]] : []),
+    ...(showProfit && showSales ? [[profit.loss ? 'Loss' : 'Profit', formatMoney(m.grossProfit.local.abs(), local), profit.loss ? 'loss' : 'profit'] as [string, string, string]] : []),
   ];
   return (
     <span className="inline-flex flex-wrap items-baseline gap-x-4 gap-y-1">

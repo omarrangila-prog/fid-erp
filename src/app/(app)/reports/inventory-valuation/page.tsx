@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { requirePageAccess, can } from '@/lib/auth/guards';
+import { can, requirePageAccessAll } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getInventoryValuation, getInventoryValuationSummary, getInventoryValuationDetail } from '@/lib/services/stock';
 import { StatementHeader, FavouriteStar } from '@/components/reports/report-statement';
-import { formatDate, titleCase } from '@/lib/format';
+import { formatDate, titleCase, dayParam } from '@/lib/format';
 import { ValuationDetail } from '@/app/(app)/reports/inventory-valuation/detail';
 import { formatMoney, formatQuantityKg } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
@@ -31,7 +31,7 @@ export const dynamic = 'force-dynamic';
  */
 export default async function InventoryValuationPage({ searchParams }: { searchParams: Promise<{ view?: string; from?: string; to?: string }> }) {
   const query = await searchParams;
-  const user = await requirePageAccess(PERMISSIONS.INVENTORY_VIEW);
+  const user = await requirePageAccessAll([PERMISSIONS.REPORTS_VIEW, PERMISSIONS.INVENTORY_VIEW]);
   const showCost = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
   const view = query.view === 'summary' || query.view === 'detail' ? query.view : 'warehouse';
   const [rows, summary, detail] = await Promise.all([
@@ -40,8 +40,8 @@ export default async function InventoryValuationPage({ searchParams }: { searchP
     view === 'detail'
       ? getInventoryValuationDetail({
           companyId: user.activeCompany.id,
-          from: query.from ? new Date(`${query.from}T00:00:00.000Z`) : undefined,
-          to: query.to ? new Date(`${query.to}T00:00:00.000Z`) : undefined,
+          from: dayParam(query.from) ?? undefined,
+          to: dayParam(query.to) ?? undefined,
         })
       : Promise.resolve([]),
   ]);

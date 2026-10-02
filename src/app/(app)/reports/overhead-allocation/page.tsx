@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
-import { formatDate, formatMoney } from '@/lib/format';
+import { formatDate, formatMoney, dayParam, companyToday } from '@/lib/format';
 import {
   getAllocatableOverheads,
   getOverheadCandidates,
@@ -25,10 +25,10 @@ const BASIS_LABEL: Record<string, string> = {
   EQUAL: 'Equally',
 };
 
-function monthRange(searchFrom?: string, searchTo?: string) {
-  const now = new Date();
-  const from = searchFrom ? new Date(`${searchFrom}T00:00:00.000Z`) : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const to = searchTo ? new Date(`${searchTo}T00:00:00.000Z`) : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
+function monthRange(timeZone: string, searchFrom?: string, searchTo?: string) {
+  const now = companyToday(timeZone);
+  const from = dayParam(searchFrom) ?? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const to = dayParam(searchTo) ?? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
   return { from, to };
 }
 
@@ -47,7 +47,7 @@ export default async function OverheadAllocationPage({
 }) {
   const user = await requirePageAccess(PERMISSIONS.REPORTS_VIEW);
   const params = await searchParams;
-  const { from, to } = monthRange(params.from, params.to);
+  const { from, to } = monthRange(user.activeCompany.timezone, params.from, params.to);
   const companyId = user.activeCompany.id;
   const local = user.activeCompany.localCurrency;
 

@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
-import { formatDate } from '@/lib/format';
+import { formatDate, dayParam, companyToday } from '@/lib/format';
 import { getReconciliationWorkspace } from '@/lib/services/bank-reconciliation';
 import { PageHeader } from '@/components/shared/page-header';
 import { Callout, EmptyState } from '@/components/ui/feedback';
@@ -46,9 +46,9 @@ export default async function BankReconciliationPage({
   const accountId = accounts.find((account) => account.id === params.account)?.id ?? accounts[0].id;
   // Default to the end of last month, which is the statement most people are
   // holding when they sit down to do this.
-  const today = new Date();
+  const today = companyToday(user.activeCompany.timezone);
   const defaultDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 0)).toISOString().slice(0, 10);
-  const statementDate = params.date ?? defaultDate;
+  const statementDate = dayParam(params.date) ? params.date! : defaultDate;
 
   const raw = await getReconciliationWorkspace({
     companyId: user.activeCompany.id,

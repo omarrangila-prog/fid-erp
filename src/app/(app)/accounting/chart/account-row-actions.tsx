@@ -17,6 +17,7 @@ import { todayInputValue } from '@/lib/format';
 import { ledgerHref } from '@/lib/ledger-currency';
 import { RowActions } from '@/components/shared/row-actions';
 import { currencyOptions } from '@/lib/company-currencies';
+import { safely } from '@/lib/safely';
 
 export type ChartRowAccount = {
   id: string;
@@ -92,7 +93,7 @@ export function AccountRowActions({
   async function deactivate(): Promise<{ ok: boolean; error?: string }> {
     if (account.isSystem) return { ok: false, error: 'A system account cannot be deactivated.' };
     setBusy(true);
-    const result = await deactivateLedgerAccountAction(account.id);
+    const result = await safely(deactivateLedgerAccountAction(account.id));
     setBusy(false);
     if (!result?.ok) {
       return { ok: false, error: result && 'error' in result ? result.error : 'Could not deactivate this account.' };
@@ -103,7 +104,7 @@ export function AccountRowActions({
 
   async function reactivate() {
     setBusy(true);
-    const result = await reactivateLedgerAccountAction(account.id);
+    const result = await safely(reactivateLedgerAccountAction(account.id));
     setBusy(false);
     if (!result?.ok) {
       toast.error(result && 'error' in result ? result.error : 'Could not reactivate this account.');

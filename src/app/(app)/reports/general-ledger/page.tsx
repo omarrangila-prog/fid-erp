@@ -13,7 +13,7 @@ import {
   ledgerDisplayCurrency,
   ledgerCurrencyLabel,
 } from '@/lib/ledger-currency';
-import { formatMoney, formatDate, titleCase } from '@/lib/format';
+import { formatMoney, formatDate, titleCase, dayParam } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { CustomizePanel } from '@/components/reports/customize-panel';
 import { PrintButton } from '@/components/shared/print-button';
@@ -87,8 +87,8 @@ export default async function GeneralLedgerPage({
   const groups = wholeBook
     ? await getGeneralLedgerByAccount({
         companyId,
-        from: from ? new Date(`${from}T00:00:00.000Z`) : undefined,
-        to: to ? new Date(`${to}T00:00:00.000Z`) : undefined,
+        from: dayParam(from) ?? undefined,
+        to: dayParam(to) ?? undefined,
       })
     : null;
 
@@ -96,8 +96,8 @@ export default async function GeneralLedgerPage({
     ? await getGeneralLedger({
         companyId,
         accountId: selectedId,
-        from: from ? new Date(`${from}T00:00:00.000Z`) : undefined,
-        to: to ? new Date(`${to}T00:00:00.000Z`) : undefined,
+        from: dayParam(from) ?? undefined,
+        to: dayParam(to) ?? undefined,
         currency: requestedCurrency,
       })
     : null;
@@ -147,7 +147,7 @@ export default async function GeneralLedgerPage({
               <StatementHeader
                 company={user.activeCompany.name}
                 title="General Ledger"
-                period={from || to ? `${from ? formatDate(new Date(`${from}T00:00:00.000Z`)) : 'Start'} – ${to ? formatDate(new Date(`${to}T00:00:00.000Z`)) : 'Today'}` : 'All dates'}
+                period={from || to ? `${from ? formatDate(dayParam(from)) : 'Start'} – ${to ? formatDate(dayParam(to)) : 'Today'}` : 'All dates'}
                 meta={
                   <p className="text-xs text-ink-subtle">
                     {groups.length} accounts with activity · in {user.activeCompany.localCurrency}, the currency the books are kept in, every

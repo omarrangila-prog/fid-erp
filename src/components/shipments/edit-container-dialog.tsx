@@ -6,6 +6,7 @@ import { ConfirmDialog } from '@/components/ui/confirm';
 import { Input, Textarea } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { editContainerAction } from '@/server/actions/trading-actions';
+import { safely } from '@/lib/safely';
 
 export type EditableContainer = {
   shipmentId: string;
@@ -52,7 +53,7 @@ export function EditContainerDialog({
   async function save() {
     if (!container) return;
     setBusy(true);
-    const result = await editContainerAction(
+    const result = await safely(editContainerAction(
       JSON.stringify({
         shipmentId: container.shipmentId,
         quantityKg: edit.quantityKg.trim() || undefined,
@@ -61,7 +62,7 @@ export function EditContainerDialog({
         batchNumber: edit.batchNumber.trim() || undefined,
         reason: edit.reason.trim() || undefined,
       }),
-    );
+    ));
     setBusy(false);
     if (!result.ok) throw new Error(result.error);
     toast.success(`${container.label} corrected.`);

@@ -107,7 +107,14 @@ test('a posted document shows the journal entry it wrote', async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto('/sales', { waitUntil: 'domcontentloaded' });
 
-  const first = page.getByRole('main').getByRole('link', { name: /INV\s*\d+/ }).first();
+  // A posted invoice: a draft has written nothing yet, and other suites
+  // leave drafts at the top of the list (the agent's, for one).
+  const first = page
+    .getByRole('main')
+    .getByRole('row')
+    .filter({ hasNotText: /Draft/i })
+    .getByRole('link', { name: /INV\s*\d+/ })
+    .first();
   await expect(first).toBeVisible({ timeout: 30_000 });
   await first.click();
   await page.waitForURL(/\/sales\/[\w-]+/, { waitUntil: 'domcontentloaded' });

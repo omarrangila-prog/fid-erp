@@ -107,9 +107,25 @@ test('Radouan signs in with the PIN alone and sees only what he was given', asyn
   for (const hidden of ['Accounting', 'Administration']) {
     await expect(nav.getByRole('button', { name: new RegExp(`^${hidden}\\b`) })).toHaveCount(0);
   }
-  for (const route of ['/accounting/journal/new', '/settings', '/admin/users', '/reports/trial-balance']) {
+  // Costs, margins and company-wide reports are not his — including the ones
+  // his shipment, sales and stock permissions used to open by address.
+  for (const route of [
+    '/accounting/journal/new',
+    '/settings',
+    '/admin/users',
+    '/reports/trial-balance',
+    '/reports/shipment-cost',
+    '/reports/sales-by',
+    '/reports/allocations',
+    '/reports/stock-movement',
+  ]) {
     await page.goto(route, { waitUntil: 'domcontentloaded' });
     await expect(page, route).toHaveURL(/\/unauthorized/, { timeout: 30_000 });
+  }
+  // Nor can he download them: the export itself checks.
+  for (const report of ['stock-ageing', 'inventory-valuation', 'sales-by']) {
+    const response = await page.request.get(`/api/export/${report}`);
+    expect(response.status(), report).toBe(403);
   }
   // His ledger only: the agents list opens straight onto his own.
   await page.goto('/agents', { waitUntil: 'domcontentloaded' });

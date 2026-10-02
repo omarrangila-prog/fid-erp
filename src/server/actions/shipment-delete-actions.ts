@@ -6,6 +6,7 @@ import { requirePermission, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getShipmentDeletePreview, deleteShipment, DELETE_REASONS, type DeletePreview } from '@/lib/services/shipment-delete';
 import { fail, ok, type ActionResult } from '@/server/actions/action-utils';
+import { BusinessRuleError } from '@/lib/errors';
 
 /**
  * Delete Shipment, from wherever it is pressed: the loading sheet, the
@@ -38,7 +39,7 @@ export async function deleteShipmentAction(payload: string): Promise<ActionResul
     try {
       parsed = JSON.parse(payload);
     } catch {
-      throw new Error('The request could not be read. Please try again.');
+      throw new BusinessRuleError('The request could not be read. Please try again.');
     }
     const input = schema.parse(parsed);
     const result = await deleteShipment({

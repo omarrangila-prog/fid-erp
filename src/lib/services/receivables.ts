@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db';
 import { Decimal, dec, toMoney } from '@/lib/money';
 import { supplierGrossPayable } from '@/lib/services/tax';
+import { getCompanyDay } from '@/lib/services/company';
 
 /**
  * Receivables and payables with ageing.
@@ -19,9 +20,9 @@ export const AGEING_LABELS: Record<AgeingBucket, string> = {
   D90_PLUS: '90+ Days',
 };
 
-export function bucketFor(dueDate: Date | null): AgeingBucket {
+/** `today` is the company's day (`getCompanyDay`); the server's UTC clock runs behind Dubai. */
+export function bucketFor(dueDate: Date | null, today: Date = new Date()): AgeingBucket {
   if (!dueDate) return 'CURRENT';
-  const today = new Date();
   const due = Date.UTC(dueDate.getUTCFullYear(), dueDate.getUTCMonth(), dueDate.getUTCDate());
   const now = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
   const daysOverdue = Math.floor((now - due) / 86_400_000);
@@ -126,6 +127,7 @@ export async function getReceivables(params: {
   shipmentId?: string;
   onlyOutstanding?: boolean;
 }): Promise<ReceivableRow[]> {
+  const today = await getCompanyDay(prisma, params.companyId);
   const rows = await prisma.$queryRaw<
     Array<{
       invoiceId: string;
@@ -218,7 +220,7 @@ export async function getReceivables(params: {
       originalAmountUsd,
       paidAmountUsd,
       outstandingAmountUsd: toMoney(originalAmountUsd.minus(paidAmountUsd)),
-      bucket: bucketFor(row.dueDate),
+      bucket: bucketFor(row.dueDate, today),
       status,
     };
   });
@@ -253,7 +255,7 @@ export async function getReceivables(params: {
           originalAmountUsd: amountUsd,
           paidAmountUsd: toMoney(0),
           outstandingAmountUsd: amountUsd,
-          bucket: bucketFor(row.entryDate),
+          bucket: bucketFor(row.entryDate, today),
           status: 'UNPAID',
         };
       });
@@ -305,6 +307,7 @@ export async function getPayables(params: {
   vendorId?: string;
   onlyOutstanding?: boolean;
 }): Promise<PayableRow[]> {
+  const today = await getCompanyDay(prisma, params.companyId);
   const rows = await prisma.$queryRaw<
     Array<{
       contractId: string;
@@ -447,7 +450,7 @@ export async function getPayables(params: {
       outstandingAmount,
       purchaseValueUsd: payable.amountUsd,
       outstandingAmountUsd: toMoney(payable.amountUsd.minus(dec(row.paidAmountUsd))),
-      bucket: bucketFor(row.dueDate),
+      bucket: bucketFor(row.dueDate, today),
       status,
     };
   });
@@ -478,7 +481,7 @@ export async function getPayables(params: {
       outstandingAmount: amount,
       purchaseValueUsd: amountUsd,
       outstandingAmountUsd: amountUsd,
-      bucket: bucketFor(row.entryDate),
+      bucket: bucketFor(row.entryDate, today),
       status: 'UNPAID',
     };
   });
@@ -615,9 +618,8 @@ export type AgeingSummaryRow = {
   ledgerHref: string;
 };
 
-function daysOverdue(dueDate: Date | null): number {
+function daysOverdue(dueDate: Date | null, today: Date): number {
   if (!dueDate) return 0;
-  const today = new Date();
   const due = Date.UTC(dueDate.getUTCFullYear(), dueDate.getUTCMonth(), dueDate.getUTCDate());
   const now = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
   return Math.max(0, Math.floor((now - due) / 86_400_000));
@@ -630,7 +632,7 @@ function daysOverdue(dueDate: Date | null): number {
  * receivables, not another calculation of them.
  */
 export async function getReceivablesAgeing(companyId: string): Promise<AgeingSummaryRow[]> {
-  const rows = await getReceivables({ companyId, onlyOutstanding: true });
+  const [rows, today] = await Promise.all([getReceivables({ companyId, onlyOutstanding: true }), getCompanyDay(prisma, companyId)]);
   return summarise(
     rows.map((r) => ({
       partyId: r.customerId,
@@ -641,7 +643,7 @@ export async function getReceivablesAgeing(companyId: string): Promise<AgeingSum
         documentLabel: shortNumber(r.invoiceNumber, 'INV'),
         documentDate: r.invoiceDate,
         dueDate: r.dueDate,
-        daysOverdue: daysOverdue(r.dueDate),
+        daysOverdue: daysOverdue(r.dueDate, today),
         currency: r.currency,
         originalAmount: r.originalAmount,
         paidAmount: r.paidAmount,
@@ -657,7 +659,7 @@ export async function getReceivablesAgeing(companyId: string): Promise<AgeingSum
 
 /** The same, for what the company owes its suppliers. */
 export async function getPayablesAgeing(companyId: string): Promise<AgeingSummaryRow[]> {
-  const rows = await getPayables({ companyId, onlyOutstanding: true });
+  const [rows, today] = await Promise.all([getPayables({ companyId, onlyOutstanding: true }), getCompanyDay(prisma, companyId)]);
   return summarise(
     rows.map((r) => ({
       partyId: r.vendorId,
@@ -668,7 +670,7 @@ export async function getPayablesAgeing(companyId: string): Promise<AgeingSummar
         documentLabel: r.contractReference,
         documentDate: r.contractDate,
         dueDate: r.dueDate,
-        daysOverdue: daysOverdue(r.dueDate),
+        daysOverdue: daysOverdue(r.dueDate, today),
         currency: r.currency,
         originalAmount: r.purchaseValue,
         paidAmount: r.paidAmount,

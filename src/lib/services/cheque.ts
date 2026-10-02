@@ -1,6 +1,7 @@
 import { transaction } from '@/lib/db';
 import type { Tx } from '@/lib/db';
 import { dec } from '@/lib/money';
+import { companyToday } from '@/lib/format';
 import { ACCOUNT_KEYS } from '@/lib/constants';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
 import { postJournalEntry, type JournalLineInput } from '@/lib/services/accounting';
@@ -105,7 +106,8 @@ export async function changeChequeStatus(input: ChequeStatusChangeInput) {
 
     const cheque = await loadCheque(tx, input.companyId, input.chequeId);
     const company = await getCompanyContext(tx, input.companyId);
-    const effectiveDate = input.effectiveDate ?? new Date();
+    // The company's day when none is given, as every other document date.
+    const effectiveDate = input.effectiveDate ?? companyToday(company.timezone);
     const isInbound = cheque.direction === 'INBOUND';
 
     if (input.toStatus === 'BOUNCED' && !input.reason?.trim()) {

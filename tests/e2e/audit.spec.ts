@@ -147,11 +147,12 @@ test('no page logs an error to the console', async ({ page }) => {
  */
 const FORMS = [
   { path: '/purchases/new', button: /Save as draft/i, name: 'purchase contract' },
-  { path: '/sales/new', button: /Save as draft/i, name: 'sales invoice' },
+  // "Save invoice" for someone who may approve; "Save as draft" for someone who may not.
+  { path: '/sales/new', button: /^(Save invoice|Save as draft)$/i, name: 'sales invoice' },
   { path: '/finance/receipts/new', button: /Save/i, name: 'receipt' },
   { path: '/finance/payments/new', button: /Save/i, name: 'payment' },
   { path: '/finance/expenses/new', button: /Save/i, name: 'expense' },
-  { path: '/accounting/journal/new', button: /Save/i, name: 'journal voucher' },
+  { path: '/accounting/journal/new', button: /^Post entry$/i, name: 'journal voucher' },
   { path: '/inventory/stock-counts/new', button: /Open count sheet/i, name: 'stock count' },
 ];
 

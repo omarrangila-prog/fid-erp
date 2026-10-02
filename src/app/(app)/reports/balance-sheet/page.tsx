@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getBalanceSheet, type BalanceSheetLine } from '@/lib/services/reports';
-import { formatMoney, formatDate, companyToday } from '@/lib/format';
+import { formatMoney, formatDate, companyToday, dayParam } from '@/lib/format';
 import { Decimal, dec } from '@/lib/money';
 import { PageHeader } from '@/components/shared/page-header';
 import { AsOfPicker } from '@/components/shared/date-range';
@@ -43,7 +43,7 @@ export default async function BalanceSheetPage({
   const user = await requirePageAccess(PERMISSIONS.ACCOUNTING_VIEW);
   const local = user.activeCompany.localCurrency;
 
-  const asOfDate = query.asOf ? new Date(`${query.asOf}T00:00:00.000Z`) : companyToday(user.activeCompany.timezone);
+  const asOfDate = dayParam(query.asOf) ?? companyToday(user.activeCompany.timezone);
   const compare = (['previous', 'year'].includes(query.compare ?? '') ? query.compare : 'none') as 'none' | 'previous' | 'year';
   const showZero = query.zero === '1';
 

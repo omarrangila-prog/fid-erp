@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { companyToday } from '@/lib/format';
 import { z } from 'zod';
 import { prisma, transaction } from '@/lib/db';
 import { requirePermission, assertPermission, requireAnyPermission } from '@/lib/auth/guards';
@@ -1030,7 +1031,7 @@ export async function saveLedgerAccountAction(
         companyId,
         userId: user.id,
         amount: data.openingAmount,
-        asOf: data.openingDate ?? new Date(),
+        asOf: data.openingDate ?? companyToday(user.activeCompany.timezone),
         currency: user.activeCompany.localCurrency,
       });
     }

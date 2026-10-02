@@ -31,6 +31,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
   const user = await requirePageAccess(PERMISSIONS.INVENTORY_VIEW);
   const companyId = user.activeCompany.id;
   const showValue = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
+  const showProfit = showValue && can(user, PERMISSIONS.PROFITS_VIEW);
   const showSales = can(user, PERMISSIONS.SALES_VIEW);
   const scope = warehouseScope(user);
 
@@ -43,14 +44,14 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
   ]);
   // The reconciliation is of the whole company, as the other screens show it —
   // so only when nothing narrows the view.
-  const checks = !filtered && !scope && showValue && showSales ? await getItemProfitabilityChecks(companyId, report) : [];
+  const checks = !filtered && !scope && showProfit && showSales ? await getItemProfitabilityChecks(companyId, report) : [];
   const local = report.localCurrency;
   const itemQuery = new URLSearchParams(
     Object.entries({ warehouse: values.warehouse, shipment: values.shipment, batch: values.batch, container: values.container, from: values.from, to: values.to }).filter(
       (entry): entry is [string, string] => !!entry[1],
     ),
   ).toString();
-  const itemRows = report.items.map((item) => toItemStockRow(item, local, { showCost: showValue, showSales }, itemQuery ? `?${itemQuery}` : ''));
+  const itemRows = report.items.map((item) => toItemStockRow(item, local, { showCost: showValue, showSales, showProfit }, itemQuery ? `?${itemQuery}` : ''));
   const t = report.total;
   const profit = profitText(t.grossProfit, local);
   const periodLabel = values.from || values.to ? `${values.from ? formatDate(values.from) : 'Start'} – ${values.to ? formatDate(values.to) : 'today'}` : undefined;
@@ -283,7 +284,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
               equivalent={pairText(t.outstanding, local)!.equivalent}
               sub="Still owed on these invoices"
             />
-            {showValue ? (
+            {showProfit ? (
               <>
                 <Figure testId="total-cogs" label="Cost of goods sold" value={pairText(t.cogs, local)!.primary} equivalent={pairText(t.cogs, local)!.equivalent} />
                 <Figure
@@ -340,6 +341,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
         <ItemStockClient
           rows={itemRows}
           showCost={showValue}
+          showProfit={showProfit}
           showSales={showSales}
           canExport={can(user, PERMISSIONS.REPORTS_EXPORT)}
           canSell={can(user, PERMISSIONS.SALES_CREATE)}

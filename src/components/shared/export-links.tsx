@@ -1,54 +1,16 @@
-'use client';
-
-import { Download, FileSpreadsheet } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { PrintButton } from '@/components/shared/print-button';
+import type { ComponentProps } from 'react';
+import { getCurrentUser } from '@/lib/auth/session';
+import { can } from '@/lib/auth/guards';
+import { PERMISSIONS } from '@/lib/constants';
+import { ExportButtons } from '@/components/shared/export-buttons';
 
 /**
- * Take this report away: as a spreadsheet, as plain text, or as a document.
- *
- * All three carry whatever filters the page is showing, so a file and the
- * screen it came from always state the same thing. The server writes both the
- * spreadsheet and the CSV from the same service the page read — the CSV is
- * read back out of the finished workbook, so there is no second definition of
- * the report that could drift from the first.
- *
- * "Print / PDF" opens the browser's print dialogue, where every desktop
- * browser offers Save as PDF. That is a real PDF, laid out by the print
- * stylesheet the client already uses for paper.
+ * Excel, CSV and Print for a report — Excel and CSV only for someone allowed
+ * to export ("Export reports and lists"), which the download itself checks
+ * too. Print stays: it is the page as it already stands on the screen.
  */
-export function ExportLinks({
-  href,
-  csvHref,
-  print = true,
-}: {
-  /** The Excel download, from `exportHref`. */
-  href?: string;
-  /** The CSV download. Defaults to the Excel link asked for as CSV. */
-  csvHref?: string;
-  print?: boolean;
-}) {
-  const csv = csvHref ?? (href ? `${href}${href.includes('?') ? '&' : '?'}format=csv` : undefined);
-
-  return (
-    <>
-      {href ? (
-        <Button asChild variant="outline" size="sm" data-print="hide">
-          <a href={href} download>
-            <FileSpreadsheet />
-            Excel
-          </a>
-        </Button>
-      ) : null}
-      {csv ? (
-        <Button asChild variant="outline" size="sm" data-print="hide">
-          <a href={csv} download>
-            <Download />
-            CSV
-          </a>
-        </Button>
-      ) : null}
-      {print ? <PrintButton /> : null}
-    </>
-  );
+export async function ExportLinks(props: ComponentProps<typeof ExportButtons>) {
+  const user = await getCurrentUser();
+  if (user && can(user, PERMISSIONS.REPORTS_EXPORT)) return <ExportButtons {...props} />;
+  return <ExportButtons print={props.print} />;
 }

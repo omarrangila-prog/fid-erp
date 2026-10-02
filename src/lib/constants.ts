@@ -959,6 +959,13 @@ export const REPORT_GROUPS = {
   OTHER_EXPENSE: 'OTHER_EXPENSE',
 } as const;
 
+/**
+ * The largest file that can be attached. Vercel accepts at most 4.5 MB in one
+ * request and the upload travels in a single request, so the form refuses a
+ * bigger file before sending it rather than failing on the way.
+ */
+export const ATTACHMENT_MAX_BYTES = 4 * 1024 * 1024;
+
 /** Default ETA alert offsets, in days before arrival. */
 export const DEFAULT_ETA_ALERT_DAYS = [7, 3, 0];
 
@@ -972,6 +979,20 @@ export const SETTING_KEYS = {
   /** ISO date. Nothing may post on or before this date. Empty means open. */
   PERIOD_CLOSED_UNTIL: 'accounting.periodClosedUntil',
 } as const;
+
+/**
+ * The settings a person may change from the Settings page — and only these.
+ *
+ * Other values live in the same table (the closed-period date, shared-report
+ * links, saved reports) and each has its own screen and permission. The save
+ * action used to accept any name, so someone with Settings access could
+ * reopen a closed period or write a share link directly.
+ */
+export const EDITABLE_SETTINGS: Record<string, { kind: 'boolean' | 'number' | 'csv'; min?: number; max?: number }> = {
+  [SETTING_KEYS.ALLOW_NEGATIVE_STOCK]: { kind: 'boolean' },
+  [SETTING_KEYS.LOW_STOCK_PERCENT]: { kind: 'number', min: 0, max: 100 },
+  [SETTING_KEYS.ETA_ALERT_DAYS]: { kind: 'csv', min: 0, max: 365 },
+};
 
 /**
  * Standard tax codes, seeded the moment a company is registered for tax.

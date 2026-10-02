@@ -77,7 +77,7 @@ function parseJson(payload: string): unknown {
   try {
     return JSON.parse(payload);
   } catch {
-    throw new Error('The submitted form could not be read. Please try again.');
+    throw new BusinessRuleError('The submitted form could not be read. Please try again.');
   }
 }
 

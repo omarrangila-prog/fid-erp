@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { getCurrentUser } from '@/lib/auth/session';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { HandCoins } from 'lucide-react';
@@ -7,7 +8,7 @@ import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getVendorLedger, ledgerKindToSourceType, resolvePartyLedgerQuery } from '@/lib/services/ledger';
 import { getPayables } from '@/lib/services/receivables';
-import { formatMoney } from '@/lib/format';
+import { formatMoney, dayParam } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Metric, MetricGrid } from '@/components/shared/stat-card';
 import { Button } from '@/components/ui/button';
@@ -20,7 +21,12 @@ export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
-  const vendor = await prisma.vendor.findUnique({ where: { id }, select: { vendorName: true } });
+  // Only this company's record, and only for someone signed in: the tab title must not
+  // name a record from the other company, or show anything before the page's own check.
+  const viewer = await getCurrentUser();
+  const vendor = viewer
+    ? await prisma.vendor.findFirst({ where: { id, companyId: viewer.activeCompany.id }, select: { vendorName: true } })
+    : null;
   return { title: vendor ? `${vendor.vendorName} · Ledger` : 'Supplier Ledger' };
 }
 
@@ -44,8 +50,8 @@ export default async function VendorLedgerPage({
     localCurrency: user.activeCompany.localCurrency,
     partyCurrency: vendor.primaryCurrency,
   });
-  const from = query.from ? new Date(`${query.from}T00:00:00.000Z`) : undefined;
-  const to = query.to ? new Date(`${query.to}T00:00:00.000Z`) : undefined;
+  const from = dayParam(query.from) ?? undefined;
+  const to = dayParam(query.to) ?? undefined;
 
   const [ledger, payables] = await Promise.all([
     getVendorLedger({

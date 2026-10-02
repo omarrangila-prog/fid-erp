@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { getCurrentUser } from '@/lib/auth/session';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { BookText, Plus } from 'lucide-react';
@@ -24,7 +25,12 @@ export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
-  const vendor = await prisma.vendor.findUnique({ where: { id }, select: { vendorName: true } });
+  // Only this company's record, and only for someone signed in: the tab title must not
+  // name a record from the other company, or show anything before the page's own check.
+  const viewer = await getCurrentUser();
+  const vendor = viewer
+    ? await prisma.vendor.findFirst({ where: { id, companyId: viewer.activeCompany.id }, select: { vendorName: true } })
+    : null;
   return { title: vendor?.vendorName ?? 'Supplier' };
 }
 

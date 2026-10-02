@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Field } from '@/components/ui/field';
 import { Input, Select, Textarea } from '@/components/ui/input';
 import { allocateOverheadsAction } from '@/server/actions/finance-actions';
+import { safely } from '@/lib/safely';
 
 type Candidate = { shipmentId: string; label: string; itemName: string; receivedKg: string; salesUsd: string };
 
@@ -54,7 +55,7 @@ export function OverheadAllocationForm({
     setError(null);
     if (chosen.size === 0) return setError('Choose at least one shipment.');
     setBusy(true);
-    const result = await allocateOverheadsAction(
+    const result = await safely(allocateOverheadsAction(
       JSON.stringify({
         from,
         to,
@@ -65,7 +66,7 @@ export function OverheadAllocationForm({
           percentage: basis === 'PERCENTAGE' ? (percentages[shipmentId] ?? '0') : undefined,
         })),
       }),
-    );
+    ));
     setBusy(false);
     if (!result.ok) return setError(result.error);
     toast.success(`${totalUsd} of overheads shared across ${result.data.shipments} shipments, for reporting only.`);

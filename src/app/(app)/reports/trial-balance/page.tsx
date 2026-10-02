@@ -5,7 +5,7 @@ import { PERMISSIONS } from '@/lib/constants';
 import { ledgerHref } from '@/lib/ledger-currency';
 import { prisma } from '@/lib/db';
 import { getTrialBalanceReport } from '@/lib/services/reports';
-import { formatMoney, formatDate, titleCase } from '@/lib/format';
+import { formatMoney, formatDate, titleCase, dayParam, companyToday } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { CustomizePanel } from '@/components/reports/customize-panel';
 import { FavouriteStar } from '@/components/reports/report-statement';
@@ -48,12 +48,8 @@ export default async function TrialBalancePage({
   const companyId = user.activeCompany.id;
 
   // "As at" is the closing date; a start date turns on opening and movement.
-  const asOfDate = query.to
-    ? new Date(`${query.to}T00:00:00.000Z`)
-    : query.asOf
-      ? new Date(`${query.asOf}T00:00:00.000Z`)
-      : new Date();
-  const fromDate = query.from ? new Date(`${query.from}T00:00:00.000Z`) : undefined;
+  const asOfDate = dayParam(query.to) ?? dayParam(query.asOf) ?? companyToday(user.activeCompany.timezone);
+  const fromDate = dayParam(query.from) ?? undefined;
   const filters = {
     accountType: query.type || null,
     currency: query.currency || null,

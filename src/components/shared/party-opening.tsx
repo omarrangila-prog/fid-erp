@@ -5,6 +5,7 @@ import { MasterFormSheet, type FieldSpec } from '@/components/shared/master-form
 import { postPartyOpeningAction } from '@/server/actions/master-actions';
 import type { MasterFormState } from '@/server/actions/master-actions';
 import { transactionCurrencies } from '@/lib/company-currencies';
+import { todayInputValue } from '@/lib/format';
 
 /**
  * What a customer or supplier already owed on the day the books started here.
@@ -83,7 +84,7 @@ export function PartyOpeningSheet({
       description="Posted against Opening Balance Equity, so the trial balance still balances."
       fields={fields}
       defaults={{
-        asOf: new Date().toISOString().slice(0, 10),
+        asOf: todayInputValue(),
         currency,
         rateToUsd: currency === 'USD' ? '1' : defaultLocalRate,
         rateLocalPerUsd: defaultLocalRate,

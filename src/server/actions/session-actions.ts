@@ -20,6 +20,8 @@ import { recordAudit } from '@/lib/services/audit';
 import { globalSearch, type SearchResult } from '@/lib/services/search';
 import { run, type ActionResult } from '@/server/actions/action-utils';
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
+import { BusinessRuleError } from '@/lib/errors';
 
 /**
  * Sign-in.
@@ -175,6 +177,17 @@ export async function switchCompanyAction(companyId: string): Promise<ActionResu
   });
 }
 
+/**
+ * The company chooser, as a form. A plain form submits even before the page's
+ * scripts have loaded, so tapping a company on a slow connection always does
+ * something; the button used to wait for the scripts and ignore an early tap.
+ */
+export async function chooseCompanyFormAction(_previous: { error: string } | null, formData: FormData): Promise<{ error: string } | null> {
+  const result = await switchCompanyAction(String(formData.get('companyId') ?? ''));
+  if (!result.ok) return { error: result.error };
+  redirect('/dashboard');
+}
+
 export async function searchAction(query: string): Promise<SearchResult[]> {
   const user = await requireUser().catch(() => null);
   if (!user) return [];
@@ -206,13 +219,13 @@ export async function changePasswordAction(
 
     const record = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
     if (!(await verifyPassword(record.passwordHash, currentPassword))) {
-      throw new Error('Your current password is not correct.');
+      throw new BusinessRuleError('Your current password is not correct.');
     }
     if (newPassword !== confirmPassword) {
-      throw new Error('The new passwords do not match.');
+      throw new BusinessRuleError('The new passwords do not match.');
     }
     const weakness = validatePasswordStrength(newPassword);
-    if (weakness) throw new Error(weakness);
+    if (weakness) throw new BusinessRuleError(weakness);
 
     await prisma.user.update({
       where: { id: user.id },

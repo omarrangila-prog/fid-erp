@@ -4,7 +4,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getCashBook } from '@/lib/services/reports';
-import { formatMoney, formatDate } from '@/lib/format';
+import { formatMoney, formatDate, dayParam } from '@/lib/format';
 import { dec, sum } from '@/lib/money';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/shared/page-header';
@@ -56,8 +56,8 @@ export default async function CashBookPage({
     ? await getCashBook({
         companyId,
         cashBankAccountId: selectedId,
-        from: from ? new Date(`${from}T00:00:00.000Z`) : undefined,
-        to: to ? new Date(`${to}T23:59:59.999Z`) : undefined,
+        from: dayParam(from) ?? undefined,
+        to: dayParam(to) ? new Date(`${to}T23:59:59.999Z`) : undefined,
       })
     : null;
 

@@ -23,7 +23,10 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       headers: {
         'Content-Type': attachment.mimeType,
         'Content-Length': String(bytes.byteLength),
-        'Content-Disposition': `attachment; filename="${encodeURIComponent(attachment.fileName)}"`,
+        // `filename*` carries the real name, spaces and accents included; the
+        // plain `filename` is an ASCII stand-in for clients that ignore it. A
+        // percent-encoded plain filename saved as "Bill%20of%20lading.pdf".
+        'Content-Disposition': `attachment; filename="${attachment.fileName.replace(/[^\x20-\x7e]|["\\]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(attachment.fileName).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`,
         'X-Content-Type-Options': 'nosniff',
         'Cache-Control': 'private, no-store',
       },

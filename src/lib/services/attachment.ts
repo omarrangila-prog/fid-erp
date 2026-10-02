@@ -1,8 +1,9 @@
 import 'server-only';
 import { createHash } from 'node:crypto';
-import { prisma, transaction } from '@/lib/db';
+import { prisma, transaction, type Tx } from '@/lib/db';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
 import { writeAudit } from '@/lib/services/audit';
+import { ATTACHMENT_MAX_BYTES } from '@/lib/constants';
 
 /**
  * Document attachments: the bill of lading, the supplier's invoice, a quality
@@ -19,7 +20,7 @@ import { writeAudit } from '@/lib/services/audit';
  * the business ever outgrows it, only the four functions below change.
  */
 
-const MAX_BYTES = Number(process.env.ATTACHMENT_MAX_BYTES ?? 20 * 1024 * 1024);
+const MAX_BYTES = ATTACHMENT_MAX_BYTES;
 
 /** Types a trading business actually attaches. Anything else is refused. */
 const ALLOWED = new Set([
@@ -38,6 +39,18 @@ const ALLOWED = new Set([
 export function isAllowedType(mimeType: string): boolean {
   return ALLOWED.has(mimeType);
 }
+
+/**
+ * The documents a file can be attached to, each looked up in the uploader's
+ * company. Without this a file could be filed against any id at all — another
+ * company's invoice, or nothing — and sit in the database where no screen
+ * would ever show it.
+ */
+const ATTACHABLE: Record<string, (tx: Tx, companyId: string, id: string) => Promise<{ id: string } | null>> = {
+  SalesInvoice: (tx, companyId, id) => tx.salesInvoice.findFirst({ where: { id, companyId }, select: { id: true } }),
+  PurchaseContract: (tx, companyId, id) => tx.purchaseContract.findFirst({ where: { id, companyId }, select: { id: true } }),
+  CreditNote: (tx, companyId, id) => tx.creditNote.findFirst({ where: { id, companyId }, select: { id: true } }),
+};
 
 /** Everything except the bytes, which are never wanted in a listing. */
 const LIST_FIELDS = {
@@ -79,6 +92,11 @@ export async function saveAttachment(input: {
   }
 
   return transaction(async (tx) => {
+    const lookup = ATTACHABLE[input.entityType];
+    if (!lookup || !(await lookup(tx, input.companyId, input.entityId))) {
+      throw new NotFoundError('Document');
+    }
+
     const attachment = await tx.attachment.create({
       data: {
         companyId: input.companyId,

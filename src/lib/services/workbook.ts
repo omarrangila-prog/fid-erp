@@ -1,5 +1,7 @@
 import 'server-only';
 import ExcelJS from 'exceljs';
+import { sum } from '@/lib/money';
+import { companyToday } from '@/lib/format';
 
 /**
  * Real Excel files.
@@ -44,6 +46,8 @@ const IVORY = 'FFF7F4EC';
 
 export async function buildWorkbook<T>(params: {
   companyName: string;
+  /** The company's time zone, for the export stamp. */
+  timeZone?: string | null;
   title: string;
   subtitle?: string;
   columns: Array<{
@@ -75,7 +79,7 @@ export async function buildWorkbook<T>(params: {
   const banded = params.rows.length <= 5_000;
 
   // --- Title block ---------------------------------------------------------
-  writeTitleBlock(sheet, params.companyName, params.title, params.subtitle, columnCount);
+  writeTitleBlock(sheet, params.companyName, params.title, params.subtitle, columnCount, params.timeZone);
 
   // --- Header row ----------------------------------------------------------
   const headerRow = sheet.getRow(4);
@@ -120,8 +124,11 @@ export async function buildWorkbook<T>(params: {
       const cell = totalRow.getCell(index + 1);
       const letter = sheet.getColumn(index + 1).letter;
       // A formula rather than a computed number, so the client can filter the
-      // sheet and watch the total follow.
-      cell.value = { formula: `SUBTOTAL(109,${letter}5:${letter}${4 + params.rows.length})` };
+      // sheet and watch the total follow. The sum rides along as the formula's
+      // cached result: nothing computes it until Excel recalculates, and the
+      // CSV, read back from this file, would otherwise total to nothing.
+      const values = params.rows.map((row) => column.value(row)).filter((v): v is number => typeof v === 'number');
+      cell.value = { formula: `SUBTOTAL(109,${letter}5:${letter}${4 + params.rows.length})`, result: sum(values).toNumber() };
       cell.numFmt = FORMATS[column.type ?? 'number'] ?? FORMATS.number!;
       cell.font = { bold: true };
       cell.alignment = { horizontal: 'right' };
@@ -164,19 +171,34 @@ function isNumeric(type: ColumnType | undefined): boolean {
   return type === 'number' || type === 'money' || type === 'quantity' || type === 'integer' || type === 'percent';
 }
 
+/** One CSV field: quoted when it holds a comma, a quote or a line break. */
+function quote(text: string): string {
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+/**
+ * Text a spreadsheet would run.
+ *
+ * A CSV cell has no type: Excel reads `=HYPERLINK(…)` or `+cmd|…` in a
+ * customer name or memo as a formula and runs it when the file is opened. A
+ * leading apostrophe makes it text again, as the user typed it. A plain number
+ * such as `-12.50` stays as it is: it is not a formula and must stay a number.
+ */
+function guardFormula(text: string): string {
+  if (!/^[=+\-@\t\r]/.test(text) || /^[-+]?\d[\d,]*(\.\d+)?$/.test(text)) return text;
+  return `'${text}`;
+}
+
 /** The filename an export downloads as: report, company and date. */
-export function workbookFileName(title: string, companyCode: string, extension = 'xlsx'): string {
+export function workbookFileName(title: string, companyCode: string, extension = 'xlsx', timeZone?: string | null): string {
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  return `${companyCode}-${slug}-${new Date().toISOString().slice(0, 10)}.${extension}`;
+  return `${companyCode}-${slug}-${companyToday(timeZone).toISOString().slice(0, 10)}.${extension}`;
 }
 
 /** A UTF-8 CSV with a BOM so Excel opens the characters correctly. */
 export function buildCsv(headers: string[], rows: Array<Array<string | number | null | undefined>>): Buffer {
-  const escape = (value: string | number | null | undefined) => {
-    const text = value == null ? '' : String(value);
-    if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
-    return text;
-  };
+  const escape = (value: string | number | null | undefined) =>
+    quote(value == null ? '' : typeof value === 'number' ? String(value) : guardFormula(value));
   const lines = [headers.map(escape).join(','), ...rows.map((row) => row.map(escape).join(','))];
   return Buffer.from(`\uFEFF${lines.join('\r\n')}`, 'utf8');
 }
@@ -197,27 +219,31 @@ export async function csvFromWorkbook(buffer: Buffer): Promise<Buffer> {
   const sheet = workbook.worksheets[0];
   if (!sheet) return Buffer.from('\uFEFF', 'utf8');
 
-  const escape = (value: unknown) => {
+  const text = (value: ExcelJS.CellValue): string => {
     if (value == null) return '';
-    // A formatted cell carries its text; a formula cell carries its result.
-    const text =
-      typeof value === 'object' && value !== null
-        ? String(
-            (value as { result?: unknown; text?: unknown; richText?: Array<{ text: string }> }).result ??
-              (value as { text?: unknown }).text ??
-              (value as { richText?: Array<{ text: string }> }).richText?.map((r) => r.text).join('') ??
-              '',
-          )
-        : String(value);
-    if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
-    return text;
+    // A date cell reads back as a Date; written as the ISO day, which every
+    // spreadsheet parses and nobody misreads as month-first.
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? '' : value.toISOString().slice(0, 10);
+    if (typeof value === 'number') return String(value);
+    if (typeof value === 'object') {
+      // A formula cell carries its result; a link its text; rich text its runs.
+      if ('formula' in value || 'sharedFormula' in value) return 'result' in value && value.result != null ? text(value.result as ExcelJS.CellValue) : '';
+      if ('richText' in value) return guardFormula(value.richText.map((r) => r.text).join(''));
+      if ('text' in value) return guardFormula(String(value.text));
+      return '';
+    }
+    return guardFormula(String(value));
   };
 
   const lines: string[] = [];
   sheet.eachRow({ includeEmpty: false }, (row) => {
-    const values = Array.isArray(row.values) ? row.values.slice(1) : [];
+    const cells: string[] = [];
+    for (let column = 1; column <= row.cellCount; column += 1) {
+      const cell = row.getCell(column);
+      // A merged heading reads back in every cell it spans; it belongs once.
+      cells.push(cell.type === ExcelJS.ValueType.Merge ? '' : quote(text(cell.value)));
+    }
     // A row of nothing is a spacer in the spreadsheet and noise in a CSV.
-    const cells = values.map(escape);
     if (cells.every((c) => c === '')) return;
     lines.push(cells.join(','));
   });
@@ -249,6 +275,8 @@ export type StatementRow =
 
 export async function buildStatementWorkbook(params: {
   companyName: string;
+  /** The company's time zone, for the export stamp. */
+  timeZone?: string | null;
   title: string;
   subtitle?: string;
   /** Heading for the description column. */
@@ -273,7 +301,7 @@ export async function buildStatementWorkbook(params: {
   const columnCount = codeColumns + 1 + params.columns.length;
 
   // --- Title block ---------------------------------------------------------
-  writeTitleBlock(sheet, params.companyName, params.title, params.subtitle, columnCount);
+  writeTitleBlock(sheet, params.companyName, params.title, params.subtitle, columnCount, params.timeZone);
 
   // --- Header row ----------------------------------------------------------
   const headerRow = sheet.getRow(4);
@@ -394,6 +422,7 @@ function writeTitleBlock(
   title: string,
   subtitle: string | undefined,
   columnCount: number,
+  timeZone?: string | null,
 ): void {
   sheet.mergeCells(1, 1, 1, columnCount);
   const titleCell = sheet.getCell(1, 1);
@@ -407,6 +436,8 @@ function writeTitleBlock(
 
   sheet.mergeCells(3, 1, 3, columnCount);
   const stampCell = sheet.getCell(3, 1);
-  stampCell.value = `Exported ${new Date().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}`;
+  // The company's clock, not the server's: the server runs on UTC, four
+  // hours behind Dubai.
+  stampCell.value = `Exported ${new Date().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: timeZone || undefined })}`;
   stampCell.font = { size: 9, italic: true, color: { argb: 'FF8A857C' } };
 }

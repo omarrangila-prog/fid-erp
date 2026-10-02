@@ -433,7 +433,7 @@ export const ledgerAccountSchema = z.object({
   name: requiredText('Account name', 120),
   type: z.enum(['ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE']),
   reportGroup: optionalText(40),
-  openingAmount: optionalDecimalString('Opening balance'),
+  openingAmount: optionalDecimalString('Opening balance', { allowNegative: true }),
   openingDate: optionalDateString,
 });
 

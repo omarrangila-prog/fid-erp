@@ -25,6 +25,10 @@ export async function downloadExcel(params: {
   });
 
   if (!response.ok) {
+    // Too large for one request: the host refuses it before the app sees it.
+    if (response.status === 413) {
+      throw new Error('That is too much to export at once. Narrow the search or the date range and export again.');
+    }
     // Never a raw status code. The caller shows this as it stands.
     const message = await response
       .json()
@@ -41,7 +45,9 @@ export async function downloadExcel(params: {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  // Safari and Firefox start the download after the click returns; revoking
+  // the URL straight away can cancel it.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 /** The server names the file; this reads that name back off the response. */

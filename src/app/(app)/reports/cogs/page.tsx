@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getCogsReport } from '@/lib/services/profitability';
-import { formatMoney, formatDate, formatQuantityKg } from '@/lib/format';
+import { formatMoney, formatDate, formatQuantityKg, dayParam, companyToday } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { DateRangePicker } from '@/components/shared/date-range';
 import { Metric, MetricGrid } from '@/components/shared/stat-card';
@@ -31,8 +31,9 @@ export default async function CogsReportPage({
 }) {
   const { from, to } = await searchParams;
   const user = await requirePageAccess(PERMISSIONS.PROFITS_VIEW);
-  const fromDate = from ? new Date(`${from}T00:00:00.000Z`) : startOfYear();
-  const toDate = to ? new Date(`${to}T00:00:00.000Z`) : new Date();
+  const fromDate = dayParam(from) ?? startOfYear();
+  // Today on the company's own clock, not the server's: Dubai is four hours ahead of UTC.
+  const toDate = dayParam(to) ?? companyToday(user.activeCompany.timezone);
 
   const rows = await getCogsReport({
     companyId: user.activeCompany.id,

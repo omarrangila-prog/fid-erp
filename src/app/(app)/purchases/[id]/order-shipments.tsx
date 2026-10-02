@@ -93,6 +93,7 @@ export function OrderShipments({
   canMarkArrived,
   canReceive = false,
   canRemove = false,
+  canSeeCosting = false,
 }: {
   contractId: string;
   summary: OrderSummary;
@@ -101,6 +102,8 @@ export function OrderShipments({
   canReceive?: boolean;
   /** Take one container off the order (the add/correct-container permission). */
   canRemove?: boolean;
+  /** Shipment Costing is purchase cost; the link is offered to those who may open it. */
+  canSeeCosting?: boolean;
 }) {
   const router = useRouter();
   const [confirmOpen, setConfirmOpen] = React.useState(false);
@@ -291,7 +294,7 @@ export function OrderShipments({
                           onSelect: () => window.dispatchEvent(new CustomEvent(RECEIVE_GOODS_EVENT)),
                         },
                         { label: 'View', icon: Eye, href: `/shipments/${row.shipmentId}` },
-                        { label: 'Costing', icon: Calculator, href: `/reports/shipment-cost?shipment=${row.shipmentId}` },
+                        { label: 'Costing', icon: Calculator, href: `/reports/shipment-cost?shipment=${row.shipmentId}`, show: canSeeCosting },
                       ]}
                     />
                   </TD>
