@@ -44,20 +44,22 @@ test('a refreshed journal voucher is either honestly empty or honestly full', as
    * can land before React has hydrated, in which case nothing happens — so
    * press it until the form is actually open.
    */
+  // The voucher's own memo: the quick entry above it has a Memo box too.
+  const voucherMemo = () => main.locator('#jv-description');
   const openAdvanced = async () => {
     const advanced = main.getByRole('button', { name: /advanced journal entry/i });
-    const box = main.getByLabel(/^memo/i);
+    const box = voucherMemo();
     // Either the voucher is already open, or the chooser is on screen and the
     // button has to be pressed — and on a cold page neither has rendered yet,
     // so this keeps looking rather than deciding on the first glance.
     await expect(async () => {
-      if (await box.count()) return;
+      if (await box.isVisible()) return;
       if (await advanced.count()) await advanced.click();
       await expect(box).toBeVisible({ timeout: 5_000 });
     }).toPass({ timeout: 120_000 });
   };
   await openAdvanced();
-  const memoBox = main.getByLabel(/^memo/i);
+  const memoBox = voucherMemo();
 
   await memoBox.fill('Refresh probe — never posted');
   await main.getByLabel(/line 1 amount/i).fill('123.45');
@@ -68,7 +70,7 @@ test('a refreshed journal voucher is either honestly empty or honestly full', as
 
   const accountBefore = await main.getByRole('combobox', { name: /line 1 account/i }).innerText();
   console.log('\nbefore refresh');
-  console.log('  memo        :', await main.getByLabel(/^memo/i).inputValue());
+  console.log('  memo        :', await voucherMemo().inputValue());
   console.log('  amount      :', await main.getByLabel(/line 1 amount/i).inputValue());
   console.log('  account     :', accountBefore.replace(/\s+/g, ' ').trim());
 
@@ -79,7 +81,7 @@ test('a refreshed journal voucher is either honestly empty or honestly full', as
   await openAdvanced();
   await page.waitForTimeout(2_000);
 
-  const memo = await main.getByLabel(/^memo/i).inputValue();
+  const memo = await voucherMemo().inputValue();
   const amount = await main.getByLabel(/line 1 amount/i).inputValue();
   const account = (await main.getByRole('combobox', { name: /line 1 account/i }).innerText()).replace(/\s+/g, ' ').trim();
   const balanced = await main.getByText(/^balanced$/i).count();

@@ -111,6 +111,10 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
     const existing = grouped.get(key);
     const onHand = dec(balance.onHandKg);
     const reserved = dec(balance.reservedKg);
+    // An empty batch is not behind the stock: it adds nothing to the row, and
+    // a deleted shipment's batch would put its renamed "… (reversed …)"
+    // reference among the row's sources (seen live, 2 Oct).
+    if (onHand.isZero() && reserved.isZero()) continue;
     const available = dec(balance.availableKg);
     const value = toMoney(onHand.times(dec(balance.batch.landedUnitCostUsd)));
     // The same coffee in the company's currency at its historical cost rates.
