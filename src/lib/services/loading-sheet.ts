@@ -2,6 +2,7 @@ import { prisma, type Tx } from '@/lib/db';
 import { Decimal, dec, toQuantity, toMoney } from '@/lib/money';
 import { repairSharedContainerAssignments } from '@/lib/services/shipment';
 import { companyToday } from '@/lib/format';
+import { getInvoicePaymentStatus } from '@/lib/invoice-payment';
 
 function uniqueNames(names: Iterable<string>): string {
   return [...new Set(names)].filter(Boolean).sort((a, b) => a.localeCompare(b)).join(', ');
@@ -145,9 +146,10 @@ function settlementOf(
   today: Date,
 ): Allocation['settlement'] {
   const outstanding = toMoney(total.minus(received).minus(credited));
-  if (outstanding.lessThanOrEqualTo('0.005')) return 'PAID';
+  const status = getInvoicePaymentStatus({ paid: received, outstanding });
+  if (status === 'PAID') return 'PAID';
   if (dueDate && dueDate < today) return 'OVERDUE';
-  return received.greaterThan('0.005') ? 'PARTIAL' : 'UNPAID';
+  return status;
 }
 
 /** The worst position among a batch's invoices is the one worth showing. */

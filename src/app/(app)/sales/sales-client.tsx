@@ -14,6 +14,7 @@ import { RowActions, viewAction, editAction } from '@/components/shared/row-acti
 import { deleteSalesInvoiceAction } from '@/server/actions/trading-actions';
 import { cn } from '@/lib/utils';
 import { formatDate } from '@/lib/format';
+import { PAYMENT_FILTER_LABELS, type PaymentFilter } from '@/lib/invoice-payment';
 
 export type SaleRow = {
   id: string;
@@ -45,6 +46,8 @@ export type SaleRow = {
   paidUsdSort: number;
   outstandingUsdSort: number;
   settlement: string;
+  /** Money still due — Unpaid for every filter, part-paid included. */
+  owing: boolean;
   daysOverdue: number;
   status: string;
   paymentType: string;
@@ -68,10 +71,10 @@ export function SalesClient({
   canDelete,
   canReverse,
   canApprove,
-  initialStanding = null,
+  initialPayment = null,
 }: {
   rows: SaleRow[];
-  initialStanding?: 'PAID' | 'PARTIAL' | 'UNPAID' | 'OUTSTANDING' | null;
+  initialPayment?: PaymentFilter | null;
   canCreate: boolean;
   canEdit: boolean;
   canDelete: boolean;
@@ -86,36 +89,30 @@ export function SalesClient({
    * it at the top, and each one opens the invoices behind it: the figure and
    * the list are the same thing, so a total can never point at nothing.
    */
-  const [standing, setStanding] = React.useState<'PAID' | 'PARTIAL' | 'UNPAID' | 'OUTSTANDING' | null>(initialStanding);
+  /*
+   * Payment status is All, Unpaid or Paid — nothing else. Unpaid is every
+   * posted invoice with money still due, part-paid included: the row still
+   * says "Partially Paid", but that is the invoice's status, not a filter.
+   * The cards and the Payment status box are the same choice.
+   */
+  const [payment, setPayment] = React.useState<PaymentFilter | null>(initialPayment);
   const [from, setFrom] = React.useState('');
   const [to, setTo] = React.useState('');
 
   const posted = rows.filter((row) => row.status === 'POSTED');
-  const summarise = (settlement: 'PAID' | 'PARTIAL' | 'UNPAID' | 'OUTSTANDING') => {
-    // Outstanding is unpaid and partly paid together: a part payment still leaves money owed.
-    const matching = posted.filter((row) =>
-      settlement === 'OUTSTANDING' ? row.settlement !== 'PAID' : row.settlement === settlement,
-    );
+  const inPayment = (row: SaleRow, filter: PaymentFilter) => row.status === 'POSTED' && (filter === 'unpaid' ? row.owing : !row.owing);
+  const summarise = (filter: PaymentFilter) => {
+    const matching = posted.filter((row) => inPayment(row, filter));
     return {
-      settlement,
+      filter,
       count: matching.length,
       paidUsd: matching.reduce((total, row) => total + row.paidUsdSort, 0),
       outstandingUsd: matching.reduce((total, row) => total + row.outstandingUsdSort, 0),
     };
   };
-  // Two cards, as the client asked: Unpaid is every invoice still owing money,
-  // part-paid ones included — a part payment still leaves it unpaid — and Paid.
-  // A dashboard link can still open the list on nothing-received or part-paid
-  // alone (?standing=UNPAID / PARTIAL); the note above the list says which.
   const standings = [
-    {
-      ...summarise('OUTSTANDING'),
-      key: 'unpaid',
-      label: 'Unpaid',
-      hint: 'Unpaid and partially paid — still to collect',
-      amount: 'outstanding' as const,
-    },
-    { ...summarise('PAID'), key: 'paid', label: 'Paid', hint: 'Settled in full', amount: 'paid' as const },
+    { ...summarise('unpaid'), label: PAYMENT_FILTER_LABELS.unpaid, hint: 'Unpaid and partially paid — still to collect', amount: 'outstanding' as const },
+    { ...summarise('paid'), label: PAYMENT_FILTER_LABELS.paid, hint: 'Settled in full', amount: 'paid' as const },
   ];
   const money = (value: number) =>
     `USD ${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -124,15 +121,7 @@ export function SalesClient({
   // documents. Its journal and the trail of who deleted it stay in the books
   // and the audit log, where an accountant can find them.
   const inDates = (row: SaleRow) => (!from || row.invoiceDateIso >= from) && (!to || row.invoiceDateIso <= to);
-  const visible = (
-    standing
-      ? rows.filter(
-          (row) =>
-            row.status === 'POSTED' &&
-            (standing === 'OUTSTANDING' ? row.settlement !== 'PAID' : row.settlement === standing),
-        )
-      : rows
-  ).filter(inDates);
+  const visible = (payment ? rows.filter((row) => inPayment(row, payment)) : rows).filter(inDates);
 
   /*
    * By customer: what was invoiced, received and is still owed across the
@@ -219,10 +208,11 @@ export function SalesClient({
       ),
     },
     {
+      // Total, Paid and Outstanding always show together: they are why a
+      // part-paid invoice sits under Unpaid.
       id: 'paid',
       header: 'Paid',
       numeric: true,
-      hideable: true,
       cell: (r) =>
         r.paidLabel === '—' ? (
           '—'
@@ -237,7 +227,6 @@ export function SalesClient({
       id: 'outstanding',
       header: 'Outstanding',
       numeric: true,
-      hideable: true,
       cell: (r) => (r.outstandingLabel === '—' ? '—' : <DualText primary={r.outstandingLabel} equivalent={r.outstandingEquivalent} />),
     },
     {
@@ -271,8 +260,7 @@ export function SalesClient({
     },
     {
       id: 'settlement',
-      header: 'Payment',
-      hideable: true,
+      header: 'Payment status',
       sortValue: (r) => r.settlement,
       cell: (r) =>
         r.status === 'POSTED' ? (
@@ -354,15 +342,15 @@ export function SalesClient({
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2" data-testid="invoice-standing">
         {standings.map((card) => {
-          const active = standing === card.settlement;
+          const active = payment === card.filter;
           const figure = card.amount === 'paid' ? card.paidUsd : card.outstandingUsd;
           return (
             <button
-              key={card.settlement}
+              key={card.filter}
               type="button"
-              onClick={() => setStanding(active ? null : card.settlement)}
+              onClick={() => setPayment(active ? null : card.filter)}
               aria-pressed={active}
-              data-testid={`invoice-standing-${card.key}`}
+              data-testid={`invoice-standing-${card.filter}`}
               className={cn(
                 'rounded-xl border p-4 text-left transition-colors',
                 active
@@ -382,22 +370,34 @@ export function SalesClient({
         })}
       </div>
 
-      {standing ? (
+      {payment ? (
         <p className="text-xs text-ink-muted" data-testid="invoice-standing-active">
-          Showing {visible.length === 1 ? 'the 1 invoice' : `the ${visible.length} invoices`} that are{' '}
-          {standing === 'OUTSTANDING'
-            ? 'still outstanding — unpaid, including partially paid'
-            : standing === 'UNPAID'
-              ? 'unpaid with nothing received yet'
-              : (SETTLEMENT_STATUS_META[standing]?.label.toLowerCase() ?? standing.toLowerCase())}
+          Showing {visible.length === 1 ? 'the 1 invoice' : `the ${visible.length} invoices`} that{' '}
+          {payment === 'unpaid'
+            ? 'are unpaid — every invoice with money still outstanding, partially paid included'
+            : 'are paid in full'}
           .{' '}
-          <button type="button" onClick={() => setStanding(null)} className="underline underline-offset-2 hover:text-ink">
+          <button type="button" onClick={() => setPayment(null)} className="underline underline-offset-2 hover:text-ink">
             Show every invoice
           </button>
         </p>
       ) : null}
 
       <div className="flex flex-wrap items-end gap-3" data-print="hide">
+        <label className="text-xs text-ink-muted">
+          Payment status
+          <select
+            value={payment ?? ''}
+            onChange={(e) => setPayment((e.target.value || null) as PaymentFilter | null)}
+            className="mt-1 block h-9 rounded-lg border border-line bg-surface px-2 text-sm text-ink"
+            aria-label="Payment status"
+            data-testid="payment-status-filter"
+          >
+            <option value="">All</option>
+            <option value="unpaid">{PAYMENT_FILTER_LABELS.unpaid}</option>
+            <option value="paid">{PAYMENT_FILTER_LABELS.paid}</option>
+          </select>
+        </label>
         <label className="text-xs text-ink-muted">
           From
           <input
@@ -421,7 +421,7 @@ export function SalesClient({
       </div>
 
       {byCustomer.length > 0 ? (
-        <details className="rounded-xl border border-line bg-surface" open={standing === 'OUTSTANDING'} data-testid="sales-by-customer">
+        <details className="rounded-xl border border-line bg-surface" open={payment === 'unpaid'} data-testid="sales-by-customer">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-ink">
             By customer — invoiced, received and still owed
           </summary>
@@ -456,21 +456,15 @@ export function SalesClient({
       <DataTable
 
         share={{
-        report: standing === 'OUTSTANDING' ? 'outstanding-invoices' : 'sales-invoices',
-        title: standing === 'OUTSTANDING' ? 'Outstanding Invoices' : 'Sales Invoices',
+        report: payment === 'unpaid' ? 'outstanding-invoices' : 'sales-invoices',
+        title: payment === 'unpaid' ? 'Outstanding Invoices' : 'Sales Invoices',
         period: from || to ? `${from ? formatDate(from) : 'the start'} – ${to ? formatDate(to) : 'today'}` : undefined,
-        filters:
-          standing === 'OUTSTANDING'
-            ? ['Unpaid and partially paid']
-            : standing
-              ? [SETTLEMENT_STATUS_META[standing]?.label ?? standing]
-              : [],
+        filters: payment === 'unpaid' ? ['Unpaid and partially paid'] : payment === 'paid' ? ['Paid'] : [],
       }}
       prefsKey="sales"
       data={visible}
       filters={[
       { id: 'status', label: 'Status', value: (r) => r.status },
-      { id: 'settlement', label: 'Payment', value: (r) => r.settlement },
       { id: 'customer', label: 'Customer', value: (r) => r.customerName },
       { id: 'currency', label: 'Currency', value: (r) => r.currency },
       { id: 'warehouse', label: 'Warehouse', value: (r) => r.warehouseNames || null },

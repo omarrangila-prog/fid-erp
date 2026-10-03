@@ -33,6 +33,7 @@ import { ReportShareButton } from '@/components/share/report-share-button';
 import { ShipmentWorkflow } from '@/app/(app)/shipments/[id]/shipment-workflow';
 import { DeleteShipmentButton } from '@/components/shipments/delete-shipment-button';
 import { Plus } from 'lucide-react';
+import { getInvoicePaymentStatus } from '@/lib/invoice-payment';
 
 export const dynamic = 'force-dynamic';
 
@@ -206,7 +207,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
     const invoicedUsd = settlements.reduce((t, x) => t.plus(x.invoicedUsd), dec(0));
     const receivedUsd = settlements.reduce((t, x) => t.plus(x.receivedUsd), dec(0));
     const outstandingUsd = invoicedUsd.minus(receivedUsd);
-    const status = invoicedUsd.isZero() ? 'UNPAID' : outstandingUsd.lessThanOrEqualTo('0.005') ? 'PAID' : receivedUsd.greaterThan(0) ? 'PARTIAL' : 'UNPAID';
+    const status = invoicedUsd.isZero() ? 'UNPAID' : getInvoicePaymentStatus({ paid: receivedUsd, outstanding: outstandingUsd });
     return { invoicedUsd, receivedUsd, outstandingUsd, status };
   })();
   const mine = pnlRows.filter((row) => ids.includes(row.shipmentId));

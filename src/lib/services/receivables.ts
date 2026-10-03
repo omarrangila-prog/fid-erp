@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import { Decimal, dec, toMoney } from '@/lib/money';
 import { supplierGrossPayable } from '@/lib/services/tax';
 import { getCompanyDay } from '@/lib/services/company';
+import { getInvoicePaymentStatus, SETTLED_TOLERANCE } from '@/lib/invoice-payment';
 
 /**
  * Receivables and payables with ageing.
@@ -196,9 +197,8 @@ export async function getReceivables(params: {
     const originalAmountUsd = toMoney(row.originalAmountUsd);
     const paidAmountUsd = toMoney(row.paidAmountUsd);
 
-    let status: ReceivableRow['status'] = 'UNPAID';
-    if (outstandingAmount.lessThanOrEqualTo(0)) status = 'PAID';
-    else if (paidAmount.greaterThan(0)) status = 'PARTIAL';
+    // The one definition every screen uses: Paid only when nothing is due.
+    const status: ReceivableRow['status'] = getInvoicePaymentStatus({ paid: paidAmount, outstanding: outstandingAmount });
 
     return {
       invoiceId: row.invoiceId,
@@ -266,7 +266,9 @@ export async function getReceivables(params: {
   // still owe carries a credit balance — money the business owes them — and
   // dropping it here hid a real balance from the report while the control
   // account kept it, which the reconciliation then reported as a break.
-  return params.onlyOutstanding ? all.filter((r) => !r.outstandingAmount.isZero()) : all;
+  // Still owing, part-paid included — or overpaid, a credit the ledger also
+  // carries. A remainder under half a cent is rounding, not a balance.
+  return params.onlyOutstanding ? all.filter((r) => r.outstandingAmount.abs().greaterThan(SETTLED_TOLERANCE)) : all;
 }
 
 export type PayableRow = {

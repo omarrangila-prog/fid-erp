@@ -25,6 +25,7 @@ import { loadAttachments } from '@/components/attachments/load';
 import { SaleActions } from '@/app/(app)/sales/[id]/sale-actions';
 import { invoiceScopeWhere } from '@/lib/auth/scope';
 import { RecordHistory } from '@/components/shared/record-history';
+import { getInvoicePaymentStatus } from '@/lib/invoice-payment';
 
 export const dynamic = 'force-dynamic';
 
@@ -133,11 +134,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
   // Derived from the balance: nothing left is Paid; something received with
   // something left is Partially paid; nothing received is Unpaid.
   const settlement = outstanding
-    ? outstanding.amount.lessThanOrEqualTo(0)
-      ? 'PAID'
-      : paidAmount.greaterThan(0) || creditedAmount.greaterThan(0)
-        ? 'PARTIAL'
-        : 'UNPAID'
+    ? getInvoicePaymentStatus({ paid: paidAmount.plus(creditedAmount), outstanding: outstanding.amount })
     : 'UNPAID';
 
   return (

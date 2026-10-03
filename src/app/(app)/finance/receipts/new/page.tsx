@@ -10,6 +10,7 @@ import { PrerequisiteGate, anyMissing, type Prerequisite } from '@/components/sh
 import { ReceiptForm, type OpenInvoice, type BankOption } from '@/app/(app)/finance/receipts/receipt-form';
 import { getLedgerSettlementAccounts } from '@/lib/services/ledger-settlement';
 import { agentScope, customerScopeWhere } from '@/lib/auth/scope';
+import { isInvoiceOutstanding } from '@/lib/invoice-payment';
 
 export const metadata: Metadata = { title: 'New Receipt' };
 export const dynamic = 'force-dynamic';
@@ -35,7 +36,9 @@ export default async function NewReceiptPage({
       select: { id: true, name: true, code: true, currency: true, accountType: true },
     }),
     // An agent collects for his own customers' invoices only.
-    getReceivables({ companyId, onlyOutstanding: true }).then(async (rows) => {
+    // Every invoice with money still due — unpaid or part paid — and no other.
+    getReceivables({ companyId, onlyOutstanding: true }).then(async (all) => {
+      const rows = all.filter((row) => isInvoiceOutstanding(row.outstandingAmount));
       if (!agentScope(user)) return rows;
       const mine = new Set(
         (await prisma.customer.findMany({ where: { companyId, ...customerScopeWhere(user) }, select: { id: true } })).map((c) => c.id),

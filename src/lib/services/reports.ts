@@ -10,6 +10,9 @@ import { getCompanyContext } from '@/lib/services/company';
 import { getReceivables, getPayables } from '@/lib/services/receivables';
 import { resolveLedgerViewCurrency, pickCashBankCurrency } from '@/lib/ledger-currency';
 import type { Tx } from '@/lib/db';
+import { getInvoicePaymentStatus } from '@/lib/invoice-payment';
+
+const SETTLEMENT_WORDS = { UNPAID: 'Unpaid', PARTIAL: 'Partially Paid', PAID: 'Paid' } as const;
 
 /**
  * Reporting.
@@ -1460,7 +1463,8 @@ export async function getSalesRegister(params: {
       grossProfitUsd: toMoney(totalUsd.minus(cogs)),
       settled,
       outstanding,
-      status: outstanding.lessThanOrEqualTo(0) ? 'Paid' : settled.greaterThan(0) ? 'Partially Paid' : 'Unpaid',
+      // The one definition every screen uses: Paid only when nothing is due.
+      status: SETTLEMENT_WORDS[getInvoicePaymentStatus({ paid: settled, outstanding })],
     };
   });
 }

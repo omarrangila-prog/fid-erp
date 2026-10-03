@@ -264,7 +264,7 @@ test('the invoice standing cards filter the list to the invoices behind them', a
   await unpaid.click();
   await expect(page.getByTestId('invoice-standing-active')).toBeVisible({ timeout: 15_000 });
 
-  await expect(page.getByTestId('invoice-standing-active')).toContainText(/unpaid, including partially paid/);
+  await expect(page.getByTestId('invoice-standing-active')).toContainText(/partially paid included/);
   if (unpaidCount > 0) {
     const shown = page.locator('main table tbody tr');
     await expect(shown).toHaveCount(unpaidCount, { timeout: 15_000 });
@@ -278,9 +278,23 @@ test('the invoice standing cards filter the list to the invoices behind them', a
   await expect(page.getByTestId('invoice-standing-active')).toHaveCount(0, { timeout: 15_000 });
   await expect(page.locator('main table tbody tr')).toHaveCount(rowsBefore, { timeout: 15_000 });
 
-  // A dashboard link can still open the part-paid ones alone.
+  // Payment status is All, Unpaid or Paid — nothing else — and is the same
+  // choice as the cards.
+  const select = page.getByTestId('payment-status-filter');
+  await expect(select.locator('option')).toHaveText(['All', 'Unpaid', 'Paid']);
+  await select.selectOption('paid');
+  await expect(page.getByTestId('invoice-standing-paid')).toHaveAttribute('aria-pressed', 'true');
+  for (const row of await page.locator('main table tbody tr').allInnerTexts()) {
+    if (/no invoices|nothing/i.test(row)) continue;
+    expect(row).not.toMatch(/Unpaid|Partially Paid/);
+  }
+  await select.selectOption('');
+  await expect(page.getByTestId('invoice-standing-active')).toHaveCount(0, { timeout: 15_000 });
+
+  // An older part-paid link opens Unpaid: there is no part-paid list of its own.
   await page.goto('/sales?standing=PARTIAL', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('invoice-standing-active')).toContainText(/partially paid/i, { timeout: 30_000 });
+  await expect(page.getByTestId('invoice-standing-active')).toContainText(/are unpaid/i, { timeout: 30_000 });
+  await expect(page.getByTestId('payment-status-filter')).toHaveValue('unpaid');
 });
 
 test('the journal can add an account without leaving the voucher', async ({ page }) => {

@@ -10,6 +10,7 @@ import { PERMISSIONS, SHIPMENT_STATUS_META, TRANSACTION_STATUS_META } from '@/li
 import { WorkQueue } from '@/app/(app)/dashboard/work-queue';
 import { getMyRecentEntries, getDashboard, getRecentActivity, getLowStock } from '@/lib/services/dashboard';
 import { getOutstandingSummary } from '@/lib/services/outstanding';
+import { isInvoiceOutstanding } from '@/lib/invoice-payment';
 import { DualAmount } from '@/components/shared/dual-amount';
 import { getSetupStatus, toChecklistStep } from '@/lib/services/setup';
 import { getMonthlyPurchases } from '@/lib/services/profitability';
@@ -917,10 +918,12 @@ async function OutstandingSection({ companyId }: { companyId: string }) {
       })}
       {/*
         Customer invoices still owed: the unpaid and the partly paid together,
-        at what is left on each. Each part opens the invoices behind it.
+        at what is left on each. It opens the invoice list on Unpaid, which is
+        the same set. The split beneath is information, not a second filter:
+        a part-paid invoice is an unpaid one.
       */}
       <div className="rounded-xl border border-line bg-surface p-4" data-testid="outstanding-invoices">
-        <Link href="/sales?standing=OUTSTANDING" className="flex items-center justify-between gap-3">
+        <Link href="/sales?paymentStatus=unpaid" className="flex items-center justify-between gap-3">
           <span className="min-w-0">
             <span className="block text-sm font-medium text-ink">Outstanding invoices</span>
             <span className="block text-xs text-ink-subtle">
@@ -944,24 +947,26 @@ async function OutstandingSection({ companyId }: { companyId: string }) {
         <div className="mt-3 grid gap-2 border-t border-line pt-3 text-xs sm:grid-cols-3">
           {(
             [
-              ['Unpaid', o.invoicesUnpaid, '/sales?standing=UNPAID', 'unpaid'],
-              ['Partially paid — outstanding', o.invoicesPartial, '/sales?standing=PARTIAL', 'partial'],
-              ['Overdue', o.invoicesOverdue, '/finance/receivables', 'overdue'],
+              ['Nothing received yet', o.invoicesUnpaid, 'unpaid'],
+              ['Part paid — still owed', o.invoicesPartial, 'partial'],
             ] as const
-          ).map(([label, figure, href, key]) => (
-            <Link
-              key={key}
-              href={href}
-              data-testid={`outstanding-invoices-${key}`}
-              // 44px on a touch screen, so a finger lands on the right row.
-              className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 hover:bg-forest-50/60 [@media(pointer:coarse)]:min-h-11"
-            >
+          ).map(([label, figure, key]) => (
+            <div key={key} data-testid={`outstanding-invoices-${key}`} className="flex items-center justify-between gap-2 px-2 py-1.5">
               <span className="text-ink-muted">
                 {label} · {figure.count}
               </span>
               <span className="tnum font-medium text-ink">{formatMoney(figure.local, local)}</span>
-            </Link>
+            </div>
           ))}
+          <Link
+            href="/finance/receivables"
+            data-testid="outstanding-invoices-overdue"
+            // 44px on a touch screen, so a finger lands on the right row.
+            className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 hover:bg-forest-50/60 [@media(pointer:coarse)]:min-h-11"
+          >
+            <span className="text-ink-muted">Overdue · {o.invoicesOverdue.count}</span>
+            <span className="tnum font-medium text-ink">{formatMoney(o.invoicesOverdue.local, local)}</span>
+          </Link>
         </div>
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -1024,7 +1029,7 @@ async function AgentOwnPanel({ user, agentId }: { user: SessionUser; agentId: st
   const own = summaries.find((s) => s.agentId === agentId);
   const relationship = own ? agentRelationship(own.summary) : null;
   const mine = new Set(customers.map((c) => c.id));
-  const owed = receivables.filter((r) => mine.has(r.customerId) && r.status !== 'PAID');
+  const owed = receivables.filter((r) => mine.has(r.customerId) && isInvoiceOutstanding(r.outstandingAmount));
   const owedLocal = owed.reduce(
     (t, r) => t.plus(r.currency === local ? dec(r.outstandingAmount) : dec(r.outstandingAmountUsd).times(dec(r.rateLocalPerUsd))),
     dec(0),
@@ -1042,7 +1047,7 @@ async function AgentOwnPanel({ user, agentId }: { user: SessionUser; agentId: st
           {net.abs().lessThan('0.005') ? '' : net.isPositive() ? 'Payable to FID' : 'Receivable from FID'} · Open my ledger
         </span>
       </Link>
-      <Link href="/sales?standing=OUTSTANDING" className="rounded-xl border border-line bg-surface p-4 hover:border-forest-300">
+      <Link href="/sales?paymentStatus=unpaid" className="rounded-xl border border-line bg-surface p-4 hover:border-forest-300">
         <span className="block text-xs text-ink-muted">My customers still owe</span>
         <span className="tnum mt-1 block text-lg font-semibold text-ink">{formatMoney(owedLocal, local)}</span>
         <span className="block text-xs text-ink-subtle">

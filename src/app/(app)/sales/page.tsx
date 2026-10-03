@@ -6,6 +6,7 @@ import { dec } from '@/lib/money';
 import { equivalentText } from '@/lib/dual-currency';
 import { formatMoney, formatQuantityKg, formatDate, daysUntil, companyToday } from '@/lib/format';
 import { getReceivables } from '@/lib/services/receivables';
+import { isInvoiceOutstanding, parsePaymentFilter } from '@/lib/invoice-payment';
 import { getWarehouseLabels } from '@/lib/services/stock';
 import { PageHeader } from '@/components/shared/page-header';
 import { SalesClient, type SaleRow } from '@/app/(app)/sales/sales-client';
@@ -22,11 +23,10 @@ function summariseReferences(refs: Array<string | null>): string | null {
   return `Multiple references (${distinct.length})`;
 }
 
-export default async function SalesPage({ searchParams }: { searchParams: Promise<{ standing?: string }> }) {
-  const { standing } = await searchParams;
-  // A dashboard card opens the list already filtered to the invoices behind it.
-  const initialStanding =
-    standing === 'UNPAID' || standing === 'PARTIAL' || standing === 'PAID' || standing === 'OUTSTANDING' ? standing : null;
+export default async function SalesPage({ searchParams }: { searchParams: Promise<{ standing?: string; paymentStatus?: string }> }) {
+  // A dashboard card opens the list already filtered: ?paymentStatus=unpaid
+  // or paid (older ?standing= links still land on the same two).
+  const initialPayment = parsePaymentFilter(await searchParams);
   const user = await requirePageAccess(PERMISSIONS.SALES_VIEW);
   const companyDay = companyToday(user.activeCompany.timezone);
   const companyId = user.activeCompany.id;
@@ -102,6 +102,9 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
       paidUsdSort: receivable ? Number(receivable.paidAmountUsd) : 0,
       outstandingUsdSort: receivable ? Number(receivable.outstandingAmountUsd) : 0,
       settlement: receivable?.status ?? 'UNPAID',
+      // Money still due — the Unpaid filter, part-paid included. Decided on
+      // what is left, by the one definition every screen uses.
+      owing: receivable ? isInvoiceOutstanding(receivable.outstandingAmount) : inv.status === 'POSTED',
       daysOverdue: days !== null && days < 0 ? Math.abs(days) : 0,
       status: inv.status,
       paymentType: inv.paymentType,
@@ -133,7 +136,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
       />
       <SalesClient
         rows={rows}
-        initialStanding={initialStanding}
+        initialPayment={initialPayment}
         canCreate={can(user, PERMISSIONS.SALES_CREATE)}
         canEdit={can(user, PERMISSIONS.SALES_EDIT)}
         canDelete={can(user, PERMISSIONS.SALES_DELETE)}

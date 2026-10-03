@@ -16,6 +16,7 @@ import { getBatchCostings } from '@/lib/services/landed-cost';
 import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
 import { getReceivables } from '@/lib/services/receivables';
 import { getNumberSetting, SETTING_KEYS } from '@/lib/services/settings';
+import { getInvoicePaymentStatus } from '@/lib/invoice-payment';
 
 /**
  * Stock, sales and profit by coffee — the Stock on Hand item view.
@@ -738,7 +739,7 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
       invoiceTotal: { local: convertToLocal({ amount: row.invoiceTotal, ...rates }), usd: toMoney(row.invoiceTotalUsd) },
       invoicePaid: toPair(invoicePaidAmount),
       invoiceOutstanding: toPair(invoiceOutstandingAmount),
-      status: invoiceOutstandingAmount.lessThanOrEqualTo(0) ? 'PAID' : invoicePaidAmount.greaterThan(0) ? 'PARTIAL' : 'UNPAID',
+      status: getInvoicePaymentStatus({ paid: invoicePaidAmount, outstanding: invoiceOutstandingAmount }),
       shared: (itemsPerInvoice.get(row.invoiceId)?.size ?? 1) > 1 || (linesByInvoice.get(row.invoiceId)?.length ?? 1) > 1,
     });
   }

@@ -245,7 +245,9 @@ export function DataTable<T>({
       })),
     [data, filters],
   );
-  const visibleColumns = columns.filter((c) => !hidden.has(c.id));
+  // Only a column that can be switched off is ever off: one saved as hidden
+  // before it became fixed would otherwise vanish with no way back.
+  const visibleColumns = columns.filter((c) => !c.hideable || !hidden.has(c.id));
 
   const filtered = React.useMemo(() => {
     let rows = data;

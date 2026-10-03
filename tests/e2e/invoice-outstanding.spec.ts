@@ -56,7 +56,7 @@ test('the dashboard counts partly paid invoices at what is left, and opens the O
   expect(total).toBeCloseTo(unpaid + partial, 2);
 
   await card.getByRole('link', { name: /Outstanding invoices/ }).click();
-  await page.waitForURL(/\/sales\?standing=OUTSTANDING/, { waitUntil: 'domcontentloaded' });
+  await page.waitForURL(/\/sales\?paymentStatus=unpaid/, { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('invoice-standing-active')).toContainText(/outstanding/, { timeout: 30_000 });
   const rows = page.locator('main table tbody tr');
   await expect(rows.filter({ hasText: /Partially Paid/ }).first()).toBeVisible();

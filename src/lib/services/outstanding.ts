@@ -1,5 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
+import { getCompanyDay } from '@/lib/services/company';
+import { isInvoiceOutstanding } from '@/lib/invoice-payment';
 import { dec, toMoney, type Decimal } from '@/lib/money';
 import { getReceivables, getPayables } from '@/lib/services/receivables';
 import { getExpenseSettlements } from '@/lib/services/expense-settlement';
@@ -131,14 +133,18 @@ export async function getOutstandingSummary(companyId: string): Promise<Outstand
     agents: [],
   };
 
+  // Overdue from the day after the due date, by the company's calendar.
+  const today = await getCompanyDay(prisma, companyId);
   for (const row of receivables) {
+    // Unpaid is anything still due — part-paid included — decided on what is
+    // left, not on the status text. A part payment leaves the remainder owed,
+    // never the invoice total.
+    if (!isInvoiceOutstanding(row.outstandingAmount)) continue;
     const amount = inLocal(row.currency, dec(row.outstandingAmount), dec(row.outstandingAmountUsd), dec(row.rateLocalPerUsd));
-    if (row.status === 'UNPAID') bump(summary.invoicesUnpaid, amount, dec(row.outstandingAmountUsd));
-    else if (row.status === 'PARTIAL') bump(summary.invoicesPartial, amount, dec(row.outstandingAmountUsd));
-    if (row.status === 'PAID') continue;
-    // A part payment still leaves money owed: the remainder, never the invoice total.
     bump(summary.invoicesOutstanding, amount, dec(row.outstandingAmountUsd));
-    if (row.dueDate && row.dueDate.getTime() < Date.now()) bump(summary.invoicesOverdue, amount, dec(row.outstandingAmountUsd));
+    // Of which: nothing received yet, or part received. A breakdown, not a filter.
+    bump(row.status === 'PARTIAL' ? summary.invoicesPartial : summary.invoicesUnpaid, amount, dec(row.outstandingAmountUsd));
+    if (row.dueDate && row.dueDate.getTime() < today.getTime()) bump(summary.invoicesOverdue, amount, dec(row.outstandingAmountUsd));
   }
 
   // Supplier bills booked as costs are counted with the costs, not twice here.
