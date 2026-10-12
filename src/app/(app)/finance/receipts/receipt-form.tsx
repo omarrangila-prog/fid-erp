@@ -20,6 +20,7 @@ import { formatMoney, formatDate, todayInputValue } from '@/lib/format';
 import { saveReceiptAction, postReceiptAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { accountsFor } from '@/lib/cash-account-choice';
+import { ROUND_OFF_LIMIT, TIP_LIMIT } from '@/lib/constants';
 import { LedgerAccountField } from '@/components/shared/ledger-account-field';
 import { ledgerTargetPayload, ledgerTargetValue } from '@/lib/ledger-target';
 import type { LedgerSettlementOption } from '@/lib/services/ledger-settlement';
@@ -35,6 +36,9 @@ import { useClientKey } from '@/lib/use-client-key';
  * USD value they agreed — whichever they actually negotiated — and the other is
  * derived and stored on the voucher for good.
  */
+
+/** What to do with the few dirhams an invoice is short by. */
+export type Shortfall = 'KEEP_OUTSTANDING' | 'ROUND_OFF' | 'OTHER_ADJUSTMENT';
 
 export type OpenInvoice = {
   id: string;
@@ -64,7 +68,7 @@ export type ReceiptInitial = {
   agentId: string | null;
   reference: string;
   description: string;
-  allocations: Array<{ salesInvoiceId: string; amount: string }>;
+  allocations: Array<{ salesInvoiceId: string; amount: string; shortfall?: Shortfall; writeOffReason?: string | null }>;
   cheque: { chequeNumber: string; chequeDate: string; bankName: string; beneficiary: string } | null;
 };
 
@@ -80,6 +84,7 @@ export function ReceiptForm({
   agents,
   canCreateCashBank = false,
   canPost = true,
+  canWriteOff = false,
   initial,
 }: {
   customers: Array<ComboOption & { currency: string }>;
@@ -94,6 +99,8 @@ export function ReceiptForm({
   /** Collection agents from the master list. Names are never hardcoded. */
   agents: Array<{ id: string; name: string }>;
   canPost?: boolean;
+  /** May write a shortfall off: the same permission as posting a credit note. */
+  canWriteOff?: boolean;
   /** Opening a drawer creates a ledger account, so it is its own permission. */
   canCreateCashBank?: boolean;
   /**
@@ -160,6 +167,24 @@ export function ReceiptForm({
   // An amount already on a saved receipt is one somebody typed.
   const [amountTyped, setAmountTyped] = React.useState(Boolean(initial));
   const [keepRemainderAsAdvance, setKeepRemainderAsAdvance] = React.useState(false);
+  /*
+   * The other direction: more money than the invoices come to. It is the
+   * customer's advance unless they said to keep it, which makes it a tip.
+   */
+  const [overpayment, setOverpayment] = React.useState<'ADVANCE' | 'TIP'>('ADVANCE');
+  const [tipReason, setTipReason] = React.useState('');
+  /*
+   * A customer who settles 112,928 with 112,920 leaves eight dirhams. Per
+   * invoice: keep them owed (the default and the honest answer), or write
+   * them off as a round-off or another adjustment, which clears the invoice
+   * exactly and puts the giveaway on the profit and loss.
+   */
+  const [shortfalls, setShortfalls] = React.useState<Record<string, Shortfall>>(
+    initial ? Object.fromEntries(initial.allocations.map((a) => [a.salesInvoiceId, a.shortfall ?? 'KEEP_OUTSTANDING'])) : {},
+  );
+  const [writeOffReasons, setWriteOffReasons] = React.useState<Record<string, string>>(
+    initial ? Object.fromEntries(initial.allocations.map((a) => [a.salesInvoiceId, a.writeOffReason ?? ''])) : {},
+  );
   function setAllocations(next: Record<string, string>) {
     setAllocationsState(next);
     if (!amountTyped) {
@@ -214,6 +239,14 @@ export function ReceiptForm({
       return null;
     }
   }, [form.amount, form.usdEquivalent, entryMode, isForeign]);
+
+  /** What is still owed on an invoice after the amount applied to it here. */
+  function shortfallOn(invoiceId: string, applied: string | undefined) {
+    const invoice = invoices.find((i) => i.id === invoiceId);
+    if (!invoice || !applied) return dec(0);
+    const left = tryDec(invoice.outstanding).minus(tryDec(applied));
+    return left.greaterThan(0) ? left : dec(0);
+  }
 
   const allocatedTotal = sum(Object.values(allocations).filter(Boolean).map((v) => tryDec(v)));
   // Received but not applied: only ever an advance when the user says so.
@@ -282,8 +315,21 @@ export function ReceiptForm({
       description: form.description,
       allocations: Object.entries(allocations)
         .filter(([, amount]) => amount && Number(amount) > 0)
-        .map(([salesInvoiceId, amount]) => ({ salesInvoiceId, amount })),
+        .map(([salesInvoiceId, amount]) => {
+          // Only a real shortfall carries a decision; nothing to write off
+          // means the default, whatever radio was last touched.
+          const short = shortfallOn(salesInvoiceId, amount);
+          const choice = short.greaterThan('0.005') ? (shortfalls[salesInvoiceId] ?? 'KEEP_OUTSTANDING') : 'KEEP_OUTSTANDING';
+          return {
+            salesInvoiceId,
+            amount,
+            shortfall: choice,
+            writeOffReason: choice === 'KEEP_OUTSTANDING' ? '' : (writeOffReasons[salesInvoiceId] ?? ''),
+          };
+        }),
       keepRemainderAsAdvance: remainder.greaterThan('0.005') ? keepRemainderAsAdvance : undefined,
+      overpayment: remainder.greaterThan('0.005') ? overpayment : 'ADVANCE',
+      tipReason: remainder.greaterThan('0.005') && overpayment === 'TIP' ? tipReason : '',
     };
 
     start(async () => {
@@ -684,25 +730,98 @@ export function ReceiptForm({
             {customerInvoices.length === 0 ? (
               <p className="py-4 text-center text-xs text-ink-subtle">This customer has no outstanding invoices.</p>
             ) : (
-              customerInvoices.map((invoice) => (
-                <div key={invoice.id} className="flex items-center justify-between gap-3 rounded-lg border border-line p-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-ink">{shortDocumentNumber(invoice.invoiceNumber)}</p>
-                    <p className="text-xs text-ink-subtle">
-                      {formatDate(invoice.invoiceDate)} · {formatMoney(invoice.outstanding, invoice.currency)} outstanding
-                    </p>
+              customerInvoices.map((invoice) => {
+                const applied = allocations[invoice.id] ?? '';
+                const short = shortfallOn(invoice.id, applied);
+                const hasShortfall = short.greaterThan('0.005');
+                const choice = shortfalls[invoice.id] ?? 'KEEP_OUTSTANDING';
+                const needsReason =
+                  (choice === 'ROUND_OFF' && short.greaterThan(ROUND_OFF_LIMIT)) || choice === 'OTHER_ADJUSTMENT';
+                return (
+                <div key={invoice.id} className="space-y-3 rounded-lg border border-line p-3" data-invoice={invoice.invoiceNumber}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-ink">{shortDocumentNumber(invoice.invoiceNumber)}</p>
+                      <p className="text-xs text-ink-subtle">
+                        {formatDate(invoice.invoiceDate)} · {formatMoney(invoice.outstanding, invoice.currency)} outstanding
+                      </p>
+                    </div>
+                    <div className="w-36 shrink-0">
+                      <MoneyInput
+                        aria-label={`Amount applied to the invoice of ${invoice.invoiceDate}`}
+                        currency={invoice.currency}
+                        value={applied}
+                        onChange={(e) => setAllocations({ ...allocations, [invoice.id]: e.target.value })}
+                        placeholder="0.00"
+                      />
+                    </div>
                   </div>
-                  <div className="w-36 shrink-0">
-                    <MoneyInput
-                      aria-label={`Amount applied to the invoice of ${invoice.invoiceDate}`}
-                      currency={invoice.currency}
-                      value={allocations[invoice.id] ?? ''}
-                      onChange={(e) => setAllocations({ ...allocations, [invoice.id]: e.target.value })}
-                      placeholder="0.00"
-                    />
-                  </div>
+
+                  {hasShortfall ? (
+                    <div className="space-y-2 rounded-lg bg-surface-sunken p-3 text-xs" data-testid="shortfall">
+                      <dl className="grid grid-cols-2 gap-x-4 gap-y-1">
+                        <dt className="text-ink-muted">Outstanding</dt>
+                        <dd className="tnum text-right">{formatMoney(invoice.outstanding, invoice.currency)}</dd>
+                        <dt className="text-ink-muted">Applied here</dt>
+                        <dd className="tnum text-right">{formatMoney(tryDec(applied), invoice.currency)}</dd>
+                        <dt className="font-medium text-ink">Difference</dt>
+                        <dd className="tnum text-right font-semibold text-amber-800" data-testid="shortfall-amount">
+                          −{formatMoney(short, invoice.currency)}
+                        </dd>
+                      </dl>
+                      <fieldset className="space-y-1">
+                        <legend className="text-ink-muted">How should the difference be handled?</legend>
+                        {(
+                          [
+                            ['KEEP_OUTSTANDING', 'Keep outstanding', 'Still owed on this invoice.'],
+                            ...(canWriteOff
+                              ? ([
+                                  ['ROUND_OFF', 'Discount or tip given', 'The customer keeps it with our agreement — a discount, a tip, a rounding. The invoice is settled and it goes to Discounts, Tips & Round-Off Allowed.'],
+                                  ['OTHER_ADJUSTMENT', 'Other adjustment', 'Settled short for another reason — a bank charge the customer deducted, say. Goes to Settlement Adjustments.'],
+                                ] as const)
+                              : []),
+                          ] as const
+                        ).map(([value, label, hint]) => (
+                          <label key={value} className="flex items-start gap-2">
+                            <input
+                              type="radio"
+                              name={`shortfall-${invoice.id}`}
+                              className="mt-0.5 size-4 shrink-0 accent-gold-600"
+                              value={value}
+                              checked={choice === value}
+                              onChange={() => setShortfalls({ ...shortfalls, [invoice.id]: value })}
+                            />
+                            <span>
+                              <span className="font-medium text-ink">{label}</span>
+                              <span className="block text-ink-subtle">{hint}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </fieldset>
+                      {choice !== 'KEEP_OUTSTANDING' ? (
+                        <Input
+                          aria-label={`Why ${formatMoney(short, invoice.currency)} is not being collected on invoice ${shortDocumentNumber(invoice.invoiceNumber)}`}
+                          value={writeOffReasons[invoice.id] ?? ''}
+                          onChange={(e) => setWriteOffReasons({ ...writeOffReasons, [invoice.id]: e.target.value })}
+                          placeholder={
+                            choice === 'ROUND_OFF'
+                              ? `Why it is not collected${needsReason ? ' (required)' : ' (optional)'}`
+                              : `What the adjustment is for${needsReason ? ' (required)' : ' (optional)'}`
+                          }
+                        />
+                      ) : null}
+                      {needsReason && !(writeOffReasons[invoice.id] ?? '').trim() ? (
+                        <p className="text-amber-800" role="alert">
+                          {choice === 'OTHER_ADJUSTMENT'
+                            ? 'Say what this adjustment is for.'
+                            : `More than ${invoice.currency} ${ROUND_OFF_LIMIT} is more than a rounding — say why it is given away, or keep it outstanding.`}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
-              ))
+                );
+              })
             )}
 
             {allocatedTotal.greaterThan(0) ? (
@@ -713,7 +832,11 @@ export function ReceiptForm({
             ) : null}
 
             {remainder.greaterThan('0.005') ? (
-              <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm" role="alert">
+              <div
+                className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm"
+                role="alert"
+                data-testid="overpayment"
+              >
                 <p className="text-amber-900">
                   <strong>{formatMoney(remainder, form.currency)}</strong> of this receipt is not applied to any invoice. If
                   that money was not actually received, lower <em>Amount received</em> to what was.
@@ -727,6 +850,52 @@ export function ReceiptForm({
                   />
                   It was received — keep {formatMoney(remainder, form.currency)} on the customer&rsquo;s account as an advance
                 </label>
+                {keepRemainderAsAdvance ? (
+                  <fieldset className="space-y-1 border-t border-amber-300 pt-2 text-xs text-amber-900">
+                    <legend className="sr-only">What the extra money is</legend>
+                    {(
+                      [
+                        ['ADVANCE', 'Hold it for the customer', 'Owed back, or applied to their next invoice.'],
+                        ['TIP', 'The customer is giving it to us', 'A tip or a round-up. Income, not money owed back.'],
+                      ] as const
+                    ).map(([value, label, hint]) => (
+                      <label key={value} className="flex items-start gap-2">
+                        <input
+                          type="radio"
+                          name="overpayment"
+                          className="mt-0.5 size-4 shrink-0 accent-gold-600"
+                          value={value}
+                          checked={overpayment === value}
+                          onChange={() => setOverpayment(value)}
+                        />
+                        <span>
+                          <span className="font-medium">{label}</span>
+                          <span className="block text-amber-800">{hint}</span>
+                        </span>
+                      </label>
+                    ))}
+                    {overpayment === 'TIP' ? (
+                      <>
+                        <Input
+                          aria-label={`Why the customer is giving ${formatMoney(remainder, form.currency)}`}
+                          value={tipReason}
+                          onChange={(e) => setTipReason(e.target.value)}
+                          placeholder={
+                            remainder.greaterThan(TIP_LIMIT)
+                              ? 'Why they are giving it (required)'
+                              : 'Why they are giving it (optional)'
+                          }
+                        />
+                        {remainder.greaterThan(TIP_LIMIT) && !tipReason.trim() ? (
+                          <p role="alert">
+                            More than {form.currency} {TIP_LIMIT} is more than a round-up — say why it is a gift, or hold
+                            it as an advance.
+                          </p>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </fieldset>
+                ) : null}
               </div>
             ) : null}
           </CardContent>

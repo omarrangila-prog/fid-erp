@@ -1532,6 +1532,10 @@ model Receipt {
   shipmentId        String?
   reference         String?
   description       String?
+  /// What happens to money received over and above the invoices it pays.
+  overpayment       ReceiptOverpayment @default(ADVANCE)
+  /// Why an overpayment was taken as income. Required above TIP_LIMIT.
+  tipReason         String?
   status            TransactionStatus @default(DRAFT)
   postedAt          DateTime?
   reversedAt        DateTime?
@@ -1560,12 +1564,41 @@ model Receipt {
   @@map("receipts")
 }
 
+/// What happens to money received beyond the invoices a receipt pays.
+enum ReceiptOverpayment {
+  /// Held on the customer's account until it is applied to an invoice. The
+  /// default: unasked-for money is the customer's until somebody says it is
+  /// not.
+  ADVANCE
+  /// The customer told us to keep it. Income, not a debt owed back.
+  TIP
+}
+
+/// How a shortfall between the invoice and the money received is dealt with.
+enum SettlementShortfall {
+  /// The remainder stays owed: the invoice is still unpaid, part paid.
+  KEEP_OUTSTANDING
+  /// Written off as a rounding difference or a discount allowed.
+  ROUND_OFF
+  /// Written off elsewhere — a bank charge the customer deducted, say.
+  OTHER_ADJUSTMENT
+}
+
 model ReceiptAllocation {
   id             String  @id @default(cuid())
   receiptId      String
   salesInvoiceId String
   amount         Decimal @db.Decimal(18, 4)
   amountUsd      Decimal @db.Decimal(18, 4)
+  /// What to do with the rest of this invoice when the money falls short.
+  /// KEEP_OUTSTANDING leaves it owed and posts nothing extra.
+  shortfall       SettlementShortfall @default(KEEP_OUTSTANDING)
+  /// The amount written off, in the invoice's own currency. Zero unless the
+  /// shortfall is being written off.
+  writeOffAmount  Decimal             @default(0) @db.Decimal(18, 4)
+  writeOffAmountUsd Decimal           @default(0) @db.Decimal(18, 4)
+  /// Why: required above the automatic round-off limit.
+  writeOffReason  String?
 
   receipt      Receipt      @relation(fields: [receiptId], references: [id], onDelete: Cascade)
   salesInvoice SalesInvoice @relation(fields: [salesInvoiceId], references: [id])

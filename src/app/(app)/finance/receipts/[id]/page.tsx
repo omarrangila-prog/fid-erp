@@ -144,9 +144,12 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
           hint={`${receipt.currency} per 1 USD`}
         />
         <Metric label="Applied to invoices" value={formatMoney(applied, 'USD')} />
+        {/* A tip is not held for anybody: calling it "held on account" would
+            claim the company owes money back that it does not. */}
         <Metric
-          label="Held on account"
+          label={receipt.overpayment === 'TIP' ? 'Kept as a tip' : 'Held on account'}
           value={formatMoney(onAccount, 'USD')}
+          hint={receipt.overpayment === 'TIP' ? (receipt.tipReason ?? undefined) : undefined}
           tone={onAccount.greaterThan(0) ? 'muted' : 'default'}
         />
       </MetricGrid>
@@ -179,6 +182,16 @@ export default async function ReceiptDetailPage({ params }: { params: Promise<{ 
                         ? ` · ${warehouses.byInvoice.get(allocation.salesInvoice.id)}`
                         : ''}
                     </span>
+                    {/* A difference not collected is money the company gave
+                        up: it says so here, or the invoice looks settled for
+                        no reason anybody can see. */}
+                    {allocation.shortfall !== 'KEEP_OUTSTANDING' && dec(allocation.writeOffAmount).greaterThan('0.005') ? (
+                      <span className="mt-0.5 block text-xs text-amber-800">
+                        {allocation.shortfall === 'ROUND_OFF' ? 'Discount or tip' : 'Adjustment'}{' '}
+                        {formatMoney(allocation.writeOffAmount, allocation.salesInvoice.currency)} not collected
+                        {allocation.writeOffReason ? ` — ${allocation.writeOffReason}` : ''}
+                      </span>
+                    ) : null}
                   </span>
                   <span className="shrink-0 text-right">
                     <span className="tnum block text-sm font-semibold">

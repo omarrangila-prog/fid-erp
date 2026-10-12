@@ -44,7 +44,7 @@ export async function generateAlerts(companyId: string): Promise<number> {
            (s."etaDate" - CURRENT_DATE) AS "daysToEta",
            c."customerName",
            SUM(si."totalAmountUsd" - COALESCE((
-             SELECT SUM(ra."amountUsd") FROM receipt_allocations ra
+             SELECT SUM(ra."amountUsd" + ra."writeOffAmountUsd") FROM receipt_allocations ra
              JOIN receipts r ON r."id" = ra."receiptId"
              WHERE ra."salesInvoiceId" = si."id" AND r."status" = 'POSTED'
            ), 0))::text AS "outstandingUsd"
@@ -57,7 +57,7 @@ export async function generateAlerts(companyId: string): Promise<number> {
       AND s."status" <> 'ARRIVED'
     GROUP BY s."id", s."shipmentNumber", s."etaDate", c."id", c."customerName"
     HAVING SUM(si."totalAmountUsd" - COALESCE((
-             SELECT SUM(ra."amountUsd") FROM receipt_allocations ra
+             SELECT SUM(ra."amountUsd" + ra."writeOffAmountUsd") FROM receipt_allocations ra
              JOIN receipts r ON r."id" = ra."receiptId"
              WHERE ra."salesInvoiceId" = si."id" AND r."status" = 'POSTED'
            ), 0)) > 0
@@ -142,7 +142,7 @@ export async function generateAlerts(companyId: string): Promise<number> {
     SELECT si."id" AS "invoiceId", si."invoiceNumber", c."customerName", si."currency", si."dueDate",
            (CURRENT_DATE - si."dueDate") AS "daysOverdue",
            (si."totalAmount" - COALESCE((
-              SELECT SUM(ra."amount") FROM receipt_allocations ra
+              SELECT SUM(ra."amount" + ra."writeOffAmount") FROM receipt_allocations ra
               JOIN receipts r ON r."id" = ra."receiptId"
               WHERE ra."salesInvoiceId" = si."id" AND r."status" = 'POSTED'
            ), 0))::text AS outstanding
@@ -153,7 +153,7 @@ export async function generateAlerts(companyId: string): Promise<number> {
       AND si."dueDate" IS NOT NULL
       AND si."dueDate" < CURRENT_DATE
       AND (si."totalAmount" - COALESCE((
-              SELECT SUM(ra."amount") FROM receipt_allocations ra
+              SELECT SUM(ra."amount" + ra."writeOffAmount") FROM receipt_allocations ra
               JOIN receipts r ON r."id" = ra."receiptId"
               WHERE ra."salesInvoiceId" = si."id" AND r."status" = 'POSTED'
            ), 0)) > 0

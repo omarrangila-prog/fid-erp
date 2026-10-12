@@ -127,6 +127,11 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
    * reduce what is owed and are shown as what they are.
    */
   const paidAmount = livePayments.filter((a) => !failed(a)).reduce((t, a) => t.plus(dec(a.amount)), dec(0));
+  // A shortfall the company wrote off: not money received, but it did clear
+  // the invoice, so the status below must count it.
+  const writtenOff = livePayments
+    .filter((a) => !failed(a) && a.shortfall !== 'KEEP_OUTSTANDING')
+    .reduce((t, a) => t.plus(dec(a.writeOffAmount)), dec(0));
   const creditedAmount = invoice.creditNotes.reduce((t, c) => t.plus(dec(c.totalAmount)), dec(0));
   const attachments = can(user, PERMISSIONS.ATTACHMENTS_VIEW)
     ? await loadAttachments(user.activeCompany.id, 'SalesInvoice', invoice.id)
@@ -134,7 +139,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
   // Derived from the balance: nothing left is Paid; something received with
   // something left is Partially paid; nothing received is Unpaid.
   const settlement = outstanding
-    ? getInvoicePaymentStatus({ paid: paidAmount.plus(creditedAmount), outstanding: outstanding.amount })
+    ? getInvoicePaymentStatus({ paid: paidAmount.plus(creditedAmount).plus(writtenOff), outstanding: outstanding.amount })
     : 'UNPAID';
 
   return (
@@ -378,6 +383,15 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                         {allocation.receipt.agent ? ` — ${allocation.receipt.agent.agentName}` : ''}
                         {failed(allocation) ? ` · cheque ${allocation.receipt.cheque?.status.toLowerCase()} — not counted` : ''}
                       </span>
+                      {/* Why this invoice is settled although less money came
+                          in than it was raised for. */}
+                      {allocation.shortfall !== 'KEEP_OUTSTANDING' && dec(allocation.writeOffAmount).greaterThan('0.005') ? (
+                        <span className="block text-xs text-amber-800">
+                          {allocation.shortfall === 'ROUND_OFF' ? 'Discount or tip' : 'Adjustment'}{' '}
+                          {formatMoney(allocation.writeOffAmount, invoice.currency)} not collected
+                          {allocation.writeOffReason ? ` — ${allocation.writeOffReason}` : ''}
+                        </span>
+                      ) : null}
                     </span>
                     <span className="tnum shrink-0 text-sm font-semibold text-gold-700">
                       {formatMoney(allocation.amount, invoice.currency)}

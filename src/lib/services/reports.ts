@@ -554,7 +554,8 @@ export async function getFinancialPosition(params: { companyId: string; asOf?: D
       COALESCE((SELECT SUM((si."totalAmountUsd" - COALESCE(alloc."paid", 0)) * si."rateLocalPerUsd")
                 FROM sales_invoices si
                 LEFT JOIN (
-                  SELECT ra."salesInvoiceId" AS "invoiceId", SUM(ra."amountUsd") AS "paid"
+                  -- Applied plus any shortfall written off: both cleared it.
+                  SELECT ra."salesInvoiceId" AS "invoiceId", SUM(ra."amountUsd" + ra."writeOffAmountUsd") AS "paid"
                   FROM receipt_allocations ra
                   JOIN receipts r ON r."id" = ra."receiptId"
                   WHERE r."status" = 'POSTED'
@@ -590,7 +591,8 @@ export async function getFinancialPosition(params: { companyId: string; asOf?: D
       COALESCE((SELECT SUM(si."totalAmountUsd" - COALESCE(alloc."paid", 0))
                 FROM sales_invoices si
                 LEFT JOIN (
-                  SELECT ra."salesInvoiceId" AS "invoiceId", SUM(ra."amountUsd") AS "paid"
+                  -- Applied plus any shortfall written off: both cleared it.
+                  SELECT ra."salesInvoiceId" AS "invoiceId", SUM(ra."amountUsd" + ra."writeOffAmountUsd") AS "paid"
                   FROM receipt_allocations ra
                   JOIN receipts r ON r."id" = ra."receiptId"
                   WHERE r."status" = 'POSTED'
@@ -1419,7 +1421,7 @@ export async function getSalesRegister(params: {
            (COALESCE(r.paid, 0) + COALESCE(c.credited, 0))::text AS settled
     FROM sales_invoices si
     LEFT JOIN LATERAL (
-      SELECT SUM(ra."amount") AS paid
+      SELECT SUM(ra."amount" + ra."writeOffAmount") AS paid
       FROM receipt_allocations ra
       JOIN receipts rc ON rc."id" = ra."receiptId"
       WHERE ra."salesInvoiceId" = si."id" AND rc."status" = 'POSTED'

@@ -2,7 +2,7 @@ import type { Tx } from '@/lib/db';
 import { ownShipmentId } from '@/lib/services/company-scope';
 import { transaction } from '@/lib/db';
 import { Decimal, dec, toMoney, convertToUsd, convertFromUsd, sum } from '@/lib/money';
-import { ACCOUNT_KEYS, DOC_TYPES } from '@/lib/constants';
+import { ACCOUNT_KEYS, DOC_TYPES, ROUND_OFF_LIMIT, TIP_LIMIT } from '@/lib/constants';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
 import { nextReference } from '@/lib/services/numbering';
 import { postJournalEntry, reverseJournalEntry } from '@/lib/services/accounting';
@@ -11,6 +11,7 @@ import { resolveSubledgerLeg } from '@/lib/services/subledger';
 import type { PaymentMethod } from '@prisma/client';
 import { writeAudit } from '@/lib/services/audit';
 import { resolveLedgerSettlement } from '@/lib/services/ledger-settlement';
+import { isInvoiceOutstanding } from '@/lib/invoice-payment';
 
 /**
  * ReceiptService — money in from customers.
@@ -26,10 +27,23 @@ import { resolveLedgerSettlement } from '@/lib/services/ledger-settlement';
  * tomorrow cannot restate this receipt — the historical ledger is immutable.
  */
 
+export type SettlementShortfall = 'KEEP_OUTSTANDING' | 'ROUND_OFF' | 'OTHER_ADJUSTMENT';
+
+/** What happens to money received beyond the invoices a receipt pays. */
+export type ReceiptOverpayment = 'ADVANCE' | 'TIP';
+
 export type ReceiptAllocationInput = {
   salesInvoiceId: string;
   /** Amount in the invoice's own currency. */
   amount: string | number;
+  /**
+   * What to do with the rest of the invoice when the money falls short of it.
+   * Keeping it outstanding is the default and posts nothing extra; the other
+   * two write the difference off so the invoice clears exactly.
+   */
+  shortfall?: SettlementShortfall;
+  /** Required above ROUND_OFF_LIMIT, and always for an other adjustment. */
+  writeOffReason?: string | null;
 };
 
 export type ChequeDetailsInput = {
@@ -78,6 +92,14 @@ export type ReceiptInput = {
    * in full: the difference is never turned into an advance on its own.
    */
   keepRemainderAsAdvance?: boolean;
+  /**
+   * What the money over and above the invoices is. An advance held for the
+   * customer unless the user says they told us to keep it, in which case it
+   * is the company's income.
+   */
+  overpayment?: ReceiptOverpayment;
+  /** Required above TIP_LIMIT before an overpayment may be taken as income. */
+  tipReason?: string | null;
 };
 
 /** Outstanding on one invoice, in the invoice currency and in USD. */
@@ -91,8 +113,9 @@ export async function getInvoiceOutstanding(
   });
 
   const rows = await tx.$queryRaw<Array<{ amount: string | null; amountUsd: string | null }>>`
-    SELECT COALESCE(SUM(ra."amount"), 0)::text AS amount,
-           COALESCE(SUM(ra."amountUsd"), 0)::text AS "amountUsd"
+    -- Applied, plus any shortfall written off: both cleared the receivable.
+    SELECT COALESCE(SUM(ra."amount" + ra."writeOffAmount"), 0)::text AS amount,
+           COALESCE(SUM(ra."amountUsd" + ra."writeOffAmountUsd"), 0)::text AS "amountUsd"
     FROM receipt_allocations ra
     JOIN receipts r ON r."id" = ra."receiptId"
     WHERE ra."salesInvoiceId" = ${invoiceId} AND r."status" = 'POSTED'
@@ -129,9 +152,20 @@ async function buildAllocations(
     receiptRateToUsd: Decimal;
     allocations: ReceiptAllocationInput[];
     keepRemainderAsAdvance?: boolean;
+    overpayment?: ReceiptOverpayment;
+    tipReason?: string | null;
   },
 ) {
-  const rows: Array<{ salesInvoiceId: string; amount: Decimal; amountUsd: Decimal; currency: string }> = [];
+  const rows: Array<{
+    salesInvoiceId: string;
+    amount: Decimal;
+    amountUsd: Decimal;
+    currency: string;
+    shortfall: SettlementShortfall;
+    writeOffAmount: Decimal;
+    writeOffAmountUsd: Decimal;
+    writeOffReason: string | null;
+  }> = [];
 
   for (const alloc of params.allocations) {
     const invoice = await tx.salesInvoice.findFirst({
@@ -162,7 +196,52 @@ async function buildAllocations(
     // an invoice in full always clears exactly its USD value, leaving no
     // phantom residue caused by a different rate on the receipt.
     const amountUsd = convertToUsd(amount, invoice.rateToUsd, invoice.currency);
-    rows.push({ salesInvoiceId: invoice.id, amount, amountUsd, currency: invoice.currency });
+
+    /*
+     * The few dirhams between the invoice and the money.
+     *
+     * A customer settling 112,928 with 112,920 leaves eight dirhams. Keeping
+     * them outstanding is the default and the honest answer; the client can
+     * instead write them off, and then the invoice clears exactly and the
+     * giveaway lands on the profit and loss rather than sitting as a debt
+     * nobody will collect. Measured against what was still owed before this
+     * receipt, in the invoice's own currency.
+     */
+    const shortfall = alloc.shortfall ?? 'KEEP_OUTSTANDING';
+    const remainder = toMoney(outstanding.amount.minus(amount));
+    let writeOffAmount = dec(0);
+    let writeOffReason = alloc.writeOffReason?.trim() || null;
+
+    if (shortfall !== 'KEEP_OUTSTANDING') {
+      if (!isInvoiceOutstanding(remainder)) {
+        throw new BusinessRuleError(
+          `Invoice ${invoice.invoiceNumber} is settled in full by this receipt — there is nothing to write off.`,
+        );
+      }
+      writeOffAmount = remainder;
+      if (shortfall === 'ROUND_OFF' && remainder.greaterThan(ROUND_OFF_LIMIT) && !writeOffReason) {
+        throw new BusinessRuleError(
+          `${invoice.currency} ${remainder.toFixed(2)} is more than a rounding difference on ${invoice.invoiceNumber}. Say why it is being written off, or keep it outstanding.`,
+        );
+      }
+      if (shortfall === 'OTHER_ADJUSTMENT' && !writeOffReason) {
+        throw new BusinessRuleError(`Say what the ${invoice.currency} ${remainder.toFixed(2)} written off ${invoice.invoiceNumber} is for.`);
+      }
+    } else {
+      // A reason without a write-off is noise on the record.
+      writeOffReason = null;
+    }
+
+    rows.push({
+      salesInvoiceId: invoice.id,
+      amount,
+      amountUsd,
+      currency: invoice.currency,
+      shortfall,
+      writeOffAmount,
+      writeOffAmountUsd: writeOffAmount.isZero() ? dec(0) : convertToUsd(writeOffAmount, invoice.rateToUsd, invoice.currency),
+      writeOffReason,
+    });
   }
 
   // Can the money cover what it is put against? Asked in the receipt's own
@@ -197,7 +276,20 @@ async function buildAllocations(
    * is not a payment; nothing may be invented to clear it.
    */
   const remainder = toMoney(params.receiptAmount.minus(settledInVoucher));
-  if (remainder.greaterThan('0.005') && !params.keepRemainderAsAdvance) {
+  const asTip = params.overpayment === 'TIP';
+  /*
+   * The other direction, and the dangerous one: taking a customer's
+   * overpayment as the company's own income. It needs the same deliberate
+   * tick as an advance, and above TIP_LIMIT a reason, because an
+   * overpayment of any size is far more often a mistake or an advance
+   * against the next order than a gift.
+   */
+  if (asTip && remainder.greaterThan(TIP_LIMIT) && !params.tipReason?.trim()) {
+    throw new BusinessRuleError(
+      `${params.receiptCurrency} ${remainder.toFixed(2)} is more than a rounding to keep as a tip. Say why the customer is giving it, or hold it on their account as an advance.`,
+    );
+  }
+  if (remainder.greaterThan('0.005') && !params.keepRemainderAsAdvance && !asTip) {
     throw new BusinessRuleError(
       rows.length === 0
         ? `This receipt of ${params.receiptCurrency} ${params.receiptAmount.toFixed(2)} is not applied to any invoice. Apply it to the invoices it pays, or choose to keep it on the customer's account as an advance.`
@@ -523,6 +615,8 @@ export async function createReceiptIn(tx: Tx, input: ReceiptInput, userId: strin
     receiptRateToUsd: amounts.rateToUsd,
     allocations: input.allocations ?? [],
     keepRemainderAsAdvance: input.keepRemainderAsAdvance,
+    overpayment: input.overpayment,
+    tipReason: input.tipReason,
   });
 
   const receiptNumber = await nextReference(tx, {
@@ -550,6 +644,8 @@ export async function createReceiptIn(tx: Tx, input: ReceiptInput, userId: strin
       shipmentId: await ownShipmentId(tx, input.companyId, input.shipmentId),
       reference: input.reference ?? null,
       description: input.description ?? null,
+      overpayment: input.overpayment ?? 'ADVANCE',
+      tipReason: input.overpayment === 'TIP' ? (input.tipReason?.trim() || null) : null,
       status: 'DRAFT',
       createdById: userId,
       allocations: { create: allocations },
@@ -642,6 +738,8 @@ export async function updateReceipt(id: string, input: ReceiptInput, userId: str
       receiptRateToUsd: amounts.rateToUsd,
       allocations: input.allocations ?? [],
       keepRemainderAsAdvance: input.keepRemainderAsAdvance,
+      overpayment: input.overpayment,
+      tipReason: input.tipReason,
     });
 
     await tx.receiptAllocation.deleteMany({ where: { receiptId: id } });
@@ -665,6 +763,8 @@ export async function updateReceipt(id: string, input: ReceiptInput, userId: str
         shipmentId: await ownShipmentId(tx, input.companyId, input.shipmentId),
         reference: input.reference ?? null,
         description: input.description ?? null,
+        overpayment: input.overpayment ?? 'ADVANCE',
+        tipReason: input.overpayment === 'TIP' ? (input.tipReason?.trim() || null) : null,
         allocations: { create: allocations },
       },
       include: { allocations: true },
@@ -826,6 +926,10 @@ export async function postReceiptIn(tx: Tx, params: { id: string; companyId: str
   );
   const unallocated = toMoney(dec(receipt.amount).minus(settledInVoucher));
   const hasAdvance = unallocated.greaterThan('0.005');
+  // The customer paid over the invoice and told us to keep it: income, not a
+  // liability. The money itself is already in the cash or bank leg either
+  // way — all that differs is what the other side of it is called.
+  const isTip = receipt.overpayment === 'TIP';
 
   const advanceLines = hasAdvance
     ? (() => {
@@ -839,6 +943,22 @@ export async function postReceiptIn(tx: Tx, params: { id: string; companyId: str
           rateLocalPerUsd: receipt.rateLocalPerUsd,
           partyLabel: receipt.customer.customerName,
         });
+        if (isTip) {
+          const wording = `Tip from ${receipt.customer.customerName}`;
+          return [
+            {
+              // Not a customer leg: a tip is not owed back, so it must not
+              // land on the customer's sub-ledger and read as a balance.
+              accountKey: ACCOUNT_KEYS.TIPS_RECEIVED,
+              direction: 'CREDIT' as const,
+              currency: receipt.currency,
+              amount: unallocated,
+              rateToUsd: receipt.rateToUsd,
+              description: receipt.tipReason ? `${wording} — ${receipt.tipReason}` : wording,
+              shipmentId: receipt.shipmentId,
+            },
+          ];
+        }
         return [
           {
             accountKey: ACCOUNT_KEYS.CUSTOMER_ADVANCES,
@@ -853,6 +973,70 @@ export async function postReceiptIn(tx: Tx, params: { id: string; companyId: str
         ];
       })()
     : [];
+
+  /*
+   * A shortfall the user chose to write off.
+   *
+   * Two legs in this same entry: the receivable is credited for the rest of
+   * the invoice, so it clears exactly, and the write-off is debited to
+   * Discounts, Tips & Round-Off Allowed or Settlement Adjustments. One entry, so
+   * the books balance whatever happens, and reversing the receipt undoes the
+   * write-off with it.
+   */
+  const writeOffs = receipt.allocations.filter(
+    (allocation) => allocation.shortfall !== 'KEEP_OUTSTANDING' && dec(allocation.writeOffAmount).greaterThan('0.005'),
+  );
+  const writeOffLines = writeOffs.flatMap((allocation) => {
+    const invoice = allocation.salesInvoice;
+    const amount = toMoney(allocation.writeOffAmount);
+    const amountUsd = toMoney(allocation.writeOffAmountUsd);
+    const bookedLocal =
+      invoice.currency === localCode ? amount : convertFromUsd(amountUsd, invoice.rateLocalPerUsd, localCode);
+    const leg = resolveSubledgerLeg({
+      partyCurrency: receipt.customer.primaryCurrency,
+      voucherCurrency: invoice.currency,
+      voucherAmount: amount,
+      voucherRateToUsd: invoice.rateToUsd,
+      voucherAmountUsd: amountUsd,
+      localCurrency: company.localCurrency,
+      rateLocalPerUsd: invoice.rateLocalPerUsd,
+      partyLabel: receipt.customer.customerName,
+    });
+    const wording =
+      allocation.shortfall === 'ROUND_OFF'
+        ? `Discount or tip on ${invoice.invoiceNumber}`
+        : `Adjustment on ${invoice.invoiceNumber}`;
+    const description = allocation.writeOffReason ? `${wording} — ${allocation.writeOffReason}` : wording;
+    return [
+      {
+        accountKey:
+          allocation.shortfall === 'ROUND_OFF' ? ACCOUNT_KEYS.SETTLEMENT_ROUNDING : ACCOUNT_KEYS.SETTLEMENT_ADJUSTMENT,
+        direction: 'DEBIT' as const,
+        currency: invoice.currency,
+        amount,
+        rateToUsd: invoice.rateToUsd,
+        bookedUsd: amountUsd,
+        bookedLocal,
+        description,
+        customerId: receipt.customerId,
+        salesInvoiceId: invoice.id,
+        shipmentId: receipt.shipmentId,
+      },
+      {
+        accountKey: ACCOUNT_KEYS.ACCOUNTS_RECEIVABLE,
+        direction: 'CREDIT' as const,
+        currency: leg.currency,
+        amount: leg.amount,
+        rateToUsd: leg.rateToUsd,
+        bookedUsd: amountUsd,
+        bookedLocal,
+        description: `Clears the rest of ${invoice.invoiceNumber}`,
+        customerId: receipt.customerId,
+        salesInvoiceId: invoice.id,
+        shipmentId: receipt.shipmentId,
+      },
+    ];
+  });
 
   const creditLines = [...settlementLines, ...advanceLines];
 
@@ -915,6 +1099,7 @@ export async function postReceiptIn(tx: Tx, params: { id: string; companyId: str
             shipmentId: receipt.shipmentId,
           },
       ...creditLines,
+      ...writeOffLines,
     ],
   });
 
@@ -936,6 +1121,15 @@ export async function postReceiptIn(tx: Tx, params: { id: string; companyId: str
       currency: receipt.currency,
       rateToUsd: receipt.rateToUsd,
       amountUsd: receipt.amountUsd,
+      // Who wrote off what, and why: the audit log keeps it whatever the
+      // invoice looks like afterwards.
+      writeOffs: writeOffs.map((allocation) => ({
+        invoiceNumber: allocation.salesInvoice.invoiceNumber,
+        kind: allocation.shortfall,
+        amount: allocation.writeOffAmount.toString(),
+        currency: allocation.salesInvoice.currency,
+        reason: allocation.writeOffReason,
+      })),
     },
   });
 

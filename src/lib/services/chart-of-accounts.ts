@@ -267,6 +267,13 @@ const STANDARD_ACCOUNTS: AccountSeed[] = [
     systemKey: ACCOUNT_KEYS.PURCHASE_RETURNS,
   },
   {
+    code: '4910',
+    name: 'Tips & Round-Off Received',
+    type: 'INCOME',
+    reportGroup: REPORT_GROUPS.OTHER_INCOME,
+    systemKey: ACCOUNT_KEYS.TIPS_RECEIVED,
+  },
+  {
     code: '4000',
     name: 'Coffee Sales',
     type: 'INCOME',
@@ -294,6 +301,20 @@ const STANDARD_ACCOUNTS: AccountSeed[] = [
     type: 'EXPENSE',
     reportGroup: REPORT_GROUPS.COGS,
     systemKey: ACCOUNT_KEYS.INVENTORY_ADJUSTMENT,
+  },
+  {
+    code: '6910',
+    name: 'Discounts, Tips & Round-Off Allowed',
+    type: 'EXPENSE',
+    reportGroup: REPORT_GROUPS.OPERATING,
+    systemKey: ACCOUNT_KEYS.SETTLEMENT_ROUNDING,
+  },
+  {
+    code: '6911',
+    name: 'Settlement Adjustments',
+    type: 'EXPENSE',
+    reportGroup: REPORT_GROUPS.OPERATING,
+    systemKey: ACCOUNT_KEYS.SETTLEMENT_ADJUSTMENT,
   },
   // --- Operating expenses --------------------------------------------------
   {

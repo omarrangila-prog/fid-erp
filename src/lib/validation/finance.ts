@@ -56,10 +56,31 @@ export const receiptSchema = z
     reference: optionalText(120),
     description: optionalText(600),
     allocations: z
-      .array(z.object({ salesInvoiceId: cuid, amount: decimalString('Allocation') }))
+      .array(
+        z.object({
+          salesInvoiceId: cuid,
+          amount: decimalString('Allocation'),
+          /**
+           * What to do with the rest of this invoice when the money falls
+           * short of it. Keeping it outstanding is the default and posts
+           * nothing extra; the other two write the difference off.
+           */
+          shortfall: z.enum(['KEEP_OUTSTANDING', 'ROUND_OFF', 'OTHER_ADJUSTMENT']).default('KEEP_OUTSTANDING'),
+          /** Required above ROUND_OFF_LIMIT, and always for an other adjustment. */
+          writeOffReason: optionalText(300),
+        }),
+      )
       .default([]),
     /** Ticked by the user: keep what is not applied to an invoice as an advance. */
     keepRemainderAsAdvance: z.boolean().optional(),
+    /**
+     * What the money over and above the invoices is: held for the customer,
+     * or a tip they told us to keep. An advance unless the user says
+     * otherwise — money arriving unasked is not the company's income.
+     */
+    overpayment: z.enum(['ADVANCE', 'TIP']).default('ADVANCE'),
+    /** Required above TIP_LIMIT before an overpayment may be taken as income. */
+    tipReason: optionalText(300),
   })
   .refine(
     (v) => v.currency === 'USD' || Number(v.rateToUsd) > 0 || Number(v.usdEquivalent) > 0,

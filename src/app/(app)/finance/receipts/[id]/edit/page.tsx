@@ -31,7 +31,7 @@ export default async function EditReceiptPage({ params }: { params: Promise<{ id
   const receipt = await prisma.receipt.findFirst({
     where: { id, companyId, ...receiptScopeWhere(user) },
     include: {
-      allocations: { select: { salesInvoiceId: true, amount: true } },
+      allocations: { select: { salesInvoiceId: true, amount: true, shortfall: true, writeOffReason: true } },
       cheque: { select: { chequeNumber: true, chequeDate: true, bankName: true, beneficiary: true } },
     },
   });
@@ -135,6 +135,7 @@ export default async function EditReceiptPage({ params }: { params: Promise<{ id
         agents={agents.map((a) => ({ id: a.id, name: a.agentName }))}
         canPost={can(user, PERMISSIONS.RECEIPTS_POST)}
         canCreateCashBank={can(user, PERMISSIONS.CASHBANK_MANAGE)}
+        canWriteOff={can(user, PERMISSIONS.CREDIT_NOTES_POST)}
         initial={{
           id: receipt.id,
           status: receipt.status,
@@ -155,6 +156,8 @@ export default async function EditReceiptPage({ params }: { params: Promise<{ id
           allocations: receipt.allocations.map((a) => ({
             salesInvoiceId: a.salesInvoiceId,
             amount: a.amount.toString(),
+            shortfall: a.shortfall,
+            writeOffReason: a.writeOffReason,
           })),
           cheque: receipt.cheque
             ? {

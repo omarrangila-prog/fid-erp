@@ -941,6 +941,32 @@ export const ACCOUNT_KEYS = {
   /// Commission agreed with an agent but not yet paid. A real cost of the
   /// shipment from the day it is agreed.
   AGENT_COMMISSION_PAYABLE: 'AGENT_COMMISSION_PAYABLE',
+  /**
+   * The few dirhams between an invoice and what the customer actually sent.
+   *
+   * A customer settling 112,928 with 112,920 has not paid in full, and the
+   * eight dirhams are not revenue the company lost track of: they are a
+   * discount it chose to allow. Written off here, the invoice clears exactly
+   * and the giveaway is visible on the profit and loss instead of hiding as
+   * a debtor nobody will ever collect.
+   */
+  SETTLEMENT_ROUNDING: 'SETTLEMENT_ROUNDING',
+  /**
+   * A shortfall that is not a rounding: a bank charge the customer deducted
+   * at their end, a deduction they made for their own reason. Kept apart from
+   * round-off so the client can see at a glance which is which.
+   */
+  SETTLEMENT_ADJUSTMENT: 'SETTLEMENT_ADJUSTMENT',
+  /**
+   * The other direction: a customer pays more than the invoice and tells us
+   * to keep the difference. That is income, not a debt owed back to them,
+   * and not coffee sales either — it is kept apart so revenue stays the
+   * revenue actually invoiced.
+   *
+   * Only ever used on the user's explicit say-so. Money arriving unasked is
+   * an advance until somebody decides otherwise; see CUSTOMER_ADVANCES.
+   */
+  TIPS_RECEIVED: 'TIPS_RECEIVED',
 } as const;
 
 export type AccountKey = (typeof ACCOUNT_KEYS)[keyof typeof ACCOUNT_KEYS];
@@ -965,6 +991,27 @@ export const REPORT_GROUPS = {
  * bigger file before sending it rather than failing on the way.
  */
 export const ATTACHMENT_MAX_BYTES = 4 * 1024 * 1024;
+
+/**
+ * The largest shortfall that can be written off as a round-off without a
+ * reason being typed, in the invoice's own currency.
+ *
+ * A few dirhams lost on a bank transfer is a rounding; fifty thousand is not,
+ * and must not be clearable by the same one-click radio button. Above this a
+ * memo is required, so the write-off always carries its own explanation.
+ */
+export const ROUND_OFF_LIMIT = 100;
+
+/**
+ * The largest overpayment that can be taken as a tip without a reason being
+ * typed, in the receipt's own currency.
+ *
+ * Symmetrical with ROUND_OFF_LIMIT and for the same reason: a customer
+ * rounding a payment up is a tip, a large overpayment is far more likely to
+ * be a mistake or an advance against the next order. Above this a memo is
+ * required before the company may book it as its own income.
+ */
+export const TIP_LIMIT = 100;
 
 /** Default ETA alert offsets, in days before arrival. */
 export const DEFAULT_ETA_ALERT_DAYS = [7, 3, 0];

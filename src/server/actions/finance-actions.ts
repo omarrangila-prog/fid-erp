@@ -2,9 +2,9 @@
 
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { requirePermission } from '@/lib/auth/guards';
+import { requirePermission, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
-import { BusinessRuleError, NotFoundError } from '@/lib/errors';
+import { BusinessRuleError, NotFoundError, ForbiddenError } from '@/lib/errors';
 import { fieldErrors } from '@/lib/validation/common';
 import {
   agentSettlementSchema,
@@ -106,6 +106,17 @@ export async function saveReceiptAction(id: string | null, payload: string): Pro
     await assertCustomerInScope(user, input.customerId);
     const ownAgent = agentScope(user);
     if (ownAgent && input.agentId && input.agentId !== ownAgent) assertInScope(false, 'agent');
+    /*
+     * Writing a shortfall off clears a customer's debt and lands it on the
+     * profit and loss, which is what a credit note does. Someone who may
+     * record receipts but not post credits must not be able to do it from
+     * here instead — checked on the server, not by hiding the radio.
+     */
+    if (input.allocations.some((a) => a.shortfall !== 'KEEP_OUTSTANDING') && !can(user, PERMISSIONS.CREDIT_NOTES_POST)) {
+      throw new ForbiddenError(
+        'You do not have permission to write off what a customer still owes. Keep the difference outstanding, or ask someone who can post credit notes.',
+      );
+    }
     const data = { companyId: user.activeCompany.id, ...input, cheque: input.cheque ?? null };
 
     // A second submit of the same form returns the receipt the first created.

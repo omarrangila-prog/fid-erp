@@ -157,7 +157,10 @@ export async function getReceivables(params: {
            si."totalAmount"::text AS "originalAmount",
            si."totalAmountUsd"::text AS "originalAmountUsd",
            (
-             COALESCE((SELECT SUM(ra."amount") FROM receipt_allocations ra
+             -- Money received, plus any shortfall the user wrote off: the
+             -- write-off cleared the receivable in the books, so the invoice
+             -- is settled here too. Both are on the same allocation row.
+             COALESCE((SELECT SUM(ra."amount" + ra."writeOffAmount") FROM receipt_allocations ra
                          JOIN receipts r ON r."id" = ra."receiptId"
                         WHERE ra."salesInvoiceId" = si."id" AND r."status" = 'POSTED'
                           AND NOT EXISTS (
@@ -168,7 +171,7 @@ export async function getReceivables(params: {
                           WHERE cn."salesInvoiceId" = si."id" AND cn."status" = 'POSTED'), 0)
            )::text AS "paidAmount",
            (
-             COALESCE((SELECT SUM(ra."amountUsd") FROM receipt_allocations ra
+             COALESCE((SELECT SUM(ra."amountUsd" + ra."writeOffAmountUsd") FROM receipt_allocations ra
                          JOIN receipts r ON r."id" = ra."receiptId"
                         WHERE ra."salesInvoiceId" = si."id" AND r."status" = 'POSTED'
                           AND NOT EXISTS (
