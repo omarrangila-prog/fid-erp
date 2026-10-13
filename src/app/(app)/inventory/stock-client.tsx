@@ -40,6 +40,13 @@ export type StockRow = {
     onHandLabel: string;
     availableLabel: string;
     bags: number;
+    /** What this coffee cost to buy, and what it cost to land. */
+    purchasePerKgLabel: string;
+    landedPerKgLabel: string;
+    remainingPurchaseLabel: string;
+    remainingValueLabel: string;
+    /** The rate those were stated at, and whether it is the one paid. */
+    rateLabel: string;
   }>;
 };
 
@@ -200,7 +207,14 @@ export function StockClient({
                 <th className="py-1.5 pr-3 font-medium">Batch</th>
                 <th className="py-1.5 pr-3 text-right font-medium">On hand</th>
                 <th className="py-1.5 pr-3 text-right font-medium">Available</th>
-                <th className="py-1.5 text-right font-medium">Bags</th>
+                <th className="py-1.5 pr-3 text-right font-medium">Bags</th>
+                {/* What the coffee still here cost: the supplier's price, the
+                    landed cost, and what the remainder is worth either way. */}
+                <th className="py-1.5 pr-3 text-right font-medium">Purchase /KG</th>
+                <th className="py-1.5 pr-3 text-right font-medium">Landed /KG</th>
+                <th className="py-1.5 pr-3 text-right font-medium">Purchase value</th>
+                <th className="py-1.5 pr-3 text-right font-medium">Stock value</th>
+                <th className="py-1.5 text-right font-medium">Rate</th>
               </tr>
             </thead>
             <tbody>
@@ -213,7 +227,12 @@ export function StockClient({
                   <td className="py-1.5 pr-3">{lot.batchNumber}</td>
                   <td className="py-1.5 pr-3 text-right tabular-nums">{lot.onHandLabel}</td>
                   <td className="py-1.5 pr-3 text-right tabular-nums">{lot.availableLabel}</td>
-                  <td className="py-1.5 text-right tabular-nums">{formatBags(lot.bags)}</td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums">{formatBags(lot.bags)}</td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums">{lot.purchasePerKgLabel}</td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums">{lot.landedPerKgLabel}</td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums">{lot.remainingPurchaseLabel}</td>
+                  <td className="py-1.5 pr-3 text-right font-medium tabular-nums">{lot.remainingValueLabel}</td>
+                  <td className="py-1.5 text-right tabular-nums text-ink-subtle">{lot.rateLabel}</td>
                 </tr>
               ))}
             </tbody>

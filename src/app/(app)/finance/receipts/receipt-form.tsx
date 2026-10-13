@@ -21,6 +21,7 @@ import { saveReceiptAction, postReceiptAction } from '@/server/actions/finance-a
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { accountsFor } from '@/lib/cash-account-choice';
 import { ROUND_OFF_LIMIT, TIP_LIMIT } from '@/lib/constants';
+import { cn } from '@/lib/utils';
 import { LedgerAccountField } from '@/components/shared/ledger-account-field';
 import { ledgerTargetPayload, ledgerTargetValue } from '@/lib/ledger-target';
 import type { LedgerSettlementOption } from '@/lib/services/ledger-settlement';
@@ -200,6 +201,15 @@ export function ReceiptForm({
   );
 
   const isForeign = form.currency !== 'USD';
+  /*
+   * Money received in the company's own currency is not a conversion.
+   *
+   * A Morocco customer pays dirhams against a dirham invoice: there is no rate
+   * to agree and no dollar amount to negotiate. The card still has to collect
+   * the group reporting rate, but it asks for that one number and says what it
+   * is for, instead of offering "I agreed a rate / I agreed a USD amount".
+   */
+  const isHomeMoney = form.currency === localCurrency && localCurrency !== 'USD';
   const isCheque = form.paymentMethod === 'CHEQUE';
 
   // Cash goes into the drawer without asking; a bank transfer still needs to
@@ -643,14 +653,17 @@ export function ReceiptForm({
       {isForeign ? (
         <Card>
           <CardHeader>
-            <CardTitle>Conversion</CardTitle>
+            <CardTitle>{isHomeMoney ? 'Group reporting rate' : 'Conversion'}</CardTitle>
             <CardDescription>
-              Enter whichever you actually agreed. The rate is stored on this receipt permanently and is never
-              restated by a later change to the rate table.
+              {isHomeMoney
+                ? `This receipt is ${form.currency}, the same as the books. The rate only states it in dollars for group reporting — it does not change what was received or what the invoice settles.`
+                : 'Enter whichever you actually agreed. The rate is stored on this receipt permanently and is never restated by a later change to the rate table.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="inline-flex rounded-lg border border-line-strong p-0.5">
+            {/* No rate-or-amount choice on home money: there is nothing to
+                have agreed, so the toggle only invited a wrong answer. */}
+            <div className={cn('inline-flex rounded-lg border border-line-strong p-0.5', isHomeMoney && 'hidden')}>
               {(['rate', 'usd'] as const).map((mode) => (
                 <button
                   key={mode}
@@ -666,12 +679,12 @@ export function ReceiptForm({
             </div>
 
             <div className="grid gap-4 sm:grid-cols-3">
-              {entryMode === 'rate' ? (
+              {entryMode === 'rate' || isHomeMoney ? (
                 <Field
                   label={`Rate (${form.currency} per 1 USD)`}
                   required
                   error={fieldIssues.rateToUsd}
-                  hint="e.g. 3.6725"
+                  hint={isHomeMoney ? 'For group reporting only.' : 'e.g. 3.6725'}
                 >
                   <Input
                     value={form.rateToUsd}

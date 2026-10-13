@@ -344,6 +344,7 @@ model User {
 
   createdContracts        PurchaseContract[]              @relation("ContractCreatedBy")
   postedContracts         PurchaseContract[]              @relation("ContractPostedBy")
+  contractActualRates  PurchaseContract[]  @relation("ContractActualRateSetBy")
   createdShipments        Shipment[]                      @relation("ShipmentCreatedBy")
   updatedShipments        Shipment[]                      @relation("ShipmentUpdatedBy")
   shipmentStatusLogs      ShipmentStatusHistory[]
@@ -917,6 +918,19 @@ model PurchaseContract {
   currency             String            @db.VarChar(3)
   rateToUsd            Decimal           @default(1) @db.Decimal(18, 8)
   rateLocalPerUsd      Decimal           @default(1) @db.Decimal(18, 8)
+  /// The rate actually paid when the dollars were bought to settle the
+  /// supplier, once it is known. Null while `rateLocalPerUsd` is still the
+  /// estimate made when the order was placed.
+  ///
+  /// Costing reads `effectiveLocalRate` (this if set, else the estimate), so
+  /// confirming the rate moves every derived local figure at once without the
+  /// USD purchase price changing: the supplier is owed the same dollars.
+  actualRateLocalPerUsd Decimal?         @db.Decimal(18, 8)
+  /// When the actual rate was confirmed, and by whom.
+  actualRateSetAt      DateTime?
+  actualRateSetById    String?
+  /// Why it moved — a bank advice, a transfer reference.
+  actualRateNote       String?
   subtotal             Decimal           @default(0) @db.Decimal(18, 4)
   freightAmount        Decimal           @default(0) @db.Decimal(18, 4)
   /// Recoverable input tax. Deliberately outside totalValue: tax you can claim
@@ -950,6 +964,7 @@ model PurchaseContract {
   vendor        Vendor                 @relation(fields: [vendorId], references: [id])
   createdBy     User                   @relation("ContractCreatedBy", fields: [createdById], references: [id])
   postedBy      User?                  @relation("ContractPostedBy", fields: [postedById], references: [id])
+  actualRateSetBy User?                @relation("ContractActualRateSetBy", fields: [actualRateSetById], references: [id])
   lines         PurchaseContractLine[]
   shipments     Shipment[]
   batches       Batch[]

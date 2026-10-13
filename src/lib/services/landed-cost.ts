@@ -5,6 +5,7 @@ import { getExpenseSettlements, type ExpensePaymentStatus } from '@/lib/services
 import { batchLandedLocal, getCapitalisedRates, getOrderFxTransactions, summariseFx } from '@/lib/services/shipment-fx';
 import { getShipmentProfitability } from '@/lib/services/profitability';
 import { Decimal, dec, toMoney, toUnitCost, allocateProportionally, sum, toQuantity, convertFromUsd, KG_PER_MT } from '@/lib/money';
+import { effectiveLocalRate, purchaseFxSource } from '@/lib/purchase-fx';
 import { BusinessRuleError } from '@/lib/errors';
 import { lockBatch } from '@/lib/services/inventory';
 
@@ -604,14 +605,25 @@ export async function getShipmentCostSheet(
       where: { id: shipmentId, companyId },
       select: {
         purchaseContractId: true,
-        purchaseContract: { select: { rateLocalPerUsd: true, currency: true, contractReference: true } },
+        purchaseContract: {
+          select: {
+            rateLocalPerUsd: true,
+            actualRateLocalPerUsd: true,
+            currency: true,
+            contractReference: true,
+          },
+        },
       },
     }),
   ]);
   // One weighted rate per currency pair for the order this shipment is on.
   const orderFx = (await getOrderFxTransactions(companyId, [shipment.purchaseContractId])).get(shipment.purchaseContractId);
 
-  const rateLocalPerUsd = dec(shipment.purchaseContract.rateLocalPerUsd);
+  // The rate actually paid for the dollars once it is known, else the estimate
+  // the order was placed at. Reading it here means confirming the rate moves
+  // every figure on this sheet without anything being recalculated by hand.
+  const rateLocalPerUsd = effectiveLocalRate(shipment.purchaseContract);
+  const fxSource = purchaseFxSource(shipment.purchaseContract);
   const localCurrency = company.localCurrency;
   const goodsLocal = convertFromUsd(job.goodsUsd, rateLocalPerUsd, localCurrency);
 
@@ -692,6 +704,31 @@ export async function getShipmentCostSheet(
   const costPerMtUsd = toUnitCost(costPerKgUsd.times(KG_PER_MT));
   const costPerMtLocal = toUnitCost(costPerKgLocal.times(KG_PER_MT));
 
+  /*
+   * The supplier's price on its own, apart from the landed cost.
+   *
+   * The client reads these as two different things and asked for them not to
+   * be mixed: what the coffee cost to buy, and what it cost to buy and land.
+   * The difference is the shipment's own charges.
+   */
+  const purchasePerKgUsd = basisKg.greaterThan(0) ? toUnitCost(job.goodsUsd.dividedBy(basisKg)) : new Decimal(0);
+  const purchasePerKgLocal = toUnitCost(purchasePerKgUsd.times(rateLocalPerUsd));
+
+  /*
+   * What is still here, and what it is worth.
+   *
+   * A shipment stays open while the last few hundred kilos sell, so the cost
+   * of the coffee sold and the cost of the coffee still in the warehouse have
+   * to be told apart — the whole shipment cost is not cost of sales while
+   * stock remains. Valued at this shipment's own weighted landed cost, never
+   * a company average.
+   */
+  const remainingKg = toQuantity(job.receivedKg.minus(job.soldKg));
+  const remainingPurchaseUsd = toMoney(purchasePerKgUsd.times(remainingKg));
+  const remainingPurchaseLocal = toMoney(remainingPurchaseUsd.times(rateLocalPerUsd));
+  const remainingLandedUsd = toMoney(costPerKgUsd.times(remainingKg));
+  const remainingLandedLocal = toMoney(costPerKgLocal.times(remainingKg));
+
   const purchaseLines: ShipmentPurchaseLine[] = purchaseBatches.map((batch) => ({
     batchId: batch.id,
     batchNumber: batch.batchNumber,
@@ -720,6 +757,8 @@ export async function getShipmentCostSheet(
   return {
     localCurrency,
     rateLocalPerUsd,
+    /** Whether that rate is the one actually paid, or still the order's estimate. */
+    fxSource,
     contractReference: shipment.purchaseContract.contractReference,
     costFx: summariseFx(orderFx?.costs ?? [], localCurrency),
     goodsUsd: job.goodsUsd,
@@ -736,7 +775,15 @@ export async function getShipmentCostSheet(
     orderedMt,
     receivedMt,
     soldKg,
-    remainingKg: toQuantity(job.receivedKg.minus(job.soldKg)),
+    remainingKg,
+    /** The supplier's price per KG, without the shipment's own charges. */
+    purchasePerKgUsd,
+    purchasePerKgLocal,
+    /** What is left in the warehouse, at this shipment's own landed cost. */
+    remainingPurchaseUsd,
+    remainingPurchaseLocal,
+    remainingLandedUsd,
+    remainingLandedLocal,
     costPerKgUsd,
     costPerKgLocal,
     costPerMtUsd,
@@ -810,7 +857,8 @@ export async function getShipmentCostingIndex(companyId: string): Promise<Map<st
            COALESCE((SELECT SUM(e."amountLocal") FROM expenses e
                      WHERE e."shipmentId" = s."id" AND e."status" = 'POSTED' AND e."kind" = 'SHIPMENT'
                        AND e."capitaliseToLandedCost" = true), 0)::text AS "expenseLocal",
-           pc."rateLocalPerUsd"::text AS "rateLocalPerUsd"
+           COALESCE(pc."actualRateLocalPerUsd", pc."rateLocalPerUsd")::text AS "rateLocalPerUsd",
+           (pc."actualRateLocalPerUsd" IS NOT NULL)::bool AS "rateIsActual"
     FROM shipments s
     JOIN purchase_contracts pc ON pc."id" = s."purchaseContractId"
     WHERE s."companyId" = ${companyId}
@@ -886,8 +934,13 @@ export type BatchCosting = {
   /** Available KG at this batch's own landed cost — not a company average. */
   stockValueUsd: Decimal;
   stockValueLocal: Decimal;
+  /** What the coffee still here cost to buy, before the shipment's charges. */
+  remainingPurchaseUsd: Decimal;
+  remainingPurchaseLocal: Decimal;
   localCurrency: string;
   rateLocalPerUsd: Decimal;
+  /** Whether that rate is the one actually paid, or the order's estimate. */
+  fxSource: 'ESTIMATED' | 'ACTUAL';
 };
 
 /**
@@ -941,7 +994,9 @@ export async function getBatchCostings(params: {
       container: { select: { containerNumber: true } },
       warehouse: { select: { name: true } },
       shipment: { select: { jobNumber: true } },
-      purchaseContract: { select: { contractReference: true, rateLocalPerUsd: true } },
+      purchaseContract: {
+        select: { contractReference: true, rateLocalPerUsd: true, actualRateLocalPerUsd: true },
+      },
       purchaseContractId: true,
     },
     orderBy: { batchNumber: 'asc' },
@@ -950,7 +1005,10 @@ export async function getBatchCostings(params: {
   const capitalisedRates = await getCapitalisedRates(params.companyId, [...new Set(batches.map((b) => b.purchaseContractId))]);
 
   return batches.map((batch) => {
-    const rateLocalPerUsd = dec(batch.purchaseContract.rateLocalPerUsd);
+    // The rate actually paid for the dollars once known, else the order's
+    // estimate. The coffee only: capitalised costs keep their own rates below.
+    const rateLocalPerUsd = effectiveLocalRate(batch.purchaseContract);
+    const fxSource = purchaseFxSource(batch.purchaseContract);
     const orderedKg = toQuantity(batch.orderedQuantityKg);
     const availableKg = toQuantity(batch.availableQuantityKg);
     const purchaseUsd = toMoney(batch.purchaseCostUsd);
@@ -998,8 +1056,22 @@ export async function getBatchCostings(params: {
       landedPerKgLocal,
       stockValueUsd: toMoney(availableKg.times(landedPerKgUsd)),
       stockValueLocal: toMoney(availableKg.times(landedPerKgLocal)),
+      /*
+       * What the coffee still here cost to buy, apart from what it cost to
+       * land. The client reads the two separately: the dollars are what the
+       * supplier was paid for the stock on the floor, the landed value is
+       * what it is worth in the books.
+       */
+      remainingPurchaseUsd: toMoney(
+        availableKg.times(orderedKg.greaterThan(0) ? purchaseUsd.dividedBy(orderedKg) : dec(0)),
+      ),
+      remainingPurchaseLocal: toMoney(
+        availableKg.times(orderedKg.greaterThan(0) ? purchaseUsd.dividedBy(orderedKg) : dec(0)).times(rateLocalPerUsd),
+      ),
       localCurrency,
       rateLocalPerUsd,
+      /** Whether that rate is the one actually paid, or the order's estimate. */
+      fxSource,
     };
   });
 }

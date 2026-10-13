@@ -14,6 +14,8 @@ import { getContractOutstanding } from '@/lib/services/payment';
 import { supplierGrossPayable } from '@/lib/services/tax';
 import { DualAmount } from '@/components/shared/dual-amount';
 import { formatMoney, formatQuantityKg, formatDate, formatDateTime, formatRate } from '@/lib/format';
+import { effectiveLocalRate, purchaseFxSource } from '@/lib/purchase-fx';
+import { ActualFxCard } from '@/app/(app)/purchases/[id]/actual-fx';
 import { PageHeader } from '@/components/shared/page-header';
 import { Metric, MetricGrid, DetailRow } from '@/components/shared/stat-card';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -53,6 +55,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
       vendor: true,
       createdBy: { select: { name: true } },
       postedBy: { select: { name: true } },
+      actualRateSetBy: { select: { name: true } },
       lines: { orderBy: { lineNumber: 'asc' }, include: { item: true } },
       shipments: { select: { id: true, shipmentNumber: true, jobNumber: true, status: true, etaDate: true } },
       goodsReceipts: {
@@ -66,6 +69,18 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
   /** An amount in the order's currency, in dollars at the order's own rate. */
   const usdOf = (value: Parameters<typeof dec>[0]) =>
     contract.currency === 'USD' ? dec(value) : dec(value).dividedBy(dec(contract.rateToUsd));
+
+  /*
+   * Local figures are stated at the rate actually paid for the dollars once it
+   * is known, and at the order's estimate until then. The same rule the
+   * costing service uses, so this page and the cost sheet cannot disagree.
+   */
+  const costingRate = effectiveLocalRate(contract);
+  const fxSource = purchaseFxSource(contract);
+  const rateSource =
+    fxSource === 'ACTUAL'
+      ? 'The rate actually paid for the dollars'
+      : "This purchase order's estimated rate";
 
   const attachments = can(user, PERMISSIONS.ATTACHMENTS_VIEW)
     ? await loadAttachments(user.activeCompany.id, 'PurchaseContract', contract.id)
@@ -208,15 +223,15 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
         />
         {showCost ? (
           <>
-            <Metric label="Goods value" value={<DualAmount amount={contract.subtotal} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={contract.rateLocalPerUsd} amountUsd={usdOf(contract.subtotal)} rateSource="This purchase order's own rate" />} />
+            <Metric label="Goods value" value={<DualAmount amount={contract.subtotal} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={costingRate} amountUsd={usdOf(contract.subtotal)} rateSource={rateSource} />} />
             <Metric
               label="Freight + charges"
-              value={<DualAmount amount={dec(contract.freightAmount).plus(dec(contract.otherCharges))} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={contract.rateLocalPerUsd} amountUsd={usdOf(dec(contract.freightAmount).plus(dec(contract.otherCharges)))} rateSource="This purchase order's own rate" />}
+              value={<DualAmount amount={dec(contract.freightAmount).plus(dec(contract.otherCharges))} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={costingRate} amountUsd={usdOf(dec(contract.freightAmount).plus(dec(contract.otherCharges)))} rateSource={rateSource} />}
             />
-            <Metric label="Contract value" value={<DualAmount amount={contract.totalValue} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={contract.rateLocalPerUsd} amountUsd={usdOf(contract.totalValue)} rateSource="This purchase order's own rate" />} />
+            <Metric label="Contract value" value={<DualAmount amount={contract.totalValue} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={costingRate} amountUsd={usdOf(contract.totalValue)} rateSource={rateSource} />} />
             <Metric
               label="Posted to supplier"
-              value={<DualAmount amount={supplierPayable.amount} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={contract.rateLocalPerUsd} amountUsd={usdOf(supplierPayable.amount)} rateSource="This purchase order's own rate" />}
+              value={<DualAmount amount={supplierPayable.amount} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={costingRate} amountUsd={usdOf(supplierPayable.amount)} rateSource={rateSource} />}
               hint={
                 supplierPayable.taxOnSupplierInvoice
                   ? 'Goods + freight + tax billed by this supplier.'
@@ -226,13 +241,29 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
             {outstanding ? (
               <Metric
                 label="Still owed"
-                value={<DualAmount amount={outstanding.amount} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={contract.rateLocalPerUsd} amountUsd={usdOf(outstanding.amount)} rateSource="This purchase order's own rate" />}
+                value={<DualAmount amount={outstanding.amount} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={costingRate} amountUsd={usdOf(outstanding.amount)} rateSource={rateSource} />}
                 tone={outstanding.amount.greaterThan(0) ? 'negative' : 'positive'}
               />
             ) : null}
           </>
         ) : null}
       </MetricGrid>
+
+      {/* The rate a dollar actually cost, which governs every local figure
+          derived from this order. Only where the costing is visible at all. */}
+      {showCost && contract.currency !== user.activeCompany.localCurrency ? (
+        <ActualFxCard
+          contractId={contract.id}
+          localCurrency={user.activeCompany.localCurrency}
+          purchaseUsd={dec(contract.totalValueUsd).toString()}
+          estimatedRate={dec(contract.rateLocalPerUsd).toString()}
+          actualRate={contract.actualRateLocalPerUsd ? dec(contract.actualRateLocalPerUsd).toString() : null}
+          note={contract.actualRateNote}
+          setAt={contract.actualRateSetAt ? formatDateTime(contract.actualRateSetAt) : null}
+          setBy={contract.actualRateSetBy?.name ?? null}
+          canEdit={contract.status === 'POSTED' && can(user, PERMISSIONS.PURCHASES_APPROVE)}
+        />
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
@@ -304,12 +335,12 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                       {showCost ? (
                         <>
                           <TD numeric>
-                            <DualAmount amount={line.unitPrice} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={contract.rateLocalPerUsd} amountUsd={usdOf(line.unitPrice)} rateSource="This purchase order's own rate" primaryClassName="font-normal" />
+                            <DualAmount amount={line.unitPrice} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={costingRate} amountUsd={usdOf(line.unitPrice)} rateSource={rateSource} primaryClassName="font-normal" />
                             <span className="block text-xs text-ink-subtle">per {line.unit}</span>
                           </TD>
-                          <TD numeric><DualAmount amount={line.lineSubtotal} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={contract.rateLocalPerUsd} amountUsd={usdOf(line.lineSubtotal)} rateSource="This purchase order's own rate" /></TD>
+                          <TD numeric><DualAmount amount={line.lineSubtotal} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={costingRate} amountUsd={usdOf(line.lineSubtotal)} rateSource={rateSource} /></TD>
                           <TD numeric className="font-medium text-gold-700">
-                            <DualAmount amount={line.unitCostKg} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={contract.rateLocalPerUsd} amountUsd={usdOf(line.unitCostKg)} rateSource="This purchase order's own rate" />
+                            <DualAmount amount={line.unitCostKg} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={costingRate} amountUsd={usdOf(line.unitCostKg)} rateSource={rateSource} />
                           </TD>
                         </>
                       ) : null}
@@ -330,7 +361,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                       <TD numeric>{formatQuantityKg(totalOrdered)}</TD>
                       <TD numeric>{contract.totalBags.toLocaleString()}</TD>
                       <TD />
-                      <TD numeric><DualAmount amount={contract.subtotal} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={contract.rateLocalPerUsd} amountUsd={usdOf(contract.subtotal)} rateSource="This purchase order's own rate" /></TD>
+                      <TD numeric><DualAmount amount={contract.subtotal} currency={contract.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={costingRate} amountUsd={usdOf(contract.subtotal)} rateSource={rateSource} /></TD>
                       <TD />
                     </tr>
                   </TFoot>
@@ -364,7 +395,12 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                   <>
                     <DetailRow label="Rate to USD">{formatRate(contract.rateToUsd)}</DetailRow>
                     <DetailRow label={`Rate to ${user.activeCompany.localCurrency}`}>
-                      {formatRate(contract.rateLocalPerUsd)}
+                      {formatRate(costingRate)}
+                      <span className="block text-xs text-ink-subtle">
+                        {fxSource === 'ACTUAL'
+                          ? `Actually paid. Ordered at ${formatRate(contract.rateLocalPerUsd)}.`
+                          : 'Estimated when the order was placed.'}
+                      </span>
                     </DetailRow>
                     <DetailRow label="Value in USD">{formatMoney(contract.totalValueUsd, 'USD')}</DetailRow>
                   </>

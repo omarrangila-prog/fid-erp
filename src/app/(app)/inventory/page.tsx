@@ -105,6 +105,9 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
   // Aggregate to one row per coffee per warehouse.
   const grouped = new Map<string, StockRow>();
   const localPerKg = new Map(costings.map((c) => [c.batchId, c.landedPerKgLocal]));
+  // §25: the costing behind each lot, so opening a row shows what the coffee
+  // cost to buy, what it cost to land, and the rate those were stated at.
+  const costingByBatch = new Map(costings.map((c) => [c.batchId, c]));
 
   for (const balance of balances) {
     const key = `${balance.itemId}:${balance.warehouseId}`;
@@ -134,6 +137,27 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
       onHandLabel: formatQuantityKg(onHand),
       availableLabel: formatQuantityKg(available),
       bags,
+      ...(() => {
+        const c = costingByBatch.get(balance.batchId);
+        if (!c) {
+          return {
+            purchasePerKgLabel: '—',
+            landedPerKgLabel: '—',
+            remainingPurchaseLabel: '—',
+            remainingValueLabel: '—',
+            rateLabel: '—',
+          };
+        }
+        // Valued at what is actually on the floor, at this batch's own cost.
+        const share = dec(c.availableKg).greaterThan(0) ? available.dividedBy(dec(c.availableKg)) : dec(0);
+        return {
+          purchasePerKgLabel: formatMoney(c.purchasePerKgUsd, 'USD'),
+          landedPerKgLabel: formatMoney(c.landedPerKgLocal, c.localCurrency),
+          remainingPurchaseLabel: formatMoney(dec(c.remainingPurchaseUsd).times(share), 'USD'),
+          remainingValueLabel: formatMoney(dec(c.stockValueLocal).times(share), c.localCurrency),
+          rateLabel: `${dec(c.rateLocalPerUsd).toString()} ${c.fxSource === 'ACTUAL' ? '(actual)' : '(est.)'}`,
+        };
+      })(),
     };
 
     if (existing) {

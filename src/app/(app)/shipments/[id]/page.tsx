@@ -422,8 +422,76 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                 tone={costSheet.grossProfitUsd.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
                 hint={formatPercent(costSheet.profitPct)}
               />
-              <Metric label="Remaining stock" value={formatQuantityKg(costSheet.remainingKg)} tone="muted" />
+              <Metric
+                label="Remaining available for sale"
+                value={formatQuantityKg(costSheet.remainingKg)}
+                tone="muted"
+                hint={`of ${formatQuantityKg(costSheet.receivedKg)} received`}
+              />
             </MetricGrid>
+
+            {/*
+              What is still in the warehouse and what it is worth.
+              A consignment stays open while the last few hundred kilos sell,
+              so the coffee sold and the coffee still here have to be told
+              apart — the whole shipment cost is not cost of sales while stock
+              remains. Valued at this shipment's own weighted landed cost,
+              never a company average, and at the rate actually paid for the
+              dollars once that is known.
+            */}
+            {costSheet.remainingKg.greaterThan(0) ? (
+              <div
+                className="rounded-xl border border-line bg-surface-sunken p-4"
+                data-testid="remaining-stock-value"
+              >
+                <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                  <div>
+                    <dt className="text-xs text-ink-muted">Purchase cost / KG</dt>
+                    <dd className="tnum font-semibold text-ink">
+                      {formatMoney(costSheet.purchasePerKgUsd, 'USD')}
+                      <span className="block text-xs font-normal text-ink-subtle">
+                        {formatMoney(costSheet.purchasePerKgLocal, costSheet.localCurrency)} · the supplier&rsquo;s price
+                        alone
+                      </span>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-ink-muted">Landed cost / KG</dt>
+                    <dd className="tnum font-semibold text-ink">
+                      {formatMoney(costSheet.costPerKgLocal, costSheet.localCurrency)}
+                      <span className="block text-xs font-normal text-ink-subtle">
+                        {formatMoney(costSheet.costPerKgUsd, 'USD')} · with this shipment&rsquo;s charges
+                      </span>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-ink-muted">Remaining purchase value</dt>
+                    <dd className="tnum font-semibold text-ink">
+                      {formatMoney(costSheet.remainingPurchaseUsd, 'USD')}
+                      <span className="block text-xs font-normal text-ink-subtle">
+                        {formatMoney(costSheet.remainingPurchaseLocal, costSheet.localCurrency)} at the purchase rate
+                      </span>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-ink-muted">Remaining inventory value</dt>
+                    <dd className="tnum font-semibold text-forest-800">
+                      {formatMoney(costSheet.remainingLandedLocal, costSheet.localCurrency)}
+                      <span className="block text-xs font-normal text-ink-subtle">
+                        {formatMoney(costSheet.remainingLandedUsd, 'USD')} · landed
+                      </span>
+                    </dd>
+                  </div>
+                </dl>
+                <p className="mt-3 text-xs text-ink-subtle">
+                  1 USD = {formatRate(costSheet.rateLocalPerUsd)} {costSheet.localCurrency} ·{' '}
+                  {costSheet.fxSource === 'ACTUAL'
+                    ? 'the rate actually paid for the dollars'
+                    : 'estimated when the order was placed'}
+                  . This is what the coffee cost, not what it will sell for.
+                </p>
+              </div>
+            ) : null}
 
             {/* §7: where the shipment's money went, line by line. The shared
                 local charges are divided equally between the item/container

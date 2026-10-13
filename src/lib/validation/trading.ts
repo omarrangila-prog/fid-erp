@@ -44,6 +44,18 @@ export const purchaseLineSchema = z.object({
   notes: optionalText(300),
 });
 
+/**
+ * The rate actually paid for the dollars that settle a purchase order.
+ *
+ * Blank clears it and puts costing back on the order's estimate, so the field
+ * is nullable rather than merely optional.
+ */
+export const purchaseActualFxSchema = z.object({
+  contractId: cuid,
+  actualRateLocalPerUsd: optionalDecimalString('Actual rate').nullish(),
+  note: optionalText(200),
+});
+
 export const purchaseContractSchema = z.object({
   // Optional. The system already issues a unique FID number; making the
   // user invent a second unique code before they can save is friction for

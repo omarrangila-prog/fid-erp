@@ -310,7 +310,10 @@ export function SaleForm({
       invoiceDate: header.invoiceDate,
       customerId: header.customerId ?? '',
       currency: header.currency,
-      rateToUsd: header.rateToUsd,
+      // On a sale in the company's own currency the invoice rate and the
+      // reporting rate are the same number, so one field drives both and they
+      // cannot be saved disagreeing.
+      rateToUsd: header.currency === localCurrency && localCurrency !== 'USD' ? header.rateLocalPerUsd : header.rateToUsd,
       rateLocalPerUsd: header.rateLocalPerUsd,
       dueDate: header.dueDate || undefined,
       paymentType: header.paymentType,
@@ -378,6 +381,16 @@ export function SaleForm({
   }
 
   const isForeign = header.currency !== 'USD';
+  /*
+   * A sale in the company's own currency is not a foreign-exchange decision.
+   *
+   * Morocco sells in dirhams and keeps its books in dirhams; the dollars only
+   * exist because the group reports in them. Asking for "MAD per 1 USD" twice
+   * — once as the invoice rate and once as the reporting rate, always the same
+   * number — made every local sale look like a currency transaction. The two
+   * are one field here, and the invoice is simply in dirhams.
+   */
+  const isHomeSale = header.currency === localCurrency && localCurrency !== 'USD';
 
   return (
     <div className="space-y-5">
@@ -508,13 +521,19 @@ export function SaleForm({
             <Select
               id="currency"
               value={header.currency}
-              onChange={(e) =>
+              onChange={(e) => {
+                const next = e.target.value;
+                const home = next === localCurrency && localCurrency !== 'USD';
                 setHeader({
                   ...header,
-                  currency: e.target.value,
-                  rateToUsd: ratesByCurrency?.[e.target.value] ?? (e.target.value === 'USD' ? '1' : ''),
-                })
-              }
+                  currency: next,
+                  // A home sale takes the reporting rate as its own, so the
+                  // single field the user sees governs both.
+                  rateToUsd: home
+                    ? header.rateLocalPerUsd
+                    : (ratesByCurrency?.[next] ?? (next === 'USD' ? '1' : '')),
+                });
+              }}
             >
               {transactionCurrencies(localCurrency).map((code) => (
                 <option key={code} value={code}>
@@ -734,17 +753,22 @@ export function SaleForm({
       <Card>
         <CardContent className="pt-5">
           <FormSection
-            title="Exchange rates"
+            title={isHomeSale ? 'Group reporting rate' : 'Exchange rates'}
             description={
-              isForeign
-                ? `${header.currency} ${header.rateToUsd || '—'} per USD · ${localCurrency} ${header.rateLocalPerUsd || '—'} per USD.`
-                : `${localCurrency} ${header.rateLocalPerUsd || '—'} per USD, used for this company's own reporting.`
+              isHomeSale
+                ? `This invoice is in ${localCurrency}. The rate is only used to state it in dollars for group reporting — it does not change what the customer owes.`
+                : isForeign
+                  ? `${header.currency} ${header.rateToUsd || '—'} per USD · ${localCurrency} ${header.rateLocalPerUsd || '—'} per USD.`
+                  : `${localCurrency} ${header.rateLocalPerUsd || '—'} per USD, used for this company's own reporting.`
             }
             collapsible
             className="sm:col-span-2 lg:col-span-3"
           >
             <div className="grid gap-4 sm:grid-cols-2">
-              {isForeign ? (
+              {/* A home sale needs one rate, not two: the invoice currency and
+                  the reporting currency are the same, so "MAD per 1 USD" was
+                  being asked for twice and had to agree with itself. */}
+              {isForeign && !isHomeSale ? (
                 <Field
                   label={`${header.currency} per 1 USD`}
                   htmlFor="rateToUsd"
@@ -760,11 +784,24 @@ export function SaleForm({
                 </Field>
               ) : null}
 
-              <Field label={`${localCurrency} per 1 USD`} htmlFor="rateLocalPerUsd">
+              <Field
+                label={`${localCurrency} per 1 USD`}
+                htmlFor="rateLocalPerUsd"
+                error={isHomeSale ? fieldIssues.rateToUsd : undefined}
+                hint={isHomeSale ? 'For group reporting only.' : undefined}
+              >
                 <Input
                   id="rateLocalPerUsd"
                   value={header.rateLocalPerUsd}
-                  onChange={(e) => setHeader({ ...header, rateLocalPerUsd: e.target.value })}
+                  onChange={(e) =>
+                    // One number on a home sale: the invoice rate follows the
+                    // reporting rate so the two can never disagree.
+                    setHeader(
+                      isHomeSale
+                        ? { ...header, rateLocalPerUsd: e.target.value, rateToUsd: e.target.value }
+                        : { ...header, rateLocalPerUsd: e.target.value },
+                    )
+                  }
                   className="tnum text-right"
                 />
               </Field>
@@ -799,7 +836,9 @@ export function SaleForm({
                   {formatMoney(totals.amount, header.currency)}
                 </dd>
               </div>
-              {isForeign ? (
+              {/* What the customer owes is the dirham figure above. The
+                  dollars are a reporting translation, not part of the sale. */}
+              {isForeign && !isHomeSale ? (
                 <div>
                   <dt className="text-xs text-ink-muted">USD equivalent</dt>
                   <dd className="tnum text-base font-semibold">{formatMoney(totals.amountUsd, 'USD')}</dd>
