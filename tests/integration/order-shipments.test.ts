@@ -981,11 +981,15 @@ describe('approving an order divides its rows by container', () => {
 describe('shared expenses on a divided order', () => {
   /**
    * The client's order: two containers of Screen 18 and one of Screen 12.
-   * Clearing and transport are booked once against the order and split
-   * equally between the two coffees — half each, as the client's own sheet
-   * does — and Screen 18's half is then shared by its two containers.
+   * Clearing and transport are booked once against the order and divided
+   * equally between the three containers, because the work is done per box.
+   *
+   * It used to be half to each coffee, so the single container of Screen 12
+   * bore the same charge as the two boxes of Screen 18 together — double
+   * what each Screen 18 box paid for the same unloading. The client rejected
+   * that: a coffee's charge is the sum of its own containers'.
    */
-  it("splits the job's local charges half to each coffee, then by weight", async () => {
+  it("divides the job's local charges equally between the containers", async () => {
     const itemB = await prisma.coffeeItem.create({
       data: { companyId, itemCode: 'SPLIT-12', itemName: 'Split Screen 12', coffeeType: 'ROBUSTA', originCountry: 'Uganda', defaultUnit: 'KG', bagWeightKg: '60' },
     });
@@ -1020,13 +1024,16 @@ describe('shared expenses on a divided order', () => {
 
     const batches = await prisma.batch.findMany({ where: { purchaseContractId: contract.id }, select: { capitalisedCostUsd: true, orderedQuantityKg: true, item: { select: { itemName: true } } } });
     const total = batches.reduce((a, b) => a + Number(b.capitalisedCostUsd), 0);
-    // 300,000 MAD at 9.60 = 31,250 USD: half to Screen 12, half to Screen 18 shared by its two boxes.
+    // 300,000 MAD at 9.60 = 31,250 USD across three boxes: 10,416.67 each.
     expect(total).toBeCloseTo(31250, 1);
     const screen12 = batches.filter((b) => b.item.itemName === 'Split Screen 12').reduce((a, b) => a + Number(b.capitalisedCostUsd), 0);
     const screen18 = batches.filter((b) => b.item.itemName !== 'Split Screen 12').map((b) => Number(b.capitalisedCostUsd));
-    expect(screen12).toBeCloseTo(15625, 0);
+    // One box of Screen 12 carries one share, not half the charge.
+    expect(screen12).toBeCloseTo(31250 / 3, 0);
     expect(screen18).toHaveLength(2);
-    for (const share of screen18) expect(share).toBeCloseTo(7812.5, 0);
+    for (const share of screen18) expect(share).toBeCloseTo(31250 / 3, 0);
+    // And Screen 18, in two boxes, carries twice what Screen 12 does.
+    expect(screen18[0] + screen18[1]).toBeCloseTo(screen12 * 2, 0);
   }, 300_000);
 });
 

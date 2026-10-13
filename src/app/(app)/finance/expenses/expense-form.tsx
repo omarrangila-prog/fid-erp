@@ -59,7 +59,7 @@ export type ExpenseFormInitial = {
   reference: string;
   description: string;
   capitaliseToLandedCost: boolean;
-  allocationMethod?: 'PER_ITEM' | 'BY_WEIGHT' | 'BY_VALUE';
+  allocationMethod?: 'PER_ITEM' | 'PER_CONTAINER' | 'BY_WEIGHT' | 'BY_VALUE';
 };
 
 /**
@@ -176,8 +176,8 @@ export function ExpenseForm({
     initial ? initial.capitaliseToLandedCost : null,
   );
   const capitalise = kind === 'SHIPMENT' && (capitaliseOverride ?? category?.capitaliseByDefault ?? false);
-  const [allocationMethod, setAllocationMethod] = React.useState<'PER_ITEM' | 'BY_WEIGHT' | 'BY_VALUE'>(
-    initial?.allocationMethod ?? 'PER_ITEM',
+  const [allocationMethod, setAllocationMethod] = React.useState<'PER_ITEM' | 'PER_CONTAINER' | 'BY_WEIGHT' | 'BY_VALUE'>(
+    initial?.allocationMethod ?? 'PER_CONTAINER',
   );
 
   function isCommissionCategory(option: CategoryOption | undefined) {
@@ -316,7 +316,7 @@ export function ExpenseForm({
       capitaliseToLandedCost: capitalise,
       // Only meaningful for a cost spread over the whole order; a named
       // container or batch takes it all, however it is shared.
-      allocationMethod: capitalise && !form.batchId ? allocationMethod : 'PER_ITEM',
+      allocationMethod: capitalise && !form.batchId ? allocationMethod : 'PER_CONTAINER',
       kind,
       taxCodeId: form.taxCodeId ?? '',
       reference: form.reference,
@@ -861,13 +861,14 @@ export function ExpenseForm({
             {capitalise && !form.batchId ? (
               <Field
                 label="How to share this cost"
-                hint="Between the coffees it is spread over. Equal per coffee is the usual rule."
+                hint="Between the coffees it is spread over. Work done once per box — unloading, inspection, port handling — belongs to the container."
               >
                 <Select
                   aria-label="How to share this cost"
                   value={allocationMethod}
                   onChange={(e) => setAllocationMethod(e.target.value as typeof allocationMethod)}
                 >
+                  <option value="PER_CONTAINER">Equal share per container</option>
                   <option value="PER_ITEM">Equal share per coffee, then by weight</option>
                   <option value="BY_WEIGHT">By weight — kilograms in each container</option>
                   <option value="BY_VALUE">By value — what each container&rsquo;s coffee cost</option>

@@ -1,0 +1,11 @@
+-- Equal share per container becomes the default way a shared shipment cost
+-- is divided.
+--
+-- Work on a consignment is done per box: unloading, inspection, port
+-- handling, transport. Sharing per coffee charged a coffee that arrived in
+-- one container the same as one that arrived in three.
+--
+-- This changes the default for costs booked from now on. Every expense
+-- already recorded keeps the method stored on its own row, so no posted
+-- costing is rewritten and no journal moves.
+ALTER TABLE "expenses" ALTER COLUMN "allocationMethod" SET DEFAULT 'PER_CONTAINER';

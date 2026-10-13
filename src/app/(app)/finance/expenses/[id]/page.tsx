@@ -109,7 +109,9 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
                   ? 'Shared by weight'
                   : expense.allocationMethod === 'BY_VALUE'
                     ? 'Shared by value'
-                    : 'Shared equally per coffee'}
+                    : expense.allocationMethod === 'PER_CONTAINER'
+                      ? 'Shared equally per container'
+                      : 'Shared equally per coffee'}
               </Badge>
             ) : null}
             {expense.shipment ? (

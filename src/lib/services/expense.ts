@@ -354,7 +354,7 @@ export async function createExpenseIn(tx: Tx, input: ExpenseInput, userId: strin
         paymentMethod:
           input.ledgerAccountId || input.ledgerAgentId ? 'LEDGER_TRANSFER' : (input.paymentMethod ?? 'BANK_TRANSFER'),
         capitaliseToLandedCost: capitalise,
-        allocationMethod: input.allocationMethod ?? 'PER_ITEM',
+        allocationMethod: input.allocationMethod ?? 'PER_CONTAINER',
         kind,
         taxCodeId: tax.taxCodeId,
         taxRatePct: tax.taxRatePct,
@@ -462,7 +462,9 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
         source.ledgerAccountId ?? '',
         source.ledgerAgentId ?? '',
         String(source.capitaliseToLandedCost),
-        // A different sharing puts the cost on different coffee.
+        // A different sharing puts the cost on different coffee. This reads
+        // what is stored, so it keeps saying PER_ITEM for the costs booked
+        // before the share moved to the container.
         source.allocationMethod ?? 'PER_ITEM',
         source.paymentMethod ?? '',
       ].join('|');
@@ -489,7 +491,7 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
           ledgerAccountId: input.ledgerAccountId ?? null,
           ledgerAgentId: input.ledgerAgentId ?? null,
           capitaliseToLandedCost: Boolean(input.capitaliseToLandedCost),
-          allocationMethod: input.allocationMethod ?? 'PER_ITEM',
+          allocationMethod: input.allocationMethod ?? 'PER_CONTAINER',
           paymentMethod: input.paymentMethod ?? null,
         });
 
@@ -563,7 +565,7 @@ export async function updateExpense(id: string, input: ExpenseInput, userId: str
         paymentMethod:
           input.ledgerAccountId || input.ledgerAgentId ? 'LEDGER_TRANSFER' : (input.paymentMethod ?? 'BANK_TRANSFER'),
         capitaliseToLandedCost: capitalise,
-        allocationMethod: input.allocationMethod ?? 'PER_ITEM',
+        allocationMethod: input.allocationMethod ?? 'PER_CONTAINER',
         kind,
         taxCodeId: tax.taxCodeId,
         taxRatePct: tax.taxRatePct,

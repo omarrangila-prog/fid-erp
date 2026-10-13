@@ -52,7 +52,17 @@ export function CostingTable({
   );
   const totalLandedUsd = sum(rows.map((r) => dec(r.landedUsd)));
   const totalLandedLocal = sum(rows.map((r) => dec(r.landedLocal)));
-  const share = rows.length > 0 ? 100 / rows.length : 0;
+  /*
+   * Each line's real share of the job's charges.
+   *
+   * This used to be 100 / rows.length — one equal share printed on every row
+   * whatever had actually been allocated. Three containers carrying 50%, 25%
+   * and 25% all read "33% of the job", so the figure beside the money
+   * contradicted the money. It is the line's own allocation over the job's
+   * total, or nothing when the job carries no charges to share.
+   */
+  const shareOf = (row: BatchCosting) =>
+    totalExpenseUsd.isZero() ? null : dec(row.allocatedExpenseUsd).dividedBy(totalExpenseUsd).times(100);
 
   return (
     <TableWrap>
@@ -95,8 +105,10 @@ export function CostingTable({
               <TD numeric>{formatMoney(row.purchaseUsd, 'USD')}</TD>
               <TD numeric>
                 {both(row.allocatedExpenseLocal, row.allocatedExpenseUsd)}
-                {rows.length > 1 ? (
-                  <span className="block text-[11px] text-ink-subtle">{share.toFixed(0)}% of the job</span>
+                {rows.length > 1 && shareOf(row) ? (
+                  <span className="block text-[11px] text-ink-subtle">
+                    {shareOf(row)!.toFixed(shareOf(row)!.lessThan(10) ? 1 : 0)}% of the job
+                  </span>
                 ) : null}
               </TD>
               <TD numeric>{both(row.landedLocal, row.landedUsd)}</TD>

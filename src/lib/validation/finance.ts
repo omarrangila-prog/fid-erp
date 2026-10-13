@@ -193,7 +193,7 @@ export const expenseSchema = z.object({
   ledgerAgentId: optionalCuid,
   capitaliseToLandedCost: z.coerce.boolean().optional(),
   /** How a cost for the whole order is shared between its coffees. */
-  allocationMethod: z.enum(['PER_ITEM', 'BY_WEIGHT', 'BY_VALUE']).optional(),
+  allocationMethod: z.enum(['PER_ITEM', 'PER_CONTAINER', 'BY_WEIGHT', 'BY_VALUE']).optional(),
   kind: z.enum(['SHIPMENT', 'GENERAL']),
   taxCodeId: optionalCuid,
   reference: optionalText(60),

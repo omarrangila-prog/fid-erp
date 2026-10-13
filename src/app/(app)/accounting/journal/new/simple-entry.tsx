@@ -9,7 +9,7 @@ import { Input, MoneyInput, Select } from '@/components/ui/input';
 import { Combobox, type ComboOption } from '@/components/ui/combobox';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { FormError } from '@/components/shared/form-error';
-import { tryDec } from '@/lib/money';
+import { dec, toMoney, tryDec } from '@/lib/money';
 import { formatMoney } from '@/lib/format';
 import { transactionCurrencies } from '@/lib/company-currencies';
 import { postJournalVoucherAction } from '@/server/actions/finance-actions';
@@ -82,6 +82,12 @@ export function SimpleEntryForm({
   const [amount, setAmount] = React.useState('');
   const [currency, setCurrency] = React.useState(localCurrency);
   const [rate, setRate] = React.useState(localCurrency === 'USD' ? defaultLocalRate : (ratesByCurrency[localCurrency] ?? defaultLocalRate));
+  /*
+   * Which side the typed amount is in. For a cross-currency entry it matters:
+   * MAD 2,100 paid against a USD loan is entered as the MAD that left, and
+   * the dollars the loan loses follow from the rate.
+   */
+  const [sourceSide, setSourceSide] = React.useState<'DEBIT' | 'CREDIT'>('DEBIT');
   const [reference, setReference] = React.useState('');
   const [memo, setMemo] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
@@ -89,15 +95,53 @@ export function SimpleEntryForm({
   const clientKey = React.useRef<string>(crypto.randomUUID());
 
   const type = TYPES.find((t) => t.id === typeId)!;
+  /*
+   * Which accounts fit a side — by what kind of account it is, and nothing
+   * else.
+   *
+   * It used to also require the account to carry the entry's single currency.
+   * That made a cross-currency entry impossible to express: settling the USD
+   * Dubai loan from a MAD account showed Sameer & Ali under MAD and the loan
+   * under USD, never both, so one side stayed empty, the preview had nothing
+   * to show and Post refused. Each side now carries its own currency.
+   */
   const fits = (side: Side) => (o: EntryOption) =>
-    (side.groups === 'ANY' || (side.groups === 'NON_CASH' ? !o.cash : side.groups.includes(o.group))) &&
-    (!o.currencies || o.currencies.includes(currency));
+    side.groups === 'ANY' || (side.groups === 'NON_CASH' ? !o.cash : side.groups.includes(o.group));
   const debitOptions = options.filter(fits(type.debit));
   const creditOptions = options.filter(fits(type.credit));
   const debitChoice = options.find((o) => o.value === debit) ?? null;
   const creditChoice = options.find((o) => o.value === credit) ?? null;
   const value = tryDec(amount);
   const moneyMoves = Boolean(debitChoice?.cash || creditChoice?.cash);
+
+  /*
+   * An account pinned to one currency is posted in that currency; anything
+   * else takes the currency chosen above. So each side has its own, and the
+   * two may differ — a MAD payment reducing a USD loan.
+   */
+  const currencyOf = (o: EntryOption | null) => (o?.currencies?.length === 1 ? o.currencies[0] : currency);
+  const debitCurrency = currencyOf(debitChoice);
+  const creditCurrency = currencyOf(creditChoice);
+  const crossCurrency = debitCurrency !== creditCurrency;
+
+  /*
+   * The amount is entered on one side; the other follows from the rates.
+   * Everything meets in USD, which is what the ledger balances on, so each
+   * side's own rate converts its amount to dollars and back.
+   */
+  const rateFor = (code: string) => (code === 'USD' ? dec(1) : tryDec(ratesByCurrency[code] ?? rate));
+  const entered = currencyOf(
+    sourceSide === 'DEBIT' ? debitChoice : creditChoice,
+  );
+  const enteredRate = entered === currency ? tryDec(rate) : rateFor(entered);
+  const usdValue = enteredRate.greaterThan(0) ? value.dividedBy(enteredRate) : dec(0);
+  const amountIn = (code: string) => {
+    if (code === entered) return value;
+    const target = code === currency ? tryDec(rate) : rateFor(code);
+    return toMoney(usdValue.times(target));
+  };
+  const debitAmount = amountIn(debitCurrency);
+  const creditAmount = amountIn(creditCurrency);
 
   function onCreated(account: CreatedJournalAccount) {
     const option: EntryOption = {
@@ -119,9 +163,8 @@ export function SimpleEntryForm({
   function chooseCurrency(next: string) {
     setCurrency(next);
     setRate(next === 'USD' ? defaultLocalRate : (ratesByCurrency[next] ?? defaultLocalRate));
-    // A drawer holds one currency: a choice that no longer fits is let go.
-    if (debitChoice?.currencies && !debitChoice.currencies.includes(next)) setDebit(null);
-    if (creditChoice?.currencies && !creditChoice.currencies.includes(next)) setCredit(null);
+    // Neither side is dropped: an account pinned to another currency keeps
+    // its own and the entry simply crosses currencies.
   }
 
   function submit() {
@@ -130,23 +173,33 @@ export function SimpleEntryForm({
     if (debitChoice.value === creditChoice.value) return setError('The two sides must be different accounts.');
     if (value.lessThanOrEqualTo(0)) return setError('Enter an amount greater than zero.');
     if (!date) return setError('Enter the date of the entry.');
-    const usd = currency === 'USD';
-    const line = (o: EntryOption, direction: 'DEBIT' | 'CREDIT') => ({
-      accountId: o.accountId,
-      direction,
-      currency,
-      amount,
-      rateToUsd: usd ? '1' : rate,
-      customerId: o.customerId,
-      vendorId: o.vendorId,
-      agentId: o.agentId,
-    });
+    if (!memo.trim()) return setError('Enter a memo saying what this entry is for.');
+    if (!enteredRate.greaterThan(0)) return setError(`Enter the rate for ${entered}.`);
+    if (crossCurrency && !usdValue.greaterThan(0)) {
+      return setError('Enter the rates for both currencies so the entry can be stated in dollars.');
+    }
+    // Each side posts in its own currency, at its own rate, for the amount
+    // that side is worth. They meet in USD, which is what the books balance.
+    const line = (o: EntryOption, direction: 'DEBIT' | 'CREDIT') => {
+      const code = currencyOf(o);
+      const sideRate = code === 'USD' ? '1' : code === currency ? rate : (ratesByCurrency[code] ?? rate);
+      return {
+        accountId: o.accountId,
+        direction,
+        currency: code,
+        amount: (direction === 'DEBIT' ? debitAmount : creditAmount).toFixed(2),
+        rateToUsd: sideRate,
+        customerId: o.customerId,
+        vendorId: o.vendorId,
+        agentId: o.agentId,
+      };
+    };
     const body = JSON.stringify({
       clientKey: clientKey.current,
       entryDate: date,
-      description: memo.trim() || `${type.label}: ${debitChoice.label} / ${creditChoice.label}`,
+      description: memo.trim(),
       reference: reference.trim() || undefined,
-      rateLocalPerUsd: usd ? rate : currency === localCurrency ? rate : defaultLocalRate,
+      rateLocalPerUsd: currency === localCurrency && currency !== 'USD' ? rate : defaultLocalRate,
       lines: [line(debitChoice, 'DEBIT'), line(creditChoice, 'CREDIT')],
     });
     startTransition(async () => {
@@ -221,9 +274,28 @@ export function SimpleEntryForm({
               onCreate={(query) => setAdding({ side: 'credit', name: query ?? '' })}
             />
           </Field>
-          <Field label="Amount" htmlFor="ge-amount" required>
-            <MoneyInput id="ge-amount" currency={currency} value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <Field
+            label={crossCurrency ? `Amount (${entered})` : 'Amount'}
+            htmlFor="ge-amount"
+            required
+            hint={crossCurrency ? 'The amount that actually moved. The other side follows from the rate.' : undefined}
+          >
+            <MoneyInput id="ge-amount" currency={entered} value={amount} onChange={(e) => setAmount(e.target.value)} />
           </Field>
+          {/* Which side the amount is in, only when the sides differ and the
+              choice is therefore a real one. */}
+          {crossCurrency ? (
+            <Field label="Amount is in" htmlFor="ge-source" required hint="The side the money is stated in.">
+              <Select
+                id="ge-source"
+                value={sourceSide}
+                onChange={(e) => setSourceSide(e.target.value as 'DEBIT' | 'CREDIT')}
+              >
+                <option value="DEBIT">{`${type.debit.label} (${debitCurrency})`}</option>
+                <option value="CREDIT">{`${type.credit.label} (${creditCurrency})`}</option>
+              </Select>
+            </Field>
+          ) : null}
           {currency !== 'USD' ? (
             <Field label={`Rate (${currency} per 1 USD)`} htmlFor="ge-rate" required hint="The rate on the day of the entry.">
               <Input id="ge-rate" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} />
@@ -232,8 +304,17 @@ export function SimpleEntryForm({
           <Field label="Reference" htmlFor="ge-reference">
             <Input id="ge-reference" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Optional" />
           </Field>
-          <Field label="Memo" htmlFor="ge-memo" className="sm:col-span-2">
-            <Input id="ge-memo" value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="What this entry is for" />
+          {/* The books require a memo on a direct entry — a journal line
+              nobody can explain later is worse than no entry at all. It said
+              "optional" and quietly substituted a default, so the rule only
+              showed up as a refusal after Post. */}
+          <Field label="Memo" htmlFor="ge-memo" required className="sm:col-span-2" hint="Why this entry exists. It follows the entry onto every ledger.">
+            <Input
+              id="ge-memo"
+              value={memo}
+              onChange={(e) => setMemo(e.target.value)}
+              placeholder="e.g. MAD paid to Sameer against the Dubai loan"
+            />
           </Field>
         </CardContent>
       </Card>
@@ -247,13 +328,32 @@ export function SimpleEntryForm({
           <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[auto_1fr_auto]">
             <dt className="font-medium text-ink-muted">Debit</dt>
             <dd>{debitChoice?.label ?? '—'}</dd>
-            <dd className="tnum text-right font-medium">{value.greaterThan(0) ? formatMoney(value, currency) : '—'}</dd>
+            <dd className="tnum text-right font-medium" data-testid="preview-debit">
+              {debitAmount.greaterThan(0) ? formatMoney(debitAmount, debitCurrency) : '—'}
+            </dd>
             <dt className="font-medium text-ink-muted">Credit</dt>
             <dd>{creditChoice?.label ?? '—'}</dd>
-            <dd className="tnum text-right font-medium">{value.greaterThan(0) ? formatMoney(value, currency) : '—'}</dd>
+            <dd className="tnum text-right font-medium" data-testid="preview-credit">
+              {creditAmount.greaterThan(0) ? formatMoney(creditAmount, creditCurrency) : '—'}
+            </dd>
+            {/* Across currencies the two sides are different numbers; what
+                has to match is the dollars, which is what the books balance
+                on. Shown so the entry can be checked before it is posted. */}
+            {crossCurrency ? (
+              <>
+                <dt className="text-ink-muted">In dollars</dt>
+                <dd className="text-ink-muted sm:col-span-2" data-testid="preview-usd">
+                  {usdValue.greaterThan(0)
+                    ? `Both sides ${formatMoney(usdValue, 'USD')} — ${formatMoney(debitAmount, debitCurrency)} against ${formatMoney(creditAmount, creditCurrency)}`
+                    : `Enter the rate for ${entered} to state this entry in dollars.`}
+                </dd>
+              </>
+            ) : null}
             <dt className="text-ink-muted">Difference</dt>
             <dd />
-            <dd className="tnum text-right">{formatMoney(0, currency)}</dd>
+            <dd className="tnum text-right" data-testid="preview-difference">
+              {formatMoney(0, crossCurrency ? 'USD' : currency)}
+            </dd>
             <dt className="text-ink-muted">Cash / bank</dt>
             <dd className="text-ink-muted sm:col-span-2">
               {moneyMoves
@@ -261,6 +361,13 @@ export function SimpleEntryForm({
                 : 'None — no cash or bank moves'}
             </dd>
           </dl>
+          {!debitChoice || !creditChoice || !value.greaterThan(0) ? (
+            <p className="mt-3 text-xs text-ink-subtle" data-testid="preview-incomplete">
+              {!debitChoice || !creditChoice
+                ? `Choose ${type.debit.label.toLowerCase()} and ${type.credit.label.toLowerCase()}, and enter the amount, to see what will be posted.`
+                : 'Enter the amount to see what will be posted.'}
+            </p>
+          ) : null}
           <FormError message={error} />
           <div className="mt-4 flex justify-end">
             <Button onClick={submit} loading={pending} data-testid="post-entry">

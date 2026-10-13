@@ -1,0 +1,11 @@
+-- Equal share per container, for costs incurred once per box.
+--
+-- PER_ITEM splits equally between the coffees and then by weight inside each
+-- coffee, so a coffee in three containers carried the same share as one in a
+-- single container. For unloading, inspection or port handling the work is
+-- done per box, so the share belongs to the container.
+--
+-- Additive only: a new enum value. No existing expense changes method and no
+-- row is rewritten, so every shipment already costed keeps the costing it was
+-- booked with.
+ALTER TYPE "CostAllocationMethod" ADD VALUE IF NOT EXISTS 'PER_CONTAINER' AFTER 'PER_ITEM';

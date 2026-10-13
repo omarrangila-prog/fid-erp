@@ -201,6 +201,40 @@ export async function applyLandedCost(
     allocateProportionally(amountUsd, weights).forEach((share, index) => {
       split[index] = share;
     });
+  } else if (method === 'PER_CONTAINER') {
+    /*
+     * An equal share per container, whatever is in it.
+     *
+     * Unloading a box, inspecting it, paying for it to sit on the quay: the
+     * work is done once per container, so each container bears one share. A
+     * coffee's own total is then the sum of its containers' shares — three
+     * containers of one coffee carry three shares, not the same share as a
+     * coffee that arrived in one. A batch with no container of its own (an
+     * older consignment entered before containers were recorded) counts as
+     * one unit, so nothing is silently left uncosted.
+     */
+    const unitOf = (b: { id: string; containerId: string | null }) => b.containerId ?? `batch:${b.id}`;
+    const units: string[] = [];
+    for (const batch of locked) {
+      const unit = unitOf(batch);
+      if (!units.includes(unit)) units.push(unit);
+    }
+
+    const perUnit = allocateProportionally(amountUsd, units.map(() => dec(1)));
+
+    units.forEach((unit, unitIndex) => {
+      // More than one batch can share a container; they split its share by
+      // weight, falling back to an equal split when no weight is recorded.
+      const members = locked
+        .map((batch, index) => ({ batch, index }))
+        .filter(({ batch }) => unitOf(batch) === unit);
+      const weights = members.map(({ batch }) => dec(batch.orderedQuantityKg));
+      const basis = sum(weights).greaterThan(0) ? weights : members.map(() => dec(1));
+      const withinUnit = allocateProportionally(perUnit[unitIndex], basis);
+      members.forEach(({ index }, memberIndex) => {
+        split[index] = withinUnit[memberIndex];
+      });
+    });
   } else {
     const lineKeyOf = (b: { itemId: string }) => b.itemId;
     const lineKeys: string[] = [];

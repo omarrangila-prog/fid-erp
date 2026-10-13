@@ -1715,7 +1715,7 @@ model Expense {
   capitaliseToLandedCost Boolean              @default(false)
   /// How a cost for the whole order is shared between its coffees. The
   /// default is the client's own rule and what every earlier cost used.
-  allocationMethod       CostAllocationMethod @default(PER_ITEM)
+  allocationMethod       CostAllocationMethod @default(PER_CONTAINER)
   /// Recorded on the voucher, not inferred from the category later: a category
   /// reclassified next year must not silently rewrite what last year's
   /// expenses were.
@@ -2483,6 +2483,11 @@ enum OverheadAllocationStatus {
 enum CostAllocationMethod {
   /// Equal share per coffee on the order, then by weight within each coffee.
   PER_ITEM
+  /// Equal share per container, whatever coffee is in it. A coffee's total is
+  /// then the sum of its own containers' shares: three containers of one
+  /// coffee carry three shares, one container carries one. Work done once per
+  /// box — unloading, inspection, port handling — is charged this way.
+  PER_CONTAINER
   /// In proportion to kilograms, across every container.
   BY_WEIGHT
   /// In proportion to what each container's coffee cost.
