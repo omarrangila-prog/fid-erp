@@ -59,6 +59,12 @@ export type PaymentInput = {
   reference?: string | null;
   description?: string | null;
   allocations?: PaymentAllocationInput[];
+  /**
+   * The user's explicit choice to leave money not put against a cost on the
+   * supplier's account as an advance. Without it a payment must be allocated
+   * in full: the difference is never turned into an advance on its own.
+   */
+  keepRemainderAsAdvance?: boolean;
 };
 
 /** Outstanding on one purchase contract, in the contract currency and in USD. */
@@ -199,6 +205,7 @@ async function buildAllocations(
     paymentCurrency: string;
     paymentRateToUsd: Decimal;
     allocations: PaymentAllocationInput[];
+    keepRemainderAsAdvance?: boolean;
   },
 ) {
   const rows: Array<{
@@ -326,6 +333,25 @@ async function buildAllocations(
   if (settledInVoucher.greaterThan(params.paymentAmount.plus('0.005'))) {
     throw new BusinessRuleError(
       `Allocations total ${params.paymentCurrency} ${settledInVoucher.toFixed(2)} but the payment is only ${params.paymentCurrency} ${params.paymentAmount.toFixed(2)}.`,
+    );
+  }
+
+  /*
+   * And the other way: money said to be paid but not put against anything.
+   *
+   * The same trap as Invoice 15 on the customer side. Record Payment opens
+   * with the amount and the allocation both at the bill's full value; lower
+   * the allocation to what was actually paid, leave the amount alone, and the
+   * difference used to become a supplier advance nobody paid — cash out of a
+   * drawer it never left, and a supplier owing goods for money they never
+   * received. An outstanding balance is not a payment.
+   */
+  const remainder = toMoney(params.paymentAmount.minus(settledInVoucher));
+  if (remainder.greaterThan('0.005') && !params.keepRemainderAsAdvance) {
+    throw new BusinessRuleError(
+      rows.length === 0
+        ? `This payment of ${params.paymentCurrency} ${params.paymentAmount.toFixed(2)} is not put against any cost. Apply it to what it settles, or choose to leave it on the supplier's account as an advance.`
+        : `${params.paymentCurrency} ${params.paymentAmount.toFixed(2)} paid but only ${params.paymentCurrency} ${settledInVoucher.toFixed(2)} put against costs. Enter the amount actually paid, or choose to leave the other ${params.paymentCurrency} ${remainder.toFixed(2)} on the supplier's account as an advance.`,
     );
   }
 
@@ -576,6 +602,7 @@ export async function createPayment(input: PaymentInput, userId: string) {
       paymentCurrency: amounts.currency,
       paymentRateToUsd: amounts.rateToUsd,
       allocations: input.allocations ?? [],
+      keepRemainderAsAdvance: input.keepRemainderAsAdvance,
     });
 
     const paymentNumber = await nextReference(tx, {
@@ -683,6 +710,7 @@ export async function updatePayment(id: string, input: PaymentInput, userId: str
       paymentCurrency: amounts.currency,
       paymentRateToUsd: amounts.rateToUsd,
       allocations: input.allocations ?? [],
+      keepRemainderAsAdvance: input.keepRemainderAsAdvance,
     });
 
     await tx.paymentAllocation.deleteMany({ where: { paymentId: id } });

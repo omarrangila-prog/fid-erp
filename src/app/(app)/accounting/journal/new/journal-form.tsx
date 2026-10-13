@@ -13,7 +13,7 @@ import { Field } from '@/components/ui/field';
 import { Combobox, type ComboOption } from '@/components/ui/combobox';
 import { Callout } from '@/components/ui/feedback';
 import { cn } from '@/lib/utils';
-import { tryDec, Decimal } from '@/lib/money';
+import { tryDec, Decimal, USD_TRANSLATION_TOLERANCE } from '@/lib/money';
 import { postJournalVoucherAction, replaceJournalVoucherAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { AddJournalAccountDialog, type CreatedJournalAccount } from '@/app/(app)/accounting/journal/new/add-account';
@@ -186,7 +186,16 @@ export function JournalForm({
     for (const line of lines) {
       const value = tryDec(line.amount);
       const rate = tryDec(line.rateToUsd);
-      const usd = line.currency === 'USD' || rate.lessThanOrEqualTo(0) ? value : value.dividedBy(rate);
+      /*
+       * A foreign line with no usable rate counts as nothing, not as dollars.
+       *
+       * It used to fall back to the amount itself, so a mistyped rate — "9..22"
+       * reads as zero — turned MAD 31,360 into USD 31,360 and the totals
+       * silently agreed with a figure nine times too big. Counting it as
+       * nothing leaves the entry visibly unbalanced, which is the truth.
+       */
+      if (line.currency !== 'USD' && !rate.greaterThan(0)) continue;
+      const usd = line.currency === 'USD' ? value : value.dividedBy(rate);
       if (line.direction === 'DEBIT') debit = debit.plus(usd);
       else credit = credit.plus(usd);
     }
@@ -203,7 +212,18 @@ export function JournalForm({
     return usd.toFixed(2);
   }
 
-  const balanced = totals.difference.isZero() && totals.debit.greaterThan(0);
+  /*
+   * Balanced to the same ceiling the posting engine uses.
+   *
+   * It used to demand an exact zero. Converting a foreign amount to dollars
+   * rarely lands on a round cent — MAD 31,360 at 9.22 is USD 3,401.3015… —
+   * so a USD leg typed as 3,401.30 leaves fifteen ten-thousandths behind.
+   * The form showed "Difference 0.00" and refused to post, with nothing the
+   * user could type to fix it, while the ledger would have accepted the
+   * entry and absorbed the residue.
+   */
+  const settled = totals.difference.abs().lessThanOrEqualTo(USD_TRANSLATION_TOLERANCE);
+  const balanced = settled && totals.debit.greaterThan(0);
 
   /**
    * Why it does not balance, in words.
@@ -289,7 +309,7 @@ export function JournalForm({
    */
   function balancingAmount(line: Line) {
     const difference = totals.difference;
-    if (difference.isZero()) return null;
+    if (difference.abs().lessThanOrEqualTo(USD_TRANSLATION_TOLERANCE)) return null;
     const inUsd = line.direction === 'DEBIT' ? difference.negated() : difference;
     if (!inUsd.greaterThan(0)) return null;
     const rate = tryDec(line.rateToUsd);
@@ -325,7 +345,9 @@ export function JournalForm({
     }
     if (!balanced) {
       setError(
-        `Debits and credits differ by ${totals.difference.abs().toFixed(2)}. A journal entry has to balance before it can be posted.`,
+        // Four decimals: a difference that rounds to 0.00 at two used to be
+        // reported as "differ by 0.00", which reads as a contradiction.
+        `Debits and credits differ by ${totals.difference.abs().toFixed(4)}. A journal entry has to balance before it can be posted.`,
       );
       return;
     }
@@ -445,7 +467,17 @@ export function JournalForm({
               disabled={currency === 'USD'}
               onChange={(e) => setRateToUsd(e.target.value)}
               className="tnum"
+              inputMode="decimal"
+              aria-invalid={currency !== 'USD' && rateToUsd.trim() !== '' && !tryDec(rateToUsd).greaterThan(0)}
             />
+            {/* A rate that cannot be read is worse than a blank one: it used
+                to seed every new line with zero, and a zero rate counted a
+                dirham as a dollar. */}
+            {currency !== 'USD' && rateToUsd.trim() !== '' && !tryDec(rateToUsd).greaterThan(0) ? (
+              <p className="mt-1 text-xs text-red-600" role="alert">
+                That is not a rate — enter how many {currency} make one dollar, e.g. 9.22.
+              </p>
+            ) : null}
           </Field>
           <Field label={`${localCurrency} per USD`} htmlFor="jv-local" hint="Used for the local-currency books." required>
             <Input id="jv-local" value={localRate} onChange={(e) => setLocalRate(e.target.value)} className="tnum" />
@@ -672,10 +704,12 @@ export function JournalForm({
               <dd
                 className={cn(
                   'tnum font-semibold',
-                  totals.difference.isZero() ? 'text-emerald-700' : 'text-red-600',
+                  settled ? 'text-emerald-700' : 'text-red-600',
                 )}
               >
-                {totals.difference.toFixed(2)}
+                {/* A residue under half a cent reads as 0.00, never "-0.00",
+                    which looked like a fault the user could not find. */}
+                {settled ? '0.00' : totals.difference.toFixed(2)}
               </dd>
             </div>
           </dl>

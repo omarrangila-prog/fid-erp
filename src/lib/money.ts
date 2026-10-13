@@ -44,6 +44,21 @@ export type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
 
 export const BASE_CURRENCY = 'USD';
 
+/**
+ * The largest difference in dollars that is arithmetic rather than error.
+ *
+ * Converting a foreign amount to dollars rarely lands on a round cent: MAD
+ * 31,360 at 9.22 to the dollar is USD 3,401.3015…, so a USD leg typed as
+ * 3,401.30 differs by fifteen ten-thousandths. Half a cent is the ceiling —
+ * below it the two sides are the same money and the posting engine folds the
+ * residue onto a translated line; above it, something is genuinely wrong.
+ *
+ * The form preview and the posting engine must use the same figure, or the
+ * form refuses entries the ledger would accept and the user is left with
+ * "differs by 0.00" and no way forward.
+ */
+export const USD_TRANSLATION_TOLERANCE = new Decimal('0.005');
+
 /** 1 metric ton expressed in the canonical inventory unit (kilograms). */
 export const KG_PER_MT = new Decimal(1000);
 

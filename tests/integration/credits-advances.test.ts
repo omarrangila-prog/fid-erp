@@ -116,6 +116,10 @@ describe('supplier advances', () => {
         companyId: ctx.dubai.id, paymentDate: utcDate('2026-02-07'), vendorId: masters.vendor.id,
         currency: 'USD', amount: '9000', rateToUsd: '1', rateLocalPerUsd: '3.6725',
         paymentMethod: 'BANK_TRANSFER', cashBankAccountId: bank.id,
+        // A deposit on purpose: the user says the money really left. Without
+        // this the payment is refused, so a lowered allocation can never
+        // quietly become an advance nobody paid.
+        keepRemainderAsAdvance: true,
       },
       ctx.admin.id,
     );

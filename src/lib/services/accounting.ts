@@ -1,5 +1,5 @@
 import type { Tx } from '@/lib/db';
-import { BASE_CURRENCY, Decimal, convertToUsd, convertFromUsd, dec, toMoney, sum } from '@/lib/money';
+import { BASE_CURRENCY, Decimal, USD_TRANSLATION_TOLERANCE, convertToUsd, convertFromUsd, dec, toMoney, sum } from '@/lib/money';
 import { ACCOUNT_KEYS, DOC_TYPES, type AccountKey } from '@/lib/constants';
 import { nextReference } from '@/lib/services/numbering';
 import { BusinessRuleError, NotFoundError } from '@/lib/errors';
@@ -92,19 +92,12 @@ export type PostJournalParams = {
  */
 const LOCAL_DRIFT_TOLERANCE = new Decimal('0.05');
 
-/**
- * Largest USD difference we treat as translation noise.
- *
- * One foreign-currency amount split across several lines is converted a line at
- * a time, and each conversion rounds on its own. A MAD 120,000 invoice at 9.85
- * becomes USD 12,182.7411 as one receivable, but 10,152.2843 of revenue plus
- * 2,030.4569 of tax — 12,182.7412. The books are not wrong by a hundredth of a
- * cent; the arithmetic simply cannot land on the same figure both ways.
- *
- * Half a cent is the ceiling, and only ever absorbed on a translated line. Any
- * difference a person could see is still a bug and is still refused.
+/*
+ * The largest USD difference treated as translation noise lives in
+ * `@/lib/money` (USD_TRANSLATION_TOLERANCE), so the journal form's preview
+ * applies the same ceiling as this engine does. A form stricter than the
+ * ledger refuses entries the ledger would accept.
  */
-const USD_TRANSLATION_TOLERANCE = new Decimal('0.005');
 
 /**
  * Which ledger account a line lands on, and — when that account is the head

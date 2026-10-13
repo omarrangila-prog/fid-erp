@@ -151,6 +151,13 @@ export function PaymentForm({
   }, [form.amount, form.rateToUsd, form.currency, isForeign]);
 
   const allocatedTotal = sum(Object.values(allocations).filter(Boolean).map((v) => tryDec(v)));
+  /*
+   * Money said to be paid but not put against a cost. It is an advance only
+   * if the user says it is: otherwise it is the balance still owed, and
+   * booking it would take cash out of a drawer it never left.
+   */
+  const unapplied = tryDec(form.amount).minus(allocatedTotal);
+  const [keepRemainderAsAdvance, setKeepRemainderAsAdvance] = React.useState(false);
 
   function submit(andPost: boolean) {
     setError(null);
@@ -193,6 +200,7 @@ export function PaymentForm({
             ? { expenseId: id, amount }
             : { purchaseContractId: id, amount };
         }),
+      keepRemainderAsAdvance: unapplied.greaterThan('0.005') ? keepRemainderAsAdvance : undefined,
     };
 
     start(async () => {
@@ -427,6 +435,28 @@ export function PaymentForm({
               <p className="text-right text-xs text-ink-muted">
                 Applied: <span className="tnum font-semibold text-ink">{allocatedTotal.toString()}</span>
               </p>
+            ) : null}
+
+            {unapplied.greaterThan('0.005') ? (
+              <div
+                className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm"
+                role="alert"
+                data-testid="payment-unapplied"
+              >
+                <p className="text-amber-900">
+                  <strong>{formatMoney(unapplied, form.currency)}</strong> of this payment is not put against any cost. If
+                  that money was not actually paid, lower <em>Amount</em> to what was.
+                </p>
+                <label className="flex items-center gap-2 text-amber-900">
+                  <input
+                    type="checkbox"
+                    className="size-4 accent-gold-600"
+                    checked={keepRemainderAsAdvance}
+                    onChange={(e) => setKeepRemainderAsAdvance(e.target.checked)}
+                  />
+                  It was paid — leave {formatMoney(unapplied, form.currency)} on the supplier&rsquo;s account as an advance
+                </label>
+              </div>
             ) : null}
           </CardContent>
         </Card>

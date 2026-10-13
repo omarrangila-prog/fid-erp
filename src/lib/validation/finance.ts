@@ -147,6 +147,8 @@ export const paymentSchema = z
           }),
       )
       .default([]),
+    /** Ticked by the user: leave what is not put against a cost as an advance. */
+    keepRemainderAsAdvance: z.boolean().optional(),
   })
   .refine((v) => v.paymentMethod === 'CHEQUE' || v.paymentMethod === 'LEDGER_TRANSFER' || Boolean(v.cashBankAccountId), {
     message: 'Choose the cash or bank account the money was paid from.',
