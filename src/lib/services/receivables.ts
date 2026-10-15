@@ -292,6 +292,14 @@ export type PayableRow = {
   contractId: string;
   contractNumber: string;
   contractReference: string;
+  /**
+   * The client's own business reference for the order the debt belongs to —
+   * ICUL/FID/… — read through the relationship: the order itself, or for a
+   * shipment cost the order its shipment is on. Null when there is none.
+   */
+  orderReference: string | null;
+  /** The supplier's own number for their invoice or contract, kept apart. */
+  supplierInvoiceNo: string | null;
   contractDate: Date;
   dueDate: Date | null;
   vendorId: string;
@@ -334,6 +342,8 @@ export async function getPayables(params: {
       taxAmountUsd: string;
       paidAmount: string;
       paidAmountUsd: string;
+      orderReference: string | null;
+      supplierInvoiceNo: string | null;
       kind: 'CONTRACT' | 'EXPENSE';
     }>
   >`
@@ -368,6 +378,8 @@ export async function getPayables(params: {
              + COALESCE((SELECT SUM(cn."totalAmountUsd") FROM credit_notes cn
                           WHERE cn."purchaseContractId" = pc."id" AND cn."status" = 'POSTED'), 0)
            )::text AS "paidAmountUsd",
+           pc."contractReference" AS "orderReference",
+           NULLIF(TRIM(pc."supplierContractNo"), '') AS "supplierInvoiceNo",
            'CONTRACT' AS kind
     FROM purchase_contracts pc
     JOIN vendors v ON v."id" = pc."vendorId"
@@ -403,6 +415,10 @@ export async function getPayables(params: {
                           SELECT 1 FROM cheques ch
                           WHERE ch."paymentId" = p."id" AND ch.status IN ('BOUNCED', 'CANCELLED')
                         )), 0)::text AS "paidAmountUsd",
+           (SELECT pc2."contractReference" FROM shipments s2
+              JOIN purchase_contracts pc2 ON pc2."id" = s2."purchaseContractId"
+             WHERE s2."id" = e."shipmentId") AS "orderReference",
+           NULLIF(TRIM(e."reference"), '') AS "supplierInvoiceNo",
            'EXPENSE' AS kind
     FROM expenses e
     JOIN vendors v ON v."id" = e."vendorId"
@@ -442,6 +458,8 @@ export async function getPayables(params: {
       contractId: row.contractId,
       contractNumber: row.contractNumber,
       contractReference: row.contractReference,
+      orderReference: row.orderReference,
+      supplierInvoiceNo: row.supplierInvoiceNo,
       contractDate: row.contractDate,
       dueDate: row.dueDate,
       vendorId: row.vendorId ?? '',
@@ -472,6 +490,8 @@ export async function getPayables(params: {
       contractId: row.entryId,
       contractNumber: row.entryNumber,
       contractReference: 'Opening balance',
+      orderReference: null,
+      supplierInvoiceNo: null,
       contractDate: row.entryDate,
       // Already due: it was outstanding before the books opened.
       dueDate: row.entryDate,

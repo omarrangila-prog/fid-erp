@@ -178,6 +178,7 @@ async function ShipmentTable({
           const netLocal = add(children, (r) => r.netProfitLocal);
           const landed = add(children, (r) => r.totalLandedCostUsd);
           const stock = add(children, (r) => r.closingStockValueUsd);
+          const stockLocal = add(children, (r) => r.closingStockValueLocal);
           const items = [...new Set(children.map((r) => r.itemName))];
           return (
             <details key={first.contractId} className="rounded-xl border border-line" data-testid="shipment-profitability-row">
@@ -203,18 +204,22 @@ async function ShipmentTable({
                   {formatMoney(cogsLocal, local)}
                   <span className="block text-xs text-ink-subtle">{formatMoney(cogs, 'USD')}</span>
                 </span>
-                <span className={cn('tnum text-right font-semibold', tone(net))}>
-                  <span className="block text-[11px] font-normal text-ink-subtle">Profit</span>
+                {/* Profit or loss and its margin in the company's currency, where a
+                    confirmed purchase rate moves the cost; the dollars beside it. */}
+                <span className={cn('tnum text-right font-semibold', tone(netLocal))}>
+                  <span className="block text-[11px] font-normal text-ink-subtle">{netLocal.isNegative() ? 'Loss' : 'Profit'}</span>
                   {formatMoney(netLocal, local)}
                   <span className="block text-xs font-normal text-ink-subtle">
-                    {formatMoney(net, 'USD')} · {revenue.greaterThan(0) ? formatPercent(net.dividedBy(revenue).times(100)) : '—'}
+                    {formatMoney(net, 'USD')} ·{' '}
+                    {revenueLocal.greaterThan(0) ? formatPercent(netLocal.dividedBy(revenueLocal).times(100)) : '—'}
                   </span>
                 </span>
               </summary>
               <div className="space-y-2 border-t border-line px-4 py-3">
                 <p className="text-xs text-ink-muted">
-                  Landed cost {formatMoney(landed, 'USD')} · gross profit {formatMoney(grossLocal, local)} ({formatMoney(gross, 'USD')}) ·
-                  costs not added to the coffee {formatMoney(other, 'USD')} · stock left carried at {formatMoney(stock, 'USD')}.{' '}
+                  Landed cost {formatMoney(landed, 'USD')} · gross {grossLocal.isNegative() ? 'loss' : 'profit'}{' '}
+                  {formatMoney(grossLocal, local)} ({formatMoney(gross, 'USD')}) · costs not added to the coffee{' '}
+                  {formatMoney(other, 'USD')} · stock left carried at {formatMoney(stockLocal, local)} ({formatMoney(stock, 'USD')}).{' '}
                   <Link href={`/reports/shipment-cost`} className="underline underline-offset-2">Full costing and FX</Link>
                 </p>
                 <TableWrap>
@@ -255,7 +260,7 @@ async function ShipmentTable({
                             {formatMoney(row.allocatedLandedCostLocal, local)}
                             <span className="block text-xs">{formatMoney(row.allocatedLandedCostUsd, 'USD')}</span>
                           </TD>
-                          <TD numeric className={cn('font-semibold', tone(row.netProfitUsd))}>
+                          <TD numeric className={cn('font-semibold', tone(row.netProfitLocal))}>
                             {formatMoney(row.netProfitLocal, local)}
                             <span className="block text-xs font-normal text-ink-subtle">{formatMoney(row.netProfitUsd, 'USD')}</span>
                           </TD>

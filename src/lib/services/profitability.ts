@@ -173,8 +173,15 @@ function shape(row: RawRow): ShipmentProfitability {
       : new Decimal(0),
     allocatedOverheadUsd: new Decimal(0),
     profitAfterOverheadUsd: netProfitUsd,
-    grossMarginPct: percentage(grossProfitUsd, salesRevenueUsd),
-    netMarginPct: percentage(netProfitUsd, salesRevenueUsd),
+    /*
+     * In the company's own currency. The coffee's dollar cost never moves when
+     * the rate paid for those dollars is confirmed — only its dirham cost does
+     * — so a margin in dollars stayed put while the shipment's dirham profit
+     * fell, and could show a healthy margin on a shipment that had become a
+     * loss. For a company keeping its books in dollars the two are one figure.
+     */
+    grossMarginPct: percentage(grossProfitLocal, salesRevenueLocal),
+    netMarginPct: percentage(netProfitLocal, salesRevenueLocal),
     goodsCostLocal,
     capitalisedCostLocal,
     totalLandedCostLocal,

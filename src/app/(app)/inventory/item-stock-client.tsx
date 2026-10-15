@@ -35,8 +35,18 @@ export type ItemStockRow = {
     transferOutLabel: string;
     soldLabel: string;
     availableLabel: string;
+    avgCost: PairText | null;
+    stockValue: PairText | null;
   }>;
-  warehouseTotal: { receivedLabel: string; transferInLabel: string; transferOutLabel: string; soldLabel: string; availableLabel: string };
+  warehouseTotal: {
+    receivedLabel: string;
+    transferInLabel: string;
+    transferOutLabel: string;
+    soldLabel: string;
+    availableLabel: string;
+    avgCost: PairText | null;
+    stockValue: PairText | null;
+  };
   /** Null when this person may not see purchase costs. */
   avgCost: PairText | null;
   cogs: PairText | null;
@@ -174,8 +184,21 @@ export function ItemStockClient({
             hideable: true,
             mobile: 'meta',
             sortValue: (r) => r.sort.avgCost,
+            // Not a money column in the export: its total row would add up
+            // per-kilo averages, which means nothing.
             exportValue: (r) => r.sort.avgCost,
             cell: (r) => money(r.avgCost),
+          },
+          {
+            id: 'stockValue',
+            header: 'Stock Value',
+            numeric: true,
+            hideable: true,
+            mobile: 'hidden',
+            sortValue: (r) => r.sort.stockValue,
+            exportValue: (r) => r.sort.stockValue,
+            exportType: 'money',
+            cell: (r) => money(r.stockValue),
           },
         ] satisfies DataColumn<ItemStockRow>[])
       : []),
@@ -283,21 +306,6 @@ export function ItemStockClient({
           },
         ] satisfies DataColumn<ItemStockRow>[])
       : []),
-    ...(showCost
-      ? ([
-          {
-            id: 'stockValue',
-            header: 'Stock Value',
-            numeric: true,
-            hideable: true,
-            mobile: 'hidden',
-            sortValue: (r) => r.sort.stockValue,
-            exportValue: (r) => r.sort.stockValue,
-            exportType: 'money',
-            cell: (r) => money(r.stockValue),
-          },
-        ] satisfies DataColumn<ItemStockRow>[])
-      : []),
     {
       id: 'actions',
       header: 'Actions',
@@ -352,7 +360,10 @@ export function ItemStockClient({
         ]}
         expandedContent={(r) => (
           <div className="overflow-x-auto">
-            <p className="mb-2 text-xs text-ink-muted">Where {r.itemName} is — the warehouses add up to the company total.</p>
+            <p className="mb-2 text-xs text-ink-muted">
+              Where {r.itemName} is — the warehouses add up to the company total. Avg Cost/KG is the stock value ÷ the KG
+              still on hand, each batch at its own landed cost.
+            </p>
             <table className="data-grid grid-framed w-full min-w-[40rem] text-sm" data-testid="item-warehouse-split">
               <thead>
                 <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
@@ -361,7 +372,13 @@ export function ItemStockClient({
                   <th className="py-1.5 pr-3 text-right font-medium">Transferred in</th>
                   <th className="py-1.5 pr-3 text-right font-medium">Transferred out</th>
                   <th className="py-1.5 pr-3 text-right font-medium">Sold</th>
-                  <th className="py-1.5 text-right font-medium">Available</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">Available</th>
+                  {showCost ? (
+                    <>
+                      <th className="py-1.5 pr-3 text-right font-medium">Avg Cost/KG</th>
+                      <th className="py-1.5 text-right font-medium">Stock Value</th>
+                    </>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
@@ -372,7 +389,13 @@ export function ItemStockClient({
                     <td className="py-1.5 pr-3 text-right tabular-nums">{w.transferInLabel}</td>
                     <td className="py-1.5 pr-3 text-right tabular-nums">{w.transferOutLabel}</td>
                     <td className="py-1.5 pr-3 text-right tabular-nums">{w.soldLabel}</td>
-                    <td className="py-1.5 text-right font-medium tabular-nums">{w.availableLabel}</td>
+                    <td className="py-1.5 pr-3 text-right font-medium tabular-nums">{w.availableLabel}</td>
+                    {showCost ? (
+                      <>
+                        <td className="py-1.5 pr-3 text-right tabular-nums">{money(w.avgCost)}</td>
+                        <td className="py-1.5 text-right tabular-nums">{money(w.stockValue)}</td>
+                      </>
+                    ) : null}
                   </tr>
                 ))}
                 <tr className="font-semibold">
@@ -381,7 +404,13 @@ export function ItemStockClient({
                   <td className="py-1.5 pr-3 text-right tabular-nums">{r.warehouseTotal.transferInLabel}</td>
                   <td className="py-1.5 pr-3 text-right tabular-nums">{r.warehouseTotal.transferOutLabel}</td>
                   <td className="py-1.5 pr-3 text-right tabular-nums">{r.warehouseTotal.soldLabel}</td>
-                  <td className="py-1.5 text-right tabular-nums">{r.warehouseTotal.availableLabel}</td>
+                  <td className="py-1.5 pr-3 text-right tabular-nums">{r.warehouseTotal.availableLabel}</td>
+                  {showCost ? (
+                    <>
+                      <td className="py-1.5 pr-3 text-right tabular-nums">{money(r.warehouseTotal.avgCost)}</td>
+                      <td className="py-1.5 text-right tabular-nums">{money(r.warehouseTotal.stockValue)}</td>
+                    </>
+                  ) : null}
                 </tr>
               </tbody>
             </table>

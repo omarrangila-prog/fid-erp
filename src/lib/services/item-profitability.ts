@@ -285,12 +285,8 @@ function addInto(target: Acc, cell: Acc) {
 const perKg = (value: Pair, kg: Decimal): Pair | null =>
   kg.greaterThan(0) ? { local: toUnitCost(value.local.dividedBy(kg)), usd: toUnitCost(value.usd.dividedBy(kg)) } : null;
 
-/**
- * The finished figures for one node. A warehouse's average cost counts the
- * coffee transferred into it; the company's counts each KG once, where it was
- * received, so a transfer never weighs a container twice.
- */
-function measure(acc: Acc, basis: 'received' | 'inflow'): ItemMeasures {
+/** The finished figures for one node. */
+function measure(acc: Acc): ItemMeasures {
   const revenue = moneyPair(acc.revenue);
   const cogs = moneyPair(acc.cogs);
   const grossProfit = moneyPair(subPair(revenue, cogs));
@@ -299,7 +295,6 @@ function measure(acc: Acc, basis: 'received' | 'inflow'): ItemMeasures {
   const soldKg = toQuantity(acc.soldKg);
   const onHandKg = toQuantity(acc.onHandKg);
   const reservedKg = toQuantity(acc.reservedKg);
-  const costBasis = basis === 'inflow' ? acc.inflowBasis : acc.receivedBasis;
   return {
     openingKg: toQuantity(acc.openingKg),
     receivedKg: toQuantity(acc.receivedKg),
@@ -320,7 +315,14 @@ function measure(acc: Acc, basis: 'received' | 'inflow'): ItemMeasures {
     credited: moneyPair(acc.credited),
     outstanding: moneyPair(acc.outstanding),
     stockValue: moneyPair(acc.stockValue),
-    avgCostPerKg: perKg(costBasis.value, costBasis.kg),
+    /*
+     * What a kilo of the coffee still here cost: the stock value ÷ the KG
+     * still on hand, each batch at its own landed cost. It used to weigh
+     * everything ever received, so a container long sold out still pulled the
+     * average of the coffee on the floor — 51.20 against the 50.40 the stock
+     * actually carries. Nothing left, nothing to average.
+     */
+    avgCostPerKg: perKg(acc.stockValue, onHandKg),
     avgSellPerKg: perKg(revenue, soldKg),
     marginPct: revenue.local.isZero() ? null : percentage(grossProfit.local, revenue.local),
     profitPerKg: perKg(grossProfit, soldKg),
@@ -806,16 +808,14 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
     addInto(getOr(batchNode.warehouses, cell.warehouseId, emptyAcc), cell.acc);
   }
 
-  // A warehouse filter narrows everything to one site, where the transfers in are its stock.
-  const siteBasis: 'received' | 'inflow' = filters.warehouseId ? 'inflow' : 'received';
   const warehouseNodes = (map: Map<string, Acc>): WarehouseNode[] =>
     [...map.entries()]
-      .map(([warehouseId, acc]) => ({ warehouseId, warehouseName: warehouseName.get(warehouseId) ?? '—', ...measure(acc, 'inflow') }))
+      .map(([warehouseId, acc]) => ({ warehouseId, warehouseName: warehouseName.get(warehouseId) ?? '—', ...measure(acc) }))
       .sort((a, b) => a.warehouseName.localeCompare(b.warehouseName));
 
   const items: ItemNode[] = [...itemAccs.entries()].map(([itemId, item]) => {
     const anyBatch = batches.find((b) => b.itemId === itemId)!;
-    const measures = measure(item.acc, siteBasis);
+    const measures = measure(item.acc);
     const shipments: ShipmentNode[] = [...item.shipments.entries()]
       .map(([shipmentId, shipment]) => {
         const sample = batches.find((b) => b.shipmentId === shipmentId)!;
@@ -824,14 +824,14 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
           shipmentLabel: shipmentOrdinalLabel(ordinals.get(shipmentId)),
           reference: sample.purchaseContract.contractReference,
           jobNumber: sample.shipment.jobNumber,
-          ...measure(shipment.acc, siteBasis),
+          ...measure(shipment.acc),
           containers: [...shipment.containers.entries()]
             .map(([containerKey, container]) => {
               const containerBatch = batches.find((b) => (b.containerId ?? '') === containerKey && b.shipmentId === shipmentId);
               return {
                 containerKey,
                 containerNumber: containerBatch?.container?.containerNumber ?? null,
-                ...measure(container.acc, siteBasis),
+                ...measure(container.acc),
                 batches: [...container.batches.entries()]
                   .map(([batchId, node]) => {
                     const b = batchById.get(batchId)!;
@@ -841,7 +841,7 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
                       lotNumber: b.lot.lotNumber,
                       containerNumber: b.container?.containerNumber ?? null,
                       landedPerKg: landedOf(batchId),
-                      ...measure(node.acc, siteBasis),
+                      ...measure(node.acc),
                       warehouses: warehouseNodes(node.warehouses),
                     };
                   })
@@ -877,7 +877,7 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
     localCurrency: local,
     lowStockPercent,
     items,
-    total: measure(totalAcc, siteBasis),
+    total: measure(totalAcc),
     lines: saleLines,
   };
 }

@@ -1475,6 +1475,7 @@ export type PurchaseRegisterRow = {
   contractId: string;
   contractNumber: string;
   contractReference: string;
+  supplierInvoiceNo: string | null;
   contractDate: Date;
   vendorId: string;
   vendorName: string;
@@ -1560,6 +1561,8 @@ export async function getPurchaseRegister(params: {
       contractId: contract.id,
       contractNumber: contract.contractNumber,
       contractReference: contract.contractReference,
+      /** The supplier's own number for the contract or invoice, when given. */
+      supplierInvoiceNo: contract.supplierContractNo?.trim() || null,
       contractDate: contract.contractDate,
       vendorId: contract.vendor.id,
       vendorName: contract.vendor.vendorName,

@@ -24,7 +24,19 @@ export default async function PayablesPage() {
     const days = daysUntil(p.dueDate, companyDay);
     return {
       id: p.contractId,
-      documentNumber: p.contractNumber,
+      /*
+       * The client's own reference first — ICUL/FID/… from the order the debt
+       * belongs to — then the system's document number and the supplier's
+       * own invoice number, each kept as itself.
+       */
+      documentNumber: p.orderReference ?? p.contractNumber,
+      documentNote:
+        [
+          p.orderReference ? p.contractNumber : null,
+          p.supplierInvoiceNo && p.supplierInvoiceNo !== p.orderReference ? `Supplier invoice ${p.supplierInvoiceNo}` : null,
+        ]
+          .filter(Boolean)
+          .join(' · ') || null,
       documentHref: p.kind === 'EXPENSE' ? `/finance/expenses/${p.contractId}` : `/purchases/${p.contractId}`,
       date: formatDate(p.contractDate),
       dateSort: p.contractDate.getTime(),
@@ -74,7 +86,7 @@ export default async function PayablesPage() {
         rows={rows}
         partyLabel="Supplier"
         settlePath="/finance/payments/new"
-        documentLabel="Contract"
+        documentLabel="Reference"
         canExport={can(user, PERMISSIONS.REPORTS_EXPORT)}
       />
     </div>

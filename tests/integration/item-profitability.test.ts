@@ -136,13 +136,17 @@ describe('Stock on Hand by item', () => {
     expect(a.status).toBe('IN_STOCK');
   }, 120_000);
 
-  it('weights the average cost by KG at each container’s landed cost', async () => {
+  it('weights the average cost by the KG still on hand, each at its own container’s landed cost', async () => {
     const a = (await getItemProfitability({ companyId })).items.find((i) => i.itemId === itemA)!;
-    // (20,000 × 48 + 10,000 × 57.60) ÷ 30,000 = 51.20, not the simple 52.80.
-    expect(n(a.avgCostPerKg!.local)).toBeCloseTo(51.2, 6);
-    expect(n(a.avgCostPerKg!.usd)).toBeCloseTo(5.3333, 3);
     // What is left at its own batch's cost: 18,000 × 48 + 6,000 × 57.60.
     expect(n(a.stockValue.local)).toBeCloseTo(1_209_600, 2);
+    // 1,209,600 ÷ 24,000 = 50.40 — not the simple (48 + 57.60) ÷ 2 = 52.80,
+    // and not 51.20, which weighed the 6,000 KG already sold as if still here.
+    expect(n(a.avgCostPerKg!.local)).toBeCloseTo(50.4, 6);
+    // USD 18,000 × 5 + 6,000 × 6 = 126,000 ÷ 24,000.
+    expect(n(a.avgCostPerKg!.usd)).toBeCloseTo(5.25, 4);
+    // Available KG × average cost is the stock value: one figure read two ways.
+    expect(n(a.availableKg) * n(a.avgCostPerKg!.local)).toBeCloseTo(n(a.stockValue.local), 2);
   }, 120_000);
 
   it('takes revenue from the item’s own invoice lines, the average from revenue ÷ KG, and COGS from the KG sold', async () => {
@@ -237,8 +241,8 @@ describe('Stock on Hand by item', () => {
     expect(n(a.soldKg)).toBe(4000);
     expect(n(a.openingKg) + n(a.receivedKg) + n(a.transferInKg) - n(a.transferOutKg) - n(a.stockSoldKg) + n(a.adjustmentKg)).toBe(n(a.onHandKg));
     expect(n(a.revenue.local)).toBeCloseTo(220_000, 2);
-    // The average cost still weighs everything received, not only what arrived in the period.
-    expect(n(a.avgCostPerKg!.local)).toBeCloseTo(51.2, 6);
+    // The average cost is of the stock on hand at the end of the period.
+    expect(n(a.avgCostPerKg!.local)).toBeCloseTo(50.4, 6);
   }, 120_000);
 
   it('agrees with Current Stock, the invoices, Shipment Profitability and Outstanding Invoices', async () => {

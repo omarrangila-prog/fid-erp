@@ -10,6 +10,8 @@ import { SETTLEMENT_STATUS_META, AGEING_LABELS_CLIENT } from '@/app/(app)/financ
 export type AgeingRow = {
   id: string;
   documentNumber: string;
+  /** A second line under the document: other numbers it is known by. */
+  documentNote?: string | null;
   documentHref: string;
   date: string;
   dateSort: number;
@@ -71,7 +73,12 @@ export function AgeingClient({
       header: documentLabel,
       mobile: 'title',
       sortValue: (r) => r.documentNumber,
-      cell: (r) => <span className="font-medium">{r.documentNumber}</span>,
+      cell: (r) => (
+        <span>
+          <span className="block font-medium">{r.documentNumber}</span>
+          {r.documentNote ? <span className="block text-[11px] text-ink-subtle">{r.documentNote}</span> : null}
+        </span>
+      ),
     },
     { id: 'party', header: partyLabel, mobile: 'meta', sortValue: (r) => r.party, cell: (r) => r.party },
     { id: 'date', header: 'Date', mobile: 'meta', sortValue: (r) => r.dateSort, cell: (r) => r.date },
@@ -168,7 +175,7 @@ export function AgeingClient({
       getRowId={(r) => r.id}
       rowHref={(r) => r.documentHref}
       pageSize={50}
-      searchValue={(r) => `${r.documentNumber} ${r.party} ${r.job ?? ''} ${r.warehouseNames}`}
+      searchValue={(r) => `${r.documentNumber} ${r.documentNote ?? ''} ${r.party} ${r.job ?? ''} ${r.warehouseNames}`}
       searchPlaceholder={`Search ${documentLabel.toLowerCase()} or ${partyLabel.toLowerCase()}…`}
       exportHref={canExport ? exportHref : undefined}
       emptyTitle="Nothing outstanding"

@@ -47,8 +47,20 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
       cheque: true,
       allocations: {
         include: {
-          purchaseContract: { select: { id: true, contractNumber: true, contractDate: true, currency: true } },
-          expense: { select: { id: true, expenseNumber: true, expenseDate: true, currency: true } },
+          purchaseContract: {
+            select: { id: true, contractNumber: true, contractReference: true, supplierContractNo: true, contractDate: true, currency: true },
+          },
+          expense: {
+            select: {
+              id: true,
+              expenseNumber: true,
+              reference: true,
+              expenseDate: true,
+              currency: true,
+              // The order a shipment cost belongs to, for its ICUL/FID reference.
+              shipment: { select: { purchaseContract: { select: { contractReference: true } } } },
+            },
+          },
         },
       },
     },
@@ -128,13 +140,29 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
                 const target = allocation.purchaseContract
                   ? {
                       href: `/purchases/${allocation.purchaseContract.id}`,
-                      number: allocation.purchaseContract.contractNumber,
+                      // The client's ICUL/FID reference first; the system's
+                      // number and the supplier's own beneath it.
+                      number: allocation.purchaseContract.contractReference || allocation.purchaseContract.contractNumber,
+                      note: [
+                        allocation.purchaseContract.contractReference ? allocation.purchaseContract.contractNumber : null,
+                        allocation.purchaseContract.supplierContractNo?.trim()
+                          ? `Supplier invoice ${allocation.purchaseContract.supplierContractNo.trim()}`
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · '),
                       date: allocation.purchaseContract.contractDate,
                       currency: allocation.purchaseContract.currency,
                     }
                   : {
                       href: `/finance/expenses/${allocation.expense!.id}`,
-                      number: allocation.expense!.expenseNumber,
+                      number: allocation.expense!.shipment?.purchaseContract.contractReference ?? allocation.expense!.expenseNumber,
+                      note: [
+                        allocation.expense!.shipment ? allocation.expense!.expenseNumber : null,
+                        allocation.expense!.reference?.trim() ? `Supplier invoice ${allocation.expense!.reference.trim()}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · '),
                       date: allocation.expense!.expenseDate,
                       currency: allocation.expense!.currency,
                     };
@@ -146,6 +174,7 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
                   >
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-medium text-forest-800">{target.number}</span>
+                      {target.note ? <span className="block text-xs text-ink-subtle">{target.note}</span> : null}
                       <span className="block text-xs text-ink-subtle">{formatDate(target.date)}</span>
                       {(() => {
                         const label = allocation.purchaseContract

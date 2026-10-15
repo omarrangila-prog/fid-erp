@@ -23,6 +23,7 @@ import { PrintHeader } from '@/components/shared/print-header';
 import { ReportSummary } from '@/components/shared/report-summary';
 import { dec, type Decimal } from '@/lib/money';
 import { transactionCurrencies } from '@/lib/company-currencies';
+import { groupForClient } from '@/lib/trial-balance-view';
 
 export const metadata: Metadata = { title: 'Trial Balance' };
 export const dynamic = 'force-dynamic';
@@ -40,6 +41,8 @@ export default async function TrialBalancePage({
     vendor?: string;
     warehouse?: string;
     shipment?: string;
+    /** "accounts" lists every ledger account; otherwise the client's view. */
+    view?: string;
   }>;
 }) {
   const query = await searchParams;
@@ -79,10 +82,28 @@ export default async function TrialBalancePage({
       select: {
         id: true,
         currency: true,
+        systemKey: true,
         cashBankAccounts: { select: { currency: true }, orderBy: { currency: 'asc' } },
       },
     }),
   ]);
+  /*
+   * The client's view unless every account is asked for: system accounts in
+   * plain words, accounts that mean the same thing on one line. Display only —
+   * the totals below are read from the same rows either way.
+   */
+  const detailed = query.view === 'accounts';
+  const lines = detailed
+    ? trial.rows.map((row) => ({ ...row, key: row.accountId, label: row.name, accounts: [{ accountId: row.accountId, code: row.code, name: row.name }] }))
+    : groupForClient(trial.rows, new Map(accountCurrencies.map((a) => [a.id, { systemKey: a.systemKey }])));
+  const viewHref = (view: 'accounts' | null) => {
+    const params = new URLSearchParams(
+      Object.entries(query).filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1] !== '' && entry[0] !== 'view'),
+    );
+    if (view) params.set('view', view);
+    const text = params.toString();
+    return `/reports/trial-balance${text ? `?${text}` : ''}`;
+  };
   const currencyByAccount = new Map(
     accountCurrencies.map((row) => {
       const cash = row.cashBankAccounts.find((d) => d.currency !== 'USD') ?? row.cashBankAccounts[0];
@@ -150,7 +171,7 @@ export default async function TrialBalancePage({
             value: formatMoney(dec(trial.totals.debitLocal).minus(trial.totals.creditLocal), local),
             lead: true,
             tone: trial.isBalancedLocal && trial.isBalanced ? 'default' : 'negative',
-            hint: `${trial.rows.length} accounts with a balance`,
+            hint: detailed ? `${trial.rows.length} accounts with a balance` : `${lines.length} lines · ${trial.rows.length} accounts`,
           },
         ]}
         status={
@@ -167,12 +188,26 @@ export default async function TrialBalancePage({
 
       <Card>
         <CardHeader>
-          <CardTitle>Account balances</CardTitle>
-          <CardDescription>
-            {trial.hasOpening
-              ? 'Where each account stood when the period opened, what moved through it, and where it stands now. Only accounts with a balance or a movement are listed.'
-              : 'From the first entry to the date chosen, so the opening is nil and the movement is the whole history. Only accounts with a balance are listed.'}
-          </CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Account balances</CardTitle>
+              <CardDescription>
+                {trial.hasOpening
+                  ? 'Where each account stood when the period opened, what moved through it, and where it stands now. Only accounts with a balance or a movement are listed.'
+                  : 'From the first entry to the date chosen, so the opening is nil and the movement is the whole history. Only accounts with a balance are listed.'}
+                {detailed
+                  ? ' Every ledger account, under its ledger name.'
+                  : ' In plain words: accounts that mean the same thing share a line, their debits and credits added up separately so the totals are the ledger’s to the cent.'}
+              </CardDescription>
+            </div>
+            <Link
+              href={viewHref(detailed ? null : 'accounts')}
+              className="shrink-0 text-sm font-medium text-forest-800 underline-offset-2 hover:underline print:hidden"
+              data-testid="tb-view-toggle"
+            >
+              {detailed ? 'Simple view' : 'Show every account'}
+            </Link>
+          </div>
         </CardHeader>
         <CardContent className="px-0 pb-0">
           <TableWrap className="rounded-none border-0 border-t">
@@ -194,15 +229,35 @@ export default async function TrialBalancePage({
                 </TR>
               </THead>
               <TBody>
-                {trial.rows.map((row) => (
-                  <TR key={row.accountId}>
+                {lines.map((row) => (
+                  <TR key={row.key} data-testid="tb-line">
                     <TD>
-                      <Link
-                        href={ledgerHref(row.accountId, currencyByAccount.get(row.accountId))}
-                        className="font-medium text-forest-800 hover:text-gold-700"
-                      >
-                        {row.name}
-                      </Link>
+                      {row.accounts.length === 1 ? (
+                        <Link
+                          href={ledgerHref(row.accounts[0].accountId, currencyByAccount.get(row.accounts[0].accountId))}
+                          className="font-medium text-forest-800 hover:text-gold-700"
+                        >
+                          {row.label}
+                        </Link>
+                      ) : (
+                        <span className="font-medium text-ink">{row.label}</span>
+                      )}
+                      {/* What the line is made of, under the ledger's names. */}
+                      {row.accounts.length > 1 || row.accounts[0].name !== row.label ? (
+                        <span className="block text-[11px] text-ink-subtle">
+                          {row.accounts.map((a, i) => (
+                            <span key={a.accountId}>
+                              {i > 0 ? ' · ' : ''}
+                              <Link
+                                href={ledgerHref(a.accountId, currencyByAccount.get(a.accountId))}
+                                className="hover:text-gold-700"
+                              >
+                                {a.code} {a.name}
+                              </Link>
+                            </span>
+                          ))}
+                        </span>
+                      ) : null}
                     </TD>
                     <TD className="text-xs">{titleCase(row.type)}</TD>
                     {trial.hasOpening ? (

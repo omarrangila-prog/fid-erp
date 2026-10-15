@@ -348,3 +348,68 @@ describe('containers', () => {
     await expect(editApprovedPurchase(asForm(order, {}, lines))).rejects.toThrow(/cannot be taken off the order/);
   }, 300_000);
 });
+
+/**
+ * A new local rate on an order whose coffee has already been received.
+ *
+ * The live books showed MAD 366,467.94 in Inventory in Transit with every
+ * kilo in the warehouse and USD 0.00 against it. The re-posted order put the
+ * whole order into transit at the new rate; the goods receipt had taken the
+ * coffee out at the old one. Dollars cancelled, dirhams did not — and a price
+ * correction moves only dollars, so a rate-only correction moved nothing.
+ */
+describe('a new rate on coffee already received', () => {
+  async function localOf(systemKey: string, contractId?: string) {
+    const [row] = await prisma.$queryRaw<Array<{ usd: string; local: string }>>`
+      SELECT COALESCE(SUM(jl."debitUsd" - jl."creditUsd"), 0)::text AS usd,
+             COALESCE(SUM(jl."debitLocal" - jl."creditLocal"), 0)::text AS local
+      FROM journal_lines jl
+      JOIN journal_entries je ON je."id" = jl."journalEntryId"
+      JOIN accounts a ON a."id" = jl."accountId"
+      WHERE je."companyId" = ${companyId} AND je."status" = 'POSTED' AND a."systemKey" = ${systemKey}
+        AND (${contractId ?? null}::text IS NULL OR jl."purchaseContractId" = ${contractId ?? null})`;
+    return { usd: dec(row.usd), local: dec(row.local) };
+  }
+
+  it('moves the dirhams out of transit to stock and cost of sales, and leaves the dollars alone', async () => {
+    // Two 10,000 KG containers at USD 4.00, MAD 10 to the dollar: USD 80,000.
+    const order = await approvedOrder('ICUL/RATE/1');
+    const first = await receive(order, 0);
+    await receive(order, 1);
+    // 4,000 KG sold: USD 16,000 of the coffee is in cost of sales.
+    await sell(first, '4000');
+
+    const transitBefore = await localOf('INVENTORY_IN_TRANSIT', order.id);
+    expect(transitBefore.usd.toFixed(2)).toBe('0.00');
+    expect(transitBefore.local.toFixed(2)).toBe('0.00');
+    const stockBefore = await localOf('INVENTORY');
+    const cogsBefore = await localOf('COST_OF_GOODS_SOLD');
+    const owedBefore = await owedTo(masters.vendor.id, order.id);
+
+    // The dollars actually cost 10.40, not 10.
+    const fresh = await prisma.purchaseContract.findUniqueOrThrow({
+      where: { id: order.id },
+      include: { lines: { orderBy: { lineNumber: 'asc' } } },
+    });
+    await editApprovedPurchase(asForm(fresh, { rateLocalPerUsd: '10.40' }));
+
+    // Nothing is left in transit for coffee that is in the warehouse.
+    const transitAfter = await localOf('INVENTORY_IN_TRANSIT', order.id);
+    expect(transitAfter.usd.toFixed(2)).toBe('0.00');
+    expect(transitAfter.local.toFixed(2)).toBe('0.00');
+
+    // USD 80,000 at 0.40 more is MAD 32,000 more: 6,400 on the 16,000 sold,
+    // 25,600 on the 64,000 still on the shelf.
+    const stockAfter = await localOf('INVENTORY');
+    const cogsAfter = await localOf('COST_OF_GOODS_SOLD');
+    expect(stockAfter.local.minus(stockBefore.local).toFixed(2)).toBe('25600.00');
+    expect(cogsAfter.local.minus(cogsBefore.local).toFixed(2)).toBe('6400.00');
+    // The dollars did not move anywhere.
+    expect(stockAfter.usd.minus(stockBefore.usd).toFixed(2)).toBe('0.00');
+    expect(cogsAfter.usd.minus(cogsBefore.usd).toFixed(2)).toBe('0.00');
+    // And the supplier is owed the same dollars.
+    expect(await owedTo(masters.vendor.id, order.id)).toBeCloseTo(owedBefore, 2);
+
+    await expectBooksWhole();
+  }, 300_000);
+});

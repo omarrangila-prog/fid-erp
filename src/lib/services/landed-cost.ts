@@ -723,11 +723,51 @@ export async function getShipmentCostSheet(
    * stock remains. Valued at this shipment's own weighted landed cost, never
    * a company average.
    */
-  const remainingKg = toQuantity(job.receivedKg.minus(job.soldKg));
-  const remainingPurchaseUsd = toMoney(purchasePerKgUsd.times(remainingKg));
-  const remainingPurchaseLocal = toMoney(remainingPurchaseUsd.times(rateLocalPerUsd));
-  const remainingLandedUsd = toMoney(costPerKgUsd.times(remainingKg));
-  const remainingLandedLocal = toMoney(costPerKgLocal.times(remainingKg));
+  /*
+   * Each container at its own cost, as Stock on Hand values it.
+   *
+   * This used to be the whole shipment's average cost per KG times the KG
+   * left. Containers carry different costs — their own purchase price, their
+   * own share of the job's charges — so once one container sold faster than
+   * another the shipment and Stock on Hand gave the same coffee two values.
+   * Both now read the one batch costing and the KG on hand in each batch.
+   */
+  const [remainingCostings, onHandRows] = await Promise.all([
+    getBatchCostings(
+      options.wholeOrder ? { companyId, purchaseContractId: shipment.purchaseContractId } : { companyId, shipmentId },
+    ),
+    prisma.inventoryBalance.groupBy({
+      by: ['batchId'],
+      where: { companyId, batch: { shipmentId: { in: shipmentIds } } },
+      _sum: { onHandKg: true },
+    }),
+  ]);
+  const onHandOf = new Map(onHandRows.map((r) => [r.batchId, dec(r._sum.onHandKg ?? 0)]));
+  let remainingKgRaw = new Decimal(0);
+  let remainingPurchaseUsdRaw = new Decimal(0);
+  let remainingPurchaseLocalRaw = new Decimal(0);
+  let remainingLandedUsdRaw = new Decimal(0);
+  let remainingLandedLocalRaw = new Decimal(0);
+  for (const c of remainingCostings) {
+    const onHand = onHandOf.get(c.batchId) ?? new Decimal(0);
+    if (onHand.isZero()) continue;
+    remainingKgRaw = remainingKgRaw.plus(onHand);
+    remainingPurchaseUsdRaw = remainingPurchaseUsdRaw.plus(onHand.times(c.purchasePerKgUsd));
+    remainingPurchaseLocalRaw = remainingPurchaseLocalRaw.plus(onHand.times(c.purchasePerKgUsd).times(c.rateLocalPerUsd));
+    remainingLandedUsdRaw = remainingLandedUsdRaw.plus(onHand.times(c.landedPerKgUsd));
+    remainingLandedLocalRaw = remainingLandedLocalRaw.plus(onHand.times(c.landedPerKgLocal));
+  }
+  const remainingKg = toQuantity(remainingKgRaw);
+  const remainingPurchaseUsd = toMoney(remainingPurchaseUsdRaw);
+  const remainingPurchaseLocal = toMoney(remainingPurchaseLocalRaw);
+  const remainingLandedUsd = toMoney(remainingLandedUsdRaw);
+  const remainingLandedLocal = toMoney(remainingLandedLocalRaw);
+  // The supplier's price on the coffee still here, so Purchase cost / KG ×
+  // remaining KG is the remaining purchase value on the same panel.
+  const remainingPurchasePerKgUsd = remainingKg.greaterThan(0) ? toUnitCost(remainingPurchaseUsdRaw.dividedBy(remainingKg)) : null;
+  // What a kilo still here cost: the figure Stock on Hand shows as Avg Cost/KG.
+  const remainingAvgCostPerKgUsd = remainingKg.greaterThan(0) ? toUnitCost(remainingLandedUsdRaw.dividedBy(remainingKg)) : null;
+  const remainingAvgCostPerKgLocal = remainingKg.greaterThan(0) ? toUnitCost(remainingLandedLocalRaw.dividedBy(remainingKg)) : null;
 
   const purchaseLines: ShipmentPurchaseLine[] = purchaseBatches.map((batch) => ({
     batchId: batch.id,
@@ -784,6 +824,10 @@ export async function getShipmentCostSheet(
     remainingPurchaseLocal,
     remainingLandedUsd,
     remainingLandedLocal,
+    /** Remaining inventory value ÷ remaining KG — the same as Stock on Hand's Avg Cost/KG. */
+    remainingAvgCostPerKgUsd,
+    remainingAvgCostPerKgLocal,
+    remainingPurchasePerKgUsd,
     costPerKgUsd,
     costPerKgLocal,
     costPerMtUsd,
@@ -795,7 +839,8 @@ export async function getShipmentCostSheet(
     grossProfitLocal: toMoney(revenueLocal.minus(cogsLocal)),
     grossProfitUsd,
     profitPerKgUsd: soldKg.greaterThan(0) ? toUnitCost(grossProfitUsd.dividedBy(soldKg)) : new Decimal(0),
-    profitPct: revenueUsd.greaterThan(0) ? grossProfitUsd.dividedBy(revenueUsd).times(100) : new Decimal(0),
+    // Gross margin in the company's currency, where a confirmed rate moves the cost.
+    profitPct: revenueLocal.greaterThan(0) ? revenueLocal.minus(cogsLocal).dividedBy(revenueLocal).times(100) : new Decimal(0),
     purchaseLines,
     lines,
   };

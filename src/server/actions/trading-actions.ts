@@ -129,10 +129,7 @@ export async function savePurchaseContractAction(id: string | null, payload: str
       if (current?.status === 'POSTED') {
         assertPermission(user, PERMISSIONS.PURCHASES_APPROVE);
         await editApprovedPurchase({ ...input, companyId, contractId: id, userId: user.id, reason: correctionReason });
-        revalidatePath('/purchases');
-        revalidatePath(`/purchases/${id}`);
-        revalidatePath('/inventory');
-        revalidatePath('/reports/shipment-cost');
+        revalidatePurchaseCosting(id);
         return { ok: true, id, message: 'Purchase order corrected.' };
       }
     }
@@ -147,6 +144,35 @@ export async function savePurchaseContractAction(id: string | null, payload: str
   } catch (error) {
     return toState(error);
   }
+}
+
+/**
+ * Every page that shows a figure derived from an order's cost.
+ *
+ * A purchase order's price or rate reaches the shipment, its containers, the
+ * stock on hand, cost of sales, profitability and the reports. A detail page
+ * is refreshed by its route pattern — a plain "/shipments" refreshes the list
+ * alone, which left an open shipment page on the old rate.
+ */
+function revalidatePurchaseCosting(contractId: string) {
+  for (const path of [
+    '/purchases',
+    `/purchases/${contractId}`,
+    '/shipments',
+    '/inventory',
+    '/profitability',
+    '/finance/payables',
+    '/reports/shipment-cost',
+    '/reports/inventory-valuation',
+    '/reports/trial-balance',
+    '/reports/financial-position',
+    '/reports/balance-sheet',
+    '/dashboard',
+  ]) {
+    revalidatePath(path);
+  }
+  revalidatePath('/shipments/[id]', 'page');
+  revalidatePath('/inventory/items/[id]', 'page');
 }
 
 /**
@@ -171,19 +197,7 @@ export async function setPurchaseActualFxAction(payload: string): Promise<DocFor
       note: input.note,
     });
 
-    for (const path of [
-      '/purchases',
-      `/purchases/${input.contractId}`,
-      '/shipments',
-      '/inventory',
-      '/inventory/stock',
-      '/reports/shipment-cost',
-      '/reports/shipment-profit',
-      '/reports/inventory-valuation',
-      '/dashboard',
-    ]) {
-      revalidatePath(path);
-    }
+    revalidatePurchaseCosting(input.contractId);
 
     return {
       ok: true,

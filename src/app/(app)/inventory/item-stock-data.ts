@@ -137,6 +137,10 @@ export function toItemStockRow(
       transferOutLabel: kg(w.transferOutKg),
       soldLabel: kg(w.stockSoldKg),
       availableLabel: kg(w.availableKg),
+      // What the coffee in this warehouse cost — each batch at its own landed
+      // cost, the same figure the item row adds up.
+      avgCost: showCost ? perKgText(w.avgCostPerKg, local) : null,
+      stockValue: showCost ? pairText(w.stockValue, local) : null,
     })),
     warehouseTotal: {
       receivedLabel: sum((w) => w.receivedKg),
@@ -144,6 +148,8 @@ export function toItemStockRow(
       transferOutLabel: sum((w) => w.transferOutKg),
       soldLabel: sum((w) => w.stockSoldKg),
       availableLabel: sum((w) => w.availableKg),
+      avgCost: showCost ? perKgText(item.avgCostPerKg, local) : null,
+      stockValue: showCost ? pairText(item.stockValue, local) : null,
     },
     avgCost: showCost ? perKgText(item.avgCostPerKg, local) : null,
     cogs: showCogs ? pairText(item.cogs, local) : null,

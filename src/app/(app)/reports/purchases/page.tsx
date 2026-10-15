@@ -127,9 +127,12 @@ export default async function PurchaseReportPage({
                           href={`/purchases/${row.contractId}`}
                           className="font-medium text-forest-800 hover:text-gold-700"
                         >
-                          {row.contractNumber}
+                          {row.contractReference || row.contractNumber}
                         </Link>
-                        <span className="block text-xs text-ink-subtle">{row.contractReference}</span>
+                        <span className="block text-xs text-ink-subtle">
+                          {row.contractReference ? row.contractNumber : null}
+                          {row.supplierInvoiceNo ? ` · Supplier invoice ${row.supplierInvoiceNo}` : null}
+                        </span>
                       </TD>
                       <TD>
                         <Link

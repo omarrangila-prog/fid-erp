@@ -414,6 +414,8 @@ export async function editApprovedPurchase(input: EditApprovedOrderInput) {
       currency,
       rateToUsd: dec(input.rateToUsd),
       lines: after.lines,
+      oldLocalRate: dec(before.rateLocalPerUsd),
+      newLocalRate: dec(input.rateLocalPerUsd),
     });
 
     // --- the books ------------------------------------------------------------
@@ -427,7 +429,7 @@ export async function editApprovedPurchase(input: EditApprovedOrderInput) {
       reason: input.reason?.trim() || 'Order corrected',
     });
 
-    if (moved.shelfUsd.isZero() === false || moved.soldUsd.isZero() === false) {
+    if (moved.shelfUsd.isZero() === false || moved.soldUsd.isZero() === false || moved.localMoved) {
       await postCostFollowsCoffee(tx, {
         companyId: input.companyId,
         userId: input.userId,
@@ -503,6 +505,9 @@ async function restateBatchCosts(
     currency: string;
     rateToUsd: Decimal;
     lines: Array<{ id: string; unitCostKg: Decimal }>;
+    /** The order's local rate before and after this correction. */
+    oldLocalRate: Decimal;
+    newLocalRate: Decimal;
   },
 ) {
   const unitCostOf = new Map(params.lines.map((l) => [l.id, dec(l.unitCostKg)]));
@@ -528,7 +533,13 @@ async function restateBatchCosts(
 
   let shelfUsd = dec(0);
   let soldUsd = dec(0);
-  const byShipment = new Map<string, { shelfUsd: Decimal; soldUsd: Decimal }>();
+  const byShipment = new Map<string, { shelfUsd: Decimal; soldUsd: Decimal; shelfLocal: Decimal; soldLocal: Decimal }>();
+  const rowOf = (shipmentId: string) => {
+    const row = byShipment.get(shipmentId) ?? { shelfUsd: dec(0), soldUsd: dec(0), shelfLocal: dec(0), soldLocal: dec(0) };
+    byShipment.set(shipmentId, row);
+    return row;
+  };
+  const rateMove = dec(params.newLocalRate).minus(dec(params.oldLocalRate));
 
   for (const batch of batches) {
     const lineId = batch.purchaseContractLineId ?? lineOfShipment.get(batch.shipmentId) ?? (params.lines.length === 1 ? params.lines[0].id : null);
@@ -548,9 +559,34 @@ async function restateBatchCosts(
       where: { id: batch.id },
       data: { unitCost, currency: params.currency, unitCostUsd, purchaseCostUsd, landedUnitCostUsd },
     });
-    if (deltaUsd.isZero() || orderedKg.lessThanOrEqualTo(0)) continue;
+    if (orderedKg.lessThanOrEqualTo(0)) continue;
 
     const soldKg = Decimal_min(await documentSoldKg(tx, params.companyId, batch.id), dec(batch.soldQuantityKg));
+
+    /*
+     * A new local rate on coffee that has already left transit.
+     *
+     * The re-posted order puts the whole order into transit at the new rate,
+     * but the goods receipt took the received coffee out at the old one. In
+     * dollars the two still cancel; in dirhams they do not, and the
+     * difference sat in Inventory in Transit for coffee long since in the
+     * warehouse — MAD 177,928.80 on an order of USD 254,184 moved from 9.60
+     * to 10.30. The dirhams follow the coffee: the share still on the shelf
+     * to stock, the share sold to cost of sales. Valued on the dollars the
+     * coffee left transit at, before this correction; any change in those
+     * dollars is moved below at the new rate.
+     */
+    if (!rateMove.isZero()) {
+      const receivedKg = Decimal_min(dec(batch.receivedQuantityKg), orderedKg);
+      const leftUsd = dec(batch.purchaseCostUsd).times(receivedKg).dividedBy(orderedKg);
+      const soldLocal = toMoney(dec(batch.purchaseCostUsd).times(Decimal_min(soldKg, receivedKg)).dividedBy(orderedKg).times(rateMove));
+      const shelfLocal = toMoney(leftUsd.times(rateMove).minus(soldLocal));
+      const row = rowOf(batch.shipmentId);
+      row.shelfLocal = row.shelfLocal.plus(shelfLocal);
+      row.soldLocal = row.soldLocal.plus(soldLocal);
+    }
+    if (deltaUsd.isZero()) continue;
+
     const atSeaKg = Decimal_max(orderedKg.minus(dec(batch.receivedQuantityKg)), dec(0));
     const soldShare = toMoney(deltaUsd.times(soldKg).dividedBy(orderedKg));
     const atSeaShare = toMoney(deltaUsd.times(atSeaKg).dividedBy(orderedKg));
@@ -561,13 +597,13 @@ async function restateBatchCosts(
     }
     shelfUsd = shelfUsd.plus(shelfShare);
     soldUsd = soldUsd.plus(soldShare);
-    const row = byShipment.get(batch.shipmentId) ?? { shelfUsd: dec(0), soldUsd: dec(0) };
+    const row = rowOf(batch.shipmentId);
     row.shelfUsd = row.shelfUsd.plus(shelfShare);
     row.soldUsd = row.soldUsd.plus(soldShare);
-    byShipment.set(batch.shipmentId, row);
   }
 
-  return { shelfUsd: toMoney(shelfUsd), soldUsd: toMoney(soldUsd), byShipment };
+  const localMoved = [...byShipment.values()].some((r) => !r.shelfLocal.isZero() || !r.soldLocal.isZero());
+  return { shelfUsd: toMoney(shelfUsd), soldUsd: toMoney(soldUsd), localMoved, byShipment };
 }
 
 const Decimal_min = (a: Decimal, b: Decimal) => (a.lessThan(b) ? a : b);
@@ -710,7 +746,7 @@ async function postCostFollowsCoffee(
     reference: string;
     localCurrency: string;
     rateLocalPerUsd: Decimal;
-    byShipment: Map<string, { shelfUsd: Decimal; soldUsd: Decimal }>;
+    byShipment: Map<string, { shelfUsd: Decimal; soldUsd: Decimal; shelfLocal: Decimal; soldLocal: Decimal }>;
   },
 ) {
   type Line = Parameters<typeof postJournalEntry>[1]['lines'][number];
@@ -728,17 +764,35 @@ async function postCostFollowsCoffee(
       shipmentId,
     } as Line);
   };
+  // Dirhams alone: the rate moved, the dollars did not.
+  const addLocal = (accountKey: string, amount: Decimal, shipmentId: string, description: string) => {
+    if (amount.isZero()) return;
+    lines.push({
+      accountKey,
+      direction: amount.greaterThan(0) ? 'DEBIT' : 'CREDIT',
+      currency: params.localCurrency,
+      amount: amount.abs(),
+      rateToUsd: params.rateLocalPerUsd,
+      description,
+      purchaseContractId: params.contractId,
+      shipmentId,
+      localOnly: true,
+    } as Line);
+  };
   for (const [shipmentId, row] of params.byShipment) {
     add(ACCOUNT_KEYS.INVENTORY, row.shelfUsd, shipmentId, 'Price correction on coffee in stock');
     add(ACCOUNT_KEYS.COST_OF_GOODS_SOLD, row.soldUsd, shipmentId, 'Price correction on coffee already sold');
     add(ACCOUNT_KEYS.INVENTORY_IN_TRANSIT, row.shelfUsd.plus(row.soldUsd).negated(), shipmentId, 'Price correction moved out of transit');
+    addLocal(ACCOUNT_KEYS.INVENTORY, row.shelfLocal, shipmentId, 'Rate correction on coffee in stock');
+    addLocal(ACCOUNT_KEYS.COST_OF_GOODS_SOLD, row.soldLocal, shipmentId, 'Rate correction on coffee already sold');
+    addLocal(ACCOUNT_KEYS.INVENTORY_IN_TRANSIT, row.shelfLocal.plus(row.soldLocal).negated(), shipmentId, 'Rate correction moved out of transit');
   }
   if (lines.length < 2) return;
 
   await postJournalEntry(tx, {
     companyId: params.companyId,
     entryDate: new Date(),
-    description: `${params.reference}: price corrected on coffee already received`,
+    description: `${params.reference}: price or rate corrected on coffee already received`,
     sourceType: 'LANDED_COST',
     sourceId: params.contractId,
     createdById: params.userId,
