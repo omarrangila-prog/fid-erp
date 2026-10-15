@@ -339,7 +339,7 @@ export async function getPayables(params: {
   >`
     SELECT pc."id" AS "contractId", pc."contractNumber", pc."contractReference", pc."contractDate", pc."dueDate",
            pc."vendorId", v."vendorName", v."country" AS "vendorCountry", c."country" AS "companyCountry",
-           pc."currency", pc."rateLocalPerUsd"::text AS "rateLocalPerUsd", v."primaryCurrency" AS "partyCurrency",
+           pc."currency", COALESCE(pc."actualRateLocalPerUsd", pc."rateLocalPerUsd")::text AS "rateLocalPerUsd", v."primaryCurrency" AS "partyCurrency",
            pc."totalValue"::text AS "netAmount",
            pc."taxAmount"::text AS "taxAmount",
            pc."totalValueUsd"::text AS "netAmountUsd",

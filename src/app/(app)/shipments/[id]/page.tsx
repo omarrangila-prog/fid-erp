@@ -375,7 +375,11 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
             <MetricGrid className="lg:grid-cols-5">
               <Metric
                 label="Purchase cost"
-                value={<DualAmount amount={costSheet.goodsUsd} currency="USD" localCurrency={costSheet.localCurrency} amountLocal={costSheet.goodsLocal} rateLocalPerUsd={costSheet.rateLocalPerUsd} rateSource="The purchase order's own rate" />}
+                value={<DualAmount amount={costSheet.goodsUsd} currency="USD" localCurrency={costSheet.localCurrency} amountLocal={costSheet.goodsLocal} rateLocalPerUsd={costSheet.rateLocalPerUsd} rateSource={
+                  costSheet.fxSource === 'ACTUAL'
+                    ? "The rate actually paid for the order's dollars"
+                    : "The purchase order's estimated rate"
+                } />}
               />
               <Metric
                 label="Local shipment expenses"
@@ -517,7 +521,11 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                         <TD className="font-medium">{line.batchNumber}</TD>
                         <TD numeric>{formatQuantityKg(line.quantityKg)}</TD>
                         <TD numeric>
-                          <DualAmount amount={line.purchaseCostUsd} currency="USD" localCurrency={costSheet.localCurrency} rateLocalPerUsd={costSheet.rateLocalPerUsd} rateSource="The purchase order's own rate" />
+                          <DualAmount amount={line.purchaseCostUsd} currency="USD" localCurrency={costSheet.localCurrency} rateLocalPerUsd={costSheet.rateLocalPerUsd} rateSource={
+                  costSheet.fxSource === 'ACTUAL'
+                    ? "The rate actually paid for the order's dollars"
+                    : "The purchase order's estimated rate"
+                } />
                         </TD>
                       </TR>
                     ))}
@@ -527,7 +535,11 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                       <TD>Total purchase cost</TD>
                       <TD />
                       <TD numeric>
-                        <DualAmount amount={costSheet.goodsUsd} currency="USD" localCurrency={costSheet.localCurrency} amountLocal={costSheet.goodsLocal} rateSource="The purchase order's own rate" />
+                        <DualAmount amount={costSheet.goodsUsd} currency="USD" localCurrency={costSheet.localCurrency} amountLocal={costSheet.goodsLocal} rateSource={
+                  costSheet.fxSource === 'ACTUAL'
+                    ? "The rate actually paid for the order's dollars"
+                    : "The purchase order's estimated rate"
+                } />
                       </TD>
                     </tr>
                   </TFoot>

@@ -3,6 +3,7 @@ import { Decimal, dec, sum, toMoney, toQuantity, toUnitCost, convertFromUsd, KG_
 import { getBatchCostings } from '@/lib/services/landed-cost';
 import { getExpenseSettlements, type ExpensePaymentStatus } from '@/lib/services/expense-settlement';
 import { getOrderFxTransactions, summariseFx, type FxPair, type FxTransaction } from '@/lib/services/shipment-fx';
+import { effectiveLocalRate } from '@/lib/purchase-fx';
 
 /**
  * The costing of one shipment — the order it was bought on, with every
@@ -136,6 +137,7 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
         id: true,
         contractReference: true,
         rateLocalPerUsd: true,
+        actualRateLocalPerUsd: true,
         vendor: { select: { vendorName: true } },
         shipments: {
           orderBy: { createdAt: 'asc' },
@@ -222,7 +224,10 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
 
   return contracts.map((contract): OrderCostSheet => {
     const records = contract.shipments;
-    const rateLocalPerUsd = dec(contract.rateLocalPerUsd);
+    // The rate paid for the dollars once it is known, else the order's estimate.
+    // Same single definition every other costing screen reads, so the order
+    // sheet cannot be left showing a rate the shipment sheet has moved past.
+    const rateLocalPerUsd = effectiveLocalRate(contract);
     const local = company.localCurrency;
 
     const lines: OrderCostLine[] = records.flatMap((s) =>

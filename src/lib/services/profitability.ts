@@ -271,7 +271,7 @@ export async function getShipmentProfitability(params: {
       COALESCE((SELECT SUM(ib."onHandKg" * b."landedUnitCostUsd") FROM batches b
                   JOIN inventory_balances ib ON ib."batchId" = b."id"
                  WHERE b."shipmentId" = s."id"), 0)::text AS "closingStockValueUsd",
-      COALESCE((SELECT SUM(b."purchaseCostUsd" * pc."rateLocalPerUsd")
+      COALESCE((SELECT SUM(b."purchaseCostUsd" * COALESCE(pc."actualRateLocalPerUsd", pc."rateLocalPerUsd"))
                   FROM batches b WHERE b."shipmentId" = s."id"), 0)::text AS "goodsCostLocal",
       /*
        * The coffee at the purchase's own rate; the costs capitalised onto it
@@ -280,14 +280,14 @@ export async function getShipmentProfitability(params: {
        * what is left carry the same blend, so landed = sold + on hand in
        * dirhams as well as in dollars.
        */
-      COALESCE((SELECT SUM(b."capitalisedCostUsd") * COALESCE(cr."rate", pc."rateLocalPerUsd")
+      COALESCE((SELECT SUM(b."capitalisedCostUsd") * COALESCE(cr."rate", COALESCE(pc."actualRateLocalPerUsd", pc."rateLocalPerUsd"))
                   FROM batches b WHERE b."shipmentId" = s."id"), 0)::text AS "capitalisedCostLocal",
       COALESCE((SELECT SUM(b."soldQuantityKg"
-                           * (b."purchaseCostUsd" * pc."rateLocalPerUsd" + b."capitalisedCostUsd" * COALESCE(cr."rate", pc."rateLocalPerUsd"))
+                           * (b."purchaseCostUsd" * COALESCE(pc."actualRateLocalPerUsd", pc."rateLocalPerUsd") + b."capitalisedCostUsd" * COALESCE(cr."rate", COALESCE(pc."actualRateLocalPerUsd", pc."rateLocalPerUsd")))
                            / NULLIF(b."orderedQuantityKg", 0))
                   FROM batches b WHERE b."shipmentId" = s."id"), 0)::text AS "allocatedLandedCostLocal",
       COALESCE((SELECT SUM(ib."onHandKg"
-                           * (b."purchaseCostUsd" * pc."rateLocalPerUsd" + b."capitalisedCostUsd" * COALESCE(cr."rate", pc."rateLocalPerUsd"))
+                           * (b."purchaseCostUsd" * COALESCE(pc."actualRateLocalPerUsd", pc."rateLocalPerUsd") + b."capitalisedCostUsd" * COALESCE(cr."rate", COALESCE(pc."actualRateLocalPerUsd", pc."rateLocalPerUsd")))
                            / NULLIF(b."orderedQuantityKg", 0))
                   FROM batches b
                   JOIN inventory_balances ib ON ib."batchId" = b."id"

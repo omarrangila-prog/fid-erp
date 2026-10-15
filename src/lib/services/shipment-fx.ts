@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import { effectiveLocalRate } from '@/lib/purchase-fx';
 import { dec, toMoney, type Decimal } from '@/lib/money';
 
 /**
@@ -159,6 +160,7 @@ export async function getOrderFxTransactions(
         currency: true,
         rateToUsd: true,
         rateLocalPerUsd: true,
+        actualRateLocalPerUsd: true,
         vendor: { select: { vendorName: true } },
         batches: { where: { status: 'ACTIVE' }, select: { purchaseCostUsd: true } },
       },
@@ -214,6 +216,10 @@ export async function getOrderFxTransactions(
   for (const c of contracts) {
     const goodsUsd = toMoney(c.batches.reduce((t, b) => t.plus(dec(b.purchaseCostUsd)), dec(0)));
     const rateToUsd = dec(c.rateToUsd);
+    // The rate paid for the dollars once confirmed, else the order's estimate:
+    // the purchase leg of the exposure must be stated at the same rate the
+    // costing uses, or the panel disagrees with the cost sheet beside it.
+    const purchaseLocalRate = effectiveLocalRate(c);
     result.set(c.id, {
       costs: [
         {
@@ -225,8 +231,8 @@ export async function getOrderFxTransactions(
           currency: c.currency,
           amount: c.currency === 'USD' ? goodsUsd : toMoney(goodsUsd.times(rateToUsd)),
           usd: goodsUsd,
-          local: toMoney(goodsUsd.times(dec(c.rateLocalPerUsd))),
-          rateLocalPerUsd: dec(c.rateLocalPerUsd),
+          local: toMoney(goodsUsd.times(purchaseLocalRate)),
+          rateLocalPerUsd: purchaseLocalRate,
         },
       ],
       sales: [],

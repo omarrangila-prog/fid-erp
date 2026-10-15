@@ -562,7 +562,7 @@ export async function getFinancialPosition(params: { companyId: string; asOf?: D
                   GROUP BY ra."salesInvoiceId"
                 ) alloc ON alloc."invoiceId" = si."id"
                WHERE si."companyId" = ${params.companyId} AND si."status" = 'POSTED'), 0)::text AS "receivableLocal",
-      COALESCE((SELECT SUM((pc."totalValueUsd" - COALESCE(settled."paid", 0)) * pc."rateLocalPerUsd")
+      COALESCE((SELECT SUM((pc."totalValueUsd" - COALESCE(settled."paid", 0)) * COALESCE(pc."actualRateLocalPerUsd", pc."rateLocalPerUsd"))
                 FROM purchase_contracts pc
                 LEFT JOIN (
                   SELECT pa."purchaseContractId" AS "contractId", SUM(pa."amountUsd") AS "paid"
@@ -575,7 +575,7 @@ export async function getFinancialPosition(params: { companyId: string; asOf?: D
       -- Stock at its historical cost: the coffee at the purchase's rate and the
       -- costs added to it at the rates they were entered at.
       COALESCE((SELECT SUM((b."availableQuantityKg" + b."allocatedQuantityKg")
-                           * (b."purchaseCostUsd" * pc."rateLocalPerUsd" + b."capitalisedCostUsd" * COALESCE(cr."rate", pc."rateLocalPerUsd"))
+                           * (b."purchaseCostUsd" * COALESCE(pc."actualRateLocalPerUsd", pc."rateLocalPerUsd") + b."capitalisedCostUsd" * COALESCE(cr."rate", COALESCE(pc."actualRateLocalPerUsd", pc."rateLocalPerUsd")))
                            / NULLIF(b."orderedQuantityKg", 0))
                 FROM batches b
                 JOIN purchase_contracts pc ON pc."id" = b."purchaseContractId"
