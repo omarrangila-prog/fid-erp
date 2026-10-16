@@ -21,6 +21,16 @@ function digest(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
+function asFlags(value: unknown): Record<string, boolean> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([, v]) => typeof v === 'boolean')) as Record<string, boolean>;
+}
+
+function asTerms(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([, v]) => typeof v === 'string' && v.trim())) as Record<string, string>;
+}
+
 export type SessionCompany = {
   id: string;
   code: string;
@@ -29,6 +39,14 @@ export type SessionCompany = {
   localCurrency: string;
   baseCurrency: string;
   timezone: string;
+  tagline?: string | null;
+  /** Currencies offered on money forms; empty keeps the local-currency rule. */
+  transactionCurrencies?: string[];
+  salesCurrencies?: string[];
+  defaultSalesCurrency?: string | null;
+  industryTemplate?: string;
+  features?: Record<string, boolean>;
+  terminology?: Record<string, string>;
 };
 
 export type SessionUser = {
@@ -158,6 +176,13 @@ async function loadCurrentUser(): Promise<SessionUser | null> {
       localCurrency: c.localCurrency,
       baseCurrency: c.baseCurrency,
       timezone: c.timezone,
+      tagline: c.tagline,
+      transactionCurrencies: c.transactionCurrencies,
+      salesCurrencies: c.salesCurrencies,
+      defaultSalesCurrency: c.defaultSalesCurrency,
+      industryTemplate: c.industryTemplate,
+      features: asFlags(c.features),
+      terminology: asTerms(c.terminology),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 

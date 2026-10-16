@@ -1,5 +1,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { FeaturesProvider } from '@/components/features-context';
+import { resolveFeatures } from '@/lib/features';
 import { getCurrentUser } from '@/lib/auth/session';
 import { countUnread } from '@/lib/services/notification';
 import { getMenuForRoles } from '@/lib/services/role-menu';
@@ -39,9 +41,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     name: c.name,
     country: c.country,
     localCurrency: c.localCurrency,
+    tagline: c.tagline,
   }));
+  const features = resolveFeatures(user.activeCompany);
 
   return (
+    <FeaturesProvider features={features}>
     <div className="flex min-h-dvh bg-paper">
       {/*
         Without this a keyboard user tabs through every navigation link — more
@@ -87,6 +92,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             name: user.activeCompany.name,
             country: user.activeCompany.country,
             localCurrency: user.activeCompany.localCurrency,
+            tagline: user.activeCompany.tagline,
           }}
           unreadCount={unreadCount}
           permissions={permissions}
@@ -111,5 +117,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
       <MobileNav permissions={permissions} isSuperAdmin={user.isSuperAdmin} myPages={myPages} />
     </div>
+    </FeaturesProvider>
   );
 }

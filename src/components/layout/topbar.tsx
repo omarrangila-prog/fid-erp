@@ -9,6 +9,8 @@ import {
   Plus, CornerDownLeft, Compass, HelpCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useBrand } from '@/components/brand-context';
+import { useFeatures } from '@/components/features-context';
 import { initials } from '@/lib/format';
 import { searchAction, switchCompanyAction, logoutAction } from '@/server/actions/session-actions';
 import { isPinOnlyEmail } from '@/lib/pin-accounts';
@@ -22,6 +24,7 @@ export type TopbarCompany = {
   name: string;
   country: string;
   localCurrency: string;
+  tagline?: string | null;
 };
 
 /** A small country marker so the active company is never in doubt. */
@@ -63,9 +66,10 @@ function CommandPalette({
   const [results, setResults] = React.useState<SearchResult[]>([]);
   const [pending, startTransition] = React.useTransition();
 
+  const has = useFeatures();
   const destinations = React.useMemo(
-    () => navDestinations(permissions, isSuperAdmin),
-    [permissions, isSuperAdmin],
+    () => navDestinations(permissions, isSuperAdmin, has),
+    [permissions, isSuperAdmin, has],
   );
 
   function handleOpenChange(next: boolean) {
@@ -210,9 +214,10 @@ function CommandPalette({
 
 /** The global create menu — the same short list from every screen. */
 function QuickCreate({ permissions, isSuperAdmin }: { permissions: string[]; isSuperAdmin: boolean }) {
+  const has = useFeatures();
   const items = React.useMemo(
-    () => filterQuickCreate(permissions, isSuperAdmin),
-    [permissions, isSuperAdmin],
+    () => filterQuickCreate(permissions, isSuperAdmin, has),
+    [permissions, isSuperAdmin, has],
   );
   if (items.length === 0) return null;
 
@@ -315,7 +320,7 @@ function CompanySwitcher({ companies, active }: { companies: TopbarCompany[]; ac
         </span>
         <span className="min-w-0">
           <span className="block truncate text-sm font-semibold leading-tight text-ink">{active.name}</span>
-          <span className="block truncate text-[11px] leading-tight text-ink-subtle">Coffee Connects Worlds</span>
+          <span className="block truncate text-[11px] leading-tight text-ink-subtle">{active.tagline}</span>
         </span>
         <span className="hidden rounded bg-forest-50 px-1.5 py-0.5 text-[11px] font-medium text-forest-700 sm:inline">
           {active.localCurrency}
@@ -341,7 +346,7 @@ function CompanySwitcher({ companies, active }: { companies: TopbarCompany[]; ac
           <span className="block max-w-32 truncate text-sm font-semibold leading-tight text-ink sm:max-w-none">
             {active.name}
           </span>
-          <span className="hidden text-[11px] leading-tight text-ink-subtle sm:block">Coffee Connects Worlds</span>
+          <span className="hidden text-[11px] leading-tight text-ink-subtle sm:block">{active.tagline}</span>
         </span>
         <span className="hidden rounded bg-forest-50 px-1.5 py-0.5 text-[11px] font-medium text-forest-700 sm:inline">
           {active.localCurrency}
@@ -474,6 +479,7 @@ export function Topbar({
   unreadCount: number;
   permissions: string[];
 }) {
+  const brand = useBrand();
   const [paletteOpen, setPaletteOpen] = React.useState(false);
 
   React.useEffect(() => {
@@ -491,7 +497,7 @@ export function Topbar({
     <header className="sticky top-0 z-30 flex h-[4.5rem] shrink-0 items-center gap-2 border-b border-line bg-surface/95 px-3 backdrop-blur sm:gap-3 sm:px-5">
       <div className="flex items-center gap-2 lg:hidden">
         <div className="grid size-7 shrink-0 place-items-center rounded-md bg-forest-800 text-[11px] font-bold text-white">
-          FID
+          {brand.shortName}
         </div>
       </div>
 

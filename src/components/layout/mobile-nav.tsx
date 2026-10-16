@@ -6,7 +6,9 @@ import { usePathname } from 'next/navigation';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X, MoreHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { MOBILE_PRIMARY } from '@/components/layout/nav-config';
+import { useBrand } from '@/components/brand-context';
+import { useFeatures } from '@/components/features-context';
+import { MOBILE_PRIMARY, featureOk } from '@/components/layout/nav-config';
 import { SidebarNav } from '@/components/layout/sidebar';
 
 /**
@@ -23,11 +25,15 @@ export function MobileNav({
   isSuperAdmin: boolean;
   myPages?: string[];
 }) {
+  const brand = useBrand();
   const pathname = usePathname();
   const [open, setOpen] = React.useState(false);
 
   const granted = new Set(permissions);
-  const primary = MOBILE_PRIMARY.filter((item) => isSuperAdmin || item.permissions.some((p) => granted.has(p)));
+  const has = useFeatures();
+  const primary = MOBILE_PRIMARY.filter(
+    (item) => (isSuperAdmin || item.permissions.some((p) => granted.has(p))) && featureOk(item.href, has),
+  );
 
   return (
     <>
@@ -76,9 +82,9 @@ export function MobileNav({
             <div className="flex h-14 shrink-0 items-center justify-between border-b border-forest-800 px-4">
               <div className="flex items-center gap-2.5">
                 <div className="grid size-7 place-items-center rounded-md bg-gold-500 text-xs font-bold text-forest-950">
-                  FID
+                  {brand.shortName}
                 </div>
-                <p className="text-sm font-semibold text-white">FID Trading</p>
+                <p className="text-sm font-semibold text-white">{brand.name}</p>
               </div>
               <DialogPrimitive.Close
                 aria-label="Close navigation"

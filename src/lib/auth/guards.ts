@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getCurrentUser, requireUser, type SessionUser } from '@/lib/auth/session';
 import { ForbiddenError, NotFoundError } from '@/lib/errors';
 import { PERMISSION_DESCRIPTIONS, type PermissionCode } from '@/lib/constants';
+import { featureBlocksPermission } from '@/lib/features';
 
 /**
  * Server-side authorisation. Every service entry point and every route handler
@@ -11,15 +12,18 @@ import { PERMISSION_DESCRIPTIONS, type PermissionCode } from '@/lib/constants';
  */
 
 export function can(user: SessionUser, permission: PermissionCode): boolean {
+  // A module the company has switched off is off for everyone, Super Admin
+  // included — otherwise a hand-typed URL would still reach it.
+  if (featureBlocksPermission(user.activeCompany, permission)) return false;
   return user.isSuperAdmin || user.permissions.has(permission);
 }
 
 export function canAny(user: SessionUser, permissions: PermissionCode[]): boolean {
-  return user.isSuperAdmin || permissions.some((p) => user.permissions.has(p));
+  return permissions.some((p) => can(user, p));
 }
 
 export function canAll(user: SessionUser, permissions: PermissionCode[]): boolean {
-  return user.isSuperAdmin || permissions.every((p) => user.permissions.has(p));
+  return permissions.every((p) => can(user, p));
 }
 
 /** Loads the session and asserts a single permission. */

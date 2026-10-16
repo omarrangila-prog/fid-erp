@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import { Toaster } from 'sonner';
+import { BrandProvider } from '@/components/brand-context';
+import { getBrand } from '@/lib/brand';
 import './globals.css';
 
 const inter = Inter({
@@ -9,15 +11,15 @@ const inter = Inter({
   display: 'swap',
 });
 
-export const metadata: Metadata = {
-  title: {
-    default: 'FID Trading',
-    template: '%s · FID Trading',
-  },
-  description:
-    'Coffee trading, inventory, shipment and accounting management for FID Trading L.L.C. and FID Trading International SARL.',
-  robots: { index: false, follow: false },
-};
+export function generateMetadata(): Metadata {
+  const brand = getBrand();
+  return {
+    title: { default: brand.name, template: `%s · ${brand.name}` },
+    description: brand.description,
+    icons: { icon: brand.icon },
+    robots: { index: false, follow: false },
+  };
+}
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -29,7 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={inter.variable}>
       <body className="min-h-dvh antialiased">
-        {children}
+        <BrandProvider brand={getBrand()}>{children}</BrandProvider>
         <Toaster
           position="top-right"
           toastOptions={{

@@ -269,6 +269,51 @@ model Company {
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
 
+  // --- Identity printed on this company's own documents ---------------------
+  /// The name customers know, when it differs from the legal name.
+  tradingName         String?
+  /// One line under the company name in the header and on documents.
+  tagline             String?
+  phone               String?
+  email               String?
+  website             String?
+  /// Commercial registration / licence number.
+  companyRegistration String?
+  /// Changes whenever the logo does, so browsers re-fetch it. The image itself
+  /// is in `CompanyLogo`, a separate table, so it is never loaded with the
+  /// company row on every request.
+  logoUpdatedAt       DateTime?
+  logo                CompanyLogo?
+
+  // --- Localisation: configuration points, not a compliance claim -----------
+  /// BCP-47 locale used to group and punctuate numbers, e.g. "en-US", "de-DE".
+  numberLocale String @default("en-US")
+  /// How dates are written: DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD or DD MMM YYYY.
+  dateFormat   String @default("DD MMM YYYY") @db.VarChar(16)
+  language     String @default("en") @db.VarChar(8)
+
+  // --- Business shape --------------------------------------------------------
+  /// IMPORT, EXPORT, IMPORT_EXPORT, LOCAL_TRADING or DISTRIBUTION.
+  businessType     String @default("IMPORT_EXPORT") @db.VarChar(24)
+  /// Which industry preset the company was started from (see lib/templates).
+  industryTemplate String @default("GENERAL_TRADING") @db.VarChar(32)
+  /// Currencies the company offers on money forms. Empty keeps the legacy list.
+  transactionCurrencies String[] @default([])
+  /// Currencies it invoices customers in. Empty means the transaction list.
+  salesCurrencies       String[] @default([])
+  /// Pre-selected on a new sales invoice. Null means the local currency.
+  defaultSalesCurrency  String?  @db.VarChar(3)
+  /// Explicit module/feature switches that override the template defaults.
+  features              Json     @default("{}")
+  /// Words the company uses for things: {"item":"Coffee","customer":"Buyer"}.
+  terminology           Json     @default("{}")
+  /// How an actual exchange rate, once known, flows into stock cost.
+  /// RECOST_ALL (FID's behaviour), PURCHASE_ONLY or NONE.
+  fxCostPolicy          String   @default("RECOST_ALL") @db.VarChar(16)
+
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
   users               UserCompany[]
   customers           Customer[]
   vendors             Vendor[]
@@ -314,7 +359,39 @@ model Company {
   overheadAllocations OverheadAllocation[]
 
   @@index([status])
+  @@index([organizationId])
   @@map("companies")
+}
+
+/// A company's logo: PNG/JPEG/WebP only (never SVG, which would run scripts
+/// when served from this origin). Kept apart from `Company` on purpose.
+model CompanyLogo {
+  companyId String   @id
+  mimeType  String   @db.VarChar(32)
+  bytes     Bytes
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("company_logos")
+}
+
+/// The customer of the product: one business that may own several legal
+/// entities (companies). Plan limits and the sign-in policy live here.
+model Organization {
+  id         String       @id @default(cuid())
+  name       String
+  /// Product plan; entitlements come from lib/entitlements.ts.
+  plan       String       @default("ENTERPRISE") @db.VarChar(24)
+  /// PASSWORD (default for new customers) or PIN_AND_PASSWORD.
+  authPolicy String       @default("PASSWORD") @db.VarChar(24)
+  status     RecordStatus @default(ACTIVE)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  companies Company[]
+
+  @@map("organizations")
 }
 
 model User {

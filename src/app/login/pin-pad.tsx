@@ -4,6 +4,7 @@ import * as React from 'react';
 import { Delete } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { pinLoginAction } from '@/server/actions/session-actions';
+import { useBrand } from '@/components/brand-context';
 
 /**
  * The sign-in screen: one PIN, nothing else.
@@ -14,6 +15,7 @@ import { pinLoginAction } from '@/server/actions/session-actions';
  * and nothing more.
  */
 export function PinPad() {
+  const brand = useBrand();
   const [digits, setDigits] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
   const [pending, startTransition] = React.useTransition();
@@ -77,7 +79,7 @@ export function PinPad() {
   return (
     <div className="w-full max-w-sm space-y-6" data-testid="pin-login">
       <div className="space-y-1 text-center">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-forest-700">FID Trading</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-forest-700">{brand.name}</p>
         <h1 className="text-xl font-semibold tracking-tight text-ink">Enter your PIN</h1>
       </div>
 

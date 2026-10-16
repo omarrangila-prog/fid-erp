@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useBrand } from '@/components/brand-context';
 
 /**
  * The screens opened lately, as tabs under the top bar.
@@ -71,14 +72,16 @@ function subscribe(listener: () => void) {
 }
 
 /** The page's own heading, or its document title without the product name. */
-function titleOfPage(): string | null {
+function titleOfPage(productName: string): string | null {
   const heading = document.querySelector('main h1')?.textContent?.trim();
   if (heading) return heading;
-  const title = document.title.replace(/\s*[·|–-]\s*FID Trading.*$/i, '').trim();
+  const suffix = ` · ${productName}`;
+  const title = (document.title.endsWith(suffix) ? document.title.slice(0, -suffix.length) : document.title).trim();
   return title || null;
 }
 
 function RecentTabsInner({ storageKey }: { storageKey: string }) {
+  const productName = useBrand().name;
   const pathname = usePathname();
   const search = useSearchParams();
   const href = search.toString() ? `${pathname}?${search.toString()}` : pathname;
@@ -93,7 +96,7 @@ function RecentTabsInner({ storageKey }: { storageKey: string }) {
     // The heading is on the page a moment after the route changes; a slow
     // page gets a second look, so its tab is named after its heading.
     const record = () => {
-      const title = titleOfPage();
+      const title = titleOfPage(productName);
       if (!title) return;
       {
         const current = read(storageKey);
@@ -121,7 +124,7 @@ function RecentTabsInner({ storageKey }: { storageKey: string }) {
       window.clearTimeout(first);
       window.clearTimeout(second);
     };
-  }, [pathname, href, storageKey]);
+  }, [pathname, href, storageKey, productName]);
 
   function close(path: string) {
     write(storageKey, read(storageKey).filter((t) => t.path !== path));

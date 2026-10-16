@@ -45,6 +45,14 @@ import {
   Activity,
 } from 'lucide-react';
 import { PERMISSIONS, type PermissionCode } from '@/lib/constants';
+import { routeFeature, type Feature } from '@/lib/features';
+
+/** True when the company has the module a route belongs to (or the route needs none). */
+export type FeatureTest = (feature: Feature) => boolean;
+export const featureOk = (href: string, has?: FeatureTest) => {
+  const feature = routeFeature(href);
+  return !feature || !has || has(feature);
+};
 
 export type NavItem = {
   label: string;
@@ -249,14 +257,14 @@ export const QUICK_CREATE: QuickCreateItem[] = [
   { label: 'Stock count', href: '/inventory/stock-counts/new', icon: ClipboardCheck, group: 'Trade', hint: 'Verify a warehouse against the books', permission: PERMISSIONS.STOCK_COUNT_MANAGE },
 ];
 
-export function filterQuickCreate(permissions: string[], isSuperAdmin: boolean): QuickCreateItem[] {
+export function filterQuickCreate(permissions: string[], isSuperAdmin: boolean, has?: FeatureTest): QuickCreateItem[] {
   const granted = new Set(permissions);
-  return QUICK_CREATE.filter((item) => isSuperAdmin || granted.has(item.permission));
+  return QUICK_CREATE.filter((item) => (isSuperAdmin || granted.has(item.permission)) && featureOk(item.href, has));
 }
 
 /** Flattened navigation, used by the command palette. */
-export function navDestinations(permissions: string[], isSuperAdmin: boolean): Array<NavItem & { group: string }> {
-  return filterNav(NAV_GROUPS, permissions, isSuperAdmin).flatMap((group) =>
+export function navDestinations(permissions: string[], isSuperAdmin: boolean, has?: FeatureTest): Array<NavItem & { group: string }> {
+  return filterNav(NAV_GROUPS, permissions, isSuperAdmin, has).flatMap((group) =>
     group.items.map((item) => ({ ...item, group: group.label })),
   );
 }
@@ -294,13 +302,15 @@ export function withMyPages(groups: NavGroup[], hrefs: string[]): NavGroup[] {
   return [{ label: MY_PAGES_LABEL, icon: Star, items, openByDefault: true }, ...groups];
 }
 
-export function filterNav(groups: NavGroup[], permissions: string[], isSuperAdmin: boolean): NavGroup[] {
+export function filterNav(groups: NavGroup[], permissions: string[], isSuperAdmin: boolean, has?: FeatureTest): NavGroup[] {
   const granted = new Set(permissions);
   return groups
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) =>
-        item.developerOnly ? granted.has(DEVELOPER_MENU_MARK) : isSuperAdmin || item.permissions.some((p) => granted.has(p)),
+      items: group.items.filter(
+        (item) =>
+          featureOk(item.href, has) &&
+          (item.developerOnly ? granted.has(DEVELOPER_MENU_MARK) : isSuperAdmin || item.permissions.some((p) => granted.has(p))),
       ),
     }))
     .filter((group) => group.items.length > 0);

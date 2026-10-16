@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
+import { getBrand } from '@/lib/brand';
 import { openShareLink } from '@/lib/services/report-share';
 import { SharedReportView } from '@/components/share/shared-report-view';
 
@@ -25,7 +26,7 @@ const PREVIEW_ROBOT = /whatsapp|facebookexternalhit|facebot|telegrambot|twitterb
 function Notice({ title, body }: { title: string; body: string }) {
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-2 px-6 text-center" data-testid="shared-notice">
-      <p className="text-sm font-semibold text-ink-muted">FID Trading</p>
+      <p className="text-sm font-semibold text-ink-muted">{getBrand().name}</p>
       <h1 className="text-lg font-semibold text-ink">{title}</h1>
       <p className="text-sm text-ink-muted">{body}</p>
     </main>

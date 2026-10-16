@@ -16,6 +16,7 @@
  *   PRODUCT_LOGO          path of the logo under /public (default /brand/logo.svg)
  *   PRODUCT_ICON          path of the square icon under /public
  *   PRODUCT_SUPPORT_EMAIL where "contact support" goes
+ *   PRODUCT_LOGIN_HEADLINE / PRODUCT_LOGIN_FOOTER  sign-in page copy
  *
  * Until a real name is chosen the placeholder `PRODUCT_NAME` is shown, on
  * purpose: it is impossible to mistake for a finished brand.
@@ -34,6 +35,10 @@ export type Brand = {
   logo: string;
   icon: string;
   supportEmail: string;
+  /** Large sentence on the sign-in page's brand panel. */
+  loginHeadline: string;
+  /** Small print at the foot of the sign-in brand panel (entities, address…). */
+  loginFooter: string;
 };
 
 export function getBrand(): Brand {
@@ -49,6 +54,8 @@ export function getBrand(): Brand {
     logo: read('PRODUCT_LOGO', '/brand/logo.svg'),
     icon: read('PRODUCT_ICON', '/brand/icon.svg'),
     supportEmail: read('PRODUCT_SUPPORT_EMAIL', ''),
+    loginHeadline: read('PRODUCT_LOGIN_HEADLINE', 'From purchase order to profit, in one place.'),
+    loginFooter: read('PRODUCT_LOGIN_FOOTER', ''),
   };
 }
 

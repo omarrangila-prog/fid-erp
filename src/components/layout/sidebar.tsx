@@ -6,6 +6,8 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import * as Popover from '@radix-ui/react-popover';
 import { ChevronRight, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useBrand } from '@/components/brand-context';
+import { useFeatures } from '@/components/features-context';
 import { NAV_GROUPS, filterNav, withMyPages, type NavGroup } from '@/components/layout/nav-config';
 
 /**
@@ -340,9 +342,10 @@ export function SidebarNav({
   collapsed?: boolean;
   onNavigate?: () => void;
 }) {
+  const has = useFeatures();
   const groups = React.useMemo(
-    () => withMyPages(filterNav(NAV_GROUPS, permissions, isSuperAdmin), myPages),
-    [permissions, isSuperAdmin, myPages],
+    () => withMyPages(filterNav(NAV_GROUPS, permissions, isSuperAdmin, has), myPages),
+    [permissions, isSuperAdmin, myPages, has],
   );
   const activeHref = useActiveHref(groups);
 
@@ -364,6 +367,7 @@ export function DesktopSidebar({
   myPages?: string[];
   defaultCollapsed?: boolean;
 }) {
+  const brand = useBrand();
   const [collapsed, setCollapsed] = React.useState(defaultCollapsed);
 
   function toggle() {
@@ -389,12 +393,12 @@ export function DesktopSidebar({
         )}
       >
         <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-gold-500 text-sm font-bold tracking-tight text-forest-950">
-          FID
+          {brand.shortName}
         </div>
         {collapsed ? null : (
           <div className="min-w-0">
-            <p className="truncate text-base font-semibold tracking-tight text-white">FID Trading</p>
-            <p className="truncate text-[11px] tracking-[0.18em] text-gold-300">TRADING</p>
+            <p className="truncate text-base font-semibold tracking-tight text-white">{brand.name}</p>
+            <p className="truncate text-[11px] uppercase tracking-[0.18em] text-gold-300">{brand.tagline}</p>
           </div>
         )}
       </div>
