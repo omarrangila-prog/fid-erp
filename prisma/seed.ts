@@ -12,12 +12,12 @@ import { initialiseProduction } from '../src/lib/seed/core';
  */
 async function main() {
   console.log('→ Initialising permissions, roles, companies and the first administrator…');
-  const base = await initialiseProduction();
+  const base = await initialiseProduction(process.env.INIT_TENANT === 'none' ? null : undefined);
 
   console.log(`  permissions: ${base.permissions}`);
   console.log(`  roles:       ${base.roles}`);
   console.log(`  companies:   ${base.companies}`);
-  console.log(`  admin:       ${base.admin.email} (${base.admin.created ? 'created' : 'already existed'})`);
+  if (base.admin) console.log(`  admin:       ${base.admin.email} (${base.admin.created ? 'created' : 'already existed'})`);
   console.log('\n✓ Ready. Sign in and follow the setup checklist on the dashboard.');
 }
 

@@ -3,6 +3,8 @@ import { prisma, transaction } from '@/lib/db';
 import { ALL_PERMISSIONS, PERMISSION_DESCRIPTIONS, SYSTEM_ROLES, SETTING_KEYS } from '@/lib/constants';
 import { hashPassword, validatePasswordStrength } from '@/lib/auth/password';
 import { provisionCompany, createCashBankAccount } from '@/lib/services/chart-of-accounts';
+import type { TenantSeed } from '@/lib/seed/types';
+import { FID_TENANT } from '@/lib/seed/tenants/fid';
 
 /**
  * Idempotent bootstrap used by both `db:seed` (development) and `db:init`
@@ -45,77 +47,17 @@ export async function seedRoles(): Promise<number> {
   return SYSTEM_ROLES.length;
 }
 
-export type CompanySeed = {
-  code: string;
-  name: string;
-  legalName: string;
-  country: string;
-  localCurrency: string;
-  timezone: string;
-  docPrefix: string;
-  address: string;
-  warehouses: Array<{ code: string; name: string; location: string; port?: string; isDefault?: boolean }>;
-  cashAccounts: Array<{
-    code: string;
-    name: string;
-    accountType: 'CASH' | 'BANK';
-    currency: string;
-    openingBalance?: string;
-    bankName?: string;
-  }>;
-};
-
-export const COMPANY_SEEDS: CompanySeed[] = [
-  {
-    code: 'FID-DXB',
-    name: 'FID Trading L.L.C.',
-    legalName: 'FID TRADING L.L.C.',
-    country: 'United Arab Emirates',
-    localCurrency: 'AED',
-    timezone: 'Asia/Dubai',
-    docPrefix: 'FID-DXB',
-    address: 'Dubai, United Arab Emirates',
-    warehouses: [
-      { code: 'DXB-JAFZA', name: 'Jebel Ali Free Zone Warehouse', location: 'Jebel Ali, Dubai', port: 'Jebel Ali', isDefault: true },
-      { code: 'DXB-BOND', name: 'Port Rashid Bonded Store', location: 'Port Rashid, Dubai', port: 'Port Rashid' },
-    ],
-    // One cash account per currency. "Cash in Hand" is the drawer; a second
-    // petty-cash box for the same currency only gave people two places to
-    // put the same note.
-    cashAccounts: [
-      { code: 'DXB-CASH-AED', name: 'Cash in Hand', accountType: 'CASH', currency: 'AED' },
-      { code: 'DXB-CASH-USD', name: 'Cash in Hand (USD)', accountType: 'CASH', currency: 'USD' },
-      { code: 'DXB-BANK-AED', name: 'AED Bank Account', accountType: 'BANK', currency: 'AED', bankName: 'Emirates NBD' },
-      { code: 'DXB-BANK-USD', name: 'USD Bank Account', accountType: 'BANK', currency: 'USD', bankName: 'Emirates NBD' },
-    ],
-  },
-  {
-    code: 'FID-MA',
-    name: 'FID Trading International SARL',
-    legalName: 'FID TRADING INTERNATIONAL SARL',
-    country: 'Morocco',
-    localCurrency: 'MAD',
-    timezone: 'Africa/Casablanca',
-    docPrefix: 'FID-MA',
-    address: 'Casablanca, Morocco',
-    // Morocco runs two warehouses; stock is tracked separately at each.
-    warehouses: [
-      { code: 'MA-CASA-A', name: 'Casablanca Warehouse A', location: 'Casablanca', port: 'Casablanca', isDefault: true },
-      { code: 'MA-CASA-B', name: 'Ridwan Warehouse', location: 'Casablanca' },
-    ],
-    cashAccounts: [
-      { code: 'MA-CASH-MAD', name: 'Cash in Hand', accountType: 'CASH', currency: 'MAD' },
-      { code: 'MA-CASH-USD', name: 'Cash in Hand (USD)', accountType: 'CASH', currency: 'USD' },
-      { code: 'MA-BANK-MAD', name: 'MAD Bank Account', accountType: 'BANK', currency: 'MAD', bankName: 'Attijariwafa Bank' },
-      { code: 'MA-BANK-USD', name: 'USD Bank Account', accountType: 'BANK', currency: 'USD', bankName: 'Attijariwafa Bank' },
-    ],
-  },
-];
-
-export async function seedCompanies(): Promise<string[]> {
+/** Creates (or repairs) a customer's organization and all of its companies. */
+export async function seedCompanies(tenant: TenantSeed = FID_TENANT): Promise<string[]> {
   const ids: string[] = [];
 
-  for (const seed of COMPANY_SEEDS) {
+  const organization = await prisma.organization.upsert({
+    where: { id: tenant.organization.id },
+    update: { name: tenant.organization.name },
+    create: { ...tenant.organization },
+  });
+
+  for (const seed of tenant.companies) {
     const company = await prisma.company.upsert({
       where: { code: seed.code },
       update: {
@@ -126,6 +68,7 @@ export async function seedCompanies(): Promise<string[]> {
         timezone: seed.timezone,
         docPrefix: seed.docPrefix,
         address: seed.address,
+        organizationId: organization.id,
       },
       create: {
         code: seed.code,
@@ -137,6 +80,13 @@ export async function seedCompanies(): Promise<string[]> {
         timezone: seed.timezone,
         docPrefix: seed.docPrefix,
         address: seed.address,
+        organizationId: organization.id,
+        industryTemplate: seed.industryTemplate ?? 'GENERAL_TRADING',
+        tagline: seed.tagline ?? null,
+        terminology: seed.terminology ?? {},
+        transactionCurrencies: seed.transactionCurrencies ?? [],
+        salesCurrencies: seed.salesCurrencies ?? [],
+        defaultSalesCurrency: seed.defaultSalesCurrency ?? null,
       },
     });
 
@@ -191,14 +141,11 @@ export async function seedCompanies(): Promise<string[]> {
 }
 
 /** Indicative rates seeded so a user is never forced to type one from scratch. */
-export async function seedExchangeRates(): Promise<void> {
+export async function seedExchangeRates(tenant: TenantSeed = FID_TENANT): Promise<void> {
   const today = new Date();
   const effectiveDate = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
 
-  for (const [quoteCurrency, rate] of [
-    ['AED', '3.67250000'],
-    ['MAD', '9.85000000'],
-  ] as const) {
+  for (const [quoteCurrency, rate] of tenant.exchangeRates) {
     const existing = await prisma.exchangeRate.findFirst({
       where: { companyId: null, quoteCurrency, effectiveDate },
     });
@@ -212,7 +159,10 @@ export async function seedExchangeRates(): Promise<void> {
  * Creates (or repairs) the first Super Admin from environment variables.
  * Credentials are never hard-coded in source.
  */
-export async function seedAdminUser(companyIds: string[]): Promise<{ email: string; created: boolean }> {
+export async function seedAdminUser(
+  companyIds: string[],
+  organizationId: string | null = FID_TENANT.organization.id,
+): Promise<{ email: string; created: boolean }> {
   const email = process.env.INITIAL_ADMIN_EMAIL;
   const name = process.env.INITIAL_ADMIN_NAME ?? 'Ali Raza';
   const password = process.env.INITIAL_ADMIN_PASSWORD;
@@ -239,8 +189,8 @@ export async function seedAdminUser(companyIds: string[]): Promise<{ email: stri
     });
     // Keep the display name in step with the environment: it appears on every
     // document this person approves, so a stale placeholder is not harmless.
-    if (existing.name !== name) {
-      await prisma.user.update({ where: { id: existing.id }, data: { name } });
+    if (existing.name !== name || existing.organizationId !== organizationId) {
+      await prisma.user.update({ where: { id: existing.id }, data: { name, organizationId } });
     }
     return { email, created: false };
   }
@@ -251,6 +201,7 @@ export async function seedAdminUser(companyIds: string[]): Promise<{ email: stri
       name,
       passwordHash: await hashPassword(password),
       isSuperAdmin: true,
+      organizationId,
       defaultCompanyId: companyIds[0] ?? null,
       roles: { create: { roleId: superAdminRole.id } },
       companies: { create: companyIds.map((companyId) => ({ companyId })) },
@@ -268,7 +219,7 @@ export async function seedAdminUser(companyIds: string[]): Promise<{ email: stri
  * the repository. Each PIN belongs to one person with one company and one role,
  * so the audit trail still names an individual.
  */
-export async function seedPinAccounts(): Promise<Array<{ name: string; company: string }>> {
+export async function seedPinAccounts(tenant: TenantSeed = FID_TENANT): Promise<Array<{ name: string; company: string }>> {
   const created: Array<{ name: string; company: string }> = [];
 
   const specs = [
@@ -280,22 +231,14 @@ export async function seedPinAccounts(): Promise<Array<{ name: string; company: 
       roleCode: null,
       companyCode: null,
     },
-    {
-      pin: process.env.DUBAI_STAFF_PIN,
-      email: 'dubai.staff@fidtrading.local',
+    ...tenant.pinStaff.map((staff) => ({
+      pin: process.env[staff.pinEnv],
+      email: staff.email,
       isAdmin: false,
-      name: process.env.DUBAI_STAFF_NAME ?? 'Dubai Staff',
-      roleCode: 'DATA_ENTRY',
-      companyCode: 'FID-DXB',
-    },
-    {
-      pin: process.env.MOROCCO_STAFF_PIN,
-      email: 'morocco.staff@fidtrading.local',
-      isAdmin: false,
-      name: process.env.MOROCCO_STAFF_NAME ?? 'Morocco Staff',
-      roleCode: 'DATA_ENTRY',
-      companyCode: 'FID-MA',
-    },
+      name: process.env[staff.nameEnv] ?? staff.defaultName,
+      roleCode: staff.roleCode,
+      companyCode: staff.companyCode,
+    })),
   ];
 
   for (const spec of specs) {
@@ -331,6 +274,7 @@ export async function seedPinAccounts(): Promise<Array<{ name: string; company: 
           name: spec.name!,
           passwordHash: await hashPassword(randomBytes(24).toString('base64url')),
           isSuperAdmin: false,
+          organizationId: tenant.organization.id,
           defaultCompanyId: company.id,
           roles: { create: { roleId: role.id } },
           companies: { create: { companyId: company.id } },
@@ -365,6 +309,7 @@ export async function seedPinAccounts(): Promise<Array<{ name: string; company: 
         pinLockedUntil: null,
         defaultCompanyId: company.id,
         isSuperAdmin: false,
+        organizationId: tenant.organization.id,
       },
     });
     created.push({ name: user.name, company: company.name });
@@ -373,13 +318,21 @@ export async function seedPinAccounts(): Promise<Array<{ name: string; company: 
   return created;
 }
 
-/** Everything a production install needs, and nothing it does not. */
-export async function initialiseProduction() {
+/**
+ * Everything a production install needs, and nothing it does not.
+ *
+ * The shared catalogue (permissions, roles) plus one customer's organization,
+ * companies and first administrator. The customer defaults to FID — the
+ * product's first tenant — and `INIT_TENANT=none` initialises the catalogue
+ * alone, for a platform that creates its customers from the console.
+ */
+export async function initialiseProduction(tenant: TenantSeed | null = FID_TENANT) {
   const permissions = await seedPermissions();
   const roles = await seedRoles();
-  const companyIds = await seedCompanies();
-  await seedExchangeRates();
-  const admin = await seedAdminUser(companyIds);
-  const pinAccounts = await seedPinAccounts();
+  if (!tenant) return { permissions, roles, companies: 0, admin: null, pinAccounts: [] };
+  const companyIds = await seedCompanies(tenant);
+  await seedExchangeRates(tenant);
+  const admin = await seedAdminUser(companyIds, tenant.organization.id);
+  const pinAccounts = await seedPinAccounts(tenant);
   return { permissions, roles, companies: companyIds.length, admin, pinAccounts };
 }
