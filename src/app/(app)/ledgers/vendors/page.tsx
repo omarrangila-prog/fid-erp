@@ -36,7 +36,7 @@ export default async function VendorLedgersPage() {
     <div className="space-y-6">
       <PageHeader
         title="Supplier Ledgers"
-        description="Overseas coffee suppliers are carried in USD for both companies, viewable in local currency too."
+        description="Overseas suppliers are carried in USD for both companies, viewable in local currency too."
         breadcrumbs={[{ label: 'Finance' }, { label: 'Supplier Ledgers' }]}
       />
 

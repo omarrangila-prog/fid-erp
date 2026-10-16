@@ -242,7 +242,7 @@ export default async function ItemStockPage({
       <Card>
         <CardHeader>
           <CardTitle>Stock by warehouse</CardTitle>
-          <CardDescription>A transfer moves coffee between warehouses; it never adds to the company&rsquo;s stock.</CardDescription>
+          <CardDescription>A transfer moves stock between warehouses; it never adds to the company&rsquo;s stock.</CardDescription>
         </CardHeader>
         <CardContent>
           <TableWrap>
@@ -349,7 +349,7 @@ export default async function ItemStockPage({
       <Card>
         <CardHeader>
           <CardTitle>By shipment</CardTitle>
-          <CardDescription>Which shipment made how much — each at its own landed cost. A sale from any warehouse belongs to the shipment its coffee came in on.</CardDescription>
+          <CardDescription>Which shipment made how much — each at its own landed cost. A sale from any warehouse belongs to the shipment its stock came in on.</CardDescription>
         </CardHeader>
         <CardContent>
           <TableWrap>

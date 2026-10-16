@@ -1,41 +1,58 @@
 import { getBrand } from '@/lib/brand';
 
-/** The left-hand brand panel shared by both sign-in screens. */
-export function LoginBrandPanel({ showHighlights = false }: { showHighlights?: boolean }) {
-  const brand = getBrand();
+/** Faint trade lanes: routes converging on a single point, drawn once and left still. */
+function TradeLines() {
   return (
-    <section className="relative hidden flex-col justify-between bg-gradient-to-br from-forest-50 via-paper to-gold-50 p-10 text-ink lg:flex">
-      <div className="flex items-center gap-3">
-        <div className="grid size-9 place-items-center rounded-lg bg-forest-800 text-sm font-bold text-white">
-          {brand.shortName}
-        </div>
+    <svg aria-hidden className="pointer-events-none absolute inset-0 size-full opacity-[0.22]" viewBox="0 0 800 900" preserveAspectRatio="xMidYMid slice" fill="none">
+      <g stroke="#c5a05a" strokeWidth="1">
+        <path d="M-40 760C180 690 320 520 520 430S760 250 860 120" />
+        <path d="M-40 840C220 780 380 600 560 520S780 380 860 260" opacity=".6" />
+        <path d="M-40 680C140 600 260 470 440 360S700 160 860 20" opacity=".45" />
+      </g>
+      <g fill="#c5a05a"><circle cx="520" cy="430" r="3" /><circle cx="560" cy="520" r="2.5" opacity=".7" /><circle cx="440" cy="360" r="2.5" opacity=".6" /></g>
+    </svg>
+  );
+}
+
+/** The left-hand brand panel shared by both sign-in screens. */
+export function LoginBrandPanel(_props: { showHighlights?: boolean } = {}) {
+  const brand = getBrand();
+  const stats = [
+    ['Landed cost', 'per unit, per shipment'],
+    ['Any currency', 'rate-locked, always balanced'],
+    ['Full traceability', 'order → shipment → stock → sale'],
+  ];
+  return (
+    <section className="relative hidden flex-col justify-between overflow-hidden bg-forest-950 p-12 text-white lg:flex">
+      {/* ambient light and a fine grid: depth without clutter */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(46rem_30rem_at_92%_-10%,rgba(55,112,95,0.45),transparent_62%),radial-gradient(34rem_22rem_at_-8%_108%,rgba(197,160,90,0.14),transparent_60%)]" />
+      <TradeLines />
+
+      <div className="relative flex items-center gap-3">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={brand.icon} alt="" aria-hidden className="size-10 rounded-lg" />
         <div>
-          <p className="text-sm font-semibold">{brand.name}</p>
-          <p className="text-xs text-ink-subtle">{brand.tagline}</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.22em]">{brand.name}</p>
+          <p className="text-[11px] uppercase tracking-[0.12em] text-white/50">{brand.tagline}</p>
         </div>
       </div>
 
-      <div className="max-w-md space-y-4">
-        <p className="text-3xl font-semibold leading-tight tracking-tight">{brand.loginHeadline}</p>
-        <p className="text-sm leading-relaxed text-ink-muted">{brand.description}</p>
-        {showHighlights ? (
-          <dl className="grid grid-cols-2 gap-4 pt-4">
-            {[
-              ['Traceability', 'Purchase → Shipment → Warehouse → Sale'],
-              ['Costing', 'Landed cost per unit, per shipment'],
-              ['Currencies', 'Any currency, rate-locked'],
-              ['Accounting', 'Double-entry, always balanced'],
-            ].map(([term, detail]) => (
-              <div key={term}>
-                <dt className="text-xs font-semibold text-forest-700">{term}</dt>
-                <dd className="mt-0.5 text-xs text-ink-muted">{detail}</dd>
+      <div className="relative max-w-lg space-y-6">
+        <p className="text-5xl font-semibold uppercase leading-[1.04] tracking-[-0.01em] xl:text-6xl">{brand.loginHeadline}</p>
+        <p className="max-w-md text-[15px] leading-relaxed text-white/70">{brand.description}</p>
+        {(
+          <dl className="grid gap-3 pt-2">
+            {stats.map(([term, detail]) => (
+              <div key={term} className="flex items-baseline gap-3 border-t border-white/10 pt-3">
+                <dt className="w-36 shrink-0 text-sm font-semibold text-gold-400">{term}</dt>
+                <dd className="text-sm text-white/65">{detail}</dd>
               </div>
             ))}
           </dl>
-        ) : null}
+        )}
       </div>
 
-      <p className="text-[11px] text-ink-subtle">{brand.loginFooter}</p>
+      <p className="relative text-[11px] text-white/45">{brand.loginFooter}</p>
     </section>
   );
 }
@@ -45,10 +62,9 @@ export function LoginBrandCompact() {
   const brand = getBrand();
   return (
     <div className="flex items-center gap-2.5">
-      <div className="grid size-8 place-items-center rounded-lg bg-forest-800 text-[11px] font-bold text-white">
-        {brand.shortName}
-      </div>
-      <p className="text-sm font-semibold text-ink">{brand.name}</p>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={brand.icon} alt="" aria-hidden className="size-8 rounded-lg" />
+      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-ink">{brand.name}</p>
     </div>
   );
 }

@@ -103,10 +103,10 @@ export default async function ExpensesPage({
         title={kind === 'SHIPMENT' ? 'Shipment Expenses' : kind === 'GENERAL' ? 'General Expenses' : 'Expenses'}
         description={
           kind === 'SHIPMENT'
-            ? 'Costs booked against a shipment. Direct costs are capitalised into the landed cost of its coffee.'
+            ? 'Costs booked against a shipment. Direct costs are capitalised into the landed cost of its goods.'
             : kind === 'GENERAL'
               ? 'Running costs of the business that belong to no shipment: rent, salaries, fuel, bank charges.'
-              : 'Shipment and operating costs. Direct shipment costs are capitalised into the landed cost of the coffee.'
+              : 'Shipment and operating costs. Direct shipment costs are capitalised into the landed cost of the goods.'
         }
         breadcrumbs={[
           { label: 'Finance' },

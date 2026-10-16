@@ -1,75 +1,81 @@
 @import "tailwindcss";
 
 /*
- * FID Trading — design system.
+ * Design system — quiet luxury, enterprise precision.
  *
- * The identity is a coffee trader's: deep forest green for structure, warm
- * ivory for paper, a restrained gold reserved for what the eye should land on
- * first, and charcoal for text. Gold is an accent, never a surface — a screen
- * full of gold reads as a warning, not as quality.
+ * Midnight ink and deep evergreen carry the structure (sidebar, login, primary
+ * actions) on a warm ivory canvas. Champagne gold is a restrained accent: logo
+ * detail, the active-navigation tick, focus. It is never a surface, a table
+ * colour or a routine button. (The scale names `forest` and `gold` are
+ * historical; the values here are the brand. Change them and every screen
+ * follows.)
  *
- * Status colour is kept separate from brand colour on purpose. The brand is
- * green, so "success" cannot also be green without the two blurring; success
- * is emerald, and it appears only on badges and figures.
+ * Status colour is kept apart from brand colour: the brand is green, so
+ * "success" is emerald and appears only on badges and figures.
  */
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-sans: var(--font-inter), "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", monospace;
 
-  /* --- Brand: deep forest green ------------------------------------------ */
-  --color-forest-50: #f2f7f4;
-  --color-forest-100: #e0ece5;
-  --color-forest-200: #c2d9cc;
-  --color-forest-300: #96bda9;
-  --color-forest-400: #649a81;
-  --color-forest-500: #427c62;
-  --color-forest-600: #30634d;
-  --color-forest-700: #274f3f;
-  --color-forest-800: #1f3f33;
-  --color-forest-900: #16302a;
-  --color-forest-950: #0d1f1a;
+  /* --- Brand: deep evergreen (500-900) down to midnight ink (950) --------- */
+  --color-forest-50: #f1f6f4;
+  --color-forest-100: #dce9e5;
+  --color-forest-200: #b9d3cc;
+  --color-forest-300: #8bb3a9;
+  --color-forest-400: #5a8f82;
+  --color-forest-500: #37705f;
+  --color-forest-600: #265a4b;
+  --color-forest-700: #1d4a3f;
+  --color-forest-800: #17403a;
+  --color-forest-900: #123a32; /* DEEP EVERGREEN */
+  --color-forest-950: #0a1114; /* MIDNIGHT INK */
 
-  /* --- Accent: warm gold, used sparingly --------------------------------- */
-  --color-gold-50: #fdf9ed;
-  --color-gold-100: #faf0d2;
-  --color-gold-200: #f4dfa2;
-  --color-gold-300: #ecc86a;
-  --color-gold-400: #e3b243;
-  --color-gold-500: #d19a2b;
-  --color-gold-600: #b47d20;
-  --color-gold-700: #90601d;
-  --color-gold-800: #764d1e;
-  --color-gold-900: #64411d;
+  /* --- Accent: champagne gold, used sparingly ----------------------------- */
+  --color-gold-50: #fbf8f0;
+  --color-gold-100: #f5edd9;
+  --color-gold-200: #ebdab7;
+  --color-gold-300: #dfc78f;
+  --color-gold-400: #d1b073;
+  --color-gold-500: #c5a05a; /* CHAMPAGNE GOLD */
+  --color-gold-600: #a9843e;
+  --color-gold-700: #86672f;
+  --color-gold-800: #66502a;
+  --color-gold-900: #4d3d25;
 
-  /* --- Surfaces: warm ivory ---------------------------------------------- */
-  --color-paper: #faf8f4;
+  /* --- Surfaces: warm ivory canvas, white cards --------------------------- */
+  --color-paper: #f6f2e8; /* WARM IVORY */
   --color-surface: #ffffff;
-  --color-surface-sunken: #f5f2ec;
-  --color-line: #e8e4dc;
-  --color-line-strong: #d8d2c7;
+  --color-surface-sunken: #efeadd;
+  --color-line: #e2ddcf;
+  --color-line-strong: #cbc5b3;
 
   /* --- Data grids: every table of figures, Excel-clear ------------------- */
-  --color-grid: #3f3f46; /* every row and column line */
-  --color-grid-strong: #18181b; /* under the header, above totals */
-  --color-grid-head: #eef1ee; /* header background */
-  --color-grid-total: #f1f4f1; /* totals and subtotals */
+  --color-grid: #3f4543; /* every row and column line */
+  --color-grid-strong: #1a1f1e; /* under the header, above totals */
+  --color-grid-head: #ecefe9; /* header background */
+  --color-grid-total: #f0f2ec; /* totals and subtotals */
 
-  /* --- Text: charcoal ----------------------------------------------------- */
-  --color-ink: #22201c;
-  --color-ink-muted: #5c574e;
-  /* 5.14:1 on white and 4.84:1 on paper — AA for normal text. The lighter
-     value this replaced measured 3.71 and failed. */
-  --color-ink-subtle: #736d61;
-  --color-ink-inverse: #f7f5f0;
+  /* --- Text --------------------------------------------------------------- */
+  --color-ink: #0a1114;
+  --color-ink-muted: #3f4c48;
+  /* SLATE #65726E: 5.3:1 on white, 4.7:1 on ivory — AA for normal text. */
+  --color-ink-subtle: #65726e;
+  --color-ink-inverse: #f6f2e8;
 
-  /* --- Radii -------------------------------------------------------------- */
+  /* --- Radii: small controls 8, cards 12 ---------------------------------- */
   --radius-card: 0.75rem;
   --radius-control: 0.5rem;
 
-  /* --- Elevation ---------------------------------------------------------- */
-  --shadow-card: 0 1px 2px rgba(34, 32, 28, 0.04), 0 1px 3px rgba(34, 32, 28, 0.03);
-  --shadow-raised: 0 2px 4px rgba(34, 32, 28, 0.05), 0 4px 12px rgba(34, 32, 28, 0.06);
-  --shadow-overlay: 0 8px 24px rgba(34, 32, 28, 0.10), 0 2px 8px rgba(34, 32, 28, 0.06);
+  /* --- Elevation: separation comes from borders; shadows are for overlays - */
+  --shadow-card: 0 1px 2px rgba(10, 17, 20, 0.04);
+  --shadow-raised: 0 2px 8px rgba(10, 17, 20, 0.08);
+  --shadow-overlay: 0 18px 44px -12px rgba(10, 17, 20, 0.34), 0 4px 12px rgba(10, 17, 20, 0.10);
+
+  /* --- Semantic aliases (components should prefer these) ------------------ */
+  --color-brand-ink: #0a1114;
+  --color-brand-evergreen: #123a32;
+  --color-brand-gold: #c5a05a;
+  --color-brand-ivory: #f6f2e8;
 }
 
 :root {
@@ -95,13 +101,25 @@
     background: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    font-feature-settings: "ss01", "cv11";
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
 
   h1, h2, h3, h4 {
-    letter-spacing: -0.011em;
+    letter-spacing: -0.022em;
+    text-wrap: balance;
+  }
+
+  body::before {
+    /* A faint, fixed wash of brand colour behind everything: depth without noise. */
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(60rem 26rem at 90% -12%, rgba(18, 58, 50, 0.05), transparent 60%);
   }
 
   /* Figures line up column-to-column only when the digits are tabular. */

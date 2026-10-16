@@ -174,7 +174,7 @@ export function TransferForm({
       <Card>
         <CardHeader>
           <CardTitle>Route</CardTitle>
-          <CardDescription>Where the coffee is leaving from, and where it is going.</CardDescription>
+          <CardDescription>Where the stock is leaving from, and where it is going.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-3">
           <Field label="From warehouse" htmlFor="from" required>

@@ -229,7 +229,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
     <div className="space-y-6">
       <PageHeader
         title="Stock on Hand"
-        description="Every coffee: what came in, what sold, what is left and where, what it cost, what it sold for, what has been collected — and whether it made money."
+        description="Every item: what came in, what sold, what is left and where, what it cost, what it sold for, what has been collected — and whether it made money."
         breadcrumbs={[{ label: 'Inventory' }, { label: 'Stock on Hand' }]}
         actions={
           <>
@@ -272,7 +272,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
             value={kg(t.availableKg, unit)}
             sub={`${sites.length === 1 ? 'In 1 warehouse' : `Across ${sites.length} warehouses`}${t.reservedKg.greaterThan(0) ? ` · ${kg(t.reservedKg, unit)} held for drafts` : ''}`}
           />
-          <Figure testId="total-in-transit" label="In transit" value={formatQuantityKg(inTransitKg)} sub="Owned, not yet landed" />
+          <Figure testId="total-in-transit" label="In transit" value={kg(inTransitKg, unit)} sub="Owned, not yet landed" />
           {showValue ? (
             <Figure
               testId="total-stock-value"

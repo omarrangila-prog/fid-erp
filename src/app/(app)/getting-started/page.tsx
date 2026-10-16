@@ -19,13 +19,13 @@ const FLOW = [
   {
     icon: FileText,
     title: 'Purchase contract',
-    body: 'What you agreed to buy. Books the supplier payable and the coffee in transit. No stock yet.',
+    body: 'What you agreed to buy. Books the supplier payable and the goods in transit. No stock yet.',
     href: '/purchases',
   },
   {
     icon: PackageCheck,
     title: 'Goods receipt',
-    body: 'The coffee arrives. Choose the warehouse and the quantity actually received — this is the step that adds stock.',
+    body: 'The goods arrive. Choose the warehouse and the quantity actually received — this is the step that adds stock.',
     href: '/goods-receipts',
   },
   {

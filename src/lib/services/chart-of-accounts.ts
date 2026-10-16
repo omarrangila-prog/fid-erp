@@ -334,7 +334,9 @@ const STANDARD_ACCOUNTS: AccountSeed[] = [
   },
 ];
 
-export async function ensureChartOfAccounts(tx: Tx, companyId: string): Promise<void> {
+export async function ensureChartOfAccounts(tx: Tx, companyId: string, industryTemplate?: string | null): Promise<void> {
+  // Only the commodity (coffee) template books its sales as "Coffee Sales".
+  const commodity = !industryTemplate || industryTemplate === 'COMMODITY_TRADING';
   // One read and one write. The obvious version — look up each account, then
   // create it — costs a network round-trip per row, which is imperceptible
   // against a local database and takes tens of seconds against a hosted one.
@@ -348,7 +350,7 @@ export async function ensureChartOfAccounts(tx: Tx, companyId: string): Promise<
     data: missing.map((seed) => ({
       companyId,
       code: seed.code,
-      name: seed.name,
+      name: seed.systemKey === ACCOUNT_KEYS.SALES_REVENUE && !commodity ? 'Sales' : seed.name,
       type: seed.type,
       reportGroup: seed.reportGroup,
       systemKey: seed.systemKey ?? null,
@@ -576,7 +578,7 @@ export async function postOpeningBalance(
 export async function provisionCompany(tx: Tx, companyId: string): Promise<void> {
   const company = await tx.company.findUnique({ where: { id: companyId } });
   if (!company) throw new NotFoundError('Company');
-  await ensureChartOfAccounts(tx, companyId);
+  await ensureChartOfAccounts(tx, companyId, company.industryTemplate);
   await ensureExpenseCategories(tx, companyId);
   // The codes exist from day one so the tax settings screen has something to
   // show, but nothing charges tax until an administrator enters a registration

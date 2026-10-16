@@ -5,15 +5,9 @@ import { cn } from '@/lib/utils';
 
 /** The product's logo tile: its short mark on the brand colour. */
 export function BrandMark({ className }: { className?: string }) {
-  const { shortName } = useBrand();
-  return (
-    <div
-      aria-hidden
-      className={cn('grid shrink-0 place-items-center rounded-lg font-bold tracking-tight', className)}
-    >
-      {shortName}
-    </div>
-  );
+  const { icon } = useBrand();
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={icon} alt="" aria-hidden className={cn('shrink-0 rounded-lg', className)} />;
 }
 
 /** The product name as plain text. */

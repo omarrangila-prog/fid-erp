@@ -40,7 +40,7 @@ export function LoginForm() {
           autoComplete="username"
           autoFocus
           required
-          placeholder="you@fidtrading.com"
+          placeholder="you@company.com"
         />
       </Field>
 

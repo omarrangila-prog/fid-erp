@@ -6,20 +6,19 @@ import { cn } from '@/lib/utils';
  * The headline figure.
  *
  * Each card carries one number, the unit it is in, and one line saying whether
- * that is good news. The coloured tile is how the eye finds the card it wants
- * without reading every label — so the colour is tied to the kind of figure,
- * not decoration.
+ * that is good news. A small evergreen icon marks the kind of figure; colour is
+ * kept for status, not decoration.
  */
 
 export type KpiTone = 'sales' | 'receivable' | 'payable' | 'inventory' | 'cash' | 'profit';
 
 const TILE: Record<KpiTone, string> = {
-  sales: 'bg-emerald-50 text-emerald-700',
-  receivable: 'bg-amber-50 text-amber-700',
-  payable: 'bg-red-50 text-red-700',
-  inventory: 'bg-sky-50 text-sky-700',
-  cash: 'bg-forest-50 text-forest-700',
-  profit: 'bg-gold-50 text-gold-700',
+  sales: 'bg-forest-50 text-forest-800 ring-1 ring-inset ring-forest-100',
+  receivable: 'bg-forest-50 text-forest-800 ring-1 ring-inset ring-forest-100',
+  payable: 'bg-forest-50 text-forest-800 ring-1 ring-inset ring-forest-100',
+  inventory: 'bg-forest-50 text-forest-800 ring-1 ring-inset ring-forest-100',
+  cash: 'bg-forest-50 text-forest-800 ring-1 ring-inset ring-forest-100',
+  profit: 'bg-forest-50 text-forest-800 ring-1 ring-inset ring-forest-100',
 };
 
 export function KpiCard({
@@ -54,10 +53,10 @@ export function KpiCard({
   const rising = (deltaPct ?? 0) >= 0;
 
   return (
-    <div className="flex h-full flex-col rounded-xl border border-line bg-surface p-4 shadow-card transition-colors hover:border-forest-200">
+    <div className="group flex h-full flex-col rounded-xl border border-line-strong/70 bg-surface p-4 shadow-card transition-colors duration-150 hover:border-forest-300">
       <div className="flex items-start justify-between gap-3">
-        <span className={cn('grid size-9 shrink-0 place-items-center rounded-lg', TILE[tone])}>
-          <Icon className="size-[18px]" />
+        <span className={cn('grid size-8 shrink-0 place-items-center rounded-lg', TILE[tone])}>
+          <Icon className="size-4" />
         </span>
         {deltaPct !== undefined && deltaPct !== null ? (
           <span
@@ -73,7 +72,7 @@ export function KpiCard({
       </div>
 
       <p className="mt-3 text-xs font-medium text-ink-muted">{label}</p>
-      <p className="tnum mt-0.5 text-xl font-semibold tracking-tight text-ink">
+      <p className="tnum mt-0.5 text-[1.65rem] font-semibold leading-tight tracking-[-0.03em] text-ink">
         {currency ? <span className="mr-1 text-sm font-medium text-ink-muted">{currency}</span> : null}
         {value}
       </p>

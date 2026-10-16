@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { BookText, Plus } from 'lucide-react';
 import { requirePageAccess, can } from '@/lib/auth/guards';
+import { makeTerms } from '@/lib/terminology';
 import { PERMISSIONS, TRANSACTION_STATUS_META, SHIPMENT_STATUS_META, PAYMENT_METHOD_LABELS, SHIPMENT_STATUSES_LANDED } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { dec } from '@/lib/money';
@@ -38,6 +39,8 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
   const { id } = await params;
   const user = await requirePageAccess(PERMISSIONS.VENDORS_VIEW);
   const companyId = user.activeCompany.id;
+  const terms = makeTerms(user.activeCompany.terminology);
+  const product = terms('product');
   const showCost = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
 
   const vendor = await prisma.vendor.findFirst({
@@ -127,7 +130,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
           tone={outstandingUsd.greaterThan(0) ? 'warning' : 'default'}
         />
         <StatCard label="Contracts" value={String(vendor.purchaseContracts.length)} sublabel={`${posted.length} approved`} />
-        <StatCard label="Coffee bought" value={formatQuantityKg(totalBoughtKg)} />
+        <StatCard label={`${product} bought`} value={formatQuantityKg(totalBoughtKg, { unit: terms('unit') })} />
         {showCost ? <StatCard label="Total purchased" value={formatMoney(totalValueUsd, 'USD')} /> : null}
       </div>
 
@@ -204,7 +207,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
                   <TR className="hover:bg-transparent">
                     <TH>Contract</TH>
                     <TH>Date</TH>
-                    <TH>Coffee</TH>
+                    <TH>{product}</TH>
                     <TH>Shipments</TH>
                     <TH numeric>Quantity</TH>
                     {showCost ? <TH numeric>Value</TH> : null}
@@ -345,7 +348,7 @@ export default async function VendorDetailPage({ params }: { params: Promise<{ i
                   <TR className="hover:bg-transparent">
                     <TH>Reference</TH>
                     <TH>Shipment</TH>
-                    <TH>Coffee</TH>
+                    <TH>{product}</TH>
                     <TH numeric>Quantity</TH>
                     <TH>ETA</TH>
                     <TH>Status</TH>

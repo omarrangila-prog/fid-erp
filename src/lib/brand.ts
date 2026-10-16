@@ -18,8 +18,9 @@
  *   PRODUCT_SUPPORT_EMAIL where "contact support" goes
  *   PRODUCT_LOGIN_HEADLINE / PRODUCT_LOGIN_FOOTER  sign-in page copy
  *
- * Until a real name is chosen the placeholder `PRODUCT_NAME` is shown, on
- * purpose: it is impossible to mistake for a finished brand.
+ * The shipped defaults are the AURQORA brand ("From purchase to profit.").
+ * A deployment that must carry another identity (FID Trading does) sets the
+ * variables above; nothing else needs editing.
  */
 
 function read(name: string, fallback: string): string {
@@ -42,20 +43,20 @@ export type Brand = {
 };
 
 export function getBrand(): Brand {
-  const name = read('PRODUCT_NAME', 'PRODUCT_NAME');
+  const name = read('PRODUCT_NAME', 'AURQORA');
   return {
     name,
     shortName: read('PRODUCT_SHORT_NAME', initials(name)),
-    tagline: read('PRODUCT_TAGLINE', 'Import · Export · Inventory · Accounting'),
+    tagline: read('PRODUCT_TAGLINE', 'Global Trade & Operations ERP'),
     description: read(
       'PRODUCT_DESCRIPTION',
-      'Purchase orders, shipments, landed cost, stock, sales and full double-entry accounting for importers, exporters and trading companies.',
+      'Purchasing, shipments, landed cost, inventory, sales, accounting and profitability — connected in one operating system for global trading businesses.',
     ),
     logo: read('PRODUCT_LOGO', '/brand/logo.svg'),
     icon: read('PRODUCT_ICON', '/brand/icon.svg'),
     supportEmail: read('PRODUCT_SUPPORT_EMAIL', ''),
-    loginHeadline: read('PRODUCT_LOGIN_HEADLINE', 'From purchase order to profit, in one place.'),
-    loginFooter: read('PRODUCT_LOGIN_FOOTER', ''),
+    loginHeadline: read('PRODUCT_LOGIN_HEADLINE', 'Run global trade with total clarity.'),
+    loginFooter: read('PRODUCT_LOGIN_FOOTER', 'Secure global operations workspace.'),
   };
 }
 

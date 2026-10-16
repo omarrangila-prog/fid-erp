@@ -72,7 +72,10 @@ export function StockClient({
   /** Rendered inside the empty state; built on the server so permissions are checked there. */
   emptyAction?: React.ReactNode;
 }) {
-  const unit = useTerms()('unit');
+  const terms = useTerms();
+  const unit = terms('unit');
+  const product = terms('product');
+  const productLower = terms.lower('product');
   const [warehouse, setWarehouse] = React.useState('ALL');
 
   const filtered = React.useMemo(
@@ -83,7 +86,7 @@ export function StockClient({
   const columns: DataColumn<StockRow>[] = [
     {
       id: 'item',
-      header: 'Coffee',
+      header: product,
       mobile: 'title',
       sortValue: (r) => r.itemName,
       cell: (r) => (
@@ -191,7 +194,7 @@ export function StockClient({
       pageSize={50}
       filters={[
         { id: 'warehouse', label: 'Warehouse', value: (r) => r.warehouse },
-        { id: 'item', label: 'Coffee', value: (r) => r.itemName },
+        { id: 'item', label: product, value: (r) => r.itemName },
         { id: 'origin', label: 'Origin', value: (r) => r.origin },
       ]}
       expandedContent={(r) => (
@@ -246,11 +249,11 @@ export function StockClient({
           .map((l) => `${l.reference} ${l.batchNumber} ${l.container} ${l.lotNumber} ${l.shipment}`)
           .join(' ')}`
       }
-      searchPlaceholder="Search coffee, warehouse, reference, batch or container…"
+      searchPlaceholder={`Search ${productLower}, warehouse, reference, batch or container…`}
       exportHref={canExport ? '/api/export/stock-on-hand' : undefined}
       emptyAction={emptyAction}
       emptyTitle="No stock on hand"
-      emptyDescription="Receive an approved purchase contract into a warehouse to bring coffee into stock."
+      emptyDescription={`Receive an approved purchase contract into a warehouse to bring ${productLower} into stock.`}
       toolbar={
         <div className="flex items-center gap-2">
           <Select

@@ -45,7 +45,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   const item = viewer
     ? await prisma.coffeeItem.findFirst({ where: { id, companyId: viewer.activeCompany.id }, select: { itemName: true } })
     : null;
-  return { title: item?.itemName ?? 'Coffee' };
+  return { title: item?.itemName ?? 'Item' };
 }
 
 export default async function ItemDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -417,7 +417,7 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
 
         <TabsContent value="shipments">
           {item.shipments.length === 0 ? (
-            <EmptyState title="No shipments yet" description="Jobs carrying this coffee appear here." />
+            <EmptyState title="No shipments yet" description="Shipments carrying this item appear here." />
           ) : (
             <>
             <TableWrap>

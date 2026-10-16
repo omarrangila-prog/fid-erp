@@ -81,9 +81,8 @@ export function MobileNav({
             </DialogPrimitive.Description>
             <div className="flex h-14 shrink-0 items-center justify-between border-b border-forest-800 px-4">
               <div className="flex items-center gap-2.5">
-                <div className="grid size-7 place-items-center rounded-md bg-gold-500 text-xs font-bold text-forest-950">
-                  {brand.shortName}
-                </div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={brand.icon} alt="" aria-hidden className="size-7 rounded-md" />
                 <p className="text-sm font-semibold text-white">{brand.name}</p>
               </div>
               <DialogPrimitive.Close

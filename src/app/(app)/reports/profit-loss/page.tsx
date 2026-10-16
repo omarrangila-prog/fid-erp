@@ -7,7 +7,6 @@ import { Decimal, dec } from '@/lib/money';
 import { PageHeader } from '@/components/shared/page-header';
 import { DateRangePicker } from '@/components/shared/date-range';
 import { Card, CardContent } from '@/components/ui/card';
-import { PrintButton } from '@/components/shared/print-button';
 import { ReportShareButton } from '@/components/share/report-share-button';
 import { exportHref } from '@/components/shared/excel-link';
 import { ExportLinks } from '@/components/shared/export-links';
@@ -160,7 +159,6 @@ export default async function ProfitLossPage({
             <FavouriteStar href="/reports/profit-loss" label="Profit & Loss" />
             <CustomizePanel report="Profit & Loss" fields={['period', 'columns', 'compare', 'zero']} />
             <ExportLinks href={exportHref('profit-loss', { from, to })} />
-            <PrintButton />
             <ReportShareButton report="profit-loss" />
           </>
         }

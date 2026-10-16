@@ -341,7 +341,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
       />
 
       <MetricGrid>
-        <Metric label="Quantity" value={formatQuantityKg(quantityKg)} hint={`${bags.toLocaleString()} bags`} />
+        <Metric label="Quantity" value={formatQuantityKg(quantityKg, { unit })} hint={unit === 'KG' ? `${bags.toLocaleString()} bags` : undefined} />
         <Metric label="Containers" value={String(containerCount)} hint={items.join(' / ')} />
         <Metric label="ETA" value={formatDate(lastEta)} hint={records.length > 1 ? 'Latest of the containers' : (shipment.vesselName ?? undefined)} />
         <Metric
@@ -544,7 +544,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                   {formatRate(costSheet.rateLocalPerUsd)}. {formatMoney(costSheet.goodsUsd, 'USD')} ×{' '}
                   {costSheet.rateLocalPerUsd.minus(costSheet.orderedRate).abs().toString()} ={' '}
                   {formatMoney(costSheet.exchangeDifferenceLocal.abs(), costSheet.localCurrency)}{' '}
-                  {costSheet.exchangeDifferenceLocal.isPositive() ? 'more' : 'less'} for the same coffee.
+                  {costSheet.exchangeDifferenceLocal.isPositive() ? 'more' : 'less'} for the same goods.
                 </p>
                 <dl className="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
                   <div>
@@ -587,7 +587,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                 <Table>
                   <THead>
                     <TR className="hover:bg-transparent">
-                      <TH>Coffee purchase</TH>
+                      <TH>Purchase cost</TH>
                       <TH numeric>Quantity</TH>
                       <TH numeric>Purchase USD</TH>
                     </TR>

@@ -46,7 +46,7 @@ const FIELDS = (localCurrency: string, keep?: string): FieldSpec[] => [
     label: 'Ledger currency',
     required: true,
     options: useCurrencyOptions(localCurrency, { keep }),
-    hint: 'Overseas coffee suppliers are normally carried in USD for both companies.',
+    hint: 'Overseas suppliers are normally carried in USD for both companies.',
   },
 
   { kind: 'section', title: 'Contact' },
@@ -238,7 +238,7 @@ export function VendorsClient({
         searchValue={(r) => `${r.vendorName} ${r.vendorCode} ${r.country ?? ''} ${r.contactPerson ?? ''}`}
         searchPlaceholder="Search suppliers…"
         emptyTitle="No suppliers yet"
-        emptyDescription="Add the exporters and cooperatives you buy green coffee from."
+        emptyDescription="Add the suppliers you buy from."
         emptyAction={canCreate ? <Button onClick={() => setCreating(true)}><Plus />Add supplier</Button> : undefined}
         toolbar={
           canCreate ? (

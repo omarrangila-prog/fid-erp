@@ -53,7 +53,10 @@ export function BatchesClient({
   /** Rendered inside the empty state; built on the server so permissions are checked there. */
   emptyAction?: React.ReactNode;
 }) {
-  const unit = useTerms()('unit');
+  const terms = useTerms();
+  const unit = terms('unit');
+  const product = terms('product');
+  const productLower = terms.lower('product');
   const columns: DataColumn<BatchRow>[] = [
     {
       id: 'batch',
@@ -70,7 +73,7 @@ export function BatchesClient({
     },
     {
       id: 'coffee',
-      header: 'Coffee',
+      header: product,
       mobile: 'meta',
       sortValue: (r) => r.itemName,
       exportValue: (r) => r.itemName,
@@ -181,7 +184,7 @@ export function BatchesClient({
       rowHref={(r) => `/inventory/batches/${r.id}`}
       pageSize={50}
       filters={[
-        { id: 'item', label: 'Coffee', value: (r) => r.itemName },
+        { id: 'item', label: product, value: (r) => r.itemName },
         { id: 'warehouse', label: 'Warehouse', value: (r) => r.warehouses || null },
         { id: 'origin', label: 'Origin', value: (r) => r.origin },
       ]}

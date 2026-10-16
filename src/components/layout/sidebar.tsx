@@ -148,11 +148,11 @@ function NavLink({
       className={cn(
         'relative flex items-center gap-2.5 rounded-lg pl-3 pr-3 text-sm transition-colors',
         compact ? 'py-1.5 [@media(pointer:coarse)]:py-2.5' : 'py-2 pl-5',
-        active ? 'bg-forest-800 font-medium text-white' : 'text-forest-200 hover:bg-forest-800/60 hover:text-white',
+        active ? 'bg-forest-900 font-medium text-white' : 'text-forest-200 hover:bg-forest-800/60 hover:text-white',
       )}
     >
-      {active ? <span className="absolute inset-y-1 left-0 w-[3px] rounded-r bg-gold-400" aria-hidden /> : null}
-      <Icon className={cn('size-4 shrink-0', active ? 'text-gold-300' : 'text-forest-300')} />
+      {active ? <span className="absolute inset-y-1 left-0 w-[3px] rounded-r bg-gold-500" aria-hidden /> : null}
+      <Icon className={cn('size-4 shrink-0', active ? 'text-white' : 'text-forest-300')} />
       <span className="truncate">{label}</span>
     </Link>
   );
@@ -230,7 +230,7 @@ function ExpandedNav({
               aria-controls={bodyId}
               className={cn(
                 'flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-colors',
-                holdsActive ? 'text-gold-300' : 'text-forest-300 hover:bg-forest-800/60 hover:text-forest-100',
+                holdsActive ? 'text-white' : 'text-forest-300 hover:bg-forest-800/60 hover:text-forest-100',
               )}
             >
               <ChevronRight className={cn('size-3.5 shrink-0 transition-transform', isOpen && 'rotate-90')} aria-hidden />
@@ -287,7 +287,7 @@ function CollapsedRail({ groups, activeHref }: { groups: NavGroup[]; activeHref:
                 className={cn(
                   'flex w-full items-center justify-center rounded-lg p-2.5 transition-colors',
                   holdsActive
-                    ? 'bg-forest-800 text-gold-300'
+                    ? 'bg-forest-900 text-white'
                     : 'text-forest-300 hover:bg-forest-800/60 hover:text-white',
                 )}
               >
@@ -382,7 +382,7 @@ export function DesktopSidebar({
       className={cn(
         // Pinned to the screen: the page scrolls, the menu stays where it is
         // and scrolls on its own when it is longer than the screen.
-        'hidden shrink-0 flex-col border-r border-forest-950 bg-forest-900 transition-[width] duration-200 lg:sticky lg:top-0 lg:flex lg:h-dvh lg:self-start',
+        'hidden shrink-0 flex-col border-r border-forest-950 bg-forest-950 transition-[width] duration-200 lg:sticky lg:top-0 lg:flex lg:h-dvh lg:self-start',
         collapsed ? 'w-[4.25rem]' : 'w-64',
       )}
     >
@@ -392,13 +392,12 @@ export function DesktopSidebar({
           collapsed ? 'justify-center px-2' : 'gap-2.5 px-5',
         )}
       >
-        <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-gold-500 text-sm font-bold tracking-tight text-forest-950">
-          {brand.shortName}
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={brand.icon} alt="" aria-hidden className="size-9 shrink-0 rounded-lg" />
         {collapsed ? null : (
           <div className="min-w-0">
-            <p className="truncate text-base font-semibold tracking-tight text-white">{brand.name}</p>
-            <p className="truncate text-[11px] uppercase tracking-[0.18em] text-gold-300">{brand.tagline}</p>
+            <p className="truncate text-[15px] font-semibold uppercase tracking-[0.2em] text-white">{brand.name}</p>
+            <p className="truncate text-[10px] uppercase tracking-[0.14em] text-white/50">{brand.tagline}</p>
           </div>
         )}
       </div>

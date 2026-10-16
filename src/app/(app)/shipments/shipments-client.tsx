@@ -180,7 +180,7 @@ export function ShipmentsClient({
       cell: (r) => (
         <span>
           <span className="block">{r.kgLabel}</span>
-          <span className="block text-xs text-ink-subtle">{r.bags.toLocaleString()} bags</span>
+          {unit === 'KG' ? <span className="block text-xs text-ink-subtle">{r.bags.toLocaleString()} bags</span> : null}
         </span>
       ),
     },

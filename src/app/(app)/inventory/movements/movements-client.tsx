@@ -56,7 +56,10 @@ export function MovementsClient({
   /** Rendered inside the empty state; built on the server so permissions are checked there. */
   emptyAction?: React.ReactNode;
 }) {
-  const unit = useTerms()('unit');
+  const terms = useTerms();
+  const unit = terms('unit');
+  const product = terms('product');
+  const productLower = terms.lower('product');
   const [type, setType] = React.useState('ALL');
   const [warehouse, setWarehouse] = React.useState('ALL');
 
@@ -93,7 +96,7 @@ export function MovementsClient({
         </span>
       ),
     },
-    { id: 'coffee', header: 'Coffee', mobile: 'meta', exportValue: (r) => r.itemName, cell: (r) => r.itemName },
+    { id: 'coffee', header: product, mobile: 'meta', exportValue: (r) => r.itemName, cell: (r) => r.itemName },
     {
       id: 'sourceRef',
       header: 'Reference',
@@ -188,10 +191,10 @@ export function MovementsClient({
       searchValue={(r) =>
         `${r.batchNumber} ${r.itemName} ${r.warehouse} ${r.reference} ${r.contractReference ?? ''} ${r.containerNumber ?? ''} ${r.notes ?? ''}`
       }
-      searchPlaceholder="Search batch, coffee, container or reference…"
+      searchPlaceholder={`Search batch, ${productLower}, container or reference…`}
       emptyAction={emptyAction}
       emptyTitle="No stock movements"
-      emptyDescription="Movements are written whenever coffee is received, sold, transferred or adjusted."
+      emptyDescription={`Movements are written whenever ${productLower} is received, sold, transferred or adjusted.`}
       toolbar={
         <div className="flex flex-wrap items-center gap-2">
           <Select aria-label="Filter by movement type" value={type} onChange={(e) => setType(e.target.value)} className="h-10 w-auto min-w-40">

@@ -1,11 +1,11 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
+import { Geist } from 'next/font/google';
 import { Toaster } from 'sonner';
 import { BrandProvider } from '@/components/brand-context';
 import { getBrand } from '@/lib/brand';
 import './globals.css';
 
-const inter = Inter({
+const inter = Geist({
   subsets: ['latin'],
   variable: '--font-inter',
   display: 'swap',
@@ -24,7 +24,7 @@ export function generateMetadata(): Metadata {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#faf8f4',
+  themeColor: '#f6f2e8',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

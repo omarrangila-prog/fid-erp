@@ -17,11 +17,9 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        // Forest is the workhorse; gold is saved for the one action on a screen
-        // that deserves the eye. gold-700 rather than gold-600 so white text
-        // clears the AA contrast threshold.
-        primary: 'bg-forest-800 text-white shadow-card hover:bg-forest-700 active:bg-forest-900',
-        accent: 'bg-gold-700 text-white shadow-card hover:bg-gold-800 active:bg-gold-900',
+        // Evergreen is the only button colour; gold never fills a button.
+        primary: 'bg-forest-900 text-white hover:bg-forest-800 active:bg-forest-950',
+        accent: 'bg-forest-900 text-white hover:bg-forest-800 active:bg-forest-950',
         outline: 'border border-line-strong bg-surface text-ink hover:border-forest-300 hover:bg-forest-50',
         ghost: 'text-ink-muted hover:bg-forest-50 hover:text-ink',
         danger: 'bg-red-600 text-white shadow-card hover:bg-red-700 active:bg-red-800',

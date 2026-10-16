@@ -225,7 +225,7 @@ function QuickCreate({ permissions, isSuperAdmin }: { permissions: string[]; isS
 
   return (
     <DropdownMenu.Root>
-      <DropdownMenu.Trigger className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-gold-700 px-2.5 text-sm font-medium text-white transition-colors hover:bg-gold-800 sm:px-3">
+      <DropdownMenu.Trigger className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-forest-900 px-2.5 text-sm font-medium text-white transition-colors hover:bg-forest-800 sm:px-3">
         <Plus className="size-4" />
         <span className="hidden sm:inline">New</span>
         <ChevronDown className="hidden size-3.5 opacity-80 sm:block" />

@@ -263,7 +263,7 @@ export function CustomersClient({
         searchValue={(r) => `${r.customerName} ${r.customerCode} ${r.country ?? ''} ${r.contactPerson ?? ''}`}
         searchPlaceholder="Search customers…"
         emptyTitle="No customers yet"
-        emptyDescription="Add the roasters and traders you sell coffee to."
+        emptyDescription="Add the customers you sell to."
         emptyAction={canCreate ? <Button onClick={() => setCreating(true)}><Plus />Add customer</Button> : undefined}
         toolbar={
           canCreate ? (

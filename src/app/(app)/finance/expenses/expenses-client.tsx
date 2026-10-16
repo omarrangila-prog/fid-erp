@@ -360,7 +360,7 @@ export function ExpensesClient({
       searchPlaceholder="Search number, category or shipment…"
       emptyAction={emptyAction}
       emptyTitle="No expenses yet"
-      emptyDescription="Record shipment and operating costs. Direct shipment costs raise the landed cost of the coffee."
+      emptyDescription="Record shipment and operating costs. Direct shipment costs raise the landed cost of the goods."
       exportFileName={canExport ? 'expenses' : undefined}
       exportTitle="Expense Vouchers"
     />

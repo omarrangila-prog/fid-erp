@@ -5,7 +5,7 @@ import { createSalesInvoice, postSalesInvoice } from '@/lib/services/sales';
 import { createReceipt, postReceipt } from '@/lib/services/receipt';
 import { createPayment, postPayment } from '@/lib/services/payment';
 import { createExpense, postExpense } from '@/lib/services/expense';
-import { createCashBankAccount } from '@/lib/services/chart-of-accounts';
+import { createCashBankAccount, postAccountOpeningBalance } from '@/lib/services/chart-of-accounts';
 import { enableTax, setStandardRate } from '@/lib/services/tax';
 import { createTenant, addCompany } from '@/lib/services/tenant';
 import { reconcile } from '@/lib/services/reconciliation';
@@ -81,6 +81,13 @@ async function buildCompany(spec: DemoSpec, companyId: string, localCurrency: st
       { companyId, code: `BANK-${i + 1}-${currency}`, name: `${currency} Bank Account`, accountType: 'BANK', currency, bankName: 'Demo Bank' },
       userId,
     );
+  }
+
+  // The owners' starting capital, so the bank is never overdrawn on day one.
+  for (const [currency, bank] of Object.entries(banks)) {
+    const amount = currency === 'USD' ? 400000 : Math.round(400000 * Number(rateOf(currency) === '1' ? 1 : rateOf(currency)));
+    const account = await prisma.cashBankAccount.findUniqueOrThrow({ where: { id: bank.id } });
+    await postAccountOpeningBalance({ accountId: account.glAccountId, companyId, userId, amount: String(amount), asOf: daysAgo(210), currency, rateToUsd: rateOf(currency), rateLocalPerUsd: localRate });
   }
 
   // --- masters ----------------------------------------------------------------

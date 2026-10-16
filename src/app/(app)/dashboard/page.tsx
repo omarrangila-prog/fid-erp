@@ -223,7 +223,7 @@ export default async function DashboardPage() {
             <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {[
                 { label: 'Cash and bank', body: `Balances per account, ${local} and USD kept apart.` },
-                { label: 'Stock on hand', body: 'Kilograms and bags, per warehouse and per batch.' },
+                { label: 'Stock on hand', body: 'Quantities per warehouse and per batch, at the cost they landed at.' },
                 { label: 'Who owes what', body: 'Customer ageing, supplier payables, overdue alerts.' },
                 { label: 'Profit', body: 'Gross and net margin, and profit per kilogram sold.' },
               ].map((preview) => (
@@ -391,7 +391,7 @@ export default async function DashboardPage() {
           }
           icon={Boxes}
           tone="inventory"
-          note={`${formatQuantityKg(data.position.availableKg)} on hand`}
+          note={`${formatQuantityKg(data.position.availableKg, { unit })} on hand`}
           href="/inventory"
           linkLabel="View stock"
         />
@@ -601,7 +601,7 @@ export default async function DashboardPage() {
           </CardHeader>
           <CardContent>
             {stockByItem.length === 0 ? (
-              <EmptyState title="No stock on hand" description="Receive a purchase order to bring coffee into a warehouse." />
+              <EmptyState title="No stock on hand" description="Receive a purchase order to bring stock into a warehouse." />
             ) : (
               <StockByItemChart data={stockByItem} />
             )}
