@@ -978,6 +978,14 @@ export type InventoryValuationLine = {
   availableKg: Decimal;
   landedUnitCostUsd: Decimal;
   valueUsd: Decimal;
+  /**
+   * The same in the company's currency, from the one batch costing every
+   * screen reads: the coffee at its order's rate (the rate actually paid once
+   * confirmed), the shipment's charges at their own. Stock on Hand shows the
+   * same figure.
+   */
+  landedUnitCostLocal: Decimal;
+  valueLocal: Decimal;
 };
 
 /** On-hand stock at landed cost, warehouse then batch. */
@@ -1014,11 +1022,18 @@ export async function getInventoryValuation(companyId: string): Promise<Inventor
      ORDER BY w."name", ci."itemName", b."batchNumber"
   `;
 
+  // Loaded here, not at the top: the costing service reads stock in turn.
+  const { getBatchCostingIndex } = await import('@/lib/services/landed-cost');
+  const costing = rows.length
+    ? await getBatchCostingIndex({ companyId, batchIds: [...new Set(rows.map((r) => r.batchId))] })
+    : new Map();
+
   return rows.map((row) => {
     const onHandKg = toQuantity(row.onHandKg);
     // The unit cost keeps its four places: rounding it to cents before
     // multiplying by twelve tonnes left the shelf a quarter off the ledger.
     const landedUnitCostUsd = toUnitCost(row.landedUnitCostUsd);
+    const landedUnitCostLocal = toUnitCost(costing.get(row.batchId)?.landedPerKgLocal ?? 0);
     return {
       warehouseId: row.warehouseId,
       warehouseName: row.warehouseName,
@@ -1033,6 +1048,8 @@ export async function getInventoryValuation(companyId: string): Promise<Inventor
       availableKg: toQuantity(row.availableKg),
       landedUnitCostUsd,
       valueUsd: toMoney(onHandKg.times(landedUnitCostUsd)),
+      landedUnitCostLocal,
+      valueLocal: toMoney(onHandKg.times(landedUnitCostLocal)),
     };
   });
 }
@@ -1163,6 +1180,9 @@ export type ValuationSummaryRow = {
   /** Value ÷ quantity: the average landed cost of what is on the shelf. */
   averageCostUsd: Decimal;
   assetValueUsd: Decimal;
+  /** The same two in the company's currency — Stock on Hand's Avg Cost/KG and Stock Value. */
+  averageCostLocal: Decimal;
+  assetValueLocal: Decimal;
   batches: number;
 };
 
@@ -1173,9 +1193,10 @@ export async function getInventoryValuationSummary(companyId: string): Promise<V
   for (const line of lines) {
     const row =
       byItem.get(line.itemId) ??
-      { itemId: line.itemId, itemName: line.itemName, onHandKg: new Decimal(0), averageCostUsd: new Decimal(0), assetValueUsd: new Decimal(0), batches: 0, batchIds: new Set<string>() };
+      { itemId: line.itemId, itemName: line.itemName, onHandKg: new Decimal(0), averageCostUsd: new Decimal(0), assetValueUsd: new Decimal(0), averageCostLocal: new Decimal(0), assetValueLocal: new Decimal(0), batches: 0, batchIds: new Set<string>() };
     row.onHandKg = row.onHandKg.plus(line.onHandKg);
     row.assetValueUsd = row.assetValueUsd.plus(line.valueUsd);
+    row.assetValueLocal = row.assetValueLocal.plus(line.valueLocal);
     row.batchIds.add(line.batchId);
     byItem.set(line.itemId, row);
   }
@@ -1186,6 +1207,8 @@ export async function getInventoryValuationSummary(companyId: string): Promise<V
       onHandKg: toQuantity(row.onHandKg),
       assetValueUsd: toMoney(row.assetValueUsd),
       averageCostUsd: row.onHandKg.greaterThan(0) ? toUnitCost(row.assetValueUsd.dividedBy(row.onHandKg)) : new Decimal(0),
+      assetValueLocal: toMoney(row.assetValueLocal),
+      averageCostLocal: row.onHandKg.greaterThan(0) ? toUnitCost(row.assetValueLocal.dividedBy(row.onHandKg)) : new Decimal(0),
     }))
     .filter((row) => !row.onHandKg.isZero() || !row.assetValueUsd.isZero())
     .sort((a, b) => a.itemName.localeCompare(b.itemName));
@@ -1216,6 +1239,8 @@ export type ValuationDetailGroup = {
   movements: ValuationDetailMovement[];
   closingKg: Decimal;
   closingValueUsd: Decimal;
+  /** The closing stock in the company's currency, at the batch's landed cost from the shared costing. */
+  closingValueLocal: Decimal;
 };
 
 /**
@@ -1293,6 +1318,7 @@ export async function getInventoryValuationDetail(params: { companyId: string; f
         movements: [],
         closingKg: new Decimal(0),
         closingValueUsd: new Decimal(0),
+        closingValueLocal: new Decimal(0),
         runningKg: new Decimal(0),
         runningValue: new Decimal(0),
       };
@@ -1353,8 +1379,15 @@ export async function getInventoryValuationDetail(params: { companyId: string; f
     }
   }
 
+  const { getBatchCostingIndex } = await import('@/lib/services/landed-cost');
+  const costing = groups.size ? await getBatchCostingIndex({ companyId: params.companyId, batchIds: [...groups.keys()] }) : new Map();
   return [...groups.values()]
-    .map(({ runningKg, runningValue, ...g }) => ({ ...g, closingKg: toQuantity(runningKg), closingValueUsd: toMoney(runningValue) }))
+    .map(({ runningKg, runningValue, ...g }) => ({
+      ...g,
+      closingKg: toQuantity(runningKg),
+      closingValueUsd: toMoney(runningValue),
+      closingValueLocal: toMoney(toQuantity(runningKg).times(costing.get(g.batchId)?.landedPerKgLocal ?? 0)),
+    }))
     .filter((g) => g.movements.length > 0 || !g.closingKg.isZero())
     .sort((a, b) => a.itemName.localeCompare(b.itemName) || a.batchNumber.localeCompare(b.batchNumber));
 }

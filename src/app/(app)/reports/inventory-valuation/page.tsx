@@ -47,6 +47,11 @@ export default async function InventoryValuationPage({ searchParams }: { searchP
   ]);
   const totalKg = rows.reduce((sum, row) => sum.plus(row.onHandKg), dec(0));
   const totalUsd = rows.reduce((sum, row) => sum.plus(row.valueUsd), dec(0));
+  // The company's own currency beside the dollars, from the same batch costing
+  // as Stock on Hand — the coffee at its order's rate, actual once confirmed.
+  const local = user.activeCompany.localCurrency;
+  const showLocal = showCost && local !== 'USD';
+  const totalLocal = rows.reduce((sum, row) => sum.plus(row.valueLocal), dec(0));
   const tab = (key: string, label: string) => (
     <Link
       key={key}
@@ -88,6 +93,12 @@ export default async function InventoryValuationPage({ searchParams }: { searchP
                 <tr className="border-b border-line-strong text-[11px] uppercase tracking-wider text-ink-muted">
                   <th className="px-3 py-2 text-left font-semibold">Item</th>
                   <th className="px-3 py-2 text-right font-semibold">Qty</th>
+                  {showLocal ? (
+                    <>
+                      <th className="px-3 py-2 text-right font-semibold">Avg cost / KG ({local})</th>
+                      <th className="px-3 py-2 text-right font-semibold">Asset value ({local})</th>
+                    </>
+                  ) : null}
                   {showCost ? (
                     <>
                       <th className="px-3 py-2 text-right font-semibold">Avg landed cost</th>
@@ -106,6 +117,12 @@ export default async function InventoryValuationPage({ searchParams }: { searchP
                       <span className="ml-2 text-xs text-ink-subtle">{row.batches} {row.batches === 1 ? 'batch' : 'batches'}</span>
                     </td>
                     <td className="tnum px-3 py-2 text-right">{formatQuantityKg(row.onHandKg)}</td>
+                    {showLocal ? (
+                      <>
+                        <td className="tnum px-3 py-2 text-right">{formatMoney(row.averageCostLocal, local)}</td>
+                        <td className="tnum px-3 py-2 text-right font-semibold">{formatMoney(row.assetValueLocal, local)}</td>
+                      </>
+                    ) : null}
                     {showCost ? (
                       <>
                         <td className="tnum px-3 py-2 text-right">{formatMoney(row.averageCostUsd, 'USD')}</td>
@@ -119,6 +136,12 @@ export default async function InventoryValuationPage({ searchParams }: { searchP
                 <tr className="border-t-2 border-line-strong bg-surface-sunken/40 font-semibold">
                   <td className="px-3 py-2">Total</td>
                   <td className="tnum px-3 py-2 text-right">{formatQuantityKg(totalKg)}</td>
+                  {showLocal ? (
+                    <>
+                      <td />
+                      <td className="tnum px-3 py-2 text-right">{formatMoney(totalLocal, local)}</td>
+                    </>
+                  ) : null}
                   {showCost ? (
                     <>
                       <td />
@@ -144,7 +167,9 @@ export default async function InventoryValuationPage({ searchParams }: { searchP
                 sub: [g.shipmentReference, g.containerNumber, `Lot ${g.lotNumber}`].filter(Boolean).join(' · '),
                 href: `/inventory/batches/${g.batchId}`,
                 closingKg: formatQuantityKg(g.closingKg),
-                closingValue: formatMoney(g.closingValueUsd, 'USD'),
+                closingValue: showLocal
+                  ? `${formatMoney(g.closingValueLocal, local)} · ${formatMoney(g.closingValueUsd, 'USD')}`
+                  : formatMoney(g.closingValueUsd, 'USD'),
                 movements: g.movements.map((m) => ({
                   key: m.id,
                   date: formatDate(m.date),
@@ -173,7 +198,8 @@ export default async function InventoryValuationPage({ searchParams }: { searchP
       <MetricGrid>
         <Metric label="Lines" value={String(rows.length)} />
         <Metric label="On hand" value={formatQuantityKg(totalKg)} />
-        {showCost ? <Metric label="Value" value={formatMoney(totalUsd, 'USD')} /> : null}
+        {showLocal ? <Metric label={`Value ${local}`} value={formatMoney(totalLocal, local)} /> : null}
+        {showCost ? <Metric label="Value USD" value={formatMoney(totalUsd, 'USD')} /> : null}
       </MetricGrid>
 
       {rows.length === 0 ? (
@@ -196,6 +222,12 @@ export default async function InventoryValuationPage({ searchParams }: { searchP
                     <TH>Container</TH>
                     <TH numeric>On hand</TH>
                     <TH numeric>Available</TH>
+                    {showLocal ? (
+                      <>
+                        <TH numeric>Landed / KG {local}</TH>
+                        <TH numeric>Value {local}</TH>
+                      </>
+                    ) : null}
                     {showCost ? (
                       <>
                         <TH numeric>Landed / KG</TH>
@@ -225,6 +257,12 @@ export default async function InventoryValuationPage({ searchParams }: { searchP
                       <TD className="font-mono text-xs">{row.containerNumber ?? '—'}</TD>
                       <TD numeric>{formatQuantityKg(row.onHandKg)}</TD>
                       <TD numeric className="text-ink-muted">{formatQuantityKg(row.availableKg)}</TD>
+                      {showLocal ? (
+                        <>
+                          <TD numeric>{formatMoney(row.landedUnitCostLocal, local)}</TD>
+                          <TD numeric className="font-medium">{formatMoney(row.valueLocal, local)}</TD>
+                        </>
+                      ) : null}
                       {showCost ? (
                         <>
                           <TD numeric>{formatMoney(row.landedUnitCostUsd, 'USD')}</TD>
@@ -239,6 +277,12 @@ export default async function InventoryValuationPage({ searchParams }: { searchP
                     <TD colSpan={5}>Total</TD>
                     <TD numeric>{formatQuantityKg(totalKg)}</TD>
                     <TD />
+                    {showLocal ? (
+                      <>
+                        <TD />
+                        <TD numeric>{formatMoney(totalLocal, local)}</TD>
+                      </>
+                    ) : null}
                     {showCost ? (
                       <>
                         <TD />

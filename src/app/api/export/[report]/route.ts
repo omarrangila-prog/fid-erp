@@ -1447,6 +1447,8 @@ const REPORTS: Record<string, Report> = {
     build: async (user) => {
       const rows = await getInventoryValuation(user.activeCompany.id);
       const showCost = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
+      const local = user.activeCompany.localCurrency;
+      const showLocal = showCost && local !== 'USD';
       return buildWorkbook({
         companyName: user.activeCompany.name,
         timeZone: user.activeCompany.timezone,
@@ -1455,7 +1457,9 @@ const REPORTS: Record<string, Report> = {
           ? 'On-hand stock at each batch landed cost'
           : 'On-hand quantities. Cost figures are not part of your access.',
         rows,
-        totals: showCost ? ['On hand (KG)', 'Available (KG)', 'Value (USD)'] : ['On hand (KG)', 'Available (KG)'],
+        totals: showCost
+          ? ['On hand (KG)', 'Available (KG)', ...(showLocal ? [`Value (${local})`] : []), 'Value (USD)']
+          : ['On hand (KG)', 'Available (KG)'],
         columns: [
           { header: 'Warehouse', value: (r) => r.warehouseName, width: 26 },
           { header: 'Code', value: (r) => r.warehouseCode },
@@ -1465,6 +1469,12 @@ const REPORTS: Record<string, Report> = {
           { header: 'Container', value: (r) => r.containerNumber ?? '' },
           { header: 'On hand (KG)', value: (r) => Number(r.onHandKg), type: 'quantity' },
           { header: 'Available (KG)', value: (r) => Number(r.availableKg), type: 'quantity' },
+          ...(showLocal
+            ? [
+                { header: `Landed / KG (${local})`, value: (r: (typeof rows)[number]) => Number(r.landedUnitCostLocal), type: 'money' as const },
+                { header: `Value (${local})`, value: (r: (typeof rows)[number]) => Number(r.valueLocal), type: 'money' as const },
+              ]
+            : []),
           ...(showCost
             ? [
                 { header: 'Landed / KG (USD)', value: (r: (typeof rows)[number]) => Number(r.landedUnitCostUsd), type: 'money' as const },
@@ -1483,13 +1493,22 @@ const REPORTS: Record<string, Report> = {
       const from = dateParam(query, 'from') ?? startOfYear();
       const to = dateParam(query, 'to') ?? new Date();
       const rows = await getCogsReport({ companyId: user.activeCompany.id, from, to });
+      const local = user.activeCompany.localCurrency;
+      const localColumns =
+        local === 'USD'
+          ? []
+          : [
+              { header: `Revenue (${local})`, value: (r: (typeof rows)[number]) => Number(r.revenueLocal), type: 'money' as const },
+              { header: `COGS (${local})`, value: (r: (typeof rows)[number]) => Number(r.cogsLocal), type: 'money' as const },
+              { header: `Gross profit (${local})`, value: (r: (typeof rows)[number]) => Number(r.grossProfitLocal), type: 'money' as const },
+            ];
       return buildWorkbook({
         companyName: user.activeCompany.name,
         timeZone: user.activeCompany.timezone,
         title: 'Cost of Goods Sold',
         subtitle: period(from, to),
         rows,
-        totals: ['Quantity (KG)', 'Revenue (USD)', 'COGS (USD)', 'Gross profit (USD)'],
+        totals: ['Quantity (KG)', ...localColumns.map((c) => c.header), 'Revenue (USD)', 'COGS (USD)', 'Gross profit (USD)'],
         columns: [
           { header: 'Date', value: (r) => r.invoiceDate, type: 'date' },
           { header: 'Customer', value: (r) => r.customerName, width: 28 },
@@ -1498,6 +1517,7 @@ const REPORTS: Record<string, Report> = {
           { header: 'Batch', value: (r) => r.batchNumber },
           { header: 'Warehouse', value: (r) => r.warehouseName ?? '' },
           { header: 'Quantity (KG)', value: (r) => Number(r.quantityKg), type: 'quantity' },
+          ...localColumns,
           { header: 'Revenue (USD)', value: (r) => Number(r.revenueUsd), type: 'money' },
           { header: 'COGS (USD)', value: (r) => Number(r.cogsUsd), type: 'money' },
           { header: 'Gross profit (USD)', value: (r) => Number(r.grossProfitUsd), type: 'money' },

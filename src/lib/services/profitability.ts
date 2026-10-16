@@ -735,6 +735,15 @@ export type CogsLine = {
   revenueUsd: Decimal;
   cogsUsd: Decimal;
   grossProfitUsd: Decimal;
+  /**
+   * The same in the company's currency. Revenue as invoiced — an invoice in
+   * that currency at its own amount — and cost from the one batch costing:
+   * the KG at the batch's landed cost, the coffee at its order's rate (the
+   * rate actually paid once confirmed). Shipment profitability reads the same.
+   */
+  revenueLocal: Decimal;
+  cogsLocal: Decimal;
+  grossProfitLocal: Decimal;
   source: 'INVOICE' | 'CREDIT';
 };
 
@@ -753,6 +762,8 @@ export async function getCogsReport(params: { companyId: string; from?: Date; to
       quantityKg: string;
       revenueUsd: string;
       cogsUsd: string;
+      batchId: string | null;
+      revenueLocal: string;
       source: string;
     }>
   >`
@@ -764,12 +775,15 @@ export async function getCogsReport(params: { companyId: string; from?: Date; to
              sil."quantityKg"::text AS "quantityKg",
              sil."lineTotalUsd"::text AS "revenueUsd",
              sil."costTotalUsd"::text AS "cogsUsd",
+             sil."batchId",
+             (CASE WHEN si."currency" = co."localCurrency" THEN sil."lineTotal" ELSE sil."lineTotalUsd" * si."rateLocalPerUsd" END)::text AS "revenueLocal",
              'INVOICE'::text AS source
         FROM sales_invoice_lines sil
         JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
         JOIN customers c ON c."id" = si."customerId"
         JOIN coffee_items ci ON ci."id" = sil."itemId"
         JOIN batches b ON b."id" = sil."batchId"
+        JOIN companies co ON co."id" = si."companyId"
         LEFT JOIN warehouses w ON w."id" = sil."warehouseId"
        WHERE si."companyId" = ${params.companyId} AND si."status" = 'POSTED'
          AND (${params.from ?? null}::date IS NULL OR si."invoiceDate" >= ${params.from ?? null}::date)
@@ -784,10 +798,13 @@ export async function getCogsReport(params: { companyId: string; from?: Date; to
              (-cnl."quantityKg")::text AS "quantityKg",
              (-cnl."lineTotalUsd")::text AS "revenueUsd",
              (-cnl."costTotalUsd")::text AS "cogsUsd",
+             cnl."batchId",
+             (-(CASE WHEN cn."currency" = co."localCurrency" THEN cnl."lineTotal" ELSE cnl."lineTotalUsd" * cn."rateLocalPerUsd" END))::text AS "revenueLocal",
              'CREDIT'::text AS source
         FROM credit_note_lines cnl
         JOIN credit_notes cn ON cn."id" = cnl."creditNoteId"
         JOIN customers c ON c."id" = cn."customerId"
+        JOIN companies co ON co."id" = cn."companyId"
         LEFT JOIN coffee_items ci ON ci."id" = cnl."itemId"
         LEFT JOIN batches b ON b."id" = cnl."batchId"
         LEFT JOIN warehouses w ON w."id" = cnl."warehouseId"
@@ -799,9 +816,18 @@ export async function getCogsReport(params: { companyId: string; from?: Date; to
     ORDER BY "invoiceDate", "invoiceNumber"
   `;
 
+  // Loaded here, not at the top: the costing service reads profitability in turn.
+  const { getBatchCostingIndex } = await import('@/lib/services/landed-cost');
+  const batchIds = [...new Set(rows.map((r) => r.batchId).filter((id): id is string => !!id))];
+  const costing = batchIds.length ? await getBatchCostingIndex({ companyId: params.companyId, batchIds }) : new Map();
+
   return rows.map((row) => {
     const revenueUsd = toMoney(row.revenueUsd);
     const cogsUsd = toMoney(row.cogsUsd);
+    const revenueLocal = toMoney(row.revenueLocal);
+    const perKgLocal = row.batchId ? costing.get(row.batchId)?.landedPerKgLocal : undefined;
+    // A credit with no coffee behind it carries no cost in either currency.
+    const cogsLocal = perKgLocal ? toMoney(toQuantity(row.quantityKg).times(perKgLocal)) : new Decimal(0);
     return {
       invoiceId: row.invoiceId,
       invoiceNumber: row.invoiceNumber,
@@ -815,6 +841,9 @@ export async function getCogsReport(params: { companyId: string; from?: Date; to
       revenueUsd,
       cogsUsd,
       grossProfitUsd: toMoney(revenueUsd.minus(cogsUsd)),
+      revenueLocal,
+      cogsLocal,
+      grossProfitLocal: toMoney(revenueLocal.minus(cogsLocal)),
       source: row.source === 'CREDIT' ? 'CREDIT' : 'INVOICE',
     };
   });

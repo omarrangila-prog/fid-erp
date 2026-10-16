@@ -6,7 +6,8 @@ import { createSalesInvoice, postSalesInvoice } from '@/lib/services/sales';
 import { setPurchaseActualFx } from '@/lib/services/purchase-edit';
 import { getShipmentCostSheet } from '@/lib/services/landed-cost';
 import { getItemProfitability } from '@/lib/services/item-profitability';
-import { getShipmentProfitability } from '@/lib/services/profitability';
+import { getShipmentProfitability, getCogsReport } from '@/lib/services/profitability';
+import { getInventoryValuation, getInventoryValuationSummary } from '@/lib/services/stock';
 import { dec } from '@/lib/money';
 
 /**
@@ -97,6 +98,9 @@ async function reconciliation() {
   const invoice = await prisma.salesInvoice.findUniqueOrThrow({ where: { id: invoiceId } });
   const contract = await prisma.purchaseContract.findUniqueOrThrow({ where: { id: contractId } });
   const f = (d: { toString(): string } | null | undefined) => (d === null || d === undefined ? '—' : dec(d.toString()).toFixed(2));
+  const valuation = await getInventoryValuation(companyId);
+  const summaryRow = (await getInventoryValuationSummary(companyId)).find((r) => r.itemId === itemId);
+  const cogsLines = await getCogsReport({ companyId });
   return {
     'PO USD value': f(contract.totalValueUsd),
     'Purchase FX': f(sheet.rateLocalPerUsd),
@@ -118,6 +122,10 @@ async function reconciliation() {
     'Gross profit / loss (MAD)': f(sheet.grossProfitLocal),
     'Gross margin %': f(sheet.profitPct),
     'Gross margin % (profitability)': f(pnl[0]?.grossMarginPct),
+    'Remaining inventory (Inventory Valuation)': f(valuation.reduce((t, l) => t.plus(l.valueLocal), dec(0))),
+    'Avg cost/KG (Inventory Valuation)': f(summaryRow?.averageCostLocal),
+    'COGS (COGS report)': f(cogsLines.reduce((t, l) => t.plus(l.cogsLocal), dec(0))),
+    'Sales (COGS report)': f(cogsLines.reduce((t, l) => t.plus(l.revenueLocal), dec(0))),
   };
 }
 
@@ -156,6 +164,8 @@ describe('the client’s example: 9.90 estimated, 10.30 actual', () => {
     expect(after['Avg cost/KG (shipment)']).toBe('43.80');
     expect(after['COGS (MAD)']).toBe('657000.00');
     expect(after['Remaining inventory (shipment)']).toBe('438000.00');
+    expect(after['Remaining inventory (Inventory Valuation)']).toBe('438000.00');
+    expect(after['COGS (COGS report)']).toBe('657000.00');
 
     // The exchange loss, said in dirhams: USD 100,000 × 0.40, of which the
     // 15,000 KG sold carry 24,000 and the 10,000 KG left carry 16,000. Put
@@ -180,6 +190,11 @@ describe('the client’s example: 9.90 estimated, 10.30 actual', () => {
       expect(r['Avg cost/KG (Stock on Hand)']).toBe(r['Avg cost/KG (shipment)']);
       expect(r['Remaining inventory (Stock on Hand)']).toBe(r['Remaining inventory (shipment)']);
       expect(r['COGS (profitability)']).toBe(r['COGS (MAD)']);
+      // The two reports read the same costing, so they say the same.
+      expect(r['Remaining inventory (Inventory Valuation)']).toBe(r['Remaining inventory (shipment)']);
+      expect(r['Avg cost/KG (Inventory Valuation)']).toBe(r['Avg cost/KG (shipment)']);
+      expect(r['COGS (COGS report)']).toBe(r['COGS (MAD)']);
+      expect(r['Sales (COGS report)']).toBe(r['Sales revenue (MAD)']);
     }
     console.table(Object.keys(after).map((k) => ({ figure: k, 'at 9.90': before[k as keyof typeof before], 'at 10.30': after[k as keyof typeof after] })));
   }, 300_000);
