@@ -73,6 +73,8 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
   });
 
   if (!item) notFound();
+  // A SKU the person typed is theirs to see; the ITM-0001 the system issues is not.
+  const userSku = /^ITM-\d+$/.test(item.itemCode) ? '—' : item.itemCode;
 
   const [batches, warehouseStock, balances, ordinals] = await Promise.all([
     getBatchStock({ companyId, itemId: id, includeEmpty: true }),
@@ -263,7 +265,7 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
               </CardHeader>
               <CardContent>
                 <dl>
-                  <DetailRow label="SKU">{item.itemCode}</DetailRow>
+                  <DetailRow label="SKU">{userSku}</DetailRow>
                   <DetailRow label="Category">{item.category ?? '—'}</DetailRow>
                   <DetailRow label="Brand">{item.brand ?? '—'}</DetailRow>
                   <DetailRow label="Country of origin">{item.originCountry ?? '—'}</DetailRow>

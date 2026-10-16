@@ -227,7 +227,7 @@ async function buyAndReceive(params: {
       freightAmount: params.freight,
       otherCharges: '0',
       incoterm: 'CIF',
-      portOfLoading: portFor(item.originCountry),
+      portOfLoading: portFor(item.originCountry ?? ''),
       destination: params.localCurrency === 'AED' ? 'Jebel Ali, Dubai' : 'Casablanca',
       expectedShipmentDate: daysAgo(params.contractDaysAgo - 14),
       notes: 'Demonstration contract.',
