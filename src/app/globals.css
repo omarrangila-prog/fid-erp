@@ -58,8 +58,8 @@
   /* --- Text --------------------------------------------------------------- */
   --color-ink: #0a1114;
   --color-ink-muted: #3f4c48;
-  /* SLATE #65726E: 5.3:1 on white, 4.7:1 on ivory — AA for normal text. */
-  --color-ink-subtle: #65726e;
+  /* SLATE-DARK #5C6965: 5.8:1 on white, 5.1:1 on ivory — AA for normal text. */
+  --color-ink-subtle: #5c6965;
   --color-ink-inverse: #f6f2e8;
 
   /* --- Radii: small controls 8, cards 12 ---------------------------------- */
@@ -673,6 +673,20 @@
     display: none !important;
   }
 
+  /* The document's own masthead is a <header> too; only the application shell's goes. */
+  article header,
+  [data-print="show"] {
+    display: flex !important;
+  }
+
+  body::before {
+    display: none !important;
+  }
+  main,
+  [data-app-canvas] {
+    background: #fff !important;
+  }
+
   /*
    * Anything a person clicks is dead on paper.
    *
@@ -714,8 +728,16 @@
   .data-grid.grid-framed {
     border-color: #000 !important;
   }
-  .data-grid > thead > tr > th {
+  .data-grid > thead > tr > th,
+  table thead th {
     background: #e6e6e6 !important;
+    color: #000 !important;
+  }
+
+  /* Filters and their Apply buttons are controls, not part of the record. */
+  form:has(input[type="date"]),
+  form:has(select) {
+    display: none !important;
   }
 
   /* A ledger on paper: black lines, the whole width of the sheet, nothing pinned. */
@@ -888,7 +910,7 @@
   }
 
   main thead th {
-    background: #217346 !important;
+    background: #123a32 !important;
     color: #ffffff !important;
     font-weight: 700 !important;
     text-transform: none !important;
@@ -896,13 +918,13 @@
   }
 
   main tbody tr:nth-child(even) td {
-    background: #e2efda !important;
+    background: #f1f4f2 !important;
   }
 
   main tfoot td {
-    background: #c6efce !important;
+    background: #dce9e5 !important;
     font-weight: 700 !important;
-    border-top: 1pt solid #217346 !important;
+    border-top: 1pt solid #123a32 !important;
   }
 
   /* A wide table must not be clipped at the paper edge. */
@@ -991,4 +1013,18 @@
 /* Shown only on paper: who printed it, and when. */
 [data-print="only"] {
   display: none;
+}
+
+/* Touch targets: links and buttons inside tables and breadcrumbs reach 24px on
+   touch screens (WCAG 2.2 target size), without making dense desktop grids taller. */
+@media (pointer: coarse) {
+  td a[href],
+  td button,
+  th button,
+  nav[aria-label="Breadcrumb"] a,
+  [data-testid="breadcrumbs"] a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+  }
 }

@@ -21,6 +21,8 @@ import { formatDrCr, formatMoney, formatMoneyCompact, formatQuantityKg, formatDa
 import { PageHeader } from '@/components/shared/page-header';
 import { StatCard } from '@/components/shared/stat-card';
 import { KpiCard } from '@/components/dashboard/kpi-card';
+import { AttentionPanel, type AttentionItem } from '@/components/dashboard/attention-panel';
+import { TradePipeline, type PipelineStage } from '@/components/dashboard/trade-pipeline';
 import { SetupChecklist } from '@/components/shared/setup-checklist';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -268,6 +270,43 @@ export default async function DashboardPage() {
     value: v.count,
   }));
 
+  const outstanding = can(user, PERMISSIONS.LEDGERS_VIEW) ? await getOutstandingSummary(companyId) : null;
+  const inDays = (d: Date | null) => (d ? daysUntil(d) : null);
+  const arrivingSoon = data.shipments.upcoming.filter((u) => {
+    const n = inDays(u.etaDate);
+    return n !== null && n <= 7;
+  });
+  const money = (n: { local: ReturnType<typeof dec> }) => formatMoney(n.local, local);
+  const attention: AttentionItem[] = [
+    ...(outstanding
+      ? ([
+          { key: 'overdue', label: 'Overdue invoices', detail: `${money(outstanding.invoicesOverdue)} past due`, count: outstanding.invoicesOverdue.count, href: '/finance/receivables', tone: 'danger' },
+          { key: 'outstanding', label: 'Outstanding invoices', detail: `${money(outstanding.invoicesOutstanding)} still to collect`, count: outstanding.invoicesOutstanding.count, href: '/sales', tone: 'warn' },
+          { key: 'payables', label: 'Supplier payments due', detail: `${money(outstanding.supplierPayables)} owed to suppliers`, count: outstanding.supplierPayables.count, href: '/ledgers/vendors', tone: 'warn' },
+          { key: 'expenses', label: 'Unpaid expenses', detail: `${money(outstanding.unpaidExpenses)} to settle`, count: outstanding.unpaidExpenses.count, href: '/finance/expenses', tone: 'warn' },
+        ] as AttentionItem[])
+      : []),
+    { key: 'arrivals', label: arrivingSoon.length === 1 ? 'Shipment arriving this week' : 'Shipments arriving this week', detail: arrivingSoon.map((u) => u.jobNumber ?? u.shipmentNumber).slice(0, 3).join(' · '), count: arrivingSoon.length, href: '/shipments', tone: 'info' },
+    { key: 'lowstock', label: 'Low-stock batches', detail: `Under 5,000 ${unit}`, count: lowStock.length, href: '/inventory', tone: 'warn' },
+    { key: 'alerts', label: 'Unread alerts', detail: 'ETA and overdue warnings', count: data.unreadAlerts, href: '/notifications', tone: 'info' },
+  ];
+
+  const stageOf = (statuses: string[]) => {
+    const rows = statuses.map((k) => data.shipments.byStatus[k]).filter(Boolean);
+    return {
+      count: rows.reduce((t, r) => t + r.count, 0),
+      containers: rows.reduce((t, r) => t + r.containers, 0),
+      quantity: formatQuantityKg(rows.reduce((t, r) => t.plus(r.quantityKg), dec(0)), { unit }),
+    };
+  };
+  const pipeline: PipelineStage[] = [
+    { key: 'purchased', label: 'Purchased', ...stageOf(['CONTRACT_CREATED', 'AWAITING_LOADING']) },
+    { key: 'loading', label: 'Loading', ...stageOf(['LOADED']) },
+    { key: 'transit', label: 'In transit', ...stageOf(['IN_TRANSIT']) },
+    { key: 'arrived', label: 'Arrived', ...stageOf(['ARRIVED', 'CUSTOMS_CLEARING', 'CLEARED']) },
+    { key: 'received', label: 'Received', ...stageOf(['DELIVERED', 'CLOSED']) },
+  ];
+
   return (
     <div className="space-y-6">
       {/* --- Greeting ------------------------------------------------------ */}
@@ -423,6 +462,12 @@ export default async function DashboardPage() {
         ) : null}
       </section>
 
+      {/* --- Trade pipeline -------------------------------------------------- */}
+      <section className="space-y-3">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">Trade pipeline</h2>
+        <TradePipeline stages={pipeline} />
+      </section>
+
       {/* --- Cash, by currency. Never one merged number. -------------------- */}
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
@@ -475,55 +520,8 @@ export default async function DashboardPage() {
             <CardTitle>Needs attention</CardTitle>
             <CardDescription>What would go wrong if nobody looked today.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <Link
-              href="/finance/receivables"
-              className="flex items-center justify-between gap-3 rounded-lg border border-line p-3 transition-colors hover:border-forest-300"
-            >
-              <span className="min-w-0">
-                <span className="block text-sm font-medium text-ink">Overdue customers</span>
-                <span className="block text-xs text-ink-subtle">
-                  {formatMoney(data.receivables.overdueUsd, 'USD')} outstanding
-                </span>
-              </span>
-              <span
-                className={`tnum shrink-0 text-lg font-semibold ${
-                  data.receivables.topOverdue.length > 0 ? 'text-red-600' : 'text-ink-subtle'
-                }`}
-              >
-                {data.receivables.topOverdue.length}
-              </span>
-            </Link>
-
-            <Link
-              href="/shipments"
-              className="flex items-center justify-between gap-3 rounded-lg border border-line p-3 transition-colors hover:border-forest-300"
-            >
-              <span className="min-w-0">
-                <span className="block text-sm font-medium text-ink">Active shipments</span>
-                <span className="block text-xs text-ink-subtle">
-                  {data.shipments.totalContainers} container{data.shipments.totalContainers === 1 ? '' : 's'}
-                </span>
-              </span>
-              <span className="tnum shrink-0 text-lg font-semibold text-ink">{data.shipments.activeCount}</span>
-            </Link>
-
-            <Link
-              href="/notifications"
-              className="flex items-center justify-between gap-3 rounded-lg border border-line p-3 transition-colors hover:border-forest-300"
-            >
-              <span className="min-w-0">
-                <span className="block text-sm font-medium text-ink">Unread alerts</span>
-                <span className="block text-xs text-ink-subtle">ETA and overdue warnings</span>
-              </span>
-              <span
-                className={`tnum shrink-0 text-lg font-semibold ${
-                  data.unreadAlerts > 0 ? 'text-amber-700' : 'text-ink-subtle'
-                }`}
-              >
-                {data.unreadAlerts}
-              </span>
-            </Link>
+          <CardContent>
+            <AttentionPanel items={attention} />
           </CardContent>
         </Card>
       </div>
@@ -742,7 +740,7 @@ export default async function DashboardPage() {
           <CardContent className="space-y-2">
             {lowStock.length === 0 ? (
               <p className="py-6 text-center text-xs text-ink-subtle">
-                Nothing is running low. Batches under 5,000 KG appear here.
+                Nothing is running low. Batches under 5,000 {unit} appear here.
               </p>
             ) : (
               lowStock.map((row) => (

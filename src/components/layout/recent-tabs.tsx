@@ -169,7 +169,7 @@ function RecentTabsInner({ storageKey }: { storageKey: string }) {
                 type="button"
                 onClick={() => close(tab.path)}
                 aria-label={`Close ${tab.title}`}
-                className="mr-1 rounded p-0.5 text-ink-subtle opacity-60 hover:bg-forest-50 hover:text-ink group-hover:opacity-100"
+                className="mr-0.5 grid size-6 place-items-center rounded text-ink-muted hover:bg-forest-50 hover:text-ink"
               >
                 <X className="size-3" />
               </button>
@@ -180,7 +180,7 @@ function RecentTabsInner({ storageKey }: { storageKey: string }) {
           <button
             type="button"
             onClick={clear}
-            className="ml-auto shrink-0 rounded-md px-2 py-1 text-[11px] text-ink-subtle hover:text-ink"
+            className="ml-auto shrink-0 rounded-md px-2 py-1.5 text-[11px] text-ink-muted hover:text-ink"
           >
             Close others
           </button>

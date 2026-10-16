@@ -62,6 +62,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
     invoice.status === 'POSTED' ? await transaction((tx) => getInvoiceOutstanding(tx, invoice.id)) : null;
 
   const totalKg = invoice.lines.reduce((sum, line) => sum.plus(line.quantityKg), dec(0));
+  const showBags = (user.activeCompany.terminology?.unit ?? 'KG') === 'KG';
   const totalBags = invoice.lines.reduce((sum, line) => sum + line.bags, 0);
   const paid = outstanding ? toMoney(dec(invoice.totalAmount).minus(outstanding.amount)) : dec(0);
   const warehouses = [
@@ -176,7 +177,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
             <thead>
               <tr className="border-b border-line-strong">
                 <th className="pb-2 pr-3 font-semibold uppercase tracking-wider text-ink-subtle">Description</th>
-                <th className="pb-2 px-3 text-right font-semibold uppercase tracking-wider text-ink-subtle">Bags</th>
+                {showBags ? <th className="pb-2 px-3 text-right font-semibold uppercase tracking-wider text-ink-subtle">Bags</th> : null}
                 <th className="pb-2 px-3 text-right font-semibold uppercase tracking-wider text-ink-subtle">
                   Quantity
                 </th>
@@ -212,7 +213,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
                         .join(' · ')}
                     </p>
                   </td>
-                  <td className="tnum px-3 py-3 text-right text-ink">{line.bags.toLocaleString()}</td>
+                  {showBags ? <td className="tnum px-3 py-3 text-right text-ink">{line.bags.toLocaleString()}</td> : null}
                   <td className="tnum px-3 py-3 text-right text-ink">{formatQuantityKg(line.quantityKg)}</td>
                   <td className="tnum px-3 py-3 text-right text-ink">
                     {formatMoney(line.unitPrice, invoice.currency)}
@@ -229,7 +230,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
                 <td className="pt-3 pr-3 text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">
                   {hasTax ? 'Goods total' : 'Total'}
                 </td>
-                <td className="tnum px-3 pt-3 text-right font-medium text-ink">{totalBags.toLocaleString()}</td>
+                {showBags ? <td className="tnum px-3 pt-3 text-right font-medium text-ink">{totalBags.toLocaleString()}</td> : null}
                 <td className="tnum px-3 pt-3 text-right font-medium text-ink">{formatQuantityKg(totalKg)}</td>
                 <td />
                 <td className="tnum pt-3 pl-3 text-right text-base font-semibold text-ink">

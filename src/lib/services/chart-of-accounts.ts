@@ -350,7 +350,7 @@ export async function ensureChartOfAccounts(tx: Tx, companyId: string, industryT
     data: missing.map((seed) => ({
       companyId,
       code: seed.code,
-      name: seed.systemKey === ACCOUNT_KEYS.SALES_REVENUE && !commodity ? 'Sales' : seed.name,
+      name: commodity ? seed.name : seed.name.replace('Coffee Stock', 'Stock').replace('Coffee Sales', 'Sales'),
       type: seed.type,
       reportGroup: seed.reportGroup,
       systemKey: seed.systemKey ?? null,

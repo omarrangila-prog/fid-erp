@@ -686,7 +686,7 @@ export async function postGoodsReceiptIn(tx: Tx, params: { id: string; companyId
         currency: 'USD',
         amount: receivedValueUsd,
         rateToUsd: 1,
-        description: `Coffee received into ${receipt.warehouse.name}`,
+        description: `Goods received into ${receipt.warehouse.name}`,
         purchaseContractId: receipt.purchaseContractId,
         shipmentId: receipt.shipmentId,
         vendorId: receipt.vendorId,

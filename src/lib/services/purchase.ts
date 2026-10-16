@@ -274,7 +274,7 @@ export async function createPurchaseContract(input: PurchaseContractInput, userI
         where: { id: line.itemId, companyId: input.companyId },
         select: { id: true },
       });
-      if (!item) throw new NotFoundError('Coffee item');
+      if (!item) throw new NotFoundError('Item');
     }
 
     await assertTraceabilityNumbersAreFree(tx, input.companyId, input.lines);
@@ -1680,7 +1680,7 @@ export async function addContainerToOrder(input: AddContainerInput) {
     if (!contract) throw new NotFoundError('Purchase contract');
     if (contract.status !== 'POSTED') throw new BusinessRuleError('Add the container to the draft order directly.');
     const item = await tx.coffeeItem.findFirst({ where: { id: input.itemId, companyId: input.companyId } });
-    if (!item) throw new NotFoundError('Coffee item');
+    if (!item) throw new NotFoundError('Item');
 
     const kg = toQuantity(dec(input.quantityKg));
     const price = toUnitCost(dec(input.unitPriceKg));

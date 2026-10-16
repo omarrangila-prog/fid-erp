@@ -1,7 +1,7 @@
 import type { Feature } from '@/lib/features';
 
 // The full list, kept here as a value so this module does not import features.ts (which imports it).
-const FEATURES: ReadonlyArray<Feature> = [
+export const PLAN_FEATURES: ReadonlyArray<Feature> = [
   'SALES', 'PURCHASES', 'SHIPMENTS', 'CONTAINERS', 'INVENTORY', 'CASH_BANK', 'CHEQUES', 'EXPENSES', 'AGENTS',
   'LOANS', 'REPORTS', 'ADVANCED_ACCOUNTING', 'MULTI_CURRENCY', 'MULTI_COMPANY', 'WHATSAPP_SHARING', 'CUSTOM_REPORTS', 'TAX',
 ];
@@ -32,7 +32,7 @@ export type Plan = {
 };
 
 const UNLIMITED = Number.MAX_SAFE_INTEGER;
-const without = (...off: Feature[]) => FEATURES.filter((f) => !off.includes(f));
+const without = (...off: Feature[]) => PLAN_FEATURES.filter((f) => !off.includes(f));
 
 export const PLANS: Record<string, Plan> = {
   STARTER: {
@@ -52,7 +52,7 @@ export const PLANS: Record<string, Plan> = {
   ENTERPRISE: {
     key: 'ENTERPRISE',
     label: 'Enterprise',
-    features: FEATURES,
+    features: PLAN_FEATURES,
     limits: { users: UNLIMITED, companies: UNLIMITED, warehouses: UNLIMITED, monthlyTransactions: UNLIMITED, storageMb: UNLIMITED },
     apiAccess: true,
   },

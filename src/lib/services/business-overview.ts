@@ -127,7 +127,7 @@ export async function getBusinessOverview(params: {
 
   const stockFigures: OverviewFigure[] = [
     { label: 'Inventory on hand', value: toQuantity(position.availableKg).toFixed(3), currency: 'KG', href: '/inventory' },
-    { label: 'Coffee in transit', value: toQuantity(position.inTransitKg).toFixed(3), currency: 'KG', href: '/shipments' },
+    { label: 'Goods in transit', value: toQuantity(position.inTransitKg).toFixed(3), currency: 'KG', href: '/shipments' },
   ];
   if (params.showCost) {
     stockFigures.push(

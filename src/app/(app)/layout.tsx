@@ -96,7 +96,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
       <div className="flex min-w-0 flex-1 flex-col">
         {isDemoMode() ? (
-          <div className="bg-forest-950 px-4 py-1.5 text-center text-xs font-medium text-gold-200" data-testid="demo-banner">
+          <div className="bg-forest-950 px-4 py-1.5 text-center text-xs font-medium text-gold-200 print:hidden" data-testid="demo-banner">
             Demonstration — every company, person and figure here is fictional, and the data resets regularly.
           </div>
         ) : null}

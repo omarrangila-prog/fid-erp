@@ -106,7 +106,7 @@ async function resolveLines(tx: Tx, input: CreditNoteInput): Promise<ResolvedLin
     if (line.batchId) {
       if (!line.warehouseId) {
         throw new BusinessRuleError(
-          `Line ${index + 1} returns stock but names no warehouse. Coffee has to come back somewhere.`,
+          `Line ${index + 1} returns stock but names no warehouse. Stock has to come back somewhere.`,
         );
       }
       if (quantityKg.lessThanOrEqualTo(0)) {
@@ -447,7 +447,7 @@ export async function postCreditNote(params: { id: string; companyId: string; us
                     currency: 'USD',
                     amount: costUsd,
                     rateToUsd: 1,
-                    description: `Coffee returned on ${note.creditNoteNumber}`,
+                    description: `Goods returned on ${note.creditNoteNumber}`,
                   },
                   {
                     accountKey: ACCOUNT_KEYS.COST_OF_GOODS_SOLD,
@@ -509,7 +509,7 @@ export async function postCreditNote(params: { id: string; companyId: string; us
                     currency: 'USD',
                     amount: costUsd,
                     rateToUsd: 1,
-                    description: `Coffee returned to supplier on ${note.creditNoteNumber}`,
+                    description: `Goods returned to supplier on ${note.creditNoteNumber}`,
                     vendorId: note.vendorId,
                   },
                 ]

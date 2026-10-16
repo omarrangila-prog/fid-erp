@@ -471,7 +471,7 @@ const ITEM: MasterConfig<typeof coffeeItemSchema> = {
   viewPermission: PERMISSIONS.ITEMS_VIEW,
   createPermission: PERMISSIONS.ITEMS_CREATE,
   editPermission: PERMISSIONS.ITEMS_EDIT,
-  label: 'Coffee item',
+  label: 'Item',
   uniqueField: 'itemCode',
   path: '/items',
   prepare(data, raw, user) {
@@ -501,7 +501,7 @@ export async function deactivateCoffeeItemAction(id: string): Promise<MasterForm
     const user = await requirePermission(PERMISSIONS.ITEMS_DELETE);
     const companyId = user.activeCompany.id;
     const item = await prisma.coffeeItem.findFirst({ where: { id, companyId } });
-    if (!item) throw new NotFoundError('Coffee item');
+    if (!item) throw new NotFoundError('Item');
 
     await prisma.coffeeItem.update({ where: { id }, data: { status: 'INACTIVE' } });
     await transaction((tx) =>
@@ -1298,7 +1298,7 @@ export async function postLedgerOpeningAction(
 const STATUS_TARGETS = {
   customer: { permission: PERMISSIONS.CUSTOMERS_EDIT, path: '/customers', label: 'Customer' },
   vendor: { permission: PERMISSIONS.VENDORS_EDIT, path: '/vendors', label: 'Supplier' },
-  coffeeItem: { permission: PERMISSIONS.ITEMS_EDIT, path: '/items', label: 'Coffee item' },
+  coffeeItem: { permission: PERMISSIONS.ITEMS_EDIT, path: '/items', label: 'Item' },
   warehouse: { permission: PERMISSIONS.WAREHOUSES_MANAGE, path: '/warehouses', label: 'Warehouse' },
   agent: { permission: PERMISSIONS.AGENTS_MANAGE, path: '/agents', label: 'Agent' },
   shippingLine: { permission: PERMISSIONS.SHIPPING_LINES_MANAGE, path: '/shipping-lines', label: 'Shipping line' },

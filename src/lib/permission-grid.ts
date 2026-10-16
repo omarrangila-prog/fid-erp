@@ -24,7 +24,7 @@ export const GRID_PAGES: Array<{ key: string; label: string; section: string }> 
   { key: 'expensecategories', label: 'Expense categories', section: 'Shipments' },
   { key: 'inventory', label: 'Inventory / warehouse stock', section: 'Inventory' },
   { key: 'stockcount', label: 'Stock counts', section: 'Inventory' },
-  { key: 'items', label: 'Coffee items', section: 'Inventory' },
+  { key: 'items', label: 'Items', section: 'Inventory' },
   { key: 'warehouses', label: 'Warehouses', section: 'Inventory' },
   { key: 'cashbank', label: 'Cash & bank', section: 'Cash & Bank' },
   { key: 'cheques', label: 'Cheques', section: 'Cash & Bank' },

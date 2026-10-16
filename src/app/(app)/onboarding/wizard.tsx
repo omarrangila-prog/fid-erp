@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Check, ChevronLeft, ChevronRight, Download, Plus } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Download, Plus, PackageOpen, PackageCheck, ArrowLeftRight, Store, Truck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
 import { Field, FieldGroup } from '@/components/ui/field';
@@ -54,6 +54,14 @@ type Props = {
     businessTypes: Array<{ value: string; label: string }>;
     imports: Array<{ kind: string; label: string; description: string }>;
   };
+};
+
+const BUSINESS_INFO: Record<string, { icon: React.ComponentType<{ className?: string }>; text: string }> = {
+  IMPORT: { icon: PackageOpen, text: 'Buy from overseas suppliers, land and sell locally.' },
+  EXPORT: { icon: PackageCheck, text: 'Source locally or abroad and ship to overseas buyers.' },
+  IMPORT_EXPORT: { icon: ArrowLeftRight, text: 'Both directions, with landed cost on every shipment.' },
+  LOCAL_TRADING: { icon: Store, text: 'Buy and sell within one country, no shipments to track.' },
+  DISTRIBUTION: { icon: Truck, text: 'Stock from principals and sell on to retailers and trade.' },
 };
 
 const STEPS = [
@@ -118,27 +126,33 @@ export function OnboardingWizard(props: Props) {
         <p className="mt-1 text-sm text-ink-muted">Ten short steps. Skip any of them and come back later from Settings — nothing here is permanent.</p>
       </div>
 
-      <ol className="grid gap-2 sm:grid-cols-5 lg:grid-cols-10" aria-label="Setup steps">
+      <div className="h-1.5 overflow-hidden rounded-full bg-line" role="progressbar" aria-valuemin={1} aria-valuemax={STEPS.length} aria-valuenow={index + 1} aria-label="Setup progress">
+        <div className="h-full rounded-full bg-forest-900 transition-[width] duration-200" style={{ width: `${((index + 1) / STEPS.length) * 100}%` }} />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[15rem_1fr]">
+      <ol className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:gap-0.5 lg:overflow-visible" aria-label="Setup steps">
         {STEPS.map((s, i) => (
-          <li key={s.key}>
+          <li key={s.key} className="shrink-0 lg:shrink">
             <button
               type="button"
               onClick={() => setIndex(i)}
               aria-current={i === index ? 'step' : undefined}
               className={cn(
-                'flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition-colors',
-                i === index ? 'border-forest-600 bg-forest-50 font-semibold text-forest-900' : 'border-line bg-surface text-ink-muted hover:bg-forest-50/50',
+                'flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-sm transition-colors',
+                i === index ? 'bg-forest-900 font-semibold text-white' : 'text-ink-muted hover:bg-forest-50',
               )}
             >
-              <span className={cn('grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-bold', i < index ? 'bg-forest-700 text-white' : 'bg-line text-ink-muted')}>
-                {i < index ? <Check className="size-3" /> : i + 1}
+              <span className={cn('grid size-6 shrink-0 place-items-center rounded-full text-[11px] font-semibold', i === index ? 'bg-white/15 text-white' : i < index ? 'bg-forest-700 text-white' : 'border border-line-strong text-ink-subtle')}>
+                {i < index ? <Check className="size-3.5" /> : String(i + 1).padStart(2, '0')}
               </span>
-              <span className="truncate">{s.title}</span>
+              <span className="whitespace-nowrap lg:whitespace-normal">{s.title}</span>
             </button>
           </li>
         ))}
       </ol>
 
+      <div className="min-w-0 space-y-6">
       <Card>
         <CardHeader>
           <CardTitle>
@@ -193,9 +207,12 @@ export function OnboardingWizard(props: Props) {
                   key={b.value}
                   type="button"
                   onClick={() => setBasics((s) => ({ ...s, businessType: b.value }))}
-                  className={cn('rounded-xl border p-4 text-left text-sm', basics.businessType === b.value ? 'border-forest-600 bg-forest-50 font-semibold' : 'border-line hover:bg-forest-50/40')}
+                  aria-pressed={basics.businessType === b.value}
+                  className={cn('rounded-xl border p-4 text-left transition-colors', basics.businessType === b.value ? 'border-forest-700 bg-forest-50 ring-1 ring-forest-700' : 'border-line hover:bg-forest-50/40')}
                 >
-                  {b.label}
+                  {(() => { const Info = BUSINESS_INFO[b.value]; return Info ? <Info.icon className="size-5 text-forest-700" /> : null; })()}
+                  <span className="mt-2 block text-sm font-semibold text-ink">{b.label}</span>
+                  <span className="mt-1 block text-xs text-ink-muted">{BUSINESS_INFO[b.value]?.text}</span>
                 </button>
               ))}
             </div>
@@ -286,6 +303,8 @@ export function OnboardingWizard(props: Props) {
             </>
           )}
         </div>
+      </div>
+      </div>
       </div>
     </div>
   );

@@ -32,6 +32,7 @@ export function ExportButtons({
 
   return (
     <>
+      {print ? <PrintButton /> : null}
       {href ? (
         <Button asChild variant="outline" size="sm" data-print="hide">
           <a href={href} download>
@@ -48,7 +49,6 @@ export function ExportButtons({
           </a>
         </Button>
       ) : null}
-      {print ? <PrintButton /> : null}
     </>
   );
 }
