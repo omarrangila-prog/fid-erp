@@ -74,9 +74,5 @@ BEGIN
            "terminology" = '{"item":"Coffee"}'::jsonb
      WHERE "code" IN ('FID-DXB', 'FID-MA');
 
-    -- Morocco sells in dirhams and dollars only; Dubai keeps the full list.
-    -- These are the lists the code hard-wired before (company-currencies.ts).
-    UPDATE "companies" SET "transactionCurrencies" = ARRAY['MAD','USD'] WHERE "code" = 'FID-MA';
-    UPDATE "companies" SET "transactionCurrencies" = ARRAY['USD','AED','MAD'] WHERE "code" = 'FID-DXB';
   END IF;
 END $$;

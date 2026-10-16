@@ -9,7 +9,8 @@ import { Input, Select } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { JOURNAL_ACCOUNT_KINDS } from '@/lib/services/journal-account-kind';
 import { quickCreateJournalAccountAction } from '@/server/actions/master-actions';
-import { CURRENCY_NAMES, transactionCurrencies } from '@/lib/company-currencies';
+import { CURRENCY_NAMES } from '@/lib/company-currencies';
+import { useTransactionCurrencies } from '@/components/company-config-context';
 
 export type CreatedJournalAccount = {
   id: string;
@@ -149,7 +150,7 @@ function AddJournalAccountBody({
           hint="The currency this ledger is usually kept in. Journals in another currency stay separate."
         >
           <Select id="newAccountCurrency" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-            {transactionCurrencies(localCurrency, defaultCurrency).map((code) => (
+            {useTransactionCurrencies(localCurrency, defaultCurrency).map((code) => (
               <option key={code} value={code}>
                 {code} — {CURRENCY_NAMES[code] ?? code}
               </option>

@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js';
+import { CURRENCIES } from '@/lib/currencies';
 
 /**
  * Decimal arithmetic comes from decimal.js directly rather than through
@@ -31,17 +32,19 @@ const HALF_UP = Decimal.ROUND_HALF_UP;
 
 export type DecimalInput = Decimal | string | number;
 
-/** Number of decimals a currency is presented with. */
-export const CURRENCY_DISPLAY_SCALE: Record<string, number> = {
-  USD: 2,
-  AED: 2,
-  MAD: 2,
-  EUR: 2,
-};
+/** Number of decimals a currency is presented with (ISO 4217; see lib/currencies.ts). */
+export const CURRENCY_DISPLAY_SCALE: Record<string, number> = Object.fromEntries(
+  CURRENCIES.map((c) => [c.code, c.digits]),
+);
 
-export const SUPPORTED_CURRENCIES = ['USD', 'AED', 'MAD'] as const;
-export type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
-
+/**
+ * The pivot every foreign amount passes through: the group / reporting
+ * currency. Each voucher keeps three figures — the amount in its own
+ * currency, in this pivot, and in the company's local currency — so a company
+ * can keep its books in *any* local currency (EUR, GBP, PKR…) while the pivot
+ * stays one stable, always-quotable currency. Changing the pivot would mean
+ * restating 66 stored columns for no gain, so it is deliberately fixed.
+ */
 export const BASE_CURRENCY = 'USD';
 
 /**

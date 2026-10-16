@@ -17,7 +17,7 @@ import { tryDec, Decimal, USD_TRANSLATION_TOLERANCE } from '@/lib/money';
 import { postJournalVoucherAction, replaceJournalVoucherAction } from '@/server/actions/finance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { AddJournalAccountDialog, type CreatedJournalAccount } from '@/app/(app)/accounting/journal/new/add-account';
-import { transactionCurrencies } from '@/lib/company-currencies';
+import { useCurrencyLister } from '@/components/company-config-context';
 
 export type AccountOption = ComboOption & {
   accountType: string;
@@ -110,6 +110,7 @@ export function JournalForm({
   /** Shown as a tab of General Entry: straight to the voucher, no guided list of its own. */
   embedded?: boolean;
 }) {
+  const listCurrencies = useCurrencyLister();
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
   /*
@@ -448,7 +449,7 @@ export function JournalForm({
                 );
               }}
             >
-              {transactionCurrencies(localCurrency, currency).map((code) => (
+              {listCurrencies(localCurrency, currency).map((code) => (
                 <option key={code} value={code}>
                   {code}
                 </option>
@@ -597,7 +598,7 @@ export function JournalForm({
                         });
                       }}
                     >
-                      {transactionCurrencies(localCurrency, line.currency).map((code) => (
+                      {listCurrencies(localCurrency, line.currency).map((code) => (
                         <option key={code} value={code}>
                           {code}
                         </option>

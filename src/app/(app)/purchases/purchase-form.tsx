@@ -19,7 +19,8 @@ import { savePurchaseContractAction, postPurchaseContractAction } from '@/server
 import { computePurchaseTotalsClient, splitLineIntoContainers, type LineDraft } from '@/app/(app)/purchases/purchase-math';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { todayInputValue, formatMoney } from '@/lib/format';
-import { CURRENCY_NAMES, transactionCurrencies } from '@/lib/company-currencies';
+import { CURRENCY_NAMES } from '@/lib/company-currencies';
+import { useTransactionCurrencies, useConfiguredCurrencies } from '@/components/company-config-context';
 
 /**
  * Purchase contract entry.
@@ -96,6 +97,7 @@ export function PurchaseForm({
   /** Correcting an approved order: every field, and the books follow. */
   approved?: boolean;
 }) {
+  const configuredCurrencies = useConfiguredCurrencies();
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
@@ -303,7 +305,7 @@ export function PurchaseForm({
                   onChange={(v) => setField('vendorId', v ?? '')}
                   placeholder="Choose a supplier…"
                   invalid={Boolean(errors.vendorId)}
-                  create={vendorCreateSpec(header.currency, localCurrency)}
+                  create={vendorCreateSpec(header.currency, localCurrency, configuredCurrencies)}
                 />
               </Field>
 
@@ -380,7 +382,7 @@ export function PurchaseForm({
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <Field label="Contract currency" htmlFor="currency">
                 <Select id="currency" value={header.currency} onChange={(e) => setField('currency', e.target.value)}>
-                  {transactionCurrencies(localCurrency, header.currency).map((code) => (
+                  {useTransactionCurrencies(localCurrency, header.currency).map((code) => (
                     <option key={code} value={code}>
                       {code} — {CURRENCY_NAMES[code] ?? code}
                     </option>

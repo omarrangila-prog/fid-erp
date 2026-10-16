@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { defaultCustomerCurrency } from '@/lib/company-currencies';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getRateDefaults } from '@/lib/services/exchange-rate';
@@ -100,7 +101,7 @@ export default async function NewSalePage() {
     shipmentId: s.shipmentId,
   }));
 
-  const defaultCurrency = user.activeCompany.localCurrency === 'MAD' ? 'MAD' : 'USD';
+  const defaultCurrency = defaultCustomerCurrency(user.activeCompany);
 
   const rates = await getRateDefaults(user.activeCompany.id);
   const invoiceNumber = await transaction((tx) => suggestSalesInvoiceNumber(tx, companyId));

@@ -5,7 +5,7 @@ import { Pencil, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MasterFormSheet, STATUS_OPTIONS, type FieldSpec } from '@/components/shared/master-form';
 import { saveCashBankAccountAction } from '@/server/actions/master-actions';
-import { currencyOptions } from '@/lib/company-currencies';
+import { useCurrencyOptions } from '@/components/company-config-context';
 
 const TYPE_OPTIONS = [
   { value: 'BANK', label: 'Bank' },
@@ -28,7 +28,7 @@ const CREATE_FIELDS = (localCurrency: string): FieldSpec[] => [
     label: 'Currency',
     required: true,
     hint: 'Fixed once the account has postings — changing it would restate history.',
-    options: currencyOptions(localCurrency),
+    options: useCurrencyOptions(localCurrency),
   },
   { kind: 'money', name: 'openingBalance', label: 'Opening balance' },
   { kind: 'text', name: 'bankName', label: 'Bank name' },
@@ -50,7 +50,7 @@ const EDIT_FIELDS = (localCurrency: string, currency: string): FieldSpec[] => [
     label: 'Currency',
     required: true,
     hint: 'Fixed once the account has postings — changing it would restate history.',
-    options: currencyOptions(localCurrency, { keep: currency }),
+    options: useCurrencyOptions(localCurrency, { keep: currency }),
   },
   { kind: 'money', name: 'openingBalance', label: 'Opening balance' },
   { kind: 'text', name: 'bankName', label: 'Bank name' },

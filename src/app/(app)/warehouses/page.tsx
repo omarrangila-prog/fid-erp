@@ -103,7 +103,7 @@ export default async function WarehousesPage() {
         rows={rows}
         columns={COLUMNS}
         fields={FIELDS}
-        createDefaults={{ status: 'ACTIVE', country: user.activeCompany.code === 'FID-MA' ? 'Morocco' : 'United Arab Emirates' }}
+        createDefaults={{ status: 'ACTIVE', country: user.activeCompany.country }}
         action={saveWarehouseAction}
         entityLabel="Warehouse"
         deleteTarget="warehouse"

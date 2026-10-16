@@ -18,15 +18,24 @@ import {
  * to be filled in later on the record itself.
  */
 
-const CURRENCIES = ['USD', 'MAD', 'AED', 'EUR'].map((code) => ({ value: code, label: code }));
+const LEGACY_DUBAI = ['USD', 'MAD', 'AED', 'EUR'].map((code) => ({ value: code, label: code }));
 
-/** Morocco keeps to dirhams and dollars; elsewhere the full list. */
-const currencyChoices = (localCurrency: string | undefined, current: string) =>
-  localCurrency?.toUpperCase() === 'MAD' ? currencyOptions(localCurrency, { keep: current, short: true }) : CURRENCIES;
+/**
+ * The currencies a quick create offers: the company's own choice when it has
+ * made one; otherwise the lists the product has always shipped — dirhams and
+ * dollars for Morocco, the four-currency list for Dubai, and for a company
+ * anywhere else its own currency and the dollar.
+ */
+const currencyChoices = (localCurrency: string | undefined, current: string, configured?: readonly string[]) => {
+  const local = localCurrency?.toUpperCase();
+  if (!configured?.length && (local === 'AED' || local === undefined)) return LEGACY_DUBAI;
+  return currencyOptions(local ?? 'USD', { keep: current, short: true, configured });
+};
 
 export function vendorCreateSpec(
   defaultCurrency: string,
   localCurrency?: string,
+  configured?: readonly string[],
 ): MasterCreateSpec<{ id: string; name: string; code: string; currency: string }> {
   return {
     label: '+ Add New Supplier',
@@ -40,7 +49,7 @@ export function vendorCreateSpec(
         label: 'Account currency',
         kind: 'select',
         required: true,
-        options: currencyChoices(localCurrency, defaultCurrency),
+        options: currencyChoices(localCurrency, defaultCurrency, configured),
         defaultValue: defaultCurrency,
         hint: 'The currency this supplier’s balance is stated in.',
       },
@@ -60,6 +69,7 @@ export function vendorCreateSpec(
 export function customerCreateSpec(
   defaultCurrency: string,
   localCurrency?: string,
+  configured?: readonly string[],
 ): MasterCreateSpec<{ id: string; name: string; currency: string; paymentTermDays: number }> {
   return {
     label: '+ Add New Customer',
@@ -73,7 +83,7 @@ export function customerCreateSpec(
         label: 'Account currency',
         kind: 'select',
         required: true,
-        options: currencyChoices(localCurrency, defaultCurrency),
+        options: currencyChoices(localCurrency, defaultCurrency, configured),
         defaultValue: defaultCurrency,
         hint: 'The currency this customer’s balance is stated in.',
       },
@@ -177,6 +187,7 @@ export function cashBankCreateSpec(
   defaultCurrency: string,
   accountType: 'CASH' | 'BANK' = 'BANK',
   localCurrency?: string,
+  configured?: readonly string[],
 ): MasterCreateSpec<{ id: string; name: string; code: string; currency: string; accountType: string }> {
   return {
     label: accountType === 'CASH' ? '+ Add New Cash Account' : '+ Add New Bank Account',
@@ -202,7 +213,7 @@ export function cashBankCreateSpec(
         label: 'Currency',
         kind: 'select',
         required: true,
-        options: currencyChoices(localCurrency, defaultCurrency),
+        options: currencyChoices(localCurrency, defaultCurrency, configured),
         defaultValue: defaultCurrency,
         hint: 'A drawer holds one currency only.',
       },

@@ -1,6 +1,7 @@
 'use client';
 
-import { transactionCurrencies, CURRENCY_NAMES } from '@/lib/company-currencies';
+import { CURRENCY_NAMES } from '@/lib/company-currencies';
+import { useSalesCurrencies } from '@/components/company-config-context';
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -130,6 +131,9 @@ export function SaleForm({
   canDelete?: boolean;
   canReverse?: boolean;
 }) {
+  const salesCurrencies = useSalesCurrencies(localCurrency, undefined);
+  // An invoice whose currency is no longer offered still shows it.
+  const salesCurrenciesFor = (current: string) => (salesCurrencies.includes(current) ? salesCurrencies : [...salesCurrencies, current]);
   const defaultTaxCodeId = preferZeroRateTax(taxCodes)?.id ?? '';
   const taxOptions = React.useMemo(
     () => [...taxCodes].sort((a, b) => Number(a.ratePct) - Number(b.ratePct) || a.code.localeCompare(b.code)),
@@ -517,6 +521,7 @@ export function SaleForm({
             />
           </Field>
 
+          {salesCurrencies.length === 1 && header.currency === salesCurrencies[0] ? null : (
           <Field label="Currency" htmlFor="currency" hint="Defaults to the customer's ledger currency.">
             <Select
               id="currency"
@@ -535,13 +540,14 @@ export function SaleForm({
                 });
               }}
             >
-              {transactionCurrencies(localCurrency).map((code) => (
+              {salesCurrenciesFor(header.currency).map((code) => (
                 <option key={code} value={code}>
                   {code} — {CURRENCY_NAMES[code] ?? code}
                 </option>
               ))}
             </Select>
           </Field>
+          )}
 
           <Field label="Customer reference" htmlFor="reference">
             <Input

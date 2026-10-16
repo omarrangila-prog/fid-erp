@@ -1,6 +1,7 @@
 'use client';
 
-import { transactionCurrencies, CURRENCY_NAMES } from '@/lib/company-currencies';
+import { CURRENCY_NAMES } from '@/lib/company-currencies';
+import { useCurrencyLister, useConfiguredCurrencies } from '@/components/company-config-context';
 import * as React from 'react';
 import { MasterSelect } from '@/components/shared/master-select';
 import { vendorCreateSpec, cashBankCreateSpec } from '@/components/shared/master-specs';
@@ -88,6 +89,8 @@ export function PaymentForm({
   /** An existing payment, opened to be corrected under its own number. */
   initial?: PaymentInitial;
 }) {
+  const configuredCurrencies = useConfiguredCurrencies();
+  const listCurrencies = useCurrencyLister();
   const router = useRouter();
   const clientKey = useClientKey();
   const { busy, start, opening } = useSaveAndOpen();
@@ -264,7 +267,7 @@ export function PaymentForm({
                 }}
                 placeholder="Choose a supplier…"
                 invalid={Boolean(fieldIssues.vendorId)}
-                create={vendorCreateSpec(form.currency, localCurrency)}
+                create={vendorCreateSpec(form.currency, localCurrency, configuredCurrencies)}
               />
             </Field>
           )}
@@ -298,7 +301,7 @@ export function PaymentForm({
                 })
               }
             >
-              {transactionCurrencies(localCurrency).map((code) => (
+              {listCurrencies(localCurrency).map((code) => (
                 <option key={code} value={code}>
                   {code} — {CURRENCY_NAMES[code] ?? code}
                 </option>
@@ -337,7 +340,7 @@ export function PaymentForm({
                 emptyText={`No ${form.currency} account exists`}
                 create={
                   canCreateCashBank
-                    ? cashBankCreateSpec(form.currency, form.paymentMethod === 'CASH' ? 'CASH' : 'BANK', localCurrency)
+                    ? cashBankCreateSpec(form.currency, form.paymentMethod === 'CASH' ? 'CASH' : 'BANK', localCurrency, configuredCurrencies)
                     : undefined
                 }
               />

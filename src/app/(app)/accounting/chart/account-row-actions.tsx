@@ -16,7 +16,7 @@ import { STATEMENT_GROUP_OPTIONS } from '@/app/(app)/accounting/chart/add-accoun
 import { todayInputValue } from '@/lib/format';
 import { ledgerHref } from '@/lib/ledger-currency';
 import { RowActions } from '@/components/shared/row-actions';
-import { currencyOptions } from '@/lib/company-currencies';
+import { useCurrencyOptions } from '@/components/company-config-context';
 import { safely } from '@/lib/safely';
 
 export type ChartRowAccount = {
@@ -76,7 +76,7 @@ export function AccountRowActions({
       name: 'currency',
       label: 'Currency',
       required: true,
-      options: currencyOptions(localCurrency, {
+      options: useCurrencyOptions(localCurrency, {
         keep: account.cashBank?.currency ?? account.currency,
         short: true,
       }),

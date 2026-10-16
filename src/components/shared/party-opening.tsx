@@ -4,7 +4,7 @@ import * as React from 'react';
 import { MasterFormSheet, type FieldSpec } from '@/components/shared/master-form';
 import { postPartyOpeningAction } from '@/server/actions/master-actions';
 import type { MasterFormState } from '@/server/actions/master-actions';
-import { transactionCurrencies } from '@/lib/company-currencies';
+import { useTransactionCurrencies } from '@/components/company-config-context';
 import { todayInputValue } from '@/lib/format';
 
 /**
@@ -61,7 +61,7 @@ export function PartyOpeningSheet({
       name: 'currency',
       label: 'Currency',
       required: true,
-      options: transactionCurrencies(localCurrency, currency).map((code) => ({
+      options: useTransactionCurrencies(localCurrency, currency).map((code) => ({
         value: code,
         label: code,
       })),

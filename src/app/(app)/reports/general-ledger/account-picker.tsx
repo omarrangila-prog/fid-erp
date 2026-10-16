@@ -6,7 +6,7 @@ import { Combobox } from '@/components/ui/combobox';
 import { Input, Select } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
-import { transactionCurrencies } from '@/lib/company-currencies';
+import { useCurrencyLister } from '@/components/company-config-context';
 
 export function AccountPicker({
   accounts,
@@ -23,6 +23,7 @@ export function AccountPicker({
   currency: string;
   localCurrency: string;
 }) {
+  const listCurrencies = useCurrencyLister();
   const router = useRouter();
   const [account, setAccount] = React.useState<string | null>(selectedId || null);
   const [fromDate, setFrom] = React.useState(from);
@@ -71,7 +72,7 @@ export function AccountPicker({
           {[
             ...new Set([
               'USD',
-              ...transactionCurrencies(localCurrency, currency === 'REPORTING' || currency === 'ALL' ? null : currency),
+              ...listCurrencies(localCurrency, currency === 'REPORTING' || currency === 'ALL' ? null : currency),
             ]),
           ].map((code) => (
             <option key={code} value={code}>

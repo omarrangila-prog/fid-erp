@@ -1,6 +1,7 @@
 'use client';
 
-import { transactionCurrencies, CURRENCY_NAMES } from '@/lib/company-currencies';
+import { CURRENCY_NAMES } from '@/lib/company-currencies';
+import { useTransactionCurrencies } from '@/components/company-config-context';
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -280,7 +281,7 @@ function SettlementSheet({
                 })
               }
             >
-              {transactionCurrencies(localCurrency).map((code) => (
+              {useTransactionCurrencies(localCurrency).map((code) => (
                 <option key={code} value={code}>
                   {code} — {CURRENCY_NAMES[code] ?? code}
                 </option>

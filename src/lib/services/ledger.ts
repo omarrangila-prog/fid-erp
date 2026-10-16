@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db';
 import { LIVE_ENTRY_TEXT } from '@/lib/services/journal-visibility';
 import { Decimal, dec, toMoney } from '@/lib/money';
+import { isCurrencyCode } from '@/lib/currencies';
 import {
   COLLECTED_BY_SQL,
   INVOICE_DOCUMENTS_SQL,
@@ -27,18 +28,37 @@ import {
 
 export type LedgerView = 'TRANSACTION' | 'USD' | 'LOCAL';
 
-export const BOOK_CURRENCIES = ['USD', 'AED', 'MAD'] as const;
-export type BookCurrency = (typeof BOOK_CURRENCIES)[number];
+/** Any ISO 4217 currency can be a book: a ledger tab is just "lines in that currency". */
+export type BookCurrency = string;
 
-export function isBookCurrency(value: string | null | undefined): value is BookCurrency {
-  return value === 'USD' || value === 'AED' || value === 'MAD';
+const LEGACY_BOOKS = new Set(['USD', 'AED', 'MAD']);
+
+/**
+ * Is `value` a currency this company keeps a book in? FID's two companies keep
+ * the three books they always had; every other company, any ISO currency.
+ */
+export function isBookCurrency(value: string | null | undefined, localCurrency?: string): value is BookCurrency {
+  const local = localCurrency?.toUpperCase();
+  if (!local || local === 'MAD' || local === 'AED') return !!value && LEGACY_BOOKS.has(value.toUpperCase()) && value === value.toUpperCase();
+  return isCurrencyCode(value);
 }
 
-/** Tabs on a person/account ledger: always USD and MAD, plus AED when that book is in play. */
+/**
+ * Tabs on a person/account ledger.
+ *
+ * FID's two books keep the tabs they have always had (USD and MAD, plus AED
+ * when that book is in play). Any other company gets the dollar, its own
+ * currency and the party's.
+ */
 export function ledgerCurrencyTabs(localCurrency: string, partyCurrency?: string): BookCurrency[] {
-  const tabs: BookCurrency[] = ['USD', 'MAD'];
-  if (localCurrency === 'AED' || partyCurrency === 'AED') tabs.splice(1, 0, 'AED');
-  return tabs;
+  const local = localCurrency.toUpperCase();
+  const party = partyCurrency?.toUpperCase();
+  if (local === 'MAD' || local === 'AED') {
+    const tabs: BookCurrency[] = ['USD', 'MAD'];
+    if (local === 'AED' || party === 'AED') tabs.splice(1, 0, 'AED');
+    return tabs;
+  }
+  return [...new Set(['USD', local, ...(party && isCurrencyCode(party) ? [party] : [])])];
 }
 
 /**
@@ -51,21 +71,22 @@ export function resolvePartyLedgerQuery(params: {
   localCurrency: string;
   partyCurrency: string;
 }): { view: LedgerView; currency?: BookCurrency } {
-  if (isBookCurrency(params.currency)) {
+  const book = (v: string | null | undefined) => isBookCurrency(v, params.localCurrency);
+  if (book(params.currency)) {
     return { view: 'TRANSACTION', currency: params.currency };
   }
-  if (isBookCurrency(params.view)) {
+  if (book(params.view)) {
     return { view: 'TRANSACTION', currency: params.view };
   }
-  if (params.view === 'LOCAL' && isBookCurrency(params.localCurrency)) {
+  if (params.view === 'LOCAL' && book(params.localCurrency)) {
     return { view: 'TRANSACTION', currency: params.localCurrency };
   }
   if (params.view === 'TRANSACTION') {
     return { view: 'TRANSACTION' };
   }
-  const fallback = isBookCurrency(params.partyCurrency)
+  const fallback = book(params.partyCurrency)
     ? params.partyCurrency
-    : isBookCurrency(params.localCurrency)
+    : book(params.localCurrency)
       ? params.localCurrency
       : 'USD';
   return { view: 'TRANSACTION', currency: fallback };

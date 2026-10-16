@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { quickCreateCustomerAction } from '@/server/actions/master-actions';
-import { CURRENCY_NAMES, transactionCurrencies } from '@/lib/company-currencies';
+import { CURRENCY_NAMES } from '@/lib/company-currencies';
+import { useTransactionCurrencies } from '@/components/company-config-context';
 
 /**
  * Add a customer without leaving the invoice.
@@ -156,7 +157,7 @@ function AddCustomerBody({
             value={form.primaryCurrency}
             onChange={(e) => set({ primaryCurrency: e.target.value })}
           >
-            {transactionCurrencies(localCurrency, defaultCurrency).map((code) => (
+            {useTransactionCurrencies(localCurrency, defaultCurrency).map((code) => (
               <option key={code} value={code}>
                 {code} — {CURRENCY_NAMES[code] ?? code}
               </option>

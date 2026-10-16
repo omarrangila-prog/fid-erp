@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { FormError } from '@/components/shared/form-error';
 import { dec, toMoney, tryDec } from '@/lib/money';
 import { formatMoney } from '@/lib/format';
-import { transactionCurrencies } from '@/lib/company-currencies';
+import { useCurrencyLister } from '@/components/company-config-context';
 import { postJournalVoucherAction } from '@/server/actions/finance-actions';
 import { AddJournalAccountDialog, type CreatedJournalAccount } from '@/app/(app)/accounting/journal/new/add-account';
 
@@ -72,6 +72,7 @@ export function SimpleEntryForm({
   ratesByCurrency: Record<string, string>;
   today: string;
 }) {
+  const listCurrencies = useCurrencyLister();
   const router = useRouter();
   const [pending, startTransition] = React.useTransition();
   const [options, setOptions] = React.useState(initialOptions);
@@ -243,7 +244,7 @@ export function SimpleEntryForm({
           </Field>
           <Field label="Entry currency" htmlFor="ge-currency" required>
             <Select id="ge-currency" value={currency} onChange={(e) => chooseCurrency(e.target.value)}>
-              {[...new Set(['USD', ...transactionCurrencies(localCurrency)])].map((code) => (
+              {[...new Set(['USD', ...listCurrencies(localCurrency)])].map((code) => (
                 <option key={code} value={code}>
                   {code}
                 </option>

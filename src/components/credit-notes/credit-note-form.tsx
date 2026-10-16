@@ -16,7 +16,7 @@ import { dec, tryDec, toMoney, sum, Decimal } from '@/lib/money';
 import { formatMoney, formatQuantityKg, todayInputValue } from '@/lib/format';
 import { saveCreditNoteAction } from '@/server/actions/compliance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
-import { transactionCurrencies } from '@/lib/company-currencies';
+import { useTransactionCurrencies, useConfiguredCurrencies } from '@/components/company-config-context';
 
 export type CreditParty = { id: string; name: string; currency: string };
 export type CreditDocument = {
@@ -103,6 +103,7 @@ export function CreditNoteForm({
   basePath: string;
   canCreateParty?: boolean;
 }) {
+  const configuredCurrencies = useConfiguredCurrencies();
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
@@ -342,7 +343,7 @@ export function CreditNoteForm({
                   value={partyId}
                   onChange={choosePartyId}
                   placeholder={`Choose a ${partyLabel.toLowerCase()}…`}
-                  create={canCreateParty ? customerCreateSpec(currency, localCurrency) : undefined}
+                  create={canCreateParty ? customerCreateSpec(currency, localCurrency, configuredCurrencies) : undefined}
                   onCreated={acceptNewParty}
                 />
               ) : (
@@ -352,7 +353,7 @@ export function CreditNoteForm({
                   value={partyId}
                   onChange={choosePartyId}
                   placeholder={`Choose a ${partyLabel.toLowerCase()}…`}
-                  create={canCreateParty ? vendorCreateSpec(currency, localCurrency) : undefined}
+                  create={canCreateParty ? vendorCreateSpec(currency, localCurrency, configuredCurrencies) : undefined}
                   onCreated={acceptNewParty}
                 />
               )}
@@ -400,7 +401,7 @@ export function CreditNoteForm({
                   if (e.target.value === 'USD') setRateToUsd('1');
                 }}
               >
-                {transactionCurrencies(localCurrency, currency).map((code) => (
+                {useTransactionCurrencies(localCurrency, currency).map((code) => (
                   <option key={code} value={code}>
                     {code}
                   </option>

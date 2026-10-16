@@ -20,7 +20,7 @@ import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import type { CategoryOption, ShipmentTrace } from '@/app/(app)/finance/expenses/expense-form';
 import { AddExpenseCategoryDialog } from '@/app/(app)/finance/expenses/add-expense-category';
 import { useClientKey } from '@/lib/use-client-key';
-import { transactionCurrencies } from '@/lib/company-currencies';
+import { useTransactionCurrencies, useConfiguredCurrencies } from '@/components/company-config-context';
 import { LedgerAccountField } from '@/components/shared/ledger-account-field';
 import { ledgerTargetPayload } from '@/lib/ledger-target';
 import type { LedgerSettlementOption } from '@/lib/services/ledger-settlement';
@@ -85,6 +85,7 @@ export function SplitExpenseForm({
   defaultShipmentId?: string;
   canCreateCashBank?: boolean;
 }) {
+  const configuredCurrencies = useConfiguredCurrencies();
   const router = useRouter();
   const clientKey = useClientKey();
   const { busy, start, opening } = useSaveAndOpen();
@@ -257,7 +258,7 @@ export function SplitExpenseForm({
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Field label="Currency" required>
               <Select value={header.currency} onChange={(e) => chooseCurrency(e.target.value)}>
-                {transactionCurrencies(localCurrency, header.currency).map((code) => (
+                {useTransactionCurrencies(localCurrency, header.currency).map((code) => (
                   <option key={code} value={code}>
                     {code}
                   </option>

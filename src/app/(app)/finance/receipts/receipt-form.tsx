@@ -1,6 +1,7 @@
 'use client';
 
-import { transactionCurrencies, CURRENCY_NAMES } from '@/lib/company-currencies';
+import { CURRENCY_NAMES } from '@/lib/company-currencies';
+import { useCurrencyLister, useConfiguredCurrencies } from '@/components/company-config-context';
 import * as React from 'react';
 import { MasterSelect } from '@/components/shared/master-select';
 import { customerCreateSpec, cashBankCreateSpec } from '@/components/shared/master-specs';
@@ -113,6 +114,8 @@ export function ReceiptForm({
    */
   initial?: ReceiptInitial;
 }) {
+  const configuredCurrencies = useConfiguredCurrencies();
+  const listCurrencies = useCurrencyLister();
   const router = useRouter();
   const clientKey = useClientKey();
   const { busy, start, opening } = useSaveAndOpen();
@@ -406,7 +409,7 @@ export function ReceiptForm({
               }}
               placeholder="Choose a customer…"
               invalid={Boolean(fieldIssues.customerId)}
-              create={customerCreateSpec(form.currency, localCurrency)}
+              create={customerCreateSpec(form.currency, localCurrency, configuredCurrencies)}
               onCreated={(created) => {
                 // A receipt is stated in the customer's own currency, so the
                 // new account's currency has to reach the voucher too.
@@ -455,7 +458,7 @@ export function ReceiptForm({
                 })
               }
             >
-              {transactionCurrencies(localCurrency).map((code) => (
+              {listCurrencies(localCurrency).map((code) => (
                 <option key={code} value={code}>
                   {code} — {CURRENCY_NAMES[code] ?? code}
                 </option>
@@ -505,7 +508,7 @@ export function ReceiptForm({
                 emptyText={`No ${form.currency} account exists`}
                 create={
                   canCreateCashBank
-                    ? cashBankCreateSpec(form.currency, form.paymentMethod === 'CASH' ? 'CASH' : 'BANK', localCurrency)
+                    ? cashBankCreateSpec(form.currency, form.paymentMethod === 'CASH' ? 'CASH' : 'BANK', localCurrency, configuredCurrencies)
                     : undefined
                 }
               />

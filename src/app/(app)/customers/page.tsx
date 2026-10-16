@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { defaultCustomerCurrency } from '@/lib/company-currencies';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
@@ -138,7 +139,7 @@ export default async function CustomersPage({
         canPostOpening={can(user, PERMISSIONS.ACCOUNTING_POST)}
         localCurrency={user.activeCompany.localCurrency}
         defaultLocalRate={rates.local}
-        defaultCurrency={user.activeCompany.code === 'FID-MA' ? 'MAD' : 'USD'}
+        defaultCurrency={defaultCustomerCurrency(user.activeCompany)}
         agents={agents}
       />
     </div>

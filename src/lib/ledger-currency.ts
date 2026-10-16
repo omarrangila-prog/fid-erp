@@ -1,3 +1,5 @@
+import { isCurrencyCode } from '@/lib/currencies';
+
 /**
  * Which currency a general-ledger screen should open in.
  *
@@ -20,19 +22,18 @@
  *             default for a control account that carries several currencies
  *             (receivables, payables, sales): every line has a USD value, so
  *             every line is shown.
- * USD, MAD, AED — only the lines in that currency, in that currency, with a
+ * a currency code (USD, MAD, EUR…) — only the lines in that currency, in that currency, with a
  *             native running balance. For a MAD cash drawer this is the only
  *             sensible view; for a personal account it keeps the dirhams and
  *             the dollars apart, as the client asked.
  * ALL      — every line in its own currency, no running balance, because
  *             dirhams and dollars are never added together.
  */
-export const LEDGER_VIEW_CURRENCIES = ['REPORTING', 'ALL', 'USD', 'MAD', 'AED'] as const;
-export type LedgerViewCurrency = (typeof LEDGER_VIEW_CURRENCIES)[number];
+export type LedgerViewCurrency = 'REPORTING' | 'ALL' | (string & {});
 
 export function parseLedgerViewCurrency(value: string | null | undefined): LedgerViewCurrency | null {
-  if (value === 'REPORTING' || value === 'ALL' || value === 'USD' || value === 'MAD' || value === 'AED') return value;
-  return null;
+  if (value === 'REPORTING' || value === 'ALL') return value;
+  return value && value === value.toUpperCase() && isCurrencyCode(value) ? value : null;
 }
 
 /**

@@ -6,7 +6,7 @@ import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { MasterFormSheet, STATUS_OPTIONS, type FieldSpec } from '@/components/shared/master-form';
-import { currencyOptions } from '@/lib/company-currencies';
+import { useCurrencyOptions } from '@/components/company-config-context';
 import { saveVendorAction, toggleMasterStatusAction, type MasterFormState } from '@/server/actions/master-actions';
 import { BookOpen, FileText, HandCoins } from 'lucide-react';
 import { RowActions, viewAction } from '@/components/shared/row-actions';
@@ -45,7 +45,7 @@ const FIELDS = (localCurrency: string, keep?: string): FieldSpec[] => [
     name: 'primaryCurrency',
     label: 'Ledger currency',
     required: true,
-    options: currencyOptions(localCurrency, { keep }),
+    options: useCurrencyOptions(localCurrency, { keep }),
     hint: 'Overseas coffee suppliers are normally carried in USD for both companies.',
   },
 

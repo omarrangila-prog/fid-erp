@@ -1,6 +1,7 @@
 'use client';
 
-import { transactionCurrencies, CURRENCY_NAMES } from '@/lib/company-currencies';
+import { CURRENCY_NAMES } from '@/lib/company-currencies';
+import { useTransactionCurrencies, useConfiguredCurrencies } from '@/components/company-config-context';
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -113,6 +114,7 @@ export function ExpenseForm({
   /** Opening a drawer creates a ledger account, so it is its own permission. */
   canCreateCashBank?: boolean;
 }) {
+  const configuredCurrencies = useConfiguredCurrencies();
   const router = useRouter();
   const clientKey = useClientKey();
   const { busy, start, opening } = useSaveAndOpen();
@@ -751,7 +753,7 @@ export function ExpenseForm({
                 });
               }}
             >
-              {transactionCurrencies(localCurrency).map((code) => (
+              {useTransactionCurrencies(localCurrency).map((code) => (
                 <option key={code} value={code}>
                   {code} — {CURRENCY_NAMES[code] ?? code}
                 </option>

@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { FeaturesProvider } from '@/components/features-context';
+import { CompanyConfigProvider } from '@/components/company-config-context';
 import { resolveFeatures } from '@/lib/features';
 import { getCurrentUser } from '@/lib/auth/session';
 import { countUnread } from '@/lib/services/notification';
@@ -47,6 +48,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <FeaturesProvider features={features}>
+    <CompanyConfigProvider
+      config={{
+        transactionCurrencies: user.activeCompany.transactionCurrencies ?? [],
+        salesCurrencies: user.activeCompany.salesCurrencies ?? [],
+        defaultSalesCurrency: user.activeCompany.defaultSalesCurrency ?? null,
+        terminology: user.activeCompany.terminology ?? {},
+      }}
+    >
     <div className="flex min-h-dvh bg-paper">
       {/*
         Without this a keyboard user tabs through every navigation link — more
@@ -117,6 +126,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
       <MobileNav permissions={permissions} isSuperAdmin={user.isSuperAdmin} myPages={myPages} />
     </div>
+    </CompanyConfigProvider>
     </FeaturesProvider>
   );
 }

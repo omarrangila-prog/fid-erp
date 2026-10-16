@@ -652,9 +652,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                         <TD numeric>{formatMoney(line.amount, line.currency)}</TD>
                         <TD numeric className="text-xs">{formatRate(line.rateToUsd)}</TD>
                         <TD numeric>
-                          {costSheet.localCurrency === 'MAD'
-                            ? formatMoney(line.amountLocal, 'MAD')
-                            : formatMoney(line.amountLocal, costSheet.localCurrency)}
+                          {formatMoney(line.amountLocal, costSheet.localCurrency)}
                         </TD>
                         <TD numeric>{formatMoney(line.amountUsd, 'USD')}</TD>
                         <TD>
