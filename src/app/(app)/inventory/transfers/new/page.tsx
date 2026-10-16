@@ -33,7 +33,7 @@ export default async function NewTransferPage() {
     {
       met: warehouses.length > 1,
       label: 'Two or more warehouses',
-      description: 'A transfer moves coffee from one warehouse to another, so there has to be somewhere to move it to.',
+      description: 'A transfer moves goods from one warehouse to another, so there has to be somewhere to move it to.',
       href: '/warehouses',
       actionLabel: 'Open warehouses',
     },
@@ -59,7 +59,7 @@ export default async function NewTransferPage() {
         />
         <PrerequisiteGate
           title="Before you can transfer stock"
-          description="A transfer relocates coffee you already hold; it never creates any."
+          description="A transfer relocates goods you already hold; it never creates any."
           prerequisites={prerequisites}
         />
       </div>
@@ -79,7 +79,7 @@ export default async function NewTransferPage() {
     <div className="space-y-6">
       <PageHeader
         title="New Warehouse Transfer"
-        description="Relocate coffee without changing how much the company owns."
+        description="Relocate goods without changing how much the company owns."
         breadcrumbs={[
           { label: 'Inventory', href: '/inventory' },
           { label: 'Transfers', href: '/inventory/transfers' },

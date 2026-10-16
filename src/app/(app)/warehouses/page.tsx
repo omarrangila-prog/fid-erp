@@ -111,7 +111,7 @@ export default async function WarehousesPage() {
         deleteTarget="warehouse"
         canCreate={can(user, PERMISSIONS.WAREHOUSES_MANAGE)}
         canEdit={can(user, PERMISSIONS.WAREHOUSES_MANAGE)}
-        emptyDescription="Add the physical locations where coffee is stored."
+        emptyDescription="Add the physical locations where goods is stored."
         searchPlaceholder="Search warehouses…"
       />
     </div>

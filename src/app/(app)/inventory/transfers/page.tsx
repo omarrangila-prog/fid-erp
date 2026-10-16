@@ -85,7 +85,7 @@ export default async function TransfersPage() {
     <div className="space-y-6">
       <PageHeader
         title="Warehouse Transfers"
-        description="Move coffee between locations. Company stock never changes — only where it sits."
+        description="Move goods between locations. Company stock never changes — only where it sits."
         breadcrumbs={[{ label: 'Inventory', href: '/inventory' }, { label: 'Transfers' }]}
       />
 

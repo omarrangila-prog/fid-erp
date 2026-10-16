@@ -35,7 +35,7 @@ const VIEWS = [
   { key: 'statement', label: 'Statement' },
   { key: 'shipment', label: 'By shipment' },
   { key: 'customer', label: 'By customer' },
-  { key: 'product', label: 'By coffee' },
+  { key: 'product', label: 'By item' },
   { key: 'batch', label: 'By batch' },
   { key: 'container', label: 'By container' },
   { key: 'month', label: 'By month' },
@@ -56,7 +56,7 @@ export default async function ProfitabilityPage({ searchParams }: { searchParams
     <div className="print-landscape space-y-6">
       <PageHeader
         title="Profitability"
-        description="Margin measured only on coffee that has actually sold. Unsold stock stays on the balance sheet."
+        description="Margin measured only on goods that has actually sold. Unsold stock stays on the balance sheet."
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Profitability' }]}
         actions={
           <>
@@ -156,7 +156,7 @@ async function ShipmentTable({
       <CardHeader>
         <CardTitle>Shipment profitability</CardTitle>
         <CardDescription>
-          One row per shipment reference; open it for its containers. Sales follow the coffee each invoice line sold,
+          One row per shipment reference; open it for its containers. Sales follow the goods each invoice line sold,
           wherever it was stored. Cost of sales is the landed cost of what sold, so shipment costs are never deducted twice.
         </CardDescription>
       </CardHeader>
@@ -218,7 +218,7 @@ async function ShipmentTable({
               <div className="space-y-2 border-t border-line px-4 py-3">
                 <p className="text-xs text-ink-muted">
                   Landed cost {formatMoney(landed, 'USD')} · gross {grossLocal.isNegative() ? 'loss' : 'profit'}{' '}
-                  {formatMoney(grossLocal, local)} ({formatMoney(gross, 'USD')}) · costs not added to the coffee{' '}
+                  {formatMoney(grossLocal, local)} ({formatMoney(gross, 'USD')}) · costs not added to the goods{' '}
                   {formatMoney(other, 'USD')} · stock left carried at {formatMoney(stockLocal, local)} ({formatMoney(stock, 'USD')}).{' '}
                   <Link href={`/reports/shipment-cost`} className="underline underline-offset-2">Full costing and FX</Link>
                 </p>
@@ -227,7 +227,7 @@ async function ShipmentTable({
                     <THead>
                       <TR className="hover:bg-transparent">
                         <TH>Container</TH>
-                        <TH>Coffee</TH>
+                        <TH>Item</TH>
                         <TH>Status</TH>
                         <TH numeric>Bought</TH>
                         <TH numeric>Sold</TH>
@@ -307,7 +307,7 @@ async function BreakdownTable({
           ? await getBatchProfitability({ companyId })
           : await getContainerProfitability({ companyId });
 
-  const labels = { customer: 'Customer', product: 'Coffee', batch: 'Batch', container: 'Container' } as const;
+  const labels = { customer: 'Customer', product: 'Item', batch: 'Batch', container: 'Container' } as const;
 
   return (
     <Card>

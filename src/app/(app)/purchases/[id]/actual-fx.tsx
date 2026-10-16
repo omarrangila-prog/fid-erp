@@ -155,7 +155,7 @@ export function ActualFxCard({
             {/* The size of the change, before it is made. */}
             {difference && !difference.isZero() ? (
               <p className="text-sm text-amber-900" data-testid="actual-fx-preview">
-                At {typed.toString()} the coffee costs {formatMoney(preview!, localCurrency)} —{' '}
+                At {typed.toString()} the goods costs {formatMoney(preview!, localCurrency)} —{' '}
                 <strong>
                   {difference.greaterThan(0) ? 'more' : 'less'} by {formatMoney(difference.abs(), localCurrency)}
                 </strong>{' '}

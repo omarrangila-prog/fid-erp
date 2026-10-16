@@ -4,6 +4,7 @@ import { effectiveTerminology } from '@/lib/templates';
 import { letterheadLines } from '@/lib/company-identity';
 import { wholeDatabaseToolsAllowed } from '@/lib/auth/tenant';
 import { randomBytes, createHash } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { cookies, headers } from 'next/headers';
 import { prisma } from '@/lib/db';
 import { UnauthenticatedError } from '@/lib/errors';
@@ -260,7 +261,32 @@ async function loadCurrentUser(): Promise<SessionUser | null> {
  * another, and it is not a cache in the sense of surviving a request: a
  * permission change still takes effect on the very next page load.
  */
-export const getCurrentUser = cache(loadCurrentUser);
+const loadOncePerRequest = cache(loadCurrentUser);
+
+/**
+ * The unit of the signed-in company's stock (KG, PCS, M…), readable from the
+ * shared formatters during this request. A quantity rendered without an
+ * explicit unit then prints in the company's own unit rather than assuming KG.
+ */
+type UnitHolder = { unit?: string };
+const requestUnit = new AsyncLocalStorage<UnitHolder>();
+(globalThis as { __requestUnit?: AsyncLocalStorage<UnitHolder> }).__requestUnit = requestUnit;
+
+// Deliberately not `async`: `enterWith` must run synchronously in the caller's
+// own context (inside an async function it would not reach the caller after the
+// await). The holder is filled in once the user has loaded.
+export function getCurrentUser(): Promise<SessionUser | null> {
+  let holder = requestUnit.getStore();
+  if (!holder) {
+    holder = {};
+    requestUnit.enterWith(holder);
+  }
+  const target = holder;
+  return loadOncePerRequest().then((user) => {
+    target.unit = user?.activeCompany.terminology?.unit;
+    return user;
+  });
+}
 
 export async function requireUser(): Promise<SessionUser> {
   const user = await getCurrentUser();

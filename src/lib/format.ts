@@ -41,7 +41,10 @@ export function formatQuantityKg(value: DecimalInput | null | undefined, options
   const digits = negative ? whole.slice(1) : whole;
   const grouped = digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   const body = `${negative ? '-' : ''}${grouped}${fraction ? `.${fraction}` : ''}`;
-  return options?.unit === false ? body : `${body} ${typeof options?.unit === 'string' ? options.unit : 'KG'}`;
+  if (options?.unit === false) return body;
+  // Unit not given: the signed-in company's own unit when rendering on the server.
+  const requestUnit = (globalThis as { __requestUnit?: { getStore(): { unit?: string } | undefined } }).__requestUnit?.getStore()?.unit;
+  return `${body} ${typeof options?.unit === 'string' ? options.unit : (requestUnit ?? 'KG')}`;
 }
 
 /** Shows kilograms as metric tons, which is how traders talk about volume. */

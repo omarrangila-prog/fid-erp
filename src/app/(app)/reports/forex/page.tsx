@@ -62,7 +62,7 @@ export default async function ForexGainLossPage({
       <DateRangePicker defaultFrom={fromDate.toISOString().slice(0, 10)} defaultTo={toDate.toISOString().slice(0, 10)} />
 
       <Callout tone="info" title="The original purchase is never rewritten">
-        A vendor bill booked at one rate and paid at another posts only the difference here. The coffee cost stays at
+        A vendor bill booked at one rate and paid at another posts only the difference here. The goods cost stays at
         the rate on the purchase order.
       </Callout>
 

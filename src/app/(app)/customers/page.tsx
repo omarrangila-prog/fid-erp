@@ -128,7 +128,7 @@ export default async function CustomersPage({
     <div className="space-y-6">
       <PageHeader
         title="Customers"
-        description="Roasters and traders you sell coffee to. Each customer's ledger is kept in their own currency."
+        description="Roasters and traders you sell goods to. Each customer's ledger is kept in their own currency."
         breadcrumbs={[{ label: 'Masters' }, { label: 'Customers' }]}
       />
       <CustomersClient

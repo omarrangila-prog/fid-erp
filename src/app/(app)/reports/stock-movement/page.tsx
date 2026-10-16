@@ -116,9 +116,9 @@ export default async function StockMovementPage({
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle>By coffee and warehouse</CardTitle>
+            <CardTitle>By item and warehouse</CardTitle>
             <CardDescription>
-              Transfers in and out net to nothing across the company: moving coffee between warehouses is not a sale.
+              Transfers in and out net to nothing across the company: moving goods between warehouses is not a sale.
             </CardDescription>
           </CardHeader>
           <CardContent className="px-0 pb-0">
@@ -126,7 +126,7 @@ export default async function StockMovementPage({
               <Table>
                 <THead>
                   <TR className="hover:bg-transparent">
-                    <TH>Coffee</TH>
+                    <TH>Item</TH>
                     <TH>Warehouse</TH>
                     <TH numeric>Opening</TH>
                     <TH numeric>Received</TH>

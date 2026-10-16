@@ -106,7 +106,7 @@ function AddExpenseCategoryBody({
     title="Add New Category"
     description={
         kind === 'SHIPMENT'
-          ? 'A cost of one consignment. You can still choose whether it raises the coffee’s landed cost.'
+          ? 'A cost of one consignment. You can still choose whether it raises the goods’ landed cost.'
           : 'A running cost of the business, not one consignment.'
       }
     >

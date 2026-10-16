@@ -124,7 +124,7 @@ export default async function FinancialPositionPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Coffee</CardTitle>
+              <CardTitle>Item</CardTitle>
               <CardDescription>Stock on hand and stock still on the water.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">

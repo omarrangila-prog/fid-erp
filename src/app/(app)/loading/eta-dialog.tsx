@@ -199,7 +199,7 @@ export function ArrivedDialog({
         </Field>
 
         <Callout tone="info">
-          Arriving does not put coffee into a warehouse. A <strong>Receive</strong> button appears on this row once it
+          Arriving does not put goods into a warehouse. A <strong>Receive</strong> button appears on this row once it
           has arrived — that is where the warehouse, the quantity and the lot are recorded, and where the stock
           actually increases.
         </Callout>

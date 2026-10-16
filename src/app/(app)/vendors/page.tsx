@@ -97,7 +97,7 @@ export default async function VendorsPage({
     <div className="space-y-6">
       <PageHeader
         title="Suppliers"
-        description="Exporters, cooperatives and estates you buy green coffee from. Overseas suppliers are carried in USD."
+        description="Exporters, cooperatives and estates you buy goods from. Overseas suppliers are carried in USD."
         breadcrumbs={[{ label: 'Masters' }, { label: 'Suppliers' }]}
       />
       <VendorsClient

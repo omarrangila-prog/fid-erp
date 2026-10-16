@@ -82,7 +82,7 @@ export function CreditNoteDetail({
         <Callout tone="info" title="Nothing has been posted yet">
           This is a draft. Posting it{' '}
           {kind === 'customer'
-            ? 'reduces what the customer owes and, where coffee is coming back, returns it to the warehouse at its landed cost.'
+            ? 'reduces what the customer owes and, where goods are coming back, returns it to the warehouse at its landed cost.'
             : 'reduces what you owe the supplier.'}
         </Callout>
       ) : null}
@@ -105,7 +105,7 @@ export function CreditNoteDetail({
                   <TR>
                     <TH>#</TH>
                     <TH>Description</TH>
-                    <TH>Coffee returned</TH>
+                    <TH>Items returned</TH>
                     <TH numeric>Net</TH>
                     {hasTax ? <TH numeric>{taxLabel}</TH> : null}
                     <TH numeric>Total</TH>

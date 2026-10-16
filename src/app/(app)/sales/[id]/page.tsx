@@ -243,7 +243,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Coffee sold</CardTitle>
+            <CardTitle>Quantity sold</CardTitle>
             <CardDescription>Traceable to the exact lot, batch, container and warehouse.</CardDescription>
           </CardHeader>
           <CardContent className="px-0 pb-0">

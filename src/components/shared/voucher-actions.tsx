@@ -70,7 +70,7 @@ const ACTIONS: Record<
     listPath: '/finance/expenses',
     label: 'expense',
     postDescription:
-      'A direct shipment cost is capitalised into the landed cost of the coffee — raising the value of stock still on hand and truing up the share already sold into cost of goods sold. A period cost goes straight to the profit and loss.',
+      'A direct shipment cost is capitalised into the landed cost of the goods — raising the value of stock still on hand and truing up the share already sold into cost of goods sold. A period cost goes straight to the profit and loss.',
     reverseDescription:
       'Any landed cost this expense added is taken back off the batches, and the cost is removed from the books. The expense disappears from every list and total.',
   },

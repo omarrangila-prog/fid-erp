@@ -40,7 +40,7 @@ type Task = {
  */
 const TASKS: Task[] = [
   { label: 'New purchase', hint: 'A contract you have agreed to buy', href: '/purchases/new', icon: FileText, permission: PERMISSIONS.PURCHASES_CREATE, accent: true },
-  { label: 'Goods receipt', hint: 'Book arriving coffee into a warehouse', href: '/goods-receipts', icon: PackageCheck, permission: PERMISSIONS.INVENTORY_VIEW },
+  { label: 'Goods receipt', hint: 'Book arriving goods into a warehouse', href: '/goods-receipts', icon: PackageCheck, permission: PERMISSIONS.INVENTORY_VIEW },
   { label: 'Loading sheet', hint: 'Update status, B/L, ETA and documents', href: '/loading', icon: ClipboardList, permission: PERMISSIONS.SHIPMENTS_VIEW },
   { label: 'New sale', hint: 'Invoice a customer from stock', href: '/sales/new', icon: ShoppingCart, permission: PERMISSIONS.SALES_CREATE, accent: true },
   { label: 'Record a receipt', hint: 'Money received from a customer', href: '/finance/receipts/new', icon: ArrowDownToLine, permission: PERMISSIONS.RECEIPTS_CREATE },

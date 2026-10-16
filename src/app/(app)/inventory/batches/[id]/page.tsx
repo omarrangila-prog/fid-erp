@@ -196,7 +196,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
           </CardHeader>
           <CardContent>
             <dl>
-              <DetailRow label="Coffee">{batch.item.itemName}</DetailRow>
+              <DetailRow label="Item">{batch.item.itemName}</DetailRow>
               <DetailRow label="Origin">
                 {batch.item.originCountry}
                 {batch.item.region ? <span className="block text-xs text-ink-subtle">{batch.item.region}</span> : null}

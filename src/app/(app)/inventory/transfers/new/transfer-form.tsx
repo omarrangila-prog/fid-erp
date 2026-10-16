@@ -195,7 +195,7 @@ export function TransferForm({
           >
             {/*
               The destination is the one warehouse in the system that may not
-              exist yet: moving coffee somewhere new is exactly when a new
+              exist yet: moving goods somewhere new is exactly when a new
               store gets opened. The source cannot be new, because a warehouse
               holding nothing has nothing to send.
             */}

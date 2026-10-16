@@ -120,7 +120,7 @@ export default async function ShipmentCostPage({
 
           <div className={cn('grid gap-3 sm:grid-cols-2 print:hidden', showProfit ? 'lg:grid-cols-4' : 'lg:grid-cols-3')}>
             {[
-              { label: 'Coffee bought', value: formatQuantityKg(totals.kg) },
+              { label: 'Quantity bought', value: formatQuantityKg(totals.kg) },
               { label: 'Costs added', value: formatMoney(totals.expenseLocal, local) },
               { label: 'Total landed cost', value: formatMoney(totals.landedLocal, local), sub: formatMoney(totals.landedUsd, 'USD') },
               ...(showProfit ? [{ label: 'Gross profit', value: formatMoney(totals.profitLocal, local), sub: formatMoney(totals.profitUsd, 'USD') }] : []),
@@ -279,7 +279,7 @@ function OrderSection({
                     <TH>Memo</TH>
                     <TH>Container</TH>
                     <TH numeric>Amount</TH>
-                    <TH>In the coffee?</TH>
+                    <TH>In the goods?</TH>
                     <TH>Paid</TH>
                   </TR>
                 </THead>
@@ -382,8 +382,8 @@ function OrderSection({
               </THead>
               <TBody>
                 {[
-                  ['Coffee, at the contract price', sheet.goodsLocal, sheet.goodsUsd],
-                  ['Costs added to the coffee', sheet.capitalisedExpenseLocal, sheet.capitalisedExpenseUsd],
+                  ['Goods, at the contract price', sheet.goodsLocal, sheet.goodsUsd],
+                  ['Costs added to the goods', sheet.capitalisedExpenseLocal, sheet.capitalisedExpenseUsd],
                   ['Total landed cost', sheet.landedLocal, sheet.landedUsd, 'bold'],
                   [`Cost per ${unit}`, sheet.costPerKgLocal, sheet.costPerKgUsd],
                   ['Cost per MT', sheet.costPerMtLocal, sheet.costPerMtUsd],
@@ -399,7 +399,7 @@ function OrderSection({
                   ...(!showProfit || dec(sheet.periodExpenseUsd).isZero()
                     ? []
                     : [
-                        ['Costs not added to the coffee', sheet.periodExpenseLocal, sheet.periodExpenseUsd],
+                        ['Costs not added to the goods', sheet.periodExpenseLocal, sheet.periodExpenseUsd],
                         ['Profit after those costs', sheet.netProfitLocal, sheet.netProfitUsd, 'profit'],
                       ]),
                 ].map(([label, localValue, usd, style]) => (
@@ -439,9 +439,9 @@ function OrderSection({
           <p className="mt-2 text-[11px] text-ink-subtle">
             {formatQuantityKg(sheet.receivedKg)} landed of {formatQuantityKg(sheet.orderedKg)} bought. Every {local} figure is
             the sum of each transaction at its own rate. Profit counts only what has been sold; stock still on hand is not
-            counted either way until it sells. The landed cost is what the coffee is valued at — the contract price plus the
+            counted either way until it sells. The landed cost is what the goods are valued at — the contract price plus the
             costs added to it — so it is the same figure the stock and the cost of sales are drawn from. A cost marked as not
-            added to the coffee is taken off the profit here instead, once, and never twice.
+            added to the goods are taken off the profit here instead, once, and never twice.
           </p>
         </section>
       </div>
@@ -464,7 +464,7 @@ function FxSummary({ sheet }: { sheet: OrderCostSheet }) {
     <div className="mt-3 rounded-lg border border-line bg-surface-sunken/40 px-3 py-2" data-testid="fx-summary">
       <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">FX summary</p>
       {/*
-        The one rate the coffee is costed at — the order's, actual once
+        The one rate the goods are costed at — the order's, actual once
         confirmed. A weighted average of every transaction used to lead here,
         blending the purchase with the rates each dirham expense happened to
         be entered at: 10.1394 on an order bought at 10.30, a rate nobody

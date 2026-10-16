@@ -58,7 +58,7 @@ const RULES = [
   {
     icon: Warehouse,
     title: 'A purchase order is not a goods receipt',
-    body: `Ordering coffee never increases stock. Only a goods receipt does, and it always names a warehouse. Order 60,000 units, receive 19,200, and stock shows 19,200 with 40,800 still on the water.`,
+    body: `Ordering goods never increases stock. Only a goods receipt does, and it always names a warehouse. Order 60,000 units, receive 19,200, and stock shows 19,200 with 40,800 still on the water.`,
   },
   {
     icon: Boxes,

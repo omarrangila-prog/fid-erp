@@ -89,7 +89,7 @@ export function PurchaseActions({
         <>
           {/*
             Every field of an approved order can be corrected where it stands,
-            received or not; the edit page keeps the coffee and kilograms of a
+            received or not; the edit page keeps the goods and kilograms of a
             received container as the warehouse counted them. It moves the
             books, so it is for the people who may approve an order.
           */}
@@ -121,7 +121,7 @@ export function PurchaseActions({
         open={confirm === 'approve'}
         onOpenChange={(open) => !open && setConfirm(null)}
         title="Approve and post this contract?"
-        description="This creates the supplier payable, opens the job and creates the lots, batches and containers. The coffee is recorded as in transit — it will not be in a warehouse until you receive it."
+        description="This creates the supplier payable, opens the job and creates the lots, batches and containers. The goods is recorded as in transit — it will not be in a warehouse until you receive it."
         confirmLabel="Approve and post"
         variant="accent"
         onConfirm={() => run(() => postPurchaseContractAction(id), 'Contract approved and posted.')}

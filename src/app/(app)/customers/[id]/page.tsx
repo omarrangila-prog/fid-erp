@@ -184,7 +184,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
           tone={outstandingOwn.greaterThan(0) ? 'warning' : 'default'}
         />
         <StatCard label="Total invoiced" value={formatMoney(totalRevenue, customer.primaryCurrency)} sublabel={`${postedInvoices.length} posted invoices`} />
-        <StatCard label="Coffee bought" value={formatQuantityKg(totalSold)} />
+        <StatCard label="Quantity bought" value={formatQuantityKg(totalSold)} />
         <StatCard
           label="Credit limit"
           value={formatMoney(customer.creditLimit, customer.primaryCurrency)}
@@ -432,7 +432,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                   <TR className="hover:bg-transparent">
                     <TH>Reference</TH>
                     <TH>Shipment</TH>
-                    <TH>Coffee</TH>
+                    <TH>Item</TH>
                     <TH numeric>Quantity</TH>
                     <TH>ETA</TH>
                     <TH>Status</TH>

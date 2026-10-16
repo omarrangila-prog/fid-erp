@@ -50,7 +50,7 @@ export default async function NewSalePage() {
     },
     {
       met: stock.length > 0,
-      label: 'Coffee available in a warehouse',
+      label: 'Stock available in a warehouse',
       description: 'You can only sell stock that has actually been received. Order it, then receive it into a warehouse.',
       href: '/purchases',
       actionLabel: 'Open purchases',

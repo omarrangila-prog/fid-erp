@@ -382,7 +382,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
         <p className="text-xs text-ink-subtle">
           Sold is what posted invoices sold, less returns. Revenue is each invoice line for the item — never a whole invoice. A payment
           made against a whole invoice is shared over its lines in proportion to their value; agent collections count as collected. Cost
-          of goods sold is the landed cost of the KG sold, as posted. Figures in {local}; ≈ USD is each transaction at its own rate.
+          of goods sold is the landed cost of the {unit} sold, as posted. Figures in {local}; ≈ USD is each transaction at its own rate.
         </p>
       </section>
 

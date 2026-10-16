@@ -255,7 +255,7 @@ export function ReportsClient({ reports, saved = [] }: { reports: ReportEntry[];
           <div>
             <h2 className="text-sm font-semibold text-ink">Everyday reports</h2>
             <p className="text-xs text-ink-muted">
-              The ones a coffee trading business opens most. Star any report to pin your own.
+              The ones an item trading business opens most. Star any report to pin your own.
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{everyday.map(tile)}</div>

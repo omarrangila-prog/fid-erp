@@ -363,7 +363,7 @@ export function PurchaseForm({
                   onChange={(e) => setField('supplierContractNo', e.target.value)}
                 />
               </Field>
-              <Field label="Origin" htmlFor="origin" hint="Where the coffee is shipped from.">
+              <Field label="Origin" htmlFor="origin" hint="Where the goods are shipped from.">
                 <Input
                   id="origin"
                   value={header.origin}
@@ -501,7 +501,7 @@ export function PurchaseForm({
             <div>
               <h3 className="text-sm font-semibold text-ink">Containers</h3>
               <p className="mt-0.5 text-xs text-ink-muted">
-                One row per container: its coffee, quantity and price, and — when the supplier has named them — its
+                One row per container: its goods, quantity and price, and — when the supplier has named them — its
                 container, lot and batch numbers. Each container then loads, arrives and is received on its own.
               </p>
             </div>
@@ -525,7 +525,7 @@ export function PurchaseForm({
           */}
           {declaredContainers > lines.length ? (
             <Callout tone="info" title={`${declaredContainers} containers, ${lines.length} ${lines.length === 1 ? 'row' : 'rows'}`}>
-              When you save, the heavier rows are divided so every container has its own row — the same coffee and
+              When you save, the heavier rows are divided so every container has its own row — the same goods and
               price, the kilograms shared — and each then loads, arrives and is received on its own. To choose the
               split yourself, use the control on the row.
             </Callout>
@@ -579,13 +579,13 @@ export function PurchaseForm({
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                    <Field label="Coffee" required error={lineError(index, 'itemId')} className="lg:col-span-2">
+                    <Field label="Item" required error={lineError(index, 'itemId')} className="lg:col-span-2">
                       <MasterSelect
                         options={itemOptions}
                         value={line.itemId || null}
                         disabled={line.locked}
                         onChange={(v) => chooseItem(line.key, v)}
-                        placeholder="Choose a coffee…"
+                        placeholder="Choose an item…"
                         invalid={Boolean(lineError(index, 'itemId'))}
                         create={canCreateItem ? coffeeItemCreateSpec(attributeSet) : undefined}
                         onCreated={(created, option) => {
@@ -650,13 +650,13 @@ export function PurchaseForm({
                     Lot, batch, container, unit, bags and bag weight are not
                     §1 fields. Lot and batch in particular are asked for at the
                     goods receipt, which is when the supplier has identified
-                    the coffee — putting them on the purchase order invited
+                    the goods — putting them on the purchase order invited
                     somebody to invent one. They stay available for a contract
                     that genuinely names them.
                   */}
                   {line.locked ? (
                     <p className="mt-2 text-[11px] text-ink-subtle">
-                      Received — its coffee, kilograms and numbers are what the warehouse counted, and are corrected on the
+                      Received — its goods, kilograms and numbers are what the warehouse counted, and are corrected on the
                       goods receipt. The price can still be corrected here; stock and cost of sales follow it.
                     </p>
                   ) : null}
@@ -668,7 +668,7 @@ export function PurchaseForm({
                     <Field
                       label="Lot number"
                       error={lineError(index, 'lotNumber')}
-                      hint="Only if the supplier has already named it. You are asked again when the coffee arrives."
+                      hint="Only if the supplier has already named it. You are asked again when the goods arrives."
                     >
                       <Input
                         value={line.lotNumber}
@@ -828,14 +828,14 @@ export function PurchaseForm({
       {approved ? (
         <Callout tone="info" title="What saving the correction does">
           The order is updated where it stands. The supplier&rsquo;s balance moves to the corrected amount, and a changed
-          price follows the coffee: what is still at sea stays in transit, what is on the shelf is revalued, and what has
+          price follows the goods: what is still at sea stays in transit, what is on the shelf is revalued, and what has
           already been sold is charged to cost of sales and to the invoices that sold it. Profit and stock value update
           everywhere.
         </Callout>
       ) : (
         <Callout tone="info" title="What saving does">
           The contract appears on the Loading Sheet immediately, the supplier payable is raised and the batches are
-          created — but no coffee is in a warehouse yet. Record a purchase receipt when the containers actually arrive.
+          created — but no stock is in a warehouse yet. Record a purchase receipt when the containers actually arrive.
         </Callout>
       )}
 

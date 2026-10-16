@@ -77,7 +77,7 @@ export function GoodsReceiptsClient({
     },
     {
       id: 'coffee',
-      header: 'Coffee',
+      header: 'Item',
       hideable: true,
       cell: (r) => <span className="block max-w-56 truncate text-xs">{r.itemNames}</span>,
     },
@@ -123,7 +123,7 @@ export function GoodsReceiptsClient({
             cancelLabel: 'Undo receipt',
             show: canReverse && r.status === 'POSTED',
             description:
-              'The coffee comes back out of the warehouse and the stock value is reversed. Refused if any of it has already been sold or transferred — reverse those first.',
+              'The goods comes back out of the warehouse and the stock value is reversed. Refused if any of it has already been sold or transferred — reverse those first.',
             run: async (reason) => {
               const result = await reverseGoodsReceiptAction(r.id, reason ?? '');
               if (result.ok) {

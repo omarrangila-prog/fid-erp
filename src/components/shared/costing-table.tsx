@@ -30,7 +30,7 @@ export function CostingTable({
   if (rows.length === 0) {
     return (
       <p className="rounded-xl border border-line bg-paper p-6 text-center text-sm text-ink-muted">
-        No costing yet — it appears once the coffee is on a contract.
+        No costing yet — it appears once the goods are on a contract.
       </p>
     );
   }

@@ -84,9 +84,9 @@ export default async function StockAgeingPage() {
         }
       />
 
-      <Callout tone="info" title="Why this matters for coffee">
-        Green coffee is not inert — it loses cup quality over months in a warehouse, and a buyer will notice before
-        the books do. Age is counted from the day the parcel physically landed, not from the contract date, so coffee
+      <Callout tone="info" title="Why this matters for goods">
+        Green goods is not inert — it loses cup quality over months in a warehouse, and a buyer will notice before
+        the books do. Age is counted from the day the parcel physically landed, not from the contract date, so goods
         bought in January and delivered in April is four months younger than the contract suggests.{' '}
         <strong>Reserved</strong> is shown beside available, because a parcel that looks idle may already be promised.
       </Callout>
@@ -119,7 +119,7 @@ export default async function StockAgeingPage() {
               <THead>
                 <TR className="hover:bg-transparent">
                   <TH>Batch</TH>
-                  <TH>Coffee</TH>
+                  <TH>Item</TH>
                   <TH>Warehouse</TH>
                   <TH>Received</TH>
                   <TH numeric>Days</TH>

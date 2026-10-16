@@ -91,7 +91,7 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
         title={`Edit ${contract.contractReference}`}
         description={
           approved
-            ? 'Every field can be corrected. The supplier balance, stock value, cost of sales and profit follow the change. A container already received keeps the coffee and kilograms the warehouse counted.'
+            ? 'Every field can be corrected. The supplier balance, stock value, cost of sales and profit follow the change. A container already received keeps the goods and kilograms the warehouse counted.'
             : 'A draft order. Nothing is posted until it is saved as a purchase order.'
         }
         breadcrumbs={[

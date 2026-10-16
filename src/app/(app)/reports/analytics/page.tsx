@@ -52,7 +52,7 @@ export default async function AnalyticsPage() {
     },
     {
       id: 'coffee',
-      label: 'Coffee',
+      label: 'Item',
       description: 'Which origins and grades earn their place.',
       rows: toSlices(products),
     },

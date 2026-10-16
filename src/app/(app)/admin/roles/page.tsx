@@ -94,7 +94,7 @@ export default async function RolesPage() {
 
       <Callout tone="info" title="What the sensitive permissions gate">
         <strong>Purchase cost</strong> hides unit and landed cost wherever it appears, so a sales user cannot see what
-        the coffee cost. <strong>Profit</strong> hides margin, net profit and shipment profitability.{' '}
+        the goods cost. <strong>Profit</strong> hides margin, net profit and shipment profitability.{' '}
         <strong>Approve</strong> is what posts a document to the ledgers. Editing a system role is allowed, but its code
         cannot be changed.
       </Callout>

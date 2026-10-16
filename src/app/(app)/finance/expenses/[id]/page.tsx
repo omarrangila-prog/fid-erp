@@ -111,7 +111,7 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
                     ? 'Shared by value'
                     : expense.allocationMethod === 'PER_CONTAINER'
                       ? 'Shared equally per container'
-                      : 'Shared equally per coffee'}
+                      : 'Shared equally per item'}
               </Badge>
             ) : null}
             {expense.shipment ? (
@@ -194,8 +194,8 @@ export default async function ExpenseDetailPage({ params }: { params: Promise<{ 
 
       {expense.status === 'POSTED' && expense.capitaliseToLandedCost ? (
         <Callout tone="info" title="Capitalised into landed cost">
-          This cost was spread across the job&rsquo;s batches. Coffee still in stock is carried at the higher value,
-          and the share belonging to coffee already sold was moved straight into cost of goods sold — so the ledger
+          This cost was spread across the job&rsquo;s batches. Stock still in stock is carried at the higher value,
+          and the share belonging to goods already sold was moved straight into cost of goods sold — so the ledger
           continues to agree with the profitability report.
         </Callout>
       ) : null}

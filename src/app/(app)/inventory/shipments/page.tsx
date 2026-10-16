@@ -61,7 +61,7 @@ export default async function ShipmentStockPage() {
             <THead>
               <TR className="hover:bg-transparent">
                 <TH>Shipment</TH>
-                <TH>Coffee</TH>
+                <TH>Item</TH>
                 <TH>Warehouse</TH>
                 <TH>Supplier</TH>
                 <TH>Buyer</TH>

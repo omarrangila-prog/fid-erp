@@ -85,7 +85,7 @@ export default async function GoodsReceiptsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Goods Receipts"
-        description="Coffee becomes sellable stock only when it is received into a named warehouse."
+        description="Goods becomes sellable stock only when it is received into a named warehouse."
         breadcrumbs={[{ label: 'Trading' }, { label: 'Goods Receipts' }]}
       />
 

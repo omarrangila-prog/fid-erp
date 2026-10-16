@@ -291,7 +291,7 @@ export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canM
         }
         searchPlaceholder="Search transfers…"
         emptyTitle="No transfers yet"
-        emptyDescription="Move coffee between warehouses without changing how much the company owns."
+        emptyDescription="Move goods between warehouses without changing how much the company owns."
         emptyAction={
           canManage ? (
             <Button asChild>

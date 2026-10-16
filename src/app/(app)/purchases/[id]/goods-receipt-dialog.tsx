@@ -195,7 +195,7 @@ function GoodsReceiptDialogBody({
     });
     if (unnamed) {
       setError(
-        `Enter a Lot Number or a Batch Number for container ${unnamed.containerNumber || ''}. This is the point the coffee becomes stock, and stock without an identity cannot be traced to a customer later.`,
+        `Enter a Lot Number or a Batch Number for container ${unnamed.containerNumber || ''}. This is the point the goods becomes stock, and stock without an identity cannot be traced to a customer later.`,
       );
       return;
     }
@@ -469,7 +469,7 @@ function GoodsReceiptDialogBody({
 
         <Callout tone="info">
           Receiving moves the value from <strong>Inventory in Transit</strong> into <strong>Inventory</strong> at the
-          batch&rsquo;s landed cost, and makes each container&rsquo;s coffee available to sell from its warehouse. Containers
+          batch&rsquo;s landed cost, and makes each container&rsquo;s goods available to sell from its warehouse. Containers
           that land later are received the same way, on their own day.
         </Callout>
       </div>

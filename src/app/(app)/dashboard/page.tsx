@@ -568,7 +568,7 @@ export default async function DashboardPage() {
         <Card className="lg:col-span-1">
           <CardHeader>
             <CardTitle>Stock by warehouse</CardTitle>
-            <CardDescription>On-hand coffee at each location.</CardDescription>
+            <CardDescription>On-hand goods at each location.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {data.warehouseStock.length === 0 ? (
@@ -579,7 +579,7 @@ export default async function DashboardPage() {
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-ink">{w.name}</p>
                     <p className="text-xs text-ink-subtle">
-                      {w.code} · {formatBags(w.bags)} bags
+                      {w.code}{unit === 'KG' ? ` · ${formatBags(w.bags)} bags` : ''}
                     </p>
                   </div>
                   <div className="shrink-0 text-right">
@@ -596,7 +596,7 @@ export default async function DashboardPage() {
 
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Available stock by coffee</CardTitle>
+            <CardTitle>Available stock by item</CardTitle>
             <CardDescription>Kilograms free to sell, across every warehouse.</CardDescription>
           </CardHeader>
           <CardContent>

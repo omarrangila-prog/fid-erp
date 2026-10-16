@@ -63,7 +63,7 @@ export function SplitLineDialog({
 
   async function submitAdd() {
     setAddError(null);
-    if (!add.itemId) return setAddError('Choose the coffee.');
+    if (!add.itemId) return setAddError('Choose the goods.');
     if (!(Number(add.quantityKg) > 0)) return setAddError('Enter the kilograms.');
     if (!(Number(add.unitPriceKg) > 0)) return setAddError(`Enter the price per ${unit} in ${currency}.`);
     setAddBusy(true);
@@ -189,9 +189,9 @@ export function SplitLineDialog({
           description={`One more container on ${contractReference}: its own row, shipment, lot and batch, pending loading like the others. The supplier is owed its value, posted against this order.`}
         >
           <div className="space-y-3">
-            <Field label="Coffee" htmlFor="addItem" required>
+            <Field label="Item" htmlFor="addItem" required>
               <Select id="addItem" value={add.itemId} onChange={(e) => setAdd((p) => ({ ...p, itemId: e.target.value }))}>
-                <option value="">Choose a coffee…</option>
+                <option value="">Choose an item…</option>
                 {items.map((i) => (
                   <option key={i.id} value={i.id}>
                     {i.name}
@@ -310,7 +310,7 @@ export function SplitLineDialog({
             {error ? <p className="text-xs font-medium text-red-600">{error}</p> : null}
 
             <Callout tone="info">
-              Nothing is posted. The supplier is still owed the same amount for the same coffee; it is now tracked
+              Nothing is posted. The supplier is still owed the same amount for the same goods; it is now tracked
               container by container.
             </Callout>
           </div>

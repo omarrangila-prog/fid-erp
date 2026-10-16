@@ -147,7 +147,7 @@ export function PurchasesClient({
     },
     {
       id: 'coffee',
-      header: 'Coffee',
+      header: 'Item',
       hideable: true,
       cell: (r) => <span className="block max-w-56 truncate text-xs">{r.itemNames}</span>,
     },
@@ -168,7 +168,7 @@ export function PurchasesClient({
         <span>
           <span className="block">{r.quantityLabel}</span>
           <span className="block text-xs text-ink-subtle">
-            {r.bags.toLocaleString()} bags · {r.containers} ctr
+            {unit === 'KG' ? `${r.bags.toLocaleString()} bags · ` : ''}{r.containers} ctr
           </span>
         </span>
       ),
@@ -453,7 +453,7 @@ export function PurchasesClient({
       searchValue={(r) =>
         `${r.contractNumber} ${r.contractReference} ${r.supplierContractNo ?? ''} ${r.vendorName} ${r.itemNames} ${r.warehouseNames} ${r.shipments.map((s) => `${s.containerNumber ?? ''} ${s.lotNumber ?? ''} ${s.batchNumber ?? ''}`).join(' ')}`
       }
-      searchPlaceholder="Search by contract, reference, supplier or coffee…"
+      searchPlaceholder="Search by contract, reference, supplier or goods…"
       emptyTitle="No purchase contracts yet"
       emptyDescription="A purchase contract creates the supplier liability and opens a job. Goods are received separately."
       emptyAction={

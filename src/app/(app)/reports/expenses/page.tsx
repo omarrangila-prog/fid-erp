@@ -85,14 +85,14 @@ export default async function ExpenseReportPage({
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <SplitTile
-          label="Into the cost of the coffee"
+          label="Into the cost of the goods"
           value={formatMoney(split.capitalisedUsd, 'USD')}
-          note="Clearing, freight, duty and the rest. Reaches the profit and loss as cost of sales when the coffee is sold, not before."
+          note="Clearing, freight, duty and the rest. Reaches the profit and loss as cost of sales when the goods are sold, not before."
         />
         <SplitTile
           label="Shipment costs charged to the period"
           value={formatMoney(split.shipmentPeriodUsd, 'USD')}
-          note="Booked to a job so it shows on that job's cost report, but not part of what the coffee cost."
+          note="Booked to a job so it shows on that job's cost report, but not part of what the goods cost."
         />
         <SplitTile
           label="General company expenses"

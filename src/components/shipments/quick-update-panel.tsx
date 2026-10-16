@@ -957,7 +957,7 @@ function QuickUpdateBody({
           if (!open) setUndoOne(null);
         }}
         title={undoOne ? `Return ${nameOf(undoOne)} to Not loaded?` : ''}
-        description="So that its loading details can be corrected and it can be marked loaded again. The shipping line, booking and dates are kept. Refused once the coffee is in stock — that is corrected on the purchase order."
+        description="So that its loading details can be corrected and it can be marked loaded again. The shipping line, booking and dates are kept. Refused once the goods are in stock — that is corrected on the purchase order."
         confirmLabel="Undo loading"
         onConfirm={async () => {
           if (!undoOne) return;

@@ -94,7 +94,7 @@ export default async function CogsReportPage({
           <CardHeader>
             <CardTitle>Sold lines</CardTitle>
             <CardDescription>
-              In {showLocal ? local : 'USD'}: revenue as invoiced, cost at each batch&rsquo;s landed cost — the coffee at
+              In {showLocal ? local : 'USD'}: revenue as invoiced, cost at each batch&rsquo;s landed cost — the goods at
               its order&rsquo;s rate, the rate actually paid once confirmed — the same figures as Shipment Profitability.
               {showLocal ? ' The USD beneath each is the cost frozen on the invoice when it was posted.' : ''}
             </CardDescription>
@@ -107,7 +107,7 @@ export default async function CogsReportPage({
                     <TH>Date</TH>
                     <TH>Invoice</TH>
                     <TH>Customer</TH>
-                    <TH>Coffee</TH>
+                    <TH>Item</TH>
                     <TH><Term k="orderRef" /></TH>
                     <TH>Batch</TH>
                     <TH>Warehouse</TH>

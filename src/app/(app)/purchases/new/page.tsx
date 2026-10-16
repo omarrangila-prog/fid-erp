@@ -52,10 +52,10 @@ export default async function NewPurchasePage() {
     },
     {
       met: items.length > 0,
-      label: 'At least one coffee item',
+      label: 'At least one goods item',
       description: 'Origin, grade, screen size and bag weight — entered once, then reused on every contract.',
       href: '/items?new=1',
-      actionLabel: 'Add coffee',
+      actionLabel: 'Add goods',
     },
   ];
 

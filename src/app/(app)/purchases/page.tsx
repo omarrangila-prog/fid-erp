@@ -185,7 +185,7 @@ export default async function PurchasesPage() {
     <div className="space-y-6">
       <PageHeader
         title="Purchase Contracts"
-        description="Approving a contract creates the supplier payable and opens a job. Coffee reaches a warehouse only through a goods receipt."
+        description="Approving a contract creates the supplier payable and opens a job. Goods reaches a warehouse only through a goods receipt."
         breadcrumbs={[{ label: 'Trading' }, { label: 'Purchase Contracts' }]}
       />
       <PurchasesClient

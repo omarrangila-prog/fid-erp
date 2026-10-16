@@ -265,7 +265,7 @@ export function CreditNoteForm({
       return;
     }
     if (hasOverReturn) {
-      setError('One or more lines return more coffee than the batch has ever sold.');
+      setError('One or more lines return more goods than the batch has ever sold.');
       return;
     }
 
@@ -430,7 +430,7 @@ export function CreditNoteForm({
           <CardHeader>
             <CardTitle>Return a whole batch, lot or container</CardTitle>
             <CardDescription>
-              Coffee usually comes back by the container, not the batch. Choose one and every batch in it is added at
+              Goods usually come back by the container, not the batch. Choose one and every batch in it is added at
               the quantity sold and the price it was sold at — then adjust any line that differs.
             </CardDescription>
           </CardHeader>
@@ -490,7 +490,7 @@ export function CreditNoteForm({
         <CardHeader>
           <CardTitle>Lines</CardTitle>
           <CardDescription>
-            A value line moves money only. A stock line also puts coffee back in a warehouse and takes its cost back
+            A value line moves money only. A stock line also puts goods back in a warehouse and takes its cost back
             out of cost of sales.
           </CardDescription>
         </CardHeader>
@@ -528,8 +528,8 @@ export function CreditNoteForm({
                         setLine(line.key, { mode: e.target.value as LineState['mode'], batchId: null })
                       }
                     >
-                      <option value="VALUE">Value only — no coffee moves</option>
-                      <option value="STOCK">Coffee comes back into a warehouse</option>
+                      <option value="VALUE">Value only — no stock moves</option>
+                      <option value="STOCK">Goods come back into a warehouse</option>
                     </Select>
                   </Field>
                 </FieldGroup>
@@ -629,7 +629,7 @@ export function CreditNoteForm({
                 ) : null}
                 {source ? (
                   <p className="text-xs text-ink-subtle">
-                    Coffee returns at its landed cost of USD {dec(source.landedUnitCostUsd).toFixed(4)}/KG, which comes
+                    Goods returns at its landed cost of USD {dec(source.landedUnitCostUsd).toFixed(4)}/KG, which comes
                     back out of cost of sales.
                   </p>
                 ) : null}

@@ -385,7 +385,7 @@ export function SaleForm({
     return (
       <EmptyState
         icon={PackageX}
-        title="No coffee available to sell"
+        title="No goods available to sell"
         description="Approve a purchase contract and receive the goods into a warehouse before raising a sales invoice."
       />
     );
@@ -581,7 +581,7 @@ export function SaleForm({
           <div>
             <CardTitle>Items</CardTitle>
             <CardDescription>
-              Two rows are ready. Leave the second blank if you are selling one coffee. Availability is checked again
+              Two rows are ready. Leave the second blank if you are selling one goods. Availability is checked again
               when you post.
             </CardDescription>
           </div>
@@ -644,10 +644,10 @@ export function SaleForm({
                       options={itemOptions}
                       value={line.itemId || null}
                       onChange={(value) => setLine(line.key, { itemId: value ?? '', stockKey: null })}
-                      placeholder={lineWarehouse ? 'Choose coffee…' : 'Choose a warehouse first'}
-                      emptyText="No coffee in this warehouse"
+                      placeholder={lineWarehouse ? 'Choose an item…' : 'Choose a warehouse first'}
+                      emptyText="No items in this warehouse"
                       disabled={!lineWarehouse}
-                      aria-label={`Coffee on item ${index + 1}`}
+                      aria-label={`Item on line ${index + 1}`}
                     />
                   </Field>
 
@@ -658,7 +658,7 @@ export function SaleForm({
                       onChange={(e) => setLine(line.key, { stockKey: e.target.value || null })}
                       aria-label={`Batch on item ${index + 1}`}
                     >
-                      <option value="">{line.itemId ? 'Choose…' : 'Choose the coffee first'}</option>
+                      <option value="">{line.itemId ? 'Choose…' : 'Choose the item first'}</option>
                       {batchesIn(lineWarehouse, line.itemId).map((batch) => (
                         <option key={batch.value} value={batch.value}>
                           {batch.batchNumber}
@@ -929,7 +929,7 @@ export function SaleForm({
         </Callout>
       ) : canApprove ? (
         <Callout tone="info" title="Saving posts this invoice">
-          The coffee comes out of the batch you chose, cost of goods sold is recorded at that batch&rsquo;s landed cost
+          The goods comes out of the batch you chose, cost of goods sold is recorded at that batch&rsquo;s landed cost
           and the customer is invoiced
           {header.paymentType === 'CASH'
             ? ', then the cash receipt settles it straight away — the money is in the account you named, dated today.'
@@ -937,7 +937,7 @@ export function SaleForm({
         </Callout>
       ) : (
         <Callout tone="info" title="Saving keeps this invoice as a draft">
-          Stock is reserved. Someone who can approve sales will post it, which is when the coffee leaves the warehouse
+          Stock is reserved. Someone who can approve sales will post it, which is when the goods leaves the warehouse
           and the customer is billed.
         </Callout>
       )}

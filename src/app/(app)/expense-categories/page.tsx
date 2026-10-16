@@ -38,7 +38,7 @@ const FIELDS = (accounts: Array<{ value: string; label: string }>): FieldSpec[] 
     kind: 'checkbox',
     name: 'capitaliseByDefault',
     label: 'Capitalise into landed cost',
-    hint: 'Direct shipment costs raise the cost of the coffee. Period costs go straight to the profit and loss.',
+    hint: 'Direct shipment costs raise the cost of the goods. Period costs go straight to the profit and loss.',
     full: true,
   },
 ];
@@ -115,7 +115,7 @@ export default async function ExpenseCategoriesPage() {
 
       <Callout tone="info" title="Landed cost or period cost?">
         Ocean freight, insurance, customs, clearing, port charges, inland transport, documentation, labour and
-        inspection are direct costs of getting coffee to the warehouse, so they are <strong>capitalised</strong> into
+        inspection are direct costs of getting goods to the warehouse, so they are <strong>capitalised</strong> into
         its landed cost and reach profit through cost of goods sold. Bank charges, agent commission and storage are{' '}
         <strong>period costs</strong> and are expensed as incurred. Getting this wrong distorts both stock valuation
         and gross margin.

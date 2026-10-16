@@ -67,7 +67,7 @@ export default async function SettingsPage() {
       />
 
       <Callout tone="warning" title="These change how transactions behave">
-        Turning on negative stock removes the block that stops staff selling coffee that is not there. Every change is
+        Turning on negative stock removes the block that stops staff selling goods that is not there. Every change is
         recorded in the audit trail.
       </Callout>
 

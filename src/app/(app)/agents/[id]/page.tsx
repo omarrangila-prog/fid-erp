@@ -198,7 +198,7 @@ export default async function AgentLedgerPage({
               className="text-xs font-medium text-forest-800 hover:text-gold-700"
               data-testid="agent-as-customer"
             >
-              Also a customer — the coffee he buys for himself is on this page too
+              Also a customer — the goods he buys for himself is on this page too
             </Link>
           ) : undefined
         }

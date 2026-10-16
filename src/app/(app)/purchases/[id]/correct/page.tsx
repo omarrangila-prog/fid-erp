@@ -36,7 +36,7 @@ export default async function CorrectPurchasePage({ params }: { params: Promise<
     contract.status !== 'POSTED'
       ? 'Only an approved order is corrected this way. A draft is edited directly.'
       : contract.goodsReceipts.length > 0
-        ? 'Coffee from this order is already in stock. Reverse the goods receipts first, or adjust the stock with a transfer or count.'
+        ? 'Goods from this order is already in stock. Reverse the goods receipts first, or adjust the stock with a transfer or count.'
         : null;
 
   return (

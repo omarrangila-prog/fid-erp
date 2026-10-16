@@ -74,7 +74,7 @@ export default async function PurchaseReportPage({
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          { label: 'Coffee bought', value: formatQuantityKg(bought), tone: 'text-ink' },
+          { label: 'Quantity bought', value: formatQuantityKg(bought), tone: 'text-ink' },
           { label: 'Landed so far', value: formatQuantityKg(landed), tone: 'text-forest-800' },
           { label: 'Purchase value', value: formatMoney(totalUsd, 'USD'), tone: 'text-ink' },
           { label: 'Still owed', value: formatMoney(owedUsd, 'USD'), tone: 'text-forest-800' },

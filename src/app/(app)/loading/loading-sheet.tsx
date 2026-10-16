@@ -880,7 +880,7 @@ export function LoadingSheet({
             .filter(Boolean)
             .join(' ')
         }
-        searchPlaceholder="Search contract, coffee, container, B/L, customer…"
+        searchPlaceholder="Search contract, goods, container, B/L, customer…"
         emptyTitle="Nothing loading yet"
         emptyDescription="Approve a purchase order and its shipment appears here automatically — there is no separate sheet to fill in."
       />
@@ -900,7 +900,7 @@ export function LoadingSheet({
             if (!open) setUndoRow(null);
           }}
           title="Return this shipment to Pending loading?"
-          description="So that you can edit its loading details and mark it loaded again. The shipping line, booking and dates are kept. Refused once the coffee is in stock."
+          description="So that you can edit its loading details and mark it loaded again. The shipping line, booking and dates are kept. Refused once the goods are in stock."
           confirmLabel="Undo loading"
           onConfirm={async () => {
             if (!undoRow) return;

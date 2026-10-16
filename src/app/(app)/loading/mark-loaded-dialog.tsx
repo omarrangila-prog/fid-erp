@@ -132,7 +132,7 @@ function MarkLoadedBody({
     // The same two rules the server holds, said here so they are read beside
     // the boxes rather than after pressing the button.
     if (!form.etaDate) {
-      setError('Enter the estimated arrival date. The loading sheet is read to find out when coffee lands.');
+      setError('Enter the estimated arrival date. The loading sheet is read to find out when goods lands.');
       return;
     }
     if (!form.shippingLineId) {

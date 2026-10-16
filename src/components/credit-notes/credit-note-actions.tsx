@@ -47,7 +47,7 @@ export function CreditNoteActions({
         title={`Post ${label}?`}
         description={
           returnsStock
-            ? 'The party ledger is credited, the coffee comes back into the warehouse at its landed cost, and the same cost is taken back out of cost of sales.'
+            ? 'The party ledger is credited, the goods come back into the warehouse at its landed cost, and the same cost is taken back out of cost of sales.'
             : 'The party ledger is credited and the amount is recorded against returns rather than netted into revenue.'
         }
         confirmLabel="Post"
@@ -73,7 +73,7 @@ export function CreditNoteActions({
         title={`Delete ${label}?`}
         description={
           returnsStock
-            ? 'The note is taken back out of the books and the coffee it brought back is taken out of the warehouse again. If it has since been sold on, the deletion will be refused.'
+            ? 'The note is taken back out of the books and the goods it brought back is taken out of the warehouse again. If it has since been sold on, the deletion will be refused.'
             : 'The note is taken back out of the books and disappears from every list and total.'
         }
         confirmLabel="Delete"

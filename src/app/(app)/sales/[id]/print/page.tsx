@@ -169,7 +169,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
           </dl>
         </section>
 
-        {/* --- The coffee ------------------------------------------------ */}
+        {/* --- The goods ------------------------------------------------ */}
         {/* Laid out for A4; on a phone the line table scrolls inside itself. */}
         <section className="overflow-x-auto py-5 print:overflow-visible">
           <table className="data-grid grid-framed w-full text-left text-xs">
@@ -305,7 +305,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
             <span className="font-medium text-ink-muted">{invoice.invoiceNumber}</span> with your remittance.
           </p>
           <p className="mt-1">
-            Coffee is sold subject to the lot and batch references shown above, which identify the exact parcel
+            Goods are sold subject to the lot and batch references shown above, which identify the exact parcel
             supplied.
           </p>
         </footer>

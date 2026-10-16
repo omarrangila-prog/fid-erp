@@ -122,7 +122,7 @@ export function ManageContainersDialog({
 
         {unused.length > 0 ? (
           <p className="text-xs text-ink-muted">
-            Also recorded on this shipment, not yet on a coffee line:{' '}
+            Also recorded on this shipment, not yet on an item line:{' '}
             <span className="font-mono font-medium text-ink">{unused.join(', ')}</span>
           </p>
         ) : null}

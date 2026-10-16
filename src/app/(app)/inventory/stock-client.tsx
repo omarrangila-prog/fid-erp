@@ -213,7 +213,7 @@ export function StockClient({
                 <th className="py-1.5 pr-3 text-right font-medium">On hand</th>
                 <th className="py-1.5 pr-3 text-right font-medium">Available</th>
                 <th className="py-1.5 pr-3 text-right font-medium">Bags</th>
-                {/* What the coffee still here cost: the supplier's price, the
+                {/* What the goods still here cost: the supplier's price, the
                     landed cost, and what the remainder is worth either way. */}
                 <th className="py-1.5 pr-3 text-right font-medium">Purchase /{unit}</th>
                 <th className="py-1.5 pr-3 text-right font-medium">Landed /{unit}</th>

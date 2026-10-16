@@ -100,7 +100,7 @@ export default async function SalesReportPage({
 
       <div className={`grid gap-3 sm:grid-cols-2 ${showProfit ? 'lg:grid-cols-5' : 'lg:grid-cols-3'}`}>
         {[
-          { label: 'Coffee sold', value: formatQuantityKg(kg), tone: 'text-ink' },
+          { label: 'Quantity sold', value: formatQuantityKg(kg), tone: 'text-ink' },
           { label: 'Revenue', value: formatMoney(totalUsd, 'USD'), tone: 'text-ink' },
           ...(showProfit
             ? [

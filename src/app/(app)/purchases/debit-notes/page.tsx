@@ -23,7 +23,7 @@ export default async function DebitNotesPage() {
 
       <Callout tone="info" title="Where the money goes">
         The supplier&rsquo;s balance is reduced and the credit is recorded in <strong>Purchase Returns &amp;
-        Credits</strong>, so it is visible as a claim rather than silently lowering the cost of coffee you have already
+        Credits</strong>, so it is visible as a claim rather than silently lowering the cost of goods you have already
         sold.
       </Callout>
 

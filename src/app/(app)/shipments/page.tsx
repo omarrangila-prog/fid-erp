@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
+import { makeTerms } from '@/lib/terminology';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { dec, sum, toMoney, toUnitCost, Decimal } from '@/lib/money';
@@ -31,6 +32,7 @@ export const dynamic = 'force-dynamic';
  */
 export default async function ShipmentsPage() {
   const user = await requirePageAccess(PERMISSIONS.SHIPMENTS_VIEW);
+  const unit = makeTerms(user.activeCompany.terminology)('unit');
   const companyDay = companyToday(user.activeCompany.timezone);
   const companyId = user.activeCompany.id;
 
@@ -119,7 +121,7 @@ export default async function ShipmentsPage() {
               containerNumber: null,
               lotNumber: null,
               batchNumber: null,
-              quantityLabel: formatQuantityKg(s.quantityKg),
+              quantityLabel: formatQuantityKg(s.quantityKg, { unit }),
               receipt: 'Not received',
               warehouse: warehouses.byShipment.get(s.id) || '—',
               landedUsd: null,
@@ -138,11 +140,11 @@ export default async function ShipmentsPage() {
             containerNumber: b.container?.containerNumber ?? null,
             lotNumber: b.lot.lotNumber,
             batchNumber: b.batchNumber,
-            quantityLabel: formatQuantityKg(ordered),
+            quantityLabel: formatQuantityKg(ordered, { unit }),
             receipt: received.greaterThanOrEqualTo(ordered) && ordered.greaterThan(0)
               ? 'Received'
               : received.greaterThan(0)
-                ? `Part received · ${formatQuantityKg(received)}`
+                ? `Part received · ${formatQuantityKg(received, { unit })}`
                 : 'Not received',
             warehouse: warehouses.byBatch.get(b.id) || '—',
             landedUsd: cost ? formatMoney(cost.landedUsd, 'USD') : null,
@@ -206,7 +208,7 @@ export default async function ShipmentsPage() {
         customerName: distinct(records.map((s) => s.customer?.customerName ?? null)).join(', ') || null,
         items,
         containers,
-        kgLabel: formatQuantityKg(kg),
+        kgLabel: formatQuantityKg(kg, { unit }),
         kgSort: Number(kg),
         bags: records.reduce((n, s) => n + s.bags, 0),
         warehouse: warehouseNames.length === 0 ? '—' : warehouseNames.length === 1 ? warehouseNames[0] : 'Multiple warehouses',
@@ -254,7 +256,7 @@ export default async function ShipmentsPage() {
         costPerMt: costs.length ? formatMoney(perKg(landedUsd).times(1000), 'USD') : null,
         costPerMtLocal:
           costs.length && localCurrency ? formatMoney(perKg(landedLocal).times(1000), localCurrency) : null,
-        remainingKg: costs.length ? formatQuantityKg(sum(costs.map((c) => dec(c.remainingKg)))) : null,
+        remainingKg: costs.length ? formatQuantityKg(sum(costs.map((c) => dec(c.remainingKg))), { unit }) : null,
         lines,
       };
     }),

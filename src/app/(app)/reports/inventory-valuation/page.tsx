@@ -68,7 +68,7 @@ export default async function InventoryValuationPage({ searchParams }: { searchP
     <div className="space-y-6">
       <PageHeader
         title="Inventory Valuation"
-        description="On-hand stock at each batch's landed cost — as a summary by coffee, by warehouse, or movement by movement."
+        description="On-hand stock at each batch's landed cost — as a summary by item, by warehouse, or movement by movement."
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Inventory Valuation' }]}
         actions={
           <>
@@ -218,7 +218,7 @@ export default async function InventoryValuationPage({ searchParams }: { searchP
                 <THead>
                   <TR className="hover:bg-transparent">
                     <TH>Warehouse</TH>
-                    <TH>Coffee</TH>
+                    <TH>Item</TH>
                     <TH>Batch</TH>
                     <TH>Lot</TH>
                     <TH>Container</TH>

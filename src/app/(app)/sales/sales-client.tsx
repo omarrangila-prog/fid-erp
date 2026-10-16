@@ -504,7 +504,7 @@ export function SalesClient({
       }
       searchPlaceholder="Search by invoice, customer or job…"
       emptyTitle="No sales invoices yet"
-      emptyDescription="Sell coffee from a batch in a warehouse. Posting raises the receivable and relieves the stock."
+      emptyDescription="Sell goods from a batch in a warehouse. Posting raises the receivable and relieves the stock."
       emptyAction={
         canCreate ? (
           <Button asChild>

@@ -207,7 +207,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
       ) : null}
 
       {contract.status === 'POSTED' && !fullyReceived ? (
-        <Callout tone="warning" title="Coffee is still in transit">
+        <Callout tone="warning" title="Goods are still in transit">
           {formatQuantityKg(totalOrdered.minus(totalReceived))} of {formatQuantityKg(totalOrdered)} has not yet been
           received into a warehouse, so it cannot be sold. Use <strong>Receive goods</strong> when it lands.
         </Callout>
@@ -297,7 +297,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                 <THead>
                   <TR className="hover:bg-transparent">
                     <TH>#</TH>
-                    <TH>Coffee</TH>
+                    <TH>Item</TH>
                     <TH>Lot / Batch</TH>
                     <TH>Container</TH>
                     <TH>Warehouse</TH>
@@ -515,7 +515,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
             {costing.length > 0 ? (
           <Card>
             <CardHeader>
-              <CardTitle>What this coffee is costing</CardTitle>
+              <CardTitle>What these goods is costing</CardTitle>
               <CardDescription>
                 The supplier&rsquo;s price for each container, plus that container&rsquo;s share of the job&rsquo;s
                 local charges. It updates by itself as shipment costs are booked.
@@ -536,7 +536,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                 <THead>
                   <TR className="hover:bg-transparent">
                     <TH>Batch</TH>
-                    <TH>Coffee</TH>
+                    <TH>Item</TH>
                     <TH>Lot</TH>
                     <TH>Warehouse</TH>
                     <TH numeric>Ordered</TH>

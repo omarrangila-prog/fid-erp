@@ -828,7 +828,7 @@ export function ExpenseForm({
           <CardHeader>
             <CardTitle>Add to this shipment’s cost?</CardTitle>
             <CardDescription>
-              Clearing, freight and duty usually raise the coffee’s cost. Office costs should not.
+              Clearing, freight and duty usually raise the goods’ cost. Office costs should not.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -837,12 +837,12 @@ export function ExpenseForm({
                 {
                   value: true,
                   title: 'Yes — add to this shipment’s cost',
-                  body: 'The amount is included in this consignment’s costing and, where the category allows, in the coffee still in stock.',
+                  body: 'The amount is included in this consignment’s costing and, where the category allows, in the goods still in stock.',
                 },
                 {
                   value: false,
                   title: 'No — company P&L only',
-                  body: 'Shown on this shipment’s cost sheet if you named one, but it does not raise the stock value of the coffee.',
+                  body: 'Shown on this shipment’s cost sheet if you named one, but it does not raise the stock value of the goods.',
                 },
               ].map((option) => (
                 <button
@@ -864,7 +864,7 @@ export function ExpenseForm({
             {capitalise && !form.batchId ? (
               <Field
                 label="How to share this cost"
-                hint="Between the coffees it is spread over. Work done once per box — unloading, inspection, port handling — belongs to the container."
+                hint="Between the items it is spread over. Work done once per box — unloading, inspection, port handling — belongs to the container."
               >
                 <Select
                   aria-label="How to share this cost"
@@ -872,9 +872,9 @@ export function ExpenseForm({
                   onChange={(e) => setAllocationMethod(e.target.value as typeof allocationMethod)}
                 >
                   <option value="PER_CONTAINER">Equal share per container</option>
-                  <option value="PER_ITEM">Equal share per coffee, then by weight</option>
+                  <option value="PER_ITEM">Equal share per item, then by weight</option>
                   <option value="BY_WEIGHT">By weight — kilograms in each container</option>
-                  <option value="BY_VALUE">By value — what each container&rsquo;s coffee cost</option>
+                  <option value="BY_VALUE">By value — what each container&rsquo;s goods cost</option>
                 </Select>
               </Field>
             ) : null}
@@ -882,7 +882,7 @@ export function ExpenseForm({
             {capitaliseOverride !== null && capitaliseOverride !== category.capitaliseByDefault ? (
               <Callout tone="warning">
                 You have overridden the default for <strong>{category.label}</strong>, which is normally{' '}
-                {category.capitaliseByDefault ? 'added to the shipment’s cost' : 'kept off the coffee’s stock value'}.
+                {category.capitaliseByDefault ? 'added to the shipment’s cost' : 'kept off the goods’ stock value'}.
                 The override is recorded on the voucher.
               </Callout>
             ) : null}

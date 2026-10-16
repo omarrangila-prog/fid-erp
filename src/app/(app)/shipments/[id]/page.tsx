@@ -367,7 +367,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
             <CardDescription>
               Purchase cost USD + local expenses USD equivalent = total landed cost USD. Every expense keeps its own
               amount, currency and rate; {costSheet.localCurrency} totals add up those amounts, not dollars at one rate.
-              {/* The one rate the coffee is costed at, not a blend of it with
+              {/* The one rate the goods are costed at, not a blend of it with
                   the rates the dirham expenses were entered at. */}
               <span className="block" data-testid="shipment-fx">
                 Purchase FX: 1 USD = {formatRate(costSheet.rateLocalPerUsd)} {costSheet.localCurrency} (
@@ -397,7 +397,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                 hint={
                   costSheet.periodExpenseUsd.isZero()
                     ? undefined
-                    : `Leaves out ${formatMoney(costSheet.periodExpenseLocal, costSheet.localCurrency)} not added to the coffee`
+                    : `Leaves out ${formatMoney(costSheet.periodExpenseLocal, costSheet.localCurrency)} not added to the goods`
                 }
               />
               <Metric
@@ -443,7 +443,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
             {/*
               What is still in the warehouse and what it is worth.
               A consignment stays open while the last few hundred kilos sell,
-              so the coffee sold and the coffee still here have to be told
+              so the goods sold and the goods still here have to be told
               apart — the whole shipment cost is not cost of sales while stock
               remains. Each container at its own landed cost, read from the
               same batch costing as Stock on Hand so the two never disagree,
@@ -508,7 +508,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                   </div>
                 </dl>
                 <p className="mt-3 text-xs text-ink-subtle">
-                  Each container at its own landed cost — the same figures as Stock on Hand. This is what the coffee
+                  Each container at its own landed cost — the same figures as Stock on Hand. This is what the goods
                   cost, not what it will sell for.
                 </p>
               </div>
@@ -517,7 +517,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
             {/*
               The exchange loss, said in words. Dollars bought at a higher rate
               than the order was placed at cost more dirhams for the same
-              coffee: that is a loss to the business, and the figures above
+              goods: that is a loss to the business, and the figures above
               already carry it. This says how much, and where it sits.
             */}
             {!costSheet.exchangeDifferenceLocal.isZero() ? (
@@ -697,7 +697,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
           <CardHeader>
             <CardTitle>Shipment profitability</CardTitle>
             <CardDescription>
-              Only the coffee that has actually sold counts. Unsold stock stays on the balance sheet.
+              Only the goods that has actually sold counts. Unsold stock stays on the balance sheet.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -855,8 +855,8 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
         <CardHeader>
           <CardTitle>Sales invoices from this shipment</CardTitle>
           <CardDescription>
-            Every invoice with coffee from this shipment, as it stands now — a corrected invoice shows its corrected
-            lines. An invoice that also sold other coffee shows only this shipment&rsquo;s part. Drafts are listed but not
+            Every invoice with goods from this shipment, as it stands now — a corrected invoice shows its corrected
+            lines. An invoice that also sold other goods shows only this shipment&rsquo;s part. Drafts are listed but not
             counted until they are posted.
           </CardDescription>
         </CardHeader>

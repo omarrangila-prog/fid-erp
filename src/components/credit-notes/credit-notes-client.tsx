@@ -137,7 +137,7 @@ export function CreditNotesClient({
       hideable: true,
       cell: (r) =>
         r.returnsStock ? (
-          <Badge tone="info">Returns coffee</Badge>
+          <Badge tone="info">Returns goods</Badge>
         ) : (
           <span className="text-xs text-ink-subtle">Value only</span>
         ),
@@ -189,7 +189,7 @@ export function CreditNotesClient({
             noun,
             show: canPost && r.status === 'POSTED',
             description: `Deletes the ${noun}: it is taken back out of the books${
-              r.returnsStock ? ', the coffee it returned goes back out of the warehouse,' : ''
+              r.returnsStock ? ', the goods it returned goes back out of the warehouse,' : ''
             } and it disappears from every list and total.`,
             run: async (reason) => {
               const result = await reverseCreditNoteAction(r.id, reason ?? '');
@@ -214,8 +214,8 @@ export function CreditNotesClient({
         emptyTitle={`No ${noun}s yet`}
         emptyDescription={
           kind === 'customer'
-            ? 'Raise one when a customer is short-shipped, sends coffee back, or is owed an allowance. The original invoice stays on file.'
-            : 'Raise one when a supplier owes you an allowance or you send coffee back to them.'
+            ? 'Raise one when a customer is short-shipped, sends goods back, or is owed an allowance. The original invoice stays on file.'
+            : 'Raise one when a supplier owes you an allowance or you send goods back to them.'
         }
         emptyAction={
           canCreate ? (
@@ -246,7 +246,7 @@ export function CreditNotesClient({
         title={`Delete ${reversing?.number ?? ''}?`}
         description={
           reversing?.returnsStock
-            ? 'The note is taken back out of the books and the coffee it brought back is taken out of the warehouse again. If it has since been sold, the deletion will be refused.'
+            ? 'The note is taken back out of the books and the goods it brought back is taken out of the warehouse again. If it has since been sold, the deletion will be refused.'
             : 'The note is taken back out of the books and disappears from every list and total.'
         }
         confirmLabel="Delete"
