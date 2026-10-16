@@ -271,3 +271,52 @@ export async function removeCompanyLogoAction(): Promise<ActionResult<undefined>
   });
 }
 
+
+// ---------------------------------------------------------------------------
+// Exchange rates
+// ---------------------------------------------------------------------------
+
+const rateSchema = z.object({
+  currency: z.string().trim().toUpperCase().refine(isCurrencyCode, 'Unknown currency.'),
+  rate: z
+    .string()
+    .trim()
+    .transform((v) => v.replace(/,/g, ''))
+    .refine((v) => /^\d+(\.\d{1,8})?$/.test(v) && Number(v) > 0 && Number(v) < 1_000_000_000, 'Enter the rate as a positive number, e.g. 3.6725.'),
+  effectiveDate: z.string().refine((v) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v)), 'Choose a date.'),
+});
+
+/**
+ * "1 USD = <rate> <currency>" for one day. A rate is only the *default* offered
+ * on new documents — every voucher keeps the rate it was entered at, so adding
+ * or correcting one here never restates anything already posted.
+ */
+export async function saveExchangeRateAction(input: { currency: string; rate: string; effectiveDate: string }): Promise<ActionResult<undefined>> {
+  return run(async () => {
+    const admin = await requirePermission(PERMISSIONS.SETTINGS_MANAGE);
+    const data = rateSchema.parse(input);
+    if (data.currency === 'USD') throw new BusinessRuleError('The dollar is the reference currency; its rate is always 1.');
+    const effectiveDate = new Date(`${data.effectiveDate}T00:00:00.000Z`);
+    if (effectiveDate.getTime() > Date.now() + 2 * 86_400_000) throw new BusinessRuleError('A rate cannot start in the future.');
+    const companyId = admin.activeCompany.id;
+    await transaction(async (tx) => {
+      const before = await tx.exchangeRate.findFirst({ where: { companyId, quoteCurrency: data.currency, effectiveDate } });
+      await tx.exchangeRate.upsert({
+        where: { companyId_quoteCurrency_effectiveDate: { companyId, quoteCurrency: data.currency, effectiveDate } },
+        update: { rate: data.rate },
+        create: { companyId, quoteCurrency: data.currency, rate: data.rate, effectiveDate },
+      });
+      await writeAudit(tx, {
+        companyId,
+        userId: admin.id,
+        action: before ? 'EXCHANGE_RATE_CORRECTED' : 'EXCHANGE_RATE_ADDED',
+        entityType: 'ExchangeRate',
+        entityId: `${data.currency}:${data.effectiveDate}`,
+        before: before ? { rate: String(before.rate) } : undefined,
+        after: { currency: data.currency, rate: data.rate, effectiveDate: data.effectiveDate },
+      });
+    });
+    revalidatePath('/settings/exchange-rates');
+    return undefined;
+  });
+}

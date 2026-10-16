@@ -220,6 +220,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Share Activity', href: '/admin/share-activity', icon: Activity, permissions: [], developerOnly: true },
       { label: 'Tax Settings', href: '/settings/tax', icon: Percent, permissions: [PERMISSIONS.SETTINGS_MANAGE] },
       { label: 'Company Profile', href: '/settings/company', icon: Building2, permissions: [PERMISSIONS.SETTINGS_MANAGE] },
+      { label: 'Exchange Rates', href: '/settings/exchange-rates', icon: Scale, permissions: [PERMISSIONS.SETTINGS_MANAGE] },
       { label: 'Settings', href: '/settings', icon: Settings, permissions: [PERMISSIONS.SETTINGS_MANAGE] },
     ],
   },

@@ -51,14 +51,35 @@ export async function getRate(params: {
 export async function getRateDefaults(companyId: string, asOf?: Date) {
   const company = await prisma.company.findUniqueOrThrow({
     where: { id: companyId },
-    select: { localCurrency: true },
+    select: { localCurrency: true, transactionCurrencies: true, salesCurrencies: true },
   });
 
-  const [local, aed, mad] = await Promise.all([
-    getRate({ companyId, quoteCurrency: company.localCurrency, asOf }),
-    getRate({ companyId, quoteCurrency: 'AED', asOf }),
-    getRate({ companyId, quoteCurrency: 'MAD', asOf }),
-  ]);
+  // Every currency the company can transact in, plus the three the product has
+  // always carried so an existing form keeps its defaults.
+  const wanted = [
+    ...new Set(
+      [company.localCurrency, 'AED', 'MAD', ...company.transactionCurrencies, ...company.salesCurrencies]
+        .map((c) => c.toUpperCase())
+        .filter((c) => c !== 'USD'),
+    ),
+  ];
+  const day = asOf ?? new Date();
+
+  // The most recent rate on or before the date, for each currency at once: the
+  // company's own beats the shared one.
+  const rows = await prisma.exchangeRate.findMany({
+    where: {
+      quoteCurrency: { in: wanted },
+      effectiveDate: { lte: day },
+      OR: [{ companyId }, { companyId: null }],
+    },
+    orderBy: [{ effectiveDate: 'desc' }, { companyId: 'desc' }],
+    select: { quoteCurrency: true, rate: true },
+  });
+  const latest = new Map<string, Decimal>();
+  for (const row of rows) if (!latest.has(row.quoteCurrency)) latest.set(row.quoteCurrency, dec(row.rate));
+
+  const local = company.localCurrency.toUpperCase() === 'USD' ? new Decimal(1) : (latest.get(company.localCurrency.toUpperCase()) ?? null);
 
   return {
     localCurrency: company.localCurrency,
@@ -71,9 +92,11 @@ export async function getRateDefaults(companyId: string, asOf?: Date) {
     local: (local ?? new Decimal(1)).toString(),
     byCurrency: {
       USD: '1',
-      AED: (aed ?? new Decimal(1)).toString(),
-      MAD: (mad ?? new Decimal(1)).toString(),
+      ...Object.fromEntries(wanted.map((code) => [code, (latest.get(code) ?? new Decimal(1)).toString()])),
     } as Record<string, string>,
+    /** Currencies the company transacts in that have no rate on file. */
+    missingCurrencies: [...new Set([company.localCurrency, ...company.transactionCurrencies, ...company.salesCurrencies].map((c) => c.toUpperCase()))]
+      .filter((code) => code !== 'USD' && !latest.has(code)),
     /** True when no rate was on file, so the form can say so. */
     missing: local === null,
   };
