@@ -10,6 +10,7 @@ import { SETTING_KEYS } from '@/lib/constants';
 import { provisionCompany } from '@/lib/services/chart-of-accounts';
 import { writeAudit } from '@/lib/services/audit';
 import { forgetOrganizationCount } from '@/lib/auth/tenant';
+import { ONBOARDING_KEY } from '@/lib/services/onboarding';
 
 /**
  * Creating and administering customers (tenants).
@@ -125,6 +126,7 @@ export async function createTenant(input: NewTenant): Promise<{
     });
     await provisionCompany(tx, company.id);
     for (const [key, value] of [
+      [ONBOARDING_KEY, 'pending'],
       [SETTING_KEYS.ALLOW_NEGATIVE_STOCK, 'false'],
       [SETTING_KEYS.ETA_ALERT_DAYS, '7,3,0'],
       [SETTING_KEYS.DEFAULT_PAYMENT_TERM_DAYS, '30'],

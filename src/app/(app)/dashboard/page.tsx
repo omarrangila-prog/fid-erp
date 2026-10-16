@@ -1,6 +1,8 @@
 import { formatBags } from '@/lib/bags';
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { getOnboardingStatus } from '@/lib/services/onboarding';
 import {
   Boxes, CircleDollarSign, HandCoins, TrendingUp, Wallet,
   Package, Container as ContainerIcon, Coins, Plus, ArrowRight, CalendarDays,
@@ -80,6 +82,8 @@ function DashboardActions({
 
 export default async function DashboardPage() {
   const user = await requirePageAccess(PERMISSIONS.DASHBOARD_VIEW);
+  // A brand-new customer starts in the setup wizard, once.
+  if (can(user, PERMISSIONS.SETTINGS_MANAGE) && (await getOnboardingStatus(user.activeCompany.id)) === 'pending') redirect('/onboarding');
   const unit = makeTerms(user.activeCompany.terminology)('unit');
   const companyDay = companyToday(user.activeCompany.timezone);
   const companyId = user.activeCompany.id;
