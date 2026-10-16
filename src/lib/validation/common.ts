@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isCurrencyCode } from '@/lib/currencies';
 
 /**
  * Shared Zod primitives.
@@ -42,7 +43,8 @@ export const currencyCode = z
   .string()
   .trim()
   .toUpperCase()
-  .length(3, 'Use a three-letter currency code such as USD, AED or MAD.');
+  .length(3, 'Use a three-letter currency code such as USD, EUR or AED.')
+  .refine(isCurrencyCode, 'That is not a currency code the system knows.');
 
 /**
  * A day that exists, as midnight UTC.

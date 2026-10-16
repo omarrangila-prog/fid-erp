@@ -19,25 +19,37 @@ import {
 import { History, Layers, ArrowLeftRight } from 'lucide-react';
 import { RowActions, viewAction } from '@/components/shared/row-actions';
 import { COFFEE_TYPE_LABELS, COFFEE_PROCESS_LABELS, PACKAGING_LABELS } from '@/lib/constants';
+import { BASE_UOMS, PACK_UOMS, uomOptionLabel } from '@/lib/uom';
+import { attributeFieldName, attributeSetFor } from '@/lib/item-attributes';
+import { useAttributeSet, useTerms } from '@/components/company-config-context';
 
 export type ItemRow = {
   id: string;
   itemCode: string;
   itemName: string;
-  coffeeType: string;
-  originCountry: string;
+  coffeeType: string | null;
+  originCountry: string | null;
   region: string | null;
   farmEstate: string | null;
   grade: string | null;
   screenSize: string | null;
   variety: string | null;
-  process: string;
+  process: string | null;
   cropYear: string | null;
   moisturePct: string | null;
   densityGPerL: string | null;
-  packagingType: string;
+  packagingType: string | null;
   bagWeightKg: string;
   defaultUnit: string;
+  baseUom: string;
+  packUom: string;
+  salesUom: string | null;
+  category: string | null;
+  brand: string | null;
+  hsCode: string | null;
+  taxCategory: string | null;
+  unitWeightKg: string | null;
+  attributes: Record<string, string>;
   description: string | null;
   notes: string | null;
   status: string;
@@ -66,69 +78,113 @@ const asOptions = (map: Record<string, string>) =>
   Object.entries(map).map(([value, label]) => ({ value, label }));
 
 /**
- * FID's item form, not Zoho's.
+ * The item form: the same core for every business, plus the one set of
+ * industry fields the company's template opts into.
  *
- * Name, unit, optional SKU, the coffee facts that actually appear on a
- * contract, and batch/lot tracking — which is always on, so there is no
- * switch for it. Sales accounts, inventory accounts and valuation methods
- * are not asked for here.
+ * Name, units, optional SKU and the facts that actually appear on an order.
+ * Sales accounts, inventory accounts and valuation methods are not asked for
+ * here, and batch/lot tracking is always on, so there is no switch for it.
  */
-const FIELDS: FieldSpec[] = [
-  { kind: 'section', title: 'Item', description: 'Name it once. Every purchase, loading sheet and invoice then uses this record.' },
-  {
-    kind: 'text',
-    name: 'itemName',
-    label: 'Item name',
-    required: true,
-    placeholder: 'Uganda Robusta Screen 12',
-    full: true,
-  },
-  {
-    kind: 'select',
-    name: 'defaultUnit',
-    label: 'Unit',
-    required: true,
-    options: [
-      { value: 'KG', label: 'KG — kilograms' },
-      { value: 'MT', label: 'MT — metric tons' },
-      { value: 'BAG', label: 'BAG — bags' },
-    ],
-    hint: 'Stock is always held in KG. This is only the unit staff type in.',
-  },
-  { kind: 'section', title: 'Coffee details' },
-  { kind: 'select', name: 'coffeeType', label: 'Type', required: true, options: asOptions(COFFEE_TYPE_LABELS) },
-  { kind: 'text', name: 'originCountry', label: 'Origin country', required: true, placeholder: 'Uganda' },
-  { kind: 'text', name: 'screenSize', label: 'Screen size', placeholder: '12' },
-  { kind: 'text', name: 'grade', label: 'Grade' },
-  { kind: 'select', name: 'process', label: 'Process', required: true, options: asOptions(COFFEE_PROCESS_LABELS) },
-  { kind: 'text', name: 'cropYear', label: 'Crop year', placeholder: '2025/26' },
-  { kind: 'text', name: 'region', label: 'Region' },
-  { kind: 'text', name: 'farmEstate', label: 'Farm / estate', placeholder: 'Optional' },
-  { kind: 'text', name: 'variety', label: 'Variety', placeholder: 'SL28, Bourbon…' },
-  {
-    kind: 'number',
-    name: 'moisturePct',
-    label: 'Moisture %',
-    placeholder: '11.5',
-    hint: 'What the certificate says. Buyers ask, and it settles disputes.',
-  },
-  { kind: 'number', name: 'densityGPerL', label: 'Density (g/L)', placeholder: '720' },
+function buildFields(attributeSet: string, noun: string, edit: boolean): FieldSpec[] {
+  const coffee = attributeSet === 'coffee';
+  const unitChoices = (codes: readonly string[]) => codes.map((value) => ({ value, label: uomOptionLabel(value) }));
+  const fields: FieldSpec[] = [
+    { kind: 'section', title: 'Item', description: 'Name it once. Every order, loading sheet and invoice then uses this record.' },
+    {
+      kind: 'text',
+      name: 'itemName',
+      label: 'Item name',
+      required: true,
+      placeholder: coffee ? 'Uganda Robusta Screen 12' : 'Cotton polo shirt, navy',
+      full: true,
+    },
+    { kind: 'text', name: 'category', label: 'Category', placeholder: coffee ? 'Green coffee' : 'Apparel' },
+    { kind: 'text', name: 'brand', label: 'Brand', placeholder: 'Optional' },
+    {
+      kind: 'select',
+      name: 'baseUom',
+      label: 'Counted in',
+      required: true,
+      options: unitChoices(BASE_UOMS),
+      hint: 'The unit stock is held and costed in. Cost per unit follows it.',
+    },
+    {
+      kind: 'select',
+      name: 'defaultUnit',
+      label: 'Buy and enter in',
+      required: true,
+      options: unitChoices(['KG', 'MT', 'BAG', 'PCS', 'DOZ', 'CTN', 'BOX', 'ROLL', 'PLT', 'PACK', 'M', 'L']),
+      hint: 'Only the unit staff type in; it is converted to the counted-in unit.',
+    },
+    {
+      kind: 'select',
+      name: 'packUom',
+      label: 'A pack is called',
+      options: unitChoices(PACK_UOMS),
+    },
+    {
+      kind: 'number',
+      name: 'bagWeightKg',
+      label: coffee ? 'Bag weight (KG)' : 'Units in one pack',
+      placeholder: coffee ? '60' : '24',
+      hint: coffee ? 'Drives the bag count on contracts and receipts.' : 'How many counted-in units one pack holds.',
+    },
+    { kind: 'text', name: 'hsCode', label: 'HS code', placeholder: '0901.11' },
+    { kind: 'text', name: 'taxCategory', label: 'Tax category', placeholder: 'Standard' },
+    { kind: 'number', name: 'unitWeightKg', label: 'Weight per unit (KG)', placeholder: 'Optional', hint: 'For freight weights when counted by the piece.' },
+  ];
 
-  {
-    kind: 'section',
-    title: 'Packaging',
-    description: 'Batch and lot are always tracked. Bag weight drives the bag count on contracts and receipts.',
-  },
-  { kind: 'select', name: 'packagingType', label: 'Packaging', required: true, options: asOptions(PACKAGING_LABELS) },
-  { kind: 'number', name: 'bagWeightKg', label: 'Bag weight (KG)', placeholder: '60' },
-  { kind: 'textarea', name: 'description', label: 'Description', full: true },
-  { kind: 'textarea', name: 'notes', label: 'Internal notes', full: true, hint: 'Not printed on documents.' },
-];
+  if (coffee) {
+    fields.push(
+      { kind: 'section', title: 'Coffee details' },
+      { kind: 'select', name: 'coffeeType', label: 'Type', required: true, options: asOptions(COFFEE_TYPE_LABELS) },
+      { kind: 'text', name: 'originCountry', label: 'Origin country', required: true, placeholder: 'Uganda' },
+      { kind: 'text', name: 'screenSize', label: 'Screen size', placeholder: '12' },
+      { kind: 'text', name: 'grade', label: 'Grade' },
+      { kind: 'select', name: 'process', label: 'Process', required: true, options: asOptions(COFFEE_PROCESS_LABELS) },
+      { kind: 'text', name: 'cropYear', label: 'Crop year', placeholder: '2025/26' },
+      { kind: 'text', name: 'region', label: 'Region' },
+      { kind: 'text', name: 'farmEstate', label: 'Farm / estate', placeholder: 'Optional' },
+      { kind: 'text', name: 'variety', label: 'Variety', placeholder: 'SL28, Bourbon…' },
+      {
+        kind: 'number',
+        name: 'moisturePct',
+        label: 'Moisture %',
+        placeholder: '11.5',
+        hint: 'What the certificate says. Buyers ask, and it settles disputes.',
+      },
+      { kind: 'number', name: 'densityGPerL', label: 'Density (g/L)', placeholder: '720' },
+      {
+        kind: 'section',
+        title: 'Packaging',
+        description: 'Batch and lot are always tracked. Bag weight drives the bag count on contracts and receipts.',
+      },
+      { kind: 'select', name: 'packagingType', label: 'Packaging', required: true, options: asOptions(PACKAGING_LABELS) },
+    );
+  } else {
+    fields.push(
+      { kind: 'text', name: 'originCountry', label: 'Country of origin', placeholder: 'China' },
+    );
+    const set = attributeSetFor(attributeSet);
+    if (set.attributes.length > 0) {
+      fields.push({ kind: 'section', title: `${set.label} details`, description: `Only what ${noun} of this kind are quoted by.` });
+      for (const def of set.attributes) {
+        fields.push(
+          def.type === 'select'
+            ? { kind: 'select', name: attributeFieldName(def.key), label: def.label, options: (def.options ?? []).map((o) => ({ value: o, label: o })), hint: def.hint }
+            : { kind: def.type === 'number' ? 'number' : 'text', name: attributeFieldName(def.key), label: def.label, placeholder: def.placeholder, hint: def.hint },
+        );
+      }
+    }
+  }
 
-const EDIT_FIELDS: FieldSpec[] = [
-  ...FIELDS,
-  { kind: 'select', name: 'status', label: 'Status', options: STATUS_OPTIONS },
-];
+  fields.push(
+    { kind: 'textarea', name: 'description', label: 'Description', full: true },
+    { kind: 'textarea', name: 'notes', label: 'Internal notes', full: true, hint: 'Not printed on documents.' },
+  );
+  if (edit) fields.push({ kind: 'select', name: 'status', label: 'Status', options: STATUS_OPTIONS });
+  return fields;
+}
 
 export function ItemsClient({
   rows,
@@ -146,6 +202,12 @@ export function ItemsClient({
   showValue: boolean;
 }) {
   const router = useRouter();
+  const attributeSet = useAttributeSet();
+  const terms = useTerms();
+  const noun = terms.lower('product');
+  const isCoffee = attributeSet === 'coffee';
+  const createFields = React.useMemo(() => buildFields(attributeSet, noun, false), [attributeSet, noun]);
+  const editFields = React.useMemo(() => buildFields(attributeSet, noun, true), [attributeSet, noun]);
   const [editing, setEditing] = React.useState<ItemRow | null>(null);
   const [creating, setCreating] = React.useState(openCreate && canCreate);
   const [deactivating, setDeactivating] = React.useState<ItemRow | null>(null);
@@ -164,48 +226,79 @@ export function ItemsClient({
         </span>
       ),
     },
-    {
-      id: 'type',
-      header: 'Type',
-      mobile: 'badge',
-      sortValue: (r) => r.coffeeType,
-      cell: (r) => (
-        <Badge tone={r.coffeeType === 'ARABICA' ? 'success' : r.coffeeType === 'ROBUSTA' ? 'info' : 'neutral'}>
-          {COFFEE_TYPE_LABELS[r.coffeeType] ?? r.coffeeType}
-        </Badge>
-      ),
-    },
-    {
-      id: 'origin',
-      header: 'Origin',
-      mobile: 'meta',
-      sortValue: (r) => r.originCountry,
-      cell: (r) => (
-        <span>
-          <span className="block">{r.originCountry}</span>
-          {r.region ? <span className="block text-xs text-ink-subtle">{r.region}</span> : null}
-        </span>
-      ),
-    },
-    {
-      id: 'grade',
-      header: 'Grade / screen',
-      mobile: 'meta',
-      hideable: true,
-      cell: (r) => [r.grade, r.screenSize].filter(Boolean).join(' · ') || '—',
-    },
-    {
-      id: 'process',
-      header: 'Process',
-      hideable: true,
-      sortValue: (r) => r.process,
-      cell: (r) => COFFEE_PROCESS_LABELS[r.process] ?? r.process,
-    },
+    ...(isCoffee
+      ? ([
+          {
+            id: 'type',
+            header: 'Type',
+            mobile: 'badge',
+            sortValue: (r) => r.coffeeType ?? '',
+            cell: (r) => (
+              <Badge tone={r.coffeeType === 'ARABICA' ? 'success' : r.coffeeType === 'ROBUSTA' ? 'info' : 'neutral'}>
+                {r.coffeeType ? (COFFEE_TYPE_LABELS[r.coffeeType] ?? r.coffeeType) : '—'}
+              </Badge>
+            ),
+          },
+          {
+            id: 'origin',
+            header: 'Origin',
+            mobile: 'meta',
+            sortValue: (r) => r.originCountry ?? '',
+            cell: (r) => (
+              <span>
+                <span className="block">{r.originCountry ?? '—'}</span>
+                {r.region ? <span className="block text-xs text-ink-subtle">{r.region}</span> : null}
+              </span>
+            ),
+          },
+          {
+            id: 'grade',
+            header: 'Grade / screen',
+            mobile: 'meta',
+            hideable: true,
+            cell: (r) => [r.grade, r.screenSize].filter(Boolean).join(' · ') || '—',
+          },
+          {
+            id: 'process',
+            header: 'Process',
+            hideable: true,
+            sortValue: (r) => r.process ?? '',
+            cell: (r) => (r.process ? (COFFEE_PROCESS_LABELS[r.process] ?? r.process) : '—'),
+          },
+        ] satisfies DataColumn<ItemRow>[])
+      : ([
+          {
+            id: 'category',
+            header: 'Category',
+            mobile: 'badge',
+            sortValue: (r) => r.category ?? '',
+            cell: (r) => (r.category ? <Badge tone="neutral">{r.category}</Badge> : <span className="text-ink-subtle">—</span>),
+          },
+          {
+            id: 'brand',
+            header: 'Brand',
+            mobile: 'meta',
+            hideable: true,
+            sortValue: (r) => r.brand ?? '',
+            cell: (r) => r.brand ?? '—',
+          },
+          ...attributeSetFor(attributeSet).attributes.slice(0, 3).map(
+            (def) =>
+              ({
+                id: `attr-${def.key}`,
+                header: def.label,
+                mobile: 'meta',
+                hideable: true,
+                sortValue: (r: ItemRow) => r.attributes[def.key] ?? '',
+                cell: (r: ItemRow) => r.attributes[def.key] ?? '—',
+              }) satisfies DataColumn<ItemRow>,
+          ),
+        ] satisfies DataColumn<ItemRow>[])),
     {
       id: 'unit',
       header: 'Unit',
       hideable: true,
-      cell: (r) => r.defaultUnit,
+      cell: (r) => r.baseUom,
     },
     {
       id: 'reference',
@@ -377,7 +470,7 @@ export function ItemsClient({
             show: canDelete && r.status === 'ACTIVE',
             cancelLabel: 'Deactivate',
             description:
-              'The coffee stops appearing on new contracts and invoices. Existing batches, stock and history are untouched, and it can be reactivated from its own page.',
+              'It stops appearing on new orders and invoices. Existing batches, stock and history are untouched, and it can be reactivated from its own page.',
             run: async (reason) => {
               void reason;
               const result = await deactivateCoffeeItemAction(r.id);
@@ -417,7 +510,7 @@ export function ItemsClient({
         rowHref={(r) => `/items/${r.id}`}
         expandedContent={(r) =>
           r.lots.length === 0 ? (
-            <p className="text-xs text-ink-muted">None of this coffee is in a warehouse right now.</p>
+            <p className="text-xs text-ink-muted">None of this {noun} is in a warehouse right now.</p>
           ) : (
             <div className="overflow-x-auto">
               <p className="mb-2 text-xs text-ink-muted">
@@ -434,7 +527,7 @@ export function ItemsClient({
                     <th className="py-1.5 pr-3 font-medium">Warehouse</th>
                     <th className="py-1.5 pr-3 text-right font-medium">On hand</th>
                     <th className="py-1.5 pr-3 text-right font-medium">Available</th>
-                    <th className="py-1.5 text-right font-medium">Bags</th>
+                    <th className="py-1.5 text-right font-medium">{isCoffee ? 'Bags' : 'Packs'}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -457,11 +550,11 @@ export function ItemsClient({
           )
         }
         searchValue={(r) =>
-          `${r.itemName} ${r.itemCode} ${r.originCountry} ${r.region ?? ''} ${r.grade ?? ''} ${r.variety ?? ''} ${r.cropYear ?? ''} ${r.screenSize ?? ''} ${r.warehouses.map((w) => w.warehouseName).join(' ')} ${r.lots.map((l) => `${l.reference} ${l.batchNumber} ${l.container} ${l.lotNumber} ${l.shipment}`).join(' ')}`
+          `${r.itemName} ${r.itemCode} ${r.category ?? ''} ${r.brand ?? ''} ${r.hsCode ?? ''} ${Object.values(r.attributes).join(' ')} ${r.originCountry ?? ''} ${r.region ?? ''} ${r.grade ?? ''} ${r.variety ?? ''} ${r.cropYear ?? ''} ${r.screenSize ?? ''} ${r.warehouses.map((w) => w.warehouseName).join(' ')} ${r.lots.map((l) => `${l.reference} ${l.batchNumber} ${l.container} ${l.lotNumber} ${l.shipment}`).join(' ')}`
         }
         searchPlaceholder="Search by name, origin, grade, reference, batch or container…"
         emptyTitle="No items yet"
-        emptyDescription="Create the coffees you trade. Every contract, batch and invoice references one."
+        emptyDescription={`Create the ${noun}s you trade. Every order, batch and invoice references one.`}
         emptyAction={
           canCreate ? (
             <Button onClick={() => setCreating(true)}>
@@ -486,17 +579,23 @@ export function ItemsClient({
           open={creating}
           onOpenChange={setCreating}
           title="New Item"
-          description="Item name, unit, coffee details, then save. Batch and lot are always tracked."
-          fields={FIELDS}
-          defaults={{
-            coffeeType: 'ROBUSTA',
-            process: 'NATURAL',
-            packagingType: 'JUTE_BAG',
-            bagWeightKg: '60',
-            defaultUnit: 'KG',
-            status: 'ACTIVE',
-            originCountry: '',
-          }}
+          description={isCoffee ? 'Item name, unit, coffee details, then save. Batch and lot are always tracked.' : 'Item name, units, then save. Batch and lot are always tracked.'}
+          fields={createFields}
+          defaults={
+            isCoffee
+              ? {
+                  coffeeType: 'ROBUSTA',
+                  process: 'NATURAL',
+                  packagingType: 'JUTE_BAG',
+                  bagWeightKg: '60',
+                  defaultUnit: 'KG',
+                  baseUom: 'KG',
+                  packUom: 'BAG',
+                  status: 'ACTIVE',
+                  originCountry: '',
+                }
+              : { bagWeightKg: '1', defaultUnit: 'PCS', baseUom: 'PCS', packUom: 'CTN', status: 'ACTIVE' }
+          }
           action={
             saveCoffeeItemAction.bind(null, null) as (p: MasterFormState, f: FormData) => Promise<MasterFormState>
           }
@@ -509,7 +608,7 @@ export function ItemsClient({
           open
           onOpenChange={(open) => !open && setEditing(null)}
           title={`Edit ${editing.itemName}`}
-          fields={EDIT_FIELDS}
+          fields={editFields}
           defaults={{
             itemName: editing.itemName,
             itemCode: editing.itemCode,
@@ -527,6 +626,14 @@ export function ItemsClient({
             packagingType: editing.packagingType,
             bagWeightKg: editing.bagWeightKg,
             defaultUnit: editing.defaultUnit,
+            baseUom: editing.baseUom,
+            packUom: editing.packUom,
+            category: editing.category,
+            brand: editing.brand,
+            hsCode: editing.hsCode,
+            taxCategory: editing.taxCategory,
+            unitWeightKg: editing.unitWeightKg,
+            ...Object.fromEntries(Object.entries(editing.attributes).map(([k, v]) => [attributeFieldName(k), v])),
             description: editing.description,
             notes: editing.notes,
             status: editing.status,
@@ -552,7 +659,7 @@ export function ItemsClient({
                 </ul>
               ) : (
                 <p className="mt-2 text-sm text-ink-muted">
-                  None of this coffee is in a warehouse yet.{' '}
+                  None of this {noun} is in a warehouse yet.{' '}
                   <Link href={`/items/${editing.id}`} className="font-medium text-forest-800 hover:underline">
                     Open the item
                   </Link>{' '}

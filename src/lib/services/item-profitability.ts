@@ -864,7 +864,7 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
       itemId,
       itemName: anyBatch.item.itemName,
       itemCode: anyBatch.item.itemCode,
-      origin: anyBatch.item.originCountry,
+      origin: anyBatch.item.originCountry ?? '',
       status,
       ...measures,
       warehouses: warehouseNodes(item.warehouses),

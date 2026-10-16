@@ -6,6 +6,7 @@ import { prisma } from '@/lib/db';
 import { getItemStock, getWarehouseStockByItem } from '@/lib/services/stock';
 import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
 import { formatQuantityKg, formatDate } from '@/lib/format';
+import { makeTerms } from '@/lib/terminology';
 import { PageHeader } from '@/components/shared/page-header';
 import { ItemsClient, type ItemRow } from '@/app/(app)/items/items-client';
 
@@ -21,6 +22,7 @@ export default async function ItemsPage({
   const openCreate = (await searchParams).new === '1';
   const user = await requirePageAccess(PERMISSIONS.ITEMS_VIEW);
   const companyId = user.activeCompany.id;
+  const terms = makeTerms(user.activeCompany.terminology);
 
   const [items, stock, warehouseStock, traffic, balances, ordinals] = await Promise.all([
     prisma.coffeeItem.findMany({ where: { companyId }, orderBy: { itemName: 'asc' } }),
@@ -65,6 +67,7 @@ export default async function ItemsPage({
     getShipmentOrdinals(companyId),
   ]);
 
+  const unitOf = new Map(items.map((i) => [i.id, i.baseUom]));
   const lotsByItem = new Map<string, ItemRow['lots']>();
   for (const balance of balances) {
     const list = lotsByItem.get(balance.itemId) ?? [];
@@ -75,8 +78,8 @@ export default async function ItemsPage({
       shipment: shipmentOrdinalLabel(ordinals.get(balance.batch.shipmentId)),
       lotNumber: balance.batch.lot?.lotNumber ?? '—',
       warehouseName: balance.warehouse.name,
-      onHandLabel: formatQuantityKg(balance.onHandKg),
-      availableLabel: formatQuantityKg(balance.availableKg),
+      onHandLabel: formatQuantityKg(balance.onHandKg, { unit: unitOf.get(balance.itemId) }),
+      availableLabel: formatQuantityKg(balance.availableKg, { unit: unitOf.get(balance.itemId) }),
       // Derived from the KG at the batch's bag weight; see src/lib/bags.ts.
       bags: bagsForKg(balance.onHandKg, balance.batch.bagWeightKg),
     });
@@ -110,11 +113,22 @@ export default async function ItemsPage({
       packagingType: i.packagingType,
       bagWeightKg: i.bagWeightKg.toString(),
       defaultUnit: i.defaultUnit,
+      baseUom: i.baseUom,
+      packUom: i.packUom,
+      salesUom: i.salesUom,
+      category: i.category,
+      brand: i.brand,
+      hsCode: i.hsCode,
+      taxCategory: i.taxCategory,
+      unitWeightKg: i.unitWeightKg?.toString() ?? null,
+      attributes: (i.attributes && typeof i.attributes === 'object' && !Array.isArray(i.attributes)
+        ? (i.attributes as Record<string, string>)
+        : {}),
       description: i.description,
       notes: i.notes,
       status: i.status,
       availableKg,
-      availableLabel: availableKg > 0 ? formatQuantityKg(availableKg) : '—',
+      availableLabel: availableKg > 0 ? formatQuantityKg(availableKg, { unit: i.baseUom }) : '—',
       bags: 0,
       batchCount: Number(activityByItem.get(i.id)?.batches ?? 0),
       lastMovedLabel: (() => {
@@ -124,7 +138,7 @@ export default async function ItemsPage({
       lastMovedSort: activityByItem.get(i.id)?.lastAt?.getTime() ?? 0,
       warehouses: (byWarehouse?.warehouses ?? []).map((warehouse) => ({
         warehouseName: warehouse.warehouseName,
-        availableLabel: formatQuantityKg(warehouse.availableKg),
+        availableLabel: formatQuantityKg(warehouse.availableKg, { unit: i.baseUom }),
         availableKg: Number(warehouse.availableKg),
       })),
       lots: lotsByItem.get(i.id) ?? [],
@@ -135,7 +149,7 @@ export default async function ItemsPage({
     <div className="space-y-6">
       <PageHeader
         title="Items"
-        description="Every coffee you trade, named once. Available stock is shown per warehouse."
+        description={`Every ${terms.lower('product')} you trade, named once. Available stock is shown per warehouse.`}
         breadcrumbs={[{ label: 'Trading' }, { label: 'Items' }]}
       />
       <ItemsClient

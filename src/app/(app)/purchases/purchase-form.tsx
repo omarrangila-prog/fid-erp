@@ -20,7 +20,7 @@ import { computePurchaseTotalsClient, splitLineIntoContainers, type LineDraft } 
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { todayInputValue, formatMoney } from '@/lib/format';
 import { CURRENCY_NAMES } from '@/lib/company-currencies';
-import { useTransactionCurrencies, useConfiguredCurrencies } from '@/components/company-config-context';
+import { useTransactionCurrencies, useConfiguredCurrencies, useAttributeSet } from '@/components/company-config-context';
 
 /**
  * Purchase contract entry.
@@ -98,6 +98,7 @@ export function PurchaseForm({
   approved?: boolean;
 }) {
   const configuredCurrencies = useConfiguredCurrencies();
+  const attributeSet = useAttributeSet();
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
@@ -568,7 +569,7 @@ export function PurchaseForm({
                         onChange={(v) => chooseItem(line.key, v)}
                         placeholder="Choose a coffee…"
                         invalid={Boolean(lineError(index, 'itemId'))}
-                        create={canCreateItem ? coffeeItemCreateSpec() : undefined}
+                        create={canCreateItem ? coffeeItemCreateSpec(attributeSet) : undefined}
                         onCreated={(created, option) => {
                           // A new coffee carries the record's own defaults.
                           setItemOptions((prev) => [

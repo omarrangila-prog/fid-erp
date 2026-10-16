@@ -1,5 +1,6 @@
 import 'server-only';
 import { cache } from 'react';
+import { effectiveTerminology } from '@/lib/templates';
 import { randomBytes, createHash } from 'node:crypto';
 import { cookies, headers } from 'next/headers';
 import { prisma } from '@/lib/db';
@@ -182,7 +183,7 @@ async function loadCurrentUser(): Promise<SessionUser | null> {
       defaultSalesCurrency: c.defaultSalesCurrency,
       industryTemplate: c.industryTemplate,
       features: asFlags(c.features),
-      terminology: asTerms(c.terminology),
+      terminology: effectiveTerminology(c.industryTemplate, asTerms(c.terminology)),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 

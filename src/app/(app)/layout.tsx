@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { FeaturesProvider } from '@/components/features-context';
 import { CompanyConfigProvider } from '@/components/company-config-context';
 import { resolveFeatures } from '@/lib/features';
+import { attributeSetOf } from '@/lib/templates';
 import { getCurrentUser } from '@/lib/auth/session';
 import { countUnread } from '@/lib/services/notification';
 import { getMenuForRoles } from '@/lib/services/role-menu';
@@ -54,6 +55,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         salesCurrencies: user.activeCompany.salesCurrencies ?? [],
         defaultSalesCurrency: user.activeCompany.defaultSalesCurrency ?? null,
         terminology: user.activeCompany.terminology ?? {},
+        attributeSet: attributeSetOf(user.activeCompany.industryTemplate),
       }}
     >
     <div className="flex min-h-dvh bg-paper">

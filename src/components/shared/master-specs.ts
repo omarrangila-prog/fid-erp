@@ -137,12 +137,45 @@ export function warehouseCreateSpec(): MasterCreateSpec<{ id: string; name: stri
   };
 }
 
-export function coffeeItemCreateSpec(): MasterCreateSpec<{
+export function coffeeItemCreateSpec(attributeSet = 'coffee'): MasterCreateSpec<{
   id: string;
   name: string;
   code: string;
-  originCountry: string;
+  originCountry: string | null;
 }> {
+  const toOption = (created: { id: string; name: string; code: string; originCountry: string | null }) => ({
+    value: created.id,
+    label: created.name,
+    hint: [created.code, created.originCountry].filter(Boolean).join(' · '),
+    keywords: created.code,
+  });
+  if (attributeSet !== 'coffee') {
+    return {
+      label: '+ Add New Item',
+      title: 'Add new item',
+      description: 'Enough to put it on the order. Category, brand, HS code and the rest can follow on the item record.',
+      nameField: 'itemName',
+      fields: [
+        { name: 'itemName', label: 'Item name', required: true },
+        {
+          name: 'baseUom',
+          label: 'Counted in',
+          kind: 'select',
+          required: true,
+          options: [
+            { value: 'PCS', label: 'PCS — pieces' },
+            { value: 'KG', label: 'KG — kilograms' },
+            { value: 'M', label: 'M — metres' },
+            { value: 'L', label: 'L — litres' },
+          ],
+          defaultValue: 'PCS',
+        },
+        { name: 'category', label: 'Category', hint: 'Optional.' },
+      ],
+      action: quickCreateCoffeeItemAction,
+      toOption,
+    };
+  }
   return {
     label: '+ Add New Item',
     title: 'Add new coffee',
@@ -166,12 +199,7 @@ export function coffeeItemCreateSpec(): MasterCreateSpec<{
       { name: 'screenSize', label: 'Screen size', hint: 'Optional.' },
     ],
     action: quickCreateCoffeeItemAction,
-    toOption: (created) => ({
-      value: created.id,
-      label: created.name,
-      hint: `${created.code} · ${created.originCountry}`,
-      keywords: created.code,
-    }),
+    toOption,
   };
 }
 

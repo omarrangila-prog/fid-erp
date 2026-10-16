@@ -10,5 +10,5 @@
 
 export type ContainerType = 'FT20' | 'FT40' | 'FT40HC' | 'LCL' | 'BULK';
 export type Incoterm = 'EXW' | 'FCA' | 'FOB' | 'CFR' | 'CIF' | 'DAP' | 'DDP';
-export type UnitOfMeasure = 'KG' | 'MT' | 'BAG';
+export type UnitOfMeasure = 'KG' | 'MT' | 'BAG' | 'PCS' | 'DOZ' | 'CTN' | 'BOX' | 'ROLL' | 'PLT' | 'PACK' | 'M' | 'L';
 export type PaymentMethodCode = 'CASH' | 'BANK_TRANSFER' | 'CHEQUE';

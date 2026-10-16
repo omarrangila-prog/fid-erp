@@ -71,7 +71,7 @@ BEGIN
        SET "organizationId" = org,
            "industryTemplate" = 'COMMODITY_TRADING',
            "tagline" = COALESCE("tagline", 'Coffee Connects Worlds'),
-           "terminology" = '{"item":"Coffee"}'::jsonb
+           "terminology" = '{"product":"Coffee"}'::jsonb
      WHERE "code" IN ('FID-DXB', 'FID-MA');
 
   END IF;

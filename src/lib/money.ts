@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js';
 import { CURRENCIES } from '@/lib/currencies';
+import type { UnitOfMeasure } from '@/lib/enums';
 
 /**
  * Decimal arithmetic comes from decimal.js directly rather than through
@@ -145,23 +146,28 @@ export function min(a: DecimalInput, b: DecimalInput): Decimal {
 // Unit conversion — the canonical inventory unit is the kilogram
 // ---------------------------------------------------------------------------
 
-export type EntryUnit = 'KG' | 'MT' | 'BAG';
+/** A unit code from lib/uom.ts: KG, MT, BAG, PCS, DOZ, CTN, BOX, ROLL, PLT, PACK, M, L. */
+export type EntryUnit = UnitOfMeasure;
+
+/** Units that mean "one pack": their size is a per-item figure, not a constant. */
+const PACK_UNITS = new Set<string>(['BAG', 'CTN', 'BOX', 'ROLL', 'PLT', 'PACK']);
 
 /**
- * How many kilograms one unit represents.
+ * How many base units (kilograms for coffee, pieces for garments…) one entry
+ * unit represents.
  *
- * Coffee is quoted per kilogram, per metric ton and — very commonly — per bag,
- * so all three are first-class entry units. A bag has no fixed weight: it is
- * whatever the coffee's packaging says, typically 60 KG but 70 for Colombia and
- * 30 for some Ethiopian lots. That is why the bag weight must be supplied.
+ * A pack has no fixed size: it is whatever the item's packaging says — a 60 KG
+ * bag, a 70 KG Colombian bag, a carton of 24 pieces. That is why the pack size
+ * must be supplied.
  */
 function kgPerUnit(unit: EntryUnit, bagWeightKg?: DecimalInput): Decimal {
   if (unit === 'MT') return KG_PER_MT;
-  if (unit === 'KG') return new Decimal(1);
+  if (unit === 'DOZ') return new Decimal(12);
+  if (!PACK_UNITS.has(unit)) return new Decimal(1);
 
   const weight = dec(bagWeightKg ?? 0);
   if (weight.lessThanOrEqualTo(0)) {
-    throw new Error('A bag weight is required to convert a quantity entered in bags.');
+    throw new Error('A pack size is required to convert a quantity entered in bags, cartons or boxes.');
   }
   return weight;
 }

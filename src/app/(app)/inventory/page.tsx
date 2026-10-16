@@ -180,7 +180,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
         id: key,
         itemName: balance.item.itemName,
         itemCode: balance.item.itemCode,
-        origin: balance.item.originCountry,
+        origin: balance.item.originCountry ?? '',
         category: balance.item.region ?? '',
         warehouse: balance.warehouse.name,
         warehouseId: balance.warehouseId,

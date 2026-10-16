@@ -21,6 +21,8 @@ export const DEFAULT_TERMS = {
   shipments: 'Shipments',
   warehouse: 'Warehouse',
   warehouses: 'Warehouses',
+  /** The unit stock is counted in, as printed after a quantity: KG, PCS, M… */
+  unit: 'KG',
   purchaseOrder: 'Purchase order',
   supplierRef: 'Supplier reference',
 } as const;

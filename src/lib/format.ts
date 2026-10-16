@@ -29,14 +29,19 @@ export function formatMoneyCompact(value: DecimalInput | null | undefined, curre
   return formatMoney(n, code);
 }
 
-export function formatQuantityKg(value: DecimalInput | null | undefined, options?: { unit?: boolean }): string {
+/**
+ * A stock quantity. The name is historical: the figure is in the item's base
+ * unit — kilograms for coffee, pieces for garments. `unit` is `false` for the
+ * bare number, or the unit code to print after it (default KG).
+ */
+export function formatQuantityKg(value: DecimalInput | null | undefined, options?: { unit?: boolean | string }): string {
   const amount = dec(value ?? 0).toFixed(3).replace(/\.?0+$/, '');
   const [whole, fraction] = amount.split('.');
   const negative = whole.startsWith('-');
   const digits = negative ? whole.slice(1) : whole;
   const grouped = digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   const body = `${negative ? '-' : ''}${grouped}${fraction ? `.${fraction}` : ''}`;
-  return options?.unit === false ? body : `${body} KG`;
+  return options?.unit === false ? body : `${body} ${typeof options?.unit === 'string' ? options.unit : 'KG'}`;
 }
 
 /** Shows kilograms as metric tons, which is how traders talk about volume. */

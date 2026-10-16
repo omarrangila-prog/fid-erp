@@ -112,6 +112,18 @@ export function isTemplateKey(value: string | null | undefined): value is Templa
   return !!value && value in TEMPLATES;
 }
 
+/** Template words, overridden by anything the company set itself. */
+export function effectiveTerminology(
+  template: string | null | undefined,
+  own: Record<string, string> | null | undefined,
+): Record<string, string> {
+  return { ...(isTemplateKey(template) ? TEMPLATES[template].terminology : {}), ...(own ?? {}) };
+}
+
+export function attributeSetOf(template: string | null | undefined): string {
+  return isTemplateKey(template) ? TEMPLATES[template].attributeSet : 'general';
+}
+
 export function templateFeatureDefaults(template: string | null | undefined): FeatureFlags {
   return isTemplateKey(template) ? TEMPLATES[template].features : {};
 }

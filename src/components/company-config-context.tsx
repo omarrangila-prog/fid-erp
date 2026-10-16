@@ -9,6 +9,8 @@ export type CompanyConfig = {
   salesCurrencies: string[];
   defaultSalesCurrency: string | null;
   terminology: Record<string, string>;
+  /** Which optional item attributes the company's industry offers (lib/item-attributes.ts). */
+  attributeSet: string;
 };
 
 const CompanyConfigContext = createContext<CompanyConfig | null>(null);
@@ -74,6 +76,11 @@ export function useSalesCurrencies(localCurrency: string, keep?: string | null):
 export function useDefaultSalesCurrency(localCurrency: string): string {
   const config = useContext(CompanyConfigContext);
   return config?.defaultSalesCurrency || localCurrency;
+}
+
+/** The industry attribute set offered on the item form. */
+export function useAttributeSet(): string {
+  return useContext(CompanyConfigContext)?.attributeSet ?? 'general';
 }
 
 /** The company's words: `terms('product')`, `terms.lower('customers')`. */

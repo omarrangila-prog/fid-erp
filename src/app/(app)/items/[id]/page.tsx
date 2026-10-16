@@ -22,6 +22,10 @@ import {
   type WarehouseStock,
 } from '@/app/(app)/items/[id]/warehouse-stock';
 import { formatDate, formatMoney, formatQuantityKg } from '@/lib/format';
+import { attributeSetOf } from '@/lib/templates';
+import { makeTerms } from '@/lib/terminology';
+import { attributeSetFor } from '@/lib/item-attributes';
+import { uomName } from '@/lib/uom';
 import { PageHeader } from '@/components/shared/page-header';
 import { Badge, StatusBadge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -49,6 +53,8 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
   const user = await requirePageAccess(PERMISSIONS.ITEMS_VIEW);
   const companyId = user.activeCompany.id;
   const showCost = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
+  const isCoffee = attributeSetOf(user.activeCompany.industryTemplate) === 'coffee';
+  const attrSet = attributeSetFor(attributeSetOf(user.activeCompany.industryTemplate));
 
   const item = await prisma.coffeeItem.findFirst({
     where: { id, companyId },
@@ -120,15 +126,15 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
       reference: balance.batch.purchaseContract?.contractReference ?? '—',
       shipment: shipmentOrdinalLabel(ordinals.get(balance.batch.shipmentId)),
       lotNumber: balance.batch.lot?.lotNumber ?? '—',
-      onHandLabel: formatQuantityKg(balance.onHandKg),
-      availableLabel: formatQuantityKg(balance.availableKg),
+      onHandLabel: formatQuantityKg(balance.onHandKg, { unit: item.baseUom }),
+      availableLabel: formatQuantityKg(balance.availableKg, { unit: item.baseUom }),
       availableKg: Number(balance.availableKg),
       bags,
     });
     byWarehouse.set(balance.warehouse.id, entry);
   }
   const warehouseBreakdown = [...byWarehouse.values()]
-    .map((w) => ({ ...w, totalLabel: formatQuantityKg(w.totalKg) }))
+    .map((w) => ({ ...w, totalLabel: formatQuantityKg(w.totalKg, { unit: item.baseUom }) }))
     .sort((a, b) => b.totalKg - a.totalKg);
 
   const availableKg = warehouseStock.totalAvailableKg;
@@ -146,14 +152,22 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
         description={[item.itemCode, item.originCountry, item.region].filter(Boolean).join(' · ')}
         breadcrumbs={[{ label: 'Trading' }, { label: 'Items', href: '/items' }, { label: item.itemName }]}
         meta={
-          <>
-            <Badge tone={item.coffeeType === 'ARABICA' ? 'success' : item.coffeeType === 'ROBUSTA' ? 'info' : 'neutral'}>
-              {COFFEE_TYPE_LABELS[item.coffeeType]}
-            </Badge>
-            <Badge tone="neutral">{COFFEE_PROCESS_LABELS[item.process]}</Badge>
-            {item.grade ? <Badge tone="neutral">Grade {item.grade}</Badge> : null}
-            {item.cropYear ? <Badge tone="neutral">Crop {item.cropYear}</Badge> : null}
-          </>
+          isCoffee ? (
+            <>
+              <Badge tone={item.coffeeType === 'ARABICA' ? 'success' : item.coffeeType === 'ROBUSTA' ? 'info' : 'neutral'}>
+                {item.coffeeType ? COFFEE_TYPE_LABELS[item.coffeeType] : '—'}
+              </Badge>
+              <Badge tone="neutral">{item.process ? COFFEE_PROCESS_LABELS[item.process] : '—'}</Badge>
+              {item.grade ? <Badge tone="neutral">Grade {item.grade}</Badge> : null}
+              {item.cropYear ? <Badge tone="neutral">Crop {item.cropYear}</Badge> : null}
+            </>
+          ) : (
+            <>
+              {item.category ? <Badge tone="neutral">{item.category}</Badge> : null}
+              {item.brand ? <Badge tone="neutral">{item.brand}</Badge> : null}
+              <Badge tone="neutral">Counted in {uomName(item.baseUom, true).toLowerCase()}</Badge>
+            </>
+          )
         }
       />
 
@@ -179,13 +193,13 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatCard label="Available" value={formatQuantityKg(availableKg)} tone={availableKg.greaterThan(0) ? 'positive' : 'default'} />
-        <StatCard label="Received to date" value={formatQuantityKg(receivedKg)} />
-        <StatCard label="Sold to date" value={formatQuantityKg(soldKg)} />
+        <StatCard label="Available" value={formatQuantityKg(availableKg, { unit: item.baseUom })} tone={availableKg.greaterThan(0) ? 'positive' : 'default'} />
+        <StatCard label="Received to date" value={formatQuantityKg(receivedKg, { unit: item.baseUom })} />
+        <StatCard label="Sold to date" value={formatQuantityKg(soldKg, { unit: item.baseUom })} />
         {showCost ? (
           <StatCard label="Stock value" value={formatMoney(stockValueUsd, 'USD')} sublabel="At landed cost" />
         ) : (
-          <StatCard label="Bag weight" value={`${item.bagWeightKg.toString()} KG`} />
+          <StatCard label={isCoffee ? 'Bag weight' : 'Pack size'} value={`${item.bagWeightKg.toString()} ${item.baseUom}`} />
         )}
       </div>
 
@@ -211,7 +225,7 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
             {costing.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle>What this coffee cost</CardTitle>
+            <CardTitle>What this {makeTerms(user.activeCompany.terminology).lower('product')} cost</CardTitle>
             <CardDescription>
               Each lot at its own landed cost — the supplier&rsquo;s price plus that container&rsquo;s share of the
               job&rsquo;s local charges. Stock and cost on one screen, so neither has to be looked up elsewhere.
@@ -223,24 +237,47 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
         </Card>
       ) : null}
 
+      {isCoffee ? (
       <Card>
               <CardHeader>
                 <CardTitle>Origin and quality</CardTitle>
               </CardHeader>
               <CardContent>
                 <dl>
-                  <DetailRow label="Type">{COFFEE_TYPE_LABELS[item.coffeeType]}</DetailRow>
-                  <DetailRow label="Origin country">{item.originCountry}</DetailRow>
+                  <DetailRow label="Type">{(item.coffeeType ? COFFEE_TYPE_LABELS[item.coffeeType] : '—')}</DetailRow>
+                  <DetailRow label="Origin country">{item.originCountry ?? '—'}</DetailRow>
                   <DetailRow label="Region">{item.region ?? '—'}</DetailRow>
                   <DetailRow label="Farm / estate">{item.farmEstate ?? '—'}</DetailRow>
                   <DetailRow label="Variety">{item.variety ?? '—'}</DetailRow>
-                  <DetailRow label="Process">{COFFEE_PROCESS_LABELS[item.process]}</DetailRow>
+                  <DetailRow label="Process">{(item.process ? COFFEE_PROCESS_LABELS[item.process] : '—')}</DetailRow>
                   <DetailRow label="Grade">{item.grade ?? '—'}</DetailRow>
                   <DetailRow label="Screen size">{item.screenSize ?? '—'}</DetailRow>
                   <DetailRow label="Crop year">{item.cropYear ?? '—'}</DetailRow>
                 </dl>
               </CardContent>
             </Card>
+      ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle>Item details</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <dl>
+                  <DetailRow label="SKU">{item.itemCode}</DetailRow>
+                  <DetailRow label="Category">{item.category ?? '—'}</DetailRow>
+                  <DetailRow label="Brand">{item.brand ?? '—'}</DetailRow>
+                  <DetailRow label="Country of origin">{item.originCountry ?? '—'}</DetailRow>
+                  <DetailRow label="HS code">{item.hsCode ?? '—'}</DetailRow>
+                  <DetailRow label="Tax category">{item.taxCategory ?? '—'}</DetailRow>
+                  {attrSet.attributes.map((def) => (
+                    <DetailRow key={def.key} label={def.label}>
+                      {(item.attributes as Record<string, string> | null)?.[def.key] ?? '—'}
+                    </DetailRow>
+                  ))}
+                </dl>
+              </CardContent>
+            </Card>
+      )}
 
             <Card>
               <CardHeader>
@@ -248,12 +285,22 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
               </CardHeader>
               <CardContent>
                 <dl>
-                  <DetailRow label="Moisture">{item.moisturePct ? `${item.moisturePct.toString()}%` : '—'}</DetailRow>
-                  <DetailRow label="Density">
-                    {item.densityGPerL ? `${item.densityGPerL.toString()} g/L` : '—'}
-                  </DetailRow>
-                  <DetailRow label="Packaging">{PACKAGING_LABELS[item.packagingType]}</DetailRow>
-                  <DetailRow label="Bag weight">{item.bagWeightKg.toString()} KG</DetailRow>
+                  {isCoffee ? (
+                    <>
+                      <DetailRow label="Moisture">{item.moisturePct ? `${item.moisturePct.toString()}%` : '—'}</DetailRow>
+                      <DetailRow label="Density">
+                        {item.densityGPerL ? `${item.densityGPerL.toString()} g/L` : '—'}
+                      </DetailRow>
+                      <DetailRow label="Packaging">{item.packagingType ? PACKAGING_LABELS[item.packagingType] : '—'}</DetailRow>
+                      <DetailRow label="Bag weight">{item.bagWeightKg.toString()} KG</DetailRow>
+                    </>
+                  ) : (
+                    <>
+                      <DetailRow label="Counted in">{uomName(item.baseUom)}</DetailRow>
+                      <DetailRow label="A pack is">{uomName(item.packUom)} of {item.bagWeightKg.toString()} {item.baseUom}</DetailRow>
+                      <DetailRow label="Weight per unit">{item.unitWeightKg ? `${item.unitWeightKg.toString()} KG` : '—'}</DetailRow>
+                    </>
+                  )}
                   <DetailRow label="Default entry unit">{item.defaultUnit}</DetailRow>
                   <DetailRow label="Status">
                     <Badge tone={item.status === 'ACTIVE' ? 'success' : 'neutral'}>

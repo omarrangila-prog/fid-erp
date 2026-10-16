@@ -43,6 +43,15 @@ enum UnitOfMeasure {
   KG
   MT
   BAG
+  PCS
+  DOZ
+  CTN
+  BOX
+  ROLL
+  PLT
+  PACK
+  M
+  L
 }
 
 enum CoffeeType {
@@ -624,21 +633,38 @@ model CoffeeItem {
   companyId     String
   itemCode      String
   itemName      String
-  coffeeType    CoffeeType    @default(ARABICA)
-  originCountry String
+  /// Coffee-set facts. Null for items that are not coffee.
+  coffeeType    CoffeeType?
+  originCountry String?
   region        String?
   farmEstate    String?
   grade         String?
   screenSize    String?
   variety       String?
-  process       CoffeeProcess @default(WASHED)
+  process       CoffeeProcess?
   cropYear      String?
   moisturePct   Decimal?      @db.Decimal(5, 2)
   densityGPerL  Decimal?      @db.Decimal(8, 2)
-  packagingType PackagingType @default(JUTE_BAG)
-  /// Nominal weight of one bag in KG. 60 for most Arabica origins, 30 for Ethiopia.
+  packagingType PackagingType?
+  /// How many base units are in one pack (a bag, carton, box, roll, pallet…).
+  /// Named for its first use: 60 KG for most Arabica origins, 30 for Ethiopia.
   bagWeightKg   Decimal       @default(60) @db.Decimal(18, 3)
   defaultUnit   UnitOfMeasure @default(KG)
+  /// The unit stock is counted in: KG, PCS, M, L… Quantities are stored in it
+  /// (the `*Kg` columns hold base units whatever the unit is).
+  baseUom       String        @default("KG") @db.VarChar(8)
+  /// What a pack is called for this item: BAG, CTN, BOX, ROLL, PLT, PACK.
+  packUom       String        @default("BAG") @db.VarChar(8)
+  /// Unit pre-selected on a sales line; null means the purchase unit.
+  salesUom      String?       @db.VarChar(8)
+  category      String?
+  brand         String?
+  hsCode        String?       @db.VarChar(16)
+  taxCategory   String?
+  /// Weight of one base unit, for items counted by the piece (kg).
+  unitWeightKg  Decimal?      @db.Decimal(18, 6)
+  /// Industry attributes (size, colour, purity, model…) — see lib/item-attributes.ts.
+  attributes    Json          @default("{}")
   description   String?
   notes         String?
   status        RecordStatus  @default(ACTIVE)

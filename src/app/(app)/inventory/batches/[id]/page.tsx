@@ -112,7 +112,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
             <Badge tone={batch.status === 'ACTIVE' ? 'success' : 'neutral'}>
               {batch.status === 'ACTIVE' ? 'Active' : 'Closed'}
             </Badge>
-            <Badge tone="neutral">{COFFEE_TYPE_LABELS[batch.item.coffeeType]}</Badge>
+            <Badge tone="neutral">{(batch.item.coffeeType ? COFFEE_TYPE_LABELS[batch.item.coffeeType] : '—')}</Badge>
             {batch.container ? <Badge tone="info">{batch.container.containerNumber}</Badge> : null}
             <Link href={`/shipments/${batch.shipment.id}`}>
               <Badge tone="info">{batch.purchaseContract.contractReference}</Badge>
@@ -202,7 +202,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
               <DetailRow label="Grade / screen">
                 {[batch.item.grade, batch.item.screenSize].filter(Boolean).join(' · ') || '—'}
               </DetailRow>
-              <DetailRow label="Process">{COFFEE_PROCESS_LABELS[batch.item.process]}</DetailRow>
+              <DetailRow label="Process">{(batch.item.process ? COFFEE_PROCESS_LABELS[batch.item.process] : '—')}</DetailRow>
               <DetailRow label="Crop year">{batch.item.cropYear ?? '—'}</DetailRow>
               <DetailRow label="Lot">{batch.lot.lotNumber}</DetailRow>
               <DetailRow label="Container">

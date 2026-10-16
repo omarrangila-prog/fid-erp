@@ -3,6 +3,9 @@
 import { revalidatePath } from 'next/cache';
 import { companyToday } from '@/lib/format';
 import { z } from 'zod';
+import { attributeSetOf } from '@/lib/templates';
+import { collectAttributes } from '@/lib/item-attributes';
+import type { SessionUser } from '@/lib/auth/session';
 import { prisma, transaction } from '@/lib/db';
 import { requirePermission, assertPermission, requireAnyPermission } from '@/lib/auth/guards';
 import { PERMISSIONS, type PermissionCode } from '@/lib/constants';
@@ -68,6 +71,8 @@ type MasterConfig<S extends z.ZodTypeAny> = {
   /** Field that must be unique within the company. */
   uniqueField: string;
   path: string;
+  /** Last-minute rules that need the session or the raw form (e.g. industry fields). */
+  prepare?: (data: Record<string, unknown>, raw: Record<string, unknown>, user: SessionUser) => void;
 };
 
 function invalid(error: unknown): MasterFormState {
@@ -121,7 +126,9 @@ async function saveMaster<S extends z.ZodTypeAny>(
     assertPermission(user, id ? config.editPermission : config.createPermission);
     const companyId = user.activeCompany.id;
 
-    const data = config.schema.parse(formDataToObject(formData)) as Record<string, unknown>;
+    const raw = formDataToObject(formData);
+    const data = config.schema.parse(raw) as Record<string, unknown>;
+    config.prepare?.(data, raw, user);
 
     // Prisma's delegates are structurally identical for these operations, but
     // TypeScript cannot prove it across a union, so this is narrowed once here.
@@ -467,6 +474,21 @@ const ITEM: MasterConfig<typeof coffeeItemSchema> = {
   label: 'Coffee item',
   uniqueField: 'itemCode',
   path: '/items',
+  prepare(data, raw, user) {
+    const set = attributeSetOf(user.activeCompany.industryTemplate);
+    if (set === 'coffee') {
+      // FID's rules, unchanged: a coffee needs its type, origin, process and packaging.
+      const missing: Record<string, string> = {};
+      if (!data.coffeeType) missing.coffeeType = 'Choose the type.';
+      if (!data.originCountry) missing.originCountry = 'Origin country is required.';
+      if (!data.process) missing.process = 'Choose the process.';
+      if (!data.packagingType) missing.packagingType = 'Choose the packaging.';
+      if (Object.keys(missing).length) {
+        throw new z.ZodError(Object.entries(missing).map(([k, message]) => ({ code: 'custom', path: [k], message })));
+      }
+    }
+    data.attributes = collectAttributes(set, raw);
+  },
 };
 
 export async function saveCoffeeItemAction(id: string | null, _prev: MasterFormState, formData: FormData) {
@@ -686,7 +708,7 @@ export async function quickCreateWarehouseAction(
  */
 export async function quickCreateCoffeeItemAction(
   payload: string,
-): Promise<ActionResult<{ id: string; name: string; code: string; originCountry: string }>> {
+): Promise<ActionResult<{ id: string; name: string; code: string; originCountry: string | null }>> {
   return run(async () => {
     const user = await requirePermission(PERMISSIONS.ITEMS_CREATE);
     const companyId = user.activeCompany.id;
@@ -695,10 +717,18 @@ export async function quickCreateCoffeeItemAction(
       .object({
         itemName: requiredText('Item name'),
         coffeeType: z.enum(['ARABICA', 'ROBUSTA', 'BLEND']).default('ROBUSTA'),
-        originCountry: requiredText('Origin country', 100),
+        originCountry: optionalText(100),
         screenSize: optionalText(60),
+        baseUom: z.enum(['KG', 'PCS', 'M', 'L']).optional(),
+        category: optionalText(120),
       })
       .parse(JSON.parse(payload) as unknown);
+
+    const isCoffee = attributeSetOf(user.activeCompany.industryTemplate) === 'coffee';
+    // FID's rule, unchanged: a coffee is not a coffee without its origin.
+    if (isCoffee && !input.originCountry) {
+      throw new z.ZodError([{ code: 'custom', path: ['originCountry'], message: 'Origin country is required.' }]);
+    }
 
     const existing = await prisma.coffeeItem.findFirst({
       where: { companyId, itemName: { equals: input.itemName, mode: 'insensitive' } },
@@ -719,9 +749,15 @@ export async function quickCreateCoffeeItemAction(
         companyId,
         itemCode,
         itemName: input.itemName,
-        coffeeType: input.coffeeType,
-        originCountry: input.originCountry,
-        screenSize: input.screenSize ?? null,
+        ...(isCoffee
+          ? {
+              coffeeType: input.coffeeType,
+              originCountry: input.originCountry,
+              screenSize: input.screenSize ?? null,
+              process: 'WASHED' as const,
+              packagingType: 'JUTE_BAG' as const,
+            }
+          : { baseUom: input.baseUom ?? 'KG', category: input.category ?? null }),
       },
       select: { id: true, itemName: true, itemCode: true, originCountry: true },
     });
