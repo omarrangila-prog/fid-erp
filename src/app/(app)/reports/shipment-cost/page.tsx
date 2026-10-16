@@ -445,30 +445,12 @@ function OrderSection({
 }
 
 /**
- * FX SUMMARY — one weighted rate per currency pair, from the transactions
- * that make up the figures above, and the transactions themselves on demand.
- * Nothing here is used to convert anything: each transaction was converted
- * at its own rate when it was entered.
+ * FX SUMMARY — the order's purchase rate, and every transaction behind the
+ * figures above at the rate it was entered at, on demand. Nothing here
+ * converts anything: each transaction was converted when it was entered.
  */
 function FxSummary({ sheet }: { sheet: OrderCostSheet }) {
   const local = sheet.localCurrency;
-  const describe = (pair: OrderCostSheet['costFx'][number], what: string) => (
-    <li key={`${what}-${pair.from}`} className="flex flex-wrap items-baseline gap-x-2">
-      <span className="font-medium text-ink">
-        {pair.from} → {pair.to}
-      </span>
-      <span className="text-ink-muted">{what}: weighted average</span>
-      <span className="tnum font-semibold text-ink">
-        1 {pair.from} = {dec(pair.rate).toFixed(4)} {pair.to}
-      </span>
-      <span className="text-xs text-ink-subtle">
-        from {pair.count} {pair.count === 1 ? 'transaction' : 'transactions'}
-        {dec(pair.lowest).equals(dec(pair.highest))
-          ? ''
-          : ` · rates ${dec(pair.lowest).toFixed(4)} to ${dec(pair.highest).toFixed(4)}`}
-      </span>
-    </li>
-  );
   const rows = [...sheet.fxCosts, ...sheet.fxSales];
   if (rows.length === 0) return null;
   const kind = { PURCHASE: 'Purchase', COST: 'Shipment cost', SALE: 'Sale' } as const;
@@ -476,10 +458,23 @@ function FxSummary({ sheet }: { sheet: OrderCostSheet }) {
   return (
     <div className="mt-3 rounded-lg border border-line bg-surface-sunken/40 px-3 py-2" data-testid="fx-summary">
       <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">FX summary</p>
-      <ul className="mt-1 space-y-0.5 text-sm">
-        {sheet.costFx.map((pair) => describe(pair, 'landed cost'))}
-        {sheet.salesFx.map((pair) => describe(pair, 'sales'))}
-      </ul>
+      {/*
+        The one rate the coffee is costed at — the order's, actual once
+        confirmed. A weighted average of every transaction used to lead here,
+        blending the purchase with the rates each dirham expense happened to
+        be entered at: 10.1394 on an order bought at 10.30, a rate nobody
+        gave. Dirham costs need no rate; their dirham amounts are the cost.
+      */}
+      <p className="mt-1 text-sm" data-testid="fx-purchase-rate">
+        <span className="font-medium text-ink">Purchase FX</span>{' '}
+        <span className="tnum font-semibold text-ink">
+          1 USD = {dec(sheet.rateLocalPerUsd).toString()} {local}
+        </span>{' '}
+        <span className="text-xs text-ink-subtle">
+          {sheet.fxSource === 'ACTUAL' ? 'actual — the rate paid for the dollars' : 'estimated — not yet confirmed on the order'}.
+          Shipment costs paid in {local} are taken at their {local} amounts.
+        </span>
+      </p>
       <details className="mt-1">
         <summary className="cursor-pointer text-xs font-medium text-forest-800 hover:text-gold-700">View FX breakdown</summary>
         <TableWrap className="mt-2">

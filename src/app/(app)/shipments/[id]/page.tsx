@@ -364,13 +364,13 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
             <CardDescription>
               Purchase cost USD + local expenses USD equivalent = total landed cost USD. Every expense keeps its own
               amount, currency and rate; {costSheet.localCurrency} totals add up those amounts, not dollars at one rate.
-              {costSheet.costFx.map((pair) => (
-                <span key={pair.from} className="block" data-testid="shipment-fx">
-                  {pair.from} → {pair.to} weighted average over the order&rsquo;s {pair.count}{' '}
-                  {pair.count === 1 ? 'transaction' : 'transactions'}: 1 {pair.from} = {Number(pair.rate).toFixed(4)} {pair.to}
-                  {pair.lowest.equals(pair.highest) ? '' : ` (rates ${Number(pair.lowest).toFixed(4)} to ${Number(pair.highest).toFixed(4)})`}.
-                </span>
-              ))}
+              {/* The one rate the coffee is costed at, not a blend of it with
+                  the rates the dirham expenses were entered at. */}
+              <span className="block" data-testid="shipment-fx">
+                Purchase FX: 1 USD = {formatRate(costSheet.rateLocalPerUsd)} {costSheet.localCurrency} (
+                {costSheet.fxSource === 'ACTUAL' ? 'actual, confirmed on the order' : 'estimated, from the order'}). Shipment
+                costs paid in {costSheet.localCurrency} are taken at their {costSheet.localCurrency} amounts.
+              </span>
               Cost per KG = total landed ÷ received KG (ordered KG if nothing has landed). Cost per MT = cost per KG × 1,000.
             </CardDescription>
           </CardHeader>

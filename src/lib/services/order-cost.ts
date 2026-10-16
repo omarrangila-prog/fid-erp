@@ -3,7 +3,7 @@ import { Decimal, dec, sum, toMoney, toQuantity, toUnitCost, convertFromUsd, KG_
 import { getBatchCostings } from '@/lib/services/landed-cost';
 import { getExpenseSettlements, type ExpensePaymentStatus } from '@/lib/services/expense-settlement';
 import { getOrderFxTransactions, summariseFx, type FxPair, type FxTransaction } from '@/lib/services/shipment-fx';
-import { effectiveLocalRate } from '@/lib/purchase-fx';
+import { effectiveLocalRate, purchaseFxSource, type PurchaseFxSource } from '@/lib/purchase-fx';
 
 /**
  * The costing of one shipment — the order it was bought on, with every
@@ -75,6 +75,8 @@ export type OrderCostSheet = {
   containers: number;
   localCurrency: string;
   rateLocalPerUsd: Decimal;
+  /** Whether that rate is the one actually paid for the dollars, or still the order's estimate. */
+  fxSource: PurchaseFxSource;
   orderedKg: Decimal;
   receivedKg: Decimal;
   soldKg: Decimal;
@@ -352,6 +354,7 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
       containers: allBatchesContainers.size,
       localCurrency: local,
       rateLocalPerUsd,
+      fxSource: purchaseFxSource(contract),
       orderedKg,
       receivedKg,
       soldKg,
