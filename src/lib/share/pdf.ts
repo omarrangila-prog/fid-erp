@@ -77,7 +77,7 @@ export async function buildSharePdf(snapshot: ShareSnapshot): Promise<Blob> {
     // Offline or blocked: the standard font still makes a readable PDF.
   }
 
-  doc.setProperties({ title: [snapshot.subject, snapshot.title].filter(Boolean).join(' — '), creator: 'FID Trading ERP', author: snapshot.generatedBy });
+  doc.setProperties({ title: [snapshot.subject, snapshot.title].filter(Boolean).join(' — '), creator: snapshot.product ?? snapshot.company, author: snapshot.generatedBy });
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 12;
   let y = 14;
@@ -94,6 +94,7 @@ export async function buildSharePdf(snapshot: ShareSnapshot): Promise<Blob> {
   };
 
   line(snapshot.company, 13, 'bold', INK, 1);
+  for (const detail of snapshot.letterhead ?? []) line(detail, 8, 'normal', MUTED, 0.4);
   line(snapshot.title, 12, 'bold', INK, 0.5);
   if (snapshot.subject) line(snapshot.subject, 11, 'normal', INK, 0.5);
   if (snapshot.period) line(snapshot.period, 9.5, 'normal', MUTED, 0.5);
@@ -173,7 +174,7 @@ export async function buildSharePdf(snapshot: ShareSnapshot): Promise<Blob> {
     doc.setFont(font, 'normal');
     doc.setFontSize(7);
     doc.setTextColor(...MUTED);
-    doc.text(`Shared from FID Trading ERP · Generated ${when(snapshot.generatedAt)}`, margin, height - 7);
+    doc.text(`Shared from ${snapshot.product ?? snapshot.company} · Generated ${when(snapshot.generatedAt)}`, margin, height - 7);
     doc.text(`Page ${p} of ${pages}`, pageWidth - margin, height - 7, { align: 'right' });
   }
 

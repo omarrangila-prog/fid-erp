@@ -29,8 +29,6 @@ const text = (max = 200) => (raw: string) => {
   return raw === '' ? null : raw;
 };
 
-const upper = (raw: string) => (raw === '' ? null : raw.toUpperCase());
-
 export const money = (raw: string): string | null => {
   if (raw === '') return null;
   const cleaned = raw.replace(/[, ]/g, '');

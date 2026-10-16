@@ -1,5 +1,9 @@
 'use server';
 
+import { letterheadLines } from '@/lib/company-identity';
+import { getBrand } from '@/lib/brand';
+import { prisma } from '@/lib/db';
+
 import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { requireUser, type SessionUser } from '@/lib/auth/session';
@@ -63,6 +67,13 @@ export async function logShareEventsAction(meta: ShareMeta, events: ShareEvent[]
   }
 }
 
+/** The server — not the browser — says whose letterhead a shared report carries. */
+async function identityOf(companyId: string): Promise<Pick<ShareSnapshot, 'company' | 'letterhead' | 'product'>> {
+  const c = await prisma.company.findUniqueOrThrow({ where: { id: companyId } });
+  const lines = letterheadLines(c);
+  return { company: c.name, letterhead: lines, product: getBrand().name };
+}
+
 export async function createShareLinkAction(
   meta: ShareMeta,
   snapshot: ShareSnapshot,
@@ -79,7 +90,7 @@ export async function createShareLinkAction(
       actor: actorOf(user),
       companyId: user.activeCompany.id,
       meta,
-      snapshot: { ...snapshot, company: user.activeCompany.name, generatedBy: user.name },
+      snapshot: { ...snapshot, ...(await identityOf(user.activeCompany.id)), generatedBy: user.name },
       expiry,
       client: at,
     });

@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { FeaturesProvider } from '@/components/features-context';
 import { CompanyConfigProvider } from '@/components/company-config-context';
+import { getBrand } from '@/lib/brand';
 import { resolveFeatures } from '@/lib/features';
 import { attributeSetOf } from '@/lib/templates';
 import { getCurrentUser } from '@/lib/auth/session';
@@ -122,6 +123,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <ShareProvider
             value={{
               company: user.activeCompany.name,
+              letterhead: user.activeCompany.letterhead,
+              product: getBrand().name,
               userName: user.name,
               canNeverExpire: user.isSuperAdmin || can(user, PERMISSIONS.USERS_MANAGE),
             }}

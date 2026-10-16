@@ -30,6 +30,10 @@ export type ShareSection = {
 export type ShareSnapshot = {
   v: 1;
   company: string;
+  /** The company's contact and registration lines, set by the server from its own record. */
+  letterhead?: string[];
+  /** The product the report was shared from. */
+  product?: string;
   /** "Agent Ledger", "Profit & Loss". */
   title: string;
   /** The party, account, shipment or invoice. */
@@ -52,6 +56,8 @@ const text = z.string().max(MAX_TEXT);
 export const shareSnapshotSchema = z.object({
   v: z.literal(1),
   company: z.string().min(1).max(200),
+  letterhead: z.array(z.string().max(300)).max(8).optional(),
+  product: z.string().max(100).optional(),
   title: z.string().min(1).max(200),
   subject: z.string().max(300).optional(),
   period: z.string().max(200).optional(),

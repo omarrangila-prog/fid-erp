@@ -165,6 +165,8 @@ export function ShareDialog({ open, onOpenChange, spec }: { open: boolean; onOpe
         setSnapshot({
           v: 1,
           company: env.company,
+          letterhead: env.letterhead,
+          product: env.product,
           title: spec.title,
           subject: spec.subject,
           period: scope === 'range' && (from || to) ? `${from ? day(from) : 'the start'} – ${to ? day(to) : 'today'}` : spec.period,
@@ -182,7 +184,7 @@ export function ShareDialog({ open, onOpenChange, spec }: { open: boolean; onOpe
     return () => {
       cancelled = true;
     };
-  }, [open, spec, scope, columns, extras, sections, from, to, env.company, env.userName]);
+  }, [open, spec, scope, columns, extras, sections, from, to, env.company, env.userName, env.letterhead, env.product]);
 
   // The PDF is made ahead of the tap, so the phone's share sheet can open straight from it.
   React.useEffect(() => {

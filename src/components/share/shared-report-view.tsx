@@ -41,6 +41,11 @@ export function SharedReportView({ snapshot, expiresAt }: { snapshot: ShareSnaps
     <article className="mx-auto max-w-5xl space-y-5 px-4 py-6 sm:px-8" data-testid="shared-report">
       <header className="space-y-1 border-b border-grid pb-4">
         <p className="text-sm font-semibold text-ink-muted">{snapshot.company}</p>
+        {(snapshot.letterhead ?? []).map((detail) => (
+          <p key={detail} className="text-xs text-ink-subtle">
+            {detail}
+          </p>
+        ))}
         <h1 className="text-xl font-bold text-ink" data-testid="shared-title">
           {snapshot.title}
         </h1>
@@ -124,7 +129,7 @@ export function SharedReportView({ snapshot, expiresAt }: { snapshot: ShareSnaps
       ))}
 
       <footer className="border-t border-grid pt-3 text-[11px] text-ink-subtle">
-        Shared from FID Trading ERP · A read-only copy of the report as it was shared
+        Shared from {snapshot.product ?? snapshot.company} · A read-only copy of the report as it was shared
         {expiresAt ? ` · This link expires ${when(expiresAt)}` : ''}
       </footer>
     </article>

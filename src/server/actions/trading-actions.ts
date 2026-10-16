@@ -188,6 +188,9 @@ export async function setPurchaseActualFxAction(payload: string): Promise<DocFor
   try {
     const user = await requirePermission(PERMISSIONS.PURCHASES_APPROVE);
     const input = purchaseActualFxSchema.parse(parseJson(payload));
+    if (user.activeCompany.fxCostPolicy === 'NONE' && input.actualRateLocalPerUsd) {
+      throw new BusinessRuleError('This company keeps the estimated exchange rate. Change the accounting policy in Settings → Company profile to use actual rates.');
+    }
 
     await setPurchaseActualFx({
       companyId: user.activeCompany.id,

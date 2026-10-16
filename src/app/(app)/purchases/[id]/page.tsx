@@ -251,7 +251,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
 
       {/* The rate a dollar actually cost, which governs every local figure
           derived from this order. Only where the costing is visible at all. */}
-      {showCost && contract.currency !== user.activeCompany.localCurrency ? (
+      {showCost && user.activeCompany.fxCostPolicy !== 'NONE' && contract.currency !== user.activeCompany.localCurrency ? (
         <ActualFxCard
           contractId={contract.id}
           localCurrency={user.activeCompany.localCurrency}

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { getBrand } from '@/lib/brand';
 import { redirect } from 'next/navigation';
 import { Building2, ArrowRight } from 'lucide-react';
 import { getCurrentUser } from '@/lib/auth/session';
@@ -38,7 +39,7 @@ export default async function SelectCompanyPage() {
       <div className="w-full max-w-3xl space-y-8">
         <div className="space-y-2 text-center">
           <div className="mx-auto grid size-10 place-items-center rounded-lg bg-gold-500 text-sm font-bold text-forest-950">
-            FID
+            {getBrand().shortName}
           </div>
           <h1 className="text-xl font-semibold tracking-tight text-ink">
             Welcome back, {user.name.split(' ')[0]}

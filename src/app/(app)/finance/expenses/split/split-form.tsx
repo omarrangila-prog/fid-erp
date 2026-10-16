@@ -337,6 +337,7 @@ export function SplitExpenseForm({
                           header.currency,
                           header.paymentMethod === 'CASH' ? 'CASH' : 'BANK',
                           localCurrency,
+                          configuredCurrencies,
                         )
                       : undefined
                   }

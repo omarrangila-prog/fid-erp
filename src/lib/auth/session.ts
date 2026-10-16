@@ -1,6 +1,7 @@
 import 'server-only';
 import { cache } from 'react';
 import { effectiveTerminology } from '@/lib/templates';
+import { letterheadLines } from '@/lib/company-identity';
 import { wholeDatabaseToolsAllowed } from '@/lib/auth/tenant';
 import { randomBytes, createHash } from 'node:crypto';
 import { cookies, headers } from 'next/headers';
@@ -51,6 +52,10 @@ export type SessionCompany = {
   terminology?: Record<string, string>;
   /** The organization's product plan; gates features and limits (lib/entitlements.ts). */
   plan?: string;
+  /** RECOST_ALL (default) lets an actual exchange rate restate cost; NONE keeps the estimate. */
+  fxCostPolicy?: string;
+  /** Legal name, address, contact and registration lines for what the company shares or prints. */
+  letterhead?: string[];
 };
 
 export type SessionUser = {
@@ -206,6 +211,8 @@ async function loadCurrentUser(): Promise<SessionUser | null> {
       features: asFlags(c.features),
       terminology: effectiveTerminology(c.industryTemplate, asTerms(c.terminology)),
       plan: c.organization?.plan ?? 'ENTERPRISE',
+      fxCostPolicy: c.fxCostPolicy,
+      letterhead: letterheadLines(c),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 

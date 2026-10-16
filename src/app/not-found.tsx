@@ -1,11 +1,13 @@
 import Link from 'next/link';
+import { getBrand } from '@/lib/brand';
 
 export default function RootNotFound() {
+  const brand = getBrand();
   return (
     <main className="grid min-h-dvh place-items-center bg-paper px-5">
       <div className="max-w-md text-center">
         <div className="mx-auto grid size-10 place-items-center rounded-lg bg-forest-900 text-[11px] font-bold text-gold-300">
-          FID
+          {brand.shortName}
         </div>
         <h1 className="mt-5 text-xl font-semibold tracking-tight text-ink">Page not found</h1>
         <p className="mt-2 text-sm text-ink-muted">

@@ -219,6 +219,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Shared Links', href: '/admin/shared-links', icon: Share2, permissions: [PERMISSIONS.USERS_MANAGE] },
       { label: 'Share Activity', href: '/admin/share-activity', icon: Activity, permissions: [], developerOnly: true },
       { label: 'Tax Settings', href: '/settings/tax', icon: Percent, permissions: [PERMISSIONS.SETTINGS_MANAGE] },
+      { label: 'Company Profile', href: '/settings/company', icon: Building2, permissions: [PERMISSIONS.SETTINGS_MANAGE] },
       { label: 'Settings', href: '/settings', icon: Settings, permissions: [PERMISSIONS.SETTINGS_MANAGE] },
     ],
   },

@@ -3,6 +3,7 @@ import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getTaxSettings, taxRegimeFor } from '@/lib/services/tax';
+import { countryByName } from '@/lib/countries';
 import { PageHeader } from '@/components/shared/page-header';
 import { TaxSettingsClient, type TaxCodeRow } from '@/app/(app)/settings/tax/tax-client';
 
@@ -23,6 +24,8 @@ export default async function TaxSettingsPage() {
   ]);
 
   const regime = taxRegimeFor(company.country);
+  // Where the product holds no statutory knowledge, borrow the country's own word for the tax; never a rate.
+  const suggestedLabel = regime.standardRatePct > 0 ? regime.label : (countryByName(company.country)?.taxLabel ?? regime.label);
 
   const rows: TaxCodeRow[] = codes.map((code) => ({
     id: code.id,
@@ -48,7 +51,7 @@ export default async function TaxSettingsPage() {
         label={settings.label}
         registrationNumber={settings.registrationNumber}
         periodMonths={settings.periodMonths}
-        suggestedLabel={regime.label}
+        suggestedLabel={suggestedLabel}
         suggestedRate={regime.standardRatePct}
         country={company.country}
         codes={rows}

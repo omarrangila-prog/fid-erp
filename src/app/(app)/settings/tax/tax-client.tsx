@@ -101,11 +101,9 @@ export function TaxSettingsClient({
         <CardHeader>
           <CardTitle>Registration</CardTitle>
           <CardDescription>
-            {country === 'AE'
-              ? 'UAE VAT is normally 5%, filed quarterly with the Federal Tax Authority.'
-              : country === 'MA'
-                ? 'Moroccan TVA is normally 20%, filed monthly.'
-                : 'Enter the registration details exactly as they appear on the certificate.'}
+            {suggestedRate > 0
+              ? `${suggestedLabel} is normally ${suggestedRate}% in ${country}. Enter the registration details exactly as they appear on the certificate.`
+              : 'Enter the registration details exactly as they appear on the certificate, then add the rates your tax authority sets — none is assumed.'}
           </CardDescription>
         </CardHeader>
         <CardContent>

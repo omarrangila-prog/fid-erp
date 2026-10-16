@@ -614,6 +614,7 @@ export function ExpenseForm({
                           form.currency,
                           form.paymentMethod === 'CASH' ? 'CASH' : 'BANK',
                           localCurrency,
+                          configuredCurrencies,
                         )
                       : undefined
                   }

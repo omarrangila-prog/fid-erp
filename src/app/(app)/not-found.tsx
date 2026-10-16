@@ -12,7 +12,7 @@ export default function AppNotFound() {
       <h1 className="mt-5 text-xl font-semibold tracking-tight text-ink">That record does not exist</h1>
       <p className="mt-2 max-w-md text-sm leading-relaxed text-ink-muted">
         It may have been deleted, or it belongs to a company you do not have access to. Records are never shared
-        between FID Trading L.L.C. and FID Trading International SARL.
+        between companies.
       </p>
 
       <Button variant="outline" asChild className="mt-6">

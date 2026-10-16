@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
+import { Letterhead } from '@/components/shared/letterhead';
 import { notFound } from 'next/navigation';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
 import { getVendorLedger, ledgerKindToSourceType, resolvePartyLedgerQuery } from '@/lib/services/ledger';
-import { formatMoney, formatDate, companyFlag, dayParam } from '@/lib/format';
+import { formatMoney, formatDate, dayParam } from '@/lib/format';
 import { PrintButton } from '@/components/shared/print-button';
 import { ReportShareButton } from '@/components/share/report-share-button';
 import { AutoPrint } from '@/app/(app)/sales/[id]/print/auto-print';
@@ -77,19 +78,8 @@ export default async function VendorLedgerPrintPage({
 
       <article className="rounded-xl border border-line bg-surface p-4 shadow-card sm:p-8 print:rounded-none print:border-0 print:p-0 print:shadow-none">
         <header className="flex flex-wrap items-start justify-between gap-6 border-b-2 border-forest-800 pb-5">
-          <div className="flex items-start gap-3">
-            <span className="grid size-11 shrink-0 place-items-center rounded-lg bg-forest-800 text-sm font-bold text-white">
-              FID
-            </span>
-            <div>
-              <p className="text-lg font-semibold tracking-tight text-ink">{companyName}</p>
-              <p className="mt-0.5 text-xs leading-relaxed text-ink-muted">
-                {companyFlag(company.country)} {company.address}
-                {company.address ? <br /> : null}
-                {company.country}
-              </p>
-            </div>
-          </div>
+          <Letterhead company={company} />
+
           <div className="text-right">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gold-700">Account statement</p>
             <p className="mt-1 text-sm font-medium text-ink">{periodLabel(from, to)}</p>
