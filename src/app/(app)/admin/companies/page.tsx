@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
+import { companiesOf } from '@/lib/auth/tenant';
 import { prisma } from '@/lib/db';
 import { PageHeader } from '@/components/shared/page-header';
 import { Callout } from '@/components/ui/feedback';
@@ -56,9 +57,10 @@ const COLUMNS: SimpleColumnSpec[] = [
 ];
 
 export default async function CompaniesPage() {
-  await requirePageAccess(PERMISSIONS.COMPANIES_MANAGE);
+  const admin = await requirePageAccess(PERMISSIONS.COMPANIES_MANAGE);
 
   const companies = await prisma.company.findMany({
+    where: companiesOf(admin),
     orderBy: { name: 'asc' },
     include: { _count: { select: { users: true, warehouses: true, customers: true } } },
   });

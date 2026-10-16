@@ -1,4 +1,10 @@
-import { FEATURES, type Feature } from '@/lib/features';
+import type { Feature } from '@/lib/features';
+
+// The full list, kept here as a value so this module does not import features.ts (which imports it).
+const FEATURES: ReadonlyArray<Feature> = [
+  'SALES', 'PURCHASES', 'SHIPMENTS', 'CONTAINERS', 'INVENTORY', 'CASH_BANK', 'CHEQUES', 'EXPENSES', 'AGENTS',
+  'LOANS', 'REPORTS', 'ADVANCED_ACCOUNTING', 'MULTI_CURRENCY', 'MULTI_COMPANY', 'WHATSAPP_SHARING', 'CUSTOM_REPORTS', 'TAX',
+];
 
 /**
  * What a product plan allows — the one place a limit or a plan-gated feature is

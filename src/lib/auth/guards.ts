@@ -2,7 +2,7 @@ import 'server-only';
 import { redirect } from 'next/navigation';
 import { getCurrentUser, requireUser, type SessionUser } from '@/lib/auth/session';
 import { ForbiddenError, NotFoundError } from '@/lib/errors';
-import { PERMISSION_DESCRIPTIONS, type PermissionCode } from '@/lib/constants';
+import { PERMISSION_DESCRIPTIONS, PERMISSIONS, type PermissionCode } from '@/lib/constants';
 import { featureBlocksPermission } from '@/lib/features';
 
 /**
@@ -15,6 +15,7 @@ export function can(user: SessionUser, permission: PermissionCode): boolean {
   // A module the company has switched off is off for everyone, Super Admin
   // included — otherwise a hand-typed URL would still reach it.
   if (featureBlocksPermission(user.activeCompany, permission)) return false;
+  if (permission === PERMISSIONS.BACKUP_MANAGE && user.backupsAllowed === false) return false;
   return user.isSuperAdmin || user.permissions.has(permission);
 }
 
@@ -38,8 +39,16 @@ function refusal(permission: PermissionCode): string {
     : 'You do not have permission to perform this action.';
 }
 
+/** A temporary password is for one thing only: choosing a new one. */
+function assertPasswordCurrent(user: SessionUser): void {
+  if (user.mustChangePassword) {
+    throw new ForbiddenError('Choose a new password first (My Account → Change password).');
+  }
+}
+
 export async function requirePermission(permission: PermissionCode): Promise<SessionUser> {
   const user = await requireUser();
+  assertPasswordCurrent(user);
   if (!can(user, permission)) {
     throw new ForbiddenError(refusal(permission));
   }
@@ -48,6 +57,7 @@ export async function requirePermission(permission: PermissionCode): Promise<Ses
 
 export async function requireAnyPermission(permissions: PermissionCode[]): Promise<SessionUser> {
   const user = await requireUser();
+  assertPasswordCurrent(user);
   if (!canAny(user, permissions)) {
     throw new ForbiddenError('You do not have permission to view this page.');
   }
@@ -113,6 +123,7 @@ export async function requireCompanyContext(
 export async function requirePageAccess(permission: PermissionCode): Promise<SessionUser> {
   const user = await getCurrentUser();
   if (!user) redirect('/login');
+  if (user.mustChangePassword) redirect('/account?change=1');
   if (!can(user, permission)) redirect(`/unauthorized?permission=${encodeURIComponent(permission)}`);
   return user;
 }
@@ -121,6 +132,7 @@ export async function requirePageAccess(permission: PermissionCode): Promise<Ses
 export async function requirePageAccessAll(permissions: PermissionCode[]): Promise<SessionUser> {
   const user = await getCurrentUser();
   if (!user) redirect('/login');
+  if (user.mustChangePassword) redirect('/account?change=1');
   const missing = permissions.find((p) => !can(user, p));
   if (missing) redirect(`/unauthorized?permission=${encodeURIComponent(missing)}`);
   return user;
@@ -130,6 +142,7 @@ export async function requirePageAccessAll(permissions: PermissionCode[]): Promi
 export async function requirePageAccessAny(permissions: PermissionCode[]): Promise<SessionUser> {
   const user = await getCurrentUser();
   if (!user) redirect('/login');
+  if (user.mustChangePassword) redirect('/account?change=1');
   if (!canAny(user, permissions)) redirect(`/unauthorized?permission=${encodeURIComponent(permissions[0])}`);
   return user;
 }

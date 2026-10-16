@@ -23,9 +23,9 @@ function duration(from: Date, to: Date | null): string {
 }
 
 export default async function BackupsPage() {
-  await requirePageAccess(PERMISSIONS.BACKUP_MANAGE);
+  const admin = await requirePageAccess(PERMISSIONS.BACKUP_MANAGE);
 
-  const [history, readiness] = await Promise.all([getBackupHistory(), backupReadiness()]);
+  const [history, readiness] = await Promise.all([getBackupHistory(30, admin.companies.map((c) => c.id)), backupReadiness()]);
   const available = readiness.ready;
 
   const runs: BackupRow[] = history.runs.map((run) => ({

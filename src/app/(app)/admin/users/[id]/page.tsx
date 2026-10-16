@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS, PERMISSION_DESCRIPTIONS, ALL_PERMISSIONS } from '@/lib/constants';
+import { peopleOf } from '@/lib/auth/tenant';
 import { prisma } from '@/lib/db';
 import { formatDateTime } from '@/lib/format';
 import { applyOverrides } from '@/lib/user-access';
@@ -24,8 +25,8 @@ export const dynamic = 'force-dynamic';
 export default async function UserAccessPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const admin = await requirePageAccess(PERMISSIONS.USERS_MANAGE);
-  const user = await prisma.user.findUnique({
-    where: { id },
+  const user = await prisma.user.findFirst({
+    where: { id, ...peopleOf(admin) },
     include: {
       roles: { include: { role: { include: { permissions: { select: { permission: { select: { code: true } } } } } } } },
       companies: { include: { company: { select: { code: true } } } },

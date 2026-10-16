@@ -1,6 +1,7 @@
 import 'server-only';
 import { cache } from 'react';
 import { effectiveTerminology } from '@/lib/templates';
+import { wholeDatabaseToolsAllowed } from '@/lib/auth/tenant';
 import { randomBytes, createHash } from 'node:crypto';
 import { cookies, headers } from 'next/headers';
 import { prisma } from '@/lib/db';
@@ -48,6 +49,8 @@ export type SessionCompany = {
   industryTemplate?: string;
   features?: Record<string, boolean>;
   terminology?: Record<string, string>;
+  /** The organization's product plan; gates features and limits (lib/entitlements.ts). */
+  plan?: string;
 };
 
 export type SessionUser = {
@@ -55,6 +58,12 @@ export type SessionUser = {
   email: string;
   name: string;
   isSuperAdmin: boolean;
+  /** The customer this person belongs to; null only for accounts that predate organizations. */
+  organizationId?: string | null;
+  /** Signed in with a temporary password: nothing else works until it is changed. */
+  mustChangePassword?: boolean;
+  /** False in a shared deployment: the whole-database backup is a platform tool. */
+  backupsAllowed?: boolean;
   permissions: Set<PermissionCode>;
   roleNames: string[];
   /** In the order they were given, for the role's own menu. */
@@ -129,7 +138,8 @@ async function loadCurrentUser(): Promise<SessionUser | null> {
         user: {
           include: {
             roles: { include: { role: { include: { permissions: { include: { permission: true } } } } } },
-            companies: { include: { company: true } },
+            organization: { select: { id: true, plan: true, status: true } },
+            companies: { include: { company: { include: { organization: { select: { plan: true, status: true } } } } } },
           },
         },
       },
@@ -144,6 +154,10 @@ async function loadCurrentUser(): Promise<SessionUser | null> {
   ]);
 
   if (!session || session.expiresAt < new Date() || !session.user.isActive) {
+    return null;
+  }
+  // A deactivated customer is signed out at once, wherever they are.
+  if (session.user.organization && session.user.organization.status !== 'ACTIVE') {
     return null;
   }
 
@@ -163,12 +177,19 @@ async function loadCurrentUser(): Promise<SessionUser | null> {
   );
   const scope = parseScope(extras.find((e) => e.key === scopeKey(user.id))?.value);
 
-  // A Super Admin reaches every company; everyone else only their assignments.
+  // An owner (Super Admin) reaches every company of THEIR organization — never
+  // another customer's; everyone else only their assignments, and only while
+  // the company's organization is active.
   const companyRows = user.isSuperAdmin
-    ? await prisma.company.findMany({ where: { status: 'ACTIVE' }, orderBy: { name: 'asc' } })
+    ? await prisma.company.findMany({
+        where: { status: 'ACTIVE', organizationId: user.organizationId ?? null },
+        orderBy: { name: 'asc' },
+        include: { organization: { select: { plan: true, status: true } } },
+      })
     : user.companies.map((uc) => uc.company).filter((c) => c.status === 'ACTIVE');
+  const reachable = companyRows.filter((c) => !c.organization || c.organization.status === 'ACTIVE');
 
-  const companies: SessionCompany[] = companyRows
+  const companies: SessionCompany[] = reachable
     .map((c) => ({
       id: c.id,
       code: c.code,
@@ -184,6 +205,7 @@ async function loadCurrentUser(): Promise<SessionUser | null> {
       industryTemplate: c.industryTemplate,
       features: asFlags(c.features),
       terminology: effectiveTerminology(c.industryTemplate, asTerms(c.terminology)),
+      plan: c.organization?.plan ?? 'ENTERPRISE',
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -207,6 +229,9 @@ async function loadCurrentUser(): Promise<SessionUser | null> {
     email: user.email,
     name: user.name,
     isSuperAdmin: user.isSuperAdmin,
+    organizationId: user.organizationId,
+    mustChangePassword: user.mustChangePassword,
+    backupsAllowed: await wholeDatabaseToolsAllowed({ id: user.id, email: user.email }),
     permissions,
     roleNames: user.roles.map((r) => r.role.name),
     roleIds: user.roles.map((r) => r.role.id),

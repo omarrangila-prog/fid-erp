@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
+import { companiesOf, peopleOf, rolesVisibleTo } from '@/lib/auth/tenant';
 import { prisma } from '@/lib/db';
 import { formatDateTime } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
@@ -33,20 +34,25 @@ const COLUMNS: SimpleColumnSpec[] = [
 export default async function UsersPage() {
   const admin = await requirePageAccess(PERMISSIONS.USERS_MANAGE);
 
-  const [users, roles, companies, agents, warehouses, scopes] = await Promise.all([
+  const [users, roles, companies, agents, warehouses] = await Promise.all([
     prisma.user.findMany({
+      where: peopleOf(admin),
       orderBy: { name: 'asc' },
       include: {
         roles: { include: { role: { select: { id: true, name: true } } } },
         companies: { include: { company: { select: { id: true, name: true, code: true } } } },
       },
     }),
-    prisma.role.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true, description: true } }),
-    prisma.company.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true, code: true } }),
-    prisma.agent.findMany({ where: { status: 'ACTIVE' }, orderBy: { agentName: 'asc' }, select: { id: true, agentName: true, company: { select: { code: true } } } }),
-    prisma.warehouse.findMany({ where: { status: 'ACTIVE' }, orderBy: { name: 'asc' }, select: { id: true, name: true, company: { select: { code: true } } } }),
-    prisma.applicationSetting.findMany({ where: { companyId: null, key: { startsWith: 'user_scope:' } }, select: { key: true, value: true } }),
+    prisma.role.findMany({ where: rolesVisibleTo(admin), orderBy: { name: 'asc' }, select: { id: true, name: true, description: true } }),
+    prisma.company.findMany({ where: companiesOf(admin), orderBy: { name: 'asc' }, select: { id: true, name: true, code: true } }),
+    prisma.agent.findMany({ where: { status: 'ACTIVE', company: companiesOf(admin) }, orderBy: { agentName: 'asc' }, select: { id: true, agentName: true, company: { select: { code: true } } } }),
+    prisma.warehouse.findMany({ where: { status: 'ACTIVE', company: companiesOf(admin) }, orderBy: { name: 'asc' }, select: { id: true, name: true, company: { select: { code: true } } } }),
   ]);
+  // Only the scope rows of the people listed above — never another customer's.
+  const scopes = await prisma.applicationSetting.findMany({
+    where: { companyId: null, key: { in: users.map((u) => `user_scope:${u.id}`) } },
+    select: { key: true, value: true },
+  });
   const scopeOf = new Map(scopes.map((row) => [row.key.slice('user_scope:'.length), parseScope(row.value)]));
   const agentName = new Map(agents.map((a) => [a.id, a.agentName]));
   const warehouseName = new Map(warehouses.map((w) => [w.id, w.name]));

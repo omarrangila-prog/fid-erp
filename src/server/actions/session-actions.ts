@@ -59,22 +59,27 @@ export async function loginAction(
 
   const user = await prisma.user.findUnique({
     where: { email },
-    include: { companies: true },
+    include: { companies: true, organization: { select: { authPolicy: true, status: true } } },
   });
 
   const passwordOk = await verifyPassword(user?.passwordHash ?? DUMMY_HASH, password);
 
-  // Everyone signs in with a PIN. The password route stays only as the
-  // owner's way back in — if every PIN were locked, or on a new installation.
-  if (!user || !passwordOk || !user.isActive || !user.isSuperAdmin) {
+  // The password route is how every customer signs in — unless their policy is
+  // "PIN and password" (FID's), where staff use their PIN and the password stays
+  // as the owner's way back in, if every PIN were locked or on a new installation.
+  const passwordAllowed =
+    !!user && (user.organization?.authPolicy === 'PASSWORD' || user.isSuperAdmin);
+  if (!user || !passwordOk || !user.isActive || !passwordAllowed || user.organization?.status === 'INACTIVE') {
     recordFailedLogin(email, address);
     return { ok: false, error: GENERIC_LOGIN_FAILURE, code: 'UNAUTHENTICATED' };
   }
 
   clearLoginAttempts(email, address);
 
+  // An owner reaches their own organization's companies — never another customer's.
+  const ownCompanies = { status: 'ACTIVE' as const, organizationId: user.organizationId ?? null };
   const companyCount = user.isSuperAdmin
-    ? await prisma.company.count({ where: { status: 'ACTIVE' } })
+    ? await prisma.company.count({ where: ownCompanies })
     : user.companies.length;
 
   if (companyCount === 0) {
@@ -88,7 +93,7 @@ export async function loginAction(
   const activeCompanyId =
     user.defaultCompanyId ??
     (user.isSuperAdmin
-      ? (await prisma.company.findFirst({ where: { status: 'ACTIVE' }, orderBy: { name: 'asc' } }))?.id ?? null
+      ? (await prisma.company.findFirst({ where: ownCompanies, orderBy: { name: 'asc' } }))?.id ?? null
       : user.companies[0]?.companyId ?? null);
 
   await createSession(user.id, activeCompanyId);
@@ -120,6 +125,8 @@ export async function loginAction(
   // Staff belong to one company and go straight in. Anyone with access to both
   // sets of books chooses first, so it is never ambiguous which company they
   // are about to post into.
+  // A temporary password must be replaced before anything else.
+  if (user.mustChangePassword) return { ok: true, data: { redirectTo: '/account?change=1' } };
   return { ok: true, data: { redirectTo: companyCount > 1 ? '/select-company' : '/dashboard' } };
 }
 
@@ -229,7 +236,7 @@ export async function changePasswordAction(
 
     await prisma.user.update({
       where: { id: user.id },
-      data: { passwordHash: await hashPassword(newPassword) },
+      data: { passwordHash: await hashPassword(newPassword), mustChangePassword: false },
     });
 
     // Changing a password invalidates every other session for that user.
@@ -306,11 +313,16 @@ export async function pinLoginAction(pin: string): Promise<ActionResult<{ redire
 
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: identity.userId },
-    include: { companies: true },
+    include: { companies: true, organization: { select: { status: true } } },
   });
+  if (user.organization?.status === 'INACTIVE') {
+    await recordPinFailure(source, 'WRONG_PIN');
+    return { ok: false, error: INCORRECT_PIN, code: 'UNAUTHENTICATED' };
+  }
 
+  const ownCompanies = { status: 'ACTIVE' as const, organizationId: user.organizationId ?? null };
   const companyCount = user.isSuperAdmin
-    ? await prisma.company.count({ where: { status: 'ACTIVE' } })
+    ? await prisma.company.count({ where: ownCompanies })
     : user.companies.length;
   if (companyCount === 0) {
     return {
@@ -323,7 +335,7 @@ export async function pinLoginAction(pin: string): Promise<ActionResult<{ redire
   const activeCompanyId =
     user.defaultCompanyId ??
     (user.isSuperAdmin
-      ? (await prisma.company.findFirst({ where: { status: 'ACTIVE' }, orderBy: { name: 'asc' } }))?.id ?? null
+      ? (await prisma.company.findFirst({ where: ownCompanies, orderBy: { name: 'asc' } }))?.id ?? null
       : user.companies[0]?.companyId ?? null);
 
   await createSession(user.id, activeCompanyId);

@@ -33,9 +33,15 @@ export function validatePinFormat(pin: string): string | null {
 }
 
 /** Every account whose PIN is this one — disabled accounts included, so re-enabling one can never create a clash. */
-async function ownersOf(pin: string, activeOnly: boolean): Promise<string[]> {
+async function ownersOf(pin: string, activeOnly: boolean, organizationId?: string | null): Promise<string[]> {
   const candidates = await prisma.user.findMany({
-    where: { pinHash: { not: null }, ...(activeOnly ? { isActive: true } : {}) },
+    where: {
+      pinHash: { not: null },
+      ...(activeOnly ? { isActive: true } : {}),
+      // Uniqueness is within one organization: another customer's PINs are none
+      // of this one's business, and "already taken" must not reveal them.
+      ...(organizationId !== undefined ? { organizationId } : {}),
+    },
     select: { id: true, pinHash: true },
   });
   // Every hash is checked, match or not, so the time taken says nothing about which one matched.
@@ -43,15 +49,16 @@ async function ownersOf(pin: string, activeOnly: boolean): Promise<string[]> {
   return checks.filter((id): id is string => id !== null);
 }
 
-export async function isPinTaken(pin: string, exceptUserId?: string | null): Promise<boolean> {
-  return (await ownersOf(pin, false)).some((id) => id !== exceptUserId);
+export async function isPinTaken(pin: string, exceptUserId?: string | null, organizationId?: string | null): Promise<boolean> {
+  return (await ownersOf(pin, false, organizationId)).some((id) => id !== exceptUserId);
 }
 
 /** Sets or changes a user's PIN. The old one stops working at once. */
 export async function setPin(userId: string, pin: string): Promise<void> {
   const problem = validatePinFormat(pin);
   if (problem) throw new BusinessRuleError(problem);
-  if (await isPinTaken(pin, userId)) throw new ConflictError(PIN_TAKEN_MESSAGE);
+  const owner = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { organizationId: true } });
+  if (await isPinTaken(pin, userId, owner.organizationId)) throw new ConflictError(PIN_TAKEN_MESSAGE);
 
   await prisma.user.update({
     where: { id: userId },
@@ -84,7 +91,7 @@ export type PinIdentity =
  * posting.
  */
 export async function identifyByPin(pin: string): Promise<PinIdentity> {
-  if (!/^\d{4}$/.test(pin)) return { ok: false, reason: 'INVALID' };
+  if (!/^\d{4}$/.test(pin) || !(await pinLoginEnabled())) return { ok: false, reason: 'INVALID' };
   const owners = await ownersOf(pin, true);
   if (owners.length === 1) return { ok: true, userId: owners[0] };
   if (owners.length > 1) return { ok: false, reason: 'AMBIGUOUS', userIds: owners };
@@ -93,5 +100,25 @@ export async function identifyByPin(pin: string): Promise<PinIdentity> {
 
 /** Whether anyone can sign in with a PIN yet; a brand-new installation starts with a password. */
 export async function anyPinAccount(): Promise<boolean> {
+  if (!(await pinLoginEnabled())) return false;
   return (await prisma.user.count({ where: { isActive: true, pinHash: { not: null } } })) > 0;
+}
+
+/**
+ * Whether this deployment lets people sign in with a PIN alone.
+ *
+ * A PIN is four digits and identifies the person by itself, which is only safe
+ * when everyone who could type one is the same customer's staff. So:
+ *   PIN_LOGIN=on     always (a deployment dedicated to one customer)
+ *   PIN_LOGIN=off    never  (the shared, multi-customer product and demo)
+ *   unset ("auto")   only while the deployment holds at most one organization
+ *                    — which keeps the existing FID installation working
+ *                    unchanged, and switches itself off the day a second
+ *                    customer is created.
+ */
+export async function pinLoginEnabled(): Promise<boolean> {
+  const setting = (process.env.PIN_LOGIN ?? 'auto').trim().toLowerCase();
+  if (setting === 'on') return true;
+  if (setting === 'off') return false;
+  return (await prisma.organization.count()) <= 1;
 }

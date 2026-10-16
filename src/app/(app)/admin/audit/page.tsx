@@ -92,14 +92,17 @@ export default async function AuditPage({
    * open. Nothing financial is company-less, so this cannot leak one
    * company's figures into the other's trail.
    */
+  // Sign-ins carry no company, so they are matched by WHO — people of this
+  // organization — and never by "no company", which would be everyone's.
+  const ownPeople = { companyId: null, user: { organizationId: user.organizationId ?? null } };
   const where = {
     // Report shares have their own log, which is the developer's alone.
     entityType: { not: SHARE_ENTITY },
     ...(view === 'access'
-      ? { OR: [{ companyId: user.activeCompany.id }, { companyId: null }], action: { in: ACCESS_ACTIONS as never } }
+      ? { OR: [{ companyId: user.activeCompany.id }, ownPeople], action: { in: ACCESS_ACTIONS as never } }
       : view === 'documents'
         ? { companyId: user.activeCompany.id, action: { notIn: ACCESS_ACTIONS as never } }
-        : { OR: [{ companyId: user.activeCompany.id }, { companyId: null }] }),
+        : { OR: [{ companyId: user.activeCompany.id }, ownPeople] }),
   };
 
   const total = await prisma.auditLog.count({ where });

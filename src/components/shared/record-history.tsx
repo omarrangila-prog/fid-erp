@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import { getCurrentUser } from '@/lib/auth/session';
 import { formatDateTime } from '@/lib/format';
 
 /**
@@ -10,8 +11,11 @@ import { formatDateTime } from '@/lib/format';
  * before this line existed as well.
  */
 export async function RecordHistory({ entityType, entityId }: { entityType: string; entityId: string }) {
+  const user = await getCurrentUser();
+  if (!user) return null;
   const events = await prisma.auditLog.findMany({
-    where: { entityType, entityId },
+    // Only this company's trail, whatever id was passed in.
+    where: { entityType, entityId, companyId: user.activeCompany.id },
     orderBy: { createdAt: 'asc' },
     select: { action: true, createdAt: true, user: { select: { name: true } } },
   });

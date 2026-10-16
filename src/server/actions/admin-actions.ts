@@ -21,6 +21,16 @@ import { setClosedUntil } from '@/lib/services/period';
 import { formDataToObject, fieldErrors, requiredText, optionalText, calendarDay } from '@/lib/validation/common';
 import { fail, type ActionResult } from '@/server/actions/action-utils';
 import type { MasterFormState } from '@/server/actions/master-actions';
+import {
+  assertCanEditRole,
+  assertCompaniesInOrg,
+  assertManagesUser,
+  assertRolesUsable,
+  canEditRole,
+  companiesOf,
+} from '@/lib/auth/tenant';
+import { planLimit } from '@/lib/entitlements';
+import { isDeveloper } from '@/lib/auth/developer';
 
 /**
  * Administration: users, roles, companies and settings.
@@ -46,18 +56,32 @@ const userSchema = z.object({
 });
 
 /** The PIN typed twice: both the same, four digits, not an obvious one, and nobody else's. */
-async function checkNewPin(pin: string | undefined, confirmPin: string | undefined, userId: string | null): Promise<string> {
+async function checkNewPin(
+  pin: string | undefined,
+  confirmPin: string | undefined,
+  userId: string | null,
+  organizationId: string | null | undefined,
+): Promise<string> {
   const value = (pin ?? '').trim();
   if (value !== (confirmPin ?? '').trim()) throw new BusinessRuleError('The two PINs do not match.');
   const problem = validatePinFormat(value);
   if (problem) throw new BusinessRuleError(problem);
-  if (await isPinTaken(value, userId)) throw new ConflictError(PIN_TAKEN_MESSAGE);
+  if (await isPinTaken(value, userId, organizationId ?? null)) throw new ConflictError(PIN_TAKEN_MESSAGE);
   return value;
 }
 
 /** The agent and warehouses must belong to the companies this person can open. */
-async function checkScope(agentId: string | null, warehouseIds: string[], companyIds: string[], isSuperAdmin: boolean) {
-  const companyFilter = isSuperAdmin ? {} : { companyId: { in: companyIds } };
+async function checkScope(
+  admin: { organizationId?: string | null },
+  agentId: string | null,
+  warehouseIds: string[],
+  companyIds: string[],
+  isSuperAdmin: boolean,
+) {
+  // An owner reaches every company of their organization — never another's.
+  const companyFilter = isSuperAdmin
+    ? { company: { organizationId: admin.organizationId ?? null } }
+    : { companyId: { in: companyIds } };
   if (agentId) {
     const agent = await prisma.agent.findFirst({ where: { id: agentId, ...companyFilter }, select: { id: true } });
     if (!agent) throw new BusinessRuleError('That agent is not in a company this user can open.');
@@ -129,10 +153,13 @@ export async function saveUserAction(
     if (input.isSuperAdmin && !admin.isSuperAdmin) {
       throw new BusinessRuleError('Only a Super Admin can grant Super Admin access.');
     }
-    await checkScope(agentId, warehouseIds, companyIds, input.isSuperAdmin);
+    await assertRolesUsable(admin, roleIds);
+    await assertCompaniesInOrg(admin, companyIds);
+    await checkScope(admin, agentId, warehouseIds, companyIds, input.isSuperAdmin);
     const scope = { agentId, warehouseIds };
 
     if (id) {
+      await assertManagesUser(admin, id);
       const existing = await prisma.user.findUnique({ where: { id }, include: { roles: true, companies: true } });
       if (!existing) throw new NotFoundError('User');
 
@@ -140,7 +167,7 @@ export async function saveUserAction(
       if (existing.id === admin.id && !input.isActive) {
         throw new BusinessRuleError('You cannot disable your own account.');
       }
-      const newPin = input.pin ? await checkNewPin(input.pin, input.confirmPin, id) : null;
+      const newPin = input.pin ? await checkNewPin(input.pin, input.confirmPin, id, admin.organizationId) : null;
 
       await prisma.user.update({
         where: { id },
@@ -194,7 +221,7 @@ export async function saveUserAction(
       return { ok: true, id, message: newPin ? 'User saved. The new PIN works from now; the old one no longer does.' : 'User saved.' };
     }
 
-    const pin = await checkNewPin(input.pin, input.confirmPin, null);
+    const pin = await checkNewPin(input.pin, input.confirmPin, null, admin.organizationId);
 
     // Sign-in is by PIN. The record still needs a unique email and a password
     // hash: an internal address that can never receive mail, and a random
@@ -204,6 +231,7 @@ export async function saveUserAction(
         email: `${randomBytes(9).toString('hex')}@${PIN_ONLY_EMAIL_DOMAIN}`,
         name: input.name,
         passwordHash: await hashPassword(randomBytes(32).toString('base64url')),
+        organizationId: admin.organizationId ?? null,
         isActive: input.isActive,
         isSuperAdmin: input.isSuperAdmin,
         defaultCompanyId: input.defaultCompanyId || companyIds[0] || null,
@@ -236,9 +264,10 @@ export async function saveUserAction(
 export async function setUserPinAction(userId: string, pin: string, confirmPin: string): Promise<ActionResult<undefined>> {
   try {
     const admin = await requirePermission(PERMISSIONS.USERS_MANAGE);
+    await assertManagesUser(admin, userId);
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
     if (!user) throw new NotFoundError('User');
-    const value = await checkNewPin(pin, confirmPin, userId);
+    const value = await checkNewPin(pin, confirmPin, userId, admin.organizationId);
     await setPin(userId, value);
     if (userId !== admin.id) await destroyAllSessionsForUser(userId);
     await transaction((tx) =>
@@ -257,6 +286,7 @@ export async function setUserActiveAction(userId: string, active: boolean): Prom
   try {
     const admin = await requirePermission(PERMISSIONS.USERS_MANAGE);
     if (userId === admin.id && !active) throw new BusinessRuleError('You cannot disable your own account.');
+    await assertManagesUser(admin, userId);
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, isActive: true, isSuperAdmin: true } });
     if (!user) throw new NotFoundError('User');
     if (user.isSuperAdmin && !admin.isSuperAdmin) throw new BusinessRuleError('Only a Super Admin can change a Super Admin.');
@@ -290,6 +320,7 @@ export async function setUserActiveAction(userId: string, active: boolean): Prom
 export async function saveUserPermissionsAction(userId: string, codes: string[]): Promise<ActionResult<undefined>> {
   try {
     const admin = await requirePermission(PERMISSIONS.USERS_MANAGE);
+    await assertManagesUser(admin, userId);
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, isSuperAdmin: true, roles: { select: { role: { select: { permissions: { select: { permission: { select: { code: true } } } } } } } } },
@@ -337,21 +368,31 @@ export async function saveRoleAction(
     const input = roleSchema.parse(formDataToObject(formData));
     const codes = toArray(input.permissions).filter((code) => ALL_PERMISSIONS.includes(code as never));
 
+    // A customer's own roles carry their organization in the stored code, so
+    // two customers can both have a "Cashier" and neither learns of the other.
+    const storedCode = admin.organizationId ? `${admin.organizationId.slice(-8)}_${input.code}` : input.code;
+    if (id) await assertCanEditRole(admin, id);
     const duplicate = await prisma.role.findFirst({
-      where: { code: input.code, ...(id ? { NOT: { id } } : {}) },
+      where: { code: storedCode, ...(id ? { NOT: { id } } : {}) },
       select: { id: true },
     });
-    if (duplicate) throw new ConflictError(`Role code "${input.code}" already exists.`);
+    if (duplicate) throw new ConflictError('A role with that code already exists.');
 
     const permissions = await prisma.permission.findMany({ where: { code: { in: codes } }, select: { id: true } });
 
     const role = id
       ? await prisma.role.update({
           where: { id },
-          data: { code: input.code, name: input.name, description: input.description },
+          data: { name: input.name, description: input.description },
         })
       : await prisma.role.create({
-          data: { code: input.code, name: input.name, description: input.description, isSystem: false },
+          data: {
+            code: storedCode,
+            name: input.name,
+            description: input.description,
+            isSystem: false,
+            organizationId: admin.organizationId ?? null,
+          },
         });
 
     await prisma.rolePermission.deleteMany({ where: { roleId: role.id } });
@@ -386,8 +427,7 @@ export async function saveRoleAction(
 export async function saveRolePermissionsAction(roleId: string, codes: string[]): Promise<ActionResult<undefined>> {
   try {
     const admin = await requirePermission(PERMISSIONS.ROLES_MANAGE);
-    const role = await prisma.role.findUnique({ where: { id: roleId }, select: { id: true, code: true } });
-    if (!role) throw new NotFoundError('Role');
+    const role = await assertCanEditRole(admin, roleId);
     const wanted = [...new Set(codes)].filter((code) => ALL_PERMISSIONS.includes(code as never));
     // Nobody takes away their own way back into this screen.
     if (!admin.isSuperAdmin && !wanted.includes(PERMISSIONS.ROLES_MANAGE) && admin.roleIds.includes(roleId)) {
@@ -427,7 +467,11 @@ export async function saveRolePermissionsAction(roleId: string, codes: string[])
 export async function addMissingStandardRolesAction(): Promise<ActionResult<{ added: string[] }>> {
   try {
     const admin = await requirePermission(PERMISSIONS.ROLES_MANAGE);
-    const existing = new Set((await prisma.role.findMany({ select: { code: true } })).map((r) => r.code));
+    // Standard roles are shared; adding a missing one is a platform job once there are several customers.
+    if (!isDeveloper(admin) && !(await canEditRole(admin, { organizationId: null, isSystem: true }))) {
+      throw new BusinessRuleError('Standard roles are managed by the platform. Create your own role instead.');
+    }
+    const existing = new Set((await prisma.role.findMany({ where: { organizationId: null }, select: { code: true } })).map((r) => r.code));
     const missing = SYSTEM_ROLES.filter((r) => !existing.has(r.code));
     for (const template of missing) {
       const permissions = await prisma.permission.findMany({ where: { code: { in: template.permissions } }, select: { id: true } });
@@ -458,8 +502,7 @@ export async function addMissingStandardRolesAction(): Promise<ActionResult<{ ad
 export async function saveRoleMenuAction(roleId: string, hrefs: string[]): Promise<ActionResult<undefined>> {
   try {
     const admin = await requirePermission(PERMISSIONS.ROLES_MANAGE);
-    const role = await prisma.role.findUnique({ where: { id: roleId }, select: { id: true } });
-    if (!role) throw new NotFoundError('Role');
+    await assertCanEditRole(admin, roleId);
     const before = await getRoleMenu(roleId);
     const after = await setRoleMenu(roleId, hrefs);
     await writeAudit(prisma, {
@@ -495,9 +538,12 @@ export async function saveCompanyAction(
       where: { code: input.code, ...(id ? { NOT: { id } } : {}) },
       select: { id: true },
     });
-    if (duplicate) throw new ConflictError(`Company code "${input.code}" already exists.`);
+    // Codes are unique across the whole platform, so the message must not say
+    // whose code it is.
+    if (duplicate) throw new ConflictError('That company code is not available. Choose another.');
 
     if (id) {
+      await assertCompaniesInOrg(admin, [id]);
       const existing = await prisma.company.findUnique({ where: { id } });
       if (!existing) throw new NotFoundError('Company');
 
@@ -528,7 +574,18 @@ export async function saveCompanyAction(
       return { ok: true, id, message: 'Company saved.' };
     }
 
-    const created = await prisma.company.create({ data: { ...input, baseCurrency: 'USD' } });
+    // The plan decides how many companies one customer may run.
+    const org = admin.organizationId
+      ? await prisma.organization.findUnique({ where: { id: admin.organizationId }, select: { plan: true } })
+      : null;
+    const owned = await prisma.company.count({ where: companiesOf(admin) });
+    if (owned >= planLimit(org?.plan, 'companies')) {
+      throw new BusinessRuleError('Your plan does not include another company. Ask your account manager to upgrade.');
+    }
+
+    const created = await prisma.company.create({
+      data: { ...input, baseCurrency: 'USD', organizationId: admin.organizationId ?? null },
+    });
     await transaction((tx) => provisionCompany(tx, created.id));
 
     await transaction((tx) =>

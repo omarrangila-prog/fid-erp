@@ -18,6 +18,7 @@
  */
 
 import { templateFeatureDefaults } from '@/lib/templates';
+import { planAllows } from '@/lib/entitlements';
 
 export const FEATURES = [
   'SALES',
@@ -66,10 +67,13 @@ export type FeatureFlags = Partial<Record<Feature, boolean>>;
 export type FeatureSubject = {
   industryTemplate?: string | null;
   features?: Record<string, boolean> | null;
+  /** The organization's plan; a feature the plan does not include is off whatever else says. */
+  plan?: string | null;
 };
 
 export function hasFeature(company: FeatureSubject | null | undefined, feature: Feature): boolean {
   if (!company) return true;
+  if (company.plan && !planAllows(company.plan, feature)) return false;
   const own = company.features?.[feature];
   if (typeof own === 'boolean') return own;
   const byTemplate = templateFeatureDefaults(company.industryTemplate)[feature];

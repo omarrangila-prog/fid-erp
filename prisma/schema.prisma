@@ -399,6 +399,8 @@ model Organization {
   updatedAt  DateTime     @updatedAt
 
   companies Company[]
+  users     User[]
+  roles     Role[]
 
   @@map("organizations")
 }
@@ -416,12 +418,21 @@ model User {
   pinLockedUntil    DateTime?
   passwordHash      String
   isActive          Boolean   @default(true)
+  /// Owner of their organization: every permission, in every company of that
+  /// organization — and none outside it. (Platform operators are named in the
+  /// DEVELOPER_USERS setting of the server, never by this flag.)
   isSuperAdmin      Boolean   @default(false)
+  /// The customer this person belongs to. A person never sees, lists or edits
+  /// anyone from another organization.
+  organizationId    String?
+  /// A temporary password was issued; it must be replaced at first sign-in.
+  mustChangePassword Boolean  @default(false)
   defaultCompanyId  String?
   lastLoginAt       DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
+  organization   Organization? @relation(fields: [organizationId], references: [id])
   defaultCompany Company?      @relation("UserDefaultCompany", fields: [defaultCompanyId], references: [id], onDelete: SetNull)
   roles          UserRole[]
   companies      UserCompany[]
@@ -492,6 +503,9 @@ model Role {
   name        String
   description String?
   isSystem    Boolean  @default(false)
+  /// Null for the shared system roles; set for a role an organization made.
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

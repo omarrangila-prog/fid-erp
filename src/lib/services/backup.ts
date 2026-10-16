@@ -217,8 +217,10 @@ export async function runBackup(params: {
   }
 }
 
-export async function getBackupHistory(limit = 30) {
+export async function getBackupHistory(limit = 30, companyIds?: string[]) {
   const runs = await prisma.backupRun.findMany({
+    // Runs are recorded against the company that asked; show only the caller's.
+    ...(companyIds ? { where: { OR: [{ companyId: { in: companyIds } }, { companyId: null }] } } : {}),
     orderBy: { startedAt: 'desc' },
     take: limit,
     include: { createdBy: { select: { name: true } }, company: { select: { name: true } } },

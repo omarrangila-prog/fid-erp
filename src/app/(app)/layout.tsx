@@ -16,7 +16,7 @@ import { ShareProvider } from '@/components/share/share-context';
 import { DEVELOPER_MENU_MARK } from '@/components/layout/nav-config';
 import { isDeveloper } from '@/lib/auth/developer';
 import { can } from '@/lib/auth/guards';
-import { PERMISSIONS } from '@/lib/constants';
+import { ALL_PERMISSIONS, PERMISSIONS } from '@/lib/constants';
 
 /**
  * The authenticated shell.
@@ -36,7 +36,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   // Only serialisable data crosses into the client components.
   // The developer mark only decides whether the menu lists the developer's page; the page checks for itself.
-  const permissions = [...user.permissions, ...(isDeveloper(user) ? [DEVELOPER_MENU_MARK] : [])];
+  // What this person can actually do right now: the permissions they hold, minus
+  // any module the company has switched off. An owner holds every permission,
+  // so the menu is built from the same list rather than from a "sees all" flag —
+  // which is how a switched-off module disappears for the owner too.
+  const effective = (user.isSuperAdmin ? ALL_PERMISSIONS : [...user.permissions]).filter((p) => can(user, p));
+  const permissions = [...effective, ...(isDeveloper(user) ? [DEVELOPER_MENU_MARK] : [])];
   const companies = user.companies.map((c) => ({
     id: c.id,
     code: c.code,
@@ -82,7 +87,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
       <DesktopSidebar
         permissions={permissions}
-        isSuperAdmin={user.isSuperAdmin}
+        isSuperAdmin={false}
         myPages={myPages}
         defaultCollapsed={sidebarCollapsed}
       />
@@ -126,7 +131,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </main>
       </div>
 
-      <MobileNav permissions={permissions} isSuperAdmin={user.isSuperAdmin} myPages={myPages} />
+      <MobileNav permissions={permissions} isSuperAdmin={false} myPages={myPages} />
     </div>
     </CompanyConfigProvider>
     </FeaturesProvider>

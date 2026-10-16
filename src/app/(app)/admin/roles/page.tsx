@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS, PERMISSION_DESCRIPTIONS, ALL_PERMISSIONS, SYSTEM_ROLES } from '@/lib/constants';
+import { rolesVisibleTo } from '@/lib/auth/tenant';
 import { prisma } from '@/lib/db';
 import { PageHeader } from '@/components/shared/page-header';
 import { Callout } from '@/components/ui/feedback';
@@ -29,9 +30,10 @@ const COLUMNS: SimpleColumnSpec[] = [
 ];
 
 export default async function RolesPage() {
-  await requirePageAccess(PERMISSIONS.ROLES_MANAGE);
+  const admin = await requirePageAccess(PERMISSIONS.ROLES_MANAGE);
 
   const roles = await prisma.role.findMany({
+    where: rolesVisibleTo(admin),
     orderBy: [{ isSystem: 'desc' }, { name: 'asc' }],
     include: {
       permissions: { select: { permissionId: true, permission: { select: { code: true } } } },

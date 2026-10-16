@@ -526,7 +526,7 @@ export function Topbar({
         <Search className="size-5" />
       </button>
 
-      <QuickCreate permissions={permissions} isSuperAdmin={user.isSuperAdmin} />
+      <QuickCreate permissions={permissions} isSuperAdmin={false} />
 
       <Link
         href="/getting-started"
@@ -556,7 +556,7 @@ export function Topbar({
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
         permissions={permissions}
-        isSuperAdmin={user.isSuperAdmin}
+        isSuperAdmin={false}
       />
     </header>
   );

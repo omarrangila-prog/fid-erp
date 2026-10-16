@@ -35,7 +35,8 @@ export default async function RevaluationPage({
     .sort();
 
   const latest = await prisma.exchangeRate.findMany({
-    where: { quoteCurrency: { in: currencies }, effectiveDate: { lte: asOfDate } },
+    // This company's own rates, then the shared ones — never another company's.
+    where: { quoteCurrency: { in: currencies }, effectiveDate: { lte: asOfDate }, OR: [{ companyId }, { companyId: null }] },
     orderBy: { effectiveDate: 'desc' },
     distinct: ['quoteCurrency'],
     select: { quoteCurrency: true, rate: true },

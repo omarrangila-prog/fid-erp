@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS, PERMISSION_DESCRIPTIONS, ALL_PERMISSIONS } from '@/lib/constants';
+import { rolesVisibleTo } from '@/lib/auth/tenant';
 import { prisma } from '@/lib/db';
 import { PageHeader } from '@/components/shared/page-header';
 import { RoleGrid } from '@/app/(app)/admin/roles/[id]/role-grid';
@@ -15,9 +16,9 @@ export const dynamic = 'force-dynamic';
 /** One role's permissions as a grid: pages down, View / Create / Edit / Delete across. */
 export default async function RolePermissionsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  await requirePageAccess(PERMISSIONS.ROLES_MANAGE);
-  const role = await prisma.role.findUnique({
-    where: { id },
+  const admin = await requirePageAccess(PERMISSIONS.ROLES_MANAGE);
+  const role = await prisma.role.findFirst({
+    where: { id, ...rolesVisibleTo(admin) },
     include: { permissions: { select: { permission: { select: { code: true } } } }, _count: { select: { users: true } } },
   });
   if (!role) notFound();

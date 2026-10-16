@@ -69,7 +69,7 @@ export function audit(): Finding[] {
       const isById = BY_ID_OPS.includes(op);
       if (!isScan && !isById) continue;
       const args = argsAt(text, (m.index ?? 0) + whole.length - 1);
-      const SCOPED = /companyId|company\.id|companyScope|\bscope\b|ownShipment|forCompany/;
+      const SCOPED = /companyId|company\.id|companyScope|companiesOf|peopleOf|rolesVisibleTo|\bscope\b|ownShipment|forCompany/;
       if (SCOPED.test(args)) continue;
       // `{ where }` or `{ where: filter }`: read the object the variable was built from.
       const variable = args.match(/\bwhere(?::\s*(\w+))?\s*[,}]/);
@@ -93,8 +93,18 @@ export function audit(): Finding[] {
   return findings;
 }
 
+/** Stable identity of a finding, so the reviewed list survives line-number drift. */
+export const findingKey = (f: Finding) => `${f.file}|${f.model}.${f.op}|${f.snippet.slice(0, 70)}`;
+
 if (require.main === module) {
   const findings = audit();
+  if (process.argv.includes('--write')) {
+    const { writeFileSync } = require('node:fs') as typeof import('node:fs');
+    const keys = findings.filter((f) => f.kind === 'unscoped').map(findingKey).sort();
+    writeFileSync(join(ROOT, 'tests/fixtures/tenant-query-review.json'), JSON.stringify(keys, null, 2) + '\n');
+    console.log(`reviewed list written: ${keys.length} queries`);
+    process.exit(0);
+  }
   const unscoped = findings.filter((f) => f.kind === 'unscoped');
   console.log(`unscoped scans: ${unscoped.length}   by-id lookups/updates: ${findings.length - unscoped.length}`);
   for (const f of unscoped) console.log(`${f.file}:${f.line}  ${f.model}.${f.op}  ${f.snippet}`);
