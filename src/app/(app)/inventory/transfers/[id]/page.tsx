@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { makeTerms } from '@/lib/terminology';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { requirePageAccess, can } from '@/lib/auth/guards';
@@ -18,6 +19,7 @@ import { NotFoundError } from '@/lib/errors';
 import { TransferActions } from '@/app/(app)/inventory/transfers/[id]/transfer-actions';
 import { warehouseScope } from '@/lib/auth/scope';
 import { RecordHistory } from '@/components/shared/record-history';
+import { Term } from '@/components/shared/term';
 
 export const metadata: Metadata = { title: 'Warehouse Transfer' };
 export const dynamic = 'force-dynamic';
@@ -32,6 +34,7 @@ const TONES: Record<string, BadgeTone> = { DRAFT: 'neutral', APPROVED: 'info', I
 export default async function TransferPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requirePageAccess(PERMISSIONS.INVENTORY_VIEW);
+  const terms = makeTerms(user.activeCompany.terminology);
   // Stock across every warehouse: someone limited to their own warehouses sees those on the stock page.
   if (warehouseScope(user)) redirect('/inventory');
   const transfer = await getStockTransferDetail(user.activeCompany.id, id).catch((error) => {
@@ -70,7 +73,7 @@ export default async function TransferPage({ params }: { params: Promise<{ id: s
           {field('Date', formatDate(transfer.transferDate))}
           {field('From warehouse', transfer.fromWarehouse.name)}
           {field('To warehouse', transfer.toWarehouse.name)}
-          {field('ICUL/FID reference', references.length === 0 ? '—' : references.join(', '))}
+          {field(terms('orderReference'), references.length === 0 ? '—' : references.join(', '))}
           {field('Quantity', formatQuantityKg(totalKg))}
           {field('Status', stateLabel)}
           {field('Created by', `${transfer.requestedBy?.name ?? '—'} · ${formatDateTime(transfer.createdAt)}`)}
@@ -90,7 +93,7 @@ export default async function TransferPage({ params }: { params: Promise<{ id: s
             <Table>
               <THead>
                 <TR className="hover:bg-transparent">
-                  <TH>ICUL/FID reference</TH>
+                  <TH><Term k="orderReference" /></TH>
                   <TH>Item</TH>
                   <TH>Batch</TH>
                   <TH>Lot</TH>

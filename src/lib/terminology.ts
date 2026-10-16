@@ -24,7 +24,9 @@ export const DEFAULT_TERMS = {
   /** The unit stock is counted in, as printed after a quantity: KG, PCS, M… */
   unit: 'KG',
   purchaseOrder: 'Purchase order',
-  supplierRef: 'Supplier reference',
+  /** The business's own reference on a purchase order — FID calls it its ICUL/FID reference. */
+  orderRef: 'Order ref',
+  orderReference: 'Order reference',
 } as const;
 
 export type TermKey = keyof typeof DEFAULT_TERMS;

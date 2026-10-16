@@ -7,6 +7,7 @@ import { Input, Textarea } from '@/components/ui/input';
 import { Field } from '@/components/ui/field';
 import { editContainerAction } from '@/server/actions/trading-actions';
 import { safely } from '@/lib/safely';
+import { useTerms } from '@/components/company-config-context';
 
 export type EditableContainer = {
   shipmentId: string;
@@ -33,6 +34,7 @@ export function EditContainerDialog({
   onClose: () => void;
   onSaved: () => void | Promise<void>;
 }) {
+  const unit = useTerms()('unit');
   const [edit, setEdit] = React.useState({ quantityKg: '', containerNumber: '', lotNumber: '', batchNumber: '', reason: '' });
   const [busy, setBusy] = React.useState(false);
   const [seeded, setSeeded] = React.useState<string | null>(null);
@@ -82,7 +84,7 @@ export function EditContainerDialog({
       body={
         <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Quantity (KG)" htmlFor="editKg" required>
+            <Field label={`Quantity (${unit})`} htmlFor="editKg" required>
               <Input id="editKg" inputMode="decimal" className="tnum text-right" value={edit.quantityKg} onChange={(e) => setEdit((p) => ({ ...p, quantityKg: e.target.value }))} />
             </Field>
             <Field label="Container number" htmlFor="editCtr">

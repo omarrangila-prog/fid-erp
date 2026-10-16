@@ -14,6 +14,7 @@ import { StatusBadge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/feedback';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { makeTerms } from '@/lib/terminology';
 
 export const metadata: Metadata = { title: 'Trace a reference' };
 export const dynamic = 'force-dynamic';
@@ -41,6 +42,7 @@ const td = 'py-1.5 pr-3 text-sm';
 export default async function TracePage({ searchParams }: { searchParams: Promise<{ ref?: string }> }) {
   const { ref } = await searchParams;
   const user = await requirePageAccess(PERMISSIONS.INVENTORY_VIEW);
+  const unit = makeTerms(user.activeCompany.terminology)('unit');
   // An agent sees his own customers among the buyers, as everywhere else.
   const agentId = agentScope(user);
   const customerIds = agentId
@@ -52,17 +54,17 @@ export default async function TracePage({ searchParams }: { searchParams: Promis
     <div className="space-y-6">
       <PageHeader
         title="Trace a reference"
-        description="Follow an ICUL/FID order from purchase, through containers, batches, warehouses and transfers, to the customers who bought it."
+        description="Follow an order from purchase, through containers, batches, warehouses and transfers, to the customers who bought it."
         breadcrumbs={[{ label: 'Inventory', href: '/inventory' }, { label: 'Trace' }]}
       />
 
       <form className="flex max-w-xl gap-2" action="/trace">
-        <Input name="ref" defaultValue={ref ?? ''} placeholder="ICUL/FID/001" aria-label="ICUL/FID reference" />
+        <Input name="ref" defaultValue={ref ?? ''} placeholder="Order reference" aria-label="Order reference" />
         <Button type="submit">Trace</Button>
       </form>
 
       {!ref ? null : !result || result.orders.length === 0 ? (
-        <EmptyState title={`No order matches “${ref}”`} description="Type all or part of the ICUL/FID reference on the purchase order." />
+        <EmptyState title={`No order matches “${ref}”`} description="Type all or part of the reference on the purchase order." />
       ) : (
         result.orders.map((t) => (
           <div key={t.order.id} className="space-y-4">
@@ -111,7 +113,7 @@ export default async function TracePage({ searchParams }: { searchParams: Promis
 
             <Section title="Received into" empty={t.receipts.length === 0}>
               <table className="data-grid grid-framed w-full min-w-[32rem]">
-                <thead><tr><th className={th}>Date</th><th className={th}>Warehouse</th><th className={th}>Batch</th><th className={`${th} text-right`}>KG</th></tr></thead>
+                <thead><tr><th className={th}>Date</th><th className={th}>Warehouse</th><th className={th}>Batch</th><th className={`${th} text-right`}>{unit}</th></tr></thead>
                 <tbody>
                   {t.receipts.map((r, i) => (
                     <tr key={i} className="border-t border-line/60">
@@ -144,7 +146,7 @@ export default async function TracePage({ searchParams }: { searchParams: Promis
 
             <Section title="Warehouse transfers" empty={t.transfers.length === 0}>
               <table className="data-grid grid-framed w-full min-w-[36rem]">
-                <thead><tr><th className={th}>Transfer</th><th className={th}>Date</th><th className={th}>From → To</th><th className={th}>Batch</th><th className={`${th} text-right`}>KG</th></tr></thead>
+                <thead><tr><th className={th}>Transfer</th><th className={th}>Date</th><th className={th}>From → To</th><th className={th}>Batch</th><th className={`${th} text-right`}>{unit}</th></tr></thead>
                 <tbody>
                   {t.transfers.map((x, i) => (
                     <tr key={i} className="border-t border-line/60">
@@ -161,7 +163,7 @@ export default async function TracePage({ searchParams }: { searchParams: Promis
 
             <Section title="Sold to" description={t.customers.length > 0 ? t.customers.map((c) => c.customerName).join(', ') : undefined} empty={t.sales.length === 0}>
               <table className="data-grid grid-framed w-full min-w-[44rem]">
-                <thead><tr><th className={th}>Invoice</th><th className={th}>Date</th><th className={th}>Customer</th><th className={th}>Item</th><th className={th}>Batch</th><th className={th}>Warehouse</th><th className={`${th} text-right`}>KG</th><th className={`${th} text-right`}>Amount</th></tr></thead>
+                <thead><tr><th className={th}>Invoice</th><th className={th}>Date</th><th className={th}>Customer</th><th className={th}>Item</th><th className={th}>Batch</th><th className={th}>Warehouse</th><th className={`${th} text-right`}>{unit}</th><th className={`${th} text-right`}>Amount</th></tr></thead>
                 <tbody>
                   {t.sales.map((s, i) => (
                     <tr key={i} className="border-t border-line/60">

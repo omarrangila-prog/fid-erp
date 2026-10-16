@@ -471,7 +471,7 @@ export function PaymentForm({
             <Textarea
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
-              placeholder="e.g. Part payment on ICUL/FID/002, by bank transfer"
+              placeholder="e.g. Part payment on the March order, by bank transfer"
               aria-label="Memo"
             />
           </Field>

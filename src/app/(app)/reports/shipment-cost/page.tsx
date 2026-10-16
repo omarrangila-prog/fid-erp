@@ -22,6 +22,7 @@ import { MemoCell } from '@/components/shared/memo-cell';
 import { DualAmount } from '@/components/shared/dual-amount';
 import { businessNumber } from '@/lib/short-number';
 import { OpenAllForPrint } from '@/app/(app)/reports/shipment-cost/open-for-print';
+import { makeTerms } from '@/lib/terminology';
 
 export const metadata: Metadata = { title: 'Shipment Costing' };
 export const dynamic = 'force-dynamic';
@@ -54,6 +55,7 @@ export default async function ShipmentCostPage({
   const showProfit = can(user, PERMISSIONS.PROFITS_VIEW);
   const companyId = user.activeCompany.id;
   const local = user.activeCompany.localCurrency;
+  const unit = makeTerms(user.activeCompany.terminology)('unit');
 
   const all = await getOrderCostSheets(companyId);
   const needle = q?.trim().toLowerCase() ?? '';
@@ -141,6 +143,7 @@ export default async function ShipmentCostPage({
                 sheet={sheet}
                 ordinal={all.indexOf(sheet) + 1}
                 local={local}
+                unit={unit}
                 defaultOpen={open === sheet.contractId || (Boolean(needle) && index === 0 && sheets.length === 1)}
               />
             ))}
@@ -155,12 +158,14 @@ function OrderSection({
   sheet,
   ordinal,
   local,
+  unit,
   defaultOpen,
   showProfit,
 }: {
   sheet: OrderCostSheet;
   ordinal: number;
   local: string;
+  unit: string;
   defaultOpen: boolean;
   showProfit: boolean;
 }) {
@@ -193,7 +198,7 @@ function OrderSection({
         <span className="tnum text-sm">
           <span className="block text-[11px] text-ink-subtle">Total landed cost</span>
           {formatMoney(sheet.landedLocal, local)}
-          <span className="block text-[11px] text-ink-subtle">{formatMoney(sheet.costPerKgLocal, local)} per KG</span>
+          <span className="block text-[11px] text-ink-subtle">{formatMoney(sheet.costPerKgLocal, local)} per {unit}</span>
         </span>
         {showProfit ? (
           <span className={cn('tnum text-sm font-semibold', profitTone)}>
@@ -226,12 +231,12 @@ function OrderSection({
                   <TH>Container</TH>
                   <TH>Lot</TH>
                   <TH>Batch</TH>
-                  <TH numeric>KG</TH>
+                  <TH numeric>{unit}</TH>
                   <TH numeric>Sold</TH>
                   <TH>Warehouse</TH>
                   <TH numeric>Purchase USD</TH>
                   <TH numeric>Landed USD</TH>
-                  <TH numeric>Per KG</TH>
+                  <TH numeric>Per {unit}</TH>
                   <TH>Status</TH>
                 </TR>
               </THead>
@@ -380,7 +385,7 @@ function OrderSection({
                   ['Coffee, at the contract price', sheet.goodsLocal, sheet.goodsUsd],
                   ['Costs added to the coffee', sheet.capitalisedExpenseLocal, sheet.capitalisedExpenseUsd],
                   ['Total landed cost', sheet.landedLocal, sheet.landedUsd, 'bold'],
-                  ['Cost per KG', sheet.costPerKgLocal, sheet.costPerKgUsd],
+                  [`Cost per ${unit}`, sheet.costPerKgLocal, sheet.costPerKgUsd],
                   ['Cost per MT', sheet.costPerMtLocal, sheet.costPerMtUsd],
                   ['Sales', sheet.revenueLocal, sheet.revenueUsd],
                   ...(showProfit

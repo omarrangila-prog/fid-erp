@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js';
+import type { UnitOfMeasure } from '@/lib/enums';
 
 /**
  * Client-side preview of the purchase contract arithmetic.
@@ -23,7 +24,7 @@ export type LineDraft = {
   batchNumber: string;
   containerNumber: string;
   quantity: string;
-  unit: 'KG' | 'MT' | 'BAG';
+  unit: UnitOfMeasure;
   unitPrice: string;
   bags: string;
   bagWeightKg: string;
@@ -44,9 +45,13 @@ const money = (d: Decimal) => d.toDecimalPlaces(4, HALF_UP);
 const qty = (d: Decimal) => d.toDecimalPlaces(3, HALF_UP);
 const unitCost = (d: Decimal) => d.toDecimalPlaces(8, HALF_UP);
 
+const PACKS = new Set<string>(['BAG', 'CTN', 'BOX', 'ROLL', 'PLT', 'PACK']);
+
+/** Base units (kilograms, pieces, metres…) in one entry unit; mirrors money.ts. */
 function kgPerUnit(unit: LineDraft['unit'], bagWeightKg: Decimal) {
   if (unit === 'MT') return KG_PER_MT;
-  if (unit === 'KG') return new Decimal(1);
+  if (unit === 'DOZ') return new Decimal(12);
+  if (!PACKS.has(unit)) return new Decimal(1);
   return bagWeightKg.greaterThan(0) ? bagWeightKg : new Decimal(0);
 }
 

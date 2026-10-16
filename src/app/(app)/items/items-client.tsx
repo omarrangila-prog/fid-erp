@@ -205,6 +205,7 @@ export function ItemsClient({
   const attributeSet = useAttributeSet();
   const terms = useTerms();
   const noun = terms.lower('product');
+  const companyUnit = (BASE_UOMS as readonly string[]).includes(terms('unit')) ? terms('unit') : 'PCS';
   const isCoffee = attributeSet === 'coffee';
   const createFields = React.useMemo(() => buildFields(attributeSet, noun, false), [attributeSet, noun]);
   const editFields = React.useMemo(() => buildFields(attributeSet, noun, true), [attributeSet, noun]);
@@ -594,7 +595,7 @@ export function ItemsClient({
                   status: 'ACTIVE',
                   originCountry: '',
                 }
-              : { bagWeightKg: '1', defaultUnit: 'PCS', baseUom: 'PCS', packUom: 'CTN', status: 'ACTIVE' }
+              : { bagWeightKg: '1', defaultUnit: companyUnit, baseUom: companyUnit, packUom: 'CTN', status: 'ACTIVE' }
           }
           action={
             saveCoffeeItemAction.bind(null, null) as (p: MasterFormState, f: FormData) => Promise<MasterFormState>

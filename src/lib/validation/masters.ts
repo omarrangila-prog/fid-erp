@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { UNIT_CODES } from '@/lib/validation/units';
 import { currencyCode, optionalCuid, optionalDecimalString, optionalText, requiredText } from '@/lib/validation/common';
 
 /** Blank, omitted, or a real address — never a Zod puzzle. */
@@ -84,7 +85,7 @@ export const coffeeItemSchema = z.object({
   hsCode: optionalText(16),
   taxCategory: optionalText(60),
   unitWeightKg: optionalDecimalString('Weight'),
-  defaultUnit: z.enum(['KG', 'MT', 'BAG', 'PCS', 'DOZ', 'CTN', 'BOX', 'ROLL', 'PLT', 'PACK', 'M', 'L']),
+  defaultUnit: z.enum(UNIT_CODES),
   description: optionalText(600),
   notes: optionalText(1000),
   status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),

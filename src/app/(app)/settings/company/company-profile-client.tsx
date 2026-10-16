@@ -69,7 +69,8 @@ const TERM_LABELS: Record<string, string> = {
   warehouses: 'Warehouses',
   unit: 'Unit stock is counted in',
   purchaseOrder: 'Purchase order',
-  supplierRef: 'Supplier reference',
+  orderRef: 'Order reference (short)',
+  orderReference: 'Order reference (long)',
 };
 
 const FX_POLICIES = [

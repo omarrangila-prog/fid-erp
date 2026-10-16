@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { entryUnitsFor, isPackUom, uomName } from '@/lib/uom';
 import { MasterSelect } from '@/components/shared/master-select';
 import { vendorCreateSpec, coffeeItemCreateSpec } from '@/components/shared/master-specs';
 import { useRouter } from 'next/navigation';
@@ -33,7 +34,7 @@ import { useTransactionCurrencies, useConfiguredCurrencies, useAttributeSet } fr
  */
 
 /** A coffee option carries the bag weight so the form can convert bag entry. */
-export type ItemOption = ComboOption & { bagWeightKg: string; defaultUnit: string };
+export type ItemOption = ComboOption & { bagWeightKg: string; defaultUnit: string; baseUom?: string; packUom?: string };
 
 /** Line drafts supplied by the server have no client-only key yet. */
 export type LineDefaults = Omit<LineDraft, 'key' | 'notes'> & { notes?: string };
@@ -147,6 +148,17 @@ export function PurchaseForm({
     setLines((prev) => prev.map((line) => (line.key === key ? { ...line, ...patch } : line)));
   }
 
+  const optionOf = (line: { itemId: string }) => itemOptions.find((i) => i.value === line.itemId);
+  const baseOf = (line: { itemId: string }) => optionOf(line)?.baseUom ?? 'KG';
+  const packOf = (line: { itemId: string }) => optionOf(line)?.packUom ?? 'BAG';
+  const unitsFor = (line: { itemId: string; unit: string }) => {
+    const units = entryUnitsFor({ baseUom: baseOf(line), packUom: packOf(line) });
+    // A line already saved in a unit the item no longer offers still shows it.
+    return units.includes(line.unit) ? units : [...units, line.unit];
+  };
+  /** "bag", "carton", "KG" — the unit as a price is quoted per. */
+  const unitNoun = (unit: string) => (isPackUom(unit) ? uomName(unit).toLowerCase() : unit);
+
   function chooseItem(key: string, itemId: string | null) {
     const item = itemOptions.find((i) => i.value === itemId);
     updateLine(key, {
@@ -155,6 +167,12 @@ export function PurchaseForm({
       unit: (item?.defaultUnit as LineDraft['unit']) ?? 'KG',
     });
   }
+
+  // One unit when every line agrees, otherwise a neutral word.
+  const usedUnits = [...new Set(lines.map((l) => baseOf(l)))];
+  const commonUnit = usedUnits.length === 1 ? usedUnits[0] : 'units';
+  const usedPacks = [...new Set(lines.map((l) => packOf(l)))];
+  const packWord = usedPacks.length === 1 ? uomName(usedPacks[0], true).toLowerCase() : 'packs';
 
   const totals = React.useMemo(
     () =>
@@ -603,8 +621,8 @@ export function PurchaseForm({
                     <Field
                       label={
                         header.currency === 'USD'
-                          ? `USD Rate / ${line.unit === 'BAG' ? 'bag' : line.unit}`
-                          : `Price per ${line.unit === 'BAG' ? 'bag' : line.unit}`
+                          ? `USD Rate / ${unitNoun(line.unit)}`
+                          : `Price per ${unitNoun(line.unit)}`
                       }
                       required
                       error={lineError(index, 'unitPrice')}
@@ -682,21 +700,23 @@ export function PurchaseForm({
                         disabled={line.locked}
                         onChange={(e) => updateLine(line.key, { unit: e.target.value as LineDraft['unit'] })}
                       >
-                        <option value="KG">KG</option>
-                        <option value="MT">MT</option>
-                        <option value="BAG">Bags</option>
+                        {unitsFor(line).map((code) => (
+                          <option key={code} value={code}>
+                            {isPackUom(code) ? uomName(code, true) : code}
+                          </option>
+                        ))}
                       </Select>
                     </Field>
-                    <Field label="Bags" hint="Left blank, derived from bag weight.">
+                    <Field label={uomName(packOf(line), true)} hint={`Left blank, derived from the ${uomName(packOf(line)).toLowerCase()} size.`}>
                       <QuantityInput
                         value={line.bags}
                         onChange={(e) => updateLine(line.key, { bags: e.target.value })}
                         placeholder={math ? String(math.bags) : '320'}
                       />
                     </Field>
-                    <Field label="Bag weight (KG)">
+                    <Field label={`Units per ${uomName(packOf(line)).toLowerCase()} (${baseOf(line)})`}>
                       <QuantityInput
-                        unit="KG"
+                        unit={baseOf(line)}
                         value={line.bagWeightKg}
                         onChange={(e) => updateLine(line.key, { bagWeightKg: e.target.value })}
                       />
@@ -708,7 +728,7 @@ export function PurchaseForm({
                     <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-line pt-3 sm:grid-cols-4">
                       <div>
                         <dt className="text-[11px] text-ink-subtle">Quantity</dt>
-                        <dd className="tnum text-sm font-medium">{math.quantityKg.toLocaleString()} KG</dd>
+                        <dd className="tnum text-sm font-medium">{math.quantityKg.toLocaleString()} {baseOf(line)}</dd>
                       </div>
                       <div>
                         <dt className="text-[11px] text-ink-subtle">Goods value</dt>
@@ -723,7 +743,7 @@ export function PurchaseForm({
                         </dd>
                       </div>
                       <div>
-                        <dt className="text-[11px] text-ink-subtle">Landed cost / KG</dt>
+                        <dt className="text-[11px] text-ink-subtle">Landed cost / {baseOf(line)}</dt>
                         <dd className="tnum text-sm font-semibold text-gold-700">
                           {header.currency} {math.unitCostKg}
                         </dd>
@@ -768,8 +788,8 @@ export function PurchaseForm({
           <div className="rounded-xl border border-line bg-forest-50/40 p-4">
             <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
               {[
-                ['Total quantity', `${totals.totalQuantityKg.toLocaleString()} KG`],
-                ['Total bags', totals.totalBags.toLocaleString()],
+                ['Total quantity', `${totals.totalQuantityKg.toLocaleString()} ${commonUnit}`],
+                [`Total ${packWord}`, totals.totalBags.toLocaleString()],
                 ['Containers', String(totals.totalContainers)],
                 ['Goods value', `${header.currency} ${totals.subtotal.toLocaleString()}`],
                 ['Contract value', `${header.currency} ${totals.totalValue.toLocaleString()}`],

@@ -47,7 +47,7 @@ export const TEMPLATES: Record<TemplateKey, Template> = {
     description: 'Buy and sell goods, import or local, with stock, sales and accounting.',
     businessType: 'IMPORT_EXPORT',
     features: { AGENTS: false, LOANS: false, CHEQUES: false },
-    terminology: {},
+    terminology: { unit: 'PCS' },
     attributeSet: 'general',
   },
   IMPORT_BUSINESS: {
@@ -56,7 +56,7 @@ export const TEMPLATES: Record<TemplateKey, Template> = {
     description: 'Import goods by sea, air or road with landed cost, then sell locally.',
     businessType: 'IMPORT',
     features: { AGENTS: false },
-    terminology: {},
+    terminology: { unit: 'PCS' },
     attributeSet: 'general',
   },
   EXPORT_BUSINESS: {
@@ -65,7 +65,7 @@ export const TEMPLATES: Record<TemplateKey, Template> = {
     description: 'Source goods locally and ship them to overseas buyers in foreign currency.',
     businessType: 'EXPORT',
     features: { AGENTS: false, LOANS: false },
-    terminology: { customer: 'Buyer' },
+    terminology: { customer: 'Buyer', customers: 'Buyers', unit: 'PCS' },
     attributeSet: 'general',
   },
   IMPORT_EXPORT: {
@@ -74,7 +74,7 @@ export const TEMPLATES: Record<TemplateKey, Template> = {
     description: 'The complete import and export workflow with every module available.',
     businessType: 'IMPORT_EXPORT',
     features: ALL_ON,
-    terminology: {},
+    terminology: { unit: 'PCS' },
     attributeSet: 'general',
   },
   DISTRIBUTION: {
@@ -83,7 +83,7 @@ export const TEMPLATES: Record<TemplateKey, Template> = {
     description: 'Buy from suppliers, stock several warehouses and sell through sales agents. No shipment tracking.',
     businessType: 'DISTRIBUTION',
     features: { SHIPMENTS: false, CONTAINERS: false },
-    terminology: { warehouse: 'Store' },
+    terminology: { warehouse: 'Store', warehouses: 'Stores', unit: 'PCS' },
     attributeSet: 'general',
   },
   COMMODITY_TRADING: {
@@ -101,7 +101,7 @@ export const TEMPLATES: Record<TemplateKey, Template> = {
     description: 'Garments and fabric by the piece, carton or roll, with size, colour and fabric.',
     businessType: 'IMPORT_EXPORT',
     features: { LOANS: false },
-    terminology: {},
+    terminology: { unit: 'PCS' },
     attributeSet: 'garments',
   },
 };

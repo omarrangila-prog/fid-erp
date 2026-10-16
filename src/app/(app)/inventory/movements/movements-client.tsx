@@ -7,6 +7,7 @@ import { RowActions } from '@/components/shared/row-actions';
 import { Select } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import type { BadgeTone } from '@/lib/constants';
+import { useTerms } from '@/components/company-config-context';
 
 export type MovementRow = {
   id: string;
@@ -55,6 +56,7 @@ export function MovementsClient({
   /** Rendered inside the empty state; built on the server so permissions are checked there. */
   emptyAction?: React.ReactNode;
 }) {
+  const unit = useTerms()('unit');
   const [type, setType] = React.useState('ALL');
   const [warehouse, setWarehouse] = React.useState('ALL');
 
@@ -121,7 +123,7 @@ export function MovementsClient({
     { id: 'warehouse', header: 'Warehouse', mobile: 'meta', sortValue: (r) => r.warehouse, exportValue: (r) => r.warehouse, cell: (r) => r.warehouse },
     {
       id: 'quantity',
-      header: 'Quantity KG',
+      header: `Quantity ${unit}`,
       numeric: true,
       mobile: 'meta',
       sortValue: (r) => r.quantitySort,

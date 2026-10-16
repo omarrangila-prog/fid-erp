@@ -63,6 +63,8 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
         grade: true,
         bagWeightKg: true,
         defaultUnit: true,
+        baseUom: true,
+        packUom: true,
       },
     }),
     prisma.port.findMany({
@@ -79,6 +81,8 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
     keywords: `${i.itemCode} ${i.originCountry}`,
     bagWeightKg: i.bagWeightKg.toString(),
     defaultUnit: i.defaultUnit,
+    baseUom: i.baseUom,
+    packUom: i.packUom,
   }));
 
   return (

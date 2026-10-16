@@ -26,6 +26,7 @@ import { SaleActions } from '@/app/(app)/sales/[id]/sale-actions';
 import { invoiceScopeWhere } from '@/lib/auth/scope';
 import { RecordHistory } from '@/components/shared/record-history';
 import { getInvoicePaymentStatus } from '@/lib/invoice-payment';
+import { Term } from '@/components/shared/term';
 
 export const dynamic = 'force-dynamic';
 
@@ -253,7 +254,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                     <TH>#</TH>
                     <TH>Item</TH>
                     <TH>Warehouse</TH>
-                    <TH>ICUL/FID Ref</TH>
+                    <TH><Term k="orderRef" /></TH>
                     <TH>Lot / Batch</TH>
                     <TH numeric>Quantity</TH>
                     <TH numeric>Price</TH>

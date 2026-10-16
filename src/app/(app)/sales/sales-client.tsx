@@ -15,6 +15,8 @@ import { deleteSalesInvoiceAction } from '@/server/actions/trading-actions';
 import { cn } from '@/lib/utils';
 import { formatDate } from '@/lib/format';
 import { PAYMENT_FILTER_LABELS, type PaymentFilter } from '@/lib/invoice-payment';
+import { useTerms } from '@/components/company-config-context';
+import { Term } from '@/components/shared/term';
 
 export type SaleRow = {
   id: string;
@@ -81,6 +83,7 @@ export function SalesClient({
   canReverse: boolean;
   canApprove: boolean;
 }) {
+  const terms = useTerms();
   /*
    * Where the money stands, and a way into it.
    *
@@ -161,7 +164,7 @@ export function SalesClient({
     },
     {
       id: 'order',
-      header: 'ICUL/FID Ref',
+      header: terms('orderRef'),
       mobile: 'meta',
       sortValue: (r) => r.reference ?? '',
       exportValue: (r) => r.references.join(', '),
@@ -478,7 +481,7 @@ export function SalesClient({
           <table className="data-grid grid-framed w-full text-xs">
             <thead>
               <tr className="text-left text-ink-muted">
-                <th className="py-1 pr-3 font-medium">ICUL/FID Reference</th>
+                <th className="py-1 pr-3 font-medium"><Term k="orderReference" /></th>
                 <th className="py-1 pr-3 font-medium">Item</th>
                 <th className="py-1 pr-3 font-medium">Batch</th>
                 <th className="py-1 pr-3 font-medium">Warehouse</th>

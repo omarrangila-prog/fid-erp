@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { UNIT_CODES } from '@/lib/validation/units';
 import {
   currencyCode,
   cuid,
@@ -36,7 +37,7 @@ export const purchaseLineSchema = z.object({
   batchNumber: optionalText(60),
   containerNumber: optionalText(40),
   quantity: decimalString('Quantity'),
-  unit: z.enum(['KG', 'MT', 'BAG']),
+  unit: z.enum(UNIT_CODES),
   unitPrice: decimalString('Price', { allowZero: true }),
   bags: positiveInt('Bags').optional(),
   bagWeightKg: optionalDecimalString('Bag weight'),
@@ -177,7 +178,7 @@ export const salesLineSchema = z.object({
   batchId: requiredChoice('Batch'),
   warehouseId: requiredChoice('Warehouse'),
   quantity: decimalString('Quantity'),
-  unit: z.enum(['KG', 'MT', 'BAG']),
+  unit: z.enum(UNIT_CODES),
   unitPrice: decimalString('Price'),
   bags: positiveInt('Bags').optional(),
   taxCodeId: optionalCuid,

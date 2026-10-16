@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { makeTerms } from '@/lib/terminology';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requirePageAccess, can } from '@/lib/auth/guards';
@@ -66,6 +67,7 @@ export default async function ItemStockPage({
     getStockFilterOptions(companyId, scope),
   ]);
   const local = report.localCurrency;
+  const unit = report.items[0]?.baseUom ?? makeTerms(user.activeCompany.terminology)('unit');
   const node = report.items[0] ?? null;
   const m: ItemMeasures = node ?? report.total;
   const lines = report.lines;
@@ -99,36 +101,36 @@ export default async function ItemStockPage({
     {
       key: 'stock',
       label: 'Received + transferred in − transferred out − sold ± adjustments = on hand',
-      shown: kg(m.openingKg.plus(m.receivedKg).plus(m.transferInKg).minus(m.transferOutKg).minus(m.stockSoldKg).plus(m.adjustmentKg)),
-      source: kg(m.onHandKg),
+      shown: kg(m.openingKg.plus(m.receivedKg).plus(m.transferInKg).minus(m.transferOutKg).minus(m.stockSoldKg).plus(m.adjustmentKg), unit),
+      source: kg(m.onHandKg, unit),
       ok: m.openingKg.plus(m.receivedKg).plus(m.transferInKg).minus(m.transferOutKg).minus(m.stockSoldKg).plus(m.adjustmentKg).minus(m.onHandKg).abs().lessThan('0.001'),
     },
     {
       key: 'warehouses',
       label: 'Warehouses add up to the item’s available stock',
-      shown: kg(sumKg(warehouses, (w) => w.availableKg)),
-      source: kg(m.availableKg),
+      shown: kg(sumKg(warehouses, (w) => w.availableKg), unit),
+      source: kg(m.availableKg, unit),
       ok: sumKg(warehouses, (w) => w.availableKg).minus(m.availableKg).abs().lessThan('0.001'),
     },
     {
       key: 'transfers',
       label: 'Transfers only move stock: in = out',
-      shown: kg(m.transferInKg),
-      source: kg(m.transferOutKg),
+      shown: kg(m.transferInKg, unit),
+      source: kg(m.transferOutKg, unit),
       ok: m.transferInKg.minus(m.transferOutKg).abs().lessThan('0.001') || !!values.warehouse || !!scope,
     },
     {
       key: 'sold',
       label: 'Sold on invoices = sold in the stock ledger',
-      shown: kg(m.soldKg),
-      source: kg(m.stockSoldKg),
+      shown: kg(m.soldKg, unit),
+      source: kg(m.stockSoldKg, unit),
       ok: m.soldKg.minus(m.stockSoldKg).abs().lessThan('0.001'),
     },
     {
       key: 'shipments',
       label: 'Shipments add up to the item (received, sold)',
-      shown: `${kg(sumKg(shipments, (s) => s.receivedKg))} · ${kg(sumKg(shipments, (s) => s.soldKg))}`,
-      source: `${kg(m.receivedKg)} · ${kg(m.soldKg)}`,
+      shown: `${kg(sumKg(shipments, (s) => s.receivedKg), unit)} · ${kg(sumKg(shipments, (s) => s.soldKg), unit)}`,
+      source: `${kg(m.receivedKg, unit)} · ${kg(m.soldKg, unit)}`,
       ok: sumKg(shipments, (s) => s.receivedKg).minus(m.receivedKg).abs().lessThan('0.001') && sumKg(shipments, (s) => s.soldKg).minus(m.soldKg).abs().lessThan('0.001'),
     },
     ...(showSales
@@ -196,22 +198,22 @@ export default async function ItemStockPage({
           <span className="text-xs text-ink-subtle">{item.originCountry}</span>
         </div>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-          <Figure testId="item-received" label="Received" value={kg(m.receivedKg)} sub={m.openingKg.isZero() ? undefined : `${kg(m.openingKg)} before the period`} />
-          <Figure testId="item-sold" label="Sold" value={kg(m.soldKg)} />
+          <Figure testId="item-received" label="Received" value={kg(m.receivedKg, unit)} sub={m.openingKg.isZero() ? undefined : `${kg(m.openingKg, unit)} before the period`} />
+          <Figure testId="item-sold" label="Sold" value={kg(m.soldKg, unit)} />
           <Figure
             testId="item-available"
             label="Remaining"
-            value={kg(m.availableKg)}
-            sub={m.reservedKg.greaterThan(0) ? `${kg(m.reservedKg)} held for drafts` : `In ${warehouses.filter((w) => !w.availableKg.isZero()).length} warehouse(s)`}
+            value={kg(m.availableKg, unit)}
+            sub={m.reservedKg.greaterThan(0) ? `${kg(m.reservedKg, unit)} held for drafts` : `In ${warehouses.filter((w) => !w.availableKg.isZero()).length} warehouse(s)`}
           />
           {showCost ? (
             <>
-              <Figure testId="item-avg-cost" label="Average cost / KG" value={perKgText(m.avgCostPerKg, local)?.primary ?? '—'} equivalent={perKgText(m.avgCostPerKg, local)?.equivalent} sub="Weighted, at landed cost" />
+              <Figure testId="item-avg-cost" label={`Average cost / ${unit}`} value={perKgText(m.avgCostPerKg, local, unit)?.primary ?? '—'} equivalent={perKgText(m.avgCostPerKg, local, unit)?.equivalent} sub="Weighted, at landed cost" />
               <Figure testId="item-stock-value" label="Stock value" value={pt(m.stockValue)!.primary} equivalent={pt(m.stockValue)!.equivalent} sub="What is left, at its landed cost" />
             </>
           ) : null}
           {showSales ? (
-            <Figure testId="item-avg-sell" label="Average selling price / KG" value={perKgText(m.avgSellPerKg, local)?.primary ?? '—'} equivalent={perKgText(m.avgSellPerKg, local)?.equivalent} sub="Revenue ÷ KG sold" />
+            <Figure testId="item-avg-sell" label={`Average selling price / ${unit}`} value={perKgText(m.avgSellPerKg, local, unit)?.primary ?? '—'} equivalent={perKgText(m.avgSellPerKg, local, unit)?.equivalent} sub={`Revenue ÷ ${unit} sold`} />
           ) : null}
         </div>
         {showSales ? (
@@ -219,14 +221,14 @@ export default async function ItemStockPage({
             <Figure testId="item-revenue" label="Sales revenue" value={pt(m.revenue)!.primary} equivalent={pt(m.revenue)!.equivalent} sub={`${m.invoiceCount} invoice${m.invoiceCount === 1 ? '' : 's'}`} />
             {showProfit ? (
               <>
-                <Figure testId="item-cogs" label="COGS" value={pt(m.cogs)!.primary} equivalent={pt(m.cogs)!.equivalent} sub="Landed cost of the KG sold" />
+                <Figure testId="item-cogs" label="COGS" value={pt(m.cogs)!.primary} equivalent={pt(m.cogs)!.equivalent} sub={`Landed cost of the ${unit} sold`} />
                 <Figure
                   testId="item-profit"
                   label={profit.label}
                   value={profit.primary}
                   equivalent={profit.equivalent}
                   tone={profit.loss ? 'negative' : m.grossProfit.local.isZero() ? 'default' : 'positive'}
-                  sub={perKgText(m.profitPerKg, local) ? `${perKgText(m.profitPerKg, local)!.primary} profit per KG sold` : undefined}
+                  sub={perKgText(m.profitPerKg, local, unit) ? `${perKgText(m.profitPerKg, local, unit)!.primary} profit per ${unit} sold` : undefined}
                 />
                 <Figure testId="item-margin" label="Margin" value={m.marginPct ? formatPercent(m.marginPct) : '—'} sub="Gross profit ÷ revenue" />
               </>
@@ -262,14 +264,14 @@ export default async function ItemStockPage({
                 {warehouses.map((w) => (
                   <TR key={w.warehouseId} data-warehouse={w.warehouseName}>
                     <TD>{w.warehouseName}</TD>
-                    {m.openingKg.isZero() ? null : <TD numeric>{kg(w.openingKg)}</TD>}
-                    <TD numeric>{kg(w.receivedKg)}</TD>
-                    <TD numeric>{kg(w.transferInKg)}</TD>
-                    <TD numeric>{kg(w.transferOutKg)}</TD>
-                    <TD numeric>{kg(w.stockSoldKg)}</TD>
-                    {hasAdjustments ? <TD numeric>{kg(w.adjustmentKg)}</TD> : null}
+                    {m.openingKg.isZero() ? null : <TD numeric>{kg(w.openingKg, unit)}</TD>}
+                    <TD numeric>{kg(w.receivedKg, unit)}</TD>
+                    <TD numeric>{kg(w.transferInKg, unit)}</TD>
+                    <TD numeric>{kg(w.transferOutKg, unit)}</TD>
+                    <TD numeric>{kg(w.stockSoldKg, unit)}</TD>
+                    {hasAdjustments ? <TD numeric>{kg(w.adjustmentKg, unit)}</TD> : null}
                     <TD numeric className="font-semibold" data-cell="available">
-                      {kg(w.availableKg)}
+                      {kg(w.availableKg, unit)}
                     </TD>
                     {showCost ? <TD numeric>{money(pt(w.stockValue))}</TD> : null}
                   </TR>
@@ -278,13 +280,13 @@ export default async function ItemStockPage({
               <TFoot>
                 <TR data-warehouse="TOTAL">
                   <TD>TOTAL</TD>
-                  {m.openingKg.isZero() ? null : <TD numeric>{kg(m.openingKg)}</TD>}
-                  <TD numeric>{kg(sumKg(warehouses, (w) => w.receivedKg))}</TD>
-                  <TD numeric>{kg(sumKg(warehouses, (w) => w.transferInKg))}</TD>
-                  <TD numeric>{kg(sumKg(warehouses, (w) => w.transferOutKg))}</TD>
-                  <TD numeric>{kg(sumKg(warehouses, (w) => w.stockSoldKg))}</TD>
-                  {hasAdjustments ? <TD numeric>{kg(sumKg(warehouses, (w) => w.adjustmentKg))}</TD> : null}
-                  <TD numeric data-cell="available">{kg(sumKg(warehouses, (w) => w.availableKg))}</TD>
+                  {m.openingKg.isZero() ? null : <TD numeric>{kg(m.openingKg, unit)}</TD>}
+                  <TD numeric>{kg(sumKg(warehouses, (w) => w.receivedKg), unit)}</TD>
+                  <TD numeric>{kg(sumKg(warehouses, (w) => w.transferInKg), unit)}</TD>
+                  <TD numeric>{kg(sumKg(warehouses, (w) => w.transferOutKg), unit)}</TD>
+                  <TD numeric>{kg(sumKg(warehouses, (w) => w.stockSoldKg), unit)}</TD>
+                  {hasAdjustments ? <TD numeric>{kg(sumKg(warehouses, (w) => w.adjustmentKg), unit)}</TD> : null}
+                  <TD numeric data-cell="available">{kg(sumKg(warehouses, (w) => w.availableKg), unit)}</TD>
                   {showCost ? <TD numeric>{money(pt(m.stockValue))}</TD> : null}
                 </TR>
               </TFoot>
@@ -357,10 +359,10 @@ export default async function ItemStockPage({
                   <TH>Shipment reference</TH>
                   <TH>Container</TH>
                   <TH>Batch</TH>
-                  <TH numeric>Received KG</TH>
-                  <TH numeric>Sold KG</TH>
-                  <TH numeric>Remaining KG</TH>
-                  {showCost ? <TH numeric>Landed cost/KG</TH> : null}
+                  <TH numeric>Received {unit}</TH>
+                  <TH numeric>Sold {unit}</TH>
+                  <TH numeric>Remaining {unit}</TH>
+                  {showCost ? <TH numeric>Landed cost/{unit}</TH> : null}
                   {showSales ? <TH numeric>Sales</TH> : null}
                   {showProfit ? <TH numeric>COGS</TH> : null}
                   {both ? <TH numeric>Profit / loss</TH> : null}
@@ -377,10 +379,10 @@ export default async function ItemStockPage({
                     </TD>
                     <TD className="font-mono text-xs">{s.containers.map((c) => c.containerNumber ?? '—').join(', ')}</TD>
                     <TD className="text-xs">{s.containers.flatMap((c) => c.batches.map((b) => b.batchNumber)).join(', ')}</TD>
-                    <TD numeric>{kg(s.receivedKg)}</TD>
-                    <TD numeric>{kg(s.soldKg)}</TD>
-                    <TD numeric>{kg(s.availableKg)}</TD>
-                    {showCost ? <TD numeric>{money(perKgText(s.avgCostPerKg, local))}</TD> : null}
+                    <TD numeric>{kg(s.receivedKg, unit)}</TD>
+                    <TD numeric>{kg(s.soldKg, unit)}</TD>
+                    <TD numeric>{kg(s.availableKg, unit)}</TD>
+                    {showCost ? <TD numeric>{money(perKgText(s.avgCostPerKg, local, unit))}</TD> : null}
                     {showSales ? <TD numeric>{money(pt(s.revenue))}</TD> : null}
                     {showProfit ? <TD numeric>{money(pt(s.cogs))}</TD> : null}
                     {both ? <TD numeric>{profitCell(s.grossProfit)}</TD> : null}
@@ -392,10 +394,10 @@ export default async function ItemStockPage({
                   <TD>Total</TD>
                   <TD />
                   <TD />
-                  <TD numeric>{kg(m.receivedKg)}</TD>
-                  <TD numeric>{kg(m.soldKg)}</TD>
-                  <TD numeric>{kg(m.availableKg)}</TD>
-                  {showCost ? <TD numeric>{money(perKgText(m.avgCostPerKg, local))}</TD> : null}
+                  <TD numeric>{kg(m.receivedKg, unit)}</TD>
+                  <TD numeric>{kg(m.soldKg, unit)}</TD>
+                  <TD numeric>{kg(m.availableKg, unit)}</TD>
+                  {showCost ? <TD numeric>{money(perKgText(m.avgCostPerKg, local, unit))}</TD> : null}
                   {showSales ? <TD numeric>{money(pt(m.revenue))}</TD> : null}
                   {showProfit ? <TD numeric>{money(pt(m.cogs))}</TD> : null}
                   {both ? <TD numeric>{profitCell(m.grossProfit)}</TD> : null}
@@ -415,19 +417,19 @@ export default async function ItemStockPage({
           {shipments.map((s) => (
             <details key={s.shipmentId} className="rounded-lg border border-line" data-level="shipment" data-ref={s.reference}>
               <summary className="cursor-pointer px-3 py-2 text-sm">
-                <DrillLine title={`${s.reference} · ${s.shipmentLabel}`} m={s} local={local} showCost={showCost} showProfit={showProfit} showSales={showSales} />
+                <DrillLine unit={unit} title={`${s.reference} · ${s.shipmentLabel}`} m={s} local={local} showCost={showCost} showProfit={showProfit} showSales={showSales} />
               </summary>
               <div className="space-y-2 border-t border-line p-2 pl-4">
                 {s.containers.map((c) => (
                   <details key={c.containerKey || 'none'} className="rounded-lg border border-line" data-level="container" data-ref={c.containerNumber ?? ''}>
                     <summary className="cursor-pointer px-3 py-2 text-sm">
-                      <DrillLine title={`Container ${c.containerNumber ?? '—'}`} m={c} local={local} showCost={showCost} showProfit={showProfit} showSales={showSales} />
+                      <DrillLine unit={unit} title={`Container ${c.containerNumber ?? '—'}`} m={c} local={local} showCost={showCost} showProfit={showProfit} showSales={showSales} />
                     </summary>
                     <div className="space-y-2 border-t border-line p-2 pl-4">
                       {c.batches.map((b) => (
                         <details key={b.batchId} className="rounded-lg border border-line" data-level="batch" data-ref={b.batchNumber}>
                           <summary className="cursor-pointer px-3 py-2 text-sm">
-                            <DrillLine title={`Batch ${b.batchNumber} · lot ${b.lotNumber}`} m={b} local={local} showCost={showCost} showProfit={showProfit} showSales={showSales} />
+                            <DrillLine unit={unit} title={`Batch ${b.batchNumber} · lot ${b.lotNumber}`} m={b} local={local} showCost={showCost} showProfit={showProfit} showSales={showSales} />
                           </summary>
                           <div className="space-y-3 border-t border-line p-2 pl-4">
                             <Link href={`/inventory/batches/${b.batchId}`} className="text-xs font-medium text-forest-800 hover:underline">
@@ -437,9 +439,9 @@ export default async function ItemStockPage({
                               const sold = linesFor(b.batchId, w.warehouseId);
                               return (
                                 <div key={w.warehouseId} className="rounded-lg border border-line/70 p-2" data-level="warehouse" data-ref={w.warehouseName}>
-                                  <DrillLine title={w.warehouseName} m={w} local={local} showCost={showCost} showProfit={showProfit} showSales={showSales} />
+                                  <DrillLine unit={unit} title={w.warehouseName} m={w} local={local} showCost={showCost} showProfit={showProfit} showSales={showSales} />
                                   {showSales && sold.length > 0 ? (
-                                    <SalesTable lines={sold} local={local} showCost={showProfit} compact />
+                                    <SalesTable unit={unit} lines={sold} local={local} showCost={showProfit} compact />
                                   ) : null}
                                 </div>
                               );
@@ -467,7 +469,7 @@ export default async function ItemStockPage({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <SalesTable lines={lines} local={local} showCost={showProfit} />
+            <SalesTable unit={unit} lines={lines} local={local} showCost={showProfit} />
           </CardContent>
         </Card>
       ) : null}
@@ -503,6 +505,7 @@ function DrillLine({
   title,
   m,
   local,
+  unit,
   showCost,
   showProfit,
   showSales,
@@ -510,18 +513,19 @@ function DrillLine({
   title: string;
   m: ItemMeasures;
   local: string;
+  unit: string;
   showCost: boolean;
   showProfit: boolean;
   showSales: boolean;
 }) {
   const profit = profitText(m.grossProfit, local);
   const facts: Array<[string, string, string?]> = [
-    ['Received', kg(m.receivedKg)],
-    ...(m.transferInKg.isZero() ? [] : [['In', kg(m.transferInKg)] as [string, string]]),
-    ...(m.transferOutKg.isZero() ? [] : [['Out', kg(m.transferOutKg)] as [string, string]]),
-    ['Sold', kg(m.soldKg)],
-    ['Remaining', kg(m.availableKg)],
-    ...(showCost && m.avgCostPerKg ? [['Landed/KG', perKgText(m.avgCostPerKg, local)!.primary] as [string, string]] : []),
+    ['Received', kg(m.receivedKg, unit)],
+    ...(m.transferInKg.isZero() ? [] : [['In', kg(m.transferInKg, unit)] as [string, string]]),
+    ...(m.transferOutKg.isZero() ? [] : [['Out', kg(m.transferOutKg, unit)] as [string, string]]),
+    ['Sold', kg(m.soldKg, unit)],
+    ['Remaining', kg(m.availableKg, unit)],
+    ...(showCost && m.avgCostPerKg ? [[`Landed/${unit}`, perKgText(m.avgCostPerKg, local, unit)!.primary] as [string, string]] : []),
     ...(showSales ? [['Sales', formatMoney(m.revenue.local, local)] as [string, string]] : []),
     ...(showProfit ? [['COGS', formatMoney(m.cogs.local, local)] as [string, string]] : []),
     ...(showProfit && showSales ? [[profit.loss ? 'Loss' : 'Profit', formatMoney(m.grossProfit.local.abs(), local), profit.loss ? 'loss' : 'profit'] as [string, string, string]] : []),
@@ -540,7 +544,7 @@ function DrillLine({
 }
 
 /** Invoice lines for the item, with each line's share of what was paid. */
-function SalesTable({ lines, local, showCost, compact = false }: { lines: ItemSaleLine[]; local: string; showCost: boolean; compact?: boolean }) {
+function SalesTable({ lines, local, unit, showCost, compact = false }: { lines: ItemSaleLine[]; local: string; unit: string; showCost: boolean; compact?: boolean }) {
   if (lines.length === 0) return <p className="text-sm text-ink-subtle">No sales in this view.</p>;
   const total = (pick: (l: ItemSaleLine) => Pair): Pair =>
     lines.reduce((s, l) => ({ local: s.local.plus(pick(l).local), usd: s.usd.plus(pick(l).usd) }), { local: new Decimal(0), usd: new Decimal(0) });
@@ -588,8 +592,8 @@ function SalesTable({ lines, local, showCost, compact = false }: { lines: ItemSa
               )}
               {compact ? null : <TD className="text-xs">{l.batchNumber}</TD>}
               {compact ? null : <TD className="text-xs">{l.warehouseName}</TD>}
-              <TD numeric>{kg(l.quantityKg)}</TD>
-              <TD numeric>{`${formatMoney(l.ratePerKg, l.currency)} / KG`}</TD>
+              <TD numeric>{kg(l.quantityKg, unit)}</TD>
+              <TD numeric>{`${formatMoney(l.ratePerKg, l.currency)} / ${unit}`}</TD>
               <TD numeric>{cell(l.gross)}</TD>
               <TD numeric>{cell(l.collectedTotal)}</TD>
               <TD numeric className={l.outstanding.local.greaterThan(0) ? 'font-semibold' : undefined}>
@@ -620,7 +624,7 @@ function SalesTable({ lines, local, showCost, compact = false }: { lines: ItemSa
             {compact ? null : <TD />}
             {compact ? null : <TD />}
             {compact ? null : <TD />}
-            <TD numeric>{kg(qty)}</TD>
+            <TD numeric>{kg(qty, unit)}</TD>
             <TD />
             <TD numeric>{cell(total((l) => l.gross))}</TD>
             <TD numeric>{cell(total((l) => l.collectedTotal))}</TD>

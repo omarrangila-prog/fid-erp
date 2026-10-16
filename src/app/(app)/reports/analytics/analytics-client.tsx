@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/feedback';
 import { downloadExcel } from '@/lib/export-excel';
 import { toast } from 'sonner';
+import { useTerms } from '@/components/company-config-context';
 
 export type Slice = {
   key: string;
@@ -46,9 +47,9 @@ function money(value: number): string {
   return value.toFixed(0);
 }
 
-function format(value: number, measure: Measure): string {
+function format(value: number, measure: Measure, unit: string): string {
   if (measure === 'marginPct') return `${value.toFixed(1)}%`;
-  if (measure === 'quantityKg') return `${value.toLocaleString('en-US', { maximumFractionDigits: 0 })} KG`;
+  if (measure === 'quantityKg') return `${value.toLocaleString('en-US', { maximumFractionDigits: 0 })} ${unit}`;
   return `USD ${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
@@ -71,6 +72,7 @@ export function AnalyticsClient({
   dimensions: Dimension[];
   currencyNote: string;
 }) {
+  const unit = useTerms()('unit');
   const [dimensionId, setDimensionId] = React.useState(dimensions[0]?.id ?? '');
   const [measure, setMeasure] = React.useState<Measure>('revenueUsd');
   const [sortDesc, setSortDesc] = React.useState(true);
@@ -113,12 +115,12 @@ export function AnalyticsClient({
         columns: [
           { header: dimension.label },
           { header: 'Detail' },
-          { header: 'Quantity KG', type: 'quantity' },
+          { header: `Quantity ${unit}`, type: 'quantity' },
           { header: 'Revenue USD', type: 'money' },
           { header: 'Cost USD', type: 'money' },
           { header: 'Gross profit USD', type: 'money' },
           { header: 'Margin', type: 'percent' },
-          { header: 'Profit per KG USD', type: 'number' },
+          { header: `Profit per ${unit} USD`, type: 'number' },
         ],
         // Margin travels as a fraction: Excel does the ×100 itself, and a
         // percentage-formatted 0.24 is a percentage the client can chart.
@@ -132,7 +134,7 @@ export function AnalyticsClient({
           row.marginPct / 100,
           row.profitPerKgUsd,
         ]),
-        totals: ['Quantity KG', 'Revenue USD', 'Cost USD', 'Gross profit USD'],
+        totals: [`Quantity ${unit}`, 'Revenue USD', 'Cost USD', 'Gross profit USD'],
       });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'The export could not be prepared.');
@@ -268,7 +270,7 @@ export function AnalyticsClient({
                       boxShadow: '0 8px 24px rgba(34,32,28,0.10)',
                     }}
                     formatter={((value: unknown) => [
-                      format(Number(Array.isArray(value) ? value[0] : (value ?? 0)), measure),
+                      format(Number(Array.isArray(value) ? value[0] : (value ?? 0)), measure, unit),
                       measureMeta.label,
                     ]) as never}
                   />
@@ -301,7 +303,7 @@ export function AnalyticsClient({
                       <th className="pb-2 px-3 text-right font-semibold">Cost</th>
                       <th className="pb-2 px-3 text-right font-semibold">Gross profit</th>
                       <th className="pb-2 px-3 text-right font-semibold">Margin</th>
-                      <th className="pb-2 pl-3 text-right font-semibold">Per KG</th>
+                      <th className="pb-2 pl-3 text-right font-semibold">Per {unit}</th>
                     </tr>
                   </thead>
                   <tbody>

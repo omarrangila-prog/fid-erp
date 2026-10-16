@@ -18,6 +18,7 @@ import { exportHref } from '@/components/shared/excel-link';
 import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
 import { dec } from '@/lib/money';
+import { makeTerms } from '@/lib/terminology';
 
 export const metadata: Metadata = { title: 'Inventory Valuation' };
 export const dynamic = 'force-dynamic';
@@ -32,6 +33,7 @@ export const dynamic = 'force-dynamic';
 export default async function InventoryValuationPage({ searchParams }: { searchParams: Promise<{ view?: string; from?: string; to?: string }> }) {
   const query = await searchParams;
   const user = await requirePageAccessAll([PERMISSIONS.REPORTS_VIEW, PERMISSIONS.INVENTORY_VIEW]);
+  const unit = makeTerms(user.activeCompany.terminology)('unit');
   const showCost = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
   const view = query.view === 'summary' || query.view === 'detail' ? query.view : 'warehouse';
   const [rows, summary, detail] = await Promise.all([
@@ -95,7 +97,7 @@ export default async function InventoryValuationPage({ searchParams }: { searchP
                   <th className="px-3 py-2 text-right font-semibold">Qty</th>
                   {showLocal ? (
                     <>
-                      <th className="px-3 py-2 text-right font-semibold">Avg cost / KG ({local})</th>
+                      <th className="px-3 py-2 text-right font-semibold">Avg cost / {unit} ({local})</th>
                       <th className="px-3 py-2 text-right font-semibold">Asset value ({local})</th>
                     </>
                   ) : null}
@@ -224,13 +226,13 @@ export default async function InventoryValuationPage({ searchParams }: { searchP
                     <TH numeric>Available</TH>
                     {showLocal ? (
                       <>
-                        <TH numeric>Landed / KG {local}</TH>
+                        <TH numeric>Landed / {unit} {local}</TH>
                         <TH numeric>Value {local}</TH>
                       </>
                     ) : null}
                     {showCost ? (
                       <>
-                        <TH numeric>Landed / KG</TH>
+                        <TH numeric>Landed / {unit}</TH>
                         <TH numeric>Value USD</TH>
                       </>
                     ) : null}

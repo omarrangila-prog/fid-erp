@@ -12,6 +12,7 @@ import { Field } from '@/components/ui/field';
 import { Callout } from '@/components/ui/feedback';
 import { receiveContainersAction } from '@/server/actions/trading-actions';
 import { todayInputValue } from '@/lib/format';
+import { useTerms } from '@/components/company-config-context';
 
 export type ReceivableBatch = {
   batchId: string;
@@ -110,6 +111,7 @@ function GoodsReceiptDialogBody({
   warehouses,
   defaultWarehouseId,
 }: GoodsReceiptDialogProps) {
+  const unit = useTerms()('unit');
   const router = useRouter();
   const [pending, startTransition] = React.useTransition();
   const [error, setError] = React.useState<string | null>(null);
@@ -207,7 +209,7 @@ function GoodsReceiptDialogBody({
       const allowance = Number(batch.orderedKg) * 0.1;
       if (claimed > Number(batch.outstandingKg) + allowance + 0.0005) {
         setError(
-          `${batch.itemName}: ${claimed.toLocaleString()} KG entered, but ${Number(batch.outstandingKg).toLocaleString()} KG is still to be received and at most ${Math.round(allowance).toLocaleString()} KG more than ordered can be accepted. Check the weight, or correct the order first.`,
+          `${batch.itemName}: ${claimed.toLocaleString()} ${unit} entered, but ${Number(batch.outstandingKg).toLocaleString()} ${unit} is still to be received and at most ${Math.round(allowance).toLocaleString()} ${unit} more than ordered can be accepted. Check the weight, or correct the order first.`,
         );
         return;
       }
@@ -358,12 +360,12 @@ function GoodsReceiptDialogBody({
                         <span className="ml-2 text-xs font-normal text-ink-muted">· {batch.itemName}</span>
                       </span>
                       <span className="tnum block text-xs text-ink-muted">
-                        Ordered {perContainer.toLocaleString(undefined, { maximumFractionDigits: 0 })} KG
+                        Ordered {perContainer.toLocaleString(undefined, { maximumFractionDigits: 0 })} {unit}
                         {siblings.length > 1
-                          ? ` (${Number(batch.orderedKg).toLocaleString()} KG across ${siblings.length} containers)`
+                          ? ` (${Number(batch.orderedKg).toLocaleString()} ${unit} across ${siblings.length} containers)`
                           : ''}{' '}
                         · outstanding{' '}
-                        <span className="font-semibold text-ink">{Number(batch.outstandingKg).toLocaleString()} KG</span>
+                        <span className="font-semibold text-ink">{Number(batch.outstandingKg).toLocaleString()} {unit}</span>
                         {batches.length > 1 ? ` · Shipment ${batch.shipmentOrdinal}` : ''}
                       </span>
                     </span>
@@ -376,8 +378,8 @@ function GoodsReceiptDialogBody({
                 {over && line.key === siblings[siblings.length - 1].key ? (
                   <p className={`tnum text-xs ${tooFar ? 'font-medium text-red-700' : 'text-amber-800'}`}>
                     {tooFar
-                      ? `${claimed.toLocaleString()} KG entered for ${batch.itemName}; ${Number(batch.outstandingKg).toLocaleString()} KG is still to be received and at most ${Math.round(allowance).toLocaleString()} KG more than ordered can be accepted.`
-                      : `${claimed.toLocaleString()} KG entered for ${batch.itemName} — ${Math.round(excess).toLocaleString()} KG more than the ${Number(batch.outstandingKg).toLocaleString()} KG ordered. The extra is received at no extra cost; the supplier is owed the contract value.`}
+                      ? `${claimed.toLocaleString()} ${unit} entered for ${batch.itemName}; ${Number(batch.outstandingKg).toLocaleString()} ${unit} is still to be received and at most ${Math.round(allowance).toLocaleString()} ${unit} more than ordered can be accepted.`
+                      : `${claimed.toLocaleString()} ${unit} entered for ${batch.itemName} — ${Math.round(excess).toLocaleString()} ${unit} more than the ${Number(batch.outstandingKg).toLocaleString()} ${unit} ordered. The extra is received at no extra cost; the supplier is owed the contract value.`}
                   </p>
                 ) : null}
 
@@ -414,7 +416,7 @@ function GoodsReceiptDialogBody({
                           placeholder={batch.traceabilityPending ? '' : 'Optional'}
                         />
                       </Field>
-                      <Field label="Received (KG)" htmlFor={`qty-${line.key}`} required>
+                      <Field label={`Received (${unit})`} htmlFor={`qty-${line.key}`} required>
                         <Input
                           id={`qty-${line.key}`}
                           value={line.quantityKg}

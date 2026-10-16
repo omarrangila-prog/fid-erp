@@ -16,6 +16,7 @@ import { tryDec, sum } from '@/lib/money';
 import { formatQuantityKg, todayInputValue } from '@/lib/format';
 import { saveStockTransferAction, updateStockTransferAction } from '@/server/actions/trading-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
+import { useTerms } from '@/components/company-config-context';
 
 export type TransferStock = {
   batchId: string;
@@ -54,6 +55,7 @@ export function TransferForm({
   defaults?: TransferDefaults;
   canCreateWarehouse?: boolean;
 }) {
+  const unit = useTerms()('unit');
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
   const [error, setError] = React.useState<string | null>(null);
@@ -260,7 +262,7 @@ export function TransferForm({
                 </Field>
 
                 <Field
-                  label="Quantity (KG)"
+                  label={`Quantity (${unit})`}
                   required
                   error={over && option ? `Only ${formatQuantityKg(option.availableKg)} free` : undefined}
                 >

@@ -15,6 +15,7 @@ import { ReportShareButton } from '@/components/share/report-share-button';
 import { exportHref } from '@/components/shared/excel-link';
 import { PrintHeader } from '@/components/shared/print-header';
 import { DateRangePicker } from '@/components/shared/date-range';
+import { makeTerms } from '@/lib/terminology';
 
 export const metadata: Metadata = { title: 'Purchase Report' };
 export const dynamic = 'force-dynamic';
@@ -35,6 +36,7 @@ export default async function PurchaseReportPage({
 }) {
   const { from, to } = await searchParams;
   const user = await requirePageAccess(PERMISSIONS.REPORTS_VIEW);
+  const unit = makeTerms(user.activeCompany.terminology)('unit');
 
   const rows = await getPurchaseRegister({
     companyId: user.activeCompany.id,
@@ -109,8 +111,8 @@ export default async function PurchaseReportPage({
                     <TH>Contract</TH>
                     <TH>Supplier</TH>
                     <TH>Origin</TH>
-                    <TH numeric>Bought KG</TH>
-                    <TH numeric>Landed KG</TH>
+                    <TH numeric>Bought {unit}</TH>
+                    <TH numeric>Landed {unit}</TH>
                     <TH numeric>Goods</TH>
                     <TH numeric>Freight</TH>
                     <TH numeric>Total</TH>

@@ -58,7 +58,7 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
   const stockOptions: StockOption[] = stock.map((s) => ({
     value: `${s.batchId}:${s.warehouseId}`,
     label: `${s.batchNumber} · ${s.itemName}`,
-    hint: `${s.contractReference} · ${s.warehouseName} · ${formatQuantityKg(s.availableKg)} available · Lot ${s.lotNumber}`,
+    hint: `${s.contractReference} · ${s.warehouseName} · ${formatQuantityKg(s.availableKg, { unit: s.baseUom })} available · Lot ${s.lotNumber}`,
     keywords: `${s.contractReference} ${s.itemCode} ${s.originCountry} ${s.lotNumber} ${s.warehouseCode}`,
     contractReference: s.contractReference,
     lotNumber: s.lotNumber,
@@ -68,6 +68,8 @@ export default async function EditSalePage({ params }: { params: Promise<{ id: s
     batchNumber: s.batchNumber,
     availableKg: s.availableKg.toString(),
     bagWeightKg: s.bagWeightKg.toString(),
+    baseUom: s.baseUom,
+    packUom: s.packUom,
     itemName: s.itemName,
     itemId: s.itemId,
     warehouseName: s.warehouseName,

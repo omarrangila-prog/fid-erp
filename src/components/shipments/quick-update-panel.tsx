@@ -31,6 +31,7 @@ import { ManageContainersDialog } from '@/app/(app)/loading/manage-containers-di
 import { GoodsReceiptDialog } from '@/app/(app)/purchases/[id]/goods-receipt-dialog';
 import { EditContainerDialog, type EditableContainer } from '@/components/shipments/edit-container-dialog';
 import { safely } from '@/lib/safely';
+import { useTerms } from '@/components/company-config-context';
 
 /** What the row's button asked for, so the panel opens ready to do it. */
 export type QuickIntent = 'load' | 'eta' | 'documents' | 'arrive' | 'receive' | null;
@@ -92,6 +93,7 @@ function QuickUpdateBody({
   onOpenChange: (open: boolean) => void;
   intent?: QuickIntent;
 }) {
+  const unit = useTerms()('unit');
   const router = useRouter();
   const wide = useWide();
   const [order, setOrder] = React.useState<QuickOrder | null>(null);
@@ -776,7 +778,7 @@ function QuickUpdateBody({
                         <th className="w-8 px-2 py-2" aria-label="Select" />
                         <th className="px-3 py-2">Container</th>
                         <th className="px-3 py-2">Item</th>
-                        <th className="px-3 py-2 text-right">KG</th>
+                        <th className="px-3 py-2 text-right">{unit}</th>
                         <th className="px-3 py-2">Load status</th>
                         <th className="px-3 py-2">ETA</th>
                         <th className="px-3 py-2">Documents</th>

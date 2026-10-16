@@ -382,6 +382,9 @@ export type SellableStockRow = {
   availableKg: Decimal;
   bagWeightKg: Decimal;
   landedUnitCostUsd: Decimal;
+  /** The unit this item's stock is counted in (KG, PCS, M, L) and what a pack is called. */
+  baseUom: string;
+  packUom: string;
 };
 
 /**
@@ -395,6 +398,7 @@ export async function getSellableStock(companyId: string): Promise<SellableStock
   >`
     SELECT ib."batchId", ib."warehouseId", b."batchNumber", l."lotNumber",
            ci."id" AS "itemId", ci."itemName", ci."itemCode", ci."originCountry", ci."grade",
+           ci."baseUom", ci."packUom",
            c."containerNumber", w."name" AS "warehouseName", w."code" AS "warehouseCode",
            s."id" AS "shipmentId", s."shipmentNumber",
            pc."contractReference",
@@ -423,8 +427,10 @@ export async function getSellableStock(companyId: string): Promise<SellableStock
     itemId: String(row.itemId),
     itemName: String(row.itemName),
     itemCode: String(row.itemCode),
-    originCountry: String(row.originCountry),
+    originCountry: row.originCountry ? String(row.originCountry) : '',
     grade: row.grade,
+    baseUom: String(row.baseUom ?? 'KG'),
+    packUom: String(row.packUom ?? 'BAG'),
     containerNumber: row.containerNumber,
     warehouseName: String(row.warehouseName),
     warehouseCode: String(row.warehouseCode),

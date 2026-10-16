@@ -27,6 +27,7 @@ import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
 import { ProfitabilityStatement } from './statement-view';
 import { FavouriteStar } from '@/components/reports/report-statement';
+import { makeTerms } from '@/lib/terminology';
 
 export const metadata: Metadata = { title: 'Profitability' };
 export const dynamic = 'force-dynamic';
@@ -44,6 +45,7 @@ const VIEWS = [
 export default async function ProfitabilityPage({ searchParams }: { searchParams: Promise<{ view?: string; contract?: string }> }) {
   const { view, contract } = await searchParams;
   const user = await requirePageAccess(PERMISSIONS.PROFITS_VIEW);
+  const unit = makeTerms(user.activeCompany.terminology)('unit');
   const companyId = user.activeCompany.id;
   const local = user.activeCompany.localCurrency;
   // "By contract" was the same rows as "By job"; both are now the one shipment view.
@@ -89,7 +91,7 @@ export default async function ProfitabilityPage({ searchParams }: { searchParams
           tone={summary.netProfitUsd.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
         />
         <StatCard
-          label="Profit per KG"
+          label={`Profit per ${unit}`}
           value={formatMoney(summary.profitPerKgUsd, 'USD')}
           sublabel={`on ${formatQuantityKg(summary.soldKg)} sold`}
         />
@@ -116,11 +118,11 @@ export default async function ProfitabilityPage({ searchParams }: { searchParams
         ))}
       </div>
 
-      {active === 'statement' ? <ProfitabilityStatement companyId={companyId} local={local} contractId={contract} /> : null}
+      {active === 'statement' ? <ProfitabilityStatement companyId={companyId} local={local} contractId={contract} unit={unit} /> : null}
       {active === 'shipment' ? <ShipmentTable companyId={companyId} local={local} lead="job" /> : null}
       {active === 'month' ? <MonthlyTable companyId={companyId} /> : null}
       {active !== 'statement' && active !== 'shipment' && active !== 'month' ? (
-        <BreakdownTable companyId={companyId} kind={active} />
+        <BreakdownTable companyId={companyId} kind={active} unit={unit} />
       ) : null}
     </div>
   );
@@ -292,9 +294,11 @@ async function ShipmentTable({
 async function BreakdownTable({
   companyId,
   kind,
+  unit,
 }: {
   companyId: string;
   kind: 'customer' | 'product' | 'batch' | 'container';
+  unit: string;
 }) {
   const rows =
     kind === 'customer'
@@ -323,7 +327,7 @@ async function BreakdownTable({
                 <TH numeric>Revenue</TH>
                 <TH numeric>Cost</TH>
                 <TH numeric>Gross profit</TH>
-                <TH numeric>Per KG</TH>
+                <TH numeric>Per {unit}</TH>
                 <TH numeric>Margin</TH>
               </TR>
             </THead>

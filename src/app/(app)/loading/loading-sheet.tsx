@@ -26,6 +26,7 @@ import { DocumentStatusDialog } from '@/app/(app)/loading/document-status-dialog
 import { ManageContainersDialog } from '@/app/(app)/loading/manage-containers-dialog';
 import { GoodsReceiptDialog, type ReceivableBatch } from '@/app/(app)/purchases/[id]/goods-receipt-dialog';
 import { cn } from '@/lib/utils';
+import { useTerms } from '@/components/company-config-context';
 
 /** Statuses from which "loaded" is still ahead rather than behind. */
 const NOT_YET_LOADED = ['CONTRACT_CREATED', 'AWAITING_LOADING'];
@@ -212,6 +213,8 @@ export function LoadingSheet({
   warehouses: Array<{ id: string; name: string; code: string }>;
   defaultWarehouseId: string | null;
 }) {
+  const unit = useTerms()('unit');
+  const terms = useTerms();
   const [viewing, setViewing] = React.useState<LoadingRow | null>(null);
   const [loadingRow, setLoadingRow] = React.useState<LoadingRow | null>(null);
   const [editingEta, setEditingEta] = React.useState<LoadingRow | null>(null);
@@ -568,7 +571,7 @@ export function LoadingSheet({
   const groupColumns: DataColumn<OrderGroup>[] = [
     {
       id: 'reference',
-      header: 'ICUL/FID Reference',
+      header: terms('orderReference'),
       mobile: 'title',
       sortValue: (g) => g.contractDateSort,
       exportValue: (g) => `${g.contractReference} ${g.contractDate}`,
@@ -626,11 +629,11 @@ export function LoadingSheet({
     },
     {
       id: 'quantity',
-      header: 'Total KG',
+      header: `Total ${unit}`,
       numeric: true,
       sortValue: (g) => totalKg(g),
       exportValue: (g) => totalKg(g),
-      cell: (g) => <span className="tnum whitespace-nowrap font-medium">{totalKg(g).toLocaleString('en-US', { maximumFractionDigits: 2 })} KG</span>,
+      cell: (g) => <span className="tnum whitespace-nowrap font-medium">{totalKg(g).toLocaleString('en-US', { maximumFractionDigits: 2 })} {unit}</span>,
     },
     {
       // Loaded or not, container by container: "2 / 3 Loaded".
@@ -793,7 +796,7 @@ export function LoadingSheet({
               <th className="py-1.5 pr-3 font-medium">Container</th>
               <th className="py-1.5 pr-3 font-medium">Lot</th>
               <th className="py-1.5 pr-3 font-medium">Batch</th>
-              <th className="py-1.5 pr-3 text-right font-medium">KG</th>
+              <th className="py-1.5 pr-3 text-right font-medium">{unit}</th>
               <th className="py-1.5 pr-3 font-medium">ETA</th>
               <th className="py-1.5 pr-3 font-medium">Documents</th>
               <th className="py-1.5 pr-3 font-medium">Status</th>

@@ -43,7 +43,7 @@ export const FID_TENANT: TenantSeed = {
       address: 'Dubai, United Arab Emirates',
       industryTemplate: 'COMMODITY_TRADING',
       tagline: 'Coffee Connects Worlds',
-      terminology: { product: 'Coffee' },
+      terminology: { product: 'Coffee', orderRef: 'ICUL/FID Ref', orderReference: 'ICUL/FID Reference' },
       warehouses: [
         { code: 'DXB-JAFZA', name: 'Jebel Ali Free Zone Warehouse', location: 'Jebel Ali, Dubai', port: 'Jebel Ali', isDefault: true },
         { code: 'DXB-BOND', name: 'Port Rashid Bonded Store', location: 'Port Rashid, Dubai', port: 'Port Rashid' },
@@ -69,7 +69,7 @@ export const FID_TENANT: TenantSeed = {
       address: 'Casablanca, Morocco',
       industryTemplate: 'COMMODITY_TRADING',
       tagline: 'Coffee Connects Worlds',
-      terminology: { product: 'Coffee' },
+      terminology: { product: 'Coffee', orderRef: 'ICUL/FID Ref', orderReference: 'ICUL/FID Reference' },
       // Morocco runs two warehouses; stock is tracked separately at each.
       warehouses: [
         { code: 'MA-CASA-A', name: 'Casablanca Warehouse A', location: 'Casablanca', port: 'Casablanca', isDefault: true },

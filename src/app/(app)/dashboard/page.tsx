@@ -32,6 +32,7 @@ import { agentScope, customerScopeWhere } from '@/lib/auth/scope';
 import { getAgentSummaries, agentRelationship } from '@/lib/services/agent-account';
 import { getReceivables } from '@/lib/services/receivables';
 import { prisma } from '@/lib/db';
+import { makeTerms } from '@/lib/terminology';
 
 export const metadata: Metadata = { title: 'Dashboard' };
 export const dynamic = 'force-dynamic';
@@ -79,6 +80,7 @@ function DashboardActions({
 
 export default async function DashboardPage() {
   const user = await requirePageAccess(PERMISSIONS.DASHBOARD_VIEW);
+  const unit = makeTerms(user.activeCompany.terminology)('unit');
   const companyDay = companyToday(user.activeCompany.timezone);
   const companyId = user.activeCompany.id;
   const local = user.activeCompany.localCurrency;
@@ -535,7 +537,7 @@ export default async function DashboardPage() {
               tone={data.profit.grossProfitUsd.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
             />
             <StatCard
-              label="Profit per KG"
+              label={`Profit per ${unit}`}
               value={formatMoney(data.profit.profitPerKgUsd, 'USD')}
               sublabel={`on ${formatQuantityKg(data.profit.soldKg)} sold`}
               tone={data.profit.profitPerKgUsd.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}

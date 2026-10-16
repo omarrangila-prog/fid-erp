@@ -7,6 +7,7 @@ import { DataTable, type DataColumn } from '@/components/ui/data-table';
 import { History, Ship, ArrowLeftRight } from 'lucide-react';
 import { RowActions, viewAction } from '@/components/shared/row-actions';
 import { Badge } from '@/components/ui/badge';
+import { useTerms } from '@/components/company-config-context';
 
 export type BatchRow = {
   id: string;
@@ -52,6 +53,7 @@ export function BatchesClient({
   /** Rendered inside the empty state; built on the server so permissions are checked there. */
   emptyAction?: React.ReactNode;
 }) {
+  const unit = useTerms()('unit');
   const columns: DataColumn<BatchRow>[] = [
     {
       id: 'batch',
@@ -99,13 +101,13 @@ export function BatchesClient({
       ),
     },
     { id: 'warehouses', header: 'Warehouse', mobile: 'meta', exportValue: (r) => r.warehouses, cell: (r) => r.warehouses || '—' },
-    { id: 'ordered', header: 'Ordered KG', numeric: true, hideable: true, sortValue: (r) => r.orderedSort, exportValue: (r) => r.orderedSort, exportType: 'quantity', cell: (r) => r.orderedLabel },
-    { id: 'received', header: 'Received KG', numeric: true, hideable: true, exportValue: (r) => r.receivedSort, exportType: 'quantity', cell: (r) => r.receivedLabel },
-    { id: 'inTransit', header: 'In transit KG', numeric: true, hideable: true, exportValue: (r) => r.inTransitSort, exportType: 'quantity', cell: (r) => r.inTransitLabel },
-    { id: 'sold', header: 'Sold KG', numeric: true, mobile: 'meta', exportValue: (r) => r.soldSort, exportType: 'quantity', cell: (r) => r.soldLabel },
+    { id: 'ordered', header: `Ordered ${unit}`, numeric: true, hideable: true, sortValue: (r) => r.orderedSort, exportValue: (r) => r.orderedSort, exportType: 'quantity', cell: (r) => r.orderedLabel },
+    { id: 'received', header: `Received ${unit}`, numeric: true, hideable: true, exportValue: (r) => r.receivedSort, exportType: 'quantity', cell: (r) => r.receivedLabel },
+    { id: 'inTransit', header: `In transit ${unit}`, numeric: true, hideable: true, exportValue: (r) => r.inTransitSort, exportType: 'quantity', cell: (r) => r.inTransitLabel },
+    { id: 'sold', header: `Sold ${unit}`, numeric: true, mobile: 'meta', exportValue: (r) => r.soldSort, exportType: 'quantity', cell: (r) => r.soldLabel },
     {
       id: 'available',
-      header: 'Available KG',
+      header: `Available ${unit}`,
       numeric: true,
       mobile: 'meta',
       sortValue: (r) => r.availableSort,
@@ -118,7 +120,7 @@ export function BatchesClient({
       ? [
           {
             id: 'landed',
-            header: 'Landed / KG USD',
+            header: `Landed / ${unit} USD`,
             numeric: true,
             hideable: true,
             exportValue: (r: BatchRow) => r.landedCostSort,

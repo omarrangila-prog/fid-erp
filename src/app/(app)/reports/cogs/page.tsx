@@ -16,6 +16,8 @@ import { exportHref } from '@/components/shared/excel-link';
 import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
 import { dec } from '@/lib/money';
+import { Term } from '@/components/shared/term';
+import { makeTerms } from '@/lib/terminology';
 
 export const metadata: Metadata = { title: 'Cost of Goods Sold' };
 export const dynamic = 'force-dynamic';
@@ -31,6 +33,7 @@ export default async function CogsReportPage({
 }) {
   const { from, to } = await searchParams;
   const user = await requirePageAccess(PERMISSIONS.PROFITS_VIEW);
+  const unit = makeTerms(user.activeCompany.terminology)('unit');
   const fromDate = dayParam(from) ?? startOfYear();
   // Today on the company's own clock, not the server's: Dubai is four hours ahead of UTC.
   const toDate = dayParam(to) ?? companyToday(user.activeCompany.timezone);
@@ -107,10 +110,10 @@ export default async function CogsReportPage({
                     <TH>Invoice</TH>
                     <TH>Customer</TH>
                     <TH>Coffee</TH>
-                    <TH>ICUL/FID Ref</TH>
+                    <TH><Term k="orderRef" /></TH>
                     <TH>Batch</TH>
                     <TH>Warehouse</TH>
-                    <TH numeric>KG</TH>
+                    <TH numeric>{unit}</TH>
                     <TH numeric>Revenue</TH>
                     <TH numeric>COGS</TH>
                     <TH numeric>Gross profit</TH>

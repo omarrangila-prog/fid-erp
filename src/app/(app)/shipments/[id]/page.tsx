@@ -35,6 +35,7 @@ import { ShipmentWorkflow } from '@/app/(app)/shipments/[id]/shipment-workflow';
 import { DeleteShipmentButton } from '@/components/shipments/delete-shipment-button';
 import { Plus } from 'lucide-react';
 import { getInvoicePaymentStatus } from '@/lib/invoice-payment';
+import { makeTerms } from '@/lib/terminology';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,6 +53,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 export default async function ShipmentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requirePageAccess(PERMISSIONS.SHIPMENTS_VIEW);
+  const unit = makeTerms(user.activeCompany.terminology)('unit');
   const companyId = user.activeCompany.id;
   const showProfit = can(user, PERMISSIONS.PROFITS_VIEW);
   const showCost = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
@@ -412,7 +414,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                 value={<DualAmount amount={costSheet.costPerMtLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} amountUsd={costSheet.costPerMtUsd} rateSource="From the landed cost, each transaction at its own rate" />}
               />
               <Metric
-                label="Cost / KG"
+                label={`Cost / ${unit}`}
                 value={<DualAmount amount={costSheet.costPerKgLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} amountUsd={costSheet.costPerKgUsd} rateSource="From the landed cost, each transaction at its own rate" />}
               />
               <Metric
@@ -458,7 +460,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                 </p>
                 <dl className="mt-3 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
                   <div>
-                    <dt className="text-xs text-ink-muted">Avg cost / KG</dt>
+                    <dt className="text-xs text-ink-muted">Avg cost / {unit}</dt>
                     <dd className="tnum font-semibold text-ink" data-testid="remaining-avg-cost">
                       {costSheet.remainingAvgCostPerKgLocal
                         ? formatMoney(costSheet.remainingAvgCostPerKgLocal, costSheet.localCurrency)
@@ -469,7 +471,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-ink-muted">Purchase cost / KG</dt>
+                    <dt className="text-xs text-ink-muted">Purchase cost / {unit}</dt>
                     <dd className="tnum font-semibold text-ink">
                       {costSheet.remainingPurchasePerKgUsd ? formatMoney(costSheet.remainingPurchasePerKgUsd, 'USD') : '—'}
                       <span className="block text-xs font-normal text-ink-subtle">the supplier&rsquo;s price alone</span>
@@ -575,6 +577,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                 local charges are divided equally between the item/container
                 lines, and the table says so on each row. */}
             <CostingTable
+              unit={makeTerms(user.activeCompany.terminology)('unit')}
               rows={costing}
               caption="Each container keeps its own purchase price; the job's shared local charges are split equally between the lines."
             />
@@ -716,10 +719,10 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                 tone={profit.netProfitLocal.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
                 hint={`${formatPercent(profit.netMarginPct)} margin`}
               />
-              <Metric label="Profit per KG" value={<DualAmount amount={profit.profitPerKgLocal} currency={local} localCurrency={local} amountUsd={profit.profitPerKgUsd} rateSource="Each transaction at its own rate" />} />
+              <Metric label={`Profit per ${unit}`} value={<DualAmount amount={profit.profitPerKgLocal} currency={local} localCurrency={local} amountUsd={profit.profitPerKgUsd} rateSource="Each transaction at its own rate" />} />
               {jobCost && costSheet ? (
                 <>
-                  <Metric label="Landed cost / KG" value={<DualAmount amount={costSheet.costPerKgLocal} currency={local} localCurrency={local} amountUsd={jobCost.landedCostPerKgUsd} rateSource="Each transaction at its own rate" />} />
+                  <Metric label={`Landed cost / ${unit}`} value={<DualAmount amount={costSheet.costPerKgLocal} currency={local} localCurrency={local} amountUsd={jobCost.landedCostPerKgUsd} rateSource="Each transaction at its own rate" />} />
                   <Metric label="Landed cost / bag" value={formatMoney(jobCost.landedCostPerBagUsd, 'USD')} />
                 </>
               ) : null}
@@ -746,7 +749,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                     <TH numeric>Received</TH>
                     <TH numeric>Sold</TH>
                     <TH numeric>Available</TH>
-                    {showCost ? <TH numeric>Landed / KG</TH> : null}
+                    {showCost ? <TH numeric>Landed / {unit}</TH> : null}
                   </TR>
                 </THead>
                 <TBody>
@@ -869,7 +872,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                     <TH>Date</TH>
                     <TH>Customer</TH>
                     <TH>Container</TH>
-                    <TH numeric>KG</TH>
+                    <TH numeric>{unit}</TH>
                     <TH numeric>Amount</TH>
                     <TH>Payment</TH>
                     <TH>Updated</TH>

@@ -148,6 +148,8 @@ export type ItemNode = ItemMeasures & {
   itemName: string;
   itemCode: string;
   origin: string;
+  /** The unit this item's quantities are counted in. */
+  baseUom: string;
   status: StockStatus;
   warehouses: WarehouseNode[];
   shipments: ShipmentNode[];
@@ -551,7 +553,7 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
         container: { select: { containerNumber: true } },
         purchaseContract: { select: { contractReference: true } },
         shipment: { select: { jobNumber: true } },
-        item: { select: { itemName: true, itemCode: true, originCountry: true } },
+        item: { select: { itemName: true, itemCode: true, originCountry: true, baseUom: true } },
       },
     }),
     batchIds.length ? getBatchCostings({ companyId, batchIds }) : Promise.resolve([]),
@@ -865,6 +867,7 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
       itemName: anyBatch.item.itemName,
       itemCode: anyBatch.item.itemCode,
       origin: anyBatch.item.originCountry ?? '',
+      baseUom: anyBatch.item.baseUom,
       status,
       ...measures,
       warehouses: warehouseNodes(item.warehouses),

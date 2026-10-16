@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { makeTerms } from '@/lib/terminology';
 import Link from 'next/link';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
@@ -46,12 +47,13 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
   // so only when nothing narrows the view.
   const checks = !filtered && !scope && showProfit && showSales ? await getItemProfitabilityChecks(companyId, report) : [];
   const local = report.localCurrency;
+  const unit = makeTerms(user.activeCompany.terminology)('unit');
   const itemQuery = new URLSearchParams(
     Object.entries({ warehouse: values.warehouse, shipment: values.shipment, batch: values.batch, container: values.container, from: values.from, to: values.to }).filter(
       (entry): entry is [string, string] => !!entry[1],
     ),
   ).toString();
-  const itemRows = report.items.map((item) => toItemStockRow(item, local, { showCost: showValue, showSales, showProfit }, itemQuery ? `?${itemQuery}` : ''));
+  const itemRows = report.items.map((item) => toItemStockRow(item, local, { showCost: showValue, showSales, showProfit }, itemQuery ? `?${itemQuery}` : '', unit));
   const t = report.total;
   const profit = profitText(t.grossProfit, local);
   const periodLabel = values.from || values.to ? `${values.from ? formatDate(values.from) : 'Start'} – ${values.to ? formatDate(values.to) : 'today'}` : undefined;
@@ -260,15 +262,15 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
           <Figure
             testId="total-received"
             label="Received"
-            value={kg(t.receivedKg)}
-            sub={t.openingKg.isZero() ? undefined : `${kg(t.openingKg)} on hand before the period`}
+            value={kg(t.receivedKg, unit)}
+            sub={t.openingKg.isZero() ? undefined : `${kg(t.openingKg, unit)} on hand before the period`}
           />
-          <Figure testId="total-sold" label="Sold" value={kg(t.soldKg)} />
+          <Figure testId="total-sold" label="Sold" value={kg(t.soldKg, unit)} />
           <Figure
             testId="total-available"
             label="Available"
-            value={kg(t.availableKg)}
-            sub={`${sites.length === 1 ? 'In 1 warehouse' : `Across ${sites.length} warehouses`}${t.reservedKg.greaterThan(0) ? ` · ${kg(t.reservedKg)} held for drafts` : ''}`}
+            value={kg(t.availableKg, unit)}
+            sub={`${sites.length === 1 ? 'In 1 warehouse' : `Across ${sites.length} warehouses`}${t.reservedKg.greaterThan(0) ? ` · ${kg(t.reservedKg, unit)} held for drafts` : ''}`}
           />
           <Figure testId="total-in-transit" label="In transit" value={formatQuantityKg(inTransitKg)} sub="Owned, not yet landed" />
           {showValue ? (
@@ -277,7 +279,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
               label="Stock value"
               value={pairText(t.stockValue, local)!.primary}
               equivalent={pairText(t.stockValue, local)!.equivalent}
-              sub={`What is left, at its landed cost${perKgText(t.avgCostPerKg, local) ? ` · average ${perKgText(t.avgCostPerKg, local)!.primary}` : ''}`}
+              sub={`What is left, at its landed cost${perKgText(t.avgCostPerKg, local, unit) ? ` · average ${perKgText(t.avgCostPerKg, local, unit)!.primary}` : ''}`}
             />
           ) : null}
         </div>
@@ -294,7 +296,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
               label="Sales revenue"
               value={pairText(t.revenue, local)!.primary}
               equivalent={pairText(t.revenue, local)!.equivalent}
-              sub={perKgText(t.avgSellPerKg, local) ? `Average ${perKgText(t.avgSellPerKg, local)!.primary}` : undefined}
+              sub={perKgText(t.avgSellPerKg, local, unit) ? `Average ${perKgText(t.avgSellPerKg, local, unit)!.primary}` : undefined}
             />
             <Figure
               testId="total-collected"
@@ -339,7 +341,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
             {sites.map((w) => (
               <div key={w.name} className="rounded-lg border border-line p-3" data-testid="site-total">
                 <p className="truncate text-sm font-medium text-ink">{w.name}</p>
-                <p className="tnum mt-1 text-lg font-semibold text-forest-800">{kg(w.available)}</p>
+                <p className="tnum mt-1 text-lg font-semibold text-forest-800">{kg(w.available, unit)}</p>
                 {showValue ? <p className="text-xs text-ink-subtle">{formatMoney(w.value, local)} at landed cost</p> : null}
               </div>
             ))}

@@ -12,6 +12,7 @@ import { Field } from '@/components/ui/field';
 import { getShipmentDeletePreviewAction, deleteShipmentAction } from '@/server/actions/shipment-delete-actions';
 import type { DeletePreview, DeleteMode } from '@/lib/services/shipment-delete';
 import { safely } from '@/lib/safely';
+import { useTerms } from '@/components/company-config-context';
 
 const REASONS = ['Mistaken entry', 'Duplicate shipment', 'Wrong purchase order', 'Test entry', 'Other'] as const;
 
@@ -57,6 +58,7 @@ function Body({
   defaultMode: DeleteMode;
   onDeleted?: (result: { draftId: string | null }) => void;
 }) {
+  const unit = useTerms()('unit');
   const router = useRouter();
   const [preview, setPreview] = React.useState<DeletePreview | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -99,7 +101,7 @@ function Body({
   const counts: Array<[string, number | string, string?]> = preview
     ? [
         ['Containers', preview.containerCount],
-        ['Goods receipts', preview.receipts.filter((r) => r.status === 'POSTED').length, preview.receipts.length ? `${Number(preview.receivedKg).toLocaleString('en-US')} KG received` : undefined],
+        ['Goods receipts', preview.receipts.filter((r) => r.status === 'POSTED').length, preview.receipts.length ? `${Number(preview.receivedKg).toLocaleString('en-US')} ${unit} received` : undefined],
         ['Stock movements', preview.stockMovements],
         ['Shipment costs', preview.costs.length],
         ['Warehouse transfers', preview.transfers.length],

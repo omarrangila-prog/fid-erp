@@ -18,6 +18,8 @@ import { DateRangePicker } from '@/components/shared/date-range';
 import { Input } from '@/components/ui/input';
 import { shortDocumentNumber } from '@/lib/short-number';
 import { Button } from '@/components/ui/button';
+import { Term } from '@/components/shared/term';
+import { makeTerms } from '@/lib/terminology';
 
 export const metadata: Metadata = { title: 'Sales Report' };
 export const dynamic = 'force-dynamic';
@@ -38,6 +40,7 @@ export default async function SalesReportPage({
 }) {
   const { from, to, ref } = await searchParams;
   const user = await requirePageAccess(PERMISSIONS.REPORTS_VIEW);
+  const unit = makeTerms(user.activeCompany.terminology)('unit');
   // Cost of goods and gross profit are profitability, which every role that
   // can run reports is not shown — as on Sales by and the profit reports.
   const showProfit = can(user, PERMISSIONS.PROFITS_VIEW);
@@ -81,8 +84,8 @@ export default async function SalesReportPage({
           {from ? <input type="hidden" name="from" value={from} /> : null}
           {to ? <input type="hidden" name="to" value={to} /> : null}
           <label className="flex flex-col gap-1 text-xs text-ink-muted">
-            ICUL/FID reference
-            <Input name="ref" defaultValue={ref ?? ''} placeholder="e.g. ICUL/FID/002" className="w-56" />
+            <Term k="orderReference" />
+            <Input name="ref" defaultValue={ref ?? ''} placeholder="e.g. PO-2026-002" className="w-56" />
           </label>
           <Button type="submit" variant="outline" size="sm">
             Filter
@@ -138,8 +141,8 @@ export default async function SalesReportPage({
                     <TH>Date</TH>
                     <TH>Invoice</TH>
                     <TH>Customer</TH>
-                    <TH>ICUL/FID Ref</TH>
-                    <TH numeric>KG</TH>
+                    <TH><Term k="orderRef" /></TH>
+                    <TH numeric>{unit}</TH>
                     <TH numeric>Total</TH>
                     <TH numeric>Paid</TH>
                     <TH numeric>Outstanding</TH>

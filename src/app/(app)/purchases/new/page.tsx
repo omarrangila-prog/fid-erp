@@ -31,6 +31,8 @@ export default async function NewPurchasePage() {
         grade: true,
         bagWeightKg: true,
         defaultUnit: true,
+        baseUom: true,
+        packUom: true,
       },
     }),
     prisma.port.findMany({
@@ -80,6 +82,8 @@ export default async function NewPurchasePage() {
     keywords: `${i.itemCode} ${i.originCountry} ${i.grade ?? ''}`,
     bagWeightKg: i.bagWeightKg.toString(),
     defaultUnit: i.defaultUnit,
+    baseUom: i.baseUom,
+    packUom: i.packUom,
   }));
 
   const rates = await getRateDefaults(user.activeCompany.id);

@@ -11,6 +11,7 @@ import { PrintButton } from '@/components/shared/print-button';
 import { ReportShareButton } from '@/components/share/report-share-button';
 import { PrintHeader } from '@/components/shared/print-header';
 import { cn } from '@/lib/utils';
+import { makeTerms } from '@/lib/terminology';
 
 export const metadata: Metadata = { title: 'Business Overview' };
 export const dynamic = 'force-dynamic';
@@ -24,6 +25,7 @@ const TONE = {
 
 export default async function BusinessOverviewPage() {
   const user = await requirePageAccess(PERMISSIONS.REPORTS_VIEW);
+  const unit = makeTerms(user.activeCompany.terminology)('unit');
 
   const overview = await getBusinessOverview({
     companyId: user.activeCompany.id,
@@ -78,7 +80,7 @@ export default async function BusinessOverviewPage() {
                         minimumFractionDigits: figure.currency === 'KG' ? 0 : 2,
                         maximumFractionDigits: figure.currency === 'KG' ? 0 : 2,
                       })}
-                      {figure.currency === 'KG' ? <span className="ml-1 text-xs text-ink-subtle">KG</span> : null}
+                      {figure.currency === 'KG' ? <span className="ml-1 text-xs text-ink-subtle">{unit}</span> : null}
                     </dd>
                     {figure.hint ? <p className="mt-0.5 text-[11px] text-ink-subtle">{figure.hint}</p> : null}
                   </>

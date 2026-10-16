@@ -23,6 +23,7 @@ import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipme
 import { DualAmount } from '@/components/shared/dual-amount';
 import { settledThrough } from '@/lib/ledger-target';
 import { agentScope, customerScopeWhere } from '@/lib/auth/scope';
+import { Term } from '@/components/shared/term';
 
 export const dynamic = 'force-dynamic';
 
@@ -264,7 +265,7 @@ export default async function CustomerDetailPage({ params }: { params: Promise<{
                     <TH>Invoice</TH>
                     <TH>Date</TH>
                     <TH>Due</TH>
-                    <TH>ICUL/FID Ref</TH>
+                    <TH><Term k="orderRef" /></TH>
                     <TH numeric>Quantity</TH>
                     <TH numeric>Amount</TH>
                     <TH>Status</TH>

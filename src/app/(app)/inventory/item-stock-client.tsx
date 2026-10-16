@@ -1,5 +1,6 @@
 'use client';
 
+import { useTerms } from '@/components/company-config-context';
 import * as React from 'react';
 import Link from 'next/link';
 import { DataTable, type DataColumn } from '@/components/ui/data-table';
@@ -94,6 +95,7 @@ export function ItemStockClient({
   period?: string;
   filters?: string[];
 }) {
+  const unit = useTerms()('unit');
   const columns: DataColumn<ItemStockRow>[] = [
     {
       id: 'item',
@@ -118,7 +120,7 @@ export function ItemStockClient({
     },
     {
       id: 'received',
-      header: 'Received KG',
+      header: `Received ${unit}`,
       numeric: true,
       hideable: true,
       mobile: 'hidden',
@@ -129,7 +131,7 @@ export function ItemStockClient({
     },
     {
       id: 'sold',
-      header: 'Sold KG',
+      header: `Sold ${unit}`,
       numeric: true,
       hideable: true,
       mobile: 'meta',
@@ -140,7 +142,7 @@ export function ItemStockClient({
     },
     {
       id: 'available',
-      header: 'Available KG',
+      header: `Available ${unit}`,
       numeric: true,
       hideable: true,
       mobile: 'meta',
@@ -179,7 +181,7 @@ export function ItemStockClient({
       ? ([
           {
             id: 'avgCost',
-            header: 'Avg Cost/KG',
+            header: `Avg Cost/${unit}`,
             numeric: true,
             hideable: true,
             mobile: 'meta',
@@ -206,7 +208,7 @@ export function ItemStockClient({
       ? ([
           {
             id: 'avgSell',
-            header: 'Avg Sell/KG',
+            header: `Avg Sell/${unit}`,
             numeric: true,
             hideable: true,
             mobile: 'meta',
@@ -296,7 +298,7 @@ export function ItemStockClient({
           },
           {
             id: 'profitPerKg',
-            header: 'Profit/KG',
+            header: `Profit/${unit}`,
             numeric: true,
             hideable: true,
             defaultHidden: true,
@@ -361,7 +363,7 @@ export function ItemStockClient({
         expandedContent={(r) => (
           <div className="overflow-x-auto">
             <p className="mb-2 text-xs text-ink-muted">
-              Where {r.itemName} is — the warehouses add up to the company total. Avg Cost/KG is the stock value ÷ the KG
+              Where {r.itemName} is — the warehouses add up to the company total. Avg Cost/{unit} is the stock value ÷ the {unit}
               still on hand, each batch at its own landed cost.
             </p>
             <table className="data-grid grid-framed w-full min-w-[40rem] text-sm" data-testid="item-warehouse-split">
@@ -375,7 +377,7 @@ export function ItemStockClient({
                   <th className="py-1.5 pr-3 text-right font-medium">Available</th>
                   {showCost ? (
                     <>
-                      <th className="py-1.5 pr-3 text-right font-medium">Avg Cost/KG</th>
+                      <th className="py-1.5 pr-3 text-right font-medium">Avg Cost/{unit}</th>
                       <th className="py-1.5 text-right font-medium">Stock Value</th>
                     </>
                   ) : null}

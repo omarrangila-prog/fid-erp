@@ -15,6 +15,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { useTerms } from '@/components/company-config-context';
 
 /**
  * Dashboard charts.
@@ -57,7 +58,7 @@ const formatUsd = (value: RcValue, name: RcName): [string, string] => [
   String(name ?? ''),
 ];
 
-const formatKg = (value: RcValue): [string, string] => [`${asNumber(value).toLocaleString()} KG`, 'Available'];
+const formatQuantity = (unit: string) => (value: RcValue): [string, string] => [`${asNumber(value).toLocaleString()} ${unit}`, 'Available'];
 
 const formatOutstanding = (value: RcValue): [string, string] => [
   `USD ${asNumber(value).toLocaleString()}`,
@@ -148,13 +149,14 @@ export function AgeingChart({ data, tone = 'receivable' }: { data: AgeingPoint[]
 export type StockPoint = { label: string; kg: number };
 
 export function StockByItemChart({ data }: { data: StockPoint[] }) {
+  const unit = useTerms()('unit');
   return (
     <ResponsiveContainer width="100%" height={Math.max(180, data.length * 34)}>
       <BarChart data={data} layout="vertical" margin={{ top: 0, right: 16, left: 8, bottom: 0 }}>
         <CartesianGrid {...GRID} horizontal={false} />
         <XAxis type="number" {...AXIS} tickLine={false} axisLine={false} tickFormatter={money} />
         <YAxis type="category" dataKey="label" {...AXIS} tickLine={false} axisLine={false} width={150} />
-        <Tooltip {...tooltipStyle} formatter={formatKg} />
+        <Tooltip {...tooltipStyle} formatter={formatQuantity(unit)} />
         <Bar dataKey="kg" fill={EMERALD} radius={[0, 4, 4, 0]} maxBarSize={20} />
       </BarChart>
     </ResponsiveContainer>

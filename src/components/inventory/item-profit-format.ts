@@ -18,8 +18,8 @@ export function pairText(value: Pair | null | undefined, local: string, suffix =
   };
 }
 
-export function perKgText(value: Pair | null | undefined, local: string): PairText | null {
-  return pairText(value, local, ' / KG');
+export function perKgText(value: Pair | null | undefined, local: string, unit = 'KG'): PairText | null {
+  return pairText(value, local, ` / ${unit}`);
 }
 
 /** Profit reads as a profit, a loss as a loss — never a bare minus sign. */
@@ -35,8 +35,8 @@ export function profitText(value: Pair, local: string): PairText & { loss: boole
   };
 }
 
-export function kg(value: Parameters<typeof formatQuantityKg>[0]): string {
-  return formatQuantityKg(value);
+export function kg(value: Parameters<typeof formatQuantityKg>[0], unit = 'KG'): string {
+  return formatQuantityKg(value, { unit });
 }
 
 /** Stock status in the words the filter and the badge use. */

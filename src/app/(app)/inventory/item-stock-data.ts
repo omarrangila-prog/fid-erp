@@ -107,14 +107,17 @@ export function toItemStockRow(
   local: string,
   access: { showCost: boolean; showSales: boolean; showProfit: boolean },
   query: string,
+  companyUnit = 'KG',
 ): ItemStockRow {
+  // An item is counted in its own unit; the company's is only the fallback.
+  const unit = item.baseUom || companyUnit;
   const { showCost, showSales } = access;
   // Cost of goods sold and profit are profitability, as on every other
   // screen: they need "View profit" as well as the cost they are made from.
   const showCogs = showCost && access.showProfit;
   const both = showCogs && showSales;
   const warehouses = item.warehouses.filter((w) => !(w.receivedKg.isZero() && w.transferInKg.isZero() && w.transferOutKg.isZero() && w.stockSoldKg.isZero() && w.onHandKg.isZero()));
-  const sum = (pick: (w: (typeof warehouses)[number]) => Decimal) => kg(warehouses.reduce((total, w) => total.plus(pick(w)), new Decimal(0)));
+  const sum = (pick: (w: (typeof warehouses)[number]) => Decimal) => kg(warehouses.reduce((total, w) => total.plus(pick(w)), new Decimal(0)), unit);
   return {
     id: item.itemId,
     href: itemPage(item.itemId) + query,
@@ -122,24 +125,24 @@ export function toItemStockRow(
     itemCode: item.itemCode,
     origin: item.origin,
     status: item.status,
-    receivedLabel: kg(item.receivedKg),
-    soldLabel: kg(item.soldKg),
-    availableLabel: kg(item.availableKg),
-    reservedLabel: item.reservedKg.greaterThan(0) ? kg(item.reservedKg) : null,
+    receivedLabel: kg(item.receivedKg, unit),
+    soldLabel: kg(item.soldKg, unit),
+    availableLabel: kg(item.availableKg, unit),
+    reservedLabel: item.reservedKg.greaterThan(0) ? kg(item.reservedKg, unit) : null,
     receivedSort: toNumber(item.receivedKg),
     soldSort: toNumber(item.soldKg),
     availableSort: toNumber(item.availableKg),
     warehouseNames: warehouses.map((w) => w.warehouseName).join(', '),
     warehouses: warehouses.map((w) => ({
       name: w.warehouseName,
-      receivedLabel: kg(w.receivedKg),
-      transferInLabel: kg(w.transferInKg),
-      transferOutLabel: kg(w.transferOutKg),
-      soldLabel: kg(w.stockSoldKg),
-      availableLabel: kg(w.availableKg),
+      receivedLabel: kg(w.receivedKg, unit),
+      transferInLabel: kg(w.transferInKg, unit),
+      transferOutLabel: kg(w.transferOutKg, unit),
+      soldLabel: kg(w.stockSoldKg, unit),
+      availableLabel: kg(w.availableKg, unit),
       // What the coffee in this warehouse cost — each batch at its own landed
       // cost, the same figure the item row adds up.
-      avgCost: showCost ? perKgText(w.avgCostPerKg, local) : null,
+      avgCost: showCost ? perKgText(w.avgCostPerKg, local, unit) : null,
       stockValue: showCost ? pairText(w.stockValue, local) : null,
     })),
     warehouseTotal: {
@@ -148,18 +151,18 @@ export function toItemStockRow(
       transferOutLabel: sum((w) => w.transferOutKg),
       soldLabel: sum((w) => w.stockSoldKg),
       availableLabel: sum((w) => w.availableKg),
-      avgCost: showCost ? perKgText(item.avgCostPerKg, local) : null,
+      avgCost: showCost ? perKgText(item.avgCostPerKg, local, unit) : null,
       stockValue: showCost ? pairText(item.stockValue, local) : null,
     },
-    avgCost: showCost ? perKgText(item.avgCostPerKg, local) : null,
+    avgCost: showCost ? perKgText(item.avgCostPerKg, local, unit) : null,
     cogs: showCogs ? pairText(item.cogs, local) : null,
     stockValue: showCost ? pairText(item.stockValue, local) : null,
-    avgSell: showSales ? perKgText(item.avgSellPerKg, local) : null,
+    avgSell: showSales ? perKgText(item.avgSellPerKg, local, unit) : null,
     revenue: showSales ? pairText(item.revenue, local) : null,
     collected: showSales ? pairText(item.collectedTotal, local) : null,
     outstanding: showSales ? pairText(item.outstanding, local) : null,
     profit: both && !item.revenue.local.isZero() ? profitText(item.grossProfit, local) : null,
-    profitPerKg: both ? perKgText(item.profitPerKg, local) : null,
+    profitPerKg: both ? perKgText(item.profitPerKg, local, unit) : null,
     margin: both && item.marginPct ? formatPercent(item.marginPct) : null,
     sort: {
       avgCost: showCost ? toNumber(item.avgCostPerKg?.local ?? 0) : 0,

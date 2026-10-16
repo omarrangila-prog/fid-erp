@@ -19,10 +19,13 @@ export function CostingTable({
   rows,
   caption,
   showWarehouse = true,
+  unit = 'KG',
 }: {
   rows: BatchCosting[];
   caption?: string;
   showWarehouse?: boolean;
+  /** What stock is counted in: KG, PCS… */
+  unit?: string;
 }) {
   if (rows.length === 0) {
     return (
@@ -77,11 +80,11 @@ export function CostingTable({
             <TH>Container</TH>
             <TH>Batch</TH>
             {showWarehouse ? <TH>Warehouse</TH> : null}
-            <TH numeric>KG</TH>
+            <TH numeric>{unit}</TH>
             <TH numeric>Purchase USD</TH>
             <TH numeric>Shared expense</TH>
             <TH numeric>Landed</TH>
-            <TH numeric>Cost/KG</TH>
+            <TH numeric>Cost/{unit}</TH>
           </TR>
         </THead>
         <TBody>
@@ -138,21 +141,21 @@ export function CostingTable({
 }
 
 /** The same figures for one batch, for a page that shows a single lot. */
-export function CostingSummary({ row }: { row: BatchCosting }) {
+export function CostingSummary({ row, unit = 'KG' }: { row: BatchCosting; unit?: string }) {
   const local = row.localCurrency;
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {[
-        { label: 'Purchase cost / KG', value: formatMoney(row.purchasePerKgUsd, 'USD'), sub: 'What the supplier charged' },
+        { label: `Purchase cost / ${unit}`, value: formatMoney(row.purchasePerKgUsd, 'USD'), sub: 'What the supplier charged' },
         {
           label: `Shared shipment cost`,
           value: formatMoney(row.allocatedExpenseLocal, local),
           sub: `${formatMoney(row.allocatedExpenseUsd, 'USD')} of the job's charges`,
         },
         {
-          label: `Landed cost / KG`,
+          label: `Landed cost / ${unit}`,
           value: formatMoney(row.landedPerKgLocal, local),
-          sub: `${formatMoney(row.landedPerKgUsd, 'USD')} per KG`,
+          sub: `${formatMoney(row.landedPerKgUsd, 'USD')} per ${unit}`,
         },
         {
           label: 'Stock value',

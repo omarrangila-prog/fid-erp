@@ -30,6 +30,7 @@ import { getOrderOverview } from '@/lib/services/shipment';
 import { OrderShipments } from '@/app/(app)/purchases/[id]/order-shipments';
 import { SplitLineDialog, SplitRowButton } from '@/app/(app)/purchases/[id]/split-line-dialog';
 import { RecordHistory } from '@/components/shared/record-history';
+import { makeTerms } from '@/lib/terminology';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,6 +47,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 export default async function PurchaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requirePageAccess(PERMISSIONS.PURCHASES_VIEW);
+  const unit = makeTerms(user.activeCompany.terminology)('unit');
   const companyId = user.activeCompany.id;
   const showCost = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
 
@@ -305,7 +307,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                       <>
                         <TH numeric>Price</TH>
                         <TH numeric>Goods</TH>
-                        <TH numeric>Cost / KG</TH>
+                        <TH numeric>Cost / {unit}</TH>
                       </>
                     ) : null}
                     {contract.status === 'POSTED' && can(user, PERMISSIONS.PURCHASES_APPROVE) ? <TH /> : null}
@@ -520,7 +522,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
               </CardDescription>
             </CardHeader>
             <CardContent className="px-0 pb-0">
-              <CostingTable rows={costing} />
+              <CostingTable rows={costing} unit={makeTerms(user.activeCompany.terminology)('unit')} />
             </CardContent>
           </Card>
         ) : null}

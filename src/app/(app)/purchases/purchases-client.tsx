@@ -13,6 +13,7 @@ import { TRANSACTION_STATUS_META, type BadgeTone } from '@/lib/constants';
 import { QuickUpdatePanel } from '@/components/shipments/quick-update-panel';
 import { deletePurchaseContractAction } from '@/server/actions/trading-actions';
 import { DeleteShipmentDialog } from '@/components/shipments/delete-shipment-dialog';
+import { useTerms } from '@/components/company-config-context';
 
 export type PurchaseShipmentRow = {
   /** The batch, or the shipment when it has none yet. */
@@ -109,6 +110,7 @@ export function PurchasesClient({
   /** Deleting an approved order (and its shipment) reverses it. */
   canReverse?: boolean;
 }) {
+  const unit = useTerms()('unit');
   const [quick, setQuick] = React.useState<{ id: string; label: string } | null>(null);
   const [deleting, setDeleting] = React.useState<{ id: string; label: string } | null>(null);
 
@@ -411,7 +413,7 @@ export function PurchasesClient({
                   <th className="py-1.5 pr-3 font-medium">Item</th>
                   <th className="py-1.5 pr-3 font-medium">Lot</th>
                   <th className="py-1.5 pr-3 font-medium">Batch</th>
-                  <th className="py-1.5 pr-3 text-right font-medium">KG</th>
+                  <th className="py-1.5 pr-3 text-right font-medium">{unit}</th>
                   <th className="py-1.5 pr-3 text-right font-medium">Received</th>
                   <th className="py-1.5 pr-3 font-medium">Status</th>
                   <th className="py-1.5 font-medium">Warehouse</th>

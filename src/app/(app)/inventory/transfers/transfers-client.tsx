@@ -13,6 +13,8 @@ import { MemoCell } from '@/components/shared/memo-cell';
 import { ConfirmDialog } from '@/components/ui/confirm';
 import { RowActions, viewAction, editAction } from '@/components/shared/row-actions';
 import type { BadgeTone } from '@/lib/constants';
+import { useTerms } from '@/components/company-config-context';
+import { Term } from '@/components/shared/term';
 
 export type TransferRow = {
   id: string;
@@ -68,6 +70,7 @@ const NEXT_STEP: Record<string, { to: 'APPROVED' | 'IN_TRANSIT' | 'RECEIVED'; la
 };
 
 export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canManage: boolean }) {
+  const terms = useTerms();
   const router = useRouter();
   const [busy, setBusy] = React.useState<string | null>(null);
   const [correcting, setCorrecting] = React.useState<TransferRow | null>(null);
@@ -107,7 +110,7 @@ export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canM
     {
       // The ICUL/FID order the stock was bought on — the business reference, in the table, not only inside.
       id: 'reference',
-      header: 'ICUL/FID Reference',
+      header: terms('orderReference'),
       sortValue: (r) => summary(r.lines.map((l) => l.reference)),
       exportValue: (r) => r.lines.map((l) => l.reference).join(', '),
       cell: (r) => <span className="font-medium text-forest-800">{summary(r.lines.map((l) => l.reference))}</span>,
@@ -263,7 +266,7 @@ export function TransfersClient({ rows, canManage }: { rows: TransferRow[]; canM
             <table className="data-grid grid-framed w-full text-xs">
               <thead>
                 <tr className="text-left text-ink-muted">
-                  <th className="py-1 pr-3 font-medium">ICUL/FID Reference</th>
+                  <th className="py-1 pr-3 font-medium"><Term k="orderReference" /></th>
                   <th className="py-1 pr-3 font-medium">Item</th>
                   <th className="py-1 pr-3 font-medium">Batch</th>
                   <th className="py-1 pr-3 font-medium">Lot</th>

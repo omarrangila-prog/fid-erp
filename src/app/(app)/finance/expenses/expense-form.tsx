@@ -896,7 +896,7 @@ export function ExpenseForm({
             <Textarea
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
-              placeholder="e.g. Clearing charges for ICUL/FID/002, paid at the port"
+              placeholder="e.g. Clearing charges for the March shipment, paid at the port"
               aria-label="Memo"
             />
           </Field>

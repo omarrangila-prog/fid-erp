@@ -18,6 +18,7 @@ import { StatusBadge, Badge } from '@/components/ui/badge';
 import { Table, TableWrap, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { shortDocumentNumber } from '@/lib/short-number';
 import { warehouseScope } from '@/lib/auth/scope';
+import { makeTerms } from '@/lib/terminology';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,6 +36,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 export default async function BatchDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requirePageAccess(PERMISSIONS.INVENTORY_VIEW);
+  const unit = makeTerms(user.activeCompany.terminology)('unit');
   // Stock across every warehouse: someone limited to their own warehouses sees those on the stock page.
   if (warehouseScope(user)) redirect('/inventory');
   const companyId = user.activeCompany.id;
@@ -134,7 +136,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
         <Metric label="Available" value={formatQuantityKg(totalAvailable)} tone="positive" />
         {showCost ? (
           <>
-            <Metric label="Landed cost / KG" value={formatMoney(batch.landedUnitCostUsd, 'USD')} />
+            <Metric label={`Landed cost / ${unit}`} value={formatMoney(batch.landedUnitCostUsd, 'USD')} />
             <Metric
               label="Stock value"
               value={formatMoney(totalOnHand.times(dec(batch.landedUnitCostUsd)), 'USD')}
@@ -156,7 +158,7 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <CostingSummary row={costing} />
+            <CostingSummary row={costing} unit={batch.item.baseUom} />
           </CardContent>
         </Card>
       ) : null}

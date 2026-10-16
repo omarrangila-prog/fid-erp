@@ -1,5 +1,7 @@
 'use client';
 
+import { entryUnitsFor, isPackUom, uomName } from '@/lib/uom';
+import type { UnitOfMeasure } from '@/lib/enums';
 import { CURRENCY_NAMES } from '@/lib/company-currencies';
 import { useSalesCurrencies } from '@/components/company-config-context';
 import * as React from 'react';
@@ -24,6 +26,7 @@ import { shortDocumentNumber } from '@/lib/short-number';
 import { bagsForKg, formatBags } from '@/lib/bags';
 import { AddCustomer } from '@/app/(app)/sales/add-customer';
 import { InvoiceDeleteButton, canCancelSalesInvoice } from '@/app/(app)/sales/[id]/sale-actions';
+import { useTerms } from '@/components/company-config-context';
 
 /**
  * Sales invoice entry.
@@ -43,6 +46,9 @@ export type StockOption = ComboOption & {
   batchNumber: string;
   availableKg: string;
   bagWeightKg: string;
+  /** What this item is counted in, and what a pack is called. */
+  baseUom?: string;
+  packUom?: string;
   itemName: string;
   itemId: string;
   warehouseName: string;
@@ -60,7 +66,7 @@ type LineState = {
   itemId: string;
   stockKey: string | null;
   quantity: string;
-  unit: 'KG' | 'MT' | 'BAG';
+  unit: UnitOfMeasure;
   unitPrice: string;
   taxCodeId: string;
 };
@@ -131,6 +137,7 @@ export function SaleForm({
   canDelete?: boolean;
   canReverse?: boolean;
 }) {
+  const terms = useTerms();
   const salesCurrencies = useSalesCurrencies(localCurrency, undefined);
   // An invoice whose currency is no longer offered still shows it.
   const salesCurrenciesFor = (current: string) => (salesCurrencies.includes(current) ? salesCurrencies : [...salesCurrencies, current]);
@@ -591,7 +598,9 @@ export function SaleForm({
           {fieldIssues.lines ? <p className="text-xs font-medium text-red-600">{fieldIssues.lines}</p> : null}
 
           {computed.map(({ line, option, math, over }, index) => {
-            const available = option ? formatQuantityKg(option.availableKg) : '—';
+            const unitCode = option?.baseUom ?? 'KG';
+            const packCode = option?.packUom ?? 'BAG';
+            const available = option ? formatQuantityKg(option.availableKg, { unit: unitCode }) : '—';
             const lineWarehouse = line.warehouseId;
             const itemOptions = itemsIn(lineWarehouse).map((item) => ({ value: item.id, label: item.name }));
             return (
@@ -653,15 +662,15 @@ export function SaleForm({
                       {batchesIn(lineWarehouse, line.itemId).map((batch) => (
                         <option key={batch.value} value={batch.value}>
                           {batch.batchNumber}
-                          {batch.contractReference ? ` · ${batch.contractReference}` : ''} — {Number(batch.availableKg).toLocaleString('en-US')} KG available
+                          {batch.contractReference ? ` · ${batch.contractReference}` : ''} — {Number(batch.availableKg).toLocaleString('en-US')} {batch.baseUom ?? 'KG'} available
                         </option>
                       ))}
                     </Select>
                   </Field>
 
-                  <Field label="Available KG" className="lg:col-span-2">
+                  <Field label={`Available ${unitCode}`} className="lg:col-span-2">
                     <div className="tnum flex h-10 items-center rounded-lg border border-line bg-forest-50 px-3 text-sm">
-                      {option ? formatQuantityKg(option.availableKg) : available}
+                      {option ? formatQuantityKg(option.availableKg, { unit: unitCode }) : available}
                     </div>
                   </Field>
 
@@ -672,13 +681,13 @@ export function SaleForm({
                     >
                       {[
                         ['Warehouse', option.warehouseName],
-                        ['ICUL/FID Ref', option.contractReference || '—'],
+                        [terms('orderRef'), option.contractReference || '—'],
                         ['Batch', option.batchNumber],
                         ['Lot', option.lotNumber || '—'],
                         ...(option.containerNumber ? [['Container', option.containerNumber]] : []),
-                        ['Available', formatQuantityKg(option.availableKg)],
+                        ['Available', formatQuantityKg(option.availableKg, { unit: unitCode })],
                         ...(Number(option.bagWeightKg) > 0
-                          ? [['Bags', formatBags(bagsForKg(option.availableKg, option.bagWeightKg))]]
+                          ? [[uomName(packCode, true), formatBags(bagsForKg(option.availableKg, option.bagWeightKg))]]
                           : []),
                       ].map(([label, value]) => (
                         <div key={label} className="flex gap-1">
@@ -705,14 +714,16 @@ export function SaleForm({
                         aria-label={`Unit on item ${index + 1}`}
                         className="w-24"
                       >
-                        <option value="KG">KG</option>
-                        <option value="MT">MT</option>
-                        <option value="BAG">Bags</option>
+                        {[...new Set([...entryUnitsFor({ baseUom: unitCode, packUom: packCode }), line.unit])].map((code) => (
+                          <option key={code} value={code}>
+                            {isPackUom(code) ? uomName(code, true) : code}
+                          </option>
+                        ))}
                       </Select>
                     </div>
                   </Field>
 
-                  <Field label={`Price / ${line.unit === 'BAG' ? 'bag' : line.unit}`} required className="lg:col-span-3">
+                  <Field label={`Price / ${isPackUom(line.unit) ? uomName(line.unit).toLowerCase() : line.unit}`} required className="lg:col-span-3">
                     <MoneyInput
                       currency={header.currency}
                       value={line.unitPrice}
@@ -746,8 +757,8 @@ export function SaleForm({
                 {over && option ? (
                   <p className="text-xs text-red-700">
                     <strong>Not enough stock.</strong> {option.warehouseName} holds{' '}
-                    {formatQuantityKg(option.availableKg)} of batch {option.batchNumber}
-                    {math ? ` — this line needs ${formatQuantityKg(math.quantityKg)}.` : '.'}
+                    {formatQuantityKg(option.availableKg, { unit: unitCode })} of batch {option.batchNumber}
+                    {math ? ` — this line needs ${formatQuantityKg(math.quantityKg, { unit: unitCode })}.` : '.'}
                   </p>
                 ) : null}
               </div>

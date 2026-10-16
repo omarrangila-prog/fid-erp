@@ -85,7 +85,7 @@ export default async function NewSalePage() {
   const stockOptions: StockOption[] = stock.map((s) => ({
     value: `${s.batchId}:${s.warehouseId}`,
     label: `${s.batchNumber} · ${s.itemName}`,
-    hint: `${s.contractReference} · ${s.warehouseName} · ${formatQuantityKg(s.availableKg)} available · Lot ${s.lotNumber}${s.containerNumber ? ` · ${s.containerNumber}` : ''}`,
+    hint: `${s.contractReference} · ${s.warehouseName} · ${formatQuantityKg(s.availableKg, { unit: s.baseUom })} available · Lot ${s.lotNumber}${s.containerNumber ? ` · ${s.containerNumber}` : ''}`,
     keywords: `${s.contractReference} ${s.itemCode} ${s.originCountry} ${s.lotNumber} ${s.containerNumber ?? ''} ${s.warehouseCode} ${s.shipmentNumber}`,
     contractReference: s.contractReference,
     lotNumber: s.lotNumber,
@@ -95,6 +95,8 @@ export default async function NewSalePage() {
     batchNumber: s.batchNumber,
     availableKg: s.availableKg.toString(),
     bagWeightKg: s.bagWeightKg.toString(),
+    baseUom: s.baseUom,
+    packUom: s.packUom,
     itemName: s.itemName,
     itemId: s.itemId,
     warehouseName: s.warehouseName,

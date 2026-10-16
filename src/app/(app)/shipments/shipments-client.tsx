@@ -11,6 +11,7 @@ import { RowActions, viewAction } from '@/components/shared/row-actions';
 import { Badge, StatusBadge } from '@/components/ui/badge';
 import { SHIPMENT_STATUS_META, DOCUMENT_STATUS_META, SETTLEMENT_STATUS_META, type BadgeTone } from '@/lib/constants';
 import { EtaDialog } from '@/app/(app)/loading/eta-dialog';
+import { useTerms } from '@/components/company-config-context';
 
 /** One container/item line inside a shipment. */
 export type ShipmentLineRow = {
@@ -123,6 +124,8 @@ export function ShipmentsClient({
   /** Delete Shipment reverses the order: purchases.reverse, checked again on the server. */
   canDelete?: boolean;
 }) {
+  const unit = useTerms()('unit');
+  const terms = useTerms();
   const [editingEta, setEditingEta] = React.useState<{ line: ShipmentLineRow; reference: string } | null>(null);
   const [quick, setQuick] = React.useState<{ id: string; label: string } | null>(null);
   const [deleting, setDeleting] = React.useState<{ id: string; label: string } | null>(null);
@@ -138,7 +141,7 @@ export function ShipmentsClient({
     },
     {
       id: 'contract',
-      header: 'ICUL/FID Reference',
+      header: terms('orderReference'),
       sortValue: (r) => r.contractReference,
       exportValue: (r) => r.contractReference,
       cell: (r) => <span className="block min-w-44 font-mono text-xs font-medium">{r.contractReference}</span>,
@@ -169,7 +172,7 @@ export function ShipmentsClient({
     },
     {
       id: 'quantity',
-      header: 'Total KG',
+      header: `Total ${unit}`,
       numeric: true,
       mobile: 'meta',
       sortValue: (r) => r.kgSort,
@@ -225,7 +228,7 @@ export function ShipmentsClient({
           } satisfies DataColumn<ShipmentGroupRow>,
           {
             id: 'costKg',
-            header: 'Cost / KG',
+            header: `Cost / ${unit}`,
             hideable: true,
             numeric: true,
             exportValue: (r: ShipmentGroupRow) => r.costPerKg ?? '',
@@ -244,7 +247,7 @@ export function ShipmentsClient({
           } satisfies DataColumn<ShipmentGroupRow>,
           {
             id: 'remaining',
-            header: 'Remaining stock (KG)',
+            header: `Remaining stock (${unit})`,
             hideable: true,
             defaultHidden: true,
             numeric: true,
@@ -398,7 +401,7 @@ export function ShipmentsClient({
               <th className="py-1.5 pr-3 font-medium">Container</th>
               <th className="py-1.5 pr-3 font-medium">Lot</th>
               <th className="py-1.5 pr-3 font-medium">Batch</th>
-              <th className="py-1.5 pr-3 text-right font-medium">KG</th>
+              <th className="py-1.5 pr-3 text-right font-medium">{unit}</th>
               <th className="py-1.5 pr-3 font-medium">Warehouse</th>
               <th className="py-1.5 pr-3 font-medium">ETA</th>
               <th className="py-1.5 pr-3 font-medium">Arrival</th>
@@ -444,7 +447,7 @@ export function ShipmentsClient({
                 {showCost ? (
                   <td className="tnum py-1.5 pr-3 text-right text-xs">
                     <span className="block">{line.landedUsd ?? '—'}</span>
-                    {line.costPerKg ? <span className="block text-ink-subtle">{line.costPerKg} / KG</span> : null}
+                    {line.costPerKg ? <span className="block text-ink-subtle">{line.costPerKg} / {unit}</span> : null}
                   </td>
                 ) : null}
                 <td className="py-1.5 text-right">

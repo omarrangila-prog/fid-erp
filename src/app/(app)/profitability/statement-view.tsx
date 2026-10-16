@@ -17,9 +17,12 @@ export async function ProfitabilityStatement({
   companyId,
   local,
   contractId,
+  unit = 'KG',
 }: {
   companyId: string;
   local: string;
+  /** What stock is counted in: KG, PCS… */
+  unit?: string;
   /** Narrow the columns to one order's shipments. */
   contractId?: string;
 }) {
@@ -78,14 +81,14 @@ export async function ProfitabilityStatement({
     { key: 'landedLocal', label: `Total landed cost (${local})`, of: (r) => r.totalLandedCostLocal, kind: 'local', emphasis: 'strong' },
     {
       key: 'costPerKg',
-      label: 'Landed cost per KG',
+      label: `Landed cost per ${unit}`,
       of: (r) => r.landedCostPerKgUsd,
       kind: 'unitUsd',
       total: (t) => ratio(t.get('landedUsd')!, t.get('purchasedKg')!),
     },
     {
       key: 'costPerKgLocal',
-      label: `Landed cost per KG (${local})`,
+      label: `Landed cost per ${unit} (${local})`,
       of: (r) => r.landedCostPerKgLocal,
       kind: 'unitLocal',
       total: (t) => ratio(t.get('landedLocal')!, t.get('purchasedKg')!),
@@ -94,7 +97,7 @@ export async function ProfitabilityStatement({
     { key: 'revenueUsd', label: 'Sales revenue', of: (r) => r.salesRevenueUsd, kind: 'usd', group: 'Result on what has sold' },
     {
       key: 'avgPrice',
-      label: 'Average selling price per KG',
+      label: `Average selling price per ${unit}`,
       of: (r) => r.averageSellingPriceUsd,
       kind: 'unitUsd',
       total: (t) => ratio(t.get('revenueUsd')!, t.get('soldKg')!),
@@ -124,7 +127,7 @@ export async function ProfitabilityStatement({
     },
     {
       key: 'profitPerKg',
-      label: 'Profit per KG sold',
+      label: `Profit per ${unit} sold`,
       of: (r) => r.profitPerKgUsd,
       kind: 'unitUsd',
       total: (t) => ratio(t.get('netUsd')!, t.get('soldKg')!),

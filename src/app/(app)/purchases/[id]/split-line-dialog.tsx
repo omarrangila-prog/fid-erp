@@ -14,6 +14,7 @@ import { Field } from '@/components/ui/field';
 import { Callout } from '@/components/ui/feedback';
 import { splitContractLineAction } from '@/server/actions/trading-actions';
 import { safely } from '@/lib/safely';
+import { useTerms } from '@/components/company-config-context';
 
 export type ItemChoice = { id: string; name: string; bagWeightKg: string };
 
@@ -53,6 +54,7 @@ export function SplitLineDialog({
   canSplit: boolean;
   canCorrect: boolean;
 }) {
+  const unit = useTerms()('unit');
   const router = useRouter();
   const [adding, setAdding] = React.useState(false);
   const [add, setAdd] = React.useState({ itemId: '', quantityKg: '', unitPriceKg: '', containerNumber: '', lotNumber: '', batchNumber: '', reason: '' });
@@ -63,7 +65,7 @@ export function SplitLineDialog({
     setAddError(null);
     if (!add.itemId) return setAddError('Choose the coffee.');
     if (!(Number(add.quantityKg) > 0)) return setAddError('Enter the kilograms.');
-    if (!(Number(add.unitPriceKg) > 0)) return setAddError(`Enter the price per KG in ${currency}.`);
+    if (!(Number(add.unitPriceKg) > 0)) return setAddError(`Enter the price per ${unit} in ${currency}.`);
     setAddBusy(true);
     const result = await safely(addContainerAction(
       JSON.stringify({
@@ -122,7 +124,7 @@ export function SplitLineDialog({
     if (!line) return;
     setError(null);
     if (!balanced) {
-      setError(`The containers add up to ${entered.toLocaleString()} KG; the row is ${expected.toLocaleString()} KG.`);
+      setError(`The containers add up to ${entered.toLocaleString()} ${unit}; the row is ${expected.toLocaleString()} ${unit}.`);
       return;
     }
     setBusy(true);
@@ -198,10 +200,10 @@ export function SplitLineDialog({
               </Select>
             </Field>
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Quantity (KG)" htmlFor="addKg" required>
+              <Field label={`Quantity (${unit})`} htmlFor="addKg" required>
                 <Input id="addKg" inputMode="decimal" className="tnum text-right" value={add.quantityKg} onChange={(e) => setAdd((p) => ({ ...p, quantityKg: e.target.value }))} placeholder="20000" />
               </Field>
-              <Field label={`Price per KG (${currency})`} htmlFor="addPrice" required>
+              <Field label={`Price per ${unit} (${currency})`} htmlFor="addPrice" required>
                 <Input id="addPrice" inputMode="decimal" className="tnum text-right" value={add.unitPriceKg} onChange={(e) => setAdd((p) => ({ ...p, unitPriceKg: e.target.value }))} placeholder="4.20" />
               </Field>
               <Field label="Container number" htmlFor="addCtr" hint="If known.">
@@ -236,7 +238,7 @@ export function SplitLineDialog({
           title={line ? `Divide row ${line.lineNumber} into containers` : ''}
           description={
             line
-              ? `${line.itemName}, ${Number(line.quantityKg).toLocaleString()} KG on ${contractReference}. Each container gets its own row, lot and batch; the order's value does not change.`
+              ? `${line.itemName}, ${Number(line.quantityKg).toLocaleString()} ${unit} on ${contractReference}. Each container gets its own row, lot and batch; the order's value does not change.`
               : undefined
           }
         >
@@ -254,7 +256,7 @@ export function SplitLineDialog({
                 >
                   {splittable.map((l) => (
                     <option key={l.id} value={l.id}>
-                      Row {l.lineNumber} · {l.itemName} · {Number(l.quantityKg).toLocaleString()} KG
+                      Row {l.lineNumber} · {l.itemName} · {Number(l.quantityKg).toLocaleString()} {unit}
                     </option>
                   ))}
                 </select>
@@ -274,7 +276,7 @@ export function SplitLineDialog({
             <div className="space-y-2">
               {parts.map((part, index) => (
                 <div key={index} className="grid gap-2 sm:grid-cols-2">
-                  <Field label={`Container ${index + 1} — KG`} htmlFor={`part-kg-${index}`} required>
+                  <Field label={`Container ${index + 1} — ${unit}`} htmlFor={`part-kg-${index}`} required>
                     <Input
                       id={`part-kg-${index}`}
                       inputMode="decimal"
@@ -301,7 +303,7 @@ export function SplitLineDialog({
             </div>
 
             <p className={`tnum text-xs ${balanced ? 'text-ink-muted' : 'font-medium text-red-700'}`}>
-              {entered.toLocaleString()} KG of {expected.toLocaleString()} KG
+              {entered.toLocaleString()} {unit} of {expected.toLocaleString()} {unit}
               {balanced ? ' — adds up.' : ' — the containers must add up to the row.'}
             </p>
 

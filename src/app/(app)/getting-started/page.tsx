@@ -58,12 +58,12 @@ const RULES = [
   {
     icon: Warehouse,
     title: 'A purchase order is not a goods receipt',
-    body: 'Ordering coffee never increases stock. Only a goods receipt does, and it always names a warehouse. Order 60,000 KG, receive 19,200, and stock shows 19,200 with 40,800 still on the water.',
+    body: `Ordering coffee never increases stock. Only a goods receipt does, and it always names a warehouse. Order 60,000 units, receive 19,200, and stock shows 19,200 with 40,800 still on the water.`,
   },
   {
     icon: Boxes,
     title: 'A transfer moves stock, it never copies it',
-    body: 'Move 20 KG out of a 100 KG warehouse and you have 80 there and 20 at the other. The company total is still 100.',
+    body: `Move 20 units out of a 100-unit warehouse and you have 80 there and 20 at the other. The company total is still 100.`,
   },
   {
     icon: Coins,

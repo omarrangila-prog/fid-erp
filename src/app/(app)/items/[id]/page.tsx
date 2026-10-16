@@ -51,6 +51,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 export default async function ItemDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requirePageAccess(PERMISSIONS.ITEMS_VIEW);
+  const unit = makeTerms(user.activeCompany.terminology)('unit');
   const companyId = user.activeCompany.id;
   const showCost = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
   const isCoffee = attributeSetOf(user.activeCompany.industryTemplate) === 'coffee';
@@ -234,7 +235,7 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
             </CardDescription>
           </CardHeader>
           <CardContent className="px-0 pb-0">
-            <CostingTable rows={costing} />
+            <CostingTable rows={costing} unit={item.baseUom} />
           </CardContent>
         </Card>
       ) : null}
@@ -294,13 +295,13 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
                         {item.densityGPerL ? `${item.densityGPerL.toString()} g/L` : '—'}
                       </DetailRow>
                       <DetailRow label="Packaging">{item.packagingType ? PACKAGING_LABELS[item.packagingType] : '—'}</DetailRow>
-                      <DetailRow label="Bag weight">{item.bagWeightKg.toString()} KG</DetailRow>
+                      <DetailRow label="Bag weight">{item.bagWeightKg.toString()} {unit}</DetailRow>
                     </>
                   ) : (
                     <>
                       <DetailRow label="Counted in">{uomName(item.baseUom)}</DetailRow>
                       <DetailRow label="A pack is">{uomName(item.packUom)} of {item.bagWeightKg.toString()} {item.baseUom}</DetailRow>
-                      <DetailRow label="Weight per unit">{item.unitWeightKg ? `${item.unitWeightKg.toString()} KG` : '—'}</DetailRow>
+                      <DetailRow label="Weight per unit">{item.unitWeightKg ? `${item.unitWeightKg.toString()} ${unit}` : '—'}</DetailRow>
                     </>
                   )}
                   <DetailRow label="Default entry unit">{item.defaultUnit}</DetailRow>
@@ -347,7 +348,7 @@ export default async function ItemDetailPage({ params }: { params: Promise<{ id:
                     <TH numeric>Sold</TH>
                     <TH numeric>Reserved</TH>
                     <TH numeric>Available</TH>
-                    {showCost ? <TH numeric>Cost / KG</TH> : null}
+                    {showCost ? <TH numeric>Cost / {unit}</TH> : null}
                     {showCost ? <TH numeric>Value</TH> : null}
                   </TR>
                 </THead>

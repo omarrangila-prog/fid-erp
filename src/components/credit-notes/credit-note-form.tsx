@@ -17,6 +17,7 @@ import { formatMoney, formatQuantityKg, todayInputValue } from '@/lib/format';
 import { saveCreditNoteAction } from '@/server/actions/compliance-actions';
 import { useSaveAndOpen } from '@/lib/use-save-and-open';
 import { useTransactionCurrencies, useConfiguredCurrencies } from '@/components/company-config-context';
+import { useTerms } from '@/components/company-config-context';
 
 export type CreditParty = { id: string; name: string; currency: string };
 export type CreditDocument = {
@@ -103,6 +104,7 @@ export function CreditNoteForm({
   basePath: string;
   canCreateParty?: boolean;
 }) {
+  const unit = useTerms()('unit');
   const configuredCurrencies = useConfiguredCurrencies();
   const router = useRouter();
   const { busy, start, opening } = useSaveAndOpen();
@@ -568,7 +570,7 @@ export function CreditNoteForm({
                         ))}
                       </Select>
                     </Field>
-                    <Field label="Quantity (KG)" required error={overReturn ? 'More than was ever sold' : undefined}>
+                    <Field label={`Quantity (${unit})`} required error={overReturn ? 'More than was ever sold' : undefined}>
                       <QuantityInput
                         value={line.quantityKg}
                         onChange={(e) => setLine(line.key, { quantityKg: e.target.value })}
@@ -580,7 +582,7 @@ export function CreditNoteForm({
 
                 <FieldGroup className={taxEnabled ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}>
                   {line.mode === 'STOCK' ? (
-                    <Field label="Price per KG" required>
+                    <Field label={`Price per ${unit}`} required>
                       <MoneyInput
                         value={line.unitPrice}
                         onChange={(e) => setLine(line.key, { unitPrice: e.target.value })}

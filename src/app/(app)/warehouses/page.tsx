@@ -10,6 +10,7 @@ import { SimpleMasterTable, type SimpleRow, type SimpleColumnSpec } from '@/comp
 import { STATUS_OPTIONS, type FieldSpec } from '@/components/shared/master-form';
 import { saveWarehouseAction } from '@/server/actions/master-actions';
 import { warehouseScopeWhere } from '@/lib/auth/scope';
+import { makeTerms } from '@/lib/terminology';
 
 export const metadata: Metadata = { title: 'Warehouses' };
 export const dynamic = 'force-dynamic';
@@ -50,6 +51,7 @@ const COLUMNS: SimpleColumnSpec[] = [
 
 export default async function WarehousesPage() {
   const user = await requirePageAccess(PERMISSIONS.WAREHOUSES_VIEW);
+  const unit = makeTerms(user.activeCompany.terminology)('unit');
   const companyId = user.activeCompany.id;
   const showValue = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
 
@@ -71,7 +73,7 @@ export default async function WarehousesPage() {
         code: w.code,
         location: w.location,
         port: w.port,
-        stock: s ? formatQuantityKg(s.onHandKg) : '0 KG',
+        stock: s ? formatQuantityKg(s.onHandKg) : `0 ${unit}`,
         bags: s ? formatBags(s.bags) : '0',
         value: showValue && s ? formatMoney(s.valueUsd, 'USD') : '—',
         status: w.status === 'ACTIVE' ? (w.isDefault ? 'Default' : 'Active') : 'Inactive',

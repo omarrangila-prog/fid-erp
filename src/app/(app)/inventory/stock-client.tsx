@@ -1,5 +1,6 @@
 'use client';
 
+import { useTerms } from '@/components/company-config-context';
 import { DualText } from '@/components/shared/dual-text';
 import { formatBags } from '@/lib/bags';
 import * as React from 'react';
@@ -71,6 +72,7 @@ export function StockClient({
   /** Rendered inside the empty state; built on the server so permissions are checked there. */
   emptyAction?: React.ReactNode;
 }) {
+  const unit = useTerms()('unit');
   const [warehouse, setWarehouse] = React.useState('ALL');
 
   const filtered = React.useMemo(
@@ -138,7 +140,7 @@ export function StockClient({
       ? [
           {
             id: 'costPerKg',
-            header: 'Landed cost / KG',
+            header: `Landed cost / ${unit}`,
             numeric: true,
             mobile: 'meta',
             sortValue: (r: StockRow) => (r.onHandSort > 0 ? r.valueSort / r.onHandSort : 0),
@@ -210,8 +212,8 @@ export function StockClient({
                 <th className="py-1.5 pr-3 text-right font-medium">Bags</th>
                 {/* What the coffee still here cost: the supplier's price, the
                     landed cost, and what the remainder is worth either way. */}
-                <th className="py-1.5 pr-3 text-right font-medium">Purchase /KG</th>
-                <th className="py-1.5 pr-3 text-right font-medium">Landed /KG</th>
+                <th className="py-1.5 pr-3 text-right font-medium">Purchase /{unit}</th>
+                <th className="py-1.5 pr-3 text-right font-medium">Landed /{unit}</th>
                 <th className="py-1.5 pr-3 text-right font-medium">Purchase value</th>
                 <th className="py-1.5 pr-3 text-right font-medium">Stock value</th>
                 <th className="py-1.5 text-right font-medium">Rate</th>

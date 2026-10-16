@@ -17,6 +17,7 @@ import { CONTAINER_STAGE_META, type ContainerStage } from '@/lib/container-stage
 import { formatQuantityKg, todayInputValue } from '@/lib/format';
 import { markOrderArrivedAction, markContainerArrivedAction, undoLoadingAction, undoArrivalAction, removeContainerAction } from '@/server/actions/trading-actions';
 import { EditContainerDialog, type EditableContainer } from '@/components/shipments/edit-container-dialog';
+import { useTerms } from '@/components/company-config-context';
 
 /** Fired by a row's "Receive goods"; the toolbar that owns the receipt sheet listens. */
 export const RECEIVE_GOODS_EVENT = 'fid:receive-goods';
@@ -105,6 +106,7 @@ export function OrderShipments({
   /** Shipment Costing is purchase cost; the link is offered to those who may open it. */
   canSeeCosting?: boolean;
 }) {
+  const unit = useTerms()('unit');
   const router = useRouter();
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [ataDate, setAtaDate] = React.useState(todayInputValue());
@@ -194,7 +196,7 @@ export function OrderShipments({
                 <TH>Item</TH>
                 <TH>Lot</TH>
                 <TH>Batch</TH>
-                <TH numeric>KG</TH>
+                <TH numeric>{unit}</TH>
                 <TH numeric>Received</TH>
                 <TH numeric>Purchase USD</TH>
                 <TH>ETA</TH>

@@ -1,4 +1,5 @@
 import { shortDocumentNumber } from '@/lib/short-number';
+import { makeTerms } from '@/lib/terminology';
 import { getOrderCostSheets } from '@/lib/services/order-cost';
 import { NextResponse } from 'next/server';
 import { requirePermission, can } from '@/lib/auth/guards';
@@ -222,11 +223,14 @@ function pnlSection(title: string, lines: PnlLine[], total: { usd: unknown; loca
   ];
 }
 
+const termsOf = (u: { activeCompany: { terminology?: Record<string, string> } }) => makeTerms(u.activeCompany.terminology);
+
 const REPORTS: Record<string, Report> = {
   'loading-sheet': {
     title: 'Loading Follow-Up',
     permission: PERMISSIONS.SHIPMENTS_VIEW,
     build: async (user) => {
+      const unit = termsOf(user)('unit');
       const rows = await getLoadingSheet(user.activeCompany.id);
       const isDubai = user.activeCompany.localCurrency === 'AED';
 
@@ -237,10 +241,10 @@ const REPORTS: Record<string, Report> = {
         {
           header: 'Item',
           value: (r: (typeof rows)[number]) =>
-            r.lines.map((line) => `${line.itemName} (${Number(line.quantityKg)} KG)`).join('; '),
+            r.lines.map((line) => `${line.itemName} (${Number(line.quantityKg)} ${unit})`).join('; '),
           width: 42,
         },
-        { header: 'Quantity (KG)', value: (r: (typeof rows)[number]) => Number(r.quantityKg), type: 'quantity' as const },
+        { header: `Quantity (${unit})`, value: (r: (typeof rows)[number]) => Number(r.quantityKg), type: 'quantity' as const },
         { header: 'Containers', value: (r: (typeof rows)[number]) => r.containers, type: 'integer' as const },
         { header: 'Status', value: (r: (typeof rows)[number]) => r.status.replace(/_/g, ' ') },
         { header: 'Shipping line', value: (r: (typeof rows)[number]) => r.shippingLine ?? '' },
@@ -261,12 +265,12 @@ const REPORTS: Record<string, Report> = {
         {
           header: 'Items description',
           value: (r: (typeof rows)[number]) =>
-            r.lines.map((line) => `${line.itemName} (${Number(line.quantityKg)} KG)`).join('; '),
+            r.lines.map((line) => `${line.itemName} (${Number(line.quantityKg)} ${unit})`).join('; '),
           width: 42,
         },
-        { header: 'Quantity (KG)', value: (r: (typeof rows)[number]) => Number(r.quantityKg), type: 'quantity' as const },
-        { header: 'Sold (KG)', value: (r: (typeof rows)[number]) => Number(r.soldKg), type: 'quantity' as const },
-        { header: 'Available (KG)', value: (r: (typeof rows)[number]) => Number(r.availableKg), type: 'quantity' as const },
+        { header: `Quantity (${unit})`, value: (r: (typeof rows)[number]) => Number(r.quantityKg), type: 'quantity' as const },
+        { header: `Sold (${unit})`, value: (r: (typeof rows)[number]) => Number(r.soldKg), type: 'quantity' as const },
+        { header: `Available (${unit})`, value: (r: (typeof rows)[number]) => Number(r.availableKg), type: 'quantity' as const },
         { header: 'Origin', value: (r: (typeof rows)[number]) => r.origin },
         { header: 'Destination', value: (r: (typeof rows)[number]) => r.destination ?? '' },
         { header: 'Status', value: (r: (typeof rows)[number]) => r.status.replace(/_/g, ' ') },
@@ -290,7 +294,7 @@ const REPORTS: Record<string, Report> = {
         title: 'Loading Follow-Up',
         subtitle: `${rows.length} shipment${rows.length === 1 ? '' : 's'} on the book`,
         rows,
-        totals: isDubai ? ['Quantity (KG)', 'Sold (KG)', 'Available (KG)'] : ['Quantity (KG)'],
+        totals: isDubai ? [`Quantity (${unit})`, `Sold (${unit})`, `Available (${unit})`] : [`Quantity (${unit})`],
         columns: isDubai ? dubaiColumns : moroccoColumns,
       });
     },
@@ -300,6 +304,7 @@ const REPORTS: Record<string, Report> = {
     title: 'Stock Allocation',
     permission: PERMISSIONS.INVENTORY_VIEW,
     build: async (user) => {
+      const unit = termsOf(user)('unit');
       const sheet = await getLoadingSheet(user.activeCompany.id);
 
       // One row per customer allocation, plus a row for anything unsold, so
@@ -350,20 +355,20 @@ const REPORTS: Record<string, Report> = {
         title: 'Stock Allocation',
         subtitle: 'Each purchase and every customer it was sold to',
         rows,
-        totals: ['Sold (KG)', 'Value', 'Outstanding'],
+        totals: [`Sold (${unit})`, 'Value', 'Outstanding'],
         columns: [
           { header: 'Contract ref', value: (r) => r.contractReference },
           { header: 'Batch', value: (r) => r.batchNumber },
-          { header: 'Coffee', value: (r) => r.itemName, width: 34 },
-          { header: 'Purchased (KG)', value: (r) => r.purchased, type: 'quantity' },
+          { header: termsOf(user)('product'), value: (r) => r.itemName, width: 34 },
+          { header: `Purchased (${unit})`, value: (r) => r.purchased, type: 'quantity' },
           { header: 'Customer', value: (r) => r.customerName, width: 30 },
           { header: 'Invoice date', value: (r) => r.invoiceDate, type: 'date' },
-          { header: 'Sold (KG)', value: (r) => r.quantity, type: 'quantity' },
+          { header: `Sold (${unit})`, value: (r) => r.quantity, type: 'quantity' },
           { header: 'Currency', value: (r) => r.currency, width: 10 },
           { header: 'Value', value: (r) => r.value, type: 'money' },
           { header: 'Outstanding', value: (r) => r.outstanding, type: 'money' },
           { header: 'Payment', value: (r) => r.settlement },
-          { header: 'Available (KG)', value: (r) => r.available, type: 'quantity' },
+          { header: `Available (${unit})`, value: (r) => r.available, type: 'quantity' },
         ],
       });
     },
@@ -430,6 +435,7 @@ const REPORTS: Record<string, Report> = {
     title: 'Stock on Hand',
     permission: PERMISSIONS.INVENTORY_VIEW,
     build: async (user) => {
+      const unit = termsOf(user)('unit');
       const rows = await getBatchStock({ companyId: user.activeCompany.id });
       return buildWorkbook({
         companyName: user.activeCompany.name,
@@ -437,20 +443,20 @@ const REPORTS: Record<string, Report> = {
         title: 'Stock on Hand',
         subtitle: 'Every batch in every warehouse',
         rows,
-        totals: ['Received (KG)', 'Sold (KG)', 'Available (KG)', 'Value (USD)'],
+        totals: [`Received (${unit})`, `Sold (${unit})`, `Available (${unit})`, 'Value (USD)'],
         columns: [
           { header: 'Warehouse', value: (r) => r.warehouseNames, width: 28 },
-          { header: 'Coffee', value: (r) => r.itemName, width: 34 },
+          { header: termsOf(user)('product'), value: (r) => r.itemName, width: 34 },
           { header: 'Lot', value: (r) => r.lotNumber },
           { header: 'Batch', value: (r) => r.batchNumber },
           { header: 'Container', value: (r) => r.containerNumber ?? '' },
           { header: 'Supplier', value: (r) => r.vendorName, width: 28 },
-          { header: 'Received (KG)', value: (r) => Number(r.receivedKg), type: 'quantity' },
-          { header: 'Sold (KG)', value: (r) => Number(r.soldKg), type: 'quantity' },
-          { header: 'Reserved (KG)', value: (r) => Number(r.allocatedKg), type: 'quantity' },
-          { header: 'Available (KG)', value: (r) => Number(r.availableKg), type: 'quantity' },
-          { header: 'In transit (KG)', value: (r) => Number(r.inTransitKg), type: 'quantity' },
-          { header: 'Cost/KG (USD)', value: (r) => Number(r.unitCostUsd), type: 'number' },
+          { header: `Received (${unit})`, value: (r) => Number(r.receivedKg), type: 'quantity' },
+          { header: `Sold (${unit})`, value: (r) => Number(r.soldKg), type: 'quantity' },
+          { header: `Reserved (${unit})`, value: (r) => Number(r.allocatedKg), type: 'quantity' },
+          { header: `Available (${unit})`, value: (r) => Number(r.availableKg), type: 'quantity' },
+          { header: `In transit (${unit})`, value: (r) => Number(r.inTransitKg), type: 'quantity' },
+          { header: `Cost/${unit} (USD)`, value: (r) => Number(r.unitCostUsd), type: 'number' },
           { header: 'Value (USD)', value: (r) => Number(r.stockValueUsd), type: 'money' },
         ],
       });
@@ -461,6 +467,7 @@ const REPORTS: Record<string, Report> = {
     title: 'Stock Ageing',
     permission: PERMISSIONS.INVENTORY_VIEW,
     build: async (user) => {
+      const unit = termsOf(user)('unit');
       const rows = await getStockAgeing(user.activeCompany.id);
       return buildWorkbook({
         companyName: user.activeCompany.name,
@@ -468,21 +475,21 @@ const REPORTS: Record<string, Report> = {
         title: 'Stock Ageing',
         subtitle: 'How long each parcel has been in the warehouse, oldest first',
         rows,
-        totals: ['On hand (KG)', 'Reserved (KG)', 'Available (KG)', 'Value (USD)'],
+        totals: [`On hand (${unit})`, `Reserved (${unit})`, `Available (${unit})`, 'Value (USD)'],
         columns: [
           { header: 'Batch', value: (r) => r.batchNumber },
           { header: 'Lot', value: (r) => r.lotNumber },
           { header: 'Container', value: (r) => r.containerNumber ?? '' },
-          { header: 'Coffee', value: (r) => r.itemName, width: 34 },
+          { header: termsOf(user)('product'), value: (r) => r.itemName, width: 34 },
           { header: 'Origin', value: (r) => r.originCountry },
           { header: 'Warehouse', value: (r) => r.warehouseName, width: 26 },
           { header: 'Received', value: (r) => r.receivedAt, type: 'date' },
           { header: 'Days in stock', value: (r) => r.daysInStock ?? 0, type: 'integer' },
           { header: 'Age', value: (r) => r.bucket },
-          { header: 'On hand (KG)', value: (r) => Number(r.onHandKg), type: 'quantity' },
-          { header: 'Reserved (KG)', value: (r) => Number(r.reservedKg), type: 'quantity' },
-          { header: 'Available (KG)', value: (r) => Number(r.availableKg), type: 'quantity' },
-          { header: 'Cost/KG (USD)', value: (r) => Number(r.unitCostUsd), type: 'number' },
+          { header: `On hand (${unit})`, value: (r) => Number(r.onHandKg), type: 'quantity' },
+          { header: `Reserved (${unit})`, value: (r) => Number(r.reservedKg), type: 'quantity' },
+          { header: `Available (${unit})`, value: (r) => Number(r.availableKg), type: 'quantity' },
+          { header: `Cost/${unit} (USD)`, value: (r) => Number(r.unitCostUsd), type: 'number' },
           { header: 'Value (USD)', value: (r) => Number(r.valueUsd), type: 'money' },
         ],
       });
@@ -493,6 +500,7 @@ const REPORTS: Record<string, Report> = {
     title: 'Profitability',
     permission: PERMISSIONS.PROFITS_VIEW,
     build: async (user, query) => {
+      const unit = termsOf(user)('unit');
       const companyId = user.activeCompany.id;
       const view = query.get('view') ?? 'shipment';
       const summary = await getCompanyProfitSummary({ companyId });
@@ -506,22 +514,22 @@ const REPORTS: Record<string, Report> = {
               : view === 'batch'
                 ? await getBatchProfitability({ companyId })
                 : await getContainerProfitability({ companyId });
-        const titles = { customer: 'Customer', product: 'Coffee', batch: 'Batch', container: 'Container' } as const;
+        const titles = { customer: 'Customer', product: termsOf(user)('product'), batch: 'Batch', container: 'Container' } as const;
         return buildWorkbook({
           companyName: user.activeCompany.name,
           timeZone: user.activeCompany.timezone,
           title: 'Profitability',
           subtitle: `By ${titles[view].toLowerCase()} · gross profit USD ${Number(summary.grossProfitUsd).toFixed(2)}`,
           rows,
-          totals: ['Quantity (KG)', 'Revenue (USD)', 'Cost (USD)', 'Gross profit (USD)'],
+          totals: [`Quantity (${unit})`, 'Revenue (USD)', 'Cost (USD)', 'Gross profit (USD)'],
           columns: [
             { header: titles[view], value: (r) => r.label, width: 32 },
             { header: 'Detail', value: (r) => r.sublabel ?? '' },
-            { header: 'Quantity (KG)', value: (r) => Number(r.quantityKg), type: 'quantity' },
+            { header: `Quantity (${unit})`, value: (r) => Number(r.quantityKg), type: 'quantity' },
             { header: 'Revenue (USD)', value: (r) => Number(r.revenueUsd), type: 'money' },
             { header: 'Cost (USD)', value: (r) => Number(r.cogsUsd), type: 'money' },
             { header: 'Gross profit (USD)', value: (r) => Number(r.grossProfitUsd), type: 'money' },
-            { header: 'Per KG (USD)', value: (r) => Number(r.profitPerKgUsd), type: 'money' },
+            { header: `Per ${unit} (USD)`, value: (r) => Number(r.profitPerKgUsd), type: 'money' },
             { header: 'Margin', value: (r) => Number(r.grossMarginPct) / 100, type: 'percent' },
           ],
         });
@@ -560,33 +568,33 @@ const REPORTS: Record<string, Report> = {
           subtitle: `Net profit USD ${Number(summary.netProfitUsd).toFixed(2)}`,
           rows: rows.slice().reverse(),
           totals: [
-            'Purchased (KG)', 'Received (KG)', 'Sold (KG)', 'Remaining (KG)',
+            `Purchased (${unit})`, `Received (${unit})`, `Sold (${unit})`, `Remaining (${unit})`,
             'Purchase cost (USD)', 'Direct expenses (USD)', 'Landed cost (USD)',
             `Purchase cost (${local})`, `Direct expenses (${local})`, `Landed cost (${local})`,
-            'Closing stock (KG)', 'Closing stock value (USD)',
+            `Closing stock (${unit})`, 'Closing stock value (USD)',
             'Revenue (USD)', 'Cost of goods sold (USD)', 'Gross profit (USD)', 'Other costs (USD)', 'Net profit (USD)',
             `Revenue (${local})`, `Cost of goods sold (${local})`, `Gross profit (${local})`, `Net profit (${local})`,
           ],
           columns: [
             { header: 'Contract ref', value: (r) => r.contractReference, width: 22 },
-            { header: 'Coffee', value: (r) => r.itemName, width: 28 },
+            { header: termsOf(user)('product'), value: (r) => r.itemName, width: 28 },
             { header: 'Status', value: (r) => r.status },
-            { header: 'Purchased (KG)', value: (r) => Number(r.purchaseQuantityKg), type: 'quantity' as const },
-            { header: 'Received (KG)', value: (r) => Number(r.receivedQuantityKg), type: 'quantity' as const },
-            { header: 'Sold (KG)', value: (r) => Number(r.soldQuantityKg), type: 'quantity' as const },
-            { header: 'Remaining (KG)', value: (r) => Number(r.remainingQuantityKg), type: 'quantity' as const },
+            { header: `Purchased (${unit})`, value: (r) => Number(r.purchaseQuantityKg), type: 'quantity' as const },
+            { header: `Received (${unit})`, value: (r) => Number(r.receivedQuantityKg), type: 'quantity' as const },
+            { header: `Sold (${unit})`, value: (r) => Number(r.soldQuantityKg), type: 'quantity' as const },
+            { header: `Remaining (${unit})`, value: (r) => Number(r.remainingQuantityKg), type: 'quantity' as const },
             { header: 'Purchase cost (USD)', value: (r) => Number(r.goodsCostUsd), type: 'money' as const },
             { header: 'Direct expenses (USD)', value: (r) => Number(r.capitalisedCostUsd), type: 'money' as const },
             { header: 'Landed cost (USD)', value: (r) => Number(r.totalLandedCostUsd), type: 'money' as const },
-            { header: 'Landed cost per KG (USD)', value: (r) => Number(r.landedCostPerKgUsd), type: 'money' as const },
+            { header: `Landed cost per ${unit} (USD)`, value: (r) => Number(r.landedCostPerKgUsd), type: 'money' as const },
             { header: `Purchase cost (${local})`, value: (r) => Number(r.goodsCostLocal), type: 'money' as const },
             { header: `Direct expenses (${local})`, value: (r) => Number(r.capitalisedCostLocal), type: 'money' as const },
             { header: `Landed cost (${local})`, value: (r) => Number(r.totalLandedCostLocal), type: 'money' as const },
-            { header: `Landed cost per KG (${local})`, value: (r) => Number(r.landedCostPerKgLocal), type: 'money' as const },
-            { header: 'Closing stock (KG)', value: (r) => Number(r.onHandQuantityKg), type: 'quantity' as const },
+            { header: `Landed cost per ${unit} (${local})`, value: (r) => Number(r.landedCostPerKgLocal), type: 'money' as const },
+            { header: `Closing stock (${unit})`, value: (r) => Number(r.onHandQuantityKg), type: 'quantity' as const },
             { header: 'Closing stock value (USD)', value: (r) => Number(r.closingStockValueUsd), type: 'money' as const },
             { header: 'Revenue (USD)', value: (r) => Number(r.salesRevenueUsd), type: 'money' as const },
-            { header: 'Average selling price (USD/KG)', value: (r) => Number(r.averageSellingPriceUsd), type: 'money' as const },
+            { header: `Average selling price (USD/${unit})`, value: (r) => Number(r.averageSellingPriceUsd), type: 'money' as const },
             { header: 'Cost of goods sold (USD)', value: (r) => Number(r.allocatedLandedCostUsd), type: 'money' as const },
             { header: 'Gross profit (USD)', value: (r) => Number(r.grossProfitUsd), type: 'money' as const },
             { header: 'Other costs (USD)', value: (r) => Number(r.otherCostsUsd), type: 'money' as const },
@@ -597,7 +605,7 @@ const REPORTS: Record<string, Report> = {
             { header: `Net profit (${local})`, value: (r) => Number(r.netProfitLocal), type: 'money' as const },
             { header: 'Gross margin', value: (r) => Number(r.grossMarginPct) / 100, type: 'percent' as const },
             { header: 'Net margin', value: (r) => Number(r.netMarginPct) / 100, type: 'percent' as const },
-            { header: 'Profit per KG (USD)', value: (r) => Number(r.profitPerKgUsd), type: 'money' as const },
+            { header: `Profit per ${unit} (USD)`, value: (r) => Number(r.profitPerKgUsd), type: 'money' as const },
           ],
         });
       }
@@ -608,7 +616,7 @@ const REPORTS: Record<string, Report> = {
         title: 'Profitability',
         subtitle: `${byContract ? 'By contract' : 'By job'} · net profit USD ${Number(summary.netProfitUsd).toFixed(2)}`,
         rows,
-        totals: ['Sold (KG)', 'Revenue (USD)', `Revenue (${local})`, 'Landed cost (USD)', 'Gross profit (USD)', 'Other costs (USD)', 'Net profit (USD)', `Net profit (${local})`],
+        totals: [`Sold (${unit})`, 'Revenue (USD)', `Revenue (${local})`, 'Landed cost (USD)', 'Gross profit (USD)', 'Other costs (USD)', 'Net profit (USD)', `Net profit (${local})`],
         columns: [
           ...(byContract
             ? [
@@ -617,10 +625,10 @@ const REPORTS: Record<string, Report> = {
             : [
                 { header: 'Contract ref', value: (r: (typeof rows)[number]) => r.contractReference, width: 22 },
               ]),
-          { header: 'Coffee', value: (r) => r.itemName, width: 28 },
+          { header: termsOf(user)('product'), value: (r) => r.itemName, width: 28 },
           { header: 'Status', value: (r) => r.status },
-          { header: 'Sold (KG)', value: (r) => Number(r.soldQuantityKg), type: 'quantity' as const },
-          { header: 'Remaining (KG)', value: (r) => Number(r.remainingQuantityKg), type: 'quantity' as const },
+          { header: `Sold (${unit})`, value: (r) => Number(r.soldQuantityKg), type: 'quantity' as const },
+          { header: `Remaining (${unit})`, value: (r) => Number(r.remainingQuantityKg), type: 'quantity' as const },
           { header: 'Revenue (USD)', value: (r) => Number(r.salesRevenueUsd), type: 'money' as const },
           { header: `Revenue (${local})`, value: (r) => Number(r.salesRevenueLocal), type: 'money' as const },
           { header: 'Landed cost (USD)', value: (r) => Number(r.allocatedLandedCostUsd), type: 'money' as const },
@@ -629,8 +637,8 @@ const REPORTS: Record<string, Report> = {
           { header: 'Other costs (USD)', value: (r) => Number(r.otherCostsUsd), type: 'money' as const },
           { header: 'Net profit (USD)', value: (r) => Number(r.netProfitUsd), type: 'money' as const },
           { header: `Net profit (${local})`, value: (r) => Number(r.netProfitLocal), type: 'money' as const },
-          { header: 'Per KG (USD)', value: (r) => Number(r.profitPerKgUsd), type: 'money' as const },
-          { header: `Per KG (${local})`, value: (r) => Number(r.profitPerKgLocal), type: 'money' as const },
+          { header: `Per ${unit} (USD)`, value: (r) => Number(r.profitPerKgUsd), type: 'money' as const },
+          { header: `Per ${unit} (${local})`, value: (r) => Number(r.profitPerKgLocal), type: 'money' as const },
           { header: 'Margin', value: (r) => Number(r.netMarginPct) / 100, type: 'percent' as const },
         ],
       });
@@ -732,6 +740,7 @@ const REPORTS: Record<string, Report> = {
     title: 'Sales By',
     permission: PERMISSIONS.REPORTS_VIEW,
     build: async (user, query) => {
+      const unit = termsOf(user)('unit');
       const by = (['customer', 'item', 'shipment', 'warehouse', 'batch'].includes(query.get('by') ?? '')
         ? query.get('by')
         : 'customer') as SalesDimension;
@@ -740,7 +749,7 @@ const REPORTS: Record<string, Report> = {
       const rows = await getSalesBy({ companyId: user.activeCompany.id, from, to, by });
       const titles: Record<SalesDimension, string> = {
         customer: 'Sales by Customer',
-        item: 'Sales by Coffee',
+        item: `Sales by ${termsOf(user)('product')}`,
         shipment: 'Sales by Shipment',
         warehouse: 'Sales by Warehouse',
         batch: 'Sales by Batch',
@@ -751,11 +760,11 @@ const REPORTS: Record<string, Report> = {
         title: titles[by],
         subtitle: period(from, to),
         rows,
-        totals: ['Quantity (KG)', 'Revenue (USD)', 'Cost (USD)', 'Gross profit (USD)'],
+        totals: [`Quantity (${unit})`, 'Revenue (USD)', 'Cost (USD)', 'Gross profit (USD)'],
         columns: [
           { header: titles[by].replace('Sales by ', ''), value: (r) => r.label, width: 32 },
           { header: 'Invoices', value: (r) => r.invoices, type: 'integer' as const },
-          { header: 'Quantity (KG)', value: (r) => Number(r.quantityKg), type: 'quantity' as const },
+          { header: `Quantity (${unit})`, value: (r) => Number(r.quantityKg), type: 'quantity' as const },
           { header: 'Revenue (USD)', value: (r) => Number(r.revenueUsd), type: 'money' as const },
           // As on screen: cost and profit only for those who may see profit.
           ...(can(user, PERMISSIONS.PROFITS_VIEW)
@@ -775,6 +784,7 @@ const REPORTS: Record<string, Report> = {
     title: 'Daily Stock Movement',
     permission: PERMISSIONS.INVENTORY_VIEW,
     build: async (user, query) => {
+      const unit = termsOf(user)('unit');
       const from = dateParam(query, 'from') ?? startOfYear();
       const to = dateParam(query, 'to') ?? new Date();
       const warehouseId = query.get('warehouse') || undefined;
@@ -785,17 +795,17 @@ const REPORTS: Record<string, Report> = {
         title: 'Daily Stock Movement',
         subtitle: period(from, to),
         rows,
-        totals: ['Opening (KG)', 'Received (KG)', 'Transferred in (KG)', 'Transferred out (KG)', 'Sold (KG)', 'Adjustments (KG)', 'Closing (KG)', 'Closing value (USD)'],
+        totals: [`Opening (${unit})`, `Received (${unit})`, `Transferred in (${unit})`, `Transferred out (${unit})`, `Sold (${unit})`, `Adjustments (${unit})`, `Closing (${unit})`, 'Closing value (USD)'],
         columns: [
-          { header: 'Coffee', value: (r) => r.itemName, width: 32 },
+          { header: termsOf(user)('product'), value: (r) => r.itemName, width: 32 },
           { header: 'Warehouse', value: (r) => r.warehouseName, width: 24 },
-          { header: 'Opening (KG)', value: (r) => Number(r.openingKg), type: 'quantity' as const },
-          { header: 'Received (KG)', value: (r) => Number(r.receiptsKg), type: 'quantity' as const },
-          { header: 'Transferred in (KG)', value: (r) => Number(r.transfersInKg), type: 'quantity' as const },
-          { header: 'Transferred out (KG)', value: (r) => Number(r.transfersOutKg), type: 'quantity' as const },
-          { header: 'Sold (KG)', value: (r) => Number(r.salesKg), type: 'quantity' as const },
-          { header: 'Adjustments (KG)', value: (r) => Number(r.adjustmentsKg), type: 'quantity' as const },
-          { header: 'Closing (KG)', value: (r) => Number(r.closingKg), type: 'quantity' as const },
+          { header: `Opening (${unit})`, value: (r) => Number(r.openingKg), type: 'quantity' as const },
+          { header: `Received (${unit})`, value: (r) => Number(r.receiptsKg), type: 'quantity' as const },
+          { header: `Transferred in (${unit})`, value: (r) => Number(r.transfersInKg), type: 'quantity' as const },
+          { header: `Transferred out (${unit})`, value: (r) => Number(r.transfersOutKg), type: 'quantity' as const },
+          { header: `Sold (${unit})`, value: (r) => Number(r.salesKg), type: 'quantity' as const },
+          { header: `Adjustments (${unit})`, value: (r) => Number(r.adjustmentsKg), type: 'quantity' as const },
+          { header: `Closing (${unit})`, value: (r) => Number(r.closingKg), type: 'quantity' as const },
           { header: 'Closing value (USD)', value: (r) => Number(r.closingValueUsd), type: 'money' as const },
         ],
       });
@@ -828,7 +838,7 @@ const REPORTS: Record<string, Report> = {
             { header: 'Amount', value: (r) => Number(r.amount), type: 'money' as const },
             { header: 'Amount (USD)', value: (r) => Number(r.amountUsd), type: 'money' as const },
             { header: `Amount (${sheet.localCurrency})`, value: (r) => Number(r.amountLocal), type: 'money' as const },
-            { header: 'In the coffee?', value: (r) => (r.capitalised ? 'Yes' : 'No — a running cost') },
+            { header: `In the ${termsOf(user).lower('product')}?`, value: (r) => (r.capitalised ? 'Yes' : 'No — a running cost') },
             { header: 'Paid', value: (r) => (r.paid ? (r.paidFrom ?? 'Paid') : 'Owed') },
           ],
         });
@@ -853,7 +863,7 @@ const REPORTS: Record<string, Report> = {
           { header: 'Amount', value: (r) => Number(r.amount), type: 'money' as const },
           { header: 'Amount (USD)', value: (r) => Number(r.amountUsd), type: 'money' as const },
           { header: `Amount (${sheet.localCurrency})`, value: (r) => Number(r.amountLocal), type: 'money' as const },
-          { header: 'In the coffee?', value: (r) => (r.capitalised ? 'Yes' : 'No — a running cost') },
+          { header: `In the ${termsOf(user).lower('product')}?`, value: (r) => (r.capitalised ? 'Yes' : 'No — a running cost') },
           { header: 'Paid', value: (r) => (r.paid ? (r.paidFrom ?? 'Paid') : 'Owed') },
         ],
       });
@@ -880,7 +890,7 @@ const REPORTS: Record<string, Report> = {
           { header: 'Date', value: (r) => r.invoiceDate, type: 'date' },
           { header: 'Invoice', value: (r) => shortDocumentNumber(r.invoiceNumber) },
           { header: 'Customer', value: (r) => r.customerName, width: 30 },
-          { header: 'ICUL/FID Ref', value: (r) => r.references.join(', '), width: 24 },
+          { header: makeTerms(user.activeCompany.terminology)('orderRef'), value: (r) => r.references.join(', '), width: 24 },
           { header: 'KG', value: (r) => Number(r.quantityKg), type: 'quantity' },
           { header: 'Currency', value: (r) => r.currency },
           { header: 'Total', value: (r) => Number(r.total), type: 'money' },
@@ -904,6 +914,7 @@ const REPORTS: Record<string, Report> = {
     title: 'Purchase Report',
     permission: PERMISSIONS.REPORTS_VIEW,
     build: async (user, query) => {
+      const unit = termsOf(user)('unit');
       const from = dateParam(query, 'from');
       const to = dateParam(query, 'to');
       const rows = await getPurchaseRegister({ companyId: user.activeCompany.id, from, to });
@@ -920,8 +931,8 @@ const REPORTS: Record<string, Report> = {
           { header: 'Reference', value: (r) => r.contractReference },
           { header: 'Supplier', value: (r) => r.vendorName, width: 30 },
           { header: 'Origin', value: (r) => r.origin ?? '' },
-          { header: 'Bought KG', value: (r) => Number(r.quantityKg), type: 'quantity' },
-          { header: 'Landed KG', value: (r) => Number(r.receivedKg), type: 'quantity' },
+          { header: `Bought ${unit}`, value: (r) => Number(r.quantityKg), type: 'quantity' },
+          { header: `Landed ${unit}`, value: (r) => Number(r.receivedKg), type: 'quantity' },
           { header: 'Currency', value: (r) => r.currency },
           { header: 'Goods', value: (r) => Number(r.goodsValue), type: 'money' },
           { header: 'Freight', value: (r) => Number(r.freight), type: 'money' },
@@ -1320,6 +1331,7 @@ const REPORTS: Record<string, Report> = {
     title: 'Financial Position',
     permission: PERMISSIONS.CASHBANK_VIEW,
     build: async (user, query) => {
+      const unit = termsOf(user)('unit');
       const asOf = dateParam(query, 'asOf');
       const position = await getFinancialPosition({ companyId: user.activeCompany.id, asOf: asOf ?? undefined });
 
@@ -1360,15 +1372,15 @@ const REPORTS: Record<string, Report> = {
             values: [null, '', Number(position.chequesOnHandUsd)],
           },
           { kind: 'spacer' },
-          { kind: 'section', label: 'Coffee' },
+          { kind: 'section', label: termsOf(user)('product') },
           {
             kind: 'line',
-            label: `In the warehouse (${Number(position.availableKg).toFixed(3)} KG, ${position.bags} bags)`,
+            label: `In the warehouse (${Number(position.availableKg).toFixed(3)} ${unit}, ${position.bags} bags)`,
             values: [null, '', showValue ? Number(position.inventoryValueUsd) : null],
           },
           {
             kind: 'line',
-            label: `On the water (${Number(position.inTransitKg).toFixed(3)} KG)`,
+            label: `On the water (${Number(position.inTransitKg).toFixed(3)} ${unit})`,
             values: [null, '', showValue ? Number(position.inTransitValueUsd) : null],
           },
           {
@@ -1445,6 +1457,7 @@ const REPORTS: Record<string, Report> = {
     title: 'Inventory Valuation',
     permission: PERMISSIONS.INVENTORY_VIEW,
     build: async (user) => {
+      const unit = termsOf(user)('unit');
       const rows = await getInventoryValuation(user.activeCompany.id);
       const showCost = can(user, PERMISSIONS.PURCHASE_COST_VIEW);
       const local = user.activeCompany.localCurrency;
@@ -1458,26 +1471,26 @@ const REPORTS: Record<string, Report> = {
           : 'On-hand quantities. Cost figures are not part of your access.',
         rows,
         totals: showCost
-          ? ['On hand (KG)', 'Available (KG)', ...(showLocal ? [`Value (${local})`] : []), 'Value (USD)']
-          : ['On hand (KG)', 'Available (KG)'],
+          ? [`On hand (${unit})`, `Available (${unit})`, ...(showLocal ? [`Value (${local})`] : []), 'Value (USD)']
+          : [`On hand (${unit})`, `Available (${unit})`],
         columns: [
           { header: 'Warehouse', value: (r) => r.warehouseName, width: 26 },
           { header: 'Code', value: (r) => r.warehouseCode },
-          { header: 'Coffee', value: (r) => r.itemName, width: 28 },
+          { header: termsOf(user)('product'), value: (r) => r.itemName, width: 28 },
           { header: 'Batch', value: (r) => r.batchNumber },
           { header: 'Lot', value: (r) => r.lotNumber },
           { header: 'Container', value: (r) => r.containerNumber ?? '' },
-          { header: 'On hand (KG)', value: (r) => Number(r.onHandKg), type: 'quantity' },
-          { header: 'Available (KG)', value: (r) => Number(r.availableKg), type: 'quantity' },
+          { header: `On hand (${unit})`, value: (r) => Number(r.onHandKg), type: 'quantity' },
+          { header: `Available (${unit})`, value: (r) => Number(r.availableKg), type: 'quantity' },
           ...(showLocal
             ? [
-                { header: `Landed / KG (${local})`, value: (r: (typeof rows)[number]) => Number(r.landedUnitCostLocal), type: 'money' as const },
+                { header: `Landed / ${unit} (${local})`, value: (r: (typeof rows)[number]) => Number(r.landedUnitCostLocal), type: 'money' as const },
                 { header: `Value (${local})`, value: (r: (typeof rows)[number]) => Number(r.valueLocal), type: 'money' as const },
               ]
             : []),
           ...(showCost
             ? [
-                { header: 'Landed / KG (USD)', value: (r: (typeof rows)[number]) => Number(r.landedUnitCostUsd), type: 'money' as const },
+                { header: `Landed / ${unit} (USD)`, value: (r: (typeof rows)[number]) => Number(r.landedUnitCostUsd), type: 'money' as const },
                 { header: 'Value (USD)', value: (r: (typeof rows)[number]) => Number(r.valueUsd), type: 'money' as const },
               ]
             : []),
@@ -1490,6 +1503,7 @@ const REPORTS: Record<string, Report> = {
     title: 'Cost of Goods Sold',
     permission: PERMISSIONS.PROFITS_VIEW,
     build: async (user, query) => {
+      const unit = termsOf(user)('unit');
       const from = dateParam(query, 'from') ?? startOfYear();
       const to = dateParam(query, 'to') ?? new Date();
       const rows = await getCogsReport({ companyId: user.activeCompany.id, from, to });
@@ -1508,15 +1522,15 @@ const REPORTS: Record<string, Report> = {
         title: 'Cost of Goods Sold',
         subtitle: period(from, to),
         rows,
-        totals: ['Quantity (KG)', ...localColumns.map((c) => c.header), 'Revenue (USD)', 'COGS (USD)', 'Gross profit (USD)'],
+        totals: [`Quantity (${unit})`, ...localColumns.map((c) => c.header), 'Revenue (USD)', 'COGS (USD)', 'Gross profit (USD)'],
         columns: [
           { header: 'Date', value: (r) => r.invoiceDate, type: 'date' },
           { header: 'Customer', value: (r) => r.customerName, width: 28 },
-          { header: 'Coffee', value: (r) => r.itemName, width: 28 },
-          { header: 'ICUL/FID Ref', value: (r) => r.contractReference },
+          { header: termsOf(user)('product'), value: (r) => r.itemName, width: 28 },
+          { header: makeTerms(user.activeCompany.terminology)('orderRef'), value: (r) => r.contractReference },
           { header: 'Batch', value: (r) => r.batchNumber },
           { header: 'Warehouse', value: (r) => r.warehouseName ?? '' },
-          { header: 'Quantity (KG)', value: (r) => Number(r.quantityKg), type: 'quantity' },
+          { header: `Quantity (${unit})`, value: (r) => Number(r.quantityKg), type: 'quantity' },
           ...localColumns,
           { header: 'Revenue (USD)', value: (r) => Number(r.revenueUsd), type: 'money' },
           { header: 'COGS (USD)', value: (r) => Number(r.cogsUsd), type: 'money' },

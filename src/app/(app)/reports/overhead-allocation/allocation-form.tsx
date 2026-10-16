@@ -10,6 +10,7 @@ import { Field } from '@/components/ui/field';
 import { Input, Select, Textarea } from '@/components/ui/input';
 import { allocateOverheadsAction } from '@/server/actions/finance-actions';
 import { safely } from '@/lib/safely';
+import { useTerms } from '@/components/company-config-context';
 
 type Candidate = { shipmentId: string; label: string; itemName: string; receivedKg: string; salesUsd: string };
 
@@ -34,6 +35,7 @@ export function OverheadAllocationForm({
   candidates: Candidate[];
   canAllocate: boolean;
 }) {
+  const unit = useTerms()('unit');
   const router = useRouter();
   const [basis, setBasis] = React.useState<(typeof BASES)[number]['value']>('QUANTITY');
   const [chosen, setChosen] = React.useState<Set<string>>(() => new Set(candidates.map((c) => c.shipmentId)));
@@ -113,7 +115,7 @@ export function OverheadAllocationForm({
                 <span>
                   <span className="block font-medium">{candidate.label}</span>
                   <span className="tnum block text-xs text-ink-muted">
-                    {candidate.itemName} · {Number(candidate.receivedKg).toLocaleString()} KG received · sales USD{' '}
+                    {candidate.itemName} · {Number(candidate.receivedKg).toLocaleString()} {unit} received · sales USD{' '}
                     {Number(candidate.salesUsd).toLocaleString()}
                   </span>
                 </span>

@@ -8,6 +8,7 @@ import { formatQuantityKg } from '@/lib/format';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { useTerms } from '@/components/company-config-context';
 
 export type ItemWarehouseLineView = {
   batchId: string;
@@ -43,6 +44,7 @@ export function ItemWarehouseStock({
   warehouses: ItemWarehouseGroupView[];
   totalAvailableKg: string;
 }) {
+  const unit = useTerms()('unit');
   const expandable = warehouses.filter((warehouse) => warehouse.lines.length > 0);
   const [open, setOpen] = React.useState<Set<string>>(
     () => new Set(expandable.map((warehouse) => warehouse.warehouseId)),
@@ -62,7 +64,7 @@ export function ItemWarehouseStock({
       <Card>
         <CardHeader>
           <CardTitle>Stock by warehouse</CardTitle>
-          <CardDescription>Physical stock in each warehouse, in KG.</CardDescription>
+          <CardDescription>Physical stock in each warehouse, in {unit}.</CardDescription>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-ink-muted">
@@ -92,7 +94,7 @@ export function ItemWarehouseStock({
             <THead>
               <TR className="hover:bg-transparent">
                 <TH>Warehouse</TH>
-                <TH numeric>Available KG</TH>
+                <TH numeric>Available {unit}</TH>
               </TR>
             </THead>
             <TBody>
