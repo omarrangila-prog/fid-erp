@@ -427,7 +427,7 @@ export async function saveRoleAction(
 export async function saveRolePermissionsAction(roleId: string, codes: string[]): Promise<ActionResult<undefined>> {
   try {
     const admin = await requirePermission(PERMISSIONS.ROLES_MANAGE);
-    const role = await assertCanEditRole(admin, roleId);
+    await assertCanEditRole(admin, roleId);
     const wanted = [...new Set(codes)].filter((code) => ALL_PERMISSIONS.includes(code as never));
     // Nobody takes away their own way back into this screen.
     if (!admin.isSuperAdmin && !wanted.includes(PERMISSIONS.ROLES_MANAGE) && admin.roleIds.includes(roleId)) {
