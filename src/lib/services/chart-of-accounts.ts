@@ -1,4 +1,5 @@
 import type { Tx } from '@/lib/db';
+import { WORLD_PORTS } from '@/lib/ports-world';
 import { prisma, transaction } from '@/lib/db';
 import { ACCOUNT_KEYS, EXPENSE_CATEGORY_SEEDS, PORT_SEEDS, REPORT_GROUPS } from '@/lib/constants';
 import { toMoney } from '@/lib/money';
@@ -582,7 +583,7 @@ export async function provisionCompany(tx: Tx, companyId: string): Promise<void>
   // number: a company below the threshold must not be nudged into collecting
   // tax it has no authority to collect.
   await ensureTaxCodes(tx, companyId, company.country);
-  await ensurePorts(tx, companyId, company.country);
+  await ensurePorts(tx, companyId, company.country, company.industryTemplate);
 }
 
 /** Where a new account of each kind starts looking for a free number. */
@@ -1192,15 +1193,19 @@ export async function postAccountOpeningBalance(input: {
  * coffee comes from. Idempotent, and an administrator can add or retire any of
  * them — this only makes the picker useful before anyone has typed anything.
  */
-export async function ensurePorts(tx: Tx, companyId: string, country: string): Promise<void> {
+export async function ensurePorts(tx: Tx, companyId: string, country: string, industryTemplate?: string | null): Promise<void> {
   const name = (country ?? '').toLowerCase();
   const home = name.includes('emirat') || name.includes('uae') || name.includes('dubai')
     ? PORT_SEEDS.AE
     : name.includes('morocco') || name.includes('maroc')
       ? PORT_SEEDS.MA
-      : [];
+      : WORLD_PORTS.filter((port) => port.country.toLowerCase() === name);
 
-  const wanted = [...home, ...PORT_SEEDS.ORIGIN];
+  // A commodity (coffee) trader gets the loading ports of the origins; anyone
+  // else gets the world's main ports. FID is a commodity trader, so it gets
+  // exactly the list it always had.
+  const commodity = !industryTemplate || industryTemplate === 'COMMODITY_TRADING';
+  const wanted = [...home, ...(commodity ? PORT_SEEDS.ORIGIN : WORLD_PORTS.filter((port) => !home.some((h) => h.code === port.code)))];
   const existing = await tx.port.findMany({ where: { companyId }, select: { code: true } });
   const present = new Set(existing.map((port) => port.code));
 
