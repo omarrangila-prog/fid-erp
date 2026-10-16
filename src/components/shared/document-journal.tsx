@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { getJournalForSource } from '@/lib/services/reports';
+import { countHiddenCorrections, getJournalForSource } from '@/lib/services/reports';
 import { dec } from '@/lib/money';
 import { formatMoney, formatDate } from '@/lib/format';
 import { businessNumber } from '@/lib/short-number';
@@ -38,7 +38,15 @@ export async function DocumentJournal({
   sourceId: string;
   title?: string;
 }) {
-  const entries = await getJournalForSource({ companyId, sourceType, sourceId });
+  const [entries, hidden] = await Promise.all([
+    getJournalForSource({ companyId, sourceType, sourceId }),
+    countHiddenCorrections({ companyId, sourceType, sourceId }),
+  ]);
+  // Earlier versions posted and taken back: kept in the books, not listed here.
+  const hiddenNote =
+    hidden > 0
+      ? `${hidden === 1 ? 'An earlier version of this document was' : `${hidden} earlier versions of this document were`} posted and taken back. Each cancels to zero, so ${hidden === 1 ? 'it is' : 'they are'} not listed.`
+      : null;
 
   if (entries.length === 0) {
     return (
@@ -46,7 +54,9 @@ export async function DocumentJournal({
         <CardHeader>
           <CardTitle>{title}</CardTitle>
           <CardDescription>
-            Nothing has been posted yet. A draft does not touch the ledger; posting writes the entry.
+            {hidden > 0
+              ? 'Everything this document posted has been taken back; nothing of it remains in the books.'
+              : 'Nothing has been posted yet. A draft does not touch the ledger; posting writes the entry.'}
           </CardDescription>
         </CardHeader>
       </Card>
@@ -61,6 +71,7 @@ export async function DocumentJournal({
           {entries.length === 1
             ? 'The double entry this document wrote to the ledger. One transaction always has two sides — what was debited and what was credited — so the same amount appears on both; it is recorded once.'
             : `The ${entries.length} entries this document wrote to the ledger, oldest first. Each has a debit side and a credit side for the same amount.`}
+          {hiddenNote ? <span className="mt-1 block text-xs text-ink-subtle" data-testid="hidden-corrections">{hiddenNote}</span> : null}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">

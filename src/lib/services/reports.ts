@@ -1041,6 +1041,16 @@ export async function getCashBook(params: {
  * shipment cost trues up what was already sold. All of them belong here, in
  * the order they were written, so the document tells its whole story.
  */
+/**
+ * The entries a document wrote that still count.
+ *
+ * A document corrected six times leaves six postings and six deletions behind
+ * it. The pairs stay in the books — they are the audit trail — but they cancel
+ * to nothing, and listing them on the document made the client read twelve
+ * entries to find the one that stands. Like every ledger and report, the
+ * document shows the live entries; `hiddenCorrections` says how many pairs
+ * were left out, so nothing disappears without a word.
+ */
 export async function getJournalForSource(params: {
   companyId: string;
   sourceType: string;
@@ -1051,6 +1061,7 @@ export async function getJournalForSource(params: {
       companyId: params.companyId,
       sourceId: params.sourceId,
       sourceType: params.sourceType as never,
+      ...LIVE_ENTRY_WHERE,
     },
     include: {
       lines: {
@@ -1059,6 +1070,19 @@ export async function getJournalForSource(params: {
       },
     },
     orderBy: [{ entryDate: 'asc' }, { sourceSeq: 'asc' }, { entryNumber: 'asc' }],
+  });
+}
+
+/** How many posted-and-taken-back pairs a document has behind it. */
+export async function countHiddenCorrections(params: { companyId: string; sourceType: string; sourceId: string }) {
+  return prisma.journalEntry.count({
+    where: {
+      companyId: params.companyId,
+      sourceId: params.sourceId,
+      sourceType: params.sourceType as never,
+      status: 'POSTED',
+      isReversal: true,
+    },
   });
 }
 
