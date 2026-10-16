@@ -157,6 +157,16 @@ describe('the client’s example: 9.90 estimated, 10.30 actual', () => {
     expect(after['COGS (MAD)']).toBe('657000.00');
     expect(after['Remaining inventory (shipment)']).toBe('438000.00');
 
+    // The exchange loss, said in dirhams: USD 100,000 × 0.40, of which the
+    // 15,000 KG sold carry 24,000 and the 10,000 KG left carry 16,000. Put
+    // back, the profit is the 12,000 the shipment made at the order's rate.
+    const sheet = await getShipmentCostSheet(companyId, shipmentId, { wholeOrder: true });
+    expect(sheet.orderedRate.toFixed(2)).toBe('9.90');
+    expect(sheet.exchangeDifferenceLocal.toFixed(2)).toBe('40000.00');
+    expect(sheet.exchangeDifferenceInSalesLocal.toFixed(2)).toBe('24000.00');
+    expect(sheet.exchangeDifferenceInStockLocal.toFixed(2)).toBe('16000.00');
+    expect(sheet.grossProfitLocal.plus(sheet.exchangeDifferenceInSalesLocal).toFixed(2)).toBe(before['Gross profit / loss (MAD)']);
+
     // A higher rate is a higher cost: the profit becomes a loss, never a gain.
     expect(after['Gross profit / loss (MAD)']).toBe('-12000.00');
     expect(dec(after['Gross margin %']).isNegative()).toBe(true);

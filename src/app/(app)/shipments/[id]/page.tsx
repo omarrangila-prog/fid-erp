@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { cn } from '@/lib/utils';
 import { getCurrentUser } from '@/lib/auth/session';
 import { CostingTable } from '@/components/shared/costing-table';
 import { getBatchCostings } from '@/lib/services/landed-cost';
@@ -508,6 +509,65 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                   Each container at its own landed cost — the same figures as Stock on Hand. This is what the coffee
                   cost, not what it will sell for.
                 </p>
+              </div>
+            ) : null}
+
+            {/*
+              The exchange loss, said in words. Dollars bought at a higher rate
+              than the order was placed at cost more dirhams for the same
+              coffee: that is a loss to the business, and the figures above
+              already carry it. This says how much, and where it sits.
+            */}
+            {!costSheet.exchangeDifferenceLocal.isZero() ? (
+              <div
+                className={cn(
+                  'rounded-xl border p-4',
+                  costSheet.exchangeDifferenceLocal.isPositive() ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50',
+                )}
+                data-testid="exchange-difference"
+              >
+                <p className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+                  {costSheet.exchangeDifferenceLocal.isPositive() ? 'Exchange loss' : 'Exchange gain'}
+                </p>
+                <p
+                  className={cn(
+                    'tnum text-xl font-semibold',
+                    costSheet.exchangeDifferenceLocal.isPositive() ? 'text-red-700' : 'text-emerald-800',
+                  )}
+                >
+                  {formatMoney(costSheet.exchangeDifferenceLocal.abs(), costSheet.localCurrency)}
+                </p>
+                <p className="mt-1 text-sm text-ink">
+                  Ordered at 1 USD = {formatRate(costSheet.orderedRate)} {costSheet.localCurrency}; the dollars cost{' '}
+                  {formatRate(costSheet.rateLocalPerUsd)}. {formatMoney(costSheet.goodsUsd, 'USD')} ×{' '}
+                  {costSheet.rateLocalPerUsd.minus(costSheet.orderedRate).abs().toString()} ={' '}
+                  {formatMoney(costSheet.exchangeDifferenceLocal.abs(), costSheet.localCurrency)}{' '}
+                  {costSheet.exchangeDifferenceLocal.isPositive() ? 'more' : 'less'} for the same coffee.
+                </p>
+                <dl className="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+                  <div>
+                    <dt className="text-xs text-ink-muted">Already in cost of sales</dt>
+                    <dd className="tnum font-semibold">{formatMoney(costSheet.exchangeDifferenceInSalesLocal, costSheet.localCurrency)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-ink-muted">Still in the remaining stock</dt>
+                    <dd className="tnum font-semibold">{formatMoney(costSheet.exchangeDifferenceInStockLocal, costSheet.localCurrency)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-ink-muted">
+                      Gross {costSheet.grossProfitLocal.plus(costSheet.exchangeDifferenceInSalesLocal).isNegative() ? 'loss' : 'profit'} at{' '}
+                      {formatRate(costSheet.orderedRate)}
+                    </dt>
+                    <dd className="tnum font-semibold">
+                      {formatMoney(costSheet.grossProfitLocal.plus(costSheet.exchangeDifferenceInSalesLocal), costSheet.localCurrency)}
+                      <span className="block text-xs font-normal text-ink-subtle">
+                        {formatMoney(costSheet.grossProfitLocal, costSheet.localCurrency)} at{' '}
+                        {formatRate(costSheet.rateLocalPerUsd)}, after the exchange{' '}
+                        {costSheet.exchangeDifferenceLocal.isPositive() ? 'loss' : 'gain'}
+                      </span>
+                    </dd>
+                  </div>
+                </dl>
               </div>
             ) : null}
 

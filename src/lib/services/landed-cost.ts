@@ -765,6 +765,28 @@ export async function getShipmentCostSheet(
   // The supplier's price on the coffee still here, so Purchase cost / KG ×
   // remaining KG is the remaining purchase value on the same panel.
   const remainingPurchasePerKgUsd = remainingKg.greaterThan(0) ? toUnitCost(remainingPurchaseUsdRaw.dividedBy(remainingKg)) : null;
+  /*
+   * What the rate cost — or saved — against the rate the order was placed at.
+   *
+   * The order's own rate field can be corrected after the event, so the rate
+   * it was placed at is read from the first posting the order made: the books
+   * remember what the screen was overwritten with. USD × (rate costed − rate
+   * ordered) is the extra dirhams the same dollars took; the share on the
+   * coffee still here is in the remaining stock, the rest has already gone
+   * through cost of sales. Nothing is posted from this — it explains, in
+   * dirhams, a cost the figures above already carry.
+   */
+  const firstPosting = await prisma.journalLine.findFirst({
+    where: {
+      journalEntry: { companyId, sourceType: 'PURCHASE_CONTRACT', sourceId: shipment.purchaseContractId, isReversal: false },
+    },
+    orderBy: [{ journalEntry: { sourceSeq: 'asc' } }, { journalEntry: { createdAt: 'asc' } }],
+    select: { rateLocalPerUsd: true },
+  });
+  const orderedRate = firstPosting ? dec(firstPosting.rateLocalPerUsd) : rateLocalPerUsd;
+  const exchangeDifferenceLocal = toMoney(job.goodsUsd.times(rateLocalPerUsd.minus(orderedRate)));
+  const exchangeDifferenceInStockLocal = toMoney(remainingPurchaseUsdRaw.times(rateLocalPerUsd.minus(orderedRate)));
+  const exchangeDifferenceInSalesLocal = toMoney(exchangeDifferenceLocal.minus(exchangeDifferenceInStockLocal));
   // What a kilo still here cost: the figure Stock on Hand shows as Avg Cost/KG.
   const remainingAvgCostPerKgUsd = remainingKg.greaterThan(0) ? toUnitCost(remainingLandedUsdRaw.dividedBy(remainingKg)) : null;
   const remainingAvgCostPerKgLocal = remainingKg.greaterThan(0) ? toUnitCost(remainingLandedLocalRaw.dividedBy(remainingKg)) : null;
@@ -828,6 +850,13 @@ export async function getShipmentCostSheet(
     remainingAvgCostPerKgUsd,
     remainingAvgCostPerKgLocal,
     remainingPurchasePerKgUsd,
+    /** The rate the order was first posted at, before any correction. */
+    orderedRate,
+    /** Extra dirhams the dollars took at the costed rate; negative is a saving. */
+    exchangeDifferenceLocal,
+    /** Of which already through cost of sales, and still in the remaining stock. */
+    exchangeDifferenceInSalesLocal,
+    exchangeDifferenceInStockLocal,
     costPerKgUsd,
     costPerKgLocal,
     costPerMtUsd,
