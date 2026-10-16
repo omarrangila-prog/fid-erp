@@ -22,6 +22,7 @@ import { run, type ActionResult } from '@/server/actions/action-utils';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { BusinessRuleError } from '@/lib/errors';
+import { DEMO_USER_EMAIL, isDemoMode } from '@/lib/demo/mode';
 
 /**
  * Sign-in.
@@ -214,11 +215,25 @@ export async function searchAction(query: string): Promise<SearchResult[]> {
   });
 }
 
+/**
+ * "Explore the demo": one click, no credentials — only on a deployment started
+ * with DEMO_MODE=1, and only into the fictional demo owner's account.
+ */
+export async function demoLoginAction(): Promise<ActionResult<{ redirectTo: string }>> {
+  if (!isDemoMode()) return { ok: false, error: 'This is not a demonstration site.', code: 'FORBIDDEN' };
+  const user = await prisma.user.findUnique({ where: { email: DEMO_USER_EMAIL() }, include: { organization: { select: { status: true } } } });
+  if (!user || !user.isActive || user.organization?.status === 'INACTIVE') return { ok: false, error: 'The demonstration is being refreshed. Try again shortly.', code: 'UNAUTHENTICATED' };
+  const first = await prisma.company.findFirst({ where: { status: 'ACTIVE', organizationId: user.organizationId ?? null }, orderBy: { code: 'asc' } });
+  await createSession(user.id, user.defaultCompanyId ?? first?.id ?? null);
+  return { ok: true, data: { redirectTo: '/dashboard' } };
+}
+
 export async function changePasswordAction(
   _prev: ActionResult<undefined> | null,
   formData: FormData,
 ): Promise<ActionResult<undefined>> {
   return run(async () => {
+    if (isDemoMode()) throw new BusinessRuleError('The demonstration account’s password cannot be changed.');
     const user = await requireUser();
     const currentPassword = String(formData.get('currentPassword') ?? '');
     const newPassword = String(formData.get('newPassword') ?? '');

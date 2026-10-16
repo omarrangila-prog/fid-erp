@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { FeaturesProvider } from '@/components/features-context';
 import { CompanyConfigProvider } from '@/components/company-config-context';
+import { isDemoMode } from '@/lib/demo/mode';
 import { getBrand } from '@/lib/brand';
 import { resolveFeatures } from '@/lib/features';
 import { attributeSetOf } from '@/lib/templates';
@@ -94,6 +95,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
+        {isDemoMode() ? (
+          <div className="bg-gold-500 px-4 py-1.5 text-center text-xs font-medium text-forest-950" data-testid="demo-banner">
+            Demonstration — every company, person and figure here is fictional, and the data resets regularly.
+          </div>
+        ) : null}
         <Topbar
           user={{
             id: user.id,

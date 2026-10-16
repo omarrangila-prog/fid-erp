@@ -6,11 +6,10 @@ import { isCurrencyCode } from '@/lib/currencies';
 import { countryByName } from '@/lib/countries';
 import { isTemplateKey, TEMPLATES } from '@/lib/templates';
 import { PLANS } from '@/lib/entitlements';
-import { SETTING_KEYS } from '@/lib/constants';
+import { ONBOARDING_KEY, SETTING_KEYS } from '@/lib/constants';
 import { provisionCompany } from '@/lib/services/chart-of-accounts';
 import { writeAudit } from '@/lib/services/audit';
-import { forgetOrganizationCount } from '@/lib/auth/tenant';
-import { ONBOARDING_KEY } from '@/lib/services/onboarding';
+import { forgetOrganizationCount } from '@/lib/org-count';
 
 /**
  * Creating and administering customers (tenants).
@@ -224,4 +223,68 @@ export async function resetOwnerPassword(params: { organizationId: string; actor
     });
   });
   return { email: owner.email, password };
+}
+
+/**
+ * A further legal entity for an existing customer (a second country, say).
+ * It joins the same organization, so its owner can switch between entities; its
+ * books, currency, tax and warehouses are entirely its own.
+ */
+export async function addCompany(params: {
+  organizationId: string;
+  name: string;
+  legalName?: string | null;
+  country: string;
+  localCurrency?: string;
+  industryTemplate?: string;
+  address?: string | null;
+  code?: string;
+  /** Existing users who should reach it (the owner, usually). */
+  userIds?: string[];
+  actorUserId: string;
+}): Promise<{ companyId: string; companyCode: string }> {
+  const org = await prisma.organization.findUnique({ where: { id: params.organizationId }, include: { _count: { select: { companies: true } } } });
+  if (!org) throw new NotFoundError('Customer');
+  const template = params.industryTemplate ?? 'GENERAL_TRADING';
+  if (!isTemplateKey(template)) throw new BusinessRuleError('Choose one of the industry presets.');
+  const country = countryByName(params.country);
+  const localCurrency = (params.localCurrency ?? country?.currency ?? '').toUpperCase();
+  if (!isCurrencyCode(localCurrency)) throw new BusinessRuleError('Choose the currency the company keeps its books in.');
+  let code = (params.code?.trim().toUpperCase() || `${slugOf(params.name)}-${randomBytes(2).toString('hex').toUpperCase()}`).slice(0, 20);
+  if (await prisma.company.findUnique({ where: { code }, select: { id: true } })) code = `${code.slice(0, 15)}-${randomBytes(2).toString('hex').toUpperCase()}`;
+
+  const id = await transaction(async (tx) => {
+    const company = await tx.company.create({
+      data: {
+        code,
+        name: params.name.trim(),
+        legalName: params.legalName?.trim() || params.name.trim(),
+        country: params.country.trim(),
+        localCurrency,
+        baseCurrency: 'USD',
+        timezone: country?.timezone ?? 'UTC',
+        address: params.address ?? null,
+        docPrefix: code,
+        organizationId: org.id,
+        industryTemplate: template,
+        businessType: TEMPLATES[template].businessType,
+        numberLocale: country?.locale ?? 'en-US',
+        dateFormat: country?.dateFormat ?? 'DD MMM YYYY',
+        taxLabel: country?.taxLabel ?? 'VAT',
+      },
+    });
+    await provisionCompany(tx, company.id);
+    for (const [key, value] of [
+      [SETTING_KEYS.ALLOW_NEGATIVE_STOCK, 'false'],
+      [SETTING_KEYS.ETA_ALERT_DAYS, '7,3,0'],
+      [SETTING_KEYS.DEFAULT_PAYMENT_TERM_DAYS, '30'],
+    ] as const) {
+      await tx.applicationSetting.create({ data: { companyId: company.id, key, value } });
+    }
+    const owners = params.userIds ?? (await tx.user.findMany({ where: { organizationId: org.id, isSuperAdmin: true }, select: { id: true } })).map((u) => u.id);
+    for (const userId of owners) await tx.userCompany.upsert({ where: { userId_companyId: { userId, companyId: company.id } }, update: {}, create: { userId, companyId: company.id } });
+    await writeAudit(tx, { companyId: company.id, userId: params.actorUserId, action: 'COMPANY_ADDED', entityType: 'Company', entityId: company.id, after: { name: params.name, code, localCurrency, template } });
+    return company.id;
+  }, 120_000);
+  return { companyId: id, companyCode: code };
 }

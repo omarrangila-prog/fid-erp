@@ -385,3 +385,25 @@ export function computeLineTax(params: {
   const taxAmount = toMoney(net.times(rate).dividedBy(100));
   return { taxAmount, taxAmountUsd: convertToUsd(taxAmount, params.rateToUsd, params.currency) };
 }
+
+/**
+ * Sets the rate of the company's standard code. A company that has just
+ * registered has a standard code at 0% (the product assumes no rate); this is
+ * how the owner states the real one.
+ */
+export async function setStandardRate(params: { companyId: string; name: string; ratePct: string | number; userId: string }) {
+  const existing = await prisma.taxCode.findFirst({ where: { companyId: params.companyId, treatment: 'STANDARD' }, orderBy: [{ isDefault: 'desc' }, { code: 'asc' }] });
+  return saveTaxCode(
+    {
+      companyId: params.companyId,
+      id: existing?.id ?? null,
+      code: existing?.code ?? 'STD',
+      name: params.name,
+      ratePct: params.ratePct,
+      treatment: 'STANDARD',
+      appliesTo: existing?.appliesTo ?? 'BOTH',
+      isDefault: true,
+    },
+    params.userId,
+  );
+}

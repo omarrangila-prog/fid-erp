@@ -12,10 +12,10 @@ import { BUSINESS_TYPES, isTemplateKey } from '@/lib/templates';
 import { BASE_UOMS } from '@/lib/uom';
 import { hashPassword } from '@/lib/auth/password';
 import { assertRolesUsable } from '@/lib/auth/tenant';
-import { ONBOARDING_KEY } from '@/lib/services/onboarding';
+import { ONBOARDING_KEY } from '@/lib/constants';
 import { planLimit } from '@/lib/entitlements';
 import { createCashBankAccount } from '@/lib/services/chart-of-accounts';
-import { enableTax, saveTaxCode } from '@/lib/services/tax';
+import { enableTax, saveTaxCode, setStandardRate } from '@/lib/services/tax';
 import { temporaryPassword } from '@/lib/services/tenant';
 import { setSetting } from '@/lib/services/settings';
 import { writeAudit } from '@/lib/services/audit';
@@ -163,13 +163,12 @@ export async function saveTaxSetupAction(input: z.input<typeof taxSchema>): Prom
     const companyId = admin.activeCompany.id;
     if (!data.registered) return undefined;
     await enableTax({ companyId, userId: admin.id, registrationNumber: data.registrationNumber ?? '', label: data.label, periodMonths: data.periodMonths });
+    const [standard, ...others] = data.rates ?? [];
+    if (standard) await setStandardRate({ companyId, name: standard.name, ratePct: standard.ratePct, userId: admin.id });
     let index = 0;
-    for (const rate of data.rates ?? []) {
+    for (const rate of others) {
       index += 1;
-      await saveTaxCode(
-        { companyId, code: `RATE${index}`, name: rate.name, ratePct: rate.ratePct, treatment: Number(rate.ratePct) === 0 ? 'ZERO_RATED' : 'STANDARD', appliesTo: 'BOTH', isDefault: index === 1 },
-        admin.id,
-      );
+      await saveTaxCode({ companyId, code: `RATE${index}`, name: rate.name, ratePct: rate.ratePct, treatment: Number(rate.ratePct) === 0 ? 'ZERO_RATED' : 'STANDARD', appliesTo: 'BOTH' }, admin.id);
     }
     revalidatePath('/settings/tax');
     return undefined;

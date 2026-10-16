@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { getCurrentUser } from '@/lib/auth/session';
 import Link from 'next/link';
+import { isDemoMode } from '@/lib/demo/mode';
+import { DemoEntry } from '@/app/login/demo-entry';
 import { LoginForm } from '@/app/login/password/login-form';
 import { LoginBrandCompact, LoginBrandPanel } from '@/app/login/brand-panel';
 
@@ -32,6 +34,7 @@ export default async function LoginPage() {
           </div>
 
           <LoginForm />
+          {isDemoMode() ? <DemoEntry /> : null}
 
           <p className="text-xs leading-relaxed text-ink-subtle">
             Access is restricted to the companies assigned to your account. Sessions expire automatically and every

@@ -1,5 +1,6 @@
 import 'server-only';
 import { prisma } from '@/lib/db';
+import { organizationCount } from '@/lib/org-count';
 import { ForbiddenError, NotFoundError } from '@/lib/errors';
 import { isDeveloper } from '@/lib/auth/developer';
 import type { SessionUser } from '@/lib/auth/session';
@@ -58,21 +59,6 @@ export async function assertRolesUsable(admin: Pick<SessionUser, 'organizationId
  * is shared by all of them, so only the platform operator may change it; a
  * customer copies it into a role of their own instead.
  */
-let organizationCountMemo: { at: number; value: number } | null = null;
-
-export async function organizationCount(): Promise<number> {
-  const now = Date.now();
-  if (organizationCountMemo && now - organizationCountMemo.at < 30_000) return organizationCountMemo.value;
-  const value = await prisma.organization.count();
-  organizationCountMemo = { at: now, value };
-  return value;
-}
-
-/** Forget the remembered count — after creating or removing an organization. */
-export function forgetOrganizationCount(): void {
-  organizationCountMemo = null;
-}
-
 export async function isSingleTenantDeployment(): Promise<boolean> {
   return (await organizationCount()) <= 1;
 }

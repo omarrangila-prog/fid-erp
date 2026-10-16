@@ -1,7 +1,9 @@
 import { prisma } from '@/lib/db';
 import { rolesVisibleTo } from '@/lib/auth/tenant';
 
-export const ONBOARDING_KEY = 'onboarding.status';
+import { ONBOARDING_KEY } from '@/lib/constants';
+
+export { ONBOARDING_KEY };
 
 /** A company made by the platform starts "pending" until its owner finishes (or skips) the wizard. */
 export async function getOnboardingStatus(companyId: string): Promise<'pending' | 'done'> {

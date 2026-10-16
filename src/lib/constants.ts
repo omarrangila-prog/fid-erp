@@ -1016,6 +1016,9 @@ export const TIP_LIMIT = 100;
 /** Default ETA alert offsets, in days before arrival. */
 export const DEFAULT_ETA_ALERT_DAYS = [7, 3, 0];
 
+/** A company made by the platform is 'pending' until its owner finishes the setup wizard. */
+export const ONBOARDING_KEY = 'onboarding.status';
+
 export const SETTING_KEYS = {
   ALLOW_NEGATIVE_STOCK: 'inventory.allowNegativeStock',
   /** An item is low on stock below this share of what it received, in percent. */

@@ -4,6 +4,7 @@ import { getCurrentUser, requireUser, type SessionUser } from '@/lib/auth/sessio
 import { ForbiddenError, NotFoundError } from '@/lib/errors';
 import { PERMISSION_DESCRIPTIONS, PERMISSIONS, type PermissionCode } from '@/lib/constants';
 import { featureBlocksPermission } from '@/lib/features';
+import { demoBlocks } from '@/lib/demo/mode';
 
 /**
  * Server-side authorisation. Every service entry point and every route handler
@@ -16,6 +17,7 @@ export function can(user: SessionUser, permission: PermissionCode): boolean {
   // included — otherwise a hand-typed URL would still reach it.
   if (featureBlocksPermission(user.activeCompany, permission)) return false;
   if (permission === PERMISSIONS.BACKUP_MANAGE && user.backupsAllowed === false) return false;
+  if (demoBlocks(permission)) return false;
   return user.isSuperAdmin || user.permissions.has(permission);
 }
 

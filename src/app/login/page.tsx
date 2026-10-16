@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { getCurrentUser } from '@/lib/auth/session';
 import { anyPinAccount } from '@/lib/auth/pin';
+import { isDemoMode } from '@/lib/demo/mode';
+import { DemoEntry } from '@/app/login/demo-entry';
 import { PinPad } from '@/app/login/pin-pad';
 import { LoginBrandCompact, LoginBrandPanel } from '@/app/login/brand-panel';
 
@@ -26,6 +28,7 @@ export default async function LoginPage() {
           </div>
 
           <PinPad />
+          {isDemoMode() ? <DemoEntry /> : null}
         </div>
       </section>
     </main>
