@@ -55,6 +55,7 @@ export type SessionCompany = {
   plan?: string;
   /** RECOST_ALL (default) lets an actual exchange rate restate cost; NONE keeps the estimate. */
   fxCostPolicy?: string;
+  customerFxHidden?: boolean;
   /** Legal name, address, contact and registration lines for what the company shares or prints. */
   letterhead?: string[];
 };
@@ -213,6 +214,7 @@ async function loadCurrentUser(): Promise<SessionUser | null> {
       terminology: effectiveTerminology(c.industryTemplate, asTerms(c.terminology)),
       plan: c.organization?.plan ?? 'ENTERPRISE',
       fxCostPolicy: c.fxCostPolicy,
+      customerFxHidden: c.customerFxHidden,
       letterhead: letterheadLines(c),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));

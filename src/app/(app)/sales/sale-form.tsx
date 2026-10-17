@@ -3,7 +3,7 @@
 import { entryUnitsFor, isPackUom, uomName } from '@/lib/uom';
 import type { UnitOfMeasure } from '@/lib/enums';
 import { CURRENCY_NAMES } from '@/lib/company-currencies';
-import { useSalesCurrencies } from '@/components/company-config-context';
+import { useSalesCurrencies, useCustomerFxHidden } from '@/components/company-config-context';
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -139,6 +139,7 @@ export function SaleForm({
 }) {
   const terms = useTerms();
   const salesCurrencies = useSalesCurrencies(localCurrency, undefined);
+  const fxHidden = useCustomerFxHidden();
   // An invoice whose currency is no longer offered still shows it.
   const salesCurrenciesFor = (current: string) => (salesCurrencies.includes(current) ? salesCurrencies : [...salesCurrencies, current]);
   const defaultTaxCodeId = preferZeroRateTax(taxCodes)?.id ?? '';
@@ -767,6 +768,9 @@ export function SaleForm({
         </CardContent>
       </Card>
 
+      {/* Where the company invoices customers in local money only, there is nothing to ask:
+          the reporting rate is filled in quietly and never shown on the invoice. */}
+      {fxHidden && isHomeSale && header.rateLocalPerUsd ? null : (
       <Card>
         <CardContent className="pt-5">
           <FormSection
@@ -826,6 +830,7 @@ export function SaleForm({
           </FormSection>
         </CardContent>
       </Card>
+      )}
 
       {totals.quantityKg.greaterThan(0) ? (
         <Card className="border-forest-200 bg-forest-50/50">

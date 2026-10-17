@@ -474,7 +474,11 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                     <dt className="text-xs text-ink-muted">Purchase cost / {unit}</dt>
                     <dd className="tnum font-semibold text-ink">
                       {costSheet.remainingPurchasePerKgUsd ? formatMoney(costSheet.remainingPurchasePerKgUsd, 'USD') : '—'}
-                      <span className="block text-xs font-normal text-ink-subtle">the supplier&rsquo;s price alone</span>
+                      <span className="block text-xs font-normal text-ink-subtle" data-testid="remaining-purchase-local-per-unit">
+                        {costSheet.remainingPurchasePerKgUsd
+                          ? `${formatMoney(costSheet.remainingPurchasePerKgUsd.times(costSheet.rateLocalPerUsd), costSheet.localCurrency)} at the purchase FX`
+                          : 'the supplier’s price alone'}
+                      </span>
                     </dd>
                   </div>
                   <div>

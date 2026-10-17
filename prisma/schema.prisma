@@ -319,6 +319,10 @@ model Company {
   /// How an actual exchange rate, once known, flows into stock cost.
   /// RECOST_ALL (FID's behaviour), PURCHASE_ONLY or NONE.
   fxCostPolicy          String   @default("RECOST_ALL") @db.VarChar(16)
+  /// Customer invoices in the company's own currency carry no exchange-rate input
+  /// and show no dollar equivalent (FID: customers are invoiced in local money only;
+  /// the purchase's actual rate is the only rate that moves cost).
+  customerFxHidden      Boolean  @default(false)
 
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id])

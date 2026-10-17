@@ -63,6 +63,7 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
 
   const receivableByInvoice = new Map(receivables.map((r) => [r.invoiceId, r]));
   const local = user.activeCompany.localCurrency;
+  const hideFx = Boolean(user.activeCompany.customerFxHidden);
 
   const rows: SaleRow[] = invoices.map((inv) => {
     const quantity = inv.lines.reduce((a, l) => a.plus(dec(l.quantityKg)), dec(0));
@@ -83,9 +84,9 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
       totalAmountSort: Number(inv.totalAmountUsd),
       totalAmountUsd: formatMoney(inv.totalAmountUsd, 'USD'),
       // The other currency, at this invoice's own rate.
-      totalEquivalent: equivalentText({ amount: inv.totalAmount, currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd, amountUsd: inv.currency === local ? inv.totalAmountUsd : null }),
-      paidEquivalent: receivable ? equivalentText({ amount: receivable.paidAmount.minus(receivable.creditedAmount), currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd }) : null,
-      outstandingEquivalent: receivable ? equivalentText({ amount: receivable.outstandingAmount, currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd }) : null,
+      totalEquivalent: hideFx ? null : equivalentText({ amount: inv.totalAmount, currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd, amountUsd: inv.currency === local ? inv.totalAmountUsd : null }),
+      paidEquivalent: hideFx ? null : receivable ? equivalentText({ amount: receivable.paidAmount.minus(receivable.creditedAmount), currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd }) : null,
+      outstandingEquivalent: hideFx ? null : receivable ? equivalentText({ amount: receivable.outstandingAmount, currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd }) : null,
       quantityLabel: formatQuantityKg(quantity),
       quantitySort: Number(quantity),
       // Raw, in the invoice's own currency, for the per-customer summary.

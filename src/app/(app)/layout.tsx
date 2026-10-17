@@ -63,6 +63,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         defaultSalesCurrency: user.activeCompany.defaultSalesCurrency ?? null,
         terminology: user.activeCompany.terminology ?? {},
         attributeSet: attributeSetOf(user.activeCompany.industryTemplate),
+        customerFxHidden: user.activeCompany.customerFxHidden ?? false,
       }}
     >
     <div className="flex min-h-dvh bg-paper">

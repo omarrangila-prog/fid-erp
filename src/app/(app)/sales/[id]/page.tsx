@@ -44,6 +44,9 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 export default async function SaleDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await requirePageAccess(PERMISSIONS.SALES_VIEW);
+  // Local-currency customer invoices carry no dollar equivalent where the company has switched it off.
+  const hideFx = Boolean(user.activeCompany.customerFxHidden);
+
   const companyId = user.activeCompany.id;
   const showProfit = can(user, PERMISSIONS.PROFITS_VIEW);
 
@@ -203,26 +206,26 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
         <Metric label="Quantity" value={formatQuantityKg(quantityKg)} hint={`${bags.toLocaleString()} bags`} />
         <Metric
           label="Invoice value"
-          value={<DualAmount amount={invoice.totalAmount} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" amountUsd={invoice.currency === user.activeCompany.localCurrency ? invoice.totalAmountUsd : null} />}
+          value={<DualAmount hideEquivalent={hideFx} amount={invoice.totalAmount} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" amountUsd={invoice.currency === user.activeCompany.localCurrency ? invoice.totalAmountUsd : null} />}
         />
         {outstanding ? (
           <>
             <Metric
               label="Paid"
-              value={<DualAmount amount={paidAmount} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" />}
+              value={<DualAmount hideEquivalent={hideFx} amount={paidAmount} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" />}
               tone="positive"
               hint={`${livePayments.filter((a) => !failed(a)).length} ${livePayments.filter((a) => !failed(a)).length === 1 ? 'payment' : 'payments'}`}
             />
             {creditedAmount.greaterThan(0) ? (
               <Metric
                 label="Credit notes"
-                value={<DualAmount amount={creditedAmount} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" />}
+                value={<DualAmount hideEquivalent={hideFx} amount={creditedAmount} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" />}
                 tone="muted"
               />
             ) : null}
             <Metric
               label="Outstanding"
-              value={<DualAmount amount={outstanding.amount} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" />}
+              value={<DualAmount hideEquivalent={hideFx} amount={outstanding.amount} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" />}
               tone={outstanding.amount.greaterThan(0) ? 'negative' : 'positive'}
             />
           </>
@@ -298,11 +301,11 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                         <span className="block text-xs text-ink-subtle">{line.bags.toLocaleString()} bags</span>
                       </TD>
                       <TD numeric>
-                        <DualAmount amount={line.unitPrice} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" primaryClassName="font-normal" />
+                        <DualAmount hideEquivalent={hideFx} amount={line.unitPrice} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" primaryClassName="font-normal" />
                         <span className="block text-xs text-ink-subtle">per {line.unit}</span>
                       </TD>
                       <TD numeric className="font-medium">
-                        <DualAmount amount={line.lineTotal} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" />
+                        <DualAmount hideEquivalent={hideFx} amount={line.lineTotal} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" />
                       </TD>
                       {showProfit ? <TD numeric>{formatMoney(line.costTotalUsd, 'USD')}</TD> : null}
                     </TR>
@@ -314,7 +317,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                     <TD numeric>{formatQuantityKg(quantityKg)}</TD>
                     <TD />
                     <TD numeric>
-                      <DualAmount amount={invoice.totalAmount} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" amountUsd={invoice.currency === user.activeCompany.localCurrency ? invoice.totalAmountUsd : null} />
+                      <DualAmount hideEquivalent={hideFx} amount={invoice.totalAmount} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" amountUsd={invoice.currency === user.activeCompany.localCurrency ? invoice.totalAmountUsd : null} />
                     </TD>
                     {showProfit ? <TD numeric>{formatMoney(invoice.costOfGoodsUsd, 'USD')}</TD> : null}
                   </tr>
@@ -339,10 +342,14 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                 <DetailRow label="Invoice date">{formatDate(invoice.invoiceDate)}</DetailRow>
                 <DetailRow label="Due date">{formatDate(invoice.dueDate)}</DetailRow>
                 <DetailRow label="Reference">{invoice.reference ?? '—'}</DetailRow>
-                <DetailRow label="Rate to USD">{formatRate(invoice.rateToUsd)}</DetailRow>
-                <DetailRow label={`Rate to ${user.activeCompany.localCurrency}`}>
-                  {formatRate(invoice.rateLocalPerUsd)}
-                </DetailRow>
+                {hideFx && invoice.currency === user.activeCompany.localCurrency ? null : (
+                  <>
+                    <DetailRow label="Rate to USD">{formatRate(invoice.rateToUsd)}</DetailRow>
+                    <DetailRow label={`Rate to ${user.activeCompany.localCurrency}`}>
+                      {formatRate(invoice.rateLocalPerUsd)}
+                    </DetailRow>
+                  </>
+                )}
                 <DetailRow label="Created by">{invoice.createdBy.name}</DetailRow>
                 {invoice.postedBy ? (
                   <DetailRow label="Posted by">

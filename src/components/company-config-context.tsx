@@ -11,6 +11,8 @@ export type CompanyConfig = {
   terminology: Record<string, string>;
   /** Which optional item attributes the company's industry offers (lib/item-attributes.ts). */
   attributeSet: string;
+  /** Customer invoices in local currency show no FX input or dollar equivalent. */
+  customerFxHidden?: boolean;
 };
 
 const CompanyConfigContext = createContext<CompanyConfig | null>(null);
@@ -87,4 +89,9 @@ export function useAttributeSet(): string {
 export function useTerms(): Terms {
   const config = useContext(CompanyConfigContext);
   return useMemo(() => makeTerms(config?.terminology), [config]);
+}
+
+/** True where customer invoices carry no exchange rate and no dollar equivalent (FID). */
+export function useCustomerFxHidden(): boolean {
+  return Boolean(useContext(CompanyConfigContext)?.customerFxHidden);
 }

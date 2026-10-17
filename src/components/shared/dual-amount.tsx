@@ -24,6 +24,7 @@ export function DualAmount({
   className,
   primaryClassName,
   hideMissing = false,
+  hideEquivalent = false,
 }: {
   amount: DecimalInput;
   currency: string;
@@ -37,8 +38,10 @@ export function DualAmount({
   primaryClassName?: string;
   /** For a figure where a missing equivalent is not worth a line. */
   hideMissing?: boolean;
+  /** Show the primary amount only (customer invoices where no FX is wanted). */
+  hideEquivalent?: boolean;
 }) {
-  const equivalent = equivalentOf({ amount, currency, localCurrency, rateLocalPerUsd, amountUsd, amountLocal });
+  const equivalent = hideEquivalent ? null : equivalentOf({ amount, currency, localCurrency, rateLocalPerUsd, amountUsd, amountLocal });
   const rate = rateLabel(equivalent?.rate, localCurrency);
   const needsOne = currency.toUpperCase() !== 'USD' || localCurrency.toUpperCase() !== 'USD';
   return (
@@ -48,7 +51,7 @@ export function DualAmount({
         <span className="tnum block text-[11px] font-normal text-ink-subtle" title={rate ? `${rate} · ${rateSource}` : rateSource}>
           ≈ {formatMoney(equivalent.amount, equivalent.currency)}
         </span>
-      ) : needsOne && !hideMissing ? (
+      ) : needsOne && !hideMissing && !hideEquivalent ? (
         <span className="block text-[11px] font-normal text-ink-subtle">
           {currency.toUpperCase() === 'USD' ? localCurrency : 'USD'} equivalent not available
         </span>
