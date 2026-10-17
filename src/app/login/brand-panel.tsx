@@ -25,20 +25,20 @@ export function LoginBrandPanel(_props: { showHighlights?: boolean } = {}) {
   return (
     <section className="relative hidden flex-col justify-between overflow-hidden bg-forest-950 p-12 text-white lg:flex">
       {/* ambient light and a fine grid: depth without clutter */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(46rem_30rem_at_92%_-10%,rgba(55,112,95,0.45),transparent_62%),radial-gradient(34rem_22rem_at_-8%_108%,rgba(197,160,90,0.14),transparent_60%)]" />
+      <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(46rem_30rem_at_92%_-10%,rgba(197,160,90,0.28),transparent_62%),radial-gradient(34rem_22rem_at_-8%_108%,rgba(197,160,90,0.16),transparent_60%)]" />
       <TradeLines />
 
       <div className="relative flex items-center gap-3">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={brand.icon} alt="" aria-hidden className="size-10 rounded-lg" />
+        <img src={brand.icon} alt="" aria-hidden className="size-12 rounded-lg" />
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.22em]">{brand.name}</p>
+          <p className="text-lg font-medium uppercase tracking-[0.3em] text-gold-200">{brand.name}</p>
           <p className="text-[11px] uppercase tracking-[0.12em] text-white/50">{brand.tagline}</p>
         </div>
       </div>
 
       <div className="relative max-w-lg space-y-6">
-        <p className="text-5xl font-semibold uppercase leading-[1.04] tracking-[-0.01em] xl:text-6xl">{brand.loginHeadline}</p>
+        <p className="text-5xl font-light uppercase leading-[1.04] tracking-[0.01em] text-gold-200 xl:text-6xl">{brand.loginHeadline}</p>
         <p className="max-w-md text-[15px] leading-relaxed text-white/70">{brand.description}</p>
         {(
           <dl className="grid gap-3 pt-2">

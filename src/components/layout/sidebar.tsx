@@ -148,11 +148,10 @@ function NavLink({
       className={cn(
         'relative flex items-center gap-2.5 rounded-lg pl-3 pr-3 text-sm transition-colors',
         compact ? 'py-1.5 [@media(pointer:coarse)]:py-2.5' : 'py-2 pl-5',
-        active ? 'bg-forest-900 font-medium text-white' : 'text-forest-200 hover:bg-forest-800/60 hover:text-white',
+        active ? 'bg-gold-500 font-semibold text-forest-950' : 'text-forest-200 hover:bg-white/5 hover:text-white',
       )}
     >
-      {active ? <span className="absolute inset-y-1 left-0 w-[3px] rounded-r bg-gold-500" aria-hidden /> : null}
-      <Icon className={cn('size-4 shrink-0', active ? 'text-white' : 'text-forest-300')} />
+            <Icon className={cn('size-4 shrink-0', active ? 'text-forest-950' : 'text-gold-400/80')} />
       <span className="truncate">{label}</span>
     </Link>
   );

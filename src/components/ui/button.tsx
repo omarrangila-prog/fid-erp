@@ -17,8 +17,9 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        // Evergreen is the only button colour; gold never fills a button.
+        // Evergreen is the working button; gold is only for the sign-in and demo calls to action.
         primary: 'bg-forest-900 text-white hover:bg-forest-800 active:bg-forest-950',
+        gold: 'bg-gold-500 text-forest-950 font-semibold hover:bg-gold-400 active:bg-gold-600',
         accent: 'bg-forest-900 text-white hover:bg-forest-800 active:bg-forest-950',
         outline: 'border border-line-strong bg-surface text-ink hover:border-forest-300 hover:bg-forest-50',
         ghost: 'text-ink-muted hover:bg-forest-50 hover:text-ink',

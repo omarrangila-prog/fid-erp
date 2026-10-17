@@ -55,7 +55,7 @@ export function LoginForm() {
         />
       </Field>
 
-      <Button type="submit" size="lg" className="w-full" loading={pending}>
+      <Button type="submit" variant="gold" size="lg" className="w-full" loading={pending}>
         {pending ? 'Signing in…' : 'Sign in'}
       </Button>
     </form>

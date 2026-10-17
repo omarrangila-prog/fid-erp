@@ -1,5 +1,6 @@
+import * as React from 'react';
 import Link from 'next/link';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, FileWarning, FileText, HandCoins, Ship, PackageMinus, Receipt, Bell } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export type AttentionItem = {
@@ -12,7 +13,14 @@ export type AttentionItem = {
   tone: 'danger' | 'warn' | 'info';
 };
 
-const DOT = { danger: 'bg-red-600', warn: 'bg-amber-500', info: 'bg-forest-400' } as const;
+const TILE = {
+  danger: 'bg-red-50 text-red-700 ring-red-100',
+  warn: 'bg-amber-50 text-amber-700 ring-amber-100',
+  info: 'bg-emerald-50 text-emerald-700 ring-emerald-100',
+} as const;
+const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  overdue: FileWarning, outstanding: FileText, payables: HandCoins, expenses: Receipt, arrivals: Ship, lowstock: PackageMinus, alerts: Bell,
+};
 const NUM = { danger: 'text-red-700', warn: 'text-amber-700', info: 'text-ink' } as const;
 
 /**
@@ -36,7 +44,9 @@ export function AttentionPanel({ items }: { items: AttentionItem[] }) {
               href={i.href}
               className="group flex items-center gap-3 rounded-lg border border-line bg-surface px-3 py-2.5 transition-colors hover:border-forest-300 hover:bg-forest-50/50"
             >
-              <span aria-hidden className={cn('size-2 shrink-0 rounded-full', DOT[i.tone])} />
+              <span aria-hidden className={cn('grid size-9 shrink-0 place-items-center rounded-lg ring-1 ring-inset', TILE[i.tone])}>
+                {(() => { const Icon = ICONS[i.key] ?? FileText; return <Icon className="size-[18px]" />; })()}
+              </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium text-ink">
                   {i.label}

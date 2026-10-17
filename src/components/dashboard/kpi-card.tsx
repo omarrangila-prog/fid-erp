@@ -13,12 +13,12 @@ import { cn } from '@/lib/utils';
 export type KpiTone = 'sales' | 'receivable' | 'payable' | 'inventory' | 'cash' | 'profit';
 
 const TILE: Record<KpiTone, string> = {
-  sales: 'bg-forest-50 text-forest-800 ring-1 ring-inset ring-forest-100',
-  receivable: 'bg-forest-50 text-forest-800 ring-1 ring-inset ring-forest-100',
-  payable: 'bg-forest-50 text-forest-800 ring-1 ring-inset ring-forest-100',
-  inventory: 'bg-forest-50 text-forest-800 ring-1 ring-inset ring-forest-100',
-  cash: 'bg-forest-50 text-forest-800 ring-1 ring-inset ring-forest-100',
-  profit: 'bg-forest-50 text-forest-800 ring-1 ring-inset ring-forest-100',
+  sales: 'border border-gold-300 bg-gold-50 text-gold-700',
+  receivable: 'border border-gold-300 bg-gold-50 text-gold-700',
+  payable: 'border border-gold-300 bg-gold-50 text-gold-700',
+  inventory: 'border border-gold-300 bg-gold-50 text-gold-700',
+  cash: 'border border-gold-300 bg-gold-50 text-gold-700',
+  profit: 'border border-gold-300 bg-gold-50 text-gold-700',
 };
 
 export function KpiCard({
@@ -55,8 +55,8 @@ export function KpiCard({
   return (
     <div className="group flex h-full flex-col rounded-xl border border-line-strong/70 bg-surface p-4 shadow-card transition-colors duration-150 hover:border-forest-300">
       <div className="flex items-start justify-between gap-3">
-        <span className={cn('grid size-8 shrink-0 place-items-center rounded-lg', TILE[tone])}>
-          <Icon className="size-4" />
+        <span className={cn('grid size-9 shrink-0 place-items-center rounded-lg', TILE[tone])}>
+          <Icon className="size-[18px]" />
         </span>
         {deltaPct !== undefined && deltaPct !== null ? (
           <span

@@ -28,7 +28,7 @@ export function TradePipeline({ stages }: { stages: PipelineStage[] }) {
                 className={cn(
                   'relative z-10 grid size-5 place-items-center rounded-full border text-[10px] font-semibold',
                   s.count > 0 ? 'border-forest-900 bg-forest-900 text-white' : 'border-line-strong bg-surface text-ink-subtle',
-                  i === current && 'ring-2 ring-gold-500/60 ring-offset-1',
+                  i === current && 'border-gold-500 bg-gold-500 text-forest-950 ring-2 ring-gold-500/40 ring-offset-1',
                 )}
               >
                 {i + 1}

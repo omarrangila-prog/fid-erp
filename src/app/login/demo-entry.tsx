@@ -15,7 +15,7 @@ export function DemoEntry() {
       <p className="text-sm font-semibold text-ink">Just looking around?</p>
       <p className="mt-1 text-xs text-ink-muted">Explore a fictional company with real, balanced books. No sign-up.</p>
       <Button
-        className="mt-3"
+        className="mt-3" variant="gold"
         disabled={busy}
         onClick={async () => {
           setBusy(true);
