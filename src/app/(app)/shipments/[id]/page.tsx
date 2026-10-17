@@ -15,7 +15,7 @@ import {
   SHIPMENT_STATUSES_LANDED,
 } from '@/lib/constants';
 import { prisma, transaction } from '@/lib/db';
-import { dec } from '@/lib/money';
+import { dec, toMoney } from '@/lib/money';
 import { getShipmentSettlement } from '@/lib/services/shipment';
 import { getShipmentProfitability } from '@/lib/services/profitability';
 import { DualAmount } from '@/components/shared/dual-amount';
@@ -193,6 +193,23 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
   const receivableByInvoice = new Map(receivables.map((r) => [r.invoiceId, r]));
   // The posted sales, in the company's currency at each invoice's own rate.
   const postedSales = soldFromHere.filter((inv) => inv.status === 'POSTED');
+  // Customers are invoiced in the company's own money: the sale side of this page is read in that
+  // money alone — no dollar figure, no conversion rate. Only the cost side carries the purchase rate.
+  const customerSalesLocalOnly = postedSales.every((inv) => inv.currency === local);
+  const settlementLocal = (() => {
+    let invoiced = dec(0);
+    let received = dec(0);
+    for (const inv of postedSales) {
+      const sold = dec(inv.amount);
+      invoiced = invoiced.plus(sold);
+      const r = receivableByInvoice.get(inv.id);
+      const whole = dec(inv.invoiceSubtotal);
+      const share = whole.greaterThan(0) ? (sold.dividedBy(whole).greaterThan(1) ? dec(1) : sold.dividedBy(whole)) : dec(1);
+      if (r) received = received.plus(dec(r.paidAmount).minus(dec(r.creditedAmount)).times(share));
+    }
+    received = toMoney(received);
+    return { invoiced: toMoney(invoiced), received, outstanding: toMoney(invoiced.minus(received)) };
+  })();
   const salesKg = postedSales.reduce((t, inv) => t.plus(dec(inv.kg)), dec(0));
   const salesUsd = postedSales.reduce((t, inv) => t.plus(dec(inv.usd)), dec(0));
   const salesLocal = postedSales.reduce(
@@ -344,16 +361,16 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
         <Metric label="ETA" value={formatDate(lastEta)} hint={records.length > 1 ? 'Latest of the containers' : (shipment.vesselName ?? undefined)} />
         <Metric
           label="Invoiced"
-          value={<DualAmount amount={settlement.invoicedUsd} currency="USD" localCurrency={local} amountLocal={profit?.salesRevenueLocal} rateSource="Each invoice at its own rate" hideMissing />}
+          value={customerSalesLocalOnly ? formatMoney(settlementLocal.invoiced, local) : <DualAmount amount={settlement.invoicedUsd} currency="USD" localCurrency={local} amountLocal={profit?.salesRevenueLocal} rateSource="Each invoice at its own rate" hideMissing />}
         />
         <Metric
           label="Received"
-          value={<DualAmount amount={settlement.receivedUsd} currency="USD" localCurrency={local} rateLocalPerUsd={salesRate} rateSource="Weighted rate of the invoices' own rates" hideMissing />}
+          value={customerSalesLocalOnly ? formatMoney(settlementLocal.received, local) : <DualAmount amount={settlement.receivedUsd} currency="USD" localCurrency={local} rateLocalPerUsd={salesRate} rateSource="Weighted rate of the invoices' own rates" hideMissing />}
           tone={settlement.receivedUsd.greaterThan(0) ? 'positive' : 'muted'}
         />
         <Metric
           label="Outstanding"
-          value={<DualAmount amount={settlement.outstandingUsd} currency="USD" localCurrency={local} rateLocalPerUsd={salesRate} rateSource="Weighted rate of the invoices' own rates" hideMissing />}
+          value={customerSalesLocalOnly ? formatMoney(settlementLocal.outstanding, local) : <DualAmount amount={settlement.outstandingUsd} currency="USD" localCurrency={local} rateLocalPerUsd={salesRate} rateSource="Weighted rate of the invoices' own rates" hideMissing />}
           tone={settlement.outstandingUsd.greaterThan(0) ? 'negative' : 'positive'}
         />
       </MetricGrid>
@@ -417,7 +434,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
               />
               <Metric
                 label="Revenue"
-                value={<DualAmount amount={costSheet.revenueLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} amountUsd={costSheet.revenueUsd} rateSource="Each invoice at its own rate" />}
+                value={<DualAmount hideEquivalent={customerSalesLocalOnly} amount={costSheet.revenueLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} amountUsd={costSheet.revenueUsd} rateSource="Each invoice at its own rate" />}
               />
               <Metric
                 label="COGS"
@@ -426,7 +443,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
               />
               <Metric
                 label={costSheet.grossProfitLocal.isNegative() ? 'Gross loss' : 'Gross profit'}
-                value={<DualAmount amount={costSheet.grossProfitLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} amountUsd={costSheet.grossProfitUsd} rateSource="Sales less cost of sales, each at its own rate" />}
+                value={<DualAmount hideEquivalent={customerSalesLocalOnly} amount={costSheet.grossProfitLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} amountUsd={costSheet.grossProfitUsd} rateSource="Sales less cost of sales, each at its own rate" />}
                 tone={costSheet.grossProfitLocal.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
                 hint={`${formatPercent(costSheet.profitPct)} gross margin`}
               />
@@ -707,22 +724,22 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
             <MetricGrid className="lg:grid-cols-5">
               <Metric label="Sold" value={formatQuantityKg(profit.soldQuantityKg)} />
               <Metric label="Remaining stock" value={formatQuantityKg(profit.remainingQuantityKg)} tone="muted" />
-              <Metric label="Sales revenue" value={<DualAmount amount={profit.salesRevenueLocal} currency={local} localCurrency={local} amountUsd={profit.salesRevenueUsd} rateSource="Each invoice at its own rate" />} />
+              <Metric label="Sales revenue" value={<DualAmount hideEquivalent={customerSalesLocalOnly} amount={profit.salesRevenueLocal} currency={local} localCurrency={local} amountUsd={profit.salesRevenueUsd} rateSource="Each invoice at its own rate" />} />
               <Metric label="Landed cost of sales" value={<DualAmount amount={profit.allocatedLandedCostLocal} currency={local} localCurrency={local} amountUsd={profit.allocatedLandedCostUsd} rateSource="At the rates the cost was incurred at" />} tone="muted" />
               <Metric
                 label={profit.grossProfitLocal.isNegative() ? 'Gross loss' : 'Gross profit'}
-                value={<DualAmount amount={profit.grossProfitLocal} currency={local} localCurrency={local} amountUsd={profit.grossProfitUsd} rateSource="Each transaction at its own rate" />}
+                value={<DualAmount hideEquivalent={customerSalesLocalOnly} amount={profit.grossProfitLocal} currency={local} localCurrency={local} amountUsd={profit.grossProfitUsd} rateSource="Each transaction at its own rate" />}
                 tone={profit.grossProfitLocal.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
                 hint={`${formatPercent(profit.grossMarginPct)} gross margin`}
               />
               <Metric label="Period costs" value={<DualAmount amount={profit.otherCostsLocal} currency={local} localCurrency={local} amountUsd={profit.otherCostsUsd} rateSource="Each expense at its own rate" />} tone="muted" />
               <Metric
                 label={profit.netProfitLocal.isNegative() ? 'Net loss' : 'Net profit'}
-                value={<DualAmount amount={profit.netProfitLocal} currency={local} localCurrency={local} amountUsd={profit.netProfitUsd} rateSource="Each transaction at its own rate" />}
+                value={<DualAmount hideEquivalent={customerSalesLocalOnly} amount={profit.netProfitLocal} currency={local} localCurrency={local} amountUsd={profit.netProfitUsd} rateSource="Each transaction at its own rate" />}
                 tone={profit.netProfitLocal.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
                 hint={`${formatPercent(profit.netMarginPct)} margin`}
               />
-              <Metric label="Profit per KG" value={<DualAmount amount={profit.profitPerKgLocal} currency={local} localCurrency={local} amountUsd={profit.profitPerKgUsd} rateSource="Each transaction at its own rate" />} />
+              <Metric label="Profit per KG" value={<DualAmount hideEquivalent={customerSalesLocalOnly} amount={profit.profitPerKgLocal} currency={local} localCurrency={local} amountUsd={profit.profitPerKgUsd} rateSource="Each transaction at its own rate" />} />
               {jobCost && costSheet ? (
                 <>
                   <Metric label="Landed cost / KG" value={<DualAmount amount={costSheet.costPerKgLocal} currency={local} localCurrency={local} amountUsd={jobCost.landedCostPerKgUsd} rateSource="Each transaction at its own rate" />} />
