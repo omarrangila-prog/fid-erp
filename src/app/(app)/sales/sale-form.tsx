@@ -750,6 +750,9 @@ export function SaleForm({
         </CardContent>
       </Card>
 
+      {/* A sale in the company's own money asks for no exchange rate: the reporting rate is
+          filled in quietly from the latest rate and never shown on the invoice. */}
+      {isHomeSale && header.rateLocalPerUsd ? null : (
       <Card>
         <CardContent className="pt-5">
           <FormSection
@@ -809,6 +812,7 @@ export function SaleForm({
           </FormSection>
         </CardContent>
       </Card>
+      )}
 
       {totals.quantityKg.greaterThan(0) ? (
         <Card className="border-forest-200 bg-forest-50/50">

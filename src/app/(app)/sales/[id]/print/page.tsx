@@ -299,7 +299,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
                 </div>
               </>
             ) : null}
-            {invoice.currency !== 'USD' ? (
+            {invoice.currency !== 'USD' && invoice.currency !== user.activeCompany.localCurrency ? (
               <p className="pt-1 text-[11px] text-ink-subtle">
                 USD equivalent {formatMoney(invoice.totalAmountUsd, 'USD')} at {dec(invoice.rateToUsd).toFixed(4)}{' '}
                 {invoice.currency}/USD

@@ -83,9 +83,9 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
       totalAmountSort: Number(inv.totalAmountUsd),
       totalAmountUsd: formatMoney(inv.totalAmountUsd, 'USD'),
       // The other currency, at this invoice's own rate.
-      totalEquivalent: equivalentText({ amount: inv.totalAmount, currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd, amountUsd: inv.currency === local ? inv.totalAmountUsd : null }),
-      paidEquivalent: receivable ? equivalentText({ amount: receivable.paidAmount.minus(receivable.creditedAmount), currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd }) : null,
-      outstandingEquivalent: receivable ? equivalentText({ amount: receivable.outstandingAmount, currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd }) : null,
+      totalEquivalent: inv.currency === local ? null : equivalentText({ amount: inv.totalAmount, currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd, amountUsd: inv.currency === local ? inv.totalAmountUsd : null }),
+      paidEquivalent: inv.currency === local ? null : receivable ? equivalentText({ amount: receivable.paidAmount.minus(receivable.creditedAmount), currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd }) : null,
+      outstandingEquivalent: inv.currency === local ? null : receivable ? equivalentText({ amount: receivable.outstandingAmount, currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd }) : null,
       quantityLabel: formatQuantityKg(quantity),
       quantitySort: Number(quantity),
       // Raw, in the invoice's own currency, for the per-customer summary.
