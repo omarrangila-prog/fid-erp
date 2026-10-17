@@ -21,7 +21,7 @@ export default async function LoginPage() {
     <main className="grid min-h-dvh lg:grid-cols-2">
       <LoginBrandPanel />
 
-      <section className="flex items-center justify-center px-5 py-10">
+      <section className="login-dark flex items-center justify-center px-5 py-10">
         <div className="w-full max-w-sm space-y-8">
           <div className="flex justify-center lg:hidden">
             <LoginBrandCompact />

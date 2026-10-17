@@ -1028,3 +1028,20 @@
     min-height: 28px;
   }
 }
+
+/* The sign-in screens are a dark brand moment: the form side re-points the text,
+   surface and line tokens, so every shared input and button inside it follows. */
+.login-dark {
+  color-scheme: dark;
+  background: #0a1114;
+  --color-ink: #f6f2e8;
+  --color-ink-muted: #cfcabb;
+  --color-ink-subtle: #a9ada3;
+  --color-surface: #131f22;
+  --color-line: #2c3a38;
+  --color-line-strong: #43524f;
+  --color-forest-700: #e3c88f;
+  --color-forest-800: #e3c88f;
+  --color-gold-50: #141d1c;
+  --color-gold-300: #5b4a2b;
+}

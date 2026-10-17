@@ -395,7 +395,7 @@ export function DesktopSidebar({
         <img src={brand.icon} alt="" aria-hidden className="size-9 shrink-0 rounded-lg" />
         {collapsed ? null : (
           <div className="min-w-0">
-            <p className="truncate text-[15px] font-semibold uppercase tracking-[0.2em] text-white">{brand.name}</p>
+            <p className="truncate text-[15px] font-medium uppercase tracking-[0.24em] text-gold-200">{brand.name}</p>
             <p className="truncate text-[10px] uppercase tracking-[0.14em] text-white/50">{brand.tagline}</p>
           </div>
         )}
