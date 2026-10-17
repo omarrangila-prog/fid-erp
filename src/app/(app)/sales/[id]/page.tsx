@@ -49,6 +49,9 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
 
   const companyId = user.activeCompany.id;
   const showProfit = can(user, PERMISSIONS.PROFITS_VIEW);
+  // Cost and profit on an invoice are held in dollars; a company that invoices in local money only
+  // reads them in Shipment Costing and Profitability, in its own currency.
+  const showCostUsd = showProfit && !user.activeCompany.customerFxHidden;
 
   const invoice = await prisma.salesInvoice.findFirst({
     where: { id, companyId, ...invoiceScopeWhere(user) },
@@ -230,7 +233,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
             />
           </>
         ) : null}
-        {showProfit && invoice.status === 'POSTED' ? (
+        {showCostUsd && invoice.status === 'POSTED' ? (
           <>
             <Metric label="Cost of goods" value={<DualAmount amount={invoice.costOfGoodsUsd} currency="USD" localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" />} tone="muted" />
             <Metric
@@ -262,7 +265,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                     <TH numeric>Quantity</TH>
                     <TH numeric>Price</TH>
                     <TH numeric>Value</TH>
-                    {showProfit ? <TH numeric>Cost</TH> : null}
+                    {showCostUsd ? <TH numeric>Cost</TH> : null}
                   </TR>
                 </THead>
                 <TBody>
@@ -307,7 +310,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                       <TD numeric className="font-medium">
                         <DualAmount hideEquivalent={hideFx} amount={line.lineTotal} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" />
                       </TD>
-                      {showProfit ? <TD numeric>{formatMoney(line.costTotalUsd, 'USD')}</TD> : null}
+                      {showCostUsd ? <TD numeric>{formatMoney(line.costTotalUsd, 'USD')}</TD> : null}
                     </TR>
                   ))}
                 </TBody>
@@ -319,7 +322,7 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                     <TD numeric>
                       <DualAmount hideEquivalent={hideFx} amount={invoice.totalAmount} currency={invoice.currency} localCurrency={user.activeCompany.localCurrency} rateLocalPerUsd={invoice.rateLocalPerUsd} rateSource="This invoice's own rate" amountUsd={invoice.currency === user.activeCompany.localCurrency ? invoice.totalAmountUsd : null} />
                     </TD>
-                    {showProfit ? <TD numeric>{formatMoney(invoice.costOfGoodsUsd, 'USD')}</TD> : null}
+                    {showCostUsd ? <TD numeric>{formatMoney(invoice.costOfGoodsUsd, 'USD')}</TD> : null}
                   </tr>
                 </TFoot>
               </Table>
