@@ -545,7 +545,7 @@ function SalesTable({ lines, local, showCost, compact = false }: { lines: ItemSa
   const total = (pick: (l: ItemSaleLine) => Pair): Pair =>
     lines.reduce((s, l) => ({ local: s.local.plus(pick(l).local), usd: s.usd.plus(pick(l).usd) }), { local: new Decimal(0), usd: new Decimal(0) });
   const qty = toQuantity(lines.reduce((s, l) => s.plus(l.quantityKg), new Decimal(0)));
-  const cell = (p: Pair) => <DualText primary={formatMoney(p.local, local)} equivalent={local === 'USD' ? null : { text: `≈ ${formatMoney(p.usd, 'USD')}`, title: 'At the invoice’s own rate' }} />;
+  const cell = (p: Pair) => <DualText primary={formatMoney(p.local, local)} equivalent={local === 'USD' ? null : { text: `≈ ${formatMoney(p.usd, 'USD')}`, title: 'At the USD/MAD rate of the order the coffee came from' }} />;
   return (
     <TableWrap className={compact ? 'mt-2' : undefined}>
       <Table data-testid={compact ? 'drill-sales' : 'item-sales'}>
