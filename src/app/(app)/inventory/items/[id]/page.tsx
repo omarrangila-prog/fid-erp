@@ -5,7 +5,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { warehouseScope } from '@/lib/auth/scope';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
-import { Decimal, toQuantity, toMoney } from '@/lib/money';
+import { Decimal, toQuantity, toMoney, toUnitCost } from '@/lib/money';
 import { formatDate, formatMoney, formatPercent } from '@/lib/format';
 import {
   getItemProfitability,
@@ -61,6 +61,8 @@ export default async function ItemStockPage({
   const both = showProfit && showSales;
   const scope = warehouseScope(user);
   const { values, filters } = parseStockFilters({ ...(await searchParams), item: id });
+  // Narrowed by anything but the item itself (a date, a warehouse), the containers' lifetime averages are not the view's.
+  const filtered = Object.entries(values).some(([key, value]) => key !== 'item' && !!value);
   const [report, options] = await Promise.all([
     getItemProfitability({ companyId, ...filters, itemId: id, warehouseIds: scope }),
     getStockFilterOptions(companyId, scope),
@@ -94,6 +96,18 @@ export default async function ItemStockPage({
   const shipments = node?.shipments ?? [];
   const sumKg = (list: ItemMeasures[], pick: (x: ItemMeasures) => Decimal) => list.reduce((s, x) => s.plus(pick(x)), new Decimal(0));
   const sumLocal = (list: Array<{ local: Decimal }>) => list.reduce((s, x) => s.plus(x.local), new Decimal(0));
+  /*
+   * §22: the item's averages rebuilt from its containers — every batch's KG
+   * at its own landed cost — so the client sees why the average is what it
+   * is, and the page proves the two agree.
+   */
+  const allBatches = shipments.flatMap((s) => s.containers.flatMap((c) => c.batches));
+  const containerReceivedKg = allBatches.reduce((t, b) => t.plus(b.receivedKg), new Decimal(0));
+  const containerLanded = allBatches.reduce((t, b) => t.plus(b.receivedKg.times(b.landedPerKg.local)), new Decimal(0));
+  const containerRemainingKg = allBatches.reduce((t, b) => t.plus(b.onHandKg), new Decimal(0));
+  const containerRemaining = allBatches.reduce((t, b) => t.plus(b.stockValue.local), new Decimal(0));
+  const containerAvg = containerReceivedKg.greaterThan(0) ? containerLanded.dividedBy(containerReceivedKg) : null;
+  const containerCurrentAvg = containerRemainingKg.greaterThan(0) ? containerRemaining.dividedBy(containerRemainingKg) : null;
   const hasAdjustments = warehouses.some((w) => !w.adjustmentKg.isZero()) || !m.openingKg.isZero();
   const checks = [
     {
@@ -147,6 +161,21 @@ export default async function ItemStockPage({
             shown: formatMoney(m.collectedTotal.local.plus(m.credited.local).plus(m.outstanding.local), local),
             source: formatMoney(m.invoiced.local, local),
             ok: m.collectedTotal.local.plus(m.credited.local).plus(m.outstanding.local).minus(m.invoiced.local).abs().lessThan('0.01'),
+          },
+        ]
+      : []),
+    ...(showCost && !filtered
+      ? [
+          {
+            key: 'containers',
+            label: 'Containers add up to the item: landed cost ÷ KG received, remaining value ÷ KG on hand',
+            shown: `${containerAvg ? formatMoney(containerAvg, local) : '—'} · ${containerCurrentAvg ? formatMoney(containerCurrentAvg, local) : '—'}`,
+            source: `${m.receivedAvgCostPerKg ? formatMoney(m.receivedAvgCostPerKg.local, local) : '—'} · ${m.avgCostPerKg ? formatMoney(m.avgCostPerKg.local, local) : '—'}`,
+            ok:
+              containerReceivedKg.minus(m.receivedKg).abs().lessThan('0.001') &&
+              containerRemainingKg.minus(m.onHandKg).abs().lessThan('0.001') &&
+              containerRemaining.minus(m.stockValue.local).abs().lessThan('0.05') &&
+              (!containerAvg || !m.receivedAvgCostPerKg || containerAvg.minus(m.receivedAvgCostPerKg.local).abs().lessThan('0.01')),
           },
         ]
       : []),
@@ -206,8 +235,24 @@ export default async function ItemStockPage({
           />
           {showCost ? (
             <>
-              <Figure testId="item-avg-cost" label="Average cost / KG" value={perKgText(m.avgCostPerKg, local)?.primary ?? '—'} equivalent={perKgText(m.avgCostPerKg, local)?.equivalent} sub="Weighted, at landed cost" />
-              <Figure testId="item-stock-value" label="Stock value" value={pt(m.stockValue)!.primary} equivalent={pt(m.stockValue)!.equivalent} sub="What is left, at its landed cost" />
+              <Figure testId="item-containers" label="Total containers" value={String(m.containerCount)} sub="Across every shipment of this item" />
+              <Figure
+                testId="item-received-avg-cost"
+                label="Average landed cost / KG"
+                info="Weighted average cost based on the actual purchase cost and allocated direct shipment expenses of the stock included in this Item."
+                value={perKgText(m.receivedAvgCostPerKg, local)?.primary ?? '—'}
+                equivalent={perKgText(m.receivedAvgCostPerKg, local)?.equivalent}
+                sub="Overall: every KG received, sold-out containers included"
+              />
+              <Figure
+                testId="item-avg-cost"
+                label="Current stock average cost / KG"
+                info="Weighted average cost of the inventory currently remaining on hand."
+                value={perKgText(m.avgCostPerKg, local)?.primary ?? '—'}
+                equivalent={perKgText(m.avgCostPerKg, local)?.equivalent}
+                sub={m.onHandKg.isZero() ? 'No stock left' : 'Only the containers still in stock'}
+              />
+              <Figure testId="item-stock-value" label="Remaining inventory value" value={pt(m.stockValue)!.primary} equivalent={pt(m.stockValue)!.equivalent} sub="What is left, at its landed cost" />
               <Figure
                 testId="item-avg-purchase"
                 label="Average purchase cost / KG"
@@ -442,6 +487,8 @@ export default async function ItemStockPage({
                     <TH numeric>Purchase / KG</TH>
                     <TH numeric>Allocated expense / KG</TH>
                     <TH numeric>Landed cost / KG</TH>
+                    <TH numeric>Received KG</TH>
+                    <TH numeric>Sold KG</TH>
                     <TH numeric>Remaining KG</TH>
                     <TH numeric>Remaining purchase value</TH>
                     <TH numeric>Remaining inventory value</TH>
@@ -464,6 +511,8 @@ export default async function ItemStockPage({
                           <TD numeric>{money(usdFirstText(b.purchasePerKg, local, ' / KG'))}</TD>
                           <TD numeric>{money(perKgText(b.expensePerKg, local))}</TD>
                           <TD numeric>{money(perKgText(b.landedPerKg, local))}</TD>
+                          <TD numeric>{kg(b.receivedKg)}</TD>
+                          <TD numeric>{kg(b.soldKg)}</TD>
                           <TD numeric>{kg(b.onHandKg)}</TD>
                           <TD numeric>{money(usdFirstText(b.purchaseValue, local))}</TD>
                           <TD numeric>{money(pt(b.stockValue))}</TD>
@@ -482,6 +531,8 @@ export default async function ItemStockPage({
                     <TD numeric>{money(usdFirstText(m.avgPurchasePerKg, local, ' / KG'))}</TD>
                     <TD />
                     <TD numeric>{money(perKgText(m.avgCostPerKg, local))}</TD>
+                    <TD numeric>{kg(m.receivedKg)}</TD>
+                    <TD numeric>{kg(m.soldKg)}</TD>
                     <TD numeric>{kg(m.onHandKg)}</TD>
                     <TD numeric>{money(usdFirstText(m.purchaseValue, local))}</TD>
                     <TD numeric>{money(pt(m.stockValue))}</TD>
@@ -489,6 +540,35 @@ export default async function ItemStockPage({
                 </TFoot>
               </Table>
             </TableWrap>
+            <dl className="grid gap-x-6 gap-y-1 px-1 pt-3 text-xs sm:grid-cols-2" data-testid="item-cost-reconciliation">
+              <div className="flex justify-between gap-3">
+                <dt className="text-ink-muted">Total KG received (containers)</dt>
+                <dd className="tnum">{kg(containerReceivedKg)}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-ink-muted">Total landed cost of KG received</dt>
+                <dd className="tnum">{formatMoney(toMoney(containerLanded), local)}</dd>
+              </div>
+              <div className="flex justify-between gap-3 font-semibold">
+                <dt>Weighted average landed cost / KG</dt>
+                <dd className="tnum">{containerAvg ? formatMoney(toUnitCost(containerAvg), local) : '—'}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-ink-muted">Remaining KG (containers)</dt>
+                <dd className="tnum">{kg(containerRemainingKg)}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-ink-muted">Remaining inventory cost</dt>
+                <dd className="tnum">{formatMoney(toMoney(containerRemaining), local)}</dd>
+              </div>
+              <div className="flex justify-between gap-3 font-semibold">
+                <dt>Current stock weighted average cost / KG</dt>
+                <dd className="tnum">{containerCurrentAvg ? formatMoney(toUnitCost(containerCurrentAvg), local) : '—'}</dd>
+              </div>
+            </dl>
+            <p className="px-1 pt-2 text-[11px] text-ink-subtle">
+              Each container&apos;s KG at its own landed cost, added up — never an average of the containers&apos; averages.
+            </p>
           </CardContent>
         </Card>
       ) : null}

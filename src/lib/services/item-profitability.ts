@@ -126,6 +126,14 @@ export type ItemMeasures = {
   purchaseValue: Pair;
   /** The purchase value ÷ the KG still on hand. */
   avgPurchasePerKg: Pair | null;
+  /**
+   * Every KG ever received at its own batch's landed cost ÷ the KG received —
+   * what the item cost overall, sold-out containers included. The current
+   * stock average (avgCostPerKg) weighs only what is still here.
+   */
+  receivedAvgCostPerKg: Pair | null;
+  /** Containers (or batches without one) that brought this coffee in. */
+  containerCount: number;
   /** Revenue over KG sold — never an average of rates. */
   avgSellPerKg: Pair | null;
   marginPct: Decimal | null;
@@ -236,6 +244,7 @@ type Acc = {
   /** The same including transfers in — a warehouse's own average. */
   inflowBasis: { kg: Decimal; value: Pair };
   invoices: Set<string>;
+  containers: Set<string>;
 };
 
 const zeroPair = (): Pair => ({ local: new Decimal(0), usd: new Decimal(0) });
@@ -268,6 +277,7 @@ function emptyAcc(): Acc {
     receivedBasis: { kg: new Decimal(0), value: zeroPair() },
     inflowBasis: { kg: new Decimal(0), value: zeroPair() },
     invoices: new Set(),
+    containers: new Set(),
   };
 }
 
@@ -298,6 +308,7 @@ function addInto(target: Acc, cell: Acc) {
     value: addPair(target.inflowBasis.value, cell.inflowBasis.value),
   };
   for (const id of cell.invoices) target.invoices.add(id);
+  for (const id of cell.containers) target.containers.add(id);
 }
 
 const perKg = (value: Pair, kg: Decimal): Pair | null =>
@@ -343,6 +354,8 @@ function measure(acc: Acc): ItemMeasures {
     avgCostPerKg: perKg(acc.stockValue, onHandKg),
     purchaseValue: moneyPair(acc.purchaseValue),
     avgPurchasePerKg: perKg(acc.purchaseValue, onHandKg),
+    receivedAvgCostPerKg: perKg(acc.receivedBasis.value, acc.receivedBasis.kg),
+    containerCount: acc.containers.size,
     avgSellPerKg: perKg(revenue, soldKg),
     marginPct: revenue.local.isZero() ? null : percentage(grossProfit.local, revenue.local),
     profitPerKg: perKg(grossProfit, soldKg),
@@ -656,9 +669,16 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
     acc.purchaseValue = addPair(acc.purchaseValue, { local: onHand.times(purchase.local), usd: onHand.times(purchase.usd) });
     const receivedToDate = dec(m.receivedToDate);
     const inflowToDate = dec(m.inflowToDate);
+    if (receivedToDate.greaterThan(0) || onHand.greaterThan(0)) {
+      const b = batchById.get(m.batchId);
+      acc.containers.add(b?.containerId ?? `batch:${m.batchId}`);
+    }
     acc.receivedBasis = {
       kg: acc.receivedBasis.kg.plus(receivedToDate),
-      value: addPair(acc.receivedBasis.value, { local: receivedToDate.times(landed.local), usd: receivedToDate.times(landed.usd) }),
+      value: addPair(acc.receivedBasis.value, {
+        local: receivedToDate.times(landed.local),
+        usd: atOrderRate(m.batchId, receivedToDate.times(landed.local), receivedToDate.times(landed.usd)),
+      }),
     };
     acc.inflowBasis = {
       kg: acc.inflowBasis.kg.plus(inflowToDate),

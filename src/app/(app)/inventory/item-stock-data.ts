@@ -151,7 +151,9 @@ export function toItemStockRow(
       avgCost: showCost ? perKgText(item.avgCostPerKg, local) : null,
       stockValue: showCost ? pairText(item.stockValue, local) : null,
     },
+    containers: item.containerCount,
     avgCost: showCost ? perKgText(item.avgCostPerKg, local) : null,
+    receivedAvgCost: showCost ? perKgText(item.receivedAvgCostPerKg, local) : null,
     avgPurchase: showCost ? usdFirstText(item.avgPurchasePerKg, local, ' / KG') : null,
     purchaseValue: showCost ? usdFirstText(item.purchaseValue, local) : null,
     cogs: showCogs ? pairText(item.cogs, local) : null,
@@ -165,6 +167,7 @@ export function toItemStockRow(
     margin: both && item.marginPct ? formatPercent(item.marginPct) : null,
     sort: {
       avgCost: showCost ? toNumber(item.avgCostPerKg?.local ?? 0) : 0,
+      receivedAvgCost: showCost ? toNumber(item.receivedAvgCostPerKg?.local ?? 0) : 0,
       avgPurchase: showCost ? toNumber(item.avgPurchasePerKg?.usd ?? 0) : 0,
       purchaseValue: showCost ? toNumber(item.purchaseValue.usd) : 0,
       avgSell: showSales ? toNumber(item.avgSellPerKg?.local ?? 0) : 0,

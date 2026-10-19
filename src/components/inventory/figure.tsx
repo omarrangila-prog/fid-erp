@@ -13,8 +13,11 @@ export function Figure({
   sub,
   tone = 'default',
   testId,
+  info,
 }: {
   label: string;
+  /** A short explanation, shown as an ⓘ beside the label. */
+  info?: string;
   value: string;
   equivalent?: { text: string; title: string } | null;
   sub?: string;
@@ -23,7 +26,14 @@ export function Figure({
 }) {
   return (
     <Card className="h-full p-4" data-testid={testId}>
-      <p className="text-xs font-medium text-ink-muted">{label}</p>
+      <p className="text-xs font-medium text-ink-muted" title={info}>
+        {label}
+        {info ? (
+          <span aria-label={info} className="ml-1 cursor-help text-ink-subtle">
+            ⓘ
+          </span>
+        ) : null}
+      </p>
       <p
         data-figure-value
         className={cn(

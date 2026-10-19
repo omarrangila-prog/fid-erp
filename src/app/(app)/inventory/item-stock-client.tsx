@@ -47,8 +47,12 @@ export type ItemStockRow = {
     avgCost: PairText | null;
     stockValue: PairText | null;
   };
+  /** Containers that brought this coffee in. */
+  containers: number;
   /** Null when this person may not see purchase costs. */
   avgCost: PairText | null;
+  /** Every KG received, sold-out containers included. */
+  receivedAvgCost: PairText | null;
   /** What the stock still here cost to buy: USD first. */
   avgPurchase: PairText | null;
   purchaseValue: PairText | null;
@@ -63,7 +67,7 @@ export type ItemStockRow = {
   profit: (PairText & { loss: boolean }) | null;
   profitPerKg: PairText | null;
   margin: string | null;
-  sort: { avgCost: number; avgPurchase: number; purchaseValue: number; avgSell: number; revenue: number; collected: number; outstanding: number; cogs: number; profit: number; margin: number; stockValue: number };
+  sort: { avgCost: number; receivedAvgCost: number; avgPurchase: number; purchaseValue: number; avgSell: number; revenue: number; collected: number; outstanding: number; cogs: number; profit: number; margin: number; stockValue: number };
 };
 
 
@@ -158,6 +162,17 @@ export function ItemStockClient({
       ),
     },
     {
+      id: 'containers',
+      header: 'Containers',
+      numeric: true,
+      hideable: true,
+      mobile: 'hidden',
+      sortValue: (r) => r.containers,
+      exportValue: (r) => r.containers,
+      exportType: 'integer',
+      cell: (r) => r.containers,
+    },
+    {
       id: 'warehouses',
       header: 'Warehouses',
       hideable: true,
@@ -182,7 +197,8 @@ export function ItemStockClient({
       ? ([
           {
             id: 'avgCost',
-            header: 'Avg Cost/KG',
+            header: 'Current Stock Avg Cost/KG',
+            headerInfo: 'Weighted average cost of the inventory currently remaining on hand.',
             numeric: true,
             hideable: true,
             mobile: 'meta',
@@ -191,6 +207,17 @@ export function ItemStockClient({
             // per-kilo averages, which means nothing.
             exportValue: (r) => r.sort.avgCost,
             cell: (r) => money(r.avgCost),
+          },
+          {
+            id: 'receivedAvgCost',
+            header: 'Avg Landed Cost/KG (all received)',
+            headerInfo: 'Weighted average cost based on the actual purchase cost and allocated direct shipment expenses of the stock included in this Item. Every KG received, sold-out containers included.',
+            numeric: true,
+            hideable: true,
+            mobile: 'hidden',
+            sortValue: (r) => r.sort.receivedAvgCost,
+            exportValue: (r) => r.sort.receivedAvgCost,
+            cell: (r) => money(r.receivedAvgCost),
           },
           {
             id: 'avgPurchase',

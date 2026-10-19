@@ -123,6 +123,7 @@ async function reconciliation() {
     'Remaining KG': f(sheet.remainingKg),
     'Avg cost/KG (shipment)': f(sheet.remainingAvgCostPerKgLocal),
     'Avg cost/KG (Stock on Hand)': f(item.avgCostPerKg?.local),
+    'Overall avg landed/KG (Stock on Hand)': f(item.receivedAvgCostPerKg?.local),
     'COGS (MAD)': f(sheet.cogsLocal),
     'COGS (profitability)': f(pnl.reduce((t, r) => t.plus(r.allocatedLandedCostLocal), dec(0))),
     'Remaining inventory (shipment)': f(sheet.remainingLandedLocal),
@@ -193,6 +194,7 @@ describe('the client’s example: the order rate edited 9.90 → 10.30 → 9.90'
     expect(before['Batch purchase/KG MAD (item page)']).toBe('39.60');
     expect(before['Batch allocated expense/KG MAD (item page)']).toBe('2.60');
     expect(before['Batch landed/KG MAD (item page)']).toBe('42.20');
+    expect(before['Overall avg landed/KG (Stock on Hand)']).toBe('42.20');
   }, 300_000);
 
   it('moves every figure that depends on the purchase cost when the order rate is edited to 10.30, and nothing else', async () => {
@@ -227,6 +229,8 @@ describe('the client’s example: the order rate edited 9.90 → 10.30 → 9.90'
     expect(after['Batch purchase/KG MAD (item page)']).toBe('41.20');
     expect(after['Batch allocated expense/KG MAD (item page)']).toBe('2.60');
     expect(after['Batch landed/KG MAD (item page)']).toBe('43.80');
+    // The item's overall average follows the order's rate too.
+    expect(after['Overall avg landed/KG (Stock on Hand)']).toBe('43.80');
 
     // The purchase cost rises by USD 100,000 × 0.40 = MAD 40,000.
     expect(after['USD/MAD rate']).toBe('10.30');

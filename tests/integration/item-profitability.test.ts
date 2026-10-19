@@ -7,6 +7,7 @@ import { createReceipt, postReceipt } from '@/lib/services/receipt';
 import { getItemProfitability, getItemProfitabilityChecks } from '@/lib/services/item-profitability';
 import { getShipmentProfitability } from '@/lib/services/profitability';
 import { reverseGoodsReceipt } from '@/lib/services/goods-receipt';
+import { dec } from '@/lib/money';
 
 /**
  * Stock on Hand, by item — worked by hand and checked against the service.
@@ -285,5 +286,38 @@ describe('Stock on Hand by item', () => {
     const dubai = await getItemProfitability({ companyId: ctx.dubai.id });
     expect(dubai.items.find((i) => [itemA, itemB, itemC].includes(i.itemId))).toBeUndefined();
     expect(dubai.lines).toHaveLength(0);
+  }, 120_000);
+});
+
+describe('item-wise weighted average landed cost (brief of 20 Oct)', () => {
+  it('states the overall average over every KG received and the current average over the stock still here', async () => {
+    const report = await getItemProfitability({ companyId });
+    const a = report.items.find((i) => i.itemId === itemA)!;
+    // Two containers of one item: (20,000 × 48.00 + 10,000 × 57.60) ÷ 30,000 = 51.20 —
+    // not (48.00 + 57.60) ÷ 2 = 52.80.
+    expect(a.containerCount).toBe(2);
+    expect(dec(a.receivedAvgCostPerKg!.local).toFixed(2)).toBe('51.20');
+    // What is left: 18,000 of A1 at 48.00 and 6,000 of A2 at 57.60 = 50.40.
+    expect(dec(a.avgCostPerKg!.local).toFixed(2)).toBe('50.40');
+    // The containers add up to the item, KG and cost.
+    const batches = a.shipments.flatMap((s) => s.containers.flatMap((c) => c.batches));
+    const landed = batches.reduce((t, b) => t.plus(b.receivedKg.times(b.landedPerKg.local)), dec(0));
+    const received = batches.reduce((t, b) => t.plus(b.receivedKg), dec(0));
+    expect(received.toFixed(3)).toBe(dec(a.receivedKg).toFixed(3));
+    expect(landed.dividedBy(received).toFixed(2)).toBe('51.20');
+    const remaining = batches.reduce((t, b) => t.plus(b.stockValue.local), dec(0));
+    expect(remaining.toFixed(2)).toBe(dec(a.stockValue.local).toFixed(2));
+    // The transfer of 3,000 KG to the second warehouse moved no cost.
+    const second_ = a.warehouses.find((w) => w.warehouseId === second)!;
+    expect(dec(second_.avgCostPerKg!.local).toFixed(2)).toBe('48.00');
+  }, 120_000);
+
+  it('keeps a sold-out item’s history: no current average, the overall one stays', async () => {
+    const c = (await getItemProfitability({ companyId })).items.find((i) => i.itemId === itemC)!;
+    expect(dec(c.onHandKg).toFixed(3)).toBe('0.000');
+    expect(c.avgCostPerKg).toBeNull();
+    expect(dec(c.receivedAvgCostPerKg!.local).toFixed(2)).toBe('48.00');
+    expect(c.containerCount).toBe(1);
+    expect(dec(c.revenue.local).toFixed(2)).toBe('40000.00');
   }, 120_000);
 });

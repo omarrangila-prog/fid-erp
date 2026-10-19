@@ -20,6 +20,8 @@ import { RowSelectBox, useTableShare, type TableShareConfig } from '@/components
 export type DataColumn<T> = {
   id: string;
   header: string;
+  /** A short explanation, shown as an ⓘ beside the header. */
+  headerInfo?: string;
   cell: (row: T) => React.ReactNode;
   numeric?: boolean;
   /** Returns a comparable value; omit to make the column unsortable. */
@@ -522,7 +524,13 @@ export function DataTable<T>({
                         column.className,
                       )}
                       data-print={column.printHidden ? 'hide' : undefined}
+                      title={column.headerInfo}
                     >
+                      {column.headerInfo ? (
+                        <span aria-label={column.headerInfo} className="mr-1 cursor-help text-ink-subtle" data-print="hide">
+                          ⓘ
+                        </span>
+                      ) : null}
                       {column.sortValue ? (
                         <button
                           type="button"
