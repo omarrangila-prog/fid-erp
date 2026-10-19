@@ -752,7 +752,7 @@ export function SaleForm({
 
       {/* A sale in the company's own money asks for no exchange rate: the reporting rate is
           filled in quietly from the latest rate and never shown on the invoice. */}
-      {isHomeSale && header.rateLocalPerUsd ? null : (
+      {isHomeSale ? null : (
       <Card>
         <CardContent className="pt-5">
           <FormSection

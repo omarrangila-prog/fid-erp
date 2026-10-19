@@ -3,7 +3,7 @@ import { Decimal } from '@/lib/money';
 import { formatPercent } from '@/lib/format';
 import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
 import type { ItemNode, ItemProfitFilters } from '@/lib/services/item-profitability';
-import { kg, pairText, perKgText, profitText } from '@/components/inventory/item-profit-format';
+import { kg, pairText, perKgText, profitText, usdFirstText } from '@/components/inventory/item-profit-format';
 import type { StockFilterValues } from '@/app/(app)/inventory/stock-filters';
 import type { ItemStockRow } from '@/app/(app)/inventory/item-stock-client';
 
@@ -152,6 +152,8 @@ export function toItemStockRow(
       stockValue: showCost ? pairText(item.stockValue, local) : null,
     },
     avgCost: showCost ? perKgText(item.avgCostPerKg, local) : null,
+    avgPurchase: showCost ? usdFirstText(item.avgPurchasePerKg, local, ' / KG') : null,
+    purchaseValue: showCost ? usdFirstText(item.purchaseValue, local) : null,
     cogs: showCogs ? pairText(item.cogs, local) : null,
     stockValue: showCost ? pairText(item.stockValue, local) : null,
     avgSell: showSales ? perKgText(item.avgSellPerKg, local) : null,
@@ -163,6 +165,8 @@ export function toItemStockRow(
     margin: both && item.marginPct ? formatPercent(item.marginPct) : null,
     sort: {
       avgCost: showCost ? toNumber(item.avgCostPerKg?.local ?? 0) : 0,
+      avgPurchase: showCost ? toNumber(item.avgPurchasePerKg?.usd ?? 0) : 0,
+      purchaseValue: showCost ? toNumber(item.purchaseValue.usd) : 0,
       avgSell: showSales ? toNumber(item.avgSellPerKg?.local ?? 0) : 0,
       revenue: showSales ? toNumber(item.revenue.local) : 0,
       collected: showSales ? toNumber(item.collectedTotal.local) : 0,

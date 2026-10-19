@@ -15,7 +15,7 @@ import {
   type ItemSaleLine,
   type Pair,
 } from '@/lib/services/item-profitability';
-import { pairText, perKgText, profitText, kg, STOCK_STATUS_META as STATUS_META, type PairText } from '@/components/inventory/item-profit-format';
+import { pairText, perKgText, profitText, usdFirstText, kg, STOCK_STATUS_META as STATUS_META, type PairText } from '@/components/inventory/item-profit-format';
 import { Figure } from '@/components/inventory/figure';
 import { PageHeader } from '@/components/shared/page-header';
 import { PrintButton } from '@/components/shared/print-button';
@@ -208,6 +208,20 @@ export default async function ItemStockPage({
             <>
               <Figure testId="item-avg-cost" label="Average cost / KG" value={perKgText(m.avgCostPerKg, local)?.primary ?? '—'} equivalent={perKgText(m.avgCostPerKg, local)?.equivalent} sub="Weighted, at landed cost" />
               <Figure testId="item-stock-value" label="Stock value" value={pt(m.stockValue)!.primary} equivalent={pt(m.stockValue)!.equivalent} sub="What is left, at its landed cost" />
+              <Figure
+                testId="item-avg-purchase"
+                label="Average purchase cost / KG"
+                value={usdFirstText(m.avgPurchasePerKg, local, ' / KG')?.primary ?? '—'}
+                equivalent={usdFirstText(m.avgPurchasePerKg, local, ' / KG')?.equivalent}
+                sub="What is left, before shipment charges"
+              />
+              <Figure
+                testId="item-purchase-value"
+                label="Remaining purchase value"
+                value={usdFirstText(m.purchaseValue, local)!.primary}
+                equivalent={usdFirstText(m.purchaseValue, local)!.equivalent}
+                sub="What is left, at the supplier's price"
+              />
             </>
           ) : null}
           {showSales ? (
@@ -405,6 +419,79 @@ export default async function ItemStockPage({
           </TableWrap>
         </CardContent>
       </Card>
+
+      {showCost ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Cost per batch</CardTitle>
+            <CardDescription>
+              What a KG of each batch cost: the supplier&apos;s price in USD at its order&apos;s USD/{local} rate, plus its share of the shipment&apos;s charges. Edit the
+              order&apos;s rate and these follow.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <TableWrap>
+              <Table data-testid="item-batch-costs">
+                <THead>
+                  <TR>
+                    <TH>Shipment reference</TH>
+                    <TH>Container</TH>
+                    <TH>Batch</TH>
+                    <TH>Warehouse</TH>
+                    <TH numeric>USD/{local} rate</TH>
+                    <TH numeric>Purchase / KG</TH>
+                    <TH numeric>Allocated expense / KG</TH>
+                    <TH numeric>Landed cost / KG</TH>
+                    <TH numeric>Remaining KG</TH>
+                    <TH numeric>Remaining purchase value</TH>
+                    <TH numeric>Remaining inventory value</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {shipments.flatMap((s) =>
+                    s.containers.flatMap((c) =>
+                      c.batches.map((b) => (
+                        <TR key={b.batchId} data-batch={b.batchNumber}>
+                          <TD>
+                            <Link href={`/shipments/${s.shipmentId}`} className="font-mono text-xs text-forest-800 hover:underline">
+                              {s.reference}
+                            </Link>
+                          </TD>
+                          <TD className="font-mono text-xs">{c.containerNumber ?? '—'}</TD>
+                          <TD className="text-xs">{b.batchNumber}</TD>
+                          <TD className="text-xs">{b.warehouses.filter((w) => !w.onHandKg.isZero()).map((w) => w.warehouseName).join(', ') || '—'}</TD>
+                          <TD numeric data-testid="batch-rate">{b.rateLocalPerUsd ? b.rateLocalPerUsd.toString() : '—'}</TD>
+                          <TD numeric>{money(usdFirstText(b.purchasePerKg, local, ' / KG'))}</TD>
+                          <TD numeric>{money(perKgText(b.expensePerKg, local))}</TD>
+                          <TD numeric>{money(perKgText(b.landedPerKg, local))}</TD>
+                          <TD numeric>{kg(b.onHandKg)}</TD>
+                          <TD numeric>{money(usdFirstText(b.purchaseValue, local))}</TD>
+                          <TD numeric>{money(pt(b.stockValue))}</TD>
+                        </TR>
+                      )),
+                    ),
+                  )}
+                </TBody>
+                <TFoot>
+                  <TR>
+                    <TD>Total</TD>
+                    <TD />
+                    <TD />
+                    <TD />
+                    <TD />
+                    <TD numeric>{money(usdFirstText(m.avgPurchasePerKg, local, ' / KG'))}</TD>
+                    <TD />
+                    <TD numeric>{money(perKgText(m.avgCostPerKg, local))}</TD>
+                    <TD numeric>{kg(m.onHandKg)}</TD>
+                    <TD numeric>{money(usdFirstText(m.purchaseValue, local))}</TD>
+                    <TD numeric>{money(pt(m.stockValue))}</TD>
+                  </TR>
+                </TFoot>
+              </Table>
+            </TableWrap>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>

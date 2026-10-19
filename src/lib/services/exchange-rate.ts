@@ -119,3 +119,14 @@ export async function getLocalRateForPosting(params: {
 
   return rows[0] ? dec(rows[0].rate) : new Decimal(1);
 }
+
+/**
+ * The reporting rate a form fills in quietly when it asks for none — a sale or
+ * a receipt in the company's own money. The rate table when it has one,
+ * otherwise the rate the business last posted at; never the bare 1 a visible
+ * rate box shows to be noticed, since here nobody would see it.
+ */
+export async function getQuietLocalRate(companyId: string, rates: { localCurrency: string; local: string; missing: boolean }): Promise<string> {
+  if (!rates.missing) return rates.local;
+  return (await getLocalRateForPosting({ companyId, localCurrency: rates.localCurrency, asOf: new Date() })).toString();
+}

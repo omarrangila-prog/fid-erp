@@ -17,6 +17,7 @@ import { formatMoney, formatQuantityKg, formatDate, formatDateTime, formatRate }
 import { effectiveLocalRate } from '@/lib/purchase-fx';
 import { PageHeader } from '@/components/shared/page-header';
 import { Metric, MetricGrid, DetailRow } from '@/components/shared/stat-card';
+import { getSupplierPaymentRate } from '@/lib/services/supplier-payment-rate';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { StatusBadge, Badge } from '@/components/ui/badge';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
@@ -69,12 +70,15 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
     contract.currency === 'USD' ? dec(value) : dec(value).dividedBy(dec(contract.rateToUsd));
 
   /*
-   * Local figures are stated at the rate actually paid for the dollars once it
-   * is known, and at the order's estimate until then. The same rule the
-   * costing service uses, so this page and the cost sheet cannot disagree.
+   * Local figures are stated at the order's one USD/MAD rate — whatever is
+   * saved on it now. The same rule the costing service uses, so this page and
+   * the cost sheet cannot disagree.
    */
   const costingRate = effectiveLocalRate(contract);
   const rateSource = "This order's USD/MAD rate";
+  // What the supplier payments against this order were bought at — shown
+  // beside the order's rate, never instead of it.
+  const paidRate = showCost ? await getSupplierPaymentRate({ companyId: user.activeCompany.id, contractId: contract.id }) : null;
 
   const attachments = can(user, PERMISSIONS.ATTACHMENTS_VIEW)
     ? await loadAttachments(user.activeCompany.id, 'PurchaseContract', contract.id)
@@ -378,6 +382,16 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                         Costs this order&rsquo;s shipment. Edit the order to change it.
                       </span>
                     </DetailRow>
+                    {paidRate ? (
+                      <DetailRow label="Paid to supplier at">
+                        <span data-testid="paid-weighted-rate">{formatRate(paidRate.weightedRate)}</span>
+                        <span className="block text-xs text-ink-subtle">
+                          Weighted over {formatMoney(paidRate.paidUsd, 'USD')} paid:{' '}
+                          {paidRate.payments.map((p) => `${formatMoney(p.usd, 'USD')} @ ${formatRate(p.rate)}`).join(' · ')}.
+                          {paidRate.weightedRate.equals(costingRate) ? '' : ' Edit the order to use this rate.'}
+                        </span>
+                      </DetailRow>
+                    ) : null}
                     <DetailRow label="Value in USD">{formatMoney(contract.totalValueUsd, 'USD')}</DetailRow>
                   </>
                 ) : null}

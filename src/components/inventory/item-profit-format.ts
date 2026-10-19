@@ -22,6 +22,18 @@ export function perKgText(value: Pair | null | undefined, local: string): PairTe
   return pairText(value, local, ' / KG');
 }
 
+/**
+ * A figure whose source is dollars — what the supplier charged — first, with
+ * the company's currency under it at the order's USD/MAD rate.
+ */
+export function usdFirstText(value: Pair | null | undefined, local: string, suffix = ''): PairText | null {
+  if (!value) return null;
+  return {
+    primary: `${formatMoney(value.usd, 'USD')}${suffix}`,
+    equivalent: local.toUpperCase() === 'USD' ? null : { text: `≈ ${formatMoney(value.local, local)}${suffix}`, title: `The ${local} equivalent at the order's USD/${local} rate` },
+  };
+}
+
 /** Profit reads as a profit, a loss as a loss — never a bare minus sign. */
 export function profitText(value: Pair, local: string): PairText & { loss: boolean; label: 'Gross profit' | 'Gross loss' } {
   const loss = value.local.isNegative();

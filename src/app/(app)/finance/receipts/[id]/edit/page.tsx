@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { prisma } from '@/lib/db';
-import { getRateDefaults } from '@/lib/services/exchange-rate';
+import { getRateDefaults, getQuietLocalRate } from '@/lib/services/exchange-rate';
 import { getReceivables } from '@/lib/services/receivables';
 import { toDateInputValue } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
@@ -102,6 +102,7 @@ export default async function EditReceiptPage({ params }: { params: Promise<{ id
     accountType: a.accountType,
   }));
 
+  const quietLocalRate = await getQuietLocalRate(companyId, rates);
   return (
     <div className="space-y-6">
       <PageHeader
@@ -130,8 +131,8 @@ export default async function EditReceiptPage({ params }: { params: Promise<{ id
         accounts={bankOptions}
         invoices={invoices}
         localCurrency={user.activeCompany.localCurrency}
-        defaultLocalRate={rates.local}
-        ratesByCurrency={rates.byCurrency}
+        defaultLocalRate={quietLocalRate}
+        ratesByCurrency={{ ...rates.byCurrency, [rates.localCurrency]: quietLocalRate }}
         agents={agents.map((a) => ({ id: a.id, name: a.agentName }))}
         canPost={can(user, PERMISSIONS.RECEIPTS_POST)}
         canCreateCashBank={can(user, PERMISSIONS.CASHBANK_MANAGE)}

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
-import { getRateDefaults } from '@/lib/services/exchange-rate';
+import { getRateDefaults, getQuietLocalRate } from '@/lib/services/exchange-rate';
 import { prisma } from '@/lib/db';
 import { getReceivables } from '@/lib/services/receivables';
 import { toDateInputValue } from '@/lib/format';
@@ -107,6 +107,7 @@ export default async function NewReceiptPage({
 
   const rates = await getRateDefaults(user.activeCompany.id);
 
+  const quietLocalRate = await getQuietLocalRate(user.activeCompany.id, rates);
   return (
     <div className="space-y-6">
       <PageHeader
@@ -126,8 +127,8 @@ export default async function NewReceiptPage({
         accounts={bankOptions}
         invoices={invoices}
         localCurrency={user.activeCompany.localCurrency}
-        defaultLocalRate={rates.local}
-        ratesByCurrency={rates.byCurrency}
+        defaultLocalRate={quietLocalRate}
+        ratesByCurrency={{ ...rates.byCurrency, [rates.localCurrency]: quietLocalRate }}
         agents={agents.map((a) => ({ id: a.id, name: a.agentName }))}
         preselectedInvoiceId={invoice}
         canPost={can(user, PERMISSIONS.RECEIPTS_POST)}

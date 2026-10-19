@@ -7,6 +7,8 @@ import { getReceivables } from '@/lib/services/receivables';
 import { getShipmentCostSheet } from '@/lib/services/landed-cost';
 import { getItemProfitability, getItemProfitabilityChecks } from '@/lib/services/item-profitability';
 import { getInvoicePoRates } from '@/lib/services/invoice-po-rate';
+import { getSupplierPaymentRate } from '@/lib/services/supplier-payment-rate';
+import { createPayment, postPayment } from '@/lib/services/payment';
 import { getShipmentProfitability, getCogsReport } from '@/lib/services/profitability';
 import { getInventoryValuation, getInventoryValuationSummary } from '@/lib/services/stock';
 import { dec } from '@/lib/money';
@@ -108,6 +110,7 @@ async function reconciliation() {
   const invoiceRate = (await getInvoicePoRates({ companyId, invoiceIds: [invoiceId] })).get(invoiceId);
   const itemChecks = await getItemProfitabilityChecks(companyId);
   const cogsUsdReport = cogsLines.reduce((t, l) => t.plus(l.rateLocalPerUsd ? l.cogsLocal.dividedBy(l.rateLocalPerUsd) : l.cogsUsd), dec(0));
+  const batch = item.shipments.find((s) => s.shipmentId === shipmentId)!.containers[0].batches[0];
   const batches = await prisma.batch.findMany({ where: { purchaseContractId: contractId }, select: { orderedQuantityKg: true, receivedQuantityKg: true, soldQuantityKg: true, availableQuantityKg: true } });
   return {
     'PO USD value': f(contract.totalValueUsd),
@@ -142,6 +145,15 @@ async function reconciliation() {
     'Stock on Hand COGS ≈ USD': f(item.cogs.usd),
     'COGS report COGS ≈ USD': f(cogsUsdReport),
     'Stock on Hand stock value ≈ USD': f(item.stockValue.usd),
+    // §27/§28: what the coffee still here cost to buy, USD as charged.
+    'Remaining purchase value USD (Stock on Hand)': f(item.purchaseValue.usd),
+    'Remaining purchase value ≈ MAD (Stock on Hand)': f(item.purchaseValue.local),
+    'Avg purchase/KG USD (Stock on Hand)': f(item.avgPurchasePerKg?.usd),
+    'Batch USD/MAD rate (item page)': f(batch.rateLocalPerUsd),
+    'Batch purchase/KG USD (item page)': f(batch.purchasePerKg.usd),
+    'Batch purchase/KG MAD (item page)': f(batch.purchasePerKg.local),
+    'Batch allocated expense/KG MAD (item page)': f(batch.expensePerKg.local),
+    'Batch landed/KG MAD (item page)': f(batch.landedPerKg.local),
     'Stock on Hand checks failing': itemChecks.filter((c) => !c.ok).map((c) => c.key).join(',') || 'none',
     'Invoice status': invoice.status,
     'Quantities (ordered/received/sold/available KG)': batches
@@ -172,6 +184,15 @@ describe('the client’s example: the order rate edited 9.90 → 10.30 → 9.90'
     expect(before['Stock on Hand COGS ≈ USD']).toBe(dec(633000).dividedBy('9.90').toFixed(2));
     expect(before['Stock on Hand stock value ≈ USD']).toBe(dec(422000).dividedBy('9.90').toFixed(2));
     expect(before['Stock on Hand checks failing']).toBe('none');
+    // 10,000 KG left of coffee bought at USD 4.00 a KG.
+    expect(before['Remaining purchase value USD (Stock on Hand)']).toBe('40000.00');
+    expect(before['Remaining purchase value ≈ MAD (Stock on Hand)']).toBe('396000.00');
+    expect(before['Avg purchase/KG USD (Stock on Hand)']).toBe('4.00');
+    expect(before['Batch USD/MAD rate (item page)']).toBe('9.90');
+    expect(before['Batch purchase/KG USD (item page)']).toBe('4.00');
+    expect(before['Batch purchase/KG MAD (item page)']).toBe('39.60');
+    expect(before['Batch allocated expense/KG MAD (item page)']).toBe('2.60');
+    expect(before['Batch landed/KG MAD (item page)']).toBe('42.20');
   }, 300_000);
 
   it('moves every figure that depends on the purchase cost when the order rate is edited to 10.30, and nothing else', async () => {
@@ -198,6 +219,14 @@ describe('the client’s example: the order rate edited 9.90 → 10.30 → 9.90'
     expect(after['Stock on Hand COGS ≈ USD']).toBe(dec(657000).dividedBy('10.30').toFixed(2));
     expect(after['Stock on Hand stock value ≈ USD']).toBe(dec(438000).dividedBy('10.30').toFixed(2));
     expect(after['Stock on Hand checks failing']).toBe('none');
+    // The supplier's dollars stay; their dirhams follow the rate; the charges stay.
+    expect(after['Remaining purchase value USD (Stock on Hand)']).toBe('40000.00');
+    expect(after['Remaining purchase value ≈ MAD (Stock on Hand)']).toBe('412000.00');
+    expect(after['Batch USD/MAD rate (item page)']).toBe('10.30');
+    expect(after['Batch purchase/KG USD (item page)']).toBe('4.00');
+    expect(after['Batch purchase/KG MAD (item page)']).toBe('41.20');
+    expect(after['Batch allocated expense/KG MAD (item page)']).toBe('2.60');
+    expect(after['Batch landed/KG MAD (item page)']).toBe('43.80');
 
     // The purchase cost rises by USD 100,000 × 0.40 = MAD 40,000.
     expect(after['USD/MAD rate']).toBe('10.30');
@@ -241,5 +270,40 @@ describe('the client’s example: the order rate edited 9.90 → 10.30 → 9.90'
       expect(r['Stock on Hand COGS ≈ USD']).toBe(r['COGS report COGS ≈ USD']);
     }
     console.table(Object.keys(after).map((k) => ({ figure: k, 'at 9.90': before[k as keyof typeof before], 'at 10.30': after[k as keyof typeof after], 'back at 9.90': back[k as keyof typeof back] })));
+  }, 300_000);
+});
+
+describe('§35: the rate the supplier was paid at, beside the order rate', () => {
+  it('weights each payment by the dollars it paid, and leaves the order rate and its costing alone', async () => {
+    const ctx = await getContext();
+    const contract = await prisma.purchaseContract.findUniqueOrThrow({ where: { id: contractId }, select: { vendorId: true } });
+    const madBank = await getCashAccount(companyId, 'MAD');
+    const before = await getShipmentCostSheet(companyId, shipmentId, { wholeOrder: true });
+    expect(await getSupplierPaymentRate({ companyId, contractId })).toBeNull();
+    for (const [date, mad, rate, usd] of [
+      ['2026-09-01', '412000', '10.30', '40000'],
+      ['2026-09-15', '594000', '9.90', '60000'],
+    ] as const) {
+      const payment = await createPayment(
+        {
+          companyId, paymentDate: utcDate(date), vendorId: contract.vendorId, currency: 'MAD', amount: mad,
+          rateToUsd: rate, rateLocalPerUsd: rate, paymentMethod: 'BANK_TRANSFER', cashBankAccountId: madBank.id,
+          allocations: [{ purchaseContractId: contractId, amount: usd }],
+        },
+        ctx.admin.id,
+      );
+      await postPayment({ id: payment.id, companyId, userId: ctx.admin.id });
+    }
+    const paid = (await getSupplierPaymentRate({ companyId, contractId }))!;
+    // (40,000 × 10.30 + 60,000 × 9.90) ÷ 100,000 = 10.06
+    expect(paid.paidUsd.toFixed(2)).toBe('100000.00');
+    expect(paid.weightedRate.toFixed(2)).toBe('10.06');
+    expect(paid.payments).toHaveLength(2);
+    // Shown, not applied: the order's own rate still costs the shipment.
+    const after = await getShipmentCostSheet(companyId, shipmentId, { wholeOrder: true });
+    expect(dec(after.rateLocalPerUsd).toFixed(2)).toBe('9.90');
+    expect(dec(after.goodsLocal).toFixed(2)).toBe(dec(before.goodsLocal).toFixed(2));
+    // Another company never sees these payments.
+    expect(await getSupplierPaymentRate({ companyId: ctx.dubai.id, contractId })).toBeNull();
   }, 300_000);
 });

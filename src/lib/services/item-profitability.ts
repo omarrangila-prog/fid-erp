@@ -118,6 +118,14 @@ export type ItemMeasures = {
   stockValue: Pair;
   /** Weighted: every KG that came in at its own batch's landed cost. */
   avgCostPerKg: Pair | null;
+  /**
+   * What the coffee still on hand cost to buy, before the shipment's charges:
+   * dollars as the supplier charged them, the company's currency at each
+   * order's USD/MAD rate.
+   */
+  purchaseValue: Pair;
+  /** The purchase value ÷ the KG still on hand. */
+  avgPurchasePerKg: Pair | null;
   /** Revenue over KG sold — never an average of rates. */
   avgSellPerKg: Pair | null;
   marginPct: Decimal | null;
@@ -132,6 +140,12 @@ export type BatchNode = ItemMeasures & {
   lotNumber: string;
   containerNumber: string | null;
   landedPerKg: Pair;
+  /** What a KG cost to buy: USD as charged, the company's currency at the order's rate. */
+  purchasePerKg: Pair;
+  /** The shipment's charges carried by a KG: landed less purchase. */
+  expensePerKg: Pair;
+  /** The USD/MAD rate on the order the batch was bought under. */
+  rateLocalPerUsd: Decimal | null;
   warehouses: WarehouseNode[];
 };
 export type ContainerNode = ItemMeasures & { containerKey: string; containerNumber: string | null; batches: BatchNode[] };
@@ -216,6 +230,7 @@ type Acc = {
   credited: Pair;
   outstanding: Pair;
   stockValue: Pair;
+  purchaseValue: Pair;
   /** Landed cost of what was received, and the KG — the company-level average. */
   receivedBasis: { kg: Decimal; value: Pair };
   /** The same including transfers in — a warehouse's own average. */
@@ -227,6 +242,7 @@ const zeroPair = (): Pair => ({ local: new Decimal(0), usd: new Decimal(0) });
 const addPair = (a: Pair, b: Pair): Pair => ({ local: a.local.plus(b.local), usd: a.usd.plus(b.usd) });
 const subPair = (a: Pair, b: Pair): Pair => ({ local: a.local.minus(b.local), usd: a.usd.minus(b.usd) });
 const moneyPair = (p: Pair): Pair => ({ local: toMoney(p.local), usd: toMoney(p.usd) });
+const unitPair = (p: Pair): Pair => ({ local: toUnitCost(p.local), usd: toUnitCost(p.usd) });
 const zeroMethods = (): Record<CollectionMethod, Pair> =>
   Object.fromEntries(COLLECTION_METHODS.map((m) => [m, zeroPair()])) as Record<CollectionMethod, Pair>;
 
@@ -248,6 +264,7 @@ function emptyAcc(): Acc {
     credited: zeroPair(),
     outstanding: zeroPair(),
     stockValue: zeroPair(),
+    purchaseValue: zeroPair(),
     receivedBasis: { kg: new Decimal(0), value: zeroPair() },
     inflowBasis: { kg: new Decimal(0), value: zeroPair() },
     invoices: new Set(),
@@ -271,6 +288,7 @@ function addInto(target: Acc, cell: Acc) {
   target.credited = addPair(target.credited, cell.credited);
   target.outstanding = addPair(target.outstanding, cell.outstanding);
   target.stockValue = addPair(target.stockValue, cell.stockValue);
+  target.purchaseValue = addPair(target.purchaseValue, cell.purchaseValue);
   target.receivedBasis = {
     kg: target.receivedBasis.kg.plus(cell.receivedBasis.kg),
     value: addPair(target.receivedBasis.value, cell.receivedBasis.value),
@@ -323,6 +341,8 @@ function measure(acc: Acc): ItemMeasures {
      * actually carries. Nothing left, nothing to average.
      */
     avgCostPerKg: perKg(acc.stockValue, onHandKg),
+    purchaseValue: moneyPair(acc.purchaseValue),
+    avgPurchasePerKg: perKg(acc.purchaseValue, onHandKg),
     avgSellPerKg: perKg(revenue, soldKg),
     marginPct: revenue.local.isZero() ? null : percentage(grossProfit.local, revenue.local),
     profitPerKg: perKg(grossProfit, soldKg),
@@ -580,6 +600,14 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
     const rate = orderRateOf(batchId);
     return rate ? localAmount.dividedBy(rate) : stored;
   };
+  const purchaseOf = (batchId: string): Pair => {
+    const usd = costingById.get(batchId)?.purchasePerKgUsd ?? new Decimal(0);
+    return { local: usd.times(orderRateOf(batchId) ?? 0), usd };
+  };
+  const expenseOf = (batchId: string): Pair => {
+    const local = landedOf(batchId).local.minus(purchaseOf(batchId).local);
+    return { local, usd: atOrderRate(batchId, local, landedOf(batchId).usd.minus(purchaseOf(batchId).usd)) };
+  };
 
   // A credit line is in view when its batch and warehouse would be.
   const batchInView = (batchId: string) => {
@@ -624,6 +652,8 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
       local: onHand.times(landed.local),
       usd: atOrderRate(m.batchId, onHand.times(landed.local), onHand.times(landed.usd)),
     });
+    const purchase = purchaseOf(m.batchId);
+    acc.purchaseValue = addPair(acc.purchaseValue, { local: onHand.times(purchase.local), usd: onHand.times(purchase.usd) });
     const receivedToDate = dec(m.receivedToDate);
     const inflowToDate = dec(m.inflowToDate);
     acc.receivedBasis = {
@@ -869,7 +899,10 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
                       batchNumber: b.batchNumber,
                       lotNumber: b.lot.lotNumber,
                       containerNumber: b.container?.containerNumber ?? null,
-                      landedPerKg: landedOf(batchId),
+                      landedPerKg: unitPair({ local: landedOf(batchId).local, usd: atOrderRate(batchId, landedOf(batchId).local, landedOf(batchId).usd) }),
+                      purchasePerKg: unitPair(purchaseOf(batchId)),
+                      expensePerKg: unitPair(expenseOf(batchId)),
+                      rateLocalPerUsd: orderRateOf(batchId),
                       ...measure(node.acc),
                       warehouses: warehouseNodes(node.warehouses),
                     };

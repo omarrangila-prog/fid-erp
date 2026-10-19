@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
-import { getRateDefaults } from '@/lib/services/exchange-rate';
+import { getRateDefaults, getQuietLocalRate } from '@/lib/services/exchange-rate';
 import { getTaxSettings, listTaxCodes } from '@/lib/services/tax';
 import { prisma, transaction } from '@/lib/db';
 import { getSellableStock } from '@/lib/services/stock';
@@ -105,6 +105,7 @@ export default async function NewSalePage() {
   const rates = await getRateDefaults(user.activeCompany.id);
   const invoiceNumber = await transaction((tx) => suggestSalesInvoiceNumber(tx, companyId));
 
+  const quietLocalRate = await getQuietLocalRate(user.activeCompany.id, rates);
   return (
     <div className="space-y-6">
       <PageHeader
@@ -124,7 +125,7 @@ export default async function NewSalePage() {
         stock={stockOptions}
         localCurrency={user.activeCompany.localCurrency}
         defaultCurrency={defaultCurrency}
-        defaultLocalRate={rates.local}
+        defaultLocalRate={quietLocalRate}
         ratesByCurrency={rates.byCurrency}
         taxCodes={taxCodes}
         taxLabel={taxSettings.label}

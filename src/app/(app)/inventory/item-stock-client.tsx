@@ -49,6 +49,9 @@ export type ItemStockRow = {
   };
   /** Null when this person may not see purchase costs. */
   avgCost: PairText | null;
+  /** What the stock still here cost to buy: USD first. */
+  avgPurchase: PairText | null;
+  purchaseValue: PairText | null;
   cogs: PairText | null;
   stockValue: PairText | null;
   /** Null when this person may not see sales. */
@@ -60,7 +63,7 @@ export type ItemStockRow = {
   profit: (PairText & { loss: boolean }) | null;
   profitPerKg: PairText | null;
   margin: string | null;
-  sort: { avgCost: number; avgSell: number; revenue: number; collected: number; outstanding: number; cogs: number; profit: number; margin: number; stockValue: number };
+  sort: { avgCost: number; avgPurchase: number; purchaseValue: number; avgSell: number; revenue: number; collected: number; outstanding: number; cogs: number; profit: number; margin: number; stockValue: number };
 };
 
 
@@ -188,6 +191,28 @@ export function ItemStockClient({
             // per-kilo averages, which means nothing.
             exportValue: (r) => r.sort.avgCost,
             cell: (r) => money(r.avgCost),
+          },
+          {
+            id: 'avgPurchase',
+            header: 'Avg Purchase/KG',
+            numeric: true,
+            hideable: true,
+            mobile: 'hidden',
+            sortValue: (r) => r.sort.avgPurchase,
+            // USD a KG, an average — not a money column in the export.
+            exportValue: (r) => r.sort.avgPurchase,
+            cell: (r) => money(r.avgPurchase),
+          },
+          {
+            id: 'purchaseValue',
+            header: 'Remaining Purchase Value USD',
+            numeric: true,
+            hideable: true,
+            mobile: 'hidden',
+            sortValue: (r) => r.sort.purchaseValue,
+            exportValue: (r) => r.sort.purchaseValue,
+            exportType: 'money',
+            cell: (r) => money(r.purchaseValue),
           },
           {
             id: 'stockValue',
