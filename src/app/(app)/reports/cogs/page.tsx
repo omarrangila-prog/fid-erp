@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { requirePageAccess } from '@/lib/auth/guards';
+import { requirePageAccess, can } from '@/lib/auth/guards';
+import { getInventoryValuation } from '@/lib/services/stock';
 import { PERMISSIONS } from '@/lib/constants';
 import { getCogsReport } from '@/lib/services/profitability';
 import { formatMoney, formatDate, formatQuantityKg, dayParam, companyToday } from '@/lib/format';
@@ -61,6 +62,14 @@ export default async function CogsReportPage({
     showLocal && row.rateLocalPerUsd ? local.dividedBy(row.rateLocalPerUsd) : stored;
   const revenueMgmt = rows.reduce((sum, row) => sum.plus(mgmt(row, row.revenueLocal, row.revenueUsd)), dec(0));
   const cogsMgmt = rows.reduce((sum, row) => sum.plus(mgmt(row, row.cogsLocal, row.cogsUsd)), dec(0));
+  /*
+   * The stock still in hand, at cost, beside the realised profit and never in
+   * it: the cost of the coffee not yet sold stays an asset until it sells.
+   * As it stands today, the figure Inventory Valuation shows.
+   */
+  const stillInHand = can(user, PERMISSIONS.PURCHASE_COST_VIEW)
+    ? (await getInventoryValuation(user.activeCompany.id)).reduce((t, l) => ({ local: t.local.plus(l.valueLocal), usd: t.usd.plus(l.valueUsd) }), { local: dec(0), usd: dec(0) })
+    : null;
 
   return (
     <div className="space-y-6">
@@ -89,12 +98,26 @@ export default async function CogsReportPage({
         <Metric label="Revenue" value={showLocal ? formatMoney(revenueLocal, local) : formatMoney(revenue, 'USD')} hint={showLocal ? `≈ ${formatMoney(revenueMgmt, 'USD')}` : undefined} />
         <Metric label="COGS" value={showLocal ? formatMoney(cogsLocal, local) : formatMoney(cogs, 'USD')} hint={showLocal ? `≈ ${formatMoney(cogsMgmt, 'USD')}` : undefined} />
         <Metric
-          label={(showLocal ? gpLocal : gp).isNegative() ? 'Gross loss' : 'Gross profit'}
+          label={(showLocal ? gpLocal : gp).isNegative() ? 'Realised gross loss on sold goods' : 'Realised gross profit on sold goods'}
           value={showLocal ? formatMoney(gpLocal, local) : formatMoney(gp, 'USD')}
           hint={showLocal ? `≈ ${formatMoney(revenueMgmt.minus(cogsMgmt), 'USD')}` : undefined}
           tone={(showLocal ? gpLocal : gp).greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
         />
+        {stillInHand ? (
+          <Metric
+            label="Remaining inventory at cost — not profit"
+            value={showLocal ? formatMoney(stillInHand.local, local) : formatMoney(stillInHand.usd, 'USD')}
+            hint="Today, as Inventory Valuation shows it"
+            tone="muted"
+          />
+        ) : null}
       </MetricGrid>
+      <p className="text-xs text-ink-subtle">
+        Profit here is realised on coffee already sold. Coffee still in hand is carried at cost in{' '}
+        <Link href="/reports/inventory-valuation" className="underline underline-offset-2">Inventory Valuation</Link>; a shipment&rsquo;s final net profit is
+        shown once it is closed, on{' '}
+        <Link href="/profitability" className="underline underline-offset-2">Shipment Profitability</Link>.
+      </p>
 
       {rows.length === 0 ? (
         <EmptyState title="Nothing sold in this period" description="Posted invoices freeze cost of goods on each line." />

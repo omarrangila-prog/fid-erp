@@ -153,6 +153,22 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
              c."customerName", si."subtotal"
     ORDER BY si."invoiceDate" DESC, si."invoiceNumber" DESC`;
   const invoiceIds = soldFromHere.map((inv) => inv.id);
+  // §26: the same sales line by line — item, batch, warehouse, rate — for tracing.
+  const saleLines = invoiceIds.length
+    ? await prisma.$queryRaw<
+        Array<{ lineId: string; invoiceId: string; itemName: string; batchNumber: string; containerNumber: string | null; warehouseName: string | null; kg: string; rate: string; amount: string }>
+      >`
+        SELECT sil."id" AS "lineId", sil."salesInvoiceId" AS "invoiceId", ci."itemName", b."batchNumber", ct."containerNumber",
+               w."name" AS "warehouseName", sil."quantityKg"::text AS kg, sil."unitPriceKg"::text AS rate, sil."lineTotal"::text AS amount
+          FROM sales_invoice_lines sil
+          JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
+          JOIN batches b ON b."id" = sil."batchId"
+          JOIN coffee_items ci ON ci."id" = sil."itemId"
+          LEFT JOIN containers ct ON ct."id" = b."containerId"
+          LEFT JOIN warehouses w ON w."id" = sil."warehouseId"
+         WHERE si."companyId" = ${companyId} AND b."shipmentId" = ANY(${ids}) AND si."id" = ANY(${invoiceIds})
+         ORDER BY si."invoiceDate" DESC, si."invoiceNumber" DESC, sil."lineNumber"`
+    : [];
 
   const [settlements, pnlRows, jobCost, costSheet, batches, orderExpenses, shippingLines, customers, ports, invoiceEdits, receivables] = await Promise.all([
     Promise.all(ids.map((recordId) => getShipmentSettlement(prisma as never, companyId, recordId))),
@@ -861,6 +877,68 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
               </Table>
             </TableWrap>
           )}
+          {saleLines.length ? (
+            <details className="border-t border-line" data-testid="shipment-sale-lines">
+              <summary className="cursor-pointer px-5 py-3 text-sm font-medium text-forest-800">
+                Line by line — item, batch, warehouse, rate, paid and outstanding ({saleLines.length} {saleLines.length === 1 ? 'line' : 'lines'})
+              </summary>
+              <TableWrap className="rounded-none border-0 border-t">
+                <Table>
+                  <THead>
+                    <TR className="hover:bg-transparent">
+                      <TH>Invoice</TH>
+                      <TH>Date</TH>
+                      <TH>Customer</TH>
+                      <TH>Item</TH>
+                      <TH>Shipment ref</TH>
+                      <TH>Batch</TH>
+                      <TH>Warehouse</TH>
+                      <TH numeric>Qty sold</TH>
+                      <TH numeric>Rate / KG</TH>
+                      <TH numeric>Sales amount</TH>
+                      <TH numeric>Paid</TH>
+                      <TH numeric>Outstanding</TH>
+                    </TR>
+                  </THead>
+                  <TBody>
+                    {saleLines.map((line) => {
+                      const inv = soldFromHere.find((x) => x.id === line.invoiceId)!;
+                      const due = receivableByInvoice.get(line.invoiceId);
+                      // An invoice's payments and balance, shared over its lines by value.
+                      const whole = dec(inv.invoiceSubtotal);
+                      const share = whole.greaterThan(0) ? dec(line.amount).dividedBy(whole) : dec(0);
+                      const draft = inv.status === 'DRAFT';
+                      return (
+                        <TR key={line.lineId}>
+                          <TD className="whitespace-nowrap">
+                            <Link href={`/sales/${inv.id}`} className="font-medium text-forest-800 hover:text-gold-700">
+                              {shortDocumentNumber(inv.invoiceNumber)}
+                            </Link>
+                            {draft ? <span className="block text-[11px] text-ink-subtle">Draft</span> : null}
+                          </TD>
+                          <TD className="whitespace-nowrap text-xs">{formatDate(inv.invoiceDate)}</TD>
+                          <TD className="text-sm">{inv.customerName}</TD>
+                          <TD className="text-sm">{line.itemName}</TD>
+                          <TD className="font-mono text-xs">{shipment.purchaseContract.contractReference}</TD>
+                          <TD className="text-xs">
+                            {line.batchNumber}
+                            {line.containerNumber ? <span className="block font-mono text-[11px] text-ink-subtle">{line.containerNumber}</span> : null}
+                          </TD>
+                          <TD className="text-xs">{line.warehouseName ?? '—'}</TD>
+                          <TD numeric>{formatQuantityKg(dec(line.kg))}</TD>
+                          <TD numeric>{formatMoney(dec(line.rate), inv.currency)}</TD>
+                          <TD numeric>{formatMoney(dec(line.amount), inv.currency)}</TD>
+                          <TD numeric>{draft || !due ? '—' : formatMoney(toMoney(dec(due.paidAmount).times(share)), inv.currency)}</TD>
+                          <TD numeric>{draft || !due ? '—' : formatMoney(toMoney(dec(due.outstandingAmount).times(share)), inv.currency)}</TD>
+                        </TR>
+                      );
+                    })}
+                  </TBody>
+                </Table>
+              </TableWrap>
+              <p className="px-5 py-2 text-[11px] text-ink-subtle">Paid and outstanding are the invoice&rsquo;s, shared over its lines by value. They do not change the profit.</p>
+            </details>
+          ) : null}
         </CardContent>
       </Card>
 

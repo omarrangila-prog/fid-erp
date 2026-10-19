@@ -552,6 +552,25 @@ const REPORTS: Record<string, Report> = {
       const local = user.activeCompany.localCurrency;
       const byContract = view === 'contract';
 
+      // Each container's stage: profit on what sold, stock at cost beside it,
+      // and a final result only once it is closed — as the screen shows it.
+      const closedDates = await getClosedDates(companyId, rows.map((r) => r.shipmentId));
+      const stageOf = new Map(
+        rows.map((r) => {
+          const stage = shipmentStage({ remainingKg: r.onHandQuantityKg, soldKg: r.soldQuantityKg, closed: r.status === 'CLOSED' });
+          const result = shipmentResult({
+            stage,
+            revenueLocal: r.salesRevenueLocal,
+            grossProfitLocal: r.grossProfitLocal,
+            soldKg: r.soldQuantityKg,
+            periodCostsLocal: r.otherCostsLocal,
+            overheadLocal: r.allocatedOverheadLocal,
+          });
+          return [r.shipmentId, { stage, result }] as const;
+        }),
+      );
+      const st = (r: (typeof rows)[number]) => stageOf.get(r.shipmentId)!;
+
       // The statement layout: every measure the screen lays out, one shipment per row.
       if (view === 'statement') {
         return buildWorkbook({
@@ -599,28 +618,14 @@ const REPORTS: Record<string, Report> = {
             { header: 'Gross margin', value: (r) => Number(r.grossMarginPct) / 100, type: 'percent' as const },
             { header: 'Net margin', value: (r) => Number(r.netMarginPct) / 100, type: 'percent' as const },
             { header: 'Profit per KG (USD)', value: (r) => Number(r.profitPerKgUsd), type: 'money' as const },
+            { header: 'Shipment stage', value: (r) => SHIPMENT_STAGE_LABELS[st(r).stage], width: 30 },
+            { header: `Remaining inventory value (${local}) — at cost, not profit`, value: (r) => Number(r.closingStockValueLocal), type: 'money' as const },
+            { header: `Final net profit (${local})`, value: (r) => (st(r).stage === 'CLOSED' ? Number(st(r).result.netLocal) : 'Not final') },
+            { header: 'Closed date', value: (r) => (closedDates.get(r.shipmentId) ? asDay(closedDates.get(r.shipmentId)!) : '') },
           ],
         });
       }
 
-      // Each container's stage: profit on what sold, stock at cost beside it,
-      // and a final result only once it is closed — as the screen shows it.
-      const closedDates = await getClosedDates(companyId, rows.map((r) => r.shipmentId));
-      const stageOf = new Map(
-        rows.map((r) => {
-          const stage = shipmentStage({ remainingKg: r.onHandQuantityKg, soldKg: r.soldQuantityKg, closed: r.status === 'CLOSED' });
-          const result = shipmentResult({
-            stage,
-            revenueLocal: r.salesRevenueLocal,
-            grossProfitLocal: r.grossProfitLocal,
-            soldKg: r.soldQuantityKg,
-            periodCostsLocal: r.otherCostsLocal,
-            overheadLocal: r.allocatedOverheadLocal,
-          });
-          return [r.shipmentId, { stage, result }] as const;
-        }),
-      );
-      const st = (r: (typeof rows)[number]) => stageOf.get(r.shipmentId)!;
       return buildWorkbook({
         companyName: user.activeCompany.name,
         timeZone: user.activeCompany.timezone,

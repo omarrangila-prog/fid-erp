@@ -2,9 +2,10 @@ import Link from 'next/link';
 import { getShipmentProfitability, getShipmentExpensesByCategory, type ShipmentProfitability } from '@/lib/services/profitability';
 import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
 import { Decimal, dec, sum } from '@/lib/money';
-import { formatMoney, formatQuantityKg, formatPercent } from '@/lib/format';
+import { formatMoney, formatQuantityKg, formatPercent, formatDate } from '@/lib/format';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { shipmentStage, shipmentResult, getClosedDates, SHIPMENT_STAGE_LABELS } from '@/lib/services/shipment-performance';
 
 /**
  * The profitability statement the client laid out: one column per shipment,
@@ -30,6 +31,26 @@ export async function ProfitabilityStatement({
   ]);
   const rows = (contractId ? all.filter((r) => r.contractId === contractId) : all).slice().reverse();
   const hasOverhead = rows.some((r) => !r.allocatedOverheadUsd.isZero());
+  /*
+   * Each column's stage: profit on what sold, stock in hand at cost apart
+   * from it, and a final result only for a closed shipment.
+   */
+  const closedDates = await getClosedDates(companyId, rows.map((r) => r.shipmentId));
+  const stageOf = new Map(
+    rows.map((r) => {
+      const stage = shipmentStage({ remainingKg: r.onHandQuantityKg, soldKg: r.soldQuantityKg, closed: r.status === 'CLOSED' });
+      const result = shipmentResult({
+        stage,
+        revenueLocal: r.salesRevenueLocal,
+        grossProfitLocal: r.grossProfitLocal,
+        soldKg: r.soldQuantityKg,
+        periodCostsLocal: r.otherCostsLocal,
+        overheadLocal: r.allocatedOverheadLocal,
+      });
+      return [r.shipmentId, { stage, result }] as const;
+    }),
+  );
+  const isFinal = (r: ShipmentProfitability) => stageOf.get(r.shipmentId)!.stage === 'CLOSED';
 
   // Every direct-cost category booked to any of these shipments, each its own
   // line — freight, clearing, transport — so the total is not one opaque sum.
@@ -51,6 +72,10 @@ export async function ProfitabilityStatement({
     emphasis?: 'strong' | 'final';
     tone?: 'profit';
     group?: string;
+    /** Words instead of the figure for this column — "Not final" for an open shipment. */
+    text?: (r: ShipmentProfitability) => string | null;
+    /** Words instead of the total. */
+    totalText?: string;
   };
 
   const ratio = (a: Decimal, b: Decimal) => (b.isZero() ? new Decimal(0) : a.dividedBy(b));
@@ -59,8 +84,9 @@ export async function ProfitabilityStatement({
     { key: 'receivedKg', label: 'Received', of: (r) => r.receivedQuantityKg, kind: 'kg' },
     { key: 'soldKg', label: 'Sold', of: (r) => r.soldQuantityKg, kind: 'kg' },
     { key: 'remainingKg', label: 'Remaining stock (purchased less sold)', of: (r) => r.remainingQuantityKg, kind: 'kg' },
-    { key: 'onHandKg', label: 'On hand in the warehouses', of: (r) => r.onHandQuantityKg, kind: 'kg' },
-    { key: 'closingValue', label: 'Closing stock value', of: (r) => r.closingStockValueUsd, kind: 'usd' },
+    { key: 'onHandKg', label: 'Remaining available for sale', of: (r) => r.onHandQuantityKg, kind: 'kg', group: 'Goods in hand — at cost, not profit' },
+    { key: 'closingValueLocal', label: `Remaining inventory value (${local})`, of: (r) => r.closingStockValueLocal, kind: 'local', emphasis: 'strong' },
+    { key: 'closingValue', label: 'Remaining inventory value (USD)', of: (r) => r.closingStockValueUsd, kind: 'usd' },
 
     { key: 'purchaseUsd', label: 'Purchase cost', of: (r) => r.goodsCostUsd, kind: 'usd', group: 'Landed cost' },
     ...categories.map(
@@ -91,7 +117,7 @@ export async function ProfitabilityStatement({
       total: (t) => ratio(t.get('landedLocal')!, t.get('purchasedKg')!),
     },
 
-    { key: 'revenueUsd', label: 'Sales revenue', of: (r) => r.salesRevenueUsd, kind: 'usd', group: 'Result on what has sold' },
+    { key: 'revenueUsd', label: 'Sales revenue', of: (r) => r.salesRevenueUsd, kind: 'usd', group: 'Sold goods performance' },
     {
       key: 'avgPrice',
       label: 'Average selling price per KG',
@@ -100,13 +126,23 @@ export async function ProfitabilityStatement({
       total: (t) => ratio(t.get('revenueUsd')!, t.get('soldKg')!),
     },
     { key: 'cogsUsd', label: 'Cost of goods sold', of: (r) => r.allocatedLandedCostUsd, kind: 'usd' },
-    { key: 'grossUsd', label: 'Gross profit', of: (r) => r.grossProfitUsd, kind: 'usd', emphasis: 'strong', tone: 'profit' },
+    { key: 'grossUsd', label: 'Gross profit on sold goods', of: (r) => r.grossProfitUsd, kind: 'usd', emphasis: 'strong', tone: 'profit' },
     { key: 'otherUsd', label: 'Other shipment costs', of: (r) => r.otherCostsUsd, kind: 'usd' },
-    { key: 'netUsd', label: 'Net profit', of: (r) => r.netProfitUsd, kind: 'usd', emphasis: 'final', tone: 'profit' },
+    { key: 'netUsd', label: 'Net profit — to date until closed', of: (r) => r.netProfitUsd, kind: 'usd', emphasis: 'strong', tone: 'profit' },
     { key: 'revenueLocal', label: `Sales revenue (${local})`, of: (r) => r.salesRevenueLocal, kind: 'local' },
     { key: 'cogsLocal', label: `Cost of goods sold (${local})`, of: (r) => r.allocatedLandedCostLocal, kind: 'local' },
-    { key: 'grossLocal', label: `Gross profit (${local})`, of: (r) => r.grossProfitLocal, kind: 'local', emphasis: 'strong', tone: 'profit' },
-    { key: 'netLocal', label: `Net profit (${local})`, of: (r) => r.netProfitLocal, kind: 'local', emphasis: 'final', tone: 'profit' },
+    { key: 'grossLocal', label: `Gross profit on sold goods (${local})`, of: (r) => r.grossProfitLocal, kind: 'local', emphasis: 'strong', tone: 'profit' },
+    { key: 'netLocal', label: `Net profit — to date until closed (${local})`, of: (r) => r.netProfitLocal, kind: 'local', emphasis: 'strong', tone: 'profit' },
+    {
+      key: 'finalLocal',
+      label: `Final net profit / loss (${local})`,
+      of: (r) => (isFinal(r) ? stageOf.get(r.shipmentId)!.result.netLocal : new Decimal(0)),
+      kind: 'local',
+      emphasis: 'final',
+      tone: 'profit',
+      text: (r) => (isFinal(r) ? null : 'Not final'),
+      totalText: rows.every(isFinal) ? undefined : 'Closed shipments only',
+    },
     {
       key: 'grossMargin',
       label: 'Gross margin',
@@ -190,6 +226,10 @@ export async function ProfitabilityStatement({
                     </Link>
                     <span className="block text-[11px] font-normal text-ink-subtle">{shipmentOrdinalLabel(ordinals.get(r.shipmentId))}</span>
                     <span className="block text-[11px] font-normal text-ink-muted">{r.itemName}</span>
+                    <span className="block text-[11px] font-normal text-ink-subtle" data-testid="statement-stage">
+                      {SHIPMENT_STAGE_LABELS[stageOf.get(r.shipmentId)!.stage]}
+                      {closedDates.get(r.shipmentId) ? ` · ${formatDate(closedDates.get(r.shipmentId)!)}` : ''}
+                    </span>
                   </th>
                 ))}
                 <th className="min-w-[9rem] border-l border-line px-3 py-2 text-right font-semibold">Total</th>
@@ -211,14 +251,15 @@ export async function ProfitabilityStatement({
                   </td>
                   {rows.map((r) => {
                     const value = m.of(r);
+                    const words = m.text?.(r) ?? null;
                     return (
-                      <td key={r.shipmentId} className={cn('tnum px-3 py-1.5 text-right', toneOf(m, value))}>
-                        {format(m, value)}
+                      <td key={r.shipmentId} className={cn('tnum px-3 py-1.5 text-right', words ? 'text-ink-subtle' : toneOf(m, value))}>
+                        {words ?? format(m, value)}
                       </td>
                     );
                   })}
-                  <td className={cn('tnum border-l border-line px-3 py-1.5 text-right font-semibold', toneOf(m, totals.get(m.key)!))}>
-                    {format(m, totals.get(m.key)!)}
+                  <td className={cn('tnum border-l border-line px-3 py-1.5 text-right font-semibold', m.totalText ? 'text-ink-subtle' : toneOf(m, totals.get(m.key)!))}>
+                    {m.totalText ?? format(m, totals.get(m.key)!)}
                   </td>
                 </tr>
               ))}
