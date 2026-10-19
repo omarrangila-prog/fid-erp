@@ -19,6 +19,7 @@ import { getShipmentSettlement } from '@/lib/services/shipment';
 import { getShipmentProfitability } from '@/lib/services/profitability';
 import { DualAmount } from '@/components/shared/dual-amount';
 import { effectiveLocalRate } from '@/lib/purchase-fx';
+import { shipmentProfitStage } from '@/lib/shipment-profit-stage';
 import { getReceivables } from '@/lib/services/receivables';
 import { shortDocumentNumber } from '@/lib/short-number';
 import { getJobCostSummary, getShipmentCostSheet } from '@/lib/services/landed-cost';
@@ -663,32 +664,81 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <MetricGrid className="lg:grid-cols-5">
-              <Metric label="Sold" value={formatQuantityKg(profit.soldQuantityKg)} />
-              <Metric label="Remaining stock" value={formatQuantityKg(profit.remainingQuantityKg)} tone="muted" />
-              <Metric label="Sales revenue" value={<DualAmount amount={profit.salesRevenueLocal} currency={local} localCurrency={local} rateLocalPerUsd={poRate} rateSource={MGMT} />} />
-              <Metric label="Landed cost of sales" value={<DualAmount amount={profit.allocatedLandedCostLocal} currency={local} localCurrency={local} rateLocalPerUsd={poRate} rateSource={MGMT} />} tone="muted" />
-              <Metric
-                label={profit.grossProfitLocal.isNegative() ? 'Gross loss' : 'Gross profit'}
-                value={<DualAmount amount={profit.grossProfitLocal} currency={local} localCurrency={local} rateLocalPerUsd={poRate} rateSource={MGMT} />}
-                tone={profit.grossProfitLocal.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
-                hint={`${formatPercent(profit.grossMarginPct)} gross margin`}
-              />
-              <Metric label="Period costs" value={<DualAmount amount={profit.otherCostsLocal} currency={local} localCurrency={local} rateLocalPerUsd={poRate} rateSource={MGMT} />} tone="muted" />
-              <Metric
-                label={profit.netProfitLocal.isNegative() ? 'Net loss' : 'Net profit'}
-                value={<DualAmount amount={profit.netProfitLocal} currency={local} localCurrency={local} rateLocalPerUsd={poRate} rateSource={MGMT} />}
-                tone={profit.netProfitLocal.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
-                hint={`${formatPercent(profit.netMarginPct)} margin`}
-              />
-              <Metric label="Profit per KG" value={<DualAmount amount={profit.profitPerKgLocal} currency={local} localCurrency={local} rateLocalPerUsd={poRate} rateSource={MGMT} />} />
-              {jobCost && costSheet ? (
-                <>
-                  <Metric label="Landed cost / KG" value={<DualAmount amount={costSheet.costPerKgLocal} currency={local} localCurrency={local} rateLocalPerUsd={poRate} rateSource={MGMT} />} />
-                  <Metric label="Landed cost / bag" value={formatMoney(jobCost.landedCostPerBagUsd, 'USD')} />
-                </>
-              ) : null}
-            </MetricGrid>
+            {(() => {
+              const amount = (value: ReturnType<typeof dec>) => (
+                <DualAmount amount={value} currency={local} localCurrency={local} rateLocalPerUsd={poRate} rateSource={MGMT} />
+              );
+              const outstanding = customerSalesLocalOnly ? settlementLocal.outstanding : settlement.outstandingUsd;
+              const stage = shipmentProfitStage({ remainingKg: profit.remainingQuantityKg, outstanding });
+              const hasOverhead = !profit.otherCostsLocal.isZero();
+              const grossLoss = profit.grossProfitLocal.isNegative();
+              const netLoss = profit.netProfitLocal.isNegative();
+              const landedPerKg =
+                jobCost && costSheet ? (
+                  <>
+                    <Metric label="Landed cost / KG" value={amount(costSheet.costPerKgLocal)} />
+                    <Metric label="Landed cost / bag" value={formatMoney(jobCost.landedCostPerBagUsd, 'USD')} />
+                  </>
+                ) : null;
+              if (stage === 'COMPLETE') {
+                // Sold out and paid for: the profit is final.
+                return (
+                  <MetricGrid className="lg:grid-cols-4" data-testid="profit-final">
+                    <Metric label="Total sales" value={amount(profit.salesRevenueLocal)} />
+                    <Metric label="Total COGS" value={amount(profit.allocatedLandedCostLocal)} tone="muted" />
+                    <Metric
+                      label={grossLoss ? 'Gross loss' : 'Gross profit'}
+                      value={amount(profit.grossProfitLocal)}
+                      tone={grossLoss ? 'negative' : 'positive'}
+                      hint={`${formatPercent(profit.grossMarginPct)} gross margin`}
+                    />
+                    <Metric label="Allocated / general expenses" value={amount(profit.otherCostsLocal)} tone="muted" />
+                    <Metric label={netLoss ? 'Final net loss' : 'Final net profit'} value={amount(profit.netProfitLocal)} tone={netLoss ? 'negative' : 'positive'} />
+                    <Metric label="Net margin" value={formatPercent(profit.netMarginPct)} tone={netLoss ? 'negative' : 'default'} />
+                    <Metric label="Remaining inventory value" value={amount(dec(0))} tone="muted" hint="Sold out" />
+                    {landedPerKg}
+                  </MetricGrid>
+                );
+              }
+              // Still selling, or still collecting: profit to date, never final.
+              const left = profit.remainingQuantityKg.greaterThan(0);
+              return (
+                <MetricGrid className="lg:grid-cols-4" data-testid="profit-to-date">
+                  <Metric label="Sold quantity" value={formatQuantityKg(profit.soldQuantityKg)} />
+                  <Metric label="Sales revenue" value={amount(profit.salesRevenueLocal)} />
+                  <Metric label="COGS of sold goods" value={amount(profit.allocatedLandedCostLocal)} tone="muted" />
+                  <Metric
+                    label={grossLoss ? 'Gross loss on sold goods' : 'Gross profit on sold goods'}
+                    value={amount(profit.grossProfitLocal)}
+                    tone={grossLoss ? 'negative' : 'positive'}
+                  />
+                  <Metric label="Gross margin" value={formatPercent(profit.grossMarginPct)} tone={grossLoss ? 'negative' : 'default'} />
+                  <Metric label="Remaining quantity" value={formatQuantityKg(profit.remainingQuantityKg)} tone="muted" />
+                  {costSheet ? (
+                    <>
+                      <Metric label="Remaining inventory value" value={amount(costSheet.remainingLandedLocal)} tone="muted" />
+                      <Metric
+                        label="Avg remaining cost / KG"
+                        value={costSheet.remainingAvgCostPerKgLocal ? amount(costSheet.remainingAvgCostPerKgLocal) : '—'}
+                        tone="muted"
+                      />
+                    </>
+                  ) : null}
+                  {hasOverhead ? (
+                    <>
+                      <Metric label="Allocated / general expenses" value={amount(profit.otherCostsLocal)} tone="muted" />
+                      <Metric
+                        label={netLoss ? 'Current net loss / loss to date' : 'Current net profit / profit to date'}
+                        value={amount(profit.netProfitLocal)}
+                        tone={netLoss ? 'negative' : 'positive'}
+                        hint={left ? `Not final — ${formatQuantityKg(profit.remainingQuantityKg)} still to sell` : 'Not final — customers still owe'}
+                      />
+                    </>
+                  ) : null}
+                  {landedPerKg}
+                </MetricGrid>
+              );
+            })()}
           </CardContent>
         </Card>
       ) : null}
