@@ -70,6 +70,8 @@ export type ShipmentProfitability = {
   allocatedOverheadUsd: Decimal;
   /** Net profit after that management share — the "fully absorbed" view. */
   profitAfterOverheadUsd: Decimal;
+  /** The same share in the company's currency, as the allocation stated it. */
+  allocatedOverheadLocal: Decimal;
   /** Purchase USD converted at the contract rate, plus local costs. */
   goodsCostLocal: Decimal;
   /** Direct shipment costs in the company's currency, at the contract rate — the same rate COGS uses. */
@@ -177,6 +179,7 @@ function shape(row: RawRow): ShipmentProfitability {
       : new Decimal(0),
     allocatedOverheadUsd: new Decimal(0),
     profitAfterOverheadUsd: netProfitUsd,
+    allocatedOverheadLocal: new Decimal(0),
     /*
      * In the company's own currency. The coffee's dollar cost never moves when
      * the rate paid for those dollars is confirmed — only its dirham cost does
@@ -360,10 +363,12 @@ export async function getShipmentProfitability(params: {
   const overheads = await getOverheadByShipment({ companyId: params.companyId, from: params.from, to: params.to });
   return rows.map((row) => {
     const shaped = shape(row);
-    const allocatedOverheadUsd = toMoney(overheads.get(row.shipmentId) ?? new Decimal(0));
+    const overhead = overheads.get(row.shipmentId);
+    const allocatedOverheadUsd = toMoney(overhead?.usd ?? new Decimal(0));
     return {
       ...shaped,
       allocatedOverheadUsd,
+      allocatedOverheadLocal: toMoney(overhead?.local ?? new Decimal(0)),
       profitAfterOverheadUsd: toMoney(shaped.netProfitUsd.minus(allocatedOverheadUsd)),
     };
   });

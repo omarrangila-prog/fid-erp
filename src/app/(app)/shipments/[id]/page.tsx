@@ -19,12 +19,13 @@ import { getShipmentSettlement } from '@/lib/services/shipment';
 import { getShipmentProfitability } from '@/lib/services/profitability';
 import { DualAmount } from '@/components/shared/dual-amount';
 import { effectiveLocalRate } from '@/lib/purchase-fx';
-import { shipmentProfitStage } from '@/lib/shipment-profit-stage';
+import { shipmentStage, shipmentResult, getClosedDates } from '@/lib/services/shipment-performance';
+import { ShipmentPerformanceView } from '@/app/(app)/shipments/[id]/shipment-performance-view';
 import { getReceivables } from '@/lib/services/receivables';
 import { shortDocumentNumber } from '@/lib/short-number';
 import { getJobCostSummary, getShipmentCostSheet } from '@/lib/services/landed-cost';
 import { getBatchStock } from '@/lib/services/stock';
-import { formatMoney, formatQuantityKg, formatQuantityMt, formatDate, formatDateTime, formatPercent, formatRate, toDateInputValue } from '@/lib/format';
+import { formatMoney, formatQuantityKg, formatQuantityMt, formatDate, formatDateTime, formatRate, toDateInputValue } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Metric, MetricGrid, DetailRow } from '@/components/shared/stat-card';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -272,6 +273,60 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
         };
       })()
     : null;
+
+  /*
+   * The shipment's performance, read from its cost sheet — the same costing
+   * Stock on Hand and the reports use — with the period costs and overhead
+   * share from its profitability. Final only once every record is closed.
+   */
+  const performance = costSheet
+    ? await (async () => {
+        const [byWarehouse, closedDates] = await Promise.all([
+          prisma.inventoryBalance.groupBy({
+            by: ['warehouseId'],
+            where: { companyId, batch: { shipmentId: { in: ids } }, onHandKg: { gt: 0 } },
+            _sum: { onHandKg: true },
+          }),
+          getClosedDates(companyId, ids),
+        ]);
+        const names = new Map(
+          (await prisma.warehouse.findMany({ where: { companyId, id: { in: byWarehouse.map((w) => w.warehouseId) } }, select: { id: true, name: true } })).map((w) => [w.id, w.name]),
+        );
+        const closed = records.every((r) => r.status === 'CLOSED');
+        const stage = shipmentStage({ remainingKg: costSheet.remainingKg, soldKg: costSheet.soldKg, closed });
+        const closedAt = closed ? [...closedDates.values()].reduce<Date | null>((latest, d) => (!latest || d > latest ? d : latest), null) : null;
+        return {
+          closedAt,
+          figures: {
+            local: costSheet.localCurrency,
+            rateLocalPerUsd: costSheet.rateLocalPerUsd,
+            soldKg: costSheet.soldKg,
+            revenueLocal: costSheet.revenueLocal,
+            cogsLocal: costSheet.cogsLocal,
+            grossProfitLocal: costSheet.grossProfitLocal,
+            grossMarginPct: costSheet.profitPct,
+            remainingKg: costSheet.remainingKg,
+            remainingPurchasePerKgUsd: costSheet.remainingPurchasePerKgUsd,
+            remainingAvgCostPerKgLocal: costSheet.remainingAvgCostPerKgLocal,
+            remainingPurchaseUsd: costSheet.remainingPurchaseUsd,
+            remainingPurchaseLocal: costSheet.remainingPurchaseLocal,
+            remainingLandedLocal: costSheet.remainingLandedLocal,
+            totalLandedLocal: costSheet.totalShipmentCostLocal,
+            warehouses: byWarehouse
+              .map((w) => ({ name: names.get(w.warehouseId) ?? '—', kg: dec(w._sum.onHandKg ?? 0) }))
+              .sort((x, y) => x.name.localeCompare(y.name)),
+          },
+          result: shipmentResult({
+            stage,
+            revenueLocal: costSheet.revenueLocal,
+            grossProfitLocal: costSheet.grossProfitLocal,
+            soldKg: costSheet.soldKg,
+            periodCostsLocal: profit?.otherCostsLocal ?? dec(0),
+            overheadLocal: total((r) => r.allocatedOverheadLocal),
+          }),
+        };
+      })()
+    : null;
   // Sales in the company's currency are at each invoice's own rate; this is
   // their weighted rate, used only to restate what has been received.
   const salesRate = profit && profit.salesRevenueUsd.greaterThan(0) ? profit.salesRevenueLocal.dividedBy(profit.salesRevenueUsd) : null;
@@ -437,111 +492,9 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                 label="Cost / KG"
                 value={<DualAmount amount={costSheet.costPerKgLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} rateLocalPerUsd={poRate} rateSource={MGMT} />}
               />
-              <Metric
-                label="Revenue"
-                value={<DualAmount amount={costSheet.revenueLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} rateLocalPerUsd={poRate} rateSource={MGMT} />}
-              />
-              <Metric
-                label="COGS"
-                value={<DualAmount amount={costSheet.cogsLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} rateLocalPerUsd={poRate} rateSource={MGMT} />}
-                tone="muted"
-              />
-              <Metric
-                label={costSheet.grossProfitLocal.isNegative() ? 'Gross loss' : 'Gross profit'}
-                value={<DualAmount amount={costSheet.grossProfitLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} rateLocalPerUsd={poRate} rateSource={MGMT} />}
-                tone={costSheet.grossProfitLocal.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
-                hint={`${formatPercent(costSheet.profitPct)} gross margin`}
-              />
-              <Metric
-                label="Remaining available for sale"
-                value={formatQuantityKg(costSheet.remainingKg)}
-                tone="muted"
-                hint={`of ${formatQuantityKg(costSheet.receivedKg)} received`}
-              />
+              {jobCost ? <Metric label="Landed cost / bag" value={formatMoney(jobCost.landedCostPerBagUsd, 'USD')} /> : null}
             </MetricGrid>
 
-            {/*
-              What is still in the warehouse and what it is worth.
-              A consignment stays open while the last few hundred kilos sell,
-              so the coffee sold and the coffee still here have to be told
-              apart — the whole shipment cost is not cost of sales while stock
-              remains. Each container at its own landed cost, read from the
-              same batch costing as Stock on Hand so the two never disagree,
-              at the order's USD/MAD rate.
-            */}
-            {costSheet.remainingKg.greaterThan(0) ? (
-              <div
-                className="rounded-xl border border-line bg-surface-sunken p-4"
-                data-testid="remaining-stock-value"
-              >
-                <p className="text-xs text-ink-muted">Remaining available for sale</p>
-                <p className="tnum text-xl font-semibold text-ink" data-testid="remaining-kg">
-                  {formatQuantityKg(costSheet.remainingKg)}
-                </p>
-                <dl className="mt-3 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
-                  <div>
-                    <dt className="text-xs text-ink-muted">Avg cost / KG</dt>
-                    <dd className="tnum font-semibold text-ink" data-testid="remaining-avg-cost">
-                      {costSheet.remainingAvgCostPerKgLocal ? (
-                        <DualAmount
-                          amount={costSheet.remainingAvgCostPerKgLocal}
-                          currency={costSheet.localCurrency}
-                          localCurrency={costSheet.localCurrency}
-                          rateLocalPerUsd={poRate}
-                          rateSource={MGMT}
-                        />
-                      ) : (
-                        '—'
-                      )}
-                      <span className="block text-xs font-normal text-ink-subtle">landed, as Stock on Hand shows it</span>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-ink-muted">Purchase cost / KG</dt>
-                    <dd className="tnum font-semibold text-ink">
-                      {costSheet.remainingPurchasePerKgUsd ? formatMoney(costSheet.remainingPurchasePerKgUsd, 'USD') : '—'}
-                      <span className="block text-xs font-normal text-ink-subtle" data-testid="remaining-purchase-local-per-unit">
-                        {costSheet.remainingPurchasePerKgUsd
-                          ? `≈ ${formatMoney(costSheet.remainingPurchasePerKgUsd.times(costSheet.rateLocalPerUsd), costSheet.localCurrency)}`
-                          : 'the supplier’s price alone'}
-                      </span>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-ink-muted">USD/MAD rate</dt>
-                    <dd className="tnum font-semibold text-ink" data-testid="remaining-fx">
-                      {formatRate(costSheet.rateLocalPerUsd)}
-                      <span className="block text-xs font-normal text-ink-subtle">from the purchase order</span>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-ink-muted">Remaining purchase value</dt>
-                    <dd className="tnum font-semibold text-ink">
-                      {formatMoney(costSheet.remainingPurchaseUsd, 'USD')}
-                      <span className="block text-xs font-normal text-ink-subtle">
-                        ≈ {formatMoney(costSheet.remainingPurchaseLocal, costSheet.localCurrency)}
-                      </span>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-ink-muted">Remaining inventory value</dt>
-                    <dd className="tnum font-semibold text-forest-800" data-testid="remaining-value">
-                      <DualAmount
-                        amount={costSheet.remainingLandedLocal}
-                        currency={costSheet.localCurrency}
-                        localCurrency={costSheet.localCurrency}
-                        rateLocalPerUsd={poRate}
-                        rateSource={MGMT}
-                      />
-                    </dd>
-                  </div>
-                </dl>
-                <p className="mt-3 text-xs text-ink-subtle">
-                  Each container at its own landed cost — the same figures as Stock on Hand. This is what the coffee
-                  cost, not what it will sell for.
-                </p>
-              </div>
-            ) : null}
 
             {/* §7: where the shipment's money went, line by line. The shared
                 local charges are divided equally between the item/container
@@ -655,90 +608,17 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
         </Card>
       ) : null}
 
-      {showProfit && profit ? (
+      {performance ? (
         <Card>
           <CardHeader>
             <CardTitle>Shipment profitability</CardTitle>
             <CardDescription>
-              Only the coffee that has actually sold counts. Unsold stock stays on the balance sheet.
+              The profit on the coffee already sold, and — separately — what the coffee still in hand cost. Stock in hand is an asset at cost, never profit; the
+              result is final only once the shipment is closed.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {(() => {
-              const amount = (value: ReturnType<typeof dec>) => (
-                <DualAmount amount={value} currency={local} localCurrency={local} rateLocalPerUsd={poRate} rateSource={MGMT} />
-              );
-              const outstanding = customerSalesLocalOnly ? settlementLocal.outstanding : settlement.outstandingUsd;
-              const stage = shipmentProfitStage({ remainingKg: profit.remainingQuantityKg, outstanding });
-              const hasOverhead = !profit.otherCostsLocal.isZero();
-              const grossLoss = profit.grossProfitLocal.isNegative();
-              const netLoss = profit.netProfitLocal.isNegative();
-              const landedPerKg =
-                jobCost && costSheet ? (
-                  <>
-                    <Metric label="Landed cost / KG" value={amount(costSheet.costPerKgLocal)} />
-                    <Metric label="Landed cost / bag" value={formatMoney(jobCost.landedCostPerBagUsd, 'USD')} />
-                  </>
-                ) : null;
-              if (stage === 'COMPLETE') {
-                // Sold out and paid for: the profit is final.
-                return (
-                  <MetricGrid className="lg:grid-cols-4" data-testid="profit-final">
-                    <Metric label="Total sales" value={amount(profit.salesRevenueLocal)} />
-                    <Metric label="Total COGS" value={amount(profit.allocatedLandedCostLocal)} tone="muted" />
-                    <Metric
-                      label={grossLoss ? 'Gross loss' : 'Gross profit'}
-                      value={amount(profit.grossProfitLocal)}
-                      tone={grossLoss ? 'negative' : 'positive'}
-                      hint={`${formatPercent(profit.grossMarginPct)} gross margin`}
-                    />
-                    <Metric label="Allocated / general expenses" value={amount(profit.otherCostsLocal)} tone="muted" />
-                    <Metric label={netLoss ? 'Final net loss' : 'Final net profit'} value={amount(profit.netProfitLocal)} tone={netLoss ? 'negative' : 'positive'} />
-                    <Metric label="Net margin" value={formatPercent(profit.netMarginPct)} tone={netLoss ? 'negative' : 'default'} />
-                    <Metric label="Remaining inventory value" value={amount(dec(0))} tone="muted" hint="Sold out" />
-                    {landedPerKg}
-                  </MetricGrid>
-                );
-              }
-              // Still selling, or still collecting: profit to date, never final.
-              const left = profit.remainingQuantityKg.greaterThan(0);
-              return (
-                <MetricGrid className="lg:grid-cols-4" data-testid="profit-to-date">
-                  <Metric label="Sold quantity" value={formatQuantityKg(profit.soldQuantityKg)} />
-                  <Metric label="Sales revenue" value={amount(profit.salesRevenueLocal)} />
-                  <Metric label="COGS of sold goods" value={amount(profit.allocatedLandedCostLocal)} tone="muted" />
-                  <Metric
-                    label={grossLoss ? 'Gross loss on sold goods' : 'Gross profit on sold goods'}
-                    value={amount(profit.grossProfitLocal)}
-                    tone={grossLoss ? 'negative' : 'positive'}
-                  />
-                  <Metric label="Gross margin" value={formatPercent(profit.grossMarginPct)} tone={grossLoss ? 'negative' : 'default'} />
-                  <Metric label="Remaining quantity" value={formatQuantityKg(profit.remainingQuantityKg)} tone="muted" />
-                  {costSheet ? (
-                    <>
-                      <Metric label="Remaining inventory value" value={amount(costSheet.remainingLandedLocal)} tone="muted" />
-                      <Metric
-                        label="Avg remaining cost / KG"
-                        value={costSheet.remainingAvgCostPerKgLocal ? amount(costSheet.remainingAvgCostPerKgLocal) : '—'}
-                        tone="muted"
-                      />
-                    </>
-                  ) : null}
-                  {hasOverhead ? (
-                    <>
-                      <Metric label="Allocated / general expenses" value={amount(profit.otherCostsLocal)} tone="muted" />
-                      <Metric
-                        label={netLoss ? 'Current net loss / loss to date' : 'Current net profit / profit to date'}
-                        value={amount(profit.netProfitLocal)}
-                        tone={netLoss ? 'negative' : 'positive'}
-                        hint={left ? `Not final — ${formatQuantityKg(profit.remainingQuantityKg)} still to sell` : 'Not final — customers still owe'}
-                      />
-                    </>
-                  ) : null}
-                  {landedPerKg}
-                </MetricGrid>
-              );
-            })()}
+            <ShipmentPerformanceView f={performance.figures} result={performance.result} showProfit={showProfit} closedAt={performance.closedAt} shipmentId={shipment.id} />
           </CardContent>
         </Card>
       ) : null}
@@ -865,7 +745,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
 
       <Card>
         <CardHeader>
-          <CardTitle>Sales invoices from this shipment</CardTitle>
+          <CardTitle id="sales-invoices">Sales invoices from this shipment</CardTitle>
           <CardDescription>
             Every invoice with coffee from this shipment, as it stands now — a corrected invoice shows its corrected
             lines. An invoice that also sold other coffee shows only this shipment&rsquo;s part. Drafts are listed but not

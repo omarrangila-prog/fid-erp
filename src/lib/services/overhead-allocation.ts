@@ -275,7 +275,7 @@ export async function getOverheadByShipment(params: {
   companyId: string;
   from?: Date;
   to?: Date;
-}): Promise<Map<string, Decimal>> {
+}): Promise<Map<string, { usd: Decimal; local: Decimal }>> {
   const lines = await prisma.overheadAllocationLine.findMany({
     where: {
       allocation: {
@@ -285,12 +285,13 @@ export async function getOverheadByShipment(params: {
         ...(params.to ? { fromDate: { lte: params.to } } : {}),
       },
     },
-    select: { shipmentId: true, amountUsd: true },
+    select: { shipmentId: true, amountUsd: true, amountLocal: true },
   });
 
-  const byShipment = new Map<string, Decimal>();
+  const byShipment = new Map<string, { usd: Decimal; local: Decimal }>();
   for (const line of lines) {
-    byShipment.set(line.shipmentId, (byShipment.get(line.shipmentId) ?? new Decimal(0)).plus(line.amountUsd));
+    const prev = byShipment.get(line.shipmentId) ?? { usd: new Decimal(0), local: new Decimal(0) };
+    byShipment.set(line.shipmentId, { usd: prev.usd.plus(line.amountUsd), local: prev.local.plus(line.amountLocal) });
   }
   return byShipment;
 }

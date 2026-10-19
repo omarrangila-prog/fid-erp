@@ -27,6 +27,9 @@ import { ExportLinks } from '@/components/shared/export-links';
 import { PrintHeader } from '@/components/shared/print-header';
 import { DualAmount } from '@/components/shared/dual-amount';
 import { ProfitabilityStatement } from './statement-view';
+import { Badge } from '@/components/ui/badge';
+import { formatDate } from '@/lib/format';
+import { shipmentStage, shipmentResult, getClosedDates, SHIPMENT_STAGE_LABELS } from '@/lib/services/shipment-performance';
 import { FavouriteStar } from '@/components/reports/report-statement';
 
 export const metadata: Metadata = { title: 'Profitability' };
@@ -138,6 +141,7 @@ async function ShipmentTable({
   lead?: 'job' | 'contract';
 }) {
   const rows = await getShipmentProfitability({ companyId });
+  const closedDates = await getClosedDates(companyId, rows.map((r) => r.shipmentId));
 
   /*
    * One shipment reference, one row.
@@ -169,12 +173,34 @@ async function ShipmentTable({
           const first = children[0];
           const sold = add(children, (r) => r.soldQuantityKg);
           const purchased = add(children, (r) => r.purchaseQuantityKg);
-          const remaining = add(children, (r) => r.remainingQuantityKg);
           const revenueLocal = add(children, (r) => r.salesRevenueLocal);
           const cogsLocal = add(children, (r) => r.allocatedLandedCostLocal);
           const grossLocal = add(children, (r) => r.grossProfitLocal);
-          const netLocal = add(children, (r) => r.netProfitLocal);
           const stockLocal = add(children, (r) => r.closingStockValueLocal);
+          const received = add(children, (r) => r.receivedQuantityKg);
+          const onHand = add(children, (r) => r.onHandQuantityKg);
+          /*
+           * Profit on what sold, and the stock left at cost beside it — never
+           * in it. The result is final only once every container is closed;
+           * until then any period costs or overhead give a profit to date.
+           */
+          const closed = children.every((r) => r.status === 'CLOSED');
+          const stage = shipmentStage({ remainingKg: onHand, soldKg: sold, closed });
+          const result = shipmentResult({
+            stage,
+            revenueLocal,
+            grossProfitLocal: grossLocal,
+            soldKg: sold,
+            periodCostsLocal: add(children, (r) => r.otherCostsLocal),
+            overheadLocal: add(children, (r) => r.allocatedOverheadLocal),
+          });
+          const closedAt = closed
+            ? children.reduce<Date | null>((latest, r) => {
+                const d = closedDates.get(r.shipmentId);
+                return d && (!latest || d > latest) ? d : latest;
+              }, null)
+            : null;
+          const netLocal = result.netLocal;
           const items = [...new Set(children.map((r) => r.itemName))];
           // Dollars here are a management equivalent at the order's USD/MAD rate.
           const rate = first.rateLocalPerUsd;
@@ -183,34 +209,68 @@ async function ShipmentTable({
           );
           return (
             <details key={first.contractId} className="rounded-xl border border-line" data-testid="shipment-profitability-row">
-              <summary className="grid cursor-pointer list-none grid-cols-2 gap-3 px-4 py-3 text-sm sm:grid-cols-6">
-                <span className="col-span-2 sm:col-span-2">
+              <summary className="grid cursor-pointer list-none grid-cols-2 gap-3 px-4 py-3 text-sm sm:grid-cols-4 lg:grid-cols-8" data-stage={stage}>
+                <span className="col-span-2">
                   <span className="block font-semibold text-forest-800">{first.contractReference}</span>
                   <span className="block text-xs text-ink-subtle">
                     {children.length} {children.length === 1 ? 'container' : 'containers'} · {items.join(', ')}
                   </span>
+                  <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                    <Badge tone={stage === 'CLOSED' ? 'neutral' : stage === 'SOLD_OUT_PENDING' ? 'warning' : 'success'}>{SHIPMENT_STAGE_LABELS[stage]}</Badge>
+                    {closedAt ? <span className="text-[11px] text-ink-subtle">Closed {formatDate(closedAt)}</span> : null}
+                  </span>
                 </span>
                 <span className="tnum text-right">
-                  <span className="block text-[11px] text-ink-subtle">Sold / bought</span>
-                  {formatQuantityKg(sold)} of {formatQuantityKg(purchased)}
-                  <span className="block text-xs text-ink-subtle">{formatQuantityKg(remaining)} left</span>
+                  <span className="block text-[11px] text-ink-subtle">Received / sold</span>
+                  {formatQuantityKg(received)}
+                  <span className="block text-xs text-ink-subtle">{formatQuantityKg(sold)} sold · {formatQuantityKg(onHand)} left</span>
                 </span>
                 <span className="tnum text-right">
                   <span className="block text-[11px] text-ink-subtle">Sales</span>
                   {usd(revenueLocal)}
                 </span>
                 <span className="tnum text-right">
-                  <span className="block text-[11px] text-ink-subtle">Cost of what sold</span>
+                  <span className="block text-[11px] text-ink-subtle">COGS</span>
                   {usd(cogsLocal)}
                 </span>
-                {/* Profit or loss and its margin in the company's currency, where the
-                    order's rate moves the cost; the dollar equivalent beneath it. */}
-                <span className={cn('tnum text-right font-semibold', tone(netLocal))}>
-                  <span className="block text-[11px] font-normal text-ink-subtle">{netLocal.isNegative() ? 'Loss' : 'Profit'}</span>
-                  {usd(netLocal)}
+                <span className={cn('tnum text-right font-semibold', tone(grossLocal))}>
+                  <span className="block text-[11px] font-normal text-ink-subtle">{grossLocal.isNegative() ? 'Gross loss on sold goods' : 'Gross profit on sold goods'}</span>
+                  {usd(grossLocal)}
                   <span className="block text-xs font-normal text-ink-subtle">
-                    {revenueLocal.greaterThan(0) ? `${formatPercent(netLocal.dividedBy(revenueLocal).times(100))} margin` : '—'}
+                    {revenueLocal.greaterThan(0) ? `${formatPercent(grossLocal.dividedBy(revenueLocal).times(100))} margin` : '—'}
                   </span>
+                </span>
+                <span className="tnum text-right">
+                  <span className="block text-[11px] text-ink-subtle">Remaining inventory value</span>
+                  {usd(stockLocal)}
+                  <span className="block text-xs text-ink-subtle">at cost — not profit</span>
+                </span>
+                <span className={cn('tnum text-right', stage === 'CLOSED' ? cn('font-semibold', tone(netLocal)) : '')} data-testid="shipment-result">
+                  {stage === 'CLOSED' ? (
+                    result.hasDeductions ? (
+                      <>
+                        <span className="block text-[11px] font-normal text-ink-subtle">{netLocal.isNegative() ? 'Final net loss' : 'Final net profit'}</span>
+                        {usd(netLocal)}
+                        <span className="block text-xs font-normal text-ink-subtle">{result.netMarginPct ? `${formatPercent(result.netMarginPct)} net margin` : '—'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="block text-[11px] font-normal text-ink-subtle">{grossLocal.isNegative() ? 'Final gross loss' : 'Final gross profit'}</span>
+                        {usd(grossLocal)}
+                        <span className="block text-xs font-normal text-ink-subtle">no overhead allocated</span>
+                      </>
+                    )
+                  ) : (
+                    <>
+                      <span className="block text-[11px] text-ink-subtle">Final net profit</span>
+                      <span className="text-ink-muted">Not final</span>
+                      {result.hasDeductions ? (
+                        <span className="block text-xs text-ink-subtle">
+                          {netLocal.isNegative() ? 'Loss' : 'Profit'} to date {formatMoney(netLocal, local)}
+                        </span>
+                      ) : null}
+                    </>
+                  )}
                 </span>
               </summary>
               <div className="space-y-2 border-t border-line px-4 py-3">
@@ -231,8 +291,9 @@ async function ShipmentTable({
                         <TH numeric>Sold</TH>
                         <TH numeric>Left</TH>
                         <TH numeric>Sales</TH>
-                        <TH numeric>Cost of what sold</TH>
-                        <TH numeric>Profit</TH>
+                        <TH numeric>COGS</TH>
+                        <TH numeric>Gross profit</TH>
+                        <TH numeric>Remaining value</TH>
                       </TR>
                     </THead>
                     <TBody>
@@ -249,10 +310,11 @@ async function ShipmentTable({
                           </TD>
                           <TD numeric>{formatQuantityKg(row.purchaseQuantityKg)}</TD>
                           <TD numeric>{formatQuantityKg(row.soldQuantityKg)}</TD>
-                          <TD numeric className="text-ink-muted">{formatQuantityKg(row.remainingQuantityKg)}</TD>
+                          <TD numeric className="text-ink-muted">{formatQuantityKg(row.onHandQuantityKg)}</TD>
                           <TD numeric>{usd(row.salesRevenueLocal)}</TD>
                           <TD numeric className="text-ink-muted">{usd(row.allocatedLandedCostLocal)}</TD>
-                          <TD numeric className={cn('font-semibold', tone(row.netProfitLocal))}>{usd(row.netProfitLocal)}</TD>
+                          <TD numeric className={cn('font-semibold', tone(row.grossProfitLocal))}>{usd(row.grossProfitLocal)}</TD>
+                          <TD numeric className="text-ink-muted">{usd(row.closingStockValueLocal)}</TD>
                         </TR>
                       ))}
                     </TBody>
@@ -261,10 +323,11 @@ async function ShipmentTable({
                         <TD colSpan={3}>Shipment total</TD>
                         <TD numeric>{formatQuantityKg(purchased)}</TD>
                         <TD numeric>{formatQuantityKg(sold)}</TD>
-                        <TD numeric>{formatQuantityKg(remaining)}</TD>
+                        <TD numeric>{formatQuantityKg(onHand)}</TD>
                         <TD numeric>{usd(revenueLocal)}</TD>
                         <TD numeric>{usd(cogsLocal)}</TD>
-                        <TD numeric>{usd(netLocal)}</TD>
+                        <TD numeric>{usd(grossLocal)}</TD>
+                        <TD numeric>{usd(stockLocal)}</TD>
                       </tr>
                     </TFoot>
                   </Table>

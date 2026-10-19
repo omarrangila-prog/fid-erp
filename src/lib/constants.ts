@@ -765,15 +765,18 @@ export const INCOTERM_LABELS: Record<string, string> = {
 export const SHIPMENT_STATUS_TRANSITIONS: Record<string, string[]> = {
   CONTRACT_CREATED: ['LOADED'],
   LOADED: ['ARRIVED', 'CONTRACT_CREATED'],
-  ARRIVED: ['LOADED'],
+  // Closed: sold out and every cost in — the shipment's result is final.
+  // Refused while anything is still open (closureBlockers); reopened by
+  // moving it back to Arrived.
+  ARRIVED: ['CLOSED', 'LOADED'],
 
   // Kept for consignments recorded before the flow was shortened, so they can
   // still be moved forward rather than being stuck in a state with no exit.
   AWAITING_LOADING: ['LOADED', 'CONTRACT_CREATED'],
   IN_TRANSIT: ['ARRIVED', 'LOADED'],
-  CUSTOMS_CLEARING: ['ARRIVED'],
-  CLEARED: ['ARRIVED'],
-  DELIVERED: ['ARRIVED'],
+  CUSTOMS_CLEARING: ['CLOSED', 'ARRIVED'],
+  CLEARED: ['CLOSED', 'ARRIVED'],
+  DELIVERED: ['CLOSED', 'ARRIVED'],
   CLOSED: ['ARRIVED'],
 };
 

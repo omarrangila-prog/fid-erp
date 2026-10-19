@@ -58,6 +58,7 @@ import {
   getCompanyProfitSummary,
   getCogsReport,
 } from '@/lib/services/profitability';
+import { shipmentStage, shipmentResult, getClosedDates, SHIPMENT_STAGE_LABELS } from '@/lib/services/shipment-performance';
 import type { SessionUser } from '@/lib/auth/session';
 import { calendarDay } from '@/lib/validation/common';
 
@@ -602,6 +603,24 @@ const REPORTS: Record<string, Report> = {
         });
       }
 
+      // Each container's stage: profit on what sold, stock at cost beside it,
+      // and a final result only once it is closed — as the screen shows it.
+      const closedDates = await getClosedDates(companyId, rows.map((r) => r.shipmentId));
+      const stageOf = new Map(
+        rows.map((r) => {
+          const stage = shipmentStage({ remainingKg: r.onHandQuantityKg, soldKg: r.soldQuantityKg, closed: r.status === 'CLOSED' });
+          const result = shipmentResult({
+            stage,
+            revenueLocal: r.salesRevenueLocal,
+            grossProfitLocal: r.grossProfitLocal,
+            soldKg: r.soldQuantityKg,
+            periodCostsLocal: r.otherCostsLocal,
+            overheadLocal: r.allocatedOverheadLocal,
+          });
+          return [r.shipmentId, { stage, result }] as const;
+        }),
+      );
+      const st = (r: (typeof rows)[number]) => stageOf.get(r.shipmentId)!;
       return buildWorkbook({
         companyName: user.activeCompany.name,
         timeZone: user.activeCompany.timezone,
@@ -632,6 +651,19 @@ const REPORTS: Record<string, Report> = {
           { header: 'Per KG (USD)', value: (r) => Number(r.profitPerKgUsd), type: 'money' as const },
           { header: `Per KG (${local})`, value: (r) => Number(r.profitPerKgLocal), type: 'money' as const },
           { header: 'Margin', value: (r) => Number(r.netMarginPct) / 100, type: 'percent' as const },
+          { header: 'Shipment stage', value: (r) => SHIPMENT_STAGE_LABELS[st(r).stage], width: 30 },
+          { header: 'Received (KG)', value: (r) => Number(r.receivedQuantityKg), type: 'quantity' as const },
+          { header: 'Remaining available (KG)', value: (r) => Number(r.onHandQuantityKg), type: 'quantity' as const },
+          { header: `COGS (${local})`, value: (r) => Number(r.allocatedLandedCostLocal), type: 'money' as const },
+          { header: `Gross profit on sold goods (${local})`, value: (r) => Number(r.grossProfitLocal), type: 'money' as const },
+          { header: 'Gross margin', value: (r) => Number(r.grossMarginPct) / 100, type: 'percent' as const },
+          { header: `Remaining inventory value (${local})`, value: (r) => Number(r.closingStockValueLocal), type: 'money' as const },
+          {
+            header: `Profit to date (${local})`,
+            value: (r) => (st(r).stage !== 'CLOSED' && st(r).result.hasDeductions ? Number(st(r).result.netLocal) : ''),
+          },
+          { header: `Final net profit (${local})`, value: (r) => (st(r).stage === 'CLOSED' ? Number(st(r).result.netLocal) : 'Not final') },
+          { header: 'Closed date', value: (r) => (closedDates.get(r.shipmentId) ? asDay(closedDates.get(r.shipmentId)!) : '') },
         ],
       });
     },

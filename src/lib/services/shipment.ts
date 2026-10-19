@@ -1,4 +1,5 @@
 import type { Tx } from '@/lib/db';
+import { closureBlockers } from '@/lib/services/shipment-performance';
 import { transaction, prisma } from '@/lib/db';
 import { Decimal, dec, sum, toMoney, toQuantity } from '@/lib/money';
 import {
@@ -159,6 +160,11 @@ export async function changeShipmentStatus(input: ShipmentStatusChangeInput) {
     };
 
     assertStatusDataComplete(input.toStatus, merged);
+
+    if (input.toStatus === 'CLOSED') {
+      const blockers = await closureBlockers(tx, input.companyId, shipment.id);
+      if (blockers.length) throw new BusinessRuleError(`This shipment cannot be closed yet. ${blockers.join(' ')}`);
+    }
 
     if (input.shippingLineId) {
       const line = await tx.shippingLine.findFirst({
