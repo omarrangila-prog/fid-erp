@@ -749,6 +749,8 @@ export type CogsLine = {
   revenueLocal: Decimal;
   cogsLocal: Decimal;
   grossProfitLocal: Decimal;
+  /** The USD/MAD rate of the order the sold coffee came from: management dollars are stated at it. */
+  rateLocalPerUsd: Decimal | null;
   source: 'INVOICE' | 'CREDIT';
 };
 
@@ -830,7 +832,8 @@ export async function getCogsReport(params: { companyId: string; from?: Date; to
     const revenueUsd = toMoney(row.revenueUsd);
     const cogsUsd = toMoney(row.cogsUsd);
     const revenueLocal = toMoney(row.revenueLocal);
-    const perKgLocal = row.batchId ? costing.get(row.batchId)?.landedPerKgLocal : undefined;
+    const batchCosting = row.batchId ? costing.get(row.batchId) : undefined;
+    const perKgLocal = batchCosting?.landedPerKgLocal;
     // A credit with no coffee behind it carries no cost in either currency.
     const cogsLocal = perKgLocal ? toMoney(toQuantity(row.quantityKg).times(perKgLocal)) : new Decimal(0);
     return {
@@ -849,6 +852,7 @@ export async function getCogsReport(params: { companyId: string; from?: Date; to
       revenueLocal,
       cogsLocal,
       grossProfitLocal: toMoney(revenueLocal.minus(cogsLocal)),
+      rateLocalPerUsd: batchCosting?.rateLocalPerUsd ?? null,
       source: row.source === 'CREDIT' ? 'CREDIT' : 'INVOICE',
     };
   });

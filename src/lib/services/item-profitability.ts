@@ -564,6 +564,22 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
     const c = costingById.get(batchId);
     return { local: c ? c.landedPerKgLocal : new Decimal(0), usd: c ? c.landedPerKgUsd : new Decimal(0) };
   };
+  /*
+   * Dollars as a management equivalent: the company's-currency figure ÷ the
+   * USD/MAD rate of the order the coffee came from, as on the shipment page.
+   * Stock value, sales, cost of sales, profit, collected and outstanding all
+   * follow the order when its rate is edited; the amounts in the company's
+   * currency — what was invoiced and paid — never move. A sale or credit in a
+   * foreign currency keeps the dollars it stored.
+   */
+  const orderRateOf = (batchId: string): Decimal | null => {
+    const rate = costingById.get(batchId)?.rateLocalPerUsd;
+    return rate && rate.greaterThan(0) ? rate : null;
+  };
+  const atOrderRate = (batchId: string, localAmount: Decimal, stored: Decimal): Decimal => {
+    const rate = orderRateOf(batchId);
+    return rate ? localAmount.dividedBy(rate) : stored;
+  };
 
   // A credit line is in view when its batch and warehouse would be.
   const batchInView = (batchId: string) => {
@@ -604,7 +620,10 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
     const onHand = dec(m.onHand);
     acc.onHandKg = acc.onHandKg.plus(onHand);
     acc.reservedKg = acc.reservedKg.plus(dec(m.reserved));
-    acc.stockValue = addPair(acc.stockValue, { local: onHand.times(landed.local), usd: onHand.times(landed.usd) });
+    acc.stockValue = addPair(acc.stockValue, {
+      local: onHand.times(landed.local),
+      usd: atOrderRate(m.batchId, onHand.times(landed.local), onHand.times(landed.usd)),
+    });
     const receivedToDate = dec(m.receivedToDate);
     const inflowToDate = dec(m.inflowToDate);
     acc.receivedBasis = {
@@ -675,20 +694,24 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
     const batch = batchById.get(row.batchId);
     if (!batch) continue;
     const rates = { currency: row.currency, rateToUsd: row.rateToUsd, localCurrency: local, rateLocalPerUsd: row.rateLocalPerUsd };
-    const toPair = (amount: Decimal): Pair => ({
-      local: convertToLocal({ amount, ...rates }),
-      usd: convertToUsd(amount, row.rateToUsd, row.currency),
-    });
+    // A sale in the company's own money: its dollars at the order's rate.
+    const inLocal = row.currency === local;
+    const usdOf = (localAmount: Decimal, stored: Decimal) => (inLocal ? atOrderRate(row.batchId, localAmount, stored) : stored);
+    const toPair = (amount: Decimal): Pair => {
+      const localAmount = convertToLocal({ amount, ...rates });
+      return { local: localAmount, usd: usdOf(localAmount, convertToUsd(amount, row.rateToUsd, row.currency)) };
+    };
     const quantityKg = dec(row.quantityKg);
     const landed = landedOf(row.batchId);
-    const amount: Pair = { local: convertToLocal({ amount: row.lineTotal, ...rates }), usd: toMoney(row.lineTotalUsd) };
-    const gross: Pair = {
-      local: convertToLocal({ amount: dec(row.lineTotal).plus(dec(row.taxAmount)), ...rates }),
-      usd: toMoney(dec(row.lineTotalUsd).plus(dec(row.taxAmountUsd))),
-    };
-    // Cost as posted on the line in USD; in the company's currency, the KG at
-    // the batch's landed cost at the rates that cost was incurred at.
-    const cogs: Pair = { local: toMoney(quantityKg.times(landed.local)), usd: toMoney(row.costTotalUsd) };
+    const amountLocal = convertToLocal({ amount: row.lineTotal, ...rates });
+    const amount: Pair = { local: amountLocal, usd: usdOf(amountLocal, toMoney(row.lineTotalUsd)) };
+    const grossLocal = convertToLocal({ amount: dec(row.lineTotal).plus(dec(row.taxAmount)), ...rates });
+    const gross: Pair = { local: grossLocal, usd: usdOf(grossLocal, toMoney(dec(row.lineTotalUsd).plus(dec(row.taxAmountUsd)))) };
+    // In the company's currency, the KG at the batch's landed cost — the coffee
+    // at its order's rate, the charges at their own; the dollars at the order's
+    // rate, so sales and their cost are stated at one rate.
+    const cogsLocal = toMoney(quantityKg.times(landed.local));
+    const cogs: Pair = { local: cogsLocal, usd: atOrderRate(row.batchId, cogsLocal, toMoney(row.costTotalUsd)) };
     const share = shareOf.get(row.lineId);
     const collected = Object.fromEntries(
       COLLECTION_METHODS.map((m) => [m, toPair(share?.paid[m] ?? new Decimal(0))]),
@@ -738,7 +761,7 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
       collectedTotal: moneyPair(collectedTotal),
       credited: moneyPair(credited),
       outstanding: moneyPair(outstanding),
-      invoiceTotal: { local: convertToLocal({ amount: row.invoiceTotal, ...rates }), usd: toMoney(row.invoiceTotalUsd) },
+      invoiceTotal: toPair(dec(row.invoiceTotal)),
       invoicePaid: toPair(invoicePaidAmount),
       invoiceOutstanding: toPair(invoiceOutstandingAmount),
       status: getInvoicePaymentStatus({ paid: invoicePaidAmount, outstanding: invoiceOutstandingAmount }),
@@ -750,17 +773,22 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
   const lineInView = new Set(lines.map((l) => l.lineId));
   for (const credit of credits) {
     const rates = { currency: credit.currency, rateToUsd: credit.rateToUsd, localCurrency: local, rateLocalPerUsd: credit.rateLocalPerUsd };
-    const value: Pair = { local: convertToLocal({ amount: credit.lineTotal, ...rates }), usd: toMoney(credit.lineTotalUsd) };
+    const creditInLocal = credit.currency === local;
+    const valueLocal = convertToLocal({ amount: credit.lineTotal, ...rates });
+    const storedUsd = toMoney(credit.lineTotalUsd);
     if (credit.batchId) {
       if (!batchInView(credit.batchId) || !warehouseInView(credit.warehouseId)) continue;
       const acc = cellFor(credit.batchId, credit.warehouseId);
       const quantityKg = dec(credit.quantityKg);
       const landed = landedOf(credit.batchId);
+      const value: Pair = { local: valueLocal, usd: creditInLocal ? atOrderRate(credit.batchId, valueLocal, storedUsd) : storedUsd };
+      const cogsLocal = quantityKg.times(landed.local);
       acc.soldKg = acc.soldKg.minus(quantityKg);
       acc.revenue = subPair(acc.revenue, value);
-      acc.cogs = subPair(acc.cogs, { local: quantityKg.times(landed.local), usd: dec(credit.costTotalUsd) });
+      acc.cogs = subPair(acc.cogs, { local: cogsLocal, usd: atOrderRate(credit.batchId, cogsLocal, dec(credit.costTotalUsd)) });
       continue;
     }
+    const value: Pair = { local: valueLocal, usd: storedUsd };
     // An allowance names no coffee: shared over the invoice's lines by value.
     if (!credit.salesInvoiceId) continue;
     const invoiceLines = linesByInvoice.get(credit.salesInvoiceId) ?? [];
@@ -771,7 +799,8 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
     invoiceLines.forEach((line, i) => {
       if (!lineInView.has(line.id)) return;
       const acc = cellFor(line.batchId, line.warehouseId);
-      acc.revenue = subPair(acc.revenue, { local: localShares[i], usd: usdShares[i] });
+      const usdShare = creditInLocal ? atOrderRate(line.batchId, localShares[i], usdShares[i]) : usdShares[i];
+      acc.revenue = subPair(acc.revenue, { local: localShares[i], usd: usdShare });
     });
   }
 
@@ -931,6 +960,18 @@ export async function getItemProfitabilityChecks(companyId: string, report?: Ite
     getReceivables({ companyId }),
   ]);
 
+  /*
+   * Cost of sales in dollars, read a second way: the COGS report states each
+   * line's cost at the rate of the order the coffee came from, from its own
+   * query. The item report must say the same.
+   */
+  const { getCogsReport } = await import('@/lib/services/profitability');
+  const cogsLines = await getCogsReport({ companyId });
+  const cogsUsdAtOrderRate = cogsLines.reduce(
+    (sum, l) => sum.plus(l.rateLocalPerUsd ? l.cogsLocal.dividedBy(l.rateLocalPerUsd) : l.cogsUsd),
+    new Decimal(0),
+  );
+
   // Outstanding on sales invoices — the opening balances brought forward
   // have no coffee behind them and belong to no item.
   const invoiceIds = new Set(
@@ -1000,11 +1041,11 @@ export async function getItemProfitabilityChecks(companyId: string, report?: Ite
     ),
     check(
       'cogs-usd',
-      'Cost of goods sold (USD) = cost posted on the invoices',
+      'Cost of goods sold (USD, at each order’s rate) = Cost of Goods Sold report',
       'USD',
       t.cogs.usd,
-      dec(headers[0]?.cogsUsd ?? 0).minus(dec(credits[0]?.cogsUsd ?? 0)),
-      'Sales invoices',
+      cogsUsdAtOrderRate,
+      'Cost of Goods Sold report',
     ),
     check('cogs-local', `Cost of goods sold (${local}) = Shipment Profitability`, 'LOCAL', t.cogs.local, shipmentCogsLocal, 'Shipment Profitability'),
     check('profit', 'Gross profit = revenue − cost of goods sold', 'LOCAL', t.grossProfit.local, t.revenue.local.minus(t.cogs.local), 'Revenue − COGS'),

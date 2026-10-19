@@ -5,7 +5,8 @@ import { createExpense, postExpense } from '@/lib/services/expense';
 import { createSalesInvoice, postSalesInvoice } from '@/lib/services/sales';
 import { getReceivables } from '@/lib/services/receivables';
 import { getShipmentCostSheet } from '@/lib/services/landed-cost';
-import { getItemProfitability } from '@/lib/services/item-profitability';
+import { getItemProfitability, getItemProfitabilityChecks } from '@/lib/services/item-profitability';
+import { getInvoicePoRates } from '@/lib/services/invoice-po-rate';
 import { getShipmentProfitability, getCogsReport } from '@/lib/services/profitability';
 import { getInventoryValuation, getInventoryValuationSummary } from '@/lib/services/stock';
 import { dec } from '@/lib/money';
@@ -104,6 +105,9 @@ async function reconciliation() {
   const summaryRow = (await getInventoryValuationSummary(companyId)).find((r) => r.itemId === itemId);
   const cogsLines = await getCogsReport({ companyId });
   const receivable = (await getReceivables({ companyId })).find((r) => r.invoiceId === invoiceId);
+  const invoiceRate = (await getInvoicePoRates({ companyId, invoiceIds: [invoiceId] })).get(invoiceId);
+  const itemChecks = await getItemProfitabilityChecks(companyId);
+  const cogsUsdReport = cogsLines.reduce((t, l) => t.plus(l.rateLocalPerUsd ? l.cogsLocal.dividedBy(l.rateLocalPerUsd) : l.cogsUsd), dec(0));
   const batches = await prisma.batch.findMany({ where: { purchaseContractId: contractId }, select: { orderedQuantityKg: true, receivedQuantityKg: true, soldQuantityKg: true, availableQuantityKg: true } });
   return {
     'PO USD value': f(contract.totalValueUsd),
@@ -130,6 +134,15 @@ async function reconciliation() {
     'COGS (COGS report)': f(cogsLines.reduce((t, l) => t.plus(l.cogsLocal), dec(0))),
     'Sales (COGS report)': f(cogsLines.reduce((t, l) => t.plus(l.revenueLocal), dec(0))),
     'Customer outstanding (MAD)': f(receivable?.outstandingAmount),
+    // Management dollars: every one at the order's rate.
+    'Invoice USD/MAD rate (from its PO)': f(invoiceRate),
+    'Invoice ≈ USD': f(invoiceRate ? dec(invoice.totalAmount).dividedBy(invoiceRate) : null),
+    'Stock on Hand sales (MAD)': f(item.revenue.local),
+    'Stock on Hand sales ≈ USD': f(item.revenue.usd),
+    'Stock on Hand COGS ≈ USD': f(item.cogs.usd),
+    'COGS report COGS ≈ USD': f(cogsUsdReport),
+    'Stock on Hand stock value ≈ USD': f(item.stockValue.usd),
+    'Stock on Hand checks failing': itemChecks.filter((c) => !c.ok).map((c) => c.key).join(',') || 'none',
     'Invoice status': invoice.status,
     'Quantities (ordered/received/sold/available KG)': batches
       .map((b) => [b.orderedQuantityKg, b.receivedQuantityKg, b.soldQuantityKg, b.availableQuantityKg].map((q) => dec(q).toFixed(3)).join('/'))
@@ -152,6 +165,13 @@ describe('the client’s example: the order rate edited 9.90 → 10.30 → 9.90'
     expect(before['Remaining inventory (shipment)']).toBe('422000.00');
     expect(before['Sales revenue (MAD)']).toBe('645000.00');
     expect(before['Gross profit / loss (MAD)']).toBe('12000.00');
+    // The dollars at 9.90: MAD 645,000 of sales, 633,000 of cost, 422,000 of stock.
+    expect(before['Invoice USD/MAD rate (from its PO)']).toBe('9.90');
+    expect(before['Invoice ≈ USD']).toBe(dec(645000).dividedBy('9.90').toFixed(2));
+    expect(before['Stock on Hand sales ≈ USD']).toBe(dec(645000).dividedBy('9.90').toFixed(2));
+    expect(before['Stock on Hand COGS ≈ USD']).toBe(dec(633000).dividedBy('9.90').toFixed(2));
+    expect(before['Stock on Hand stock value ≈ USD']).toBe(dec(422000).dividedBy('9.90').toFixed(2));
+    expect(before['Stock on Hand checks failing']).toBe('none');
   }, 300_000);
 
   it('moves every figure that depends on the purchase cost when the order rate is edited to 10.30, and nothing else', async () => {
@@ -168,6 +188,16 @@ describe('the client’s example: the order rate edited 9.90 → 10.30 → 9.90'
     expect(after['Customer outstanding (MAD)']).toBe(before['Customer outstanding (MAD)']);
     expect(after['Invoice status']).toBe(before['Invoice status']);
     expect(after['Quantities (ordered/received/sold/available KG)']).toBe(before['Quantities (ordered/received/sold/available KG)']);
+
+    // Stock on Hand: the sales in dirhams are the invoice and do not move;
+    // every dollar figure is restated at 10.30, and every check still holds.
+    expect(after['Stock on Hand sales (MAD)']).toBe(before['Stock on Hand sales (MAD)']);
+    expect(after['Invoice USD/MAD rate (from its PO)']).toBe('10.30');
+    expect(after['Invoice ≈ USD']).toBe(dec(645000).dividedBy('10.30').toFixed(2));
+    expect(after['Stock on Hand sales ≈ USD']).toBe(dec(645000).dividedBy('10.30').toFixed(2));
+    expect(after['Stock on Hand COGS ≈ USD']).toBe(dec(657000).dividedBy('10.30').toFixed(2));
+    expect(after['Stock on Hand stock value ≈ USD']).toBe(dec(438000).dividedBy('10.30').toFixed(2));
+    expect(after['Stock on Hand checks failing']).toBe('none');
 
     // The purchase cost rises by USD 100,000 × 0.40 = MAD 40,000.
     expect(after['USD/MAD rate']).toBe('10.30');
@@ -207,6 +237,8 @@ describe('the client’s example: the order rate edited 9.90 → 10.30 → 9.90'
       expect(r['Avg cost/KG (Inventory Valuation)']).toBe(r['Avg cost/KG (shipment)']);
       expect(r['COGS (COGS report)']).toBe(r['COGS (MAD)']);
       expect(r['Sales (COGS report)']).toBe(r['Sales revenue (MAD)']);
+      // Stock on Hand and the COGS report state cost of sales in the same dollars.
+      expect(r['Stock on Hand COGS ≈ USD']).toBe(r['COGS report COGS ≈ USD']);
     }
     console.table(Object.keys(after).map((k) => ({ figure: k, 'at 9.90': before[k as keyof typeof before], 'at 10.30': after[k as keyof typeof after], 'back at 9.90': back[k as keyof typeof back] })));
   }, 300_000);

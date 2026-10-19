@@ -51,6 +51,16 @@ export default async function CogsReportPage({
   const revenueLocal = rows.reduce((sum, row) => sum.plus(row.revenueLocal), dec(0));
   const cogsLocal = rows.reduce((sum, row) => sum.plus(row.cogsLocal), dec(0));
   const gpLocal = revenueLocal.minus(cogsLocal);
+  /*
+   * Under each dirham figure, its dollars at the rate of the order the coffee
+   * came from — sales and their cost at the same rate, so the dollar margin
+   * is the dirham margin restated. A line with no order behind it keeps the
+   * dollars its invoice stored.
+   */
+  const mgmt = (row: (typeof rows)[number], local: ReturnType<typeof dec>, stored: ReturnType<typeof dec>) =>
+    showLocal && row.rateLocalPerUsd ? local.dividedBy(row.rateLocalPerUsd) : stored;
+  const revenueMgmt = rows.reduce((sum, row) => sum.plus(mgmt(row, row.revenueLocal, row.revenueUsd)), dec(0));
+  const cogsMgmt = rows.reduce((sum, row) => sum.plus(mgmt(row, row.cogsLocal, row.cogsUsd)), dec(0));
 
   return (
     <div className="space-y-6">
@@ -76,12 +86,12 @@ export default async function CogsReportPage({
 
       <MetricGrid>
         <Metric label="Quantity sold" value={formatQuantityKg(qty)} />
-        <Metric label="Revenue" value={showLocal ? formatMoney(revenueLocal, local) : formatMoney(revenue, 'USD')} hint={showLocal ? formatMoney(revenue, 'USD') : undefined} />
-        <Metric label="COGS" value={showLocal ? formatMoney(cogsLocal, local) : formatMoney(cogs, 'USD')} hint={showLocal ? formatMoney(cogs, 'USD') : undefined} />
+        <Metric label="Revenue" value={showLocal ? formatMoney(revenueLocal, local) : formatMoney(revenue, 'USD')} hint={showLocal ? `≈ ${formatMoney(revenueMgmt, 'USD')}` : undefined} />
+        <Metric label="COGS" value={showLocal ? formatMoney(cogsLocal, local) : formatMoney(cogs, 'USD')} hint={showLocal ? `≈ ${formatMoney(cogsMgmt, 'USD')}` : undefined} />
         <Metric
           label={(showLocal ? gpLocal : gp).isNegative() ? 'Gross loss' : 'Gross profit'}
           value={showLocal ? formatMoney(gpLocal, local) : formatMoney(gp, 'USD')}
-          hint={showLocal ? formatMoney(gp, 'USD') : undefined}
+          hint={showLocal ? `≈ ${formatMoney(revenueMgmt.minus(cogsMgmt), 'USD')}` : undefined}
           tone={(showLocal ? gpLocal : gp).greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
         />
       </MetricGrid>
@@ -95,7 +105,7 @@ export default async function CogsReportPage({
             <CardDescription>
               In {showLocal ? local : 'USD'}: revenue as invoiced, cost at each batch&rsquo;s landed cost — the coffee at
               its order&rsquo;s rate, the rate actually paid once confirmed — the same figures as Shipment Profitability.
-              {showLocal ? ' The USD beneath each is the cost frozen on the invoice when it was posted.' : ''}
+              {showLocal ? ' The USD beneath each is its equivalent at the USD/MAD rate of the order the coffee came from.' : ''}
             </CardDescription>
           </CardHeader>
           <CardContent className="px-0 pb-0">
@@ -135,16 +145,16 @@ export default async function CogsReportPage({
                       <TD className="text-ink-muted">{row.warehouseName ?? '—'}</TD>
                       <TD numeric>{formatQuantityKg(row.quantityKg)}</TD>
                       <TD numeric>
-                        <Pair local={showLocal ? row.revenueLocal : null} usd={row.revenueUsd} currency={local} />
+                        <Pair local={showLocal ? row.revenueLocal : null} usd={mgmt(row, row.revenueLocal, row.revenueUsd)} currency={local} />
                       </TD>
                       <TD numeric className="text-ink-muted">
-                        <Pair local={showLocal ? row.cogsLocal : null} usd={row.cogsUsd} currency={local} />
+                        <Pair local={showLocal ? row.cogsLocal : null} usd={mgmt(row, row.cogsLocal, row.cogsUsd)} currency={local} />
                       </TD>
                       <TD
                         numeric
                         className={(showLocal ? row.grossProfitLocal : row.grossProfitUsd).greaterThanOrEqualTo(0) ? 'text-gold-700' : 'text-red-600'}
                       >
-                        <Pair local={showLocal ? row.grossProfitLocal : null} usd={row.grossProfitUsd} currency={local} />
+                        <Pair local={showLocal ? row.grossProfitLocal : null} usd={mgmt(row, row.grossProfitLocal, row.grossProfitUsd)} currency={local} />
                       </TD>
                     </TR>
                   ))}
@@ -154,13 +164,13 @@ export default async function CogsReportPage({
                     <TD colSpan={7}>Total</TD>
                     <TD numeric>{formatQuantityKg(qty)}</TD>
                     <TD numeric>
-                      <Pair local={showLocal ? revenueLocal : null} usd={revenue} currency={local} />
+                      <Pair local={showLocal ? revenueLocal : null} usd={showLocal ? revenueMgmt : revenue} currency={local} />
                     </TD>
                     <TD numeric>
-                      <Pair local={showLocal ? cogsLocal : null} usd={cogs} currency={local} />
+                      <Pair local={showLocal ? cogsLocal : null} usd={showLocal ? cogsMgmt : cogs} currency={local} />
                     </TD>
                     <TD numeric>
-                      <Pair local={showLocal ? gpLocal : null} usd={gp} currency={local} />
+                      <Pair local={showLocal ? gpLocal : null} usd={showLocal ? revenueMgmt.minus(cogsMgmt) : gp} currency={local} />
                     </TD>
                   </tr>
                 </TFoot>
@@ -179,7 +189,7 @@ function Pair({ local, usd, currency }: { local: ReturnType<typeof dec> | null; 
   return (
     <span className="inline-block">
       <span className="tnum block">{formatMoney(local, currency)}</span>
-      <span className="tnum block text-[11px] text-ink-subtle">{formatMoney(usd, 'USD')}</span>
+      <span className="tnum block text-[11px] text-ink-subtle">≈ {formatMoney(usd, 'USD')}</span>
     </span>
   );
 }

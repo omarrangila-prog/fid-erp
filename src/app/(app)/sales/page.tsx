@@ -6,6 +6,7 @@ import { dec } from '@/lib/money';
 import { equivalentText } from '@/lib/dual-currency';
 import { formatMoney, formatQuantityKg, formatDate, daysUntil, companyToday } from '@/lib/format';
 import { getReceivables } from '@/lib/services/receivables';
+import { getInvoicePoRates } from '@/lib/services/invoice-po-rate';
 import { isInvoiceOutstanding, parsePaymentFilter } from '@/lib/invoice-payment';
 import { getWarehouseLabels } from '@/lib/services/stock';
 import { PageHeader } from '@/components/shared/page-header';
@@ -60,6 +61,9 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
     getReceivables({ companyId }),
     getWarehouseLabels(companyId),
   ]);
+  // An invoice in the company's own money reads its dollars at the rate of the
+  // purchase orders whose coffee it sold — following each order as it is edited.
+  const poRates = await getInvoicePoRates({ companyId, invoiceIds: invoices.map((i) => i.id) });
 
   const receivableByInvoice = new Map(receivables.map((r) => [r.invoiceId, r]));
   const local = user.activeCompany.localCurrency;
@@ -68,6 +72,15 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
     const quantity = inv.lines.reduce((a, l) => a.plus(dec(l.quantityKg)), dec(0));
     const receivable = receivableByInvoice.get(inv.id);
     const days = daysUntil(inv.dueDate, companyDay);
+    const poRate = inv.currency === local ? (poRates.get(inv.id) ?? null) : null;
+    // The invoice's dollars: at its orders' rate when sold in local money, else as stored.
+    const usdOf = (amount: ReturnType<typeof dec>, stored: ReturnType<typeof dec>) => (poRate ? amount.dividedBy(poRate) : stored);
+    const equivalent = (amount: ReturnType<typeof dec>) =>
+      poRate
+        ? equivalentText({ amount, currency: local, localCurrency: local, rateLocalPerUsd: poRate })
+        : inv.currency === local
+          ? null
+          : equivalentText({ amount, currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd });
 
     return {
       id: inv.id,
@@ -80,12 +93,12 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
       customerId: inv.customer.id,
       currency: inv.currency,
       totalAmount: formatMoney(inv.totalAmount, inv.currency),
-      totalAmountSort: Number(inv.totalAmountUsd),
-      totalAmountUsd: formatMoney(inv.totalAmountUsd, 'USD'),
-      // The other currency, at this invoice's own rate.
-      totalEquivalent: inv.currency === local ? null : equivalentText({ amount: inv.totalAmount, currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd, amountUsd: inv.currency === local ? inv.totalAmountUsd : null }),
-      paidEquivalent: inv.currency === local ? null : receivable ? equivalentText({ amount: receivable.paidAmount.minus(receivable.creditedAmount), currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd }) : null,
-      outstandingEquivalent: inv.currency === local ? null : receivable ? equivalentText({ amount: receivable.outstandingAmount, currency: inv.currency, localCurrency: local, rateLocalPerUsd: inv.rateLocalPerUsd }) : null,
+      totalAmountSort: Number(usdOf(dec(inv.totalAmount), dec(inv.totalAmountUsd))),
+      totalAmountUsd: formatMoney(usdOf(dec(inv.totalAmount), dec(inv.totalAmountUsd)), 'USD'),
+      // The other currency: at the orders' USD/MAD rate for a local invoice, else at its own rate.
+      totalEquivalent: equivalent(dec(inv.totalAmount)),
+      paidEquivalent: receivable ? equivalent(receivable.paidAmount.minus(receivable.creditedAmount)) : null,
+      outstandingEquivalent: receivable ? equivalent(receivable.outstandingAmount) : null,
       quantityLabel: formatQuantityKg(quantity),
       quantitySort: Number(quantity),
       // Raw, in the invoice's own currency, for the per-customer summary.
@@ -99,8 +112,8 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
       outstandingLabel: receivable ? formatMoney(receivable.outstandingAmount, inv.currency) : '—',
       // In dollars as well, because a total across invoices in dirhams and
       // dollars is only meaningful in one of them.
-      paidUsdSort: receivable ? Number(receivable.paidAmountUsd) : 0,
-      outstandingUsdSort: receivable ? Number(receivable.outstandingAmountUsd) : 0,
+      paidUsdSort: receivable ? Number(usdOf(receivable.paidAmount.minus(receivable.creditedAmount), dec(receivable.paidAmountUsd))) : 0,
+      outstandingUsdSort: receivable ? Number(usdOf(receivable.outstandingAmount, dec(receivable.outstandingAmountUsd))) : 0,
       settlement: receivable?.status ?? 'UNPAID',
       // Money still due — the Unpaid filter, part-paid included. Decided on
       // what is left, by the one definition every screen uses.

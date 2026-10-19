@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getReceivables, summariseAgeing, AGEING_LABELS } from '@/lib/services/receivables';
+import { getInvoicePoRates } from '@/lib/services/invoice-po-rate';
+import { toMoney } from '@/lib/money';
 import { getWarehouseLabels } from '@/lib/services/stock';
 import { formatMoney, formatDate, daysUntil, companyToday } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
@@ -14,10 +16,21 @@ export const dynamic = 'force-dynamic';
 export default async function ReceivablesPage() {
   const user = await requirePageAccess(PERMISSIONS.RECEIVABLES_VIEW);
   const companyDay = companyToday(user.activeCompany.timezone);
-  const [receivables, warehouses] = await Promise.all([
+  const [owed, warehouses] = await Promise.all([
     getReceivables({ companyId: user.activeCompany.id, onlyOutstanding: true }),
     getWarehouseLabels(user.activeCompany.id),
   ]);
+  /*
+   * An invoice in the company's own money states its dollars at the rate of
+   * the purchase orders whose coffee it sold, so what a customer owes in
+   * dollars follows those orders as their rate is edited. The amount owed —
+   * in the invoice's own money — never moves.
+   */
+  const poRates = await getInvoicePoRates({ companyId: user.activeCompany.id, invoiceIds: owed.map((r) => r.invoiceId) });
+  const receivables = owed.map((r) => {
+    const rate = poRates.get(r.invoiceId);
+    return rate ? { ...r, outstandingAmountUsd: toMoney(r.outstandingAmount.dividedBy(rate)) } : r;
+  });
   const ageing = summariseAgeing(receivables);
 
   const rows: AgeingRow[] = receivables.map((r) => {

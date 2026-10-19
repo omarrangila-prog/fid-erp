@@ -253,11 +253,21 @@ export async function getOrderFxTransactions(
       rateLocalPerUsd: dec(e.amountUsd).isZero() ? dec(e.rateLocalPerUsd) : dec(e.amountLocal).dividedBy(dec(e.amountUsd)),
     });
   }
+  /*
+   * A sale in the company's own money is that money; its dollars are a
+   * management equivalent at the order's USD/MAD rate, so a sale and the cost
+   * of the coffee it sold are stated at the same rate and follow the order
+   * when its rate is edited. A sale in another currency keeps its own rate.
+   */
+  const { localCurrency } = await prisma.company.findUniqueOrThrow({ where: { id: companyId }, select: { localCurrency: true } });
+  const orderRate = new Map(contracts.map((c) => [c.id, effectiveLocalRate(c)]));
   for (const s of sales) {
     const bucket = result.get(s.contractId);
     if (!bucket) continue;
-    const usd = toMoney(s.usd);
-    const rate = dec(s.rateLocalPerUsd);
+    const amount = toMoney(s.amount);
+    const poRate = s.currency === localCurrency ? orderRate.get(s.contractId) : undefined;
+    const rate = poRate && poRate.greaterThan(0) ? poRate : dec(s.rateLocalPerUsd);
+    const usd = poRate && poRate.greaterThan(0) ? toMoney(amount.dividedBy(poRate)) : toMoney(s.usd);
     bucket.sales.push({
       kind: 'SALE',
       id: s.invoiceId,
@@ -265,9 +275,9 @@ export async function getOrderFxTransactions(
       label: s.customerName,
       reference: null,
       currency: s.currency,
-      amount: toMoney(s.amount),
+      amount,
       usd,
-      local: toMoney(usd.times(rate)),
+      local: s.currency === localCurrency ? amount : toMoney(usd.times(rate)),
       rateLocalPerUsd: rate,
     });
   }
