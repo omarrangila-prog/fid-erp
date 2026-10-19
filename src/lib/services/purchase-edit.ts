@@ -6,6 +6,7 @@ import { BusinessRuleError, NotFoundError } from '@/lib/errors';
 import { postJournalEntry, reverseJournalEntry } from '@/lib/services/accounting';
 import { getCompanyContext } from '@/lib/services/company';
 import { writeAudit } from '@/lib/services/audit';
+import { effectiveLocalRate } from '@/lib/purchase-fx';
 import { lockBatch } from '@/lib/services/inventory';
 import { documentSoldKg, restateSoldCost } from '@/lib/services/landed-cost';
 import { supplierGrossPayable } from '@/lib/services/tax';
@@ -375,6 +376,12 @@ export async function editApprovedPurchase(input: EditApprovedOrderInput) {
         currency,
         rateToUsd: dec(input.rateToUsd),
         rateLocalPerUsd: dec(input.rateLocalPerUsd),
+        // One rate per order: whatever is saved here is the rate. A second rate
+        // left from the earlier two-rate model is folded in and cleared.
+        actualRateLocalPerUsd: null,
+        actualRateSetAt: null,
+        actualRateSetById: null,
+        actualRateNote: null,
         subtotal: totals.subtotal,
         freightAmount: totals.freightAmount,
         otherCharges: totals.otherCharges,
@@ -448,7 +455,8 @@ export async function editApprovedPurchase(input: EditApprovedOrderInput) {
       ['date', before.contractDate.toISOString().slice(0, 10), input.contractDate.toISOString().slice(0, 10)],
       ['currency', before.currency, currency],
       ['rate to USD', before.rateToUsd.toString(), dec(input.rateToUsd).toString()],
-      ['local rate', before.rateLocalPerUsd.toString(), dec(input.rateLocalPerUsd).toString()],
+      // The rate the client saw on the order before, and the one saved now.
+      ['USD/local rate', effectiveLocalRate(before).toString(), dec(input.rateLocalPerUsd).toString()],
       ['total', before.totalValue.toString(), totals.totalValue.toString()],
     ];
     for (const [field, was, now] of header) {
@@ -467,6 +475,8 @@ export async function editApprovedPurchase(input: EditApprovedOrderInput) {
         date: before.contractDate,
         currency: before.currency,
         rateToUsd: before.rateToUsd.toString(),
+        // The order's USD/MAD rate history, one edit at a time (§3 of 19 Oct).
+        rateLocalPerUsd: effectiveLocalRate(before).toString(),
         totalValue: before.totalValue.toString(),
         lines: before.lines.map((l) => ({ line: l.lineNumber, itemId: l.itemId, kg: l.quantityKg.toString(), price: l.unitPrice.toString() })),
       },
@@ -476,6 +486,7 @@ export async function editApprovedPurchase(input: EditApprovedOrderInput) {
         date: input.contractDate,
         currency,
         rateToUsd: dec(input.rateToUsd).toString(),
+        rateLocalPerUsd: dec(input.rateLocalPerUsd).toString(),
         totalValue: totals.totalValue.toString(),
         lines: after.lines.map((l) => ({ line: l.lineNumber, itemId: l.itemId, kg: l.quantityKg.toString(), price: l.unitPrice.toString() })),
         changes,
@@ -936,110 +947,3 @@ async function removeUntouchedContainer(
   await tx.purchaseContractLine.delete({ where: { id: params.line.id } });
 }
 
-/**
- * Record the rate actually paid for the dollars that settle a purchase order.
- *
- * The order was placed at the best rate available that day. The real one is
- * only known when the dollars are bought, and until then every local figure
- * derived from the order — landed cost, cost per kilo, inventory value, cost
- * of sales — is stated at a rate nobody paid.
- *
- * The USD purchase price is deliberately untouched: the supplier is owed the
- * same dollars whatever the dirhams cost. Only the translation moves, and
- * because every costing screen reads `effectiveLocalRate` rather than storing
- * its own copy, saving this moves all of them at once. Nothing is reposted and
- * no journal is rewritten — the posted books keep the rate they were posted
- * at, and the exchange difference belongs to the supplier settlement, where
- * the existing FX policy already handles it.
- */
-export async function setPurchaseActualFx(input: {
-  companyId: string;
-  contractId: string;
-  userId: string;
-  /** The rate actually paid, in local units per USD. Null puts it back to the estimate. */
-  actualRateLocalPerUsd: string | number | null;
-  note?: string | null;
-}) {
-  return transaction(async (tx) => {
-    const contract = await tx.purchaseContract.findFirst({
-      where: { id: input.contractId, companyId: input.companyId },
-      select: {
-        id: true,
-        contractNumber: true,
-        contractReference: true,
-        status: true,
-        currency: true,
-        totalValueUsd: true,
-        rateLocalPerUsd: true,
-        actualRateLocalPerUsd: true,
-        actualRateNote: true,
-      },
-    });
-    if (!contract) throw new NotFoundError('Purchase contract');
-    if (contract.status === 'REVERSED') {
-      throw new BusinessRuleError('This order has been reversed, so its exchange rate is no longer costed against.');
-    }
-
-    const clearing = input.actualRateLocalPerUsd === null || input.actualRateLocalPerUsd === '';
-    const rate = clearing ? null : toUnitCost(dec(input.actualRateLocalPerUsd!));
-    if (rate && !rate.greaterThan(0)) {
-      throw new BusinessRuleError('Enter the rate actually paid — how many local units one dollar cost.');
-    }
-
-    const company = await getCompanyContext(tx, input.companyId);
-    // Sanity, not policy: a rate an order of magnitude from the estimate is
-    // far more likely to be a typo than a currency crisis, and a wrong one
-    // silently restates the cost of everything on the order.
-    if (rate) {
-      const estimate = dec(contract.rateLocalPerUsd);
-      if (estimate.greaterThan(0) && (rate.greaterThan(estimate.times(3)) || rate.lessThan(estimate.dividedBy(3)))) {
-        throw new BusinessRuleError(
-          `${company.localCurrency} ${rate.toFixed(4)} per dollar is a long way from the ${estimate.toFixed(4)} this order was placed at. Check the rate: it restates the cost of everything on this order.`,
-        );
-      }
-    }
-
-    const updated = await tx.purchaseContract.update({
-      where: { id: contract.id },
-      data: {
-        actualRateLocalPerUsd: rate,
-        actualRateSetAt: rate ? new Date() : null,
-        actualRateSetById: rate ? input.userId : null,
-        actualRateNote: rate ? (input.note?.trim() || null) : null,
-      },
-      select: { actualRateLocalPerUsd: true, actualRateSetAt: true, actualRateNote: true },
-    });
-
-    // What the change is worth, so the audit record explains the movement in
-    // cost rather than leaving it to be rediscovered.
-    const usd = dec(contract.totalValueUsd);
-    const estimatedLocal = toMoney(usd.times(dec(contract.rateLocalPerUsd)));
-    const actualLocal = rate ? toMoney(usd.times(rate)) : estimatedLocal;
-
-    await writeAudit(tx, {
-      companyId: input.companyId,
-      userId: input.userId,
-      action: 'PURCHASE_ACTUAL_FX_SET',
-      entityType: 'PurchaseContract',
-      entityId: contract.id,
-      before: {
-        actualRateLocalPerUsd: contract.actualRateLocalPerUsd?.toString() ?? null,
-        note: contract.actualRateNote,
-      },
-      after: {
-        contract: contract.contractReference ?? contract.contractNumber,
-        estimatedRate: dec(contract.rateLocalPerUsd).toString(),
-        actualRate: rate?.toString() ?? null,
-        purchaseUsd: usd.toFixed(2),
-        // The dollars do not move; only what they cost locally.
-        estimatedLocal: estimatedLocal.toFixed(2),
-        actualLocal: actualLocal.toFixed(2),
-        difference: actualLocal.minus(estimatedLocal).toFixed(2),
-        localCurrency: company.localCurrency,
-        note: updated.actualRateNote,
-      },
-    });
-
-    return updated;
-  });
-}

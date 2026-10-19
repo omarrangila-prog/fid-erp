@@ -1,9 +1,9 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { prisma, resetDatabase, getContext, createMasters, getCashAccount, utcDate, receiveEverything } from '../helpers';
+import { prisma, resetDatabase, getContext, createMasters, getCashAccount, utcDate, receiveEverything, editOrderRate } from '../helpers';
 import { createPurchaseContract, postPurchaseContract } from '@/lib/services/purchase';
 import { createExpense, postExpense } from '@/lib/services/expense';
 import { createSalesInvoice, postSalesInvoice } from '@/lib/services/sales';
-import { setPurchaseActualFx } from '@/lib/services/purchase-edit';
+import { getReceivables } from '@/lib/services/receivables';
 import { getShipmentCostSheet } from '@/lib/services/landed-cost';
 import { getItemProfitability } from '@/lib/services/item-profitability';
 import { getShipmentProfitability, getCogsReport } from '@/lib/services/profitability';
@@ -11,17 +11,19 @@ import { getInventoryValuation, getInventoryValuationSummary } from '@/lib/servi
 import { dec } from '@/lib/money';
 
 /**
- * The client's own example, end to end (brief of 16 Oct, §31 and §35).
+ * The client's own example, end to end (briefs of 16 and 19 Oct).
  *
- * USD 100,000 of coffee in two containers, ordered at an estimated 9.90 MAD to
- * the dollar, with MAD 65,000 of customs, transport and warehouse charges.
- * 15,000 of the 25,000 KG sold at MAD 43. The dollars actually cost 10.30.
+ * USD 100,000 of coffee in two containers, ordered at 9.90 MAD to the dollar,
+ * with MAD 65,000 of customs, transport and warehouse charges. 15,000 of the
+ * 25,000 KG sold at MAD 43. The order has one USD/MAD rate, and the client
+ * edits it on the order: 9.90 → 10.30, then back to 9.90.
  *
- * At 9.90 the shipment makes MAD 12,000. At 10.30 the same coffee cost MAD
- * 40,000 more, and the shipment is a MAD 12,000 loss. The supplier is owed
- * the same USD 100,000, the MAD charges are the same MAD 65,000, and the
- * customer's invoice is the same MAD 645,000 — the purchase cost moved, and
- * every figure derived from it follows, reconciling at each step.
+ * At 9.90 the shipment makes MAD 12,000. At 10.30 the same coffee costs MAD
+ * 40,000 more and the shipment is a MAD 12,000 loss; back at 9.90 it is a
+ * MAD 12,000 profit again. The supplier is owed the same USD 100,000, the MAD
+ * charges are the same MAD 65,000, the customer's invoice and balance are the
+ * same, and not a kilo moves — the purchase cost moved, and every figure
+ * derived from it follows, reconciling at each step.
  */
 
 let companyId: string;
@@ -101,10 +103,11 @@ async function reconciliation() {
   const valuation = await getInventoryValuation(companyId);
   const summaryRow = (await getInventoryValuationSummary(companyId)).find((r) => r.itemId === itemId);
   const cogsLines = await getCogsReport({ companyId });
+  const receivable = (await getReceivables({ companyId })).find((r) => r.invoiceId === invoiceId);
+  const batches = await prisma.batch.findMany({ where: { purchaseContractId: contractId }, select: { orderedQuantityKg: true, receivedQuantityKg: true, soldQuantityKg: true, availableQuantityKg: true } });
   return {
     'PO USD value': f(contract.totalValueUsd),
-    'Purchase FX': f(sheet.rateLocalPerUsd),
-    'FX source': sheet.fxSource,
+    'USD/MAD rate': f(sheet.rateLocalPerUsd),
     'MAD purchase cost': f(sheet.goodsLocal),
     'Direct expenses (MAD)': f(sheet.expenseLocal),
     'Landed cost (MAD)': f(sheet.totalShipmentCostLocal),
@@ -126,14 +129,20 @@ async function reconciliation() {
     'Avg cost/KG (Inventory Valuation)': f(summaryRow?.averageCostLocal),
     'COGS (COGS report)': f(cogsLines.reduce((t, l) => t.plus(l.cogsLocal), dec(0))),
     'Sales (COGS report)': f(cogsLines.reduce((t, l) => t.plus(l.revenueLocal), dec(0))),
+    'Customer outstanding (MAD)': f(receivable?.outstandingAmount),
+    'Invoice status': invoice.status,
+    'Quantities (ordered/received/sold/available KG)': batches
+      .map((b) => [b.orderedQuantityKg, b.receivedQuantityKg, b.soldQuantityKg, b.availableQuantityKg].map((q) => dec(q).toFixed(3)).join('/'))
+      .join(' · '),
   };
 }
 
-describe('the client’s example: 9.90 estimated, 10.30 actual', () => {
+describe('the client’s example: the order rate edited 9.90 → 10.30 → 9.90', () => {
   let before: Awaited<ReturnType<typeof reconciliation>>;
   let after: Awaited<ReturnType<typeof reconciliation>>;
+  let back: Awaited<ReturnType<typeof reconciliation>>;
 
-  it('reconciles at the estimate, with a profit', async () => {
+  it('reconciles at 9.90, with a profit', async () => {
     before = await reconciliation();
     expect(before['MAD purchase cost']).toBe('990000.00');
     expect(before['Direct expenses (MAD)']).toBe('65000.00');
@@ -145,19 +154,23 @@ describe('the client’s example: 9.90 estimated, 10.30 actual', () => {
     expect(before['Gross profit / loss (MAD)']).toBe('12000.00');
   }, 300_000);
 
-  it('moves every figure that depends on the purchase cost when 10.30 is confirmed, and nothing else', async () => {
+  it('moves every figure that depends on the purchase cost when the order rate is edited to 10.30, and nothing else', async () => {
     const ctx = await getContext();
-    await setPurchaseActualFx({ companyId, contractId, userId: ctx.admin.id, actualRateLocalPerUsd: '10.30', note: 'Bank advice' });
+    await editOrderRate({ companyId, contractId, userId: ctx.admin.id, rateLocalPerUsd: '10.30' });
     after = await reconciliation();
 
-    // Unchanged: the supplier's dollars, the dirham charges, the customer's invoice.
+    // Unchanged: the supplier's dollars, the dirham charges, the customer's
+    // invoice, what the customer owes, and every kilo.
     expect(after['PO USD value']).toBe('100000.00');
     expect(after['Direct expenses (MAD)']).toBe('65000.00');
     expect(after['Sales revenue (MAD)']).toBe('645000.00');
     expect(after['Invoice total (MAD)']).toBe(before['Invoice total (MAD)']);
+    expect(after['Customer outstanding (MAD)']).toBe(before['Customer outstanding (MAD)']);
+    expect(after['Invoice status']).toBe(before['Invoice status']);
+    expect(after['Quantities (ordered/received/sold/available KG)']).toBe(before['Quantities (ordered/received/sold/available KG)']);
 
     // The purchase cost rises by USD 100,000 × 0.40 = MAD 40,000.
-    expect(after['FX source']).toBe('ACTUAL');
+    expect(after['USD/MAD rate']).toBe('10.30');
     expect(after['MAD purchase cost']).toBe('1030000.00');
     expect(dec(after['MAD purchase cost']).minus(before['MAD purchase cost']).toFixed(2)).toBe('40000.00');
     expect(after['Landed cost (MAD)']).toBe('1095000.00');
@@ -167,24 +180,23 @@ describe('the client’s example: 9.90 estimated, 10.30 actual', () => {
     expect(after['Remaining inventory (Inventory Valuation)']).toBe('438000.00');
     expect(after['COGS (COGS report)']).toBe('657000.00');
 
-    // The exchange loss, said in dirhams: USD 100,000 × 0.40, of which the
-    // 15,000 KG sold carry 24,000 and the 10,000 KG left carry 16,000. Put
-    // back, the profit is the 12,000 the shipment made at the order's rate.
-    const sheet = await getShipmentCostSheet(companyId, shipmentId, { wholeOrder: true });
-    expect(sheet.orderedRate.toFixed(2)).toBe('9.90');
-    expect(sheet.exchangeDifferenceLocal.toFixed(2)).toBe('40000.00');
-    expect(sheet.exchangeDifferenceInSalesLocal.toFixed(2)).toBe('24000.00');
-    expect(sheet.exchangeDifferenceInStockLocal.toFixed(2)).toBe('16000.00');
-    expect(sheet.grossProfitLocal.plus(sheet.exchangeDifferenceInSalesLocal).toFixed(2)).toBe(before['Gross profit / loss (MAD)']);
-
     // A higher rate is a higher cost: the profit becomes a loss, never a gain.
     expect(after['Gross profit / loss (MAD)']).toBe('-12000.00');
     expect(dec(after['Gross margin %']).isNegative()).toBe(true);
     expect(dec(after['Gross margin % (profitability)']).isNegative()).toBe(true);
   }, 300_000);
 
+  it('follows the rate back down when it is edited again, to 9.90', async () => {
+    const ctx = await getContext();
+    await editOrderRate({ companyId, contractId, userId: ctx.admin.id, rateLocalPerUsd: '9.90' });
+    back = await reconciliation();
+    // Whatever is saved on the order now is the rate: every figure is what it
+    // was at 9.90, with no trace of 10.30 left in the costing.
+    for (const key of Object.keys(before) as Array<keyof typeof before>) expect(back[key], key).toBe(before[key]);
+  }, 300_000);
+
   it('reconciles: landed = COGS + remaining, and every screen says the same', async () => {
-    for (const r of [before, after]) {
+    for (const r of [before, after, back]) {
       expect(dec(r['COGS (MAD)']).plus(r['Remaining inventory (shipment)']).toFixed(2)).toBe(r['Landed cost (MAD)']);
       expect(dec(r['Sales revenue (MAD)']).minus(r['COGS (MAD)']).toFixed(2)).toBe(r['Gross profit / loss (MAD)']);
       expect(r['Avg cost/KG (Stock on Hand)']).toBe(r['Avg cost/KG (shipment)']);
@@ -196,6 +208,6 @@ describe('the client’s example: 9.90 estimated, 10.30 actual', () => {
       expect(r['COGS (COGS report)']).toBe(r['COGS (MAD)']);
       expect(r['Sales (COGS report)']).toBe(r['Sales revenue (MAD)']);
     }
-    console.table(Object.keys(after).map((k) => ({ figure: k, 'at 9.90': before[k as keyof typeof before], 'at 10.30': after[k as keyof typeof after] })));
+    console.table(Object.keys(after).map((k) => ({ figure: k, 'at 9.90': before[k as keyof typeof before], 'at 10.30': after[k as keyof typeof after], 'back at 9.90': back[k as keyof typeof back] })));
   }, 300_000);
 });

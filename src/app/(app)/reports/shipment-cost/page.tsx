@@ -466,13 +466,12 @@ function FxSummary({ sheet }: { sheet: OrderCostSheet }) {
         gave. Dirham costs need no rate; their dirham amounts are the cost.
       */}
       <p className="mt-1 text-sm" data-testid="fx-purchase-rate">
-        <span className="font-medium text-ink">Purchase FX</span>{' '}
+        <span className="font-medium text-ink">USD/MAD rate</span>{' '}
         <span className="tnum font-semibold text-ink">
           1 USD = {dec(sheet.rateLocalPerUsd).toString()} {local}
         </span>{' '}
         <span className="text-xs text-ink-subtle">
-          {sheet.fxSource === 'ACTUAL' ? 'actual — the rate paid for the dollars' : 'estimated — not yet confirmed on the order'}.
-          Shipment costs paid in {local} are taken at their {local} amounts.
+          from the purchase order. Shipment costs paid in {local} are taken at their {local} amounts.
         </span>
       </p>
       <details className="mt-1">

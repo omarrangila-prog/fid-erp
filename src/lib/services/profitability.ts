@@ -1,6 +1,6 @@
 import { getOverheadByShipment } from '@/lib/services/overhead-allocation';
 import { prisma } from '@/lib/db';
-import { Decimal, toMoney, toQuantity, toUnitCost, percentage } from '@/lib/money';
+import { Decimal, dec, toMoney, toQuantity, toUnitCost, percentage } from '@/lib/money';
 
 /**
  * ProfitabilityService.
@@ -32,6 +32,8 @@ export type ShipmentProfitability = {
   contractId: string;
   contractNumber: string;
   contractReference: string;
+  /** The order's USD/MAD rate: management dollar equivalents are stated at it. */
+  rateLocalPerUsd: Decimal;
   status: string;
   itemName: string;
   vendorName: string;
@@ -91,6 +93,7 @@ type RawRow = {
   contractId: string;
   contractNumber: string;
   contractReference: string;
+  rateLocalPerUsd: string;
   status: string;
   itemName: string;
   vendorName: string;
@@ -143,6 +146,7 @@ function shape(row: RawRow): ShipmentProfitability {
     contractId: row.contractId,
     contractNumber: row.contractNumber,
     contractReference: row.contractReference,
+    rateLocalPerUsd: dec(row.rateLocalPerUsd),
     status: row.status,
     itemName: row.itemName,
     vendorName: row.vendorName,
@@ -213,6 +217,7 @@ export async function getShipmentProfitability(params: {
     SELECT
       s."id" AS "shipmentId", s."shipmentNumber", s."jobNumber", s."status"::text AS status,
       pc."id" AS "contractId", pc."contractNumber", pc."contractReference",
+      COALESCE(pc."actualRateLocalPerUsd", pc."rateLocalPerUsd")::text AS "rateLocalPerUsd",
       ci."itemName", v."vendorName",
       -- Who bought this shipment's coffee: by the lines sold from its batches,
       -- not by an invoice header, which may name another shipment or none.
@@ -738,8 +743,8 @@ export type CogsLine = {
   /**
    * The same in the company's currency. Revenue as invoiced — an invoice in
    * that currency at its own amount — and cost from the one batch costing:
-   * the KG at the batch's landed cost, the coffee at its order's rate (the
-   * rate actually paid once confirmed). Shipment profitability reads the same.
+   * the KG at the batch's landed cost, the coffee at its order's USD/MAD
+   * rate. Shipment profitability reads the same.
    */
   revenueLocal: Decimal;
   cogsLocal: Decimal;

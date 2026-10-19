@@ -139,4 +139,44 @@ export async function receiveEverything(params: {
   return { grn, batches };
 }
 
+/**
+ * Change an approved order's USD/MAD rate the way the client does: open the
+ * order, edit the rate, save. Every other field goes back exactly as it is.
+ */
+export async function editOrderRate(params: { companyId: string; contractId: string; userId: string; rateLocalPerUsd: string }) {
+  const { editApprovedPurchase } = await import('@/lib/services/purchase-edit');
+  const order = await prisma.purchaseContract.findUniqueOrThrow({
+    where: { id: params.contractId },
+    include: { lines: { orderBy: { lineNumber: 'asc' } } },
+  });
+  return editApprovedPurchase({
+    companyId: params.companyId,
+    contractId: order.id,
+    userId: params.userId,
+    contractReference: order.contractReference,
+    contractDate: order.contractDate,
+    vendorId: order.vendorId,
+    currency: order.currency,
+    rateToUsd: order.rateToUsd.toString(),
+    rateLocalPerUsd: params.rateLocalPerUsd,
+    freightAmount: order.freightAmount.toString(),
+    otherCharges: order.otherCharges.toString(),
+    containers: order.containers,
+    notes: order.notes,
+    reason: 'Rate corrected',
+    lines: order.lines.map((l) => ({
+      id: l.id,
+      itemId: l.itemId,
+      lotNumber: l.lotNumber,
+      batchNumber: l.batchNumber,
+      containerNumber: l.containerNumber,
+      quantity: l.quantity.toString(),
+      unit: l.unit as 'KG',
+      unitPrice: l.unitPrice.toString(),
+      bags: l.bags,
+      bagWeightKg: l.bagWeightKg.toString(),
+    })),
+  });
+}
+
 export { prisma, transaction };

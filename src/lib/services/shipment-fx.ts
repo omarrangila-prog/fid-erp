@@ -216,9 +216,8 @@ export async function getOrderFxTransactions(
   for (const c of contracts) {
     const goodsUsd = toMoney(c.batches.reduce((t, b) => t.plus(dec(b.purchaseCostUsd)), dec(0)));
     const rateToUsd = dec(c.rateToUsd);
-    // The rate paid for the dollars once confirmed, else the order's estimate:
-    // the purchase leg of the exposure must be stated at the same rate the
-    // costing uses, or the panel disagrees with the cost sheet beside it.
+    // The order's USD/MAD rate: the purchase leg must be stated at the same
+    // rate the costing uses, or the panel disagrees with the cost sheet beside it.
     const purchaseLocalRate = effectiveLocalRate(c);
     result.set(c.id, {
       costs: [

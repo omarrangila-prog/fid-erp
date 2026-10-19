@@ -214,7 +214,7 @@ export function StockClient({
                 <th className="py-1.5 pr-3 text-right font-medium">Landed /KG</th>
                 <th className="py-1.5 pr-3 text-right font-medium">Purchase value</th>
                 <th className="py-1.5 pr-3 text-right font-medium">Stock value</th>
-                <th className="py-1.5 text-right font-medium">Rate</th>
+                <th className="py-1.5 text-right font-medium">USD/MAD rate</th>
               </tr>
             </thead>
             <tbody>

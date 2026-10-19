@@ -650,7 +650,9 @@ export function ReceiptForm({
         </Card>
       ) : null}
 
-      {isForeign ? (
+      {/* Money received in the company's own currency asks for no exchange rate: the
+          reporting rate is filled in quietly from the rate table, as on the invoice. */}
+      {isForeign && !(isHomeMoney && form.rateToUsd) ? (
         <Card>
           <CardHeader>
             <CardTitle>{isHomeMoney ? 'Group reporting rate' : 'Conversion'}</CardTitle>

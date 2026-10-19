@@ -14,8 +14,7 @@ import { getContractOutstanding } from '@/lib/services/payment';
 import { supplierGrossPayable } from '@/lib/services/tax';
 import { DualAmount } from '@/components/shared/dual-amount';
 import { formatMoney, formatQuantityKg, formatDate, formatDateTime, formatRate } from '@/lib/format';
-import { effectiveLocalRate, purchaseFxSource } from '@/lib/purchase-fx';
-import { ActualFxCard } from '@/app/(app)/purchases/[id]/actual-fx';
+import { effectiveLocalRate } from '@/lib/purchase-fx';
 import { PageHeader } from '@/components/shared/page-header';
 import { Metric, MetricGrid, DetailRow } from '@/components/shared/stat-card';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -55,7 +54,6 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
       vendor: true,
       createdBy: { select: { name: true } },
       postedBy: { select: { name: true } },
-      actualRateSetBy: { select: { name: true } },
       lines: { orderBy: { lineNumber: 'asc' }, include: { item: true } },
       shipments: { select: { id: true, shipmentNumber: true, jobNumber: true, status: true, etaDate: true } },
       goodsReceipts: {
@@ -76,11 +74,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
    * costing service uses, so this page and the cost sheet cannot disagree.
    */
   const costingRate = effectiveLocalRate(contract);
-  const fxSource = purchaseFxSource(contract);
-  const rateSource =
-    fxSource === 'ACTUAL'
-      ? 'The rate actually paid for the dollars'
-      : "This purchase order's estimated rate";
+  const rateSource = "This order's USD/MAD rate";
 
   const attachments = can(user, PERMISSIONS.ATTACHMENTS_VIEW)
     ? await loadAttachments(user.activeCompany.id, 'PurchaseContract', contract.id)
@@ -249,22 +243,6 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
         ) : null}
       </MetricGrid>
 
-      {/* The rate a dollar actually cost, which governs every local figure
-          derived from this order. Only where the costing is visible at all. */}
-      {showCost && contract.currency !== user.activeCompany.localCurrency ? (
-        <ActualFxCard
-          contractId={contract.id}
-          localCurrency={user.activeCompany.localCurrency}
-          purchaseUsd={dec(contract.totalValueUsd).toString()}
-          estimatedRate={dec(contract.rateLocalPerUsd).toString()}
-          actualRate={contract.actualRateLocalPerUsd ? dec(contract.actualRateLocalPerUsd).toString() : null}
-          note={contract.actualRateNote}
-          setAt={contract.actualRateSetAt ? formatDateTime(contract.actualRateSetAt) : null}
-          setBy={contract.actualRateSetBy?.name ?? null}
-          canEdit={contract.status === 'POSTED' && can(user, PERMISSIONS.PURCHASES_APPROVE)}
-        />
-      ) : null}
-
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
@@ -394,12 +372,10 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                 {showCost ? (
                   <>
                     <DetailRow label="Rate to USD">{formatRate(contract.rateToUsd)}</DetailRow>
-                    <DetailRow label={`Rate to ${user.activeCompany.localCurrency}`}>
+                    <DetailRow label={`USD/${user.activeCompany.localCurrency} rate`}>
                       {formatRate(costingRate)}
                       <span className="block text-xs text-ink-subtle">
-                        {fxSource === 'ACTUAL'
-                          ? `Actually paid. Ordered at ${formatRate(contract.rateLocalPerUsd)}.`
-                          : 'Estimated when the order was placed.'}
+                        Costs this order&rsquo;s shipment. Edit the order to change it.
                       </span>
                     </DetailRow>
                     <DetailRow label="Value in USD">{formatMoney(contract.totalValueUsd, 'USD')}</DetailRow>

@@ -5,7 +5,7 @@ import { getExpenseSettlements, type ExpensePaymentStatus } from '@/lib/services
 import { batchLandedLocal, getCapitalisedRates, getOrderFxTransactions, summariseFx } from '@/lib/services/shipment-fx';
 import { getShipmentProfitability } from '@/lib/services/profitability';
 import { Decimal, dec, toMoney, toUnitCost, allocateProportionally, sum, toQuantity, convertFromUsd, KG_PER_MT } from '@/lib/money';
-import { effectiveLocalRate, purchaseFxSource } from '@/lib/purchase-fx';
+import { effectiveLocalRate } from '@/lib/purchase-fx';
 import { BusinessRuleError } from '@/lib/errors';
 import { lockBatch } from '@/lib/services/inventory';
 
@@ -619,11 +619,9 @@ export async function getShipmentCostSheet(
   // One weighted rate per currency pair for the order this shipment is on.
   const orderFx = (await getOrderFxTransactions(companyId, [shipment.purchaseContractId])).get(shipment.purchaseContractId);
 
-  // The rate actually paid for the dollars once it is known, else the estimate
-  // the order was placed at. Reading it here means confirming the rate moves
-  // every figure on this sheet without anything being recalculated by hand.
+  // The order's USD/MAD rate, as saved on it now. Reading it here means editing
+  // the rate moves every figure on this sheet with nothing recalculated by hand.
   const rateLocalPerUsd = effectiveLocalRate(shipment.purchaseContract);
-  const fxSource = purchaseFxSource(shipment.purchaseContract);
   const localCurrency = company.localCurrency;
   const goodsLocal = convertFromUsd(job.goodsUsd, rateLocalPerUsd, localCurrency);
 
@@ -765,28 +763,6 @@ export async function getShipmentCostSheet(
   // The supplier's price on the coffee still here, so Purchase cost / KG ×
   // remaining KG is the remaining purchase value on the same panel.
   const remainingPurchasePerKgUsd = remainingKg.greaterThan(0) ? toUnitCost(remainingPurchaseUsdRaw.dividedBy(remainingKg)) : null;
-  /*
-   * What the rate cost — or saved — against the rate the order was placed at.
-   *
-   * The order's own rate field can be corrected after the event, so the rate
-   * it was placed at is read from the first posting the order made: the books
-   * remember what the screen was overwritten with. USD × (rate costed − rate
-   * ordered) is the extra dirhams the same dollars took; the share on the
-   * coffee still here is in the remaining stock, the rest has already gone
-   * through cost of sales. Nothing is posted from this — it explains, in
-   * dirhams, a cost the figures above already carry.
-   */
-  const firstPosting = await prisma.journalLine.findFirst({
-    where: {
-      journalEntry: { companyId, sourceType: 'PURCHASE_CONTRACT', sourceId: shipment.purchaseContractId, isReversal: false },
-    },
-    orderBy: [{ journalEntry: { sourceSeq: 'asc' } }, { journalEntry: { createdAt: 'asc' } }],
-    select: { rateLocalPerUsd: true },
-  });
-  const orderedRate = firstPosting ? dec(firstPosting.rateLocalPerUsd) : rateLocalPerUsd;
-  const exchangeDifferenceLocal = toMoney(job.goodsUsd.times(rateLocalPerUsd.minus(orderedRate)));
-  const exchangeDifferenceInStockLocal = toMoney(remainingPurchaseUsdRaw.times(rateLocalPerUsd.minus(orderedRate)));
-  const exchangeDifferenceInSalesLocal = toMoney(exchangeDifferenceLocal.minus(exchangeDifferenceInStockLocal));
   // What a kilo still here cost: the figure Stock on Hand shows as Avg Cost/KG.
   const remainingAvgCostPerKgUsd = remainingKg.greaterThan(0) ? toUnitCost(remainingLandedUsdRaw.dividedBy(remainingKg)) : null;
   const remainingAvgCostPerKgLocal = remainingKg.greaterThan(0) ? toUnitCost(remainingLandedLocalRaw.dividedBy(remainingKg)) : null;
@@ -819,8 +795,6 @@ export async function getShipmentCostSheet(
   return {
     localCurrency,
     rateLocalPerUsd,
-    /** Whether that rate is the one actually paid, or still the order's estimate. */
-    fxSource,
     contractReference: shipment.purchaseContract.contractReference,
     costFx: summariseFx(orderFx?.costs ?? [], localCurrency),
     goodsUsd: job.goodsUsd,
@@ -850,13 +824,6 @@ export async function getShipmentCostSheet(
     remainingAvgCostPerKgUsd,
     remainingAvgCostPerKgLocal,
     remainingPurchasePerKgUsd,
-    /** The rate the order was first posted at, before any correction. */
-    orderedRate,
-    /** Extra dirhams the dollars took at the costed rate; negative is a saving. */
-    exchangeDifferenceLocal,
-    /** Of which already through cost of sales, and still in the remaining stock. */
-    exchangeDifferenceInSalesLocal,
-    exchangeDifferenceInStockLocal,
     costPerKgUsd,
     costPerKgLocal,
     costPerMtUsd,
@@ -1013,8 +980,6 @@ export type BatchCosting = {
   remainingPurchaseLocal: Decimal;
   localCurrency: string;
   rateLocalPerUsd: Decimal;
-  /** Whether that rate is the one actually paid, or the order's estimate. */
-  fxSource: 'ESTIMATED' | 'ACTUAL';
 };
 
 /**
@@ -1079,10 +1044,9 @@ export async function getBatchCostings(params: {
   const capitalisedRates = await getCapitalisedRates(params.companyId, [...new Set(batches.map((b) => b.purchaseContractId))]);
 
   return batches.map((batch) => {
-    // The rate actually paid for the dollars once known, else the order's
-    // estimate. The coffee only: capitalised costs keep their own rates below.
+    // The order's USD/MAD rate, as saved on it now. The coffee only:
+    // capitalised costs keep their own rates below.
     const rateLocalPerUsd = effectiveLocalRate(batch.purchaseContract);
-    const fxSource = purchaseFxSource(batch.purchaseContract);
     const orderedKg = toQuantity(batch.orderedQuantityKg);
     const availableKg = toQuantity(batch.availableQuantityKg);
     const purchaseUsd = toMoney(batch.purchaseCostUsd);
@@ -1144,8 +1108,6 @@ export async function getBatchCostings(params: {
       ),
       localCurrency,
       rateLocalPerUsd,
-      /** Whether that rate is the one actually paid, or the order's estimate. */
-      fxSource,
     };
   });
 }

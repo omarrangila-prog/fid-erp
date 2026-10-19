@@ -9,7 +9,6 @@ import { PERMISSIONS } from '@/lib/constants';
 import { fieldErrors, calendarDay } from '@/lib/validation/common';
 import {
   purchaseContractSchema,
-  purchaseActualFxSchema,
   goodsReceiptSchema,
   receiveContainersSchema,
   splitContractLineSchema,
@@ -35,7 +34,7 @@ import {
   addContainerToOrder,
   removeContainerFromOrder,
 } from '@/lib/services/purchase';
-import { editApprovedPurchase, setPurchaseActualFx } from '@/lib/services/purchase-edit';
+import { editApprovedPurchase } from '@/lib/services/purchase-edit';
 import {
   createGoodsReceipt,
   postGoodsReceipt,
@@ -173,42 +172,6 @@ function revalidatePurchaseCosting(contractId: string) {
   }
   revalidatePath('/shipments/[id]', 'page');
   revalidatePath('/inventory/items/[id]', 'page');
-}
-
-/**
- * Record the rate actually paid for the dollars settling an order.
- *
- * It restates the local cost of everything on the order, so it is for the
- * people who may approve one — checked here, not only by which buttons the
- * screen shows. Every costing page is revalidated, because the figures are
- * derived from this rate and the client must not have to sign out to see
- * them move.
- */
-export async function setPurchaseActualFxAction(payload: string): Promise<DocFormState> {
-  try {
-    const user = await requirePermission(PERMISSIONS.PURCHASES_APPROVE);
-    const input = purchaseActualFxSchema.parse(parseJson(payload));
-
-    await setPurchaseActualFx({
-      companyId: user.activeCompany.id,
-      contractId: input.contractId,
-      userId: user.id,
-      actualRateLocalPerUsd: input.actualRateLocalPerUsd ?? null,
-      note: input.note,
-    });
-
-    revalidatePurchaseCosting(input.contractId);
-
-    return {
-      ok: true,
-      id: input.contractId,
-      message: input.actualRateLocalPerUsd
-        ? 'Actual rate saved. Costing now uses it.'
-        : 'Back to the order’s estimated rate.',
-    };
-  } catch (error) {
-    return toState(error);
-  }
 }
 
 export async function postPurchaseContractAction(id: string): Promise<ActionResult<undefined>> {

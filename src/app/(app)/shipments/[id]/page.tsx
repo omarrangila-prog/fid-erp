@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import { cn } from '@/lib/utils';
 import { getCurrentUser } from '@/lib/auth/session';
 import { CostingTable } from '@/components/shared/costing-table';
 import { getBatchCostings } from '@/lib/services/landed-cost';
@@ -19,6 +18,7 @@ import { dec, toMoney } from '@/lib/money';
 import { getShipmentSettlement } from '@/lib/services/shipment';
 import { getShipmentProfitability } from '@/lib/services/profitability';
 import { DualAmount } from '@/components/shared/dual-amount';
+import { effectiveLocalRate } from '@/lib/purchase-fx';
 import { getReceivables } from '@/lib/services/receivables';
 import { shortDocumentNumber } from '@/lib/short-number';
 import { getJobCostSummary, getShipmentCostSheet } from '@/lib/services/landed-cost';
@@ -66,6 +66,9 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
           contractReference: true,
           status: true,
           currency: true,
+          // The order's USD/MAD rate: the one rate management figures are stated in.
+          rateLocalPerUsd: true,
+          actualRateLocalPerUsd: true,
           // Every shipment on the same order, so this one knows it is "2 of 3"
           // and the reader can step to its siblings without going back.
           shipments: { orderBy: { createdAt: 'asc' }, select: { id: true, status: true } },
@@ -193,9 +196,16 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
   const receivableByInvoice = new Map(receivables.map((r) => [r.invoiceId, r]));
   // The posted sales, in the company's currency at each invoice's own rate.
   const postedSales = soldFromHere.filter((inv) => inv.status === 'POSTED');
-  // Customers are invoiced in the company's own money: the sale side of this page is read in that
-  // money alone — no dollar figure, no conversion rate. Only the cost side carries the purchase rate.
+  // Customers are invoiced in the company's own money. The sale side is read in that money; the dollars
+  // beneath it are a management equivalent at the order's USD/MAD rate, never the invoice's currency.
   const customerSalesLocalOnly = postedSales.every((inv) => inv.currency === local);
+  /*
+   * The one rate management figures on this page are stated in: the order's
+   * USD/MAD rate as saved on it now. Dirham figures read "≈ USD" at it, dollar
+   * figures "≈ MAD"; editing the rate on the order moves every one of them.
+   */
+  const poRate = effectiveLocalRate(shipment.purchaseContract);
+  const MGMT = "Management equivalent at this order's USD/MAD rate";
   const settlementLocal = (() => {
     let invoiced = dec(0);
     let received = dec(0);
@@ -361,16 +371,16 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
         <Metric label="ETA" value={formatDate(lastEta)} hint={records.length > 1 ? 'Latest of the containers' : (shipment.vesselName ?? undefined)} />
         <Metric
           label="Invoiced"
-          value={customerSalesLocalOnly ? formatMoney(settlementLocal.invoiced, local) : <DualAmount amount={settlement.invoicedUsd} currency="USD" localCurrency={local} amountLocal={profit?.salesRevenueLocal} rateSource="Each invoice at its own rate" hideMissing />}
+          value={customerSalesLocalOnly ? <DualAmount amount={settlementLocal.invoiced} currency={local} localCurrency={local} rateLocalPerUsd={poRate} rateSource={MGMT} /> : <DualAmount amount={settlement.invoicedUsd} currency="USD" localCurrency={local} amountLocal={profit?.salesRevenueLocal} rateSource="Each invoice at its own rate" hideMissing />}
         />
         <Metric
           label="Received"
-          value={customerSalesLocalOnly ? formatMoney(settlementLocal.received, local) : <DualAmount amount={settlement.receivedUsd} currency="USD" localCurrency={local} rateLocalPerUsd={salesRate} rateSource="Weighted rate of the invoices' own rates" hideMissing />}
+          value={customerSalesLocalOnly ? <DualAmount amount={settlementLocal.received} currency={local} localCurrency={local} rateLocalPerUsd={poRate} rateSource={MGMT} /> : <DualAmount amount={settlement.receivedUsd} currency="USD" localCurrency={local} rateLocalPerUsd={salesRate} rateSource="Weighted rate of the invoices' own rates" hideMissing />}
           tone={settlement.receivedUsd.greaterThan(0) ? 'positive' : 'muted'}
         />
         <Metric
           label="Outstanding"
-          value={customerSalesLocalOnly ? formatMoney(settlementLocal.outstanding, local) : <DualAmount amount={settlement.outstandingUsd} currency="USD" localCurrency={local} rateLocalPerUsd={salesRate} rateSource="Weighted rate of the invoices' own rates" hideMissing />}
+          value={customerSalesLocalOnly ? <DualAmount amount={settlementLocal.outstanding} currency={local} localCurrency={local} rateLocalPerUsd={poRate} rateSource={MGMT} /> : <DualAmount amount={settlement.outstandingUsd} currency="USD" localCurrency={local} rateLocalPerUsd={salesRate} rateSource="Weighted rate of the invoices' own rates" hideMissing />}
           tone={settlement.outstandingUsd.greaterThan(0) ? 'negative' : 'positive'}
         />
       </MetricGrid>
@@ -380,14 +390,12 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
           <CardHeader>
             <CardTitle>Shipment costing</CardTitle>
             <CardDescription>
-              Purchase cost USD + local expenses USD equivalent = total landed cost USD. Every expense keeps its own
-              amount, currency and rate; {costSheet.localCurrency} totals add up those amounts, not dollars at one rate.
-              {/* The one rate the coffee is costed at, not a blend of it with
-                  the rates the dirham expenses were entered at. */}
+              {/* The order's one rate. Edit it on the purchase order and every figure here follows. */}
               <span className="block" data-testid="shipment-fx">
-                Purchase FX: 1 USD = {formatRate(costSheet.rateLocalPerUsd)} {costSheet.localCurrency} (
-                {costSheet.fxSource === 'ACTUAL' ? 'actual, confirmed on the order' : 'estimated, from the order'}). Shipment
-                costs paid in {costSheet.localCurrency} are taken at their {costSheet.localCurrency} amounts.
+                USD/MAD rate: 1 USD = {formatRate(costSheet.rateLocalPerUsd)} {costSheet.localCurrency}, from the purchase
+                order. Purchase cost = the USD purchase × that rate; shipment costs paid in {costSheet.localCurrency} are
+                taken at their {costSheet.localCurrency} amounts. Dollar figures under {costSheet.localCurrency} amounts are
+                equivalents at the same rate.
               </span>
               Cost per KG = total landed ÷ received KG (ordered KG if nothing has landed). Cost per MT = cost per KG × 1,000.
             </CardDescription>
@@ -396,19 +404,15 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
             <MetricGrid className="lg:grid-cols-5">
               <Metric
                 label="Purchase cost"
-                value={<DualAmount amount={costSheet.goodsUsd} currency="USD" localCurrency={costSheet.localCurrency} amountLocal={costSheet.goodsLocal} rateLocalPerUsd={costSheet.rateLocalPerUsd} rateSource={
-                  costSheet.fxSource === 'ACTUAL'
-                    ? "The rate actually paid for the order's dollars"
-                    : "The purchase order's estimated rate"
-                } />}
+                value={<DualAmount amount={costSheet.goodsUsd} currency="USD" localCurrency={costSheet.localCurrency} amountLocal={costSheet.goodsLocal} rateLocalPerUsd={costSheet.rateLocalPerUsd} rateSource="This order's USD/MAD rate" />}
               />
               <Metric
                 label="Local shipment expenses"
-                value={<DualAmount amount={costSheet.expenseLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} amountUsd={costSheet.expenseUsd} rateSource="Each expense at its own rate" />}
+                value={<DualAmount amount={costSheet.expenseLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} rateLocalPerUsd={poRate} rateSource={MGMT} />}
               />
               <Metric
                 label="Total landed cost"
-                value={<DualAmount amount={costSheet.totalShipmentCostLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} amountUsd={costSheet.totalShipmentCostUsd} rateSource="Each transaction at its own rate" />}
+                value={<DualAmount amount={costSheet.totalShipmentCostLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} rateLocalPerUsd={poRate} rateSource={MGMT} />}
                 hint={
                   costSheet.periodExpenseUsd.isZero()
                     ? undefined
@@ -426,24 +430,24 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
               />
               <Metric
                 label="Cost / MT"
-                value={<DualAmount amount={costSheet.costPerMtLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} amountUsd={costSheet.costPerMtUsd} rateSource="From the landed cost, each transaction at its own rate" />}
+                value={<DualAmount amount={costSheet.costPerMtLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} rateLocalPerUsd={poRate} rateSource={MGMT} />}
               />
               <Metric
                 label="Cost / KG"
-                value={<DualAmount amount={costSheet.costPerKgLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} amountUsd={costSheet.costPerKgUsd} rateSource="From the landed cost, each transaction at its own rate" />}
+                value={<DualAmount amount={costSheet.costPerKgLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} rateLocalPerUsd={poRate} rateSource={MGMT} />}
               />
               <Metric
                 label="Revenue"
-                value={<DualAmount hideEquivalent={customerSalesLocalOnly} amount={costSheet.revenueLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} amountUsd={costSheet.revenueUsd} rateSource="Each invoice at its own rate" />}
+                value={<DualAmount amount={costSheet.revenueLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} rateLocalPerUsd={poRate} rateSource={MGMT} />}
               />
               <Metric
                 label="COGS"
-                value={<DualAmount amount={costSheet.cogsLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} amountUsd={costSheet.cogsUsd} rateSource="At the rates the cost was incurred at" />}
+                value={<DualAmount amount={costSheet.cogsLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} rateLocalPerUsd={poRate} rateSource={MGMT} />}
                 tone="muted"
               />
               <Metric
                 label={costSheet.grossProfitLocal.isNegative() ? 'Gross loss' : 'Gross profit'}
-                value={<DualAmount hideEquivalent={customerSalesLocalOnly} amount={costSheet.grossProfitLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} amountUsd={costSheet.grossProfitUsd} rateSource="Sales less cost of sales, each at its own rate" />}
+                value={<DualAmount amount={costSheet.grossProfitLocal} currency={costSheet.localCurrency} localCurrency={costSheet.localCurrency} rateLocalPerUsd={poRate} rateSource={MGMT} />}
                 tone={costSheet.grossProfitLocal.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
                 hint={`${formatPercent(costSheet.profitPct)} gross margin`}
               />
@@ -462,7 +466,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
               apart — the whole shipment cost is not cost of sales while stock
               remains. Each container at its own landed cost, read from the
               same batch costing as Stock on Hand so the two never disagree,
-              and at the rate actually paid for the dollars once that is known.
+              at the order's USD/MAD rate.
             */}
             {costSheet.remainingKg.greaterThan(0) ? (
               <div
@@ -477,12 +481,18 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                   <div>
                     <dt className="text-xs text-ink-muted">Avg cost / KG</dt>
                     <dd className="tnum font-semibold text-ink" data-testid="remaining-avg-cost">
-                      {costSheet.remainingAvgCostPerKgLocal
-                        ? formatMoney(costSheet.remainingAvgCostPerKgLocal, costSheet.localCurrency)
-                        : '—'}
-                      <span className="block text-xs font-normal text-ink-subtle">
-                        landed, as Stock on Hand shows it
-                      </span>
+                      {costSheet.remainingAvgCostPerKgLocal ? (
+                        <DualAmount
+                          amount={costSheet.remainingAvgCostPerKgLocal}
+                          currency={costSheet.localCurrency}
+                          localCurrency={costSheet.localCurrency}
+                          rateLocalPerUsd={poRate}
+                          rateSource={MGMT}
+                        />
+                      ) : (
+                        '—'
+                      )}
+                      <span className="block text-xs font-normal text-ink-subtle">landed, as Stock on Hand shows it</span>
                     </dd>
                   </div>
                   <div>
@@ -491,20 +501,16 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                       {costSheet.remainingPurchasePerKgUsd ? formatMoney(costSheet.remainingPurchasePerKgUsd, 'USD') : '—'}
                       <span className="block text-xs font-normal text-ink-subtle" data-testid="remaining-purchase-local-per-unit">
                         {costSheet.remainingPurchasePerKgUsd
-                          ? `${formatMoney(costSheet.remainingPurchasePerKgUsd.times(costSheet.rateLocalPerUsd), costSheet.localCurrency)} at the purchase FX`
+                          ? `≈ ${formatMoney(costSheet.remainingPurchasePerKgUsd.times(costSheet.rateLocalPerUsd), costSheet.localCurrency)}`
                           : 'the supplier’s price alone'}
                       </span>
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-xs text-ink-muted">
-                      {costSheet.fxSource === 'ACTUAL' ? 'Actual purchase FX' : 'Purchase FX (estimated)'}
-                    </dt>
+                    <dt className="text-xs text-ink-muted">USD/MAD rate</dt>
                     <dd className="tnum font-semibold text-ink" data-testid="remaining-fx">
-                      {formatRate(costSheet.rateLocalPerUsd)} {costSheet.localCurrency}/USD
-                      <span className="block text-xs font-normal text-ink-subtle">
-                        {costSheet.fxSource === 'ACTUAL' ? 'what the dollars actually cost' : 'not yet confirmed on the order'}
-                      </span>
+                      {formatRate(costSheet.rateLocalPerUsd)}
+                      <span className="block text-xs font-normal text-ink-subtle">from the purchase order</span>
                     </dd>
                   </div>
                   <div>
@@ -512,17 +518,20 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                     <dd className="tnum font-semibold text-ink">
                       {formatMoney(costSheet.remainingPurchaseUsd, 'USD')}
                       <span className="block text-xs font-normal text-ink-subtle">
-                        {formatMoney(costSheet.remainingPurchaseLocal, costSheet.localCurrency)} at the purchase FX
+                        ≈ {formatMoney(costSheet.remainingPurchaseLocal, costSheet.localCurrency)}
                       </span>
                     </dd>
                   </div>
                   <div>
                     <dt className="text-xs text-ink-muted">Remaining inventory value</dt>
                     <dd className="tnum font-semibold text-forest-800" data-testid="remaining-value">
-                      {formatMoney(costSheet.remainingLandedLocal, costSheet.localCurrency)}
-                      <span className="block text-xs font-normal text-ink-subtle">
-                        {formatMoney(costSheet.remainingLandedUsd, 'USD')} · landed
-                      </span>
+                      <DualAmount
+                        amount={costSheet.remainingLandedLocal}
+                        currency={costSheet.localCurrency}
+                        localCurrency={costSheet.localCurrency}
+                        rateLocalPerUsd={poRate}
+                        rateSource={MGMT}
+                      />
                     </dd>
                   </div>
                 </dl>
@@ -530,65 +539,6 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                   Each container at its own landed cost — the same figures as Stock on Hand. This is what the coffee
                   cost, not what it will sell for.
                 </p>
-              </div>
-            ) : null}
-
-            {/*
-              The exchange loss, said in words. Dollars bought at a higher rate
-              than the order was placed at cost more dirhams for the same
-              coffee: that is a loss to the business, and the figures above
-              already carry it. This says how much, and where it sits.
-            */}
-            {!costSheet.exchangeDifferenceLocal.isZero() ? (
-              <div
-                className={cn(
-                  'rounded-xl border p-4',
-                  costSheet.exchangeDifferenceLocal.isPositive() ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50',
-                )}
-                data-testid="exchange-difference"
-              >
-                <p className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                  {costSheet.exchangeDifferenceLocal.isPositive() ? 'Exchange loss' : 'Exchange gain'}
-                </p>
-                <p
-                  className={cn(
-                    'tnum text-xl font-semibold',
-                    costSheet.exchangeDifferenceLocal.isPositive() ? 'text-red-700' : 'text-emerald-800',
-                  )}
-                >
-                  {formatMoney(costSheet.exchangeDifferenceLocal.abs(), costSheet.localCurrency)}
-                </p>
-                <p className="mt-1 text-sm text-ink">
-                  Ordered at 1 USD = {formatRate(costSheet.orderedRate)} {costSheet.localCurrency}; the dollars cost{' '}
-                  {formatRate(costSheet.rateLocalPerUsd)}. {formatMoney(costSheet.goodsUsd, 'USD')} ×{' '}
-                  {costSheet.rateLocalPerUsd.minus(costSheet.orderedRate).abs().toString()} ={' '}
-                  {formatMoney(costSheet.exchangeDifferenceLocal.abs(), costSheet.localCurrency)}{' '}
-                  {costSheet.exchangeDifferenceLocal.isPositive() ? 'more' : 'less'} for the same coffee.
-                </p>
-                <dl className="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
-                  <div>
-                    <dt className="text-xs text-ink-muted">Already in cost of sales</dt>
-                    <dd className="tnum font-semibold">{formatMoney(costSheet.exchangeDifferenceInSalesLocal, costSheet.localCurrency)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-ink-muted">Still in the remaining stock</dt>
-                    <dd className="tnum font-semibold">{formatMoney(costSheet.exchangeDifferenceInStockLocal, costSheet.localCurrency)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-ink-muted">
-                      Gross {costSheet.grossProfitLocal.plus(costSheet.exchangeDifferenceInSalesLocal).isNegative() ? 'loss' : 'profit'} at{' '}
-                      {formatRate(costSheet.orderedRate)}
-                    </dt>
-                    <dd className="tnum font-semibold">
-                      {formatMoney(costSheet.grossProfitLocal.plus(costSheet.exchangeDifferenceInSalesLocal), costSheet.localCurrency)}
-                      <span className="block text-xs font-normal text-ink-subtle">
-                        {formatMoney(costSheet.grossProfitLocal, costSheet.localCurrency)} at{' '}
-                        {formatRate(costSheet.rateLocalPerUsd)}, after the exchange{' '}
-                        {costSheet.exchangeDifferenceLocal.isPositive() ? 'loss' : 'gain'}
-                      </span>
-                    </dd>
-                  </div>
-                </dl>
               </div>
             ) : null}
 
@@ -616,11 +566,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                         <TD className="font-medium">{line.batchNumber}</TD>
                         <TD numeric>{formatQuantityKg(line.quantityKg)}</TD>
                         <TD numeric>
-                          <DualAmount amount={line.purchaseCostUsd} currency="USD" localCurrency={costSheet.localCurrency} rateLocalPerUsd={costSheet.rateLocalPerUsd} rateSource={
-                  costSheet.fxSource === 'ACTUAL'
-                    ? "The rate actually paid for the order's dollars"
-                    : "The purchase order's estimated rate"
-                } />
+                          <DualAmount amount={line.purchaseCostUsd} currency="USD" localCurrency={costSheet.localCurrency} rateLocalPerUsd={costSheet.rateLocalPerUsd} rateSource="This order's USD/MAD rate" />
                         </TD>
                       </TR>
                     ))}
@@ -630,11 +576,7 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                       <TD>Total purchase cost</TD>
                       <TD />
                       <TD numeric>
-                        <DualAmount amount={costSheet.goodsUsd} currency="USD" localCurrency={costSheet.localCurrency} amountLocal={costSheet.goodsLocal} rateSource={
-                  costSheet.fxSource === 'ACTUAL'
-                    ? "The rate actually paid for the order's dollars"
-                    : "The purchase order's estimated rate"
-                } />
+                        <DualAmount amount={costSheet.goodsUsd} currency="USD" localCurrency={costSheet.localCurrency} amountLocal={costSheet.goodsLocal} rateSource="This order's USD/MAD rate" />
                       </TD>
                     </tr>
                   </TFoot>
@@ -724,25 +666,25 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
             <MetricGrid className="lg:grid-cols-5">
               <Metric label="Sold" value={formatQuantityKg(profit.soldQuantityKg)} />
               <Metric label="Remaining stock" value={formatQuantityKg(profit.remainingQuantityKg)} tone="muted" />
-              <Metric label="Sales revenue" value={<DualAmount hideEquivalent={customerSalesLocalOnly} amount={profit.salesRevenueLocal} currency={local} localCurrency={local} amountUsd={profit.salesRevenueUsd} rateSource="Each invoice at its own rate" />} />
-              <Metric label="Landed cost of sales" value={<DualAmount amount={profit.allocatedLandedCostLocal} currency={local} localCurrency={local} amountUsd={profit.allocatedLandedCostUsd} rateSource="At the rates the cost was incurred at" />} tone="muted" />
+              <Metric label="Sales revenue" value={<DualAmount amount={profit.salesRevenueLocal} currency={local} localCurrency={local} rateLocalPerUsd={poRate} rateSource={MGMT} />} />
+              <Metric label="Landed cost of sales" value={<DualAmount amount={profit.allocatedLandedCostLocal} currency={local} localCurrency={local} rateLocalPerUsd={poRate} rateSource={MGMT} />} tone="muted" />
               <Metric
                 label={profit.grossProfitLocal.isNegative() ? 'Gross loss' : 'Gross profit'}
-                value={<DualAmount hideEquivalent={customerSalesLocalOnly} amount={profit.grossProfitLocal} currency={local} localCurrency={local} amountUsd={profit.grossProfitUsd} rateSource="Each transaction at its own rate" />}
+                value={<DualAmount amount={profit.grossProfitLocal} currency={local} localCurrency={local} rateLocalPerUsd={poRate} rateSource={MGMT} />}
                 tone={profit.grossProfitLocal.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
                 hint={`${formatPercent(profit.grossMarginPct)} gross margin`}
               />
-              <Metric label="Period costs" value={<DualAmount amount={profit.otherCostsLocal} currency={local} localCurrency={local} amountUsd={profit.otherCostsUsd} rateSource="Each expense at its own rate" />} tone="muted" />
+              <Metric label="Period costs" value={<DualAmount amount={profit.otherCostsLocal} currency={local} localCurrency={local} rateLocalPerUsd={poRate} rateSource={MGMT} />} tone="muted" />
               <Metric
                 label={profit.netProfitLocal.isNegative() ? 'Net loss' : 'Net profit'}
-                value={<DualAmount hideEquivalent={customerSalesLocalOnly} amount={profit.netProfitLocal} currency={local} localCurrency={local} amountUsd={profit.netProfitUsd} rateSource="Each transaction at its own rate" />}
+                value={<DualAmount amount={profit.netProfitLocal} currency={local} localCurrency={local} rateLocalPerUsd={poRate} rateSource={MGMT} />}
                 tone={profit.netProfitLocal.greaterThanOrEqualTo(0) ? 'positive' : 'negative'}
                 hint={`${formatPercent(profit.netMarginPct)} margin`}
               />
-              <Metric label="Profit per KG" value={<DualAmount hideEquivalent={customerSalesLocalOnly} amount={profit.profitPerKgLocal} currency={local} localCurrency={local} amountUsd={profit.profitPerKgUsd} rateSource="Each transaction at its own rate" />} />
+              <Metric label="Profit per KG" value={<DualAmount amount={profit.profitPerKgLocal} currency={local} localCurrency={local} rateLocalPerUsd={poRate} rateSource={MGMT} />} />
               {jobCost && costSheet ? (
                 <>
-                  <Metric label="Landed cost / KG" value={<DualAmount amount={costSheet.costPerKgLocal} currency={local} localCurrency={local} amountUsd={jobCost.landedCostPerKgUsd} rateSource="Each transaction at its own rate" />} />
+                  <Metric label="Landed cost / KG" value={<DualAmount amount={costSheet.costPerKgLocal} currency={local} localCurrency={local} rateLocalPerUsd={poRate} rateSource={MGMT} />} />
                   <Metric label="Landed cost / bag" value={formatMoney(jobCost.landedCostPerBagUsd, 'USD')} />
                 </>
               ) : null}
@@ -919,9 +861,9 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                             amount={dec(inv.amount)}
                             currency={inv.currency}
                             localCurrency={local}
-                            rateLocalPerUsd={dec(inv.rate)}
-                            amountUsd={inv.currency === local ? dec(inv.usd) : null}
-                            rateSource={`This invoice's own rate, ${formatDate(inv.invoiceDate)}`}
+                            rateLocalPerUsd={inv.currency === local ? poRate : dec(inv.rate)}
+                            amountUsd={null}
+                            rateSource={inv.currency === local ? MGMT : `This invoice's own rate, ${formatDate(inv.invoiceDate)}`}
                             primaryClassName="font-normal"
                           />
                           {partOfInvoice ? (
@@ -978,8 +920,9 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                         amount={salesLocal}
                         currency={local}
                         localCurrency={local}
-                        amountUsd={salesUsd}
-                        rateSource="Each invoice at its own rate"
+                        rateLocalPerUsd={customerSalesLocalOnly ? poRate : null}
+                        amountUsd={customerSalesLocalOnly ? null : salesUsd}
+                        rateSource={customerSalesLocalOnly ? MGMT : 'Each invoice at its own rate'}
                       />
                     </TD>
                     <TD colSpan={2} />
@@ -1021,10 +964,12 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                       amount={e.amount}
                       currency={e.currency}
                       localCurrency={local}
-                      amountUsd={e.amountUsd}
-                      amountLocal={e.amountLocal}
-                      rateLocalPerUsd={e.rateLocalPerUsd}
-                      rateSource={`This expense's own rate, ${formatDate(e.expenseDate)}`}
+                      // A dirham expense is what was paid; its dollars are a management
+                      // equivalent at the order's rate. A dollar expense keeps its own.
+                      amountUsd={e.currency === local ? null : e.amountUsd}
+                      amountLocal={e.currency === local ? null : e.amountLocal}
+                      rateLocalPerUsd={e.currency === local ? poRate : e.rateLocalPerUsd}
+                      rateSource={e.currency === local ? MGMT : `This expense's own rate, ${formatDate(e.expenseDate)}`}
                     />
                     <Badge tone={e.capitaliseToLandedCost ? 'info' : 'neutral'}>
                       {e.capitaliseToLandedCost ? 'Landed cost' : 'Period cost'}

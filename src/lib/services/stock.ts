@@ -980,8 +980,8 @@ export type InventoryValuationLine = {
   valueUsd: Decimal;
   /**
    * The same in the company's currency, from the one batch costing every
-   * screen reads: the coffee at its order's rate (the rate actually paid once
-   * confirmed), the shipment's charges at their own. Stock on Hand shows the
+   * screen reads: the coffee at its order's USD/MAD rate, the shipment's
+   * charges at their own. Stock on Hand shows the
    * same figure.
    */
   landedUnitCostLocal: Decimal;

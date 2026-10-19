@@ -1,9 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { prisma, resetDatabase, getContext, createMasters, getCashAccount, utcDate, receiveEverything } from '../helpers';
+import { prisma, resetDatabase, getContext, createMasters, getCashAccount, utcDate, receiveEverything, editOrderRate } from '../helpers';
 import { createPurchaseContract, postPurchaseContract } from '@/lib/services/purchase';
 import { createExpense, postExpense } from '@/lib/services/expense';
 import { createSalesInvoice, postSalesInvoice } from '@/lib/services/sales';
-import { setPurchaseActualFx } from '@/lib/services/purchase-edit';
 import { getShipmentCostSheet } from '@/lib/services/landed-cost';
 import { getItemProfitability } from '@/lib/services/item-profitability';
 import { getShipmentProfitability } from '@/lib/services/profitability';
@@ -11,22 +10,23 @@ import { getInventoryValuation } from '@/lib/services/stock';
 import { dec } from '@/lib/money';
 
 /**
- * FID acceptance: the purchase order's confirmed actual rate is the one rate
- * that moves cost, for both FID companies, each in its own local money.
+ * FID acceptance: the purchase order's one USD/local rate — whatever is saved
+ * on it — moves cost, for both FID companies, each in its own local money.
  *
  * USD 100,000 of coffee, 25,000 KG; local charges 65,000; one genuine USD
  * charge of USD 1,000 booked at its OWN rate; 15,000 KG sold in local money.
- * Then the actual rate replaces the estimate. The supplier's dollars, the
+ * Then the rate on the order is edited. The supplier's dollars, the
  * local charges, the USD charge's own rate and the customer's invoice must not
  * move; the purchase cost, landed cost, cost per kilo, cost of sales, stock
  * value and profit must — and agree on every page.
  */
+// `estimate` is the rate the order is entered at, `actual` the rate it is edited to.
 const CASES = [
   { name: 'FID Morocco (MAD)', company: 'morocco' as const, currency: 'MAD', estimate: '9.60', actual: '10.30', usdChargeRate: '9.75', price: '43' },
   { name: 'FID Dubai (AED)', company: 'dubai' as const, currency: 'AED', estimate: '3.6725', actual: '3.7100', usdChargeRate: '3.6725', price: '15' },
 ];
 
-describe.each(CASES)('$name: actual FX drives cost, never sales', (c) => {
+describe.each(CASES)('$name: the order rate drives cost, never sales', (c) => {
   let companyId: string;
   let contractId: string;
   let shipmentId: string;
@@ -113,10 +113,9 @@ describe.each(CASES)('$name: actual FX drives cost, never sales', (c) => {
     const est = dec(c.estimate);
     const act = dec(c.actual);
 
-    expect(before.sheet.fxSource).toBe('ESTIMATED');
     expect(before.sheet.goodsLocal.toFixed(2)).toBe(dec(100000).times(est).toFixed(2));
 
-    await setPurchaseActualFx({ companyId, contractId, userId: ctx.admin.id, actualRateLocalPerUsd: c.actual, note: 'Bank advice' });
+    await editOrderRate({ companyId, contractId, userId: ctx.admin.id, rateLocalPerUsd: c.actual });
     const after = await snapshot();
 
     // The supplier's dollars, the customer's invoice and every local charge do not move.
@@ -128,8 +127,8 @@ describe.each(CASES)('$name: actual FX drives cost, never sales', (c) => {
     expect(after.sheet.expenseLocal.toFixed(2)).toBe(before.sheet.expenseLocal.toFixed(2));
     expect(after.sheet.expenseLocal.toFixed(2)).toBe(dec(65000).plus(usdCharge).toFixed(2));
 
-    // The purchase cost is the dollars at the confirmed rate; landed = that + charges.
-    expect(after.sheet.fxSource).toBe('ACTUAL');
+    // The purchase cost is the dollars at the order's rate; landed = that + charges.
+    expect(after.sheet.rateLocalPerUsd.toFixed(4)).toBe(act.toFixed(4));
     expect(after.sheet.goodsLocal.toFixed(2)).toBe(dec(100000).times(act).toFixed(2));
     const landed = dec(100000).times(act).plus(65000).plus(usdCharge);
     expect(after.sheet.totalShipmentCostLocal.toFixed(2)).toBe(landed.toFixed(2));
@@ -151,19 +150,21 @@ describe.each(CASES)('$name: actual FX drives cost, never sales', (c) => {
     expect(after.pnl.reduce((t, r) => t.plus(r.allocatedLandedCostLocal), dec(0)).toFixed(2)).toBe(after.sheet.cogsLocal.toFixed(2));
     expect(after.valuation.reduce((t, l) => t.plus(l.valueLocal), dec(0)).toFixed(2)).toBe(after.sheet.remainingLandedLocal.toFixed(2));
 
-    // The estimate is not lost: the audit trail keeps old and new rate, who and why.
-    const audit = await prisma.auditLog.findFirst({ where: { companyId, action: 'PURCHASE_ACTUAL_FX_SET', entityId: contractId }, orderBy: { createdAt: 'desc' } });
+    // The old rate is not lost: the audit trail keeps old and new rate, who and when.
+    const audit = await prisma.auditLog.findFirst({ where: { companyId, action: 'PURCHASE_CONTRACT_EDITED', entityId: contractId }, orderBy: { createdAt: 'desc' } });
     expect(audit).not.toBeNull();
-    const recorded = audit!.after as { estimatedRate: string; actualRate: string; difference: string };
-    expect(dec(recorded.estimatedRate).toFixed(4)).toBe(est.toFixed(4));
-    expect(dec(recorded.actualRate).toFixed(4)).toBe(act.toFixed(4));
-    expect(dec(recorded.difference).toFixed(2)).toBe(dec(100000).times(act.minus(est)).toFixed(2));
+    const was = audit!.before as { rateLocalPerUsd: string };
+    const now = audit!.after as { rateLocalPerUsd: string; changes: string[] };
+    expect(dec(was.rateLocalPerUsd).toFixed(4)).toBe(est.toFixed(4));
+    expect(dec(now.rateLocalPerUsd).toFixed(4)).toBe(act.toFixed(4));
+    expect(now.changes.join(' ')).toMatch(/USD\/local rate/);
     expect(audit!.userId).toBe(ctx.admin.id);
+    expect(audit!.createdAt).toBeInstanceOf(Date);
 
     console.table({
       'PO USD amount': '100000.00',
-      'Estimated FX': c.estimate,
-      'Actual FX': c.actual,
+      'Rate before': c.estimate,
+      'Rate now': c.actual,
       [`Purchase cost (${c.currency})`]: after.sheet.goodsLocal.toFixed(2),
       'Direct expenses': after.sheet.expenseLocal.toFixed(2),
       'Landed cost': after.sheet.totalShipmentCostLocal.toFixed(2),

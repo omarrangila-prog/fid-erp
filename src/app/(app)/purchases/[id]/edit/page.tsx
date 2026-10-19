@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { effectiveLocalRate } from '@/lib/purchase-fx';
 import { notFound, redirect } from 'next/navigation';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
@@ -105,7 +106,7 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
         }))}
         items={itemOptions}
         localCurrency={user.activeCompany.localCurrency}
-        defaultLocalRate={contract.rateLocalPerUsd.toString()}
+        defaultLocalRate={effectiveLocalRate(contract).toString()}
         canApprove={can(user, PERMISSIONS.PURCHASES_APPROVE)}
         approved={approved}
         canCreateItem={can(user, PERMISSIONS.ITEMS_CREATE)}
@@ -121,7 +122,8 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
           containers: contract.containers != null ? String(contract.containers) : '',
           currency: contract.currency,
           rateToUsd: contract.rateToUsd.toString(),
-          rateLocalPerUsd: contract.rateLocalPerUsd.toString(),
+          // The order's one USD/MAD rate — the one its costing uses today.
+          rateLocalPerUsd: effectiveLocalRate(contract).toString(),
           freightAmount: contract.freightAmount.toString(),
           otherCharges: contract.otherCharges.toString(),
           incoterm: contract.incoterm,

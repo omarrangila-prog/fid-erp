@@ -155,7 +155,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
           landedPerKgLabel: formatMoney(c.landedPerKgLocal, c.localCurrency),
           remainingPurchaseLabel: formatMoney(dec(c.remainingPurchaseUsd).times(share), 'USD'),
           remainingValueLabel: formatMoney(dec(c.stockValueLocal).times(share), c.localCurrency),
-          rateLabel: `${dec(c.rateLocalPerUsd).toString()} ${c.fxSource === 'ACTUAL' ? '(actual)' : '(est.)'}`,
+          rateLabel: dec(c.rateLocalPerUsd).toString(),
         };
       })(),
     };

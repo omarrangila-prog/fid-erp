@@ -1,65 +1,35 @@
 import { dec, type DecimalInput, type Decimal } from '@/lib/money';
 
 /**
- * Which rate a purchase order's local-currency costing is stated at.
+ * The one USD/MAD rate a purchase order's coffee is costed at.
  *
- * An order is placed in dollars at the best rate available that day. That rate
- * is an estimate: the real one appears later, when the dollars are actually
- * bought to pay the supplier. Until then every local figure derived from the
- * order — landed cost, cost per kilo, inventory value, cost of sales — is
- * stated at a rate nobody paid.
+ * An order is bought in dollars and carries one exchange rate: whatever is
+ * saved on it now. Every local figure derived from the order — purchase cost,
+ * landed cost, cost per kilo, stock value, cost of sales, profit — reads that
+ * rate, so editing it moves all of them at once and none can be left on the
+ * old one. The dollar purchase price never moves: the supplier is owed the
+ * same dollars whatever the dirhams cost.
  *
- * One definition, read by every screen, so confirming the rate moves all of
- * them at once and none can be left showing the estimate. The dollar purchase
- * price is never touched: the supplier is owed the same dollars whatever the
- * dirhams cost.
+ * A few orders were given a second, "actual" rate before the client asked for
+ * one rate only. Until such an order is next saved, that rate is the one its
+ * screens show and its costing uses; saving the order makes it the order's
+ * own rate and clears the second one.
  */
 
-export type PurchaseFxSource = 'ESTIMATED' | 'ACTUAL';
-
 export type PurchaseFxInput = {
-  /** The rate entered when the order was placed. */
+  /** The rate saved on the order. */
   rateLocalPerUsd: DecimalInput;
-  /** The rate actually paid, once known. Null while still an estimate. */
+  /** A second rate recorded under the earlier two-rate model, if any. */
   actualRateLocalPerUsd?: DecimalInput | null;
 };
 
-/** The rate costing must use: the actual one when it is known, else the estimate. */
+/** The order's USD/MAD rate. */
 export function effectiveLocalRate(contract: PurchaseFxInput): Decimal {
-  const actual = contract.actualRateLocalPerUsd;
-  if (actual !== null && actual !== undefined) {
-    const rate = dec(actual);
+  const legacy = contract.actualRateLocalPerUsd;
+  if (legacy !== null && legacy !== undefined) {
+    const rate = dec(legacy);
     // A zero or negative rate is not a rate; fall back rather than divide by it.
     if (rate.greaterThan(0)) return rate;
   }
   return dec(contract.rateLocalPerUsd);
-}
-
-/** Whether that rate is the one actually paid, or still the day's guess. */
-export function purchaseFxSource(contract: PurchaseFxInput): PurchaseFxSource {
-  const actual = contract.actualRateLocalPerUsd;
-  return actual !== null && actual !== undefined && dec(actual).greaterThan(0) ? 'ACTUAL' : 'ESTIMATED';
-}
-
-export const PURCHASE_FX_LABELS: Record<PurchaseFxSource, string> = {
-  ESTIMATED: 'Estimated',
-  ACTUAL: 'Actual',
-};
-
-/**
- * What confirming the rate does to the local value of a dollar amount.
- *
- * Reported so the user sees the size of the change before it is saved, and so
- * the difference can be explained afterwards rather than appearing as an
- * unexplained movement in cost.
- */
-export function localRateImpact(params: {
-  amountUsd: DecimalInput;
-  estimatedRate: DecimalInput;
-  actualRate: DecimalInput;
-}): { estimatedLocal: Decimal; actualLocal: Decimal; difference: Decimal } {
-  const usd = dec(params.amountUsd);
-  const estimatedLocal = usd.times(dec(params.estimatedRate));
-  const actualLocal = usd.times(dec(params.actualRate));
-  return { estimatedLocal, actualLocal, difference: actualLocal.minus(estimatedLocal) };
 }
