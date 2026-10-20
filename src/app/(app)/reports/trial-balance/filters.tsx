@@ -2,8 +2,7 @@
 
 import * as React from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Select } from '@/components/ui/input';
-import { Field } from '@/components/ui/field';
+import { FilterBar, FilterCell, FilterSelect } from '@/components/shared/filter-bar';
 
 type Option = { value: string; label: string };
 
@@ -37,20 +36,20 @@ export function TrialBalanceFilters({
   }
 
   const control = (key: string, label: string, options: Option[], all: string) => (
-    <Field label={label} htmlFor={`tb-${key}`}>
-      <Select id={`tb-${key}`} value={searchParams.get(key) ?? ''} onChange={(e) => set(key, e.target.value)}>
+    <FilterCell label={label} htmlFor={`tb-${key}`} className="md:min-w-40 md:flex-1">
+      <FilterSelect id={`tb-${key}`} value={searchParams.get(key) ?? ''} onChange={(e) => set(key, e.target.value)}>
         <option value="">{all}</option>
         {options.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
           </option>
         ))}
-      </Select>
-    </Field>
+      </FilterSelect>
+    </FilterCell>
   );
 
   return (
-    <div className="grid gap-3 rounded-xl border border-line bg-surface p-4 print:hidden sm:grid-cols-2 lg:grid-cols-6">
+    <FilterBar>
       {control('type', 'Account category', [
         { value: 'ASSET', label: 'Assets' },
         { value: 'LIABILITY', label: 'Liabilities' },
@@ -63,6 +62,6 @@ export function TrialBalanceFilters({
       {control('vendor', 'Supplier', vendors, 'All suppliers')}
       {control('warehouse', 'Warehouse', warehouses, 'All warehouses')}
       {control('shipment', 'Shipment', shipments, 'All shipments')}
-    </div>
+    </FilterBar>
   );
 }

@@ -160,7 +160,7 @@ export default async function BalanceSheetPage({
       />
       <PrintHeader title="Balance Sheet" companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency} country={user.activeCompany.country} />
 
-      <div className="flex flex-wrap items-end gap-3 print:hidden">
+      <div className="flex flex-wrap items-start gap-3 print:hidden">
         <AsOfPicker defaultDate={asOf} />
         <StatementControls compare={compare} showColumnsBy={false} showZero={showZero} />
       </div>

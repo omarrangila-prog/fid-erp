@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ChevronDown, ChevronRight, Star } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { FilterBar, FilterCell, FilterSelect } from '@/components/shared/filter-bar';
 
 /**
  * The accounting-statement shell every financial report is built on.
@@ -97,38 +98,37 @@ export function StatementControls({
   children?: React.ReactNode;
 }) {
   const set = useSearchParamSetter();
-  const control = 'h-10 rounded-lg border border-line-strong bg-surface px-3 text-sm';
   return (
-    <div className="flex flex-wrap items-end gap-3 print:hidden">
+    <FilterBar className="md:inline-flex">
       {showColumnsBy ? (
-        <label className="flex flex-col gap-1.5 text-xs font-medium text-ink-muted">
-          Display columns by
-          <select className={control} value={columnsBy ?? 'total'} onChange={(e) => set({ columns: e.target.value === 'total' ? null : e.target.value })}>
+        <FilterCell label="Display columns by" className="md:w-44">
+          <FilterSelect value={columnsBy ?? 'total'} onChange={(e) => set({ columns: e.target.value === 'total' ? null : e.target.value })}>
             <option value="total">Total only</option>
             <option value="month">Month</option>
             <option value="quarter">Quarter</option>
             <option value="year">Year</option>
-          </select>
-        </label>
+          </FilterSelect>
+        </FilterCell>
       ) : null}
       {showCompare ? (
-        <label className="flex flex-col gap-1.5 text-xs font-medium text-ink-muted">
-          Compare
-          <select className={control} value={compare ?? 'none'} onChange={(e) => set({ compare: e.target.value === 'none' ? null : e.target.value })}>
+        <FilterCell label="Compare" className="md:w-44">
+          <FilterSelect value={compare ?? 'none'} onChange={(e) => set({ compare: e.target.value === 'none' ? null : e.target.value })}>
             <option value="none">No comparison</option>
             <option value="previous">Previous period</option>
             <option value="year">Previous year</option>
-          </select>
-        </label>
+          </FilterSelect>
+        </FilterCell>
       ) : null}
       {showZero !== undefined ? (
-        <label className="flex h-10 items-center gap-2 text-xs font-medium text-ink-muted">
-          <input type="checkbox" className="size-4 accent-gold-600" checked={showZero} onChange={(e) => set({ zero: e.target.checked ? '1' : null })} />
-          Show zero-balance accounts
-        </label>
+        <FilterCell label="Zero balances" className="md:w-44">
+          <span className="flex h-7 items-center gap-2 text-sm font-semibold text-ink">
+            <input type="checkbox" className="size-4 accent-forest-700" checked={showZero} onChange={(e) => set({ zero: e.target.checked ? '1' : null })} />
+            Show them
+          </span>
+        </FilterCell>
       ) : null}
       {children}
-    </div>
+    </FilterBar>
   );
 }
 

@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { can, requirePageAccessAll } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { formatDate, formatMoney, formatPercent, formatQuantityKg, dayParam, companyToday } from '@/lib/format';
@@ -9,6 +8,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { ExportLinks } from '@/components/shared/export-links';
 import { exportHref } from '@/components/shared/excel-link';
 import { CustomizePanel } from '@/components/reports/customize-panel';
+import { FilterChips } from '@/components/shared/filter-bar';
 import { DateRangePicker } from '@/components/shared/date-range';
 import { ReportShareButton } from '@/components/share/report-share-button';
 import { PrintHeader } from '@/components/shared/print-header';
@@ -75,22 +75,13 @@ export default async function SalesByPage({
       />
       <PrintHeader title={title} companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency} country={user.activeCompany.country} />
 
-      <div className="flex flex-wrap items-end gap-3 print:hidden">
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-2 print:hidden">
         <DateRangePicker defaultFrom={fromStr} defaultTo={toStr} />
-        <div className="flex flex-col gap-1.5 text-xs font-medium text-ink-muted">
-          Group by
-          <div className="flex flex-wrap gap-1">
-            {DIMENSIONS.map((d) => (
-              <Link
-                key={d.key}
-                href={`/reports/sales-by?by=${d.key}&from=${fromStr}&to=${toStr}`}
-                className={`rounded-md px-3 py-2 text-sm ${d.key === by ? 'bg-forest-700 text-white' : 'border border-line text-ink hover:bg-surface-sunken'}`}
-              >
-                {d.label}
-              </Link>
-            ))}
-          </div>
-        </div>
+        <FilterChips
+          label="Group by"
+          options={DIMENSIONS.map((d) => ({ value: d.key, label: d.label, href: `/reports/sales-by?by=${d.key}&from=${fromStr}&to=${toStr}` }))}
+          value={by}
+        />
       </div>
 
       {rows.length === 0 ? (

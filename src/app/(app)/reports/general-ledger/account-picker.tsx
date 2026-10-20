@@ -3,9 +3,7 @@
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { Combobox } from '@/components/ui/combobox';
-import { Input, Select } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Field } from '@/components/ui/field';
+import { FilterApply, FilterBar, FilterCell, FilterDate, FilterSelect } from '@/components/shared/filter-bar';
 import { transactionCurrencies } from '@/lib/company-currencies';
 
 export function AccountPicker({
@@ -28,6 +26,7 @@ export function AccountPicker({
   const [fromDate, setFrom] = React.useState(from);
   const [toDate, setTo] = React.useState(to);
   const [ccy, setCcy] = React.useState(currency || 'USD');
+  const dirty = (account ?? 'all') !== (selectedId || 'all') || fromDate !== from || toDate !== to || ccy !== (currency || 'USD');
 
   function chooseAccount(id: string | null) {
     setAccount(id);
@@ -46,8 +45,8 @@ export function AccountPicker({
   }
 
   return (
-    <div className="flex flex-wrap items-end gap-2">
-      <Field label="Account" className="min-w-64 flex-1">
+    <FilterBar>
+      <FilterCell label="Account" className="md:min-w-72 md:flex-1">
         <Combobox
           options={[
             // The whole book, account by account — the printed general ledger.
@@ -62,10 +61,11 @@ export function AccountPicker({
           value={account}
           onChange={chooseAccount}
           placeholder="Choose an account…"
+          className="h-7 rounded-none border-0 bg-transparent px-0 font-semibold hover:border-0 focus:ring-0 [&>span]:text-ink"
         />
-      </Field>
-      <Field label="Currency" className="w-40">
-        <Select value={ccy} onChange={(e) => setCcy(e.target.value)}>
+      </FilterCell>
+      <FilterCell label="Currency" className="md:w-56">
+        <FilterSelect value={ccy} onChange={(e) => setCcy(e.target.value)}>
           <option value="REPORTING">Every line at USD value</option>
           <option value="ALL">All — listed separately</option>
           {[
@@ -78,17 +78,15 @@ export function AccountPicker({
               {code} lines only
             </option>
           ))}
-        </Select>
-      </Field>
-      <Field label="From" className="w-40">
-        <Input type="date" value={fromDate} onChange={(e) => setFrom(e.target.value)} />
-      </Field>
-      <Field label="To" className="w-40">
-        <Input type="date" value={toDate} onChange={(e) => setTo(e.target.value)} />
-      </Field>
-      <Button variant="outline" onClick={apply}>
-        Apply
-      </Button>
-    </div>
+        </FilterSelect>
+      </FilterCell>
+      <FilterCell label="From" className="md:w-44">
+        <FilterDate value={fromDate} onChange={setFrom} empty="Beginning" aria-label="From" />
+      </FilterCell>
+      <FilterCell label="To" className="md:w-44">
+        <FilterDate value={toDate} onChange={setTo} empty="Today" aria-label="To" />
+      </FilterCell>
+      <FilterApply dirty={dirty} onClick={apply} />
+    </FilterBar>
   );
 }

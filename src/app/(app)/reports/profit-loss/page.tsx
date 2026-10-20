@@ -5,6 +5,7 @@ import { getProfitAndLossByColumns, type PnlLine, type ProfitAndLoss } from '@/l
 import { formatMoney, formatDate, formatPercent, formatQuantityKg, companyToday, dayParam } from '@/lib/format';
 import { Decimal, dec } from '@/lib/money';
 import { PageHeader } from '@/components/shared/page-header';
+import { FilterApply, FilterBar, FilterCell, FilterSelect } from '@/components/shared/filter-bar';
 import { DateRangePicker } from '@/components/shared/date-range';
 import { Card, CardContent } from '@/components/ui/card';
 import { ReportShareButton } from '@/components/share/report-share-button';
@@ -182,43 +183,42 @@ export default async function ProfitLossPage({
       />
       <PrintHeader title="Profit and Loss" companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency} country={user.activeCompany.country} />
 
-      <div className="flex flex-wrap items-end gap-3 print:hidden">
+      <div className="flex flex-wrap items-start gap-3 print:hidden">
         <DateRangePicker defaultFrom={from} defaultTo={to} />
         {scoped ? null : <StatementControls columnsBy={columnsBy} compare={compare} showZero={showZero} />}
       </div>
 
-      <form method="get" className="flex flex-wrap items-end gap-3 print:hidden" data-testid="pnl-scope">
+      <form method="get" className="space-y-1.5 print:hidden" data-testid="pnl-scope">
         <input type="hidden" name="from" value={from} />
         <input type="hidden" name="to" value={to} />
-        <label className="text-xs text-ink-muted">
-          <span className="block">Shipment</span>
-          <select name="shipment" defaultValue={query.shipment ?? ''} className="mt-1 h-9 rounded-md border border-line-strong bg-surface px-2 text-sm">
-            <option value="">Whole company</option>
-            {shipmentOptions.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.contractReference}
-              </option>
-            ))}
-          </select>
-        </label>
-        <span className="pb-2 text-xs text-ink-subtle">or</span>
-        <label className="text-xs text-ink-muted">
-          <span className="block">Customer</span>
-          <select name="customer" defaultValue={query.customer ?? ''} className="mt-1 h-9 rounded-md border border-line-strong bg-surface px-2 text-sm">
-            <option value="">Whole company</option>
-            {customerOptions.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.customerName}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="submit" className="h-9 rounded-md bg-forest-800 px-3 text-sm font-medium text-white">
-          Show
-        </button>
+        <FilterBar className="md:inline-flex">
+          <FilterCell label="Shipment" className="md:w-64">
+            <FilterSelect name="shipment" defaultValue={query.shipment ?? ''}>
+              <option value="">Whole company</option>
+              {shipmentOptions.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.contractReference}
+                </option>
+              ))}
+            </FilterSelect>
+          </FilterCell>
+          <FilterCell label="or Customer" className="md:w-64">
+            <FilterSelect name="customer" defaultValue={query.customer ?? ''}>
+              <option value="">Whole company</option>
+              {customerOptions.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.customerName}
+                </option>
+              ))}
+            </FilterSelect>
+          </FilterCell>
+          <FilterApply type="submit" dirty>
+            Show
+          </FilterApply>
+        </FilterBar>
         {scoped ? (
-          <a href={`/reports/profit-loss?from=${from}&to=${to}`} className="pb-2 text-xs text-forest-800 underline">
-            Back to the whole company
+          <a href={`/reports/profit-loss?from=${from}&to=${to}`} className="inline-block px-1 text-xs font-medium text-forest-800 hover:text-gold-700">
+            ← Back to the whole company
           </a>
         ) : null}
       </form>

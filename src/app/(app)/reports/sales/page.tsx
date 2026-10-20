@@ -14,10 +14,9 @@ import { ExportLinks } from '@/components/shared/export-links';
 import { ReportShareButton } from '@/components/share/report-share-button';
 import { exportHref } from '@/components/shared/excel-link';
 import { PrintHeader } from '@/components/shared/print-header';
+import { FilterApply, FilterBar, FilterCell, FilterInput } from '@/components/shared/filter-bar';
 import { DateRangePicker } from '@/components/shared/date-range';
-import { Input } from '@/components/ui/input';
 import { shortDocumentNumber } from '@/lib/short-number';
-import { Button } from '@/components/ui/button';
 
 export const metadata: Metadata = { title: 'Sales Report' };
 export const dynamic = 'force-dynamic';
@@ -77,18 +76,19 @@ export default async function SalesReportPage({
       <div className="space-y-3 print:hidden">
         <DateRangePicker defaultFrom={from ?? ''} defaultTo={to ?? ''} />
         {/* A plain form, so the filter lives in the URL like the dates do. */}
-        <form method="get" className="flex flex-wrap items-end gap-2">
+        <form method="get" className="space-y-1.5">
           {from ? <input type="hidden" name="from" value={from} /> : null}
           {to ? <input type="hidden" name="to" value={to} /> : null}
-          <label className="flex flex-col gap-1 text-xs text-ink-muted">
-            ICUL/FID reference
-            <Input name="ref" defaultValue={ref ?? ''} placeholder="e.g. ICUL/FID/002" className="w-56" />
-          </label>
-          <Button type="submit" variant="outline" size="sm">
-            Filter
-          </Button>
+          <FilterBar className="md:inline-flex">
+            <FilterCell label="ICUL/FID reference" className="md:w-80">
+              <FilterInput name="ref" defaultValue={ref ?? ''} placeholder="e.g. ICUL/FID/002" />
+            </FilterCell>
+            <FilterApply type="submit" dirty={false}>
+              Filter
+            </FilterApply>
+          </FilterBar>
           {ref ? (
-            <Link href={`/reports/sales?${new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) }).toString()}`} className="text-sm text-forest-800 hover:text-gold-700">
+            <Link href={`/reports/sales?${new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) }).toString()}`} className="inline-block px-1 text-xs font-medium text-forest-800 hover:text-gold-700">
               Show every reference
             </Link>
           ) : null}
