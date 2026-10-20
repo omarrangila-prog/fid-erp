@@ -5,6 +5,7 @@ import { requirePermission, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { toErrorResponse, NotFoundError, ForbiddenError } from '@/lib/errors';
 import { prisma } from '@/lib/db';
+import { getCostOfSalesBreakdown } from '@/lib/services/cost-of-sales-breakdown';
 import { dec } from '@/lib/money';
 import {
   buildWorkbook,
@@ -1018,11 +1019,34 @@ const REPORTS: Record<string, Report> = {
       const pnl = await getProfitAndLoss({ companyId: user.activeCompany.id, from, to });
       const t = pnl.totals;
 
+      // As on screen: the Cost of Goods Sold line opened into the coffee and
+      // each shipment expense on the coffee sold, adding up to the ledger.
+      const [breakdown, cogsAccount] = await Promise.all([
+        getCostOfSalesBreakdown({ companyId: user.activeCompany.id, from, to }),
+        prisma.account.findFirst({ where: { companyId: user.activeCompany.id, systemKey: 'COST_OF_GOODS_SOLD' }, select: { id: true } }),
+      ]);
+      const cogsRows = pnlSection('Cost of goods sold', pnl.costOfSales, { usd: t.costOfSalesUsd, local: t.costOfSalesLocal });
+      const ledgerCogs = pnl.costOfSales.find((l) => l.accountId === cogsAccount?.id);
+      if (ledgerCogs) {
+        const timingLocal = dec(ledgerCogs.amountLocal).minus(breakdown.totalLocal);
+        const timingUsd = dec(ledgerCogs.amountUsd).minus(breakdown.totalUsd);
+        const parts: StatementRow[] = [
+          { kind: 'line', label: 'Coffee purchase cost (coffee sold)', values: [Number(breakdown.purchase.local), Number(breakdown.purchase.usd)] },
+          ...breakdown.expenses.map((e): StatementRow => ({ kind: 'line', label: `Shipment expense — ${e.label}`, values: [Number(e.local), Number(e.usd)] })),
+          { kind: 'line', label: 'Total shipment expenses on the coffee sold', values: [Number(breakdown.expensesTotal.local), Number(breakdown.expensesTotal.usd)] },
+          ...(timingLocal.abs().greaterThanOrEqualTo('0.01')
+            ? [{ kind: 'line', label: 'Stock / cost of sales correction dated in this period', values: [Number(timingLocal), Number(timingUsd)] } as StatementRow]
+            : []),
+        ];
+        const at = cogsRows.findIndex((r) => r.kind === 'line' && r.label === ledgerCogs.name);
+        if (at >= 0) cogsRows.splice(at, 1, ...parts);
+      }
+
       const rows: StatementRow[] = [
         // The headings the statement on screen uses, so the file and the
         // screen read as one report rather than two namings of it.
         ...pnlSection('Income', pnl.revenue, { usd: t.revenueUsd, local: t.revenueLocal }),
-        ...pnlSection('Cost of goods sold', pnl.costOfSales, { usd: t.costOfSalesUsd, local: t.costOfSalesLocal }),
+        ...cogsRows,
         {
           kind: 'total',
           label: 'Gross profit',

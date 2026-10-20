@@ -6,6 +6,7 @@ import { formatMoney, formatDate, formatPercent, formatQuantityKg, companyToday,
 import { Decimal, dec } from '@/lib/money';
 import { PageHeader } from '@/components/shared/page-header';
 import { FilterApply, FilterBar, FilterCell, FilterSelect } from '@/components/shared/filter-bar';
+import { getCostOfSalesBreakdown } from '@/lib/services/cost-of-sales-breakdown';
 import { DateRangePicker } from '@/components/shared/date-range';
 import { Card, CardContent } from '@/components/ui/card';
 import { ReportShareButton } from '@/components/share/report-share-button';
@@ -72,6 +73,12 @@ export default async function ProfitLossPage({
       : null;
 
   const report = await getProfitAndLossByColumns({ companyId: user.activeCompany.id, from: fromDate, to: toDate, columnsBy, compare });
+  // What the cost of goods sold is made of: the coffee, and each kind of
+  // shipment expense on the coffee sold. Shown on the single-column statement.
+  const [breakdown, cogsAccount] = await Promise.all([
+    columnsBy === 'total' && !compare ? getCostOfSalesBreakdown({ companyId, from: fromDate, to: toDate }) : Promise.resolve(null),
+    prisma.account.findFirst({ where: { companyId, systemKey: 'COST_OF_GOODS_SOLD' }, select: { id: true } }),
+  ]);
   const { total, before, previous } = report;
   const from = fromDate.toISOString().slice(0, 10);
   const to = toDate.toISOString().slice(0, 10);
@@ -144,9 +151,40 @@ export default async function ProfitLossPage({
     };
   };
 
+  const cogsSection = section('cogs', 'Cost of goods sold', (p) => p.costOfSales, (p) => ({ local: p.totals.costOfSalesLocal, usd: p.totals.costOfSalesUsd }), 'Total cost of goods sold');
+  if (breakdown && cogsAccount) {
+    // The one "Cost of Goods Sold" line opened into what it is made of. The
+    // parts add up to the ledger's figure: any difference (a correction dated
+    // in another period) is its own line, never folded in silently.
+    const ledgerLine = total.costOfSales.find((l) => l.accountId === cogsAccount.id);
+    const ledger: Pair = { local: dec(ledgerLine?.amountLocal ?? 0), usd: dec(ledgerLine?.amountUsd ?? 0) };
+    const timing: Pair = { local: ledger.local.minus(breakdown.totalLocal), usd: ledger.usd.minus(breakdown.totalUsd) };
+    const href = `/reports/general-ledger?account=${cogsAccount.id}&from=${from}&to=${to}`;
+    const parts: StatementLine[] = [
+      { key: 'cos-purchase', label: 'Coffee purchase cost (coffee sold)', href, cells: [money({ local: breakdown.purchase.local, usd: breakdown.purchase.usd })] },
+      ...breakdown.expenses.map((e) => ({
+        key: `cos-${e.key}`,
+        label: `Shipment expense — ${e.label}`,
+        href: `/reports/cogs?from=${from}&to=${to}`,
+        indent: true,
+        cells: [money({ local: e.local, usd: e.usd })],
+      })),
+      {
+        key: 'cos-expenses',
+        label: 'Total shipment expenses on the coffee sold',
+        cells: [money({ local: breakdown.expensesTotal.local, usd: breakdown.expensesTotal.usd })],
+      },
+      ...(timing.local.abs().greaterThanOrEqualTo('0.01')
+        ? [{ key: 'cos-timing', label: 'Stock / cost of sales correction dated in this period', href, cells: [money(timing)] }]
+        : []),
+    ];
+    const at = cogsSection.lines.findIndex((l) => l.key === cogsAccount.id);
+    if (at >= 0) cogsSection.lines.splice(at, 1, ...parts);
+  }
+
   const sections: StatementSectionData[] = [
     section('income', 'Income', (p) => p.revenue, (p) => ({ local: p.totals.revenueLocal, usd: p.totals.revenueUsd }), 'Total income'),
-    section('cogs', 'Cost of goods sold', (p) => p.costOfSales, (p) => ({ local: p.totals.costOfSalesLocal, usd: p.totals.costOfSalesUsd }), 'Total cost of goods sold'),
+    cogsSection,
     section('expenses', 'Expenses', (p) => p.operatingExpenses, (p) => ({ local: p.totals.operatingExpensesLocal, usd: p.totals.operatingExpensesUsd }), 'Total expenses'),
     ...(total.otherItems.length > 0 || (before?.otherItems.length ?? 0) > 0
       ? [section('other', 'Other income and expenses', (p) => p.otherItems, (p) => ({ local: p.totals.otherLocal, usd: p.totals.otherUsd }), 'Total other')]

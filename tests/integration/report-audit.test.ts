@@ -15,6 +15,8 @@ import {
 } from '@/lib/services/reports';
 import { getCogsReport } from '@/lib/services/profitability';
 import { getPayables } from '@/lib/services/receivables';
+import { getCostOfSalesBreakdown } from '@/lib/services/cost-of-sales-breakdown';
+import { restateInventorySplit } from '@/lib/services/inventory-split';
 import { dec, sum } from '@/lib/money';
 
 /**
@@ -186,6 +188,20 @@ describe('Sales by customer', () => {
     expect(sum(rows.map((r) => r.revenueLocal)).toFixed(2)).toBe('300000.00');
     expect(sum(rows.map((r) => r.costLocal)).toFixed(2)).toBe(sum(cogs.map((l) => l.cogsLocal)).toFixed(2));
     expect(sum(rows.map((r) => r.revenueLocal)).toFixed(2)).toBe((await ledgerLocal('SALES_REVENUE')).negated().toFixed(2));
+  });
+});
+
+describe('Profit and loss: what the cost of goods sold is made of', () => {
+  it('splits the sold coffee into its purchase cost and each shipment expense, adding up to the ledger', async () => {
+    // A quarter of the order sold: a quarter of USD 80,000 at 10, and a quarter of MAD 12,000 clearing.
+    const b = await getCostOfSalesBreakdown({ companyId });
+    expect(b.purchase.local.toFixed(2)).toBe('200000.00');
+    expect(b.expenses.map((e) => [e.label, e.local.toFixed(2)])).toEqual([['Clearing Charges', '3000.00']]);
+    expect(b.totalLocal.toFixed(2)).toBe('203000.00');
+    // The ledger agrees once the stock / cost-of-sales split is kept in step,
+    // which the app does after every posting.
+    await restateInventorySplit({ companyId, userId: ctx.admin.id, trigger: 'test' });
+    expect((await ledgerLocal('COST_OF_GOODS_SOLD')).toFixed(2)).toBe(b.totalLocal.toFixed(2));
   });
 });
 

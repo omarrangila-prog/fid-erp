@@ -733,6 +733,8 @@ export async function getMonthlyPurchases(params: { companyId: string; months?: 
 
 export type CogsLine = {
   invoiceId: string;
+  /** The batch the coffee was sold from, whose costing priced it. */
+  batchId: string | null;
   invoiceNumber: string;
   invoiceDate: Date;
   customerId: string;
@@ -849,6 +851,7 @@ export async function getCogsReport(params: { companyId: string; from?: Date; to
     const cogsLocal = perKgLocal ? toMoney(toQuantity(row.quantityKg).times(perKgLocal)) : new Decimal(0);
     return {
       invoiceId: row.invoiceId,
+      batchId: row.batchId,
       invoiceNumber: row.invoiceNumber,
       invoiceDate: row.invoiceDate,
       customerId: row.customerId,
