@@ -30,6 +30,16 @@ const REPORTS = [
   '/ledgers/vendors',
 ];
 
+/** A load the sign-in redirect may still abort: wait, then load it once more. */
+async function open(page: Page, path: string) {
+  try {
+    await page.goto(path, { waitUntil: 'domcontentloaded' });
+  } catch {
+    await page.waitForTimeout(1000);
+    await page.goto(path, { waitUntil: 'domcontentloaded' });
+  }
+}
+
 async function signInMorocco(page: Page) {
   await page.goto('/login/password');
   await page.getByLabel(/email/i).fill(E2E_EMAIL!);
@@ -56,7 +66,7 @@ for (const width of WIDTHS) {
     await signInMorocco(page);
     const problems: string[] = [];
     for (const path of REPORTS) {
-      await page.goto(path, { waitUntil: 'domcontentloaded' });
+      await open(page, path);
       await settle(page);
       const { scrollWidth, clientWidth } = await page.evaluate(() => ({
         scrollWidth: document.documentElement.scrollWidth,
