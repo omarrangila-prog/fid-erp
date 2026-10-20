@@ -71,7 +71,7 @@ export default async function CogsReportPage({
     : null;
 
   return (
-    <div className="space-y-6">
+    <div className="print-landscape space-y-6">
       <PageHeader
         title="Cost of Goods Sold"
         description={`${user.activeCompany.name} · ${formatDate(fromDate)} to ${formatDate(toDate)}`}

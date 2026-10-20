@@ -33,6 +33,7 @@ export function StatCard({
 
   const body = (
     <Card
+      data-print-figure
       className={cn(
         'h-full p-4 transition-colors',
         href && 'hover:border-forest-300 hover:bg-forest-50/40',

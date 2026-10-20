@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { PrintHeader } from '@/components/shared/print-header';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getBatchStock } from '@/lib/services/stock';
@@ -92,12 +93,13 @@ export default async function BatchesPage() {
   }));
 
   return (
-    <div className="space-y-6">
+    <div className="print-landscape space-y-6">
       <PageHeader
         title="Batch / Lot Stock"
         description="Full traceability: every batch, its lot, its container, where it is and what is left of it."
         breadcrumbs={[{ label: 'Inventory', href: '/inventory' }, { label: 'Batch / Lot Stock' }]}
       />
+      <PrintHeader title="Batch / Lot Stock" companyName={user.activeCompany.name} country={user.activeCompany.country} currency={user.activeCompany.localCurrency} />
       <BatchesClient
         emptyAction={
           can(user, PERMISSIONS.PURCHASES_VIEW) ? (

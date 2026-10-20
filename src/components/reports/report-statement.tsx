@@ -39,9 +39,13 @@ export function StatementHeader({
   meta?: React.ReactNode;
 }) {
   return (
-    <div className="space-y-1 py-4 text-center">
-      <p className="text-sm font-medium text-ink-muted">{company}</p>
-      <h2 className="text-xl font-semibold uppercase tracking-wide text-ink">{title}</h2>
+    <div className="space-y-1 py-4 text-center" data-statement-header>
+      <p className="text-sm font-medium text-ink-muted" data-statement-company>
+        {company}
+      </p>
+      <h2 className="text-xl font-semibold uppercase tracking-wide text-ink" data-statement-title>
+        {title}
+      </h2>
       <p className="text-sm text-ink-muted" data-share-period>
         {period}
       </p>

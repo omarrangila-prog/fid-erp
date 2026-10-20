@@ -33,15 +33,21 @@ export function PrintHeader({
       <p data-print="hide" className="-mt-2 text-[11px] text-ink-subtle" data-testid="report-context">
         {context} · Generated {generated}
       </p>
-      <div data-print="only" className="mb-4 border-b border-line pb-3">
-        <p className="text-base font-semibold text-ink">
-          {companyFlag(country)} {companyName}
-        </p>
-        <p className="text-sm text-ink">{title}</p>
-        {period ? <p className="text-xs text-ink-muted">{period}</p> : null}
-        {filters?.length ? <p className="text-xs text-ink-muted">{filters.join(' · ')}</p> : null}
-        {currency ? <p className="text-xs text-ink-muted">Reporting currency: {currency}</p> : null}
-        <p className="mt-1 text-[10px] text-ink-subtle">Generated {generated}</p>
+      <div data-print="only" className="print-letterhead">
+        <div className="lh-row">
+          <div>
+            <p className="lh-company">
+              {companyFlag(country)} {companyName}
+            </p>
+            <p className="lh-title">{title}</p>
+          </div>
+          <div className="lh-side">
+            {period ? <p>{period}</p> : null}
+            {currency ? <p>Reporting currency: {currency}</p> : null}
+            <p>Generated {generated}</p>
+          </div>
+        </div>
+        {filters?.length ? <p className="lh-filters">{filters.join(' · ')}</p> : null}
       </div>
     </>
   );

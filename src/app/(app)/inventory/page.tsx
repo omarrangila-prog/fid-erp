@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { PrintHeader } from '@/components/shared/print-header';
 import Link from 'next/link';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
@@ -224,7 +225,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
   const inTransitKg = toQuantity(inTransit._sum.inTransitQuantityKg ?? 0);
 
   return (
-    <div className="space-y-6">
+    <div className="print-landscape space-y-6">
       <PageHeader
         title="Stock on Hand"
         description="Every coffee: what came in, what sold, what is left and where, what it cost, what it sold for, what has been collected — and whether it made money."
@@ -248,6 +249,7 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
           </>
         }
       />
+      <PrintHeader title="Stock on Hand" companyName={user.activeCompany.name} country={user.activeCompany.country} currency={user.activeCompany.localCurrency} />
 
       <StockFilters action="/inventory" values={values} {...options} />
 

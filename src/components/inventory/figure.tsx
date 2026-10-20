@@ -25,7 +25,7 @@ export function Figure({
   testId?: string;
 }) {
   return (
-    <Card className="h-full p-4" data-testid={testId}>
+    <Card className="h-full p-4" data-testid={testId} data-print-figure>
       <p className="text-xs font-medium text-ink-muted" title={info}>
         {label}
         {info ? (
