@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getProfitAndLossByColumns, type PnlLine, type ProfitAndLoss } from '@/lib/services/reports';
-import { formatMoney, formatDate, formatPercent, companyToday, dayParam } from '@/lib/format';
+import { formatMoney, formatDate, formatPercent, formatQuantityKg, companyToday, dayParam } from '@/lib/format';
 import { Decimal, dec } from '@/lib/money';
 import { PageHeader } from '@/components/shared/page-header';
 import { DateRangePicker } from '@/components/shared/date-range';
@@ -22,6 +22,8 @@ import {
   type StatementSectionData,
 } from '@/components/reports/report-statement';
 import { CustomizePanel } from '@/components/reports/customize-panel';
+import { prisma } from '@/lib/db';
+import { getShipmentPnl, getCustomerPnl, type ScopedPnl, type ScopedPair } from '@/lib/services/scoped-pnl';
 
 export const metadata: Metadata = { title: 'Profit & Loss' };
 export const dynamic = 'force-dynamic';
@@ -42,7 +44,7 @@ function startOfYear() {
 export default async function ProfitLossPage({
   searchParams,
 }: {
-  searchParams: Promise<{ from?: string; to?: string; columns?: string; compare?: string; zero?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; columns?: string; compare?: string; zero?: string; shipment?: string; customer?: string }>;
 }) {
   const query = await searchParams;
   const user = await requirePageAccess(PERMISSIONS.ACCOUNTING_VIEW);
@@ -53,6 +55,21 @@ export default async function ProfitLossPage({
   const columnsBy = (['month', 'quarter', 'year'].includes(query.columns ?? '') ? query.columns : 'total') as 'total' | 'month' | 'quarter' | 'year';
   const compare = (['previous', 'year'].includes(query.compare ?? '') ? query.compare : 'none') as 'none' | 'previous' | 'year';
   const showZero = query.zero === '1';
+
+  /*
+   * §6.8–6.9: the same statement for one shipment or one customer. The
+   * scope is read on the server and every query is this company's alone.
+   */
+  const companyId = user.activeCompany.id;
+  const [shipmentOptions, customerOptions] = await Promise.all([
+    prisma.purchaseContract.findMany({ where: { companyId, status: 'POSTED' }, orderBy: { contractDate: 'desc' }, select: { id: true, contractReference: true } }),
+    prisma.customer.findMany({ where: { companyId }, orderBy: { customerName: 'asc' }, select: { id: true, customerName: true } }),
+  ]);
+  const scoped: ScopedPnl | null = query.shipment
+    ? await getShipmentPnl({ companyId, contractId: query.shipment, from: fromDate, to: toDate })
+    : query.customer
+      ? await getCustomerPnl({ companyId, customerId: query.customer, from: fromDate, to: toDate })
+      : null;
 
   const report = await getProfitAndLossByColumns({ companyId: user.activeCompany.id, from: fromDate, to: toDate, columnsBy, compare });
   const { total, before, previous } = report;
@@ -169,8 +186,48 @@ export default async function ProfitLossPage({
 
       <div className="flex flex-wrap items-end gap-3 print:hidden">
         <DateRangePicker defaultFrom={from} defaultTo={to} />
-        <StatementControls columnsBy={columnsBy} compare={compare} showZero={showZero} />
+        {scoped ? null : <StatementControls columnsBy={columnsBy} compare={compare} showZero={showZero} />}
       </div>
+
+      <form method="get" className="flex flex-wrap items-end gap-3 print:hidden" data-testid="pnl-scope">
+        <input type="hidden" name="from" value={from} />
+        <input type="hidden" name="to" value={to} />
+        <label className="text-xs text-ink-muted">
+          <span className="block">Shipment</span>
+          <select name="shipment" defaultValue={query.shipment ?? ''} className="mt-1 h-9 rounded-md border border-line-strong bg-surface px-2 text-sm">
+            <option value="">Whole company</option>
+            {shipmentOptions.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.contractReference}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className="pb-2 text-xs text-ink-subtle">or</span>
+        <label className="text-xs text-ink-muted">
+          <span className="block">Customer</span>
+          <select name="customer" defaultValue={query.customer ?? ''} className="mt-1 h-9 rounded-md border border-line-strong bg-surface px-2 text-sm">
+            <option value="">Whole company</option>
+            {customerOptions.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.customerName}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="submit" className="h-9 rounded-md bg-forest-800 px-3 text-sm font-medium text-white">
+          Show
+        </button>
+        {scoped ? (
+          <a href={`/reports/profit-loss?from=${from}&to=${to}`} className="pb-2 text-xs text-forest-800 underline">
+            Back to the whole company
+          </a>
+        ) : null}
+      </form>
+
+      {scoped ? <ScopedStatement p={scoped} local={local} company={user.activeCompany.name} period={`${formatDate(fromDate)} – ${formatDate(toDate)}`} /> : null}
+      {query.shipment || query.customer ? (scoped ? null : <p className="text-sm text-ink-subtle">Nothing to show for that selection.</p>) : (
+      <>
 
       <Card>
         <CardContent className="px-2 pb-4 pt-2 sm:px-4">
@@ -202,6 +259,63 @@ export default async function ProfitLossPage({
           </p>
         </CardContent>
       </Card>
+      </>
+      )}
     </div>
+  );
+}
+
+/** The P&L of one shipment or one customer, in the statement's order. */
+function ScopedStatement({ p, local, company, period }: { p: ScopedPnl; local: string; company: string; period: string }) {
+  const amount = (v: ScopedPair) => (
+    <>
+      <span className="block">{formatMoney(v.local, local)}</span>
+      <span className="block text-[11px] font-normal text-ink-subtle">{v.usd ? `≈ ${formatMoney(v.usd, 'USD')}` : 'USD equivalent unavailable'}</span>
+    </>
+  );
+  const row = (label: string, v: ScopedPair, opts: { strong?: boolean; final?: boolean; less?: boolean; testId?: string } = {}) => (
+    <tr className={opts.final ? 'grid-total grid-final' : opts.strong ? 'bg-surface-sunken/30 font-semibold' : undefined} data-testid={opts.testId}>
+      <td className="px-3 py-1.5 text-left">{opts.less ? `Less: ${label}` : label}</td>
+      <td className={`tnum px-3 py-1.5 text-right ${v.local.isNegative() && (opts.strong || opts.final) ? 'text-red-600' : ''}`}>{amount(v)}</td>
+    </tr>
+  );
+  const grossLoss = p.grossProfit.local.isNegative();
+  const netLoss = p.netProfit?.local.isNegative() ?? false;
+  return (
+    <Card>
+      <CardContent className="px-2 pb-4 pt-2 sm:px-4">
+        <StatementHeader company={company} title={`Profit and Loss — ${p.scope === 'shipment' ? 'Shipment' : 'Customer'}: ${p.label}`} period={p.scope === 'customer' ? period : 'Shipment to date'} />
+        <div className="overflow-x-auto" data-wide-sheet>
+          <table className="data-grid grid-framed w-full min-w-[22rem] text-sm" data-testid="scoped-pnl">
+            <tbody>
+              {row('Sales / revenue', p.revenue, { testId: 'scoped-revenue' })}
+              {row('Cost of goods sold', p.cogs, { less: true, testId: 'scoped-cogs' })}
+              {row(grossLoss ? 'Gross loss' : 'Gross profit', p.grossProfit, { strong: true, testId: 'scoped-gross' })}
+              <tr>
+                <td className="px-3 py-1.5 text-left text-ink-muted">Gross margin</td>
+                <td className="tnum px-3 py-1.5 text-right">{p.grossMarginPct ? formatPercent(p.grossMarginPct) : '—'}</td>
+              </tr>
+              {p.periodCosts ? row('Shipment period costs (not in stock)', p.periodCosts, { less: true }) : null}
+              {p.allocatedOverhead ? row('Allocated company overhead (management)', p.allocatedOverhead, { less: true }) : null}
+              {p.netProfit ? row(netLoss ? 'Net loss' : 'Net profit', p.netProfit, { final: true, testId: 'scoped-net' }) : null}
+              {p.netProfit ? (
+                <tr>
+                  <td className="px-3 py-1.5 text-left text-ink-muted">Net margin</td>
+                  <td className="tnum px-3 py-1.5 text-right">{p.netMarginPct ? formatPercent(p.netMarginPct) : '—'}</td>
+                </tr>
+              ) : null}
+              <tr>
+                <td className="px-3 py-1.5 text-left text-ink-muted">Company operating expenses in the period — unallocated, not deducted above</td>
+                <td className="tnum px-3 py-1.5 text-right text-ink-muted">{formatMoney(p.unallocatedCompanyExpensesLocal, local)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-3 px-3 text-xs text-ink-subtle">
+          {p.periodNote} {p.netNote ?? ''} {p.usdBasis} {formatQuantityKg(p.soldKg)} sold{p.scope === 'shipment' ? ` from ${p.lines} container${p.lines === 1 ? '' : 's'}` : ` on ${p.lines} line${p.lines === 1 ? '' : 's'}`}. COGS is the landed cost of the
+          KG sold only — the stock still in hand stays an asset. Capitalised shipment costs are inside COGS and are not deducted again.
+        </p>
+      </CardContent>
+    </Card>
   );
 }

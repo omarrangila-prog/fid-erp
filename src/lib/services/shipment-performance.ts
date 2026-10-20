@@ -117,3 +117,69 @@ export async function getClosedDates(companyId: string, shipmentIds: string[]): 
   for (const row of rows) if (!closed.has(row.shipmentId)) closed.set(row.shipmentId, row.changedAt);
   return closed;
 }
+
+/**
+ * What is still owed on each shipment (§7.5), by purchase order: by
+ * customers for its coffee, and to suppliers for the coffee and for its
+ * shipment costs.
+ *
+ * A customer's balance is never spread over shipments wholesale: each
+ * invoice's outstanding amount is shared over its lines by value, and only
+ * the lines that sold this shipment's coffee count. The supplier side is the
+ * order's own payable (in its currency) and the unpaid shipment costs booked
+ * to the order (in the company's currency).
+ */
+export type ShipmentOutstanding = { customerLocal: Decimal; supplierOrder: Decimal; supplierCurrency: string; shipmentCostsOwedLocal: Decimal };
+
+export async function getShipmentOutstandings(companyId: string): Promise<Map<string, ShipmentOutstanding>> {
+  const { getReceivables, getPayables } = await import('@/lib/services/receivables');
+  const [receivables, payables, lines, contracts, company] = await Promise.all([
+    getReceivables({ companyId, onlyOutstanding: true }),
+    getPayables({ companyId, onlyOutstanding: true }),
+    prisma.$queryRaw<Array<{ contractId: string; invoiceId: string; share: string }>>`
+      SELECT b."purchaseContractId" AS "contractId", sil."salesInvoiceId" AS "invoiceId",
+             (SUM(sil."lineTotal" + sil."taxAmount") / NULLIF(MAX(si."totalAmount"), 0))::text AS share
+        FROM sales_invoice_lines sil
+        JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
+        JOIN batches b ON b."id" = sil."batchId"
+       WHERE si."companyId" = ${companyId} AND si."status" = 'POSTED'
+       GROUP BY b."purchaseContractId", sil."salesInvoiceId"`,
+    prisma.purchaseContract.findMany({ where: { companyId }, select: { id: true, contractReference: true, currency: true } }),
+    prisma.company.findUniqueOrThrow({ where: { id: companyId }, select: { localCurrency: true } }),
+  ]);
+  // In the company's currency: a local document as it stands, any other at its own rate.
+  const inLocal = (d: { currency: string; outstandingAmount: Decimal; outstandingAmountUsd: Decimal; rateLocalPerUsd: Decimal }) =>
+    d.currency === company.localCurrency ? d.outstandingAmount : d.outstandingAmountUsd.times(d.rateLocalPerUsd);
+  const out = new Map<string, ShipmentOutstanding>();
+  const entry = (contractId: string) => {
+    let e = out.get(contractId);
+    if (!e) {
+      e = { customerLocal: dec(0), supplierOrder: dec(0), supplierCurrency: contracts.find((c) => c.id === contractId)?.currency ?? 'USD', shipmentCostsOwedLocal: dec(0) };
+      out.set(contractId, e);
+    }
+    return e;
+  };
+  const owed = new Map(receivables.map((r) => [r.invoiceId, r]));
+  for (const line of lines) {
+    const r = owed.get(line.invoiceId);
+    if (!r) continue;
+    const e = entry(line.contractId);
+    e.customerLocal = e.customerLocal.plus(inLocal(r).times(dec(line.share ?? 0)));
+  }
+  const byReference = new Map(contracts.map((c) => [c.contractReference, c.id]));
+  for (const p of payables) {
+    if (p.kind === 'CONTRACT' && contracts.some((c) => c.id === p.contractId)) {
+      const e = entry(p.contractId);
+      e.supplierOrder = e.supplierOrder.plus(p.outstandingAmount);
+    } else if (p.kind === 'EXPENSE' && p.orderReference && byReference.has(p.orderReference)) {
+      const e = entry(byReference.get(p.orderReference)!);
+      e.shipmentCostsOwedLocal = e.shipmentCostsOwedLocal.plus(inLocal(p));
+    }
+  }
+  for (const e of out.values()) {
+    e.customerLocal = toMoney(e.customerLocal);
+    e.supplierOrder = toMoney(e.supplierOrder);
+    e.shipmentCostsOwedLocal = toMoney(e.shipmentCostsOwedLocal);
+  }
+  return out;
+}

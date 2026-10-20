@@ -247,6 +247,27 @@ export async function runConsistencyChecks(companyId: string): Promise<{
     }),
   );
 
+  // --- Inventory: the valuation against the Inventory account in the books --
+  // The stock on the shelf at its landed cost, in the company's currency,
+  // against what the ledger carries for it. A PO rate edit restates both.
+  const [inventoryGl] = await prisma.$queryRaw<Array<{ local: string }>>(Prisma.sql`
+    SELECT COALESCE(SUM(jl."debitLocal" - jl."creditLocal"), 0)::text AS local
+    FROM journal_lines jl
+    JOIN journal_entries je ON je."id" = jl."journalEntryId"
+    JOIN accounts a ON a."id" = jl."accountId"
+    WHERE je."companyId" = ${companyId} AND ${LIVE_ENTRY_SQL} AND a."systemKey" = 'INVENTORY'`);
+  checks.push(
+    check({
+      area: 'Inventory',
+      label: `Inventory Valuation = Inventory account in the ledger (${local})`,
+      left: { label: 'Inventory Valuation', value: toMoney(valuation.reduce((t, line) => t.plus(line.valueLocal), dec(0))) },
+      right: { label: 'Inventory (GL)', value: toMoney(dec(inventoryGl?.local ?? 0)) },
+      currency: local,
+      severity: 'info',
+      note: 'Stock counts and write-offs post to the ledger as they happen; a difference names an adjustment to look at, not a broken total.',
+    }),
+  );
+
   // --- Customer receivables: the control account against its customers ----
   // A line on the control with no customer on it would be receivable nobody owes —
   // the one way the control and the customer ledgers could quietly part company.

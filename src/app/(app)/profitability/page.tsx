@@ -29,7 +29,7 @@ import { DualAmount } from '@/components/shared/dual-amount';
 import { ProfitabilityStatement } from './statement-view';
 import { Badge } from '@/components/ui/badge';
 import { formatDate } from '@/lib/format';
-import { shipmentStage, shipmentResult, getClosedDates, SHIPMENT_STAGE_LABELS } from '@/lib/services/shipment-performance';
+import { shipmentStage, shipmentResult, getClosedDates, getShipmentOutstandings, SHIPMENT_STAGE_LABELS } from '@/lib/services/shipment-performance';
 import { FavouriteStar } from '@/components/reports/report-statement';
 
 export const metadata: Metadata = { title: 'Profitability' };
@@ -141,7 +141,7 @@ async function ShipmentTable({
   lead?: 'job' | 'contract';
 }) {
   const rows = await getShipmentProfitability({ companyId });
-  const closedDates = await getClosedDates(companyId, rows.map((r) => r.shipmentId));
+  const [closedDates, outstandings] = await Promise.all([getClosedDates(companyId, rows.map((r) => r.shipmentId)), getShipmentOutstandings(companyId)]);
 
   /*
    * One shipment reference, one row.
@@ -274,6 +274,35 @@ async function ShipmentTable({
                 </span>
               </summary>
               <div className="space-y-2 border-t border-line px-4 py-3">
+                {(() => {
+                  const owed = outstandings.get(first.contractId);
+                  const cell = (label: string, value: React.ReactNode, note?: string) => (
+                    <div className="rounded-md border border-line px-3 py-2">
+                      <dt className="text-[11px] text-ink-subtle">{label}</dt>
+                      <dd className="tnum text-sm font-medium">{value}</dd>
+                      {note ? <dd className="text-[11px] text-ink-subtle">{note}</dd> : null}
+                    </div>
+                  );
+                  return (
+                    <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6" data-testid="shipment-costs-balances">
+                      {cell('Purchase cost', usd(add(children, (r) => r.goodsCostLocal)))}
+                      {cell('Direct shipment costs', usd(add(children, (r) => r.capitalisedCostLocal)), 'inside landed cost — not deducted again')}
+                      {cell('Total landed cost', usd(add(children, (r) => r.totalLandedCostLocal)))}
+                      {cell('Allocated overhead', usd(add(children, (r) => r.allocatedOverheadLocal)), 'management share, where allocated')}
+                      {cell('Customer outstanding', usd(owed?.customerLocal ?? dec(0)), 'its share of each invoice')}
+                      {cell(
+                        'Supplier outstanding',
+                        <>
+                          {formatMoney(owed?.supplierOrder ?? dec(0), owed?.supplierCurrency ?? 'USD')}
+                          {owed && !owed.shipmentCostsOwedLocal.isZero() ? (
+                            <span className="block text-xs text-ink-muted">+ {formatMoney(owed.shipmentCostsOwedLocal, local)} shipment costs</span>
+                          ) : null}
+                        </>,
+                        'the order, and costs booked to it',
+                      )}
+                    </dl>
+                  );
+                })()}
                 <p className="text-xs text-ink-muted">
                   USD/{local} rate {rate.toString()} · gross {grossLocal.isNegative() ? 'loss' : 'profit'}{' '}
                   {formatMoney(grossLocal, local)} (≈ {formatMoney(grossLocal.dividedBy(rate), 'USD')}) · stock left carried at{' '}

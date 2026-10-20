@@ -735,9 +735,12 @@ export type CogsLine = {
   invoiceId: string;
   invoiceNumber: string;
   invoiceDate: Date;
+  customerId: string;
   customerName: string;
   itemName: string;
   batchNumber: string;
+  /** The purchase order the sold stock came from — the shipment, for P&L by shipment. */
+  contractId: string | null;
   /** The ICUL/FID order the sold stock came from. */
   contractReference: string;
   warehouseName: string | null;
@@ -766,9 +769,11 @@ export async function getCogsReport(params: { companyId: string; from?: Date; to
       invoiceId: string;
       invoiceNumber: string;
       invoiceDate: Date;
+      customerId: string;
       customerName: string;
       itemName: string;
       batchNumber: string;
+      contractId: string | null;
       contractReference: string | null;
       warehouseName: string | null;
       quantityKg: string;
@@ -781,7 +786,7 @@ export async function getCogsReport(params: { companyId: string; from?: Date; to
   >`
     SELECT * FROM (
       SELECT si."id" AS "invoiceId", si."invoiceNumber", si."invoiceDate",
-             c."customerName", ci."itemName", b."batchNumber",
+             c."id" AS "customerId", c."customerName", ci."itemName", b."batchNumber", b."purchaseContractId" AS "contractId",
              (SELECT pc."contractReference" FROM purchase_contracts pc WHERE pc."id" = b."purchaseContractId") AS "contractReference",
              w."name" AS "warehouseName",
              sil."quantityKg"::text AS "quantityKg",
@@ -802,9 +807,10 @@ export async function getCogsReport(params: { companyId: string; from?: Date; to
          AND (${params.to ?? null}::date IS NULL OR si."invoiceDate" <= ${params.to ?? null}::date)
       UNION ALL
       SELECT cn."id" AS "invoiceId", cn."creditNoteNumber" AS "invoiceNumber", cn."creditDate" AS "invoiceDate",
-             c."customerName",
+             c."id" AS "customerId", c."customerName",
              COALESCE(ci."itemName", 'Credit note') AS "itemName",
              COALESCE(b."batchNumber", '—') AS "batchNumber",
+             b."purchaseContractId" AS "contractId",
              (SELECT pc."contractReference" FROM purchase_contracts pc WHERE pc."id" = b."purchaseContractId") AS "contractReference",
              w."name" AS "warehouseName",
              (-cnl."quantityKg")::text AS "quantityKg",
@@ -845,9 +851,11 @@ export async function getCogsReport(params: { companyId: string; from?: Date; to
       invoiceId: row.invoiceId,
       invoiceNumber: row.invoiceNumber,
       invoiceDate: row.invoiceDate,
+      customerId: row.customerId,
       customerName: row.customerName,
       itemName: row.itemName,
       batchNumber: row.batchNumber,
+      contractId: row.contractId,
       contractReference: row.contractReference ?? '—',
       warehouseName: row.warehouseName,
       quantityKg: toQuantity(row.quantityKg),

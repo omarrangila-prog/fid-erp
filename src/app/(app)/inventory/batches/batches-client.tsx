@@ -113,12 +113,12 @@ export function BatchesClient({
       exportType: 'quantity',
       cell: (r) => <span className="font-medium">{r.availableLabel}</span>,
     },
-    { id: 'bags', header: 'Bags', numeric: true, hideable: true, defaultHidden: true, exportValue: (r) => r.bags, exportType: 'number', cell: (r) => formatBags(r.bags) },
+    { id: 'bags', header: 'Bags', numeric: true, hideable: true, exportValue: (r) => r.bags, exportType: 'number', cell: (r) => formatBags(r.bags) },
     ...(showValue
       ? [
           {
             id: 'landed',
-            header: 'Landed / KG USD',
+            header: 'Landed / KG',
             numeric: true,
             hideable: true,
             exportValue: (r: BatchRow) => r.landedCostSort,
@@ -127,7 +127,7 @@ export function BatchesClient({
           } satisfies DataColumn<BatchRow>,
           {
             id: 'value',
-            header: 'Value USD',
+            header: 'Stock Value',
             numeric: true,
             hideable: true,
             sortValue: (r: BatchRow) => r.valueSort,

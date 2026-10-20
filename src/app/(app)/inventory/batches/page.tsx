@@ -3,6 +3,7 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getBatchStock } from '@/lib/services/stock';
 import { getBatchCostings } from '@/lib/services/landed-cost';
+import type { Decimal } from '@/lib/money';
 import { equivalentText } from '@/lib/dual-currency';
 import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
 import { formatMoney, formatQuantityKg } from '@/lib/format';
@@ -26,10 +27,20 @@ export default async function BatchesPage() {
     getShipmentOrdinals(user.activeCompany.id),
     showValue ? getBatchCostings({ companyId: user.activeCompany.id }) : Promise.resolve([]),
   ]);
-  // Each batch's landed cost per kilo in the company's currency: the purchase
-  // at its own rate and each cost at its own — never one rate for all.
-  const localPerKg = new Map(costings.map((c) => [c.batchId, c.landedPerKgLocal]));
+  /*
+   * Each batch from the one shared costing — the purchase at its order's
+   * current USD/MAD rate, each shipment cost at its own amount — in the
+   * company's currency first, as Stock on Hand and Inventory Valuation state
+   * it, with the dollars at the order's rate under it. Not the dollar cost
+   * stored on the batch when it was received, which a PO rate edit leaves
+   * behind.
+   */
+  const costingOf = new Map(costings.map((c) => [c.batchId, c]));
   const local = user.activeCompany.localCurrency;
+  const atRate = (batchId: string, amount: Decimal) => {
+    const rate = costingOf.get(batchId)?.rateLocalPerUsd;
+    return rate && rate.greaterThan(0) ? amount.dividedBy(rate) : null;
+  };
 
   const rows: BatchRow[] = batches.map((b) => ({
     id: b.batchId,
@@ -54,17 +65,29 @@ export default async function BatchesPage() {
     availableLabel: formatQuantityKg(b.availableKg),
     availableSort: Number(b.availableKg),
     bags: b.bags,
-    landedCostLabel: formatMoney(b.unitCostUsd, 'USD'),
-    landedCostEquivalent: equivalentText({ amount: b.unitCostUsd, currency: 'USD', localCurrency: local, amountLocal: localPerKg.get(b.batchId) ?? null }),
-    landedCostSort: Number(b.unitCostUsd),
-    valueLabel: formatMoney(b.stockValueUsd, 'USD'),
-    valueEquivalent: equivalentText({
-      amount: b.stockValueUsd,
-      currency: 'USD',
-      localCurrency: local,
-      amountLocal: localPerKg.has(b.batchId) ? b.availableKg.times(localPerKg.get(b.batchId)!) : null,
-    }),
-    valueSort: Number(b.stockValueUsd),
+    ...(() => {
+      const c = costingOf.get(b.batchId);
+      if (!c) {
+        return {
+          landedCostLabel: formatMoney(b.unitCostUsd, 'USD'),
+          landedCostEquivalent: null,
+          landedCostSort: Number(b.unitCostUsd),
+          valueLabel: formatMoney(b.stockValueUsd, 'USD'),
+          valueEquivalent: null,
+          valueSort: Number(b.stockValueUsd),
+        };
+      }
+      const perKgUsd = atRate(b.batchId, c.landedPerKgLocal);
+      const valueUsd = atRate(b.batchId, c.stockValueLocal);
+      return {
+        landedCostLabel: formatMoney(c.landedPerKgLocal, local),
+        landedCostEquivalent: perKgUsd ? equivalentText({ amount: c.landedPerKgLocal, currency: local, localCurrency: local, amountUsd: perKgUsd }) : null,
+        landedCostSort: Number(c.landedPerKgLocal),
+        valueLabel: formatMoney(c.stockValueLocal, local),
+        valueEquivalent: valueUsd ? equivalentText({ amount: c.stockValueLocal, currency: local, localCurrency: local, amountUsd: valueUsd }) : null,
+        valueSort: Number(c.stockValueLocal),
+      };
+    })(),
     status: b.status,
   }));
 

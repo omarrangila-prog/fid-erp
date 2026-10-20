@@ -184,9 +184,10 @@ export function DataTable<T>({
   const [query, setQuery] = React.useState('');
   const [page, setPage] = React.useState(0);
   const [sort, setSort] = React.useState<SortState>(null);
-  const [hidden, setHidden] = React.useState<Set<string>>(
-    () => new Set(columns.filter((c) => c.defaultHidden).map((c) => c.id)),
-  );
+  const defaultHidden = React.useMemo(() => columns.filter((c) => c.defaultHidden).map((c) => c.id), [columns]);
+  const [hidden, setHidden] = React.useState<Set<string>>(() => new Set(defaultHidden));
+  // The column order someone chose, by id; null is the report's own order.
+  const [order, setOrder] = React.useState<string[] | null>(null);
   // Compact fits about a third more rows on a screen, which matters on a
   // follow-up sheet somebody scans all day.
   const [compact, setCompact] = React.useState(dense);
@@ -213,10 +214,12 @@ export function DataTable<T>({
     const rememberedSort = readPreference<SortState>(prefsKey, 'sort', null);
     const rememberedHidden = readPreference<string[] | null>(prefsKey, 'hidden', null);
     const rememberedCompact = readPreference<boolean | null>(prefsKey, 'compact', null);
+    const rememberedOrder = readPreference<string[] | null>(prefsKey, 'order', null);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- applying a client-only value after hydration
     if (rememberedSort) setSort(rememberedSort);
     if (rememberedHidden) setHidden(new Set(rememberedHidden));
     if (rememberedCompact !== null) setCompact(rememberedCompact);
+    if (rememberedOrder) setOrder(rememberedOrder);
     loaded.current = true;
   }, [prefsKey]);
 
@@ -234,6 +237,10 @@ export function DataTable<T>({
     if (!prefsKey || !loaded.current) return;
     writePreference(prefsKey, 'compact', compact);
   }, [prefsKey, compact]);
+  React.useEffect(() => {
+    if (!prefsKey || !loaded.current) return;
+    writePreference(prefsKey, 'order', order);
+  }, [prefsKey, order]);
 
   const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set());
   const [filterValues, setFilterValues] = React.useState<Record<string, string>>({});
@@ -249,7 +256,33 @@ export function DataTable<T>({
   );
   // Only a column that can be switched off is ever off: one saved as hidden
   // before it became fixed would otherwise vanish with no way back.
-  const visibleColumns = columns.filter((c) => !c.hideable || !hidden.has(c.id));
+  // Pinned columns keep their place; the rest follow the chosen order, and a
+  // column added to the report since sits where the report puts it.
+  const orderedColumns = React.useMemo(() => {
+    if (!order) return columns;
+    const rank = new Map(order.map((id, i) => [id, i]));
+    const movable = columns.filter((c) => !c.pin);
+    const sortedMovable = movable
+      .map((c, i) => ({ c, key: rank.has(c.id) ? rank.get(c.id)! : order.length + i }))
+      .sort((a, b) => a.key - b.key)
+      .map((x) => x.c);
+    let next = 0;
+    return columns.map((c) => (c.pin ? c : sortedMovable[next++]));
+  }, [columns, order]);
+  const moveColumn = (id: string, step: -1 | 1) => {
+    const ids = orderedColumns.filter((c) => !c.pin).map((c) => c.id);
+    const at = ids.indexOf(id);
+    const to = at + step;
+    if (at < 0 || to < 0 || to >= ids.length) return;
+    [ids[at], ids[to]] = [ids[to], ids[at]];
+    setOrder(ids);
+  };
+  const resetColumns = () => {
+    setHidden(new Set(defaultHidden));
+    setOrder(null);
+    setSort(null);
+  };
+  const visibleColumns = orderedColumns.filter((c) => !c.hideable || !hidden.has(c.id));
 
   const filtered = React.useMemo(() => {
     let rows = data;
@@ -289,7 +322,7 @@ export function DataTable<T>({
     });
   }
 
-  const hideableColumns = columns.filter((c) => c.hideable);
+  const hideableColumns = orderedColumns.filter((c) => c.hideable);
 
   const tableShare = useTableShare({
     config: share,
@@ -467,9 +500,9 @@ export function DataTable<T>({
                     className="animate-in-soft z-50 max-h-[var(--radix-popover-content-available-height)] w-56 overflow-y-auto overscroll-contain rounded-lg border border-line bg-surface p-1 shadow-lg"
                   >
                     {hideableColumns.map((column) => (
+                      <div key={column.id} className="flex items-center gap-1 rounded-md pr-1 hover:bg-forest-50">
                       <label
-                        key={column.id}
-                        className="flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-sm hover:bg-forest-50"
+                        className="flex flex-1 cursor-pointer items-center gap-2 px-2.5 py-2 text-sm"
                       >
                         <input
                           type="checkbox"
@@ -486,7 +519,25 @@ export function DataTable<T>({
                         />
                         {column.header}
                       </label>
+                      {column.pin ? null : (
+                        <>
+                          <button type="button" aria-label={`Move ${column.header} left`} className="rounded px-1 text-xs text-ink-muted hover:bg-surface-sunken" onClick={() => moveColumn(column.id, -1)}>
+                            ↑
+                          </button>
+                          <button type="button" aria-label={`Move ${column.header} right`} className="rounded px-1 text-xs text-ink-muted hover:bg-surface-sunken" onClick={() => moveColumn(column.id, 1)}>
+                            ↓
+                          </button>
+                        </>
+                      )}
+                      </div>
                     ))}
+                    <button
+                      type="button"
+                      onClick={resetColumns}
+                      className="mt-1 w-full rounded-md border-t border-line px-2.5 py-2 text-left text-xs font-medium text-forest-800 hover:bg-forest-50"
+                    >
+                      Reset to default
+                    </button>
                   </Popover.Content>
                 </Popover.Portal>
               </Popover.Root>

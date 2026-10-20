@@ -10,6 +10,10 @@ import { changeShipmentStatus } from '@/lib/services/shipment';
 import { shipmentStage, shipmentResult, closureBlockers, getClosedDates } from '@/lib/services/shipment-performance';
 import { transaction } from '@/lib/db';
 import { dec } from '@/lib/money';
+import { getShipmentPnl, getCustomerPnl } from '@/lib/services/scoped-pnl';
+import { getShipmentOutstandings } from '@/lib/services/shipment-performance';
+import { getReceivables } from '@/lib/services/receivables';
+import { runConsistencyChecks } from '@/lib/services/consistency';
 
 /**
  * Profit on what sold, stock at cost beside it, and a final result only once
@@ -192,6 +196,57 @@ describe('a shipment from first sale to final result', () => {
     const r = await read();
     expect(r.stage).toBe('SOLD_OUT_PENDING');
     expect(await getClosedDates(companyId, [shipmentId])).toEqual(new Map());
+  }, 300_000);
+});
+
+describe('P&L by shipment and by customer (§6.8–6.9), and what is owed (§7.5)', () => {
+  const year = { from: utcDate('2026-01-01'), to: utcDate('2026-12-31') };
+
+  it('states one shipment: revenue, COGS, gross, its own period costs and net — company overhead left unallocated', async () => {
+    const p = (await getShipmentPnl({ companyId, contractId, ...year }))!;
+    expect(f2(p.revenue.local)).toBe('487500.00');
+    expect(f2(p.cogs.local)).toBe('525000.00');
+    expect(f2(p.grossProfit.local)).toBe('-37500.00');
+    expect(f2(p.periodCosts!.local)).toBe('5000.00');
+    expect(p.allocatedOverhead).toBeNull();
+    expect(f2(p.netProfit!.local)).toBe('-42500.00');
+    // Dollars at the order's rate, 9.90.
+    expect(f2(p.revenue.usd)).toBe(f2(dec(487500).dividedBy('9.90')));
+    // It agrees with the shipment's own page.
+    const { sheet } = await read();
+    expect(f2(p.revenue.local)).toBe(f2(sheet.revenueLocal));
+    expect(f2(p.cogs.local)).toBe(f2(sheet.cogsLocal));
+  }, 300_000);
+
+  it('states one customer for the period: no net profit, since overhead is not allocated to customers', async () => {
+    const p = (await getCustomerPnl({ companyId, customerId, ...year }))!;
+    expect(f2(p.revenue.local)).toBe('487500.00');
+    expect(f2(p.cogs.local)).toBe('525000.00');
+    expect(f2(p.grossProfit.local)).toBe('-37500.00');
+    expect(p.netProfit).toBeNull();
+    expect(p.netNote).toMatch(/not allocated to customers/);
+    // Outside the period there is nothing.
+    const before = (await getCustomerPnl({ companyId, customerId, from: utcDate('2025-01-01'), to: utcDate('2025-12-31') }))!;
+    expect(f2(before.revenue.local)).toBe('0.00');
+    // Another company's customer is not found.
+    const ctx = await getContext();
+    expect(await getCustomerPnl({ companyId: ctx.dubai.id, customerId, ...year })).toBeNull();
+  }, 300_000);
+
+  it('shares each invoice’s balance to the shipment by its lines, and names what the supplier is still owed', async () => {
+    const owed = (await getShipmentOutstandings(companyId)).get(contractId)!;
+    const receivables = await getReceivables({ companyId, onlyOutstanding: true });
+    // Every invoice sold only this shipment's coffee, so the shipment carries all of it.
+    expect(f2(owed.customerLocal)).toBe(f2(receivables.reduce((t, r) => t.plus(r.outstandingAmount), dec(0))));
+    expect(f2(owed.supplierOrder)).toBe('50000.00');
+    expect(owed.supplierCurrency).toBe('USD');
+  }, 300_000);
+
+  it('reconciles the trial balance and states the inventory account against the valuation', async () => {
+    const { checks } = await runConsistencyChecks(companyId);
+    const tb = checks.find((c) => c.label.startsWith('Trial Balance: debits = credits'))!;
+    expect(tb.ok).toBe(true);
+    expect(checks.some((c) => c.label.startsWith('Inventory Valuation = Inventory account'))).toBe(true);
   }, 300_000);
 });
 
