@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import type { Decimal } from '@/lib/money';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getCashFlow } from '@/lib/services/reports';
@@ -24,6 +25,9 @@ export default async function CashFlowPage({ searchParams }: { searchParams: Pro
   const toDate = dayParam(to) ?? companyToday(user.activeCompany.timezone);
 
   const flow = await getCashFlow({ companyId: user.activeCompany.id, from: fromDate, to: toDate });
+  // The company's currency first, as the cash book has it; USD underneath.
+  const local = user.activeCompany.localCurrency;
+  const usd = (amount: Decimal) => (local !== 'USD' ? <span className="block text-[11px] font-normal text-ink-subtle">≈ {formatMoney(amount, 'USD')}</span> : null);
 
   return (
     <div className="space-y-6">
@@ -49,19 +53,22 @@ export default async function CashFlowPage({ searchParams }: { searchParams: Pro
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Card className="p-4">
           <p className="text-xs font-medium text-ink-muted">Money in</p>
-          <p className="tnum mt-1 text-lg font-semibold text-gold-700">{formatMoney(flow.totalInUsd, 'USD')}</p>
+          <p className="tnum mt-1 text-lg font-semibold text-gold-700">{formatMoney(flow.totalInLocal, local)}</p>
+          {usd(flow.totalInUsd)}
         </Card>
         <Card className="p-4">
           <p className="text-xs font-medium text-ink-muted">Money out</p>
-          <p className="tnum mt-1 text-lg font-semibold text-red-600">{formatMoney(flow.totalOutUsd, 'USD')}</p>
+          <p className="tnum mt-1 text-lg font-semibold text-red-600">{formatMoney(flow.totalOutLocal, local)}</p>
+          {usd(flow.totalOutUsd)}
         </Card>
         <Card className="p-4">
           <p className="text-xs font-medium text-ink-muted">Net movement</p>
           <p
             className={`tnum mt-1 text-lg font-semibold ${flow.netMovementUsd.greaterThanOrEqualTo(0) ? 'text-gold-700' : 'text-red-600'}`}
           >
-            {formatMoney(flow.netMovementUsd, 'USD')}
+            {formatMoney(flow.netMovementLocal, local)}
           </p>
+          {usd(flow.netMovementUsd)}
         </Card>
       </div>
 
@@ -95,13 +102,26 @@ export default async function CashFlowPage({ searchParams }: { searchParams: Pro
                   flow.lines.map((line) => (
                     <TR key={line.sourceType}>
                       <TD className="font-medium">{line.label}</TD>
-                      <TD numeric className={line.inUsd.greaterThan(0) ? 'text-gold-700' : 'text-ink-subtle'}>
-                        {line.inUsd.greaterThan(0) ? formatMoney(line.inUsd, 'USD') : '—'}
+                      <TD numeric className={line.inLocal.greaterThan(0) ? 'text-gold-700' : 'text-ink-subtle'}>
+                        {line.inLocal.greaterThan(0) ? (
+                          <>
+                            {formatMoney(line.inLocal, local)}
+                            {usd(line.inUsd)}
+                          </>
+                        ) : '—'}
                       </TD>
-                      <TD numeric className={line.outUsd.greaterThan(0) ? 'text-red-600' : 'text-ink-subtle'}>
-                        {line.outUsd.greaterThan(0) ? formatMoney(line.outUsd, 'USD') : '—'}
+                      <TD numeric className={line.outLocal.greaterThan(0) ? 'text-red-600' : 'text-ink-subtle'}>
+                        {line.outLocal.greaterThan(0) ? (
+                          <>
+                            {formatMoney(line.outLocal, local)}
+                            {usd(line.outUsd)}
+                          </>
+                        ) : '—'}
                       </TD>
-                      <TD numeric className="font-medium">{formatMoney(line.netUsd, 'USD')}</TD>
+                      <TD numeric className="font-medium">
+                        {formatMoney(line.netLocal, local)}
+                        {usd(line.netUsd)}
+                      </TD>
                     </TR>
                   ))
                 )}
@@ -109,9 +129,9 @@ export default async function CashFlowPage({ searchParams }: { searchParams: Pro
               <TFoot>
                 <tr>
                   <TD>Total</TD>
-                  <TD numeric>{formatMoney(flow.totalInUsd, 'USD')}</TD>
-                  <TD numeric>{formatMoney(flow.totalOutUsd, 'USD')}</TD>
-                  <TD numeric>{formatMoney(flow.netMovementUsd, 'USD')}</TD>
+                  <TD numeric>{formatMoney(flow.totalInLocal, local)}{usd(flow.totalInUsd)}</TD>
+                  <TD numeric>{formatMoney(flow.totalOutLocal, local)}{usd(flow.totalOutUsd)}</TD>
+                  <TD numeric>{formatMoney(flow.netMovementLocal, local)}{usd(flow.netMovementUsd)}</TD>
                 </tr>
               </TFoot>
             </Table>

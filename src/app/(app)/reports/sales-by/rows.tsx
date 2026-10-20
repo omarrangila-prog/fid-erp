@@ -11,9 +11,9 @@ export type SalesByRowView = {
   href: string | null;
   invoices: number;
   quantity: string;
-  revenue: string;
-  cost: string;
-  gross: string;
+  revenue: React.ReactNode;
+  cost: React.ReactNode;
+  gross: React.ReactNode;
   margin: string;
   negative: boolean;
   detail: Array<{
@@ -27,14 +27,14 @@ export type SalesByRowView = {
     batch: string;
     shipment: string;
     quantity: string;
-    price: string;
-    revenue: string;
-    cost: string;
+    price: React.ReactNode;
+    revenue: React.ReactNode;
+    cost: React.ReactNode;
   }>;
 };
 
 /** Summary rows that open into the invoice lines behind them. */
-export function SalesByRows({ rows, showCost, totals }: { rows: SalesByRowView[]; showCost: boolean; totals: { quantity: string; revenue: string; cost: string; gross: string; margin: string } }) {
+export function SalesByRows({ rows, showCost, totals }: { rows: SalesByRowView[]; showCost: boolean; totals: { quantity: string; revenue: React.ReactNode; cost: React.ReactNode; gross: React.ReactNode; margin: string } }) {
   const [open, setOpen] = React.useState<Set<string>>(() => new Set());
   const toggle = (key: string) =>
     setOpen((prev) => {

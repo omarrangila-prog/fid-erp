@@ -11,6 +11,7 @@ import { getReceivables, getPayables } from '@/lib/services/receivables';
 import { resolveLedgerViewCurrency, pickCashBankCurrency } from '@/lib/ledger-currency';
 import type { Tx } from '@/lib/db';
 import { getInvoicePaymentStatus } from '@/lib/invoice-payment';
+import { getBatchCostingIndex } from '@/lib/services/landed-cost';
 
 const SETTLEMENT_WORDS = { UNPAID: 'Unpaid', PARTIAL: 'Partially Paid', PAID: 'Paid' } as const;
 
@@ -696,6 +697,7 @@ export async function getGeneralLedger(params: {
       cashBankAccounts: { select: { currency: true }, orderBy: { currency: 'asc' } },
     },
   });
+  const { localCurrency } = await prisma.company.findUniqueOrThrow({ where: { id: params.companyId }, select: { localCurrency: true } });
 
   // What the account's own postings are actually in. One currency means the
   // ledger opens in it — an account that only ever held dirhams is a dirham
@@ -715,6 +717,7 @@ export async function getGeneralLedger(params: {
     accountCurrency: account.currency,
     cashBankCurrency: pickCashBankCurrency(account.cashBankAccounts, account.currency ?? params.currency),
     onlyPostedCurrency: posted.length === 1 ? posted[0].currency : null,
+    companyCurrency: localCurrency,
   });
   // Three ways to read an account:
   //
@@ -731,7 +734,9 @@ export async function getGeneralLedger(params: {
   //   ALL  — every line in its own currency, listed without a running
   //          balance, because dirhams and dollars are never added together.
   const allCurrencies = viewCurrency === 'ALL';
-  const currencyFilter = allCurrencies || viewCurrency === 'REPORTING' ? null : viewCurrency;
+  // LOCAL: every line, at the value the books carry it in (debitLocal).
+  const companyView = viewCurrency === 'LOCAL';
+  const currencyFilter = allCurrencies || companyView || viewCurrency === 'REPORTING' ? null : viewCurrency;
   const useOriginal = Boolean(currencyFilter) || allCurrencies;
 
   const openingRows = currencyFilter
@@ -744,7 +749,16 @@ export async function getGeneralLedger(params: {
           AND jl."currency" = ${currencyFilter}
           AND ${params.from ?? null}::date IS NOT NULL AND je."entryDate" < ${params.from ?? null}::date
       `
-    : await prisma.$queryRaw<Array<{ net: string | null }>>`
+    : companyView
+      ? await prisma.$queryRaw<Array<{ net: string | null }>>`
+        SELECT SUM(jl."debitLocal" - jl."creditLocal")::text AS net
+        FROM journal_lines jl
+        JOIN journal_entries je ON je."id" = jl."journalEntryId"
+        WHERE je."companyId" = ${params.companyId} AND ${LIVE_ENTRY_SQL}
+          AND jl."accountId" = ${params.accountId}
+          AND ${params.from ?? null}::date IS NOT NULL AND je."entryDate" < ${params.from ?? null}::date
+      `
+      : await prisma.$queryRaw<Array<{ net: string | null }>>`
         SELECT SUM(jl."debitUsd" - jl."creditUsd")::text AS net
         FROM journal_lines jl
         JOIN journal_entries je ON je."id" = jl."journalEntryId"
@@ -767,6 +781,8 @@ export async function getGeneralLedger(params: {
           credit: string;
           debitUsd: string;
           creditUsd: string;
+          debitLocal: string;
+          creditLocal: string;
           reference: string | null;
         }>
       >`
@@ -774,6 +790,7 @@ export async function getGeneralLedger(params: {
                je."sourceType"::text AS "sourceType", je."sourceId" AS "sourceId", jl."currency",
                jl."debit"::text AS debit, jl."credit"::text AS credit,
                jl."debitUsd"::text AS "debitUsd", jl."creditUsd"::text AS "creditUsd",
+               jl."debitLocal"::text AS "debitLocal", jl."creditLocal"::text AS "creditLocal",
                jl."description" AS reference
         FROM journal_lines jl
         JOIN journal_entries je ON je."id" = jl."journalEntryId"
@@ -797,6 +814,8 @@ export async function getGeneralLedger(params: {
           credit: string;
           debitUsd: string;
           creditUsd: string;
+          debitLocal: string;
+          creditLocal: string;
           reference: string | null;
         }>
       >`
@@ -804,6 +823,7 @@ export async function getGeneralLedger(params: {
                je."sourceType"::text AS "sourceType", je."sourceId" AS "sourceId", jl."currency",
                jl."debit"::text AS debit, jl."credit"::text AS credit,
                jl."debitUsd"::text AS "debitUsd", jl."creditUsd"::text AS "creditUsd",
+               jl."debitLocal"::text AS "debitLocal", jl."creditLocal"::text AS "creditLocal",
                jl."description" AS reference
         FROM journal_lines jl
         JOIN journal_entries je ON je."id" = jl."journalEntryId"
@@ -818,8 +838,8 @@ export async function getGeneralLedger(params: {
   const opening = running;
 
   const shaped: GeneralLedgerRow[] = rows.map((row) => {
-    const debitMove = useOriginal ? dec(row.debit) : dec(row.debitUsd);
-    const creditMove = useOriginal ? dec(row.credit) : dec(row.creditUsd);
+    const debitMove = companyView ? dec(row.debitLocal) : useOriginal ? dec(row.debit) : dec(row.debitUsd);
+    const creditMove = companyView ? dec(row.creditLocal) : useOriginal ? dec(row.credit) : dec(row.creditUsd);
     if (!allCurrencies) running = toMoney(running.plus(debitMove).minus(creditMove));
     return {
       entryId: row.entryId,
@@ -829,9 +849,12 @@ export async function getGeneralLedger(params: {
       sourceType: row.sourceType,
       sourceId: row.sourceId,
       reference: row.reference,
-      currency: row.currency,
-      debit: dec(row.debit),
-      credit: dec(row.credit),
+      // In the company view a line reads in the company's currency, the
+      // value the books carry it at; the dollars it was raised in stay on
+      // the document.
+      currency: companyView ? localCurrency : row.currency,
+      debit: companyView ? dec(row.debitLocal) : dec(row.debit),
+      credit: companyView ? dec(row.creditLocal) : dec(row.credit),
       debitUsd: dec(row.debitUsd),
       creditUsd: dec(row.creditUsd),
       balanceUsd: running,
@@ -847,8 +870,8 @@ export async function getGeneralLedger(params: {
    * "USD 46,000.00" for a MAD 46,000 cheque. Reporting view totals the USD
    * values; a currency view totals that currency's own amounts.
    */
-  const totalDebit = toMoney(sum(shaped.map((r) => (useOriginal ? r.debit : r.debitUsd))));
-  const totalCredit = toMoney(sum(shaped.map((r) => (useOriginal ? r.credit : r.creditUsd))));
+  const totalDebit = toMoney(sum(shaped.map((r) => (useOriginal || companyView ? r.debit : r.debitUsd))));
+  const totalCredit = toMoney(sum(shaped.map((r) => (useOriginal || companyView ? r.credit : r.creditUsd))));
 
   return {
     account: {
@@ -865,6 +888,9 @@ export async function getGeneralLedger(params: {
     totalDebit,
     totalCredit,
     viewCurrency,
+    /** The currency the balance and totals are in. */
+    displayCurrency: viewCurrency === 'REPORTING' ? 'USD' : companyView || allCurrencies ? localCurrency : viewCurrency,
+    localCurrency,
     mixedCurrencies: allCurrencies,
     rows: shaped,
   };
@@ -1128,10 +1154,15 @@ export async function getJournalReport(params: {
  * an indirect reconciliation from profit.
  */
 export async function getCashFlow(params: { companyId: string; from: Date; to: Date }) {
-  const rows = await prisma.$queryRaw<Array<{ sourceType: string; inUsd: string; outUsd: string }>>`
+  // In the company's currency (what the cash book and the balance sheet
+  // carry) and in USD. Morocco's drawers are all dirhams; a USD-only cash
+  // flow stated them at each day's rate and matched neither.
+  const rows = await prisma.$queryRaw<Array<{ sourceType: string; inUsd: string; outUsd: string; inLocal: string; outLocal: string }>>`
     SELECT je."sourceType"::text AS "sourceType",
            COALESCE(SUM(jl."debitUsd"), 0)::text  AS "inUsd",
-           COALESCE(SUM(jl."creditUsd"), 0)::text AS "outUsd"
+           COALESCE(SUM(jl."creditUsd"), 0)::text AS "outUsd",
+           COALESCE(SUM(jl."debitLocal"), 0)::text  AS "inLocal",
+           COALESCE(SUM(jl."creditLocal"), 0)::text AS "outLocal"
     FROM journal_lines jl
     JOIN journal_entries je ON je."id" = jl."journalEntryId"
     WHERE je."companyId" = ${params.companyId} AND ${LIVE_ENTRY_SQL}
@@ -1154,12 +1185,17 @@ export async function getCashFlow(params: { companyId: string; from: Date; to: D
   const lines = rows.map((row) => {
     const inUsd = toMoney(row.inUsd);
     const outUsd = toMoney(row.outUsd);
+    const inLocal = toMoney(row.inLocal);
+    const outLocal = toMoney(row.outLocal);
     return {
       sourceType: row.sourceType,
       label: LABELS[row.sourceType] ?? row.sourceType.replaceAll('_', ' '),
       inUsd,
       outUsd,
       netUsd: toMoney(inUsd.minus(outUsd)),
+      inLocal,
+      outLocal,
+      netLocal: toMoney(inLocal.minus(outLocal)),
     };
   });
 
@@ -1168,6 +1204,9 @@ export async function getCashFlow(params: { companyId: string; from: Date; to: D
     totalInUsd: toMoney(lines.reduce((a, l) => a.plus(l.inUsd), new Decimal(0))),
     totalOutUsd: toMoney(lines.reduce((a, l) => a.plus(l.outUsd), new Decimal(0))),
     netMovementUsd: toMoney(lines.reduce((a, l) => a.plus(l.netUsd), new Decimal(0))),
+    totalInLocal: toMoney(lines.reduce((a, l) => a.plus(l.inLocal), new Decimal(0))),
+    totalOutLocal: toMoney(lines.reduce((a, l) => a.plus(l.outLocal), new Decimal(0))),
+    netMovementLocal: toMoney(lines.reduce((a, l) => a.plus(l.netLocal), new Decimal(0))),
   };
 }
 
@@ -1182,7 +1221,7 @@ export async function getExpenseReport(params: {
   /** Narrow to one side of the business, or leave off for everything. */
   kind?: 'SHIPMENT' | 'GENERAL';
 }) {
-  const rows = await prisma.$queryRaw<Array<{ key: string; label: string; amountUsd: string; count: bigint }>>`
+  const rows = await prisma.$queryRaw<Array<{ key: string; label: string; amountUsd: string; amountLocal: string; count: bigint }>>`
     SELECT
       CASE ${params.groupBy}
         WHEN 'category' THEN ec."id"
@@ -1199,6 +1238,7 @@ export async function getExpenseReport(params: {
         ELSE to_char(e."expenseDate", 'YYYY-MM')
       END AS label,
       COALESCE(SUM(e."amountUsd"), 0)::text AS "amountUsd",
+      COALESCE(SUM(e."amountLocal"), 0)::text AS "amountLocal",
       COUNT(*) AS count
     FROM expenses e
     JOIN expense_categories ec ON ec."id" = e."expenseCategoryId"
@@ -1210,13 +1250,16 @@ export async function getExpenseReport(params: {
       AND (${params.from ?? null}::date IS NULL OR e."expenseDate" >= ${params.from ?? null}::date)
       AND (${params.to ?? null}::date IS NULL OR e."expenseDate" <= ${params.to ?? null}::date)
     GROUP BY 1, 2
-    ORDER BY SUM(e."amountUsd") DESC
+    ORDER BY SUM(e."amountLocal") DESC
   `;
 
+  // Each expense in the company's currency as it was booked (Morocco's are
+  // dirham bills), with its USD value at the expense's own rate beside it.
   return rows.map((r) => ({
     key: r.key,
     label: r.label,
     amountUsd: toMoney(r.amountUsd),
+    amountLocal: toMoney(r.amountLocal),
     count: Number(r.count),
   }));
 }
@@ -1232,11 +1275,12 @@ export async function getExpenseReport(params: {
  */
 export async function getExpenseSplit(params: { companyId: string; from?: Date; to?: Date }) {
   const rows = await prisma.$queryRaw<
-    Array<{ kind: string; capitalised: boolean; amountUsd: string; count: bigint }>
+    Array<{ kind: string; capitalised: boolean; amountUsd: string; amountLocal: string; count: bigint }>
   >`
     SELECT e."kind"::text AS kind,
            e."capitaliseToLandedCost" AS capitalised,
            COALESCE(SUM(e."amountUsd"), 0)::text AS "amountUsd",
+           COALESCE(SUM(e."amountLocal"), 0)::text AS "amountLocal",
            COUNT(*) AS count
     FROM expenses e
     WHERE e."companyId" = ${params.companyId} AND e."status" = 'POSTED'
@@ -1244,14 +1288,17 @@ export async function getExpenseSplit(params: { companyId: string; from?: Date; 
       AND (${params.to ?? null}::date IS NULL OR e."expenseDate" <= ${params.to ?? null}::date)
     GROUP BY 1, 2`;
 
-  const pick = (kind: string, capitalised?: boolean) =>
+  const pick = (kind: string, capitalised?: boolean, field: 'amountUsd' | 'amountLocal' = 'amountUsd') =>
     rows
       .filter((r) => r.kind === kind && (capitalised === undefined || r.capitalised === capitalised))
-      .reduce((sum, r) => sum.plus(r.amountUsd), new Decimal(0));
+      .reduce((sum, r) => sum.plus(r[field]), new Decimal(0));
 
   const capitalised = toMoney(pick('SHIPMENT', true));
   const shipmentPeriod = toMoney(pick('SHIPMENT', false));
   const general = toMoney(pick('GENERAL'));
+  const capitalisedLocal = toMoney(pick('SHIPMENT', true, 'amountLocal'));
+  const shipmentPeriodLocal = toMoney(pick('SHIPMENT', false, 'amountLocal'));
+  const generalLocal = toMoney(pick('GENERAL', undefined, 'amountLocal'));
 
   return {
     /** Into the landed cost of the coffee; reaches the P&L as cost of sales. */
@@ -1264,6 +1311,11 @@ export async function getExpenseSplit(params: { companyId: string; from?: Date; 
     totalSpendUsd: toMoney(capitalised.plus(shipmentPeriod).plus(general)),
     /** What the period's profit and loss is charged, which is not the same. */
     periodChargeUsd: toMoney(shipmentPeriod.plus(general)),
+    capitalisedLocal,
+    shipmentPeriodLocal,
+    generalLocal,
+    totalSpendLocal: toMoney(capitalisedLocal.plus(shipmentPeriodLocal).plus(generalLocal)),
+    periodChargeLocal: toMoney(shipmentPeriodLocal.plus(generalLocal)),
     counts: {
       shipment: rows.filter((r) => r.kind === 'SHIPMENT').reduce((n, r) => n + Number(r.count), 0),
       general: rows.filter((r) => r.kind === 'GENERAL').reduce((n, r) => n + Number(r.count), 0),
@@ -1535,7 +1587,10 @@ export async function getPurchaseRegister(params: {
   const contracts = await prisma.purchaseContract.findMany({
     where: {
       companyId: params.companyId,
-      status: { not: 'DRAFT' },
+      // Posted orders only. "Not a draft" also took reversed and cancelled
+      // orders, and Morocco's purchases read USD 1,817,005.08 — two reversed
+      // orders (USD 529,246.32) counted as bought and still owed.
+      status: 'POSTED',
       ...(params.vendorId ? { vendorId: params.vendorId } : {}),
       ...(params.from || params.to
         ? {
@@ -1863,6 +1918,15 @@ export type SalesByRow = {
   revenueUsd: Decimal;
   costUsd: Decimal;
   grossProfitUsd: Decimal;
+  /**
+   * The same figures in the company's currency: revenue as invoiced (Morocco
+   * sells in dirhams), cost from the shipment costing the profit and loss and
+   * the shipment results use, so the three agree.
+   */
+  revenueLocal: Decimal;
+  costLocal: Decimal;
+  grossProfitLocal: Decimal;
+  /** On the company's-currency figures, which are the ones the books keep. */
   marginPct: Decimal;
   /** The invoice lines behind the row, for the detail view. */
   detail: Array<{
@@ -1878,6 +1942,8 @@ export type SalesByRow = {
     unitPriceUsd: Decimal;
     revenueUsd: Decimal;
     costUsd: Decimal;
+    revenueLocal: Decimal;
+    costLocal: Decimal;
   }>;
 };
 
@@ -1893,9 +1959,20 @@ export async function getSalesBy(params: { companyId: string; from: Date; to: Da
     select: {
       id: true,
       quantityKg: true,
+      lineTotal: true,
       lineTotalUsd: true,
       costTotalUsd: true,
-      salesInvoice: { select: { id: true, invoiceNumber: true, invoiceDate: true, customer: { select: { id: true, customerName: true } } } },
+      batchId: true,
+      salesInvoice: {
+        select: {
+          id: true,
+          invoiceNumber: true,
+          invoiceDate: true,
+          currency: true,
+          rateLocalPerUsd: true,
+          customer: { select: { id: true, customerName: true } },
+        },
+      },
       item: { select: { id: true, itemName: true } },
       warehouse: { select: { id: true, name: true } },
       batch: {
@@ -1908,6 +1985,15 @@ export async function getSalesBy(params: { companyId: string; from: Date; to: Da
     },
     orderBy: [{ salesInvoice: { invoiceDate: 'asc' } }, { id: 'asc' }],
   });
+  const { localCurrency } = await prisma.company.findUniqueOrThrow({ where: { id: params.companyId }, select: { localCurrency: true } });
+  const batchIds = [...new Set(lines.map((l) => l.batchId).filter((id): id is string => Boolean(id)))];
+  const costing = batchIds.length ? await getBatchCostingIndex({ companyId: params.companyId, batchIds }) : new Map();
+  const revenueLocalOf = (line: (typeof lines)[number]) =>
+    line.salesInvoice.currency === localCurrency ? dec(line.lineTotal) : dec(line.lineTotalUsd).times(line.salesInvoice.rateLocalPerUsd);
+  const costLocalOf = (line: (typeof lines)[number]) => {
+    const perKg = line.batchId ? costing.get(line.batchId)?.landedPerKgLocal : undefined;
+    return perKg ? toMoney(toQuantity(line.quantityKg).times(perKg)) : new Decimal(0);
+  };
 
   const keyOf = (line: (typeof lines)[number]): { key: string; label: string; href: string | null } => {
     switch (params.by) {
@@ -1931,11 +2017,20 @@ export async function getSalesBy(params: { companyId: string; from: Date; to: Da
     const { key, label, href } = keyOf(line);
     const row =
       rows.get(key) ??
-      { key, label, href, invoices: 0, quantityKg: new Decimal(0), revenueUsd: new Decimal(0), costUsd: new Decimal(0), grossProfitUsd: new Decimal(0), marginPct: new Decimal(0), detail: [], invoiceIds: new Set<string>() };
+      {
+        key, label, href, invoices: 0, quantityKg: new Decimal(0),
+        revenueUsd: new Decimal(0), costUsd: new Decimal(0), grossProfitUsd: new Decimal(0),
+        revenueLocal: new Decimal(0), costLocal: new Decimal(0), grossProfitLocal: new Decimal(0),
+        marginPct: new Decimal(0), detail: [], invoiceIds: new Set<string>(),
+      };
+    const revenueLocal = revenueLocalOf(line);
+    const costLocal = costLocalOf(line);
     row.invoiceIds.add(line.salesInvoice.id);
     row.quantityKg = row.quantityKg.plus(line.quantityKg);
     row.revenueUsd = row.revenueUsd.plus(line.lineTotalUsd);
     row.costUsd = row.costUsd.plus(line.costTotalUsd);
+    row.revenueLocal = row.revenueLocal.plus(revenueLocal);
+    row.costLocal = row.costLocal.plus(costLocal);
     row.detail.push({
       invoiceId: line.salesInvoice.id,
       invoiceLabel: `INV ${Number(line.salesInvoice.invoiceNumber.match(/(\d+)\s*$/)?.[1] ?? line.salesInvoice.invoiceNumber)}`,
@@ -1949,6 +2044,8 @@ export async function getSalesBy(params: { companyId: string; from: Date; to: Da
       unitPriceUsd: dec(line.quantityKg).greaterThan(0) ? toUnitCost(dec(line.lineTotalUsd).dividedBy(line.quantityKg)) : new Decimal(0),
       revenueUsd: toMoney(line.lineTotalUsd),
       costUsd: toMoney(line.costTotalUsd),
+      revenueLocal: toMoney(revenueLocal),
+      costLocal,
     });
     rows.set(key, row);
   }
@@ -1956,6 +2053,7 @@ export async function getSalesBy(params: { companyId: string; from: Date; to: Da
   return [...rows.values()]
     .map(({ invoiceIds, ...row }) => {
       const gross = toMoney(row.revenueUsd.minus(row.costUsd));
+      const grossLocal = toMoney(row.revenueLocal.minus(row.costLocal));
       return {
         ...row,
         invoices: invoiceIds.size,
@@ -1963,10 +2061,13 @@ export async function getSalesBy(params: { companyId: string; from: Date; to: Da
         revenueUsd: toMoney(row.revenueUsd),
         costUsd: toMoney(row.costUsd),
         grossProfitUsd: gross,
-        marginPct: row.revenueUsd.isZero() ? new Decimal(0) : gross.dividedBy(row.revenueUsd).times(100).toDecimalPlaces(2),
+        revenueLocal: toMoney(row.revenueLocal),
+        costLocal: toMoney(row.costLocal),
+        grossProfitLocal: grossLocal,
+        marginPct: row.revenueLocal.isZero() ? new Decimal(0) : grossLocal.dividedBy(row.revenueLocal).times(100).toDecimalPlaces(2),
       };
     })
-    .sort((a, b) => b.revenueUsd.comparedTo(a.revenueUsd));
+    .sort((a, b) => b.revenueLocal.comparedTo(a.revenueLocal));
 }
 
 // ---------------------------------------------------------------------------

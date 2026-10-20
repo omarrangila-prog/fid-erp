@@ -40,6 +40,14 @@ describe('resolveLedgerViewCurrency', () => {
     // showed nothing and a closing balance of zero.
     expect(resolveLedgerViewCurrency({})).toBe('REPORTING');
   });
+
+  it('opens a mixed-currency account of a dirham company at its MAD value', () => {
+    expect(resolveLedgerViewCurrency({ companyCurrency: 'MAD' })).toBe('LOCAL');
+    expect(resolveLedgerViewCurrency({ companyCurrency: 'USD' })).toBe('REPORTING');
+    // A single-currency account still opens in its own currency.
+    expect(resolveLedgerViewCurrency({ companyCurrency: 'MAD', onlyPostedCurrency: 'USD' })).toBe('USD');
+    expect(resolveLedgerViewCurrency({ companyCurrency: 'MAD', requested: 'REPORTING' })).toBe('REPORTING');
+  });
 });
 
 describe('pickCashBankCurrency', () => {

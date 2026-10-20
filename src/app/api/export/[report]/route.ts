@@ -775,6 +775,8 @@ const REPORTS: Record<string, Report> = {
       const from = dateParam(query, 'from') ?? startOfYear();
       const to = dateParam(query, 'to') ?? new Date();
       const rows = await getSalesBy({ companyId: user.activeCompany.id, from, to, by });
+      const local = user.activeCompany.localCurrency;
+      const canProfit = can(user, PERMISSIONS.PROFITS_VIEW);
       const titles: Record<SalesDimension, string> = {
         customer: 'Sales by Customer',
         item: 'Sales by Coffee',
@@ -788,18 +790,25 @@ const REPORTS: Record<string, Report> = {
         title: titles[by],
         subtitle: period(from, to),
         rows,
-        totals: ['Quantity (KG)', 'Revenue (USD)', 'Cost (USD)', 'Gross profit (USD)'],
+        totals: ['Quantity (KG)', `Revenue (${local})`, `Cost (${local})`, `Gross profit (${local})`, 'Revenue (USD)', 'Cost (USD)', 'Gross profit (USD)'],
         columns: [
           { header: titles[by].replace('Sales by ', ''), value: (r) => r.label, width: 32 },
           { header: 'Invoices', value: (r) => r.invoices, type: 'integer' as const },
           { header: 'Quantity (KG)', value: (r) => Number(r.quantityKg), type: 'quantity' as const },
-          { header: 'Revenue (USD)', value: (r) => Number(r.revenueUsd), type: 'money' as const },
+          { header: `Revenue (${local})`, value: (r) => Number(r.revenueLocal), type: 'money' as const },
           // As on screen: cost and profit only for those who may see profit.
-          ...(can(user, PERMISSIONS.PROFITS_VIEW)
+          ...(canProfit
+            ? [
+                { header: `Cost (${local})`, value: (r: (typeof rows)[number]) => Number(r.costLocal), type: 'money' as const },
+                { header: `Gross profit (${local})`, value: (r: (typeof rows)[number]) => Number(r.grossProfitLocal), type: 'money' as const },
+                { header: 'Margin', value: (r: (typeof rows)[number]) => Number(r.marginPct) / 100, type: 'percent' as const },
+              ]
+            : []),
+          { header: 'Revenue (USD)', value: (r) => Number(r.revenueUsd), type: 'money' as const },
+          ...(canProfit
             ? [
                 { header: 'Cost (USD)', value: (r: (typeof rows)[number]) => Number(r.costUsd), type: 'money' as const },
                 { header: 'Gross profit (USD)', value: (r: (typeof rows)[number]) => Number(r.grossProfitUsd), type: 'money' as const },
-                { header: 'Margin', value: (r: (typeof rows)[number]) => Number(r.marginPct) / 100, type: 'percent' as const },
               ]
             : []),
         ],
@@ -1115,6 +1124,9 @@ const REPORTS: Record<string, Report> = {
         subtitle: period(from, to),
         labelHeader: 'Movement',
         columns: [
+          { header: `In ${user.activeCompany.localCurrency}`, type: 'money' },
+          { header: `Out ${user.activeCompany.localCurrency}`, type: 'money' },
+          { header: `Net ${user.activeCompany.localCurrency}`, type: 'money' },
           { header: 'In USD', type: 'money' },
           { header: 'Out USD', type: 'money' },
           { header: 'Net USD', type: 'money' },
@@ -1124,12 +1136,15 @@ const REPORTS: Record<string, Report> = {
           ...flow.lines.map((line): StatementRow => ({
             kind: 'line',
             label: line.label,
-            values: [Number(line.inUsd), Number(line.outUsd), Number(line.netUsd)],
+            values: [Number(line.inLocal), Number(line.outLocal), Number(line.netLocal), Number(line.inUsd), Number(line.outUsd), Number(line.netUsd)],
           })),
           {
             kind: 'grand',
             label: 'Net movement',
-            values: [Number(flow.totalInUsd), Number(flow.totalOutUsd), Number(flow.netMovementUsd)],
+            values: [
+              Number(flow.totalInLocal), Number(flow.totalOutLocal), Number(flow.netMovementLocal),
+              Number(flow.totalInUsd), Number(flow.totalOutUsd), Number(flow.netMovementUsd),
+            ],
           },
           { kind: 'note', label: 'Direct method: what actually moved through cash and bank, grouped by cause.' },
         ],
@@ -1161,26 +1176,45 @@ const REPORTS: Record<string, Report> = {
         currency: query.get('currency') || undefined,
       });
 
+      // Labelled in the currency the ledger was read in. The balance runs in
+      // that currency — dirhams for a MAD drawer or the company view — and a
+      // sheet that called it "USD" put MAD 174,273.48 of cash under a USD
+      // heading, with totals taken from the historical USD columns instead.
+      const ccy = ledger.displayCurrency;
+      const listed = ledger.mixedCurrencies;
+      type GlRow = (typeof ledger.rows)[number];
       return buildWorkbook({
         companyName: user.activeCompany.name,
         timeZone: user.activeCompany.timezone,
         title: 'General Ledger',
-        subtitle:
-          `${ledger.account.name} · opening USD ${Number(ledger.openingBalanceUsd).toFixed(2)}` +
-          ` · closing USD ${Number(ledger.closingBalanceUsd).toFixed(2)}`,
+        subtitle: listed
+          ? `${ledger.account.name} · every currency listed separately, never added together`
+          : `${ledger.account.name} · opening ${ccy} ${Number(ledger.openingBalance).toFixed(2)}` +
+            ` · closing ${ccy} ${Number(ledger.closingBalance).toFixed(2)}`,
         rows: ledger.rows,
-        totals: ['Debit USD', 'Credit USD'],
+        totals: listed ? [] : ledger.viewCurrency === 'REPORTING' ? ['Debit USD', 'Credit USD'] : [`Debit ${ccy}`, `Credit ${ccy}`],
         columns: [
           { header: 'Date', value: (r) => r.entryDate, type: 'date' },
           { header: 'Source', value: (r) => r.sourceType.replace(/_/g, ' ') },
           { header: 'Memo', value: (r) => r.description, width: 40 },
           { header: 'Reference', value: (r) => r.reference ?? '', width: 28 },
           { header: 'Currency', value: (r) => r.currency, width: 10 },
-          { header: 'Debit', value: (r) => Number(r.debit), type: 'money' },
-          { header: 'Credit', value: (r) => Number(r.credit), type: 'money' },
-          { header: 'Debit USD', value: (r) => Number(r.debitUsd), type: 'money' },
-          { header: 'Credit USD', value: (r) => Number(r.creditUsd), type: 'money' },
-          { header: 'Balance USD', value: (r) => Number(r.balanceUsd), type: 'money' },
+          ...(ledger.viewCurrency === 'REPORTING' || listed
+            ? [
+                { header: 'Debit', value: (r: GlRow) => Number(r.debit), type: 'money' as const },
+                { header: 'Credit', value: (r: GlRow) => Number(r.credit), type: 'money' as const },
+              ]
+            : [
+                { header: `Debit ${ccy}`, value: (r: GlRow) => Number(r.debit), type: 'money' as const },
+                { header: `Credit ${ccy}`, value: (r: GlRow) => Number(r.credit), type: 'money' as const },
+              ]),
+          ...(ccy === 'USD' && ledger.viewCurrency !== 'REPORTING' && !listed
+            ? []
+            : [
+                { header: 'Debit USD', value: (r: GlRow) => Number(r.debitUsd), type: 'money' as const },
+                { header: 'Credit USD', value: (r: GlRow) => Number(r.creditUsd), type: 'money' as const },
+              ]),
+          ...(listed ? [] : [{ header: `Balance ${ccy}`, value: (r: GlRow) => Number(r.balance), type: 'money' as const }]),
         ],
       });
     },
@@ -1216,10 +1250,18 @@ const REPORTS: Record<string, Report> = {
           accountCode: line.account.code,
           accountName: line.account.name,
           lineDescription: line.description ?? '',
+          currency: line.currency,
+          debit: Number(line.debit),
+          credit: Number(line.credit),
+          debitLocal: Number(line.debitLocal),
+          creditLocal: Number(line.creditLocal),
           debitUsd: Number(line.debitUsd),
           creditUsd: Number(line.creditUsd),
         })),
       );
+      // The same three readings the screen shows: as raised, in the company's
+      // currency (what the books balance in), and the USD equivalent.
+      const local = user.activeCompany.localCurrency;
 
       return buildWorkbook({
         companyName: user.activeCompany.name,
@@ -1229,13 +1271,18 @@ const REPORTS: Record<string, Report> = {
           (from && to ? `${period(from, to)} · ` : '') +
           `${entries.length} entr${entries.length === 1 ? 'y' : 'ies'}, ${rows.length} lines`,
         rows,
-        totals: ['Debit USD', 'Credit USD'],
+        totals: [`Debit ${local}`, `Credit ${local}`, 'Debit USD', 'Credit USD'],
         columns: [
           { header: 'Date', value: (r) => r.entryDate, type: 'date' },
           { header: 'Source', value: (r) => r.sourceType.replace(/_/g, ' ') },
           { header: 'Narration', value: (r) => r.narration, width: 38 },
           { header: 'Account', value: (r) => r.accountName, width: 32 },
           { header: 'Line detail', value: (r) => r.lineDescription, width: 32 },
+          { header: 'Currency', value: (r) => r.currency, width: 10 },
+          { header: 'Debit', value: (r) => r.debit, type: 'money' },
+          { header: 'Credit', value: (r) => r.credit, type: 'money' },
+          { header: `Debit ${local}`, value: (r) => r.debitLocal, type: 'money' },
+          { header: `Credit ${local}`, value: (r) => r.creditLocal, type: 'money' },
           { header: 'Debit USD', value: (r) => r.debitUsd, type: 'money' },
           { header: 'Credit USD', value: (r) => r.creditUsd, type: 'money' },
           { header: 'Entered by', value: (r) => r.createdBy },
@@ -1255,7 +1302,9 @@ const REPORTS: Record<string, Report> = {
       const groupBy = requested && allowed.includes(requested) ? requested : 'type';
 
       const rows = await getExpenseReport({ companyId: user.activeCompany.id, from, to, groupBy });
-      const total = Number(rows.reduce((sum, row) => sum.plus(dec(row.amountUsd)), dec(0)));
+      // The company's own currency first, as on the screen; USD beside it.
+      const local = user.activeCompany.localCurrency;
+      const total = Number(rows.reduce((sum, row) => sum.plus(dec(row.amountLocal)), dec(0)));
 
       return buildWorkbook({
         companyName: user.activeCompany.name,
@@ -1264,12 +1313,13 @@ const REPORTS: Record<string, Report> = {
         subtitle: `${period(from, to)} · grouped by ${groupBy}`,
         rows: rows.map((row) => ({
           ...row,
-          share: total === 0 ? 0 : Number(row.amountUsd) / total,
+          share: total === 0 ? 0 : Number(row.amountLocal) / total,
         })),
-        totals: ['Amount USD', 'Entries'],
+        totals: [`Amount ${local}`, 'Amount USD', 'Entries'],
         columns: [
           { header: titleFor(groupBy), value: (r) => r.label, width: 40 },
           { header: 'Entries', value: (r) => r.count, type: 'integer' },
+          { header: `Amount ${local}`, value: (r) => Number(r.amountLocal), type: 'money' },
           { header: 'Amount USD', value: (r) => Number(r.amountUsd), type: 'money' },
           { header: 'Share', value: (r) => r.share, type: 'percent' },
         ],

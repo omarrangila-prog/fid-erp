@@ -16,6 +16,13 @@
  */
 
 /**
+ * LOCAL    — every line at its value in the company's own currency (MAD for
+ *             Morocco), with a running balance in it. The figure the trial
+ *             balance and the balance sheet are kept in, so this is the view
+ *             that agrees with them. The default for an account that carries
+ *             several currencies in a company that does not keep its books in
+ *             USD: Morocco's inventory, payables and cost of sales opened at
+ *             their USD value while every statement beside them said MAD.
  * REPORTING — every line at its USD value, with a running USD balance. The
  *             default for a control account that carries several currencies
  *             (receivables, payables, sales): every line has a USD value, so
@@ -27,11 +34,11 @@
  * ALL      — every line in its own currency, no running balance, because
  *             dirhams and dollars are never added together.
  */
-export const LEDGER_VIEW_CURRENCIES = ['REPORTING', 'ALL', 'USD', 'MAD', 'AED'] as const;
+export const LEDGER_VIEW_CURRENCIES = ['LOCAL', 'REPORTING', 'ALL', 'USD', 'MAD', 'AED'] as const;
 export type LedgerViewCurrency = (typeof LEDGER_VIEW_CURRENCIES)[number];
 
 export function parseLedgerViewCurrency(value: string | null | undefined): LedgerViewCurrency | null {
-  if (value === 'REPORTING' || value === 'ALL' || value === 'USD' || value === 'MAD' || value === 'AED') return value;
+  if (value === 'LOCAL' || value === 'REPORTING' || value === 'ALL' || value === 'USD' || value === 'MAD' || value === 'AED') return value;
   return null;
 }
 
@@ -68,13 +75,15 @@ export function resolveLedgerViewCurrency(params: {
    * USD heading. When every line agrees, that currency is the view.
    */
   onlyPostedCurrency?: string | null;
+  /** The currency the company keeps its books in; not USD means mixed accounts open in it. */
+  companyCurrency?: string | null;
 }): LedgerViewCurrency {
   return (
     parseLedgerViewCurrency(params.requested) ??
     parseLedgerViewCurrency(params.cashBankCurrency) ??
     parseLedgerViewCurrency(params.accountCurrency) ??
     parseLedgerViewCurrency(params.onlyPostedCurrency) ??
-    'REPORTING'
+    (params.companyCurrency && params.companyCurrency.toUpperCase() !== 'USD' ? 'LOCAL' : 'REPORTING')
   );
 }
 
@@ -92,16 +101,17 @@ export function ledgerHref(accountId: string, currency?: string | null): string 
  * "REPORTING" and "ALL" are ways of looking at a ledger, not currencies, and
  * handing either to a money formatter printed "REPORTING 50,000.00" on the
  * screen. The reporting view states every line at its USD value, so USD is
- * what those figures are in.
+ * what those figures are in; the company view is in the company's currency.
  */
 export function ledgerDisplayCurrency(viewCurrency: string, fallback = 'USD'): string {
   if (viewCurrency === 'REPORTING') return 'USD';
-  if (viewCurrency === 'ALL') return fallback;
+  if (viewCurrency === 'ALL' || viewCurrency === 'LOCAL') return fallback;
   return viewCurrency;
 }
 
-export function ledgerCurrencyLabel(viewCurrency: string, mixed: boolean): string {
+export function ledgerCurrencyLabel(viewCurrency: string, mixed: boolean, localCurrency = 'MAD'): string {
   if (mixed) return 'all currencies listed separately — USD and MAD are never added together';
   if (viewCurrency === 'REPORTING') return 'every line at its USD value';
+  if (viewCurrency === 'LOCAL') return `every line at its ${localCurrency} value, as in the trial balance`;
   return `${viewCurrency} lines only, in ${viewCurrency}`;
 }

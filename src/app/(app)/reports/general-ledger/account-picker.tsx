@@ -66,12 +66,13 @@ export function AccountPicker({
       </FilterCell>
       <FilterCell label="Currency" className="md:w-56">
         <FilterSelect value={ccy} onChange={(e) => setCcy(e.target.value)}>
+          {localCurrency !== 'USD' ? <option value="LOCAL">Every line at {localCurrency} value</option> : null}
           <option value="REPORTING">Every line at USD value</option>
           <option value="ALL">All — listed separately</option>
           {[
             ...new Set([
               'USD',
-              ...transactionCurrencies(localCurrency, currency === 'REPORTING' || currency === 'ALL' ? null : currency),
+              ...transactionCurrencies(localCurrency, currency === 'REPORTING' || currency === 'ALL' || currency === 'LOCAL' ? null : currency),
             ]),
           ].map((code) => (
             <option key={code} value={code}>

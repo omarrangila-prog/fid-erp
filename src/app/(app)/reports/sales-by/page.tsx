@@ -50,9 +50,20 @@ export default async function SalesByPage({
 
   const rows = await getSalesBy({ companyId: user.activeCompany.id, from, to, by });
   const sum = (pick: (r: (typeof rows)[number]) => Decimal) => rows.reduce((a, r) => a.plus(pick(r)), new Decimal(0));
-  const revenue = sum((r) => r.revenueUsd);
-  const cost = sum((r) => r.costUsd);
+  // The company's currency first — Morocco invoices in dirhams — with the
+  // USD equivalent under each figure.
+  const local = user.activeCompany.localCurrency;
+  const revenue = sum((r) => r.revenueLocal);
+  const cost = sum((r) => r.costLocal);
   const gross = revenue.minus(cost);
+  const revenueUsd = sum((r) => r.revenueUsd);
+  const costUsd = sum((r) => r.costUsd);
+  const pair = (amount: Decimal, usd: Decimal) => (
+    <>
+      {formatMoney(amount, local)}
+      {local !== 'USD' ? <span className="block text-[11px] font-normal text-ink-subtle">≈ {formatMoney(usd, 'USD')}</span> : null}
+    </>
+  );
   const label = DIMENSIONS.find((d) => d.key === by)!.label;
   const title = `Sales by ${label}`;
   const fromStr = from.toISOString().slice(0, 10);
@@ -94,9 +105,9 @@ export default async function SalesByPage({
               showCost={showCost}
               totals={{
                 quantity: formatQuantityKg(sum((r) => r.quantityKg)),
-                revenue: formatMoney(revenue, 'USD'),
-                cost: formatMoney(cost, 'USD'),
-                gross: formatMoney(gross, 'USD'),
+                revenue: pair(revenue, revenueUsd),
+                cost: pair(cost, costUsd),
+                gross: pair(gross, revenueUsd.minus(costUsd)),
                 margin: revenue.isZero() ? '—' : formatPercent(gross.dividedBy(revenue).times(100)),
               }}
               rows={rows.map((r) => ({
@@ -105,11 +116,11 @@ export default async function SalesByPage({
                 href: r.href,
                 invoices: r.invoices,
                 quantity: formatQuantityKg(r.quantityKg),
-                revenue: formatMoney(r.revenueUsd, 'USD'),
-                cost: formatMoney(r.costUsd, 'USD'),
-                gross: formatMoney(r.grossProfitUsd, 'USD'),
-                margin: r.revenueUsd.isZero() ? '—' : formatPercent(r.marginPct),
-                negative: r.grossProfitUsd.isNegative(),
+                revenue: pair(r.revenueLocal, r.revenueUsd),
+                cost: pair(r.costLocal, r.costUsd),
+                gross: pair(r.grossProfitLocal, r.grossProfitUsd),
+                margin: r.revenueLocal.isZero() ? '—' : formatPercent(r.marginPct),
+                negative: r.grossProfitLocal.isNegative(),
                 detail: r.detail.map((d, i) => ({
                   key: `${d.invoiceId}-${i}`,
                   invoice: d.invoiceLabel,
@@ -121,9 +132,9 @@ export default async function SalesByPage({
                   batch: d.batchNumber ?? '—',
                   shipment: d.shipmentReference ?? '—',
                   quantity: formatQuantityKg(d.quantityKg),
-                  price: formatMoney(d.unitPriceUsd, 'USD'),
-                  revenue: formatMoney(d.revenueUsd, 'USD'),
-                  cost: formatMoney(d.costUsd, 'USD'),
+                  price: d.quantityKg.greaterThan(0) ? formatMoney(d.revenueLocal.dividedBy(d.quantityKg), local) : '—',
+                  revenue: pair(d.revenueLocal, d.revenueUsd),
+                  cost: pair(d.costLocal, d.costUsd),
                 })),
               }))}
             />

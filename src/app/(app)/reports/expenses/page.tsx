@@ -44,7 +44,10 @@ export default async function ExpenseReportPage({
     getExpenseSplit({ companyId: user.activeCompany.id, from: fromDate, to: toDate }),
   ]);
 
-  const total = rows.reduce((a, r) => a.plus(r.amountUsd), dec(0));
+  // In the company's own currency, as the bills were paid; USD underneath.
+  const local = user.activeCompany.localCurrency;
+  const total = rows.reduce((a, r) => a.plus(r.amountLocal), dec(0));
+  const totalUsd = rows.reduce((a, r) => a.plus(r.amountUsd), dec(0));
 
   return (
     <div className="space-y-6">
@@ -86,23 +89,27 @@ export default async function ExpenseReportPage({
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <SplitTile
           label="Into the cost of the coffee"
-          value={formatMoney(split.capitalisedUsd, 'USD')}
+          value={formatMoney(split.capitalisedLocal, local)}
+          usd={formatMoney(split.capitalisedUsd, 'USD')}
           note="Clearing, freight, duty and the rest. Reaches the profit and loss as cost of sales when the coffee is sold, not before."
         />
         <SplitTile
           label="Shipment costs charged to the period"
-          value={formatMoney(split.shipmentPeriodUsd, 'USD')}
+          value={formatMoney(split.shipmentPeriodLocal, local)}
+          usd={formatMoney(split.shipmentPeriodUsd, 'USD')}
           note="Booked to a job so it shows on that job's cost report, but not part of what the coffee cost."
         />
         <SplitTile
           label="General company expenses"
-          value={formatMoney(split.generalUsd, 'USD')}
+          value={formatMoney(split.generalLocal, local)}
+          usd={formatMoney(split.generalUsd, 'USD')}
           note="Meals, rent, utilities, travel. Nothing to do with any consignment."
         />
         <SplitTile
           label="Total cash spent"
-          value={formatMoney(split.totalSpendUsd, 'USD')}
-          note={`Of which ${formatMoney(split.periodChargeUsd, 'USD')} is charged to this period's profit. The rest is sitting in inventory.`}
+          value={formatMoney(split.totalSpendLocal, local)}
+          usd={formatMoney(split.totalSpendUsd, 'USD')}
+          note={`Of which ${formatMoney(split.periodChargeLocal, local)} is charged to this period's profit. The rest is sitting in inventory.`}
           strong
         />
       </div>
@@ -132,25 +139,27 @@ export default async function ExpenseReportPage({
                             : 'Month'}
                   </TH>
                   <TH numeric>Vouchers</TH>
-                  <TH numeric>Amount USD</TH>
+                  <TH numeric>Amount {local}</TH>
+                  <TH numeric>≈ USD</TH>
                   <TH numeric>Share</TH>
                 </TR>
               </THead>
               <TBody>
                 {rows.length === 0 ? (
                   <TR>
-                    <TD colSpan={4} className="py-8 text-center text-xs text-ink-subtle">
+                    <TD colSpan={5} className="py-8 text-center text-xs text-ink-subtle">
                       No posted expenses in this period.
                     </TD>
                   </TR>
                 ) : (
                   rows.map((row) => {
-                    const share = total.greaterThan(0) ? row.amountUsd.dividedBy(total).times(100) : dec(0);
+                    const share = total.greaterThan(0) ? row.amountLocal.dividedBy(total).times(100) : dec(0);
                     return (
                       <TR key={row.key}>
                         <TD className="font-medium">{row.label}</TD>
                         <TD numeric>{row.count}</TD>
-                        <TD numeric className="font-semibold">{formatMoney(row.amountUsd, 'USD')}</TD>
+                        <TD numeric className="font-semibold">{formatMoney(row.amountLocal, local)}</TD>
+                        <TD numeric className="text-ink-muted">{formatMoney(row.amountUsd, 'USD')}</TD>
                         <TD numeric>
                           <span className="flex items-center justify-end gap-2">
                             <span className="h-1.5 w-16 overflow-hidden rounded-full bg-forest-100">
@@ -168,7 +177,8 @@ export default async function ExpenseReportPage({
                 <tr>
                   <TD>Total</TD>
                   <TD numeric>{rows.reduce((a, r) => a + r.count, 0)}</TD>
-                  <TD numeric>{formatMoney(total, 'USD')}</TD>
+                  <TD numeric>{formatMoney(total, local)}</TD>
+                  <TD numeric>{formatMoney(totalUsd, 'USD')}</TD>
                   <TD />
                 </tr>
               </TFoot>
@@ -183,11 +193,13 @@ export default async function ExpenseReportPage({
 function SplitTile({
   label,
   value,
+  usd,
   note,
   strong,
 }: {
   label: string;
   value: string;
+  usd?: string;
   note: string;
   strong?: boolean;
 }) {
@@ -195,6 +207,7 @@ function SplitTile({
     <div className={strong ? 'rounded-xl border border-forest-200 bg-forest-50/50 p-4' : 'rounded-xl border border-line bg-surface p-4'}>
       <p className="text-xs font-medium text-ink-muted">{label}</p>
       <p className="mt-1 text-xl font-semibold tabular-nums text-ink">{value}</p>
+      {usd ? <p className="text-xs tabular-nums text-ink-subtle">≈ {usd}</p> : null}
       <p className="mt-1.5 text-[11px] leading-relaxed text-ink-subtle">{note}</p>
     </div>
   );

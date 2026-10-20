@@ -10,7 +10,6 @@ import {
   parseLedgerViewCurrency,
   resolveLedgerViewCurrency,
   pickCashBankCurrency,
-  ledgerDisplayCurrency,
   ledgerCurrencyLabel,
 } from '@/lib/ledger-currency';
 import { formatMoney, formatDate, titleCase, dayParam } from '@/lib/format';
@@ -69,6 +68,7 @@ export default async function GeneralLedgerPage({
     nativeCurrency: resolveLedgerViewCurrency({
       accountCurrency: row.currency,
       cashBankCurrency: pickCashBankCurrency(row.cashBankAccounts, row.currency),
+      companyCurrency: user.activeCompany.localCurrency,
     }),
   }));
 
@@ -261,7 +261,7 @@ export default async function GeneralLedgerPage({
               <CardContent className="pt-5">
                 <p className="text-xs text-ink-muted">{meaning.label}</p>
                 <p className="text-lg font-semibold tabular-nums text-forest-800">
-                  {formatMoney(meaning.amount, ledgerDisplayCurrency(ledger.viewCurrency))}
+                  {formatMoney(meaning.amount, ledger.displayCurrency)}
                 </p>
                 <p className="mt-1 text-[11px] text-ink-subtle">{meaning.sentence}</p>
               </CardContent>
@@ -287,8 +287,8 @@ export default async function GeneralLedgerPage({
 
         <p className="text-sm text-ink-muted" data-testid="ledger-currency-label">
           <span className="font-semibold text-ink">{ledger.account.name}</span> · {titleCase(ledger.account.type)} account ·{' '}
-          {ledgerCurrencyLabel(ledger.viewCurrency, ledger.mixedCurrencies)}
-          {ledger.account.currency && ledger.account.currency !== ledger.viewCurrency && !ledger.mixedCurrencies
+          {ledgerCurrencyLabel(ledger.viewCurrency, ledger.mixedCurrencies, ledger.localCurrency)}
+          {ledger.account.currency && ledger.account.currency !== ledger.displayCurrency && !ledger.mixedCurrencies
             ? ` · native ${ledger.account.currency}`
             : ''}
         </p>
@@ -309,7 +309,7 @@ export default async function GeneralLedgerPage({
             })
           : [
               {
-                currency: ledgerDisplayCurrency(ledger.viewCurrency),
+                currency: ledger.displayCurrency,
                 opening: ledger.openingBalance.toString(),
                 rows: ledger.rows.map((row, index) => ({ row, index, balance: row.balance.toString() })),
               },

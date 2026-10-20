@@ -108,6 +108,7 @@ export default async function ChartOfAccountsPage() {
                             resolveLedgerViewCurrency({
                               accountCurrency: account.currency,
                               cashBankCurrency: account.cashBank?.currency,
+                              companyCurrency: localCurrency,
                             }),
                           )}
                           className="font-medium text-forest-800 hover:text-gold-700"
@@ -181,6 +182,7 @@ export default async function ChartOfAccountsPage() {
                               resolveLedgerViewCurrency({
                                 accountCurrency: account.currency,
                                 cashBankCurrency: account.cashBank?.currency,
+                                companyCurrency: localCurrency,
                               }),
                             )}
                             className="text-xs font-medium text-forest-800 hover:text-gold-700"
