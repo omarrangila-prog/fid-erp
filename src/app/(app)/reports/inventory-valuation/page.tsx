@@ -191,7 +191,7 @@ export default async function InventoryValuationPage({ searchParams }: { searchP
       <>
       <PrintHeader
         title="Inventory Valuation"
-        companyName={user.activeCompany.name}
+        companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency}
         country={user.activeCompany.country}
       />
 

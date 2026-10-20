@@ -47,7 +47,7 @@ export default async function BalancesPage({ searchParams }: { searchParams: Pro
           </>
         }
       />
-      <PrintHeader title={title} companyName={user.activeCompany.name} country={user.activeCompany.country} />
+      <PrintHeader title={title} companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency} country={user.activeCompany.country} />
 
       <div className="flex gap-2 print:hidden">
         <Link href="/reports/balances" className={`rounded-md px-3 py-1.5 text-sm ${!suppliers ? 'bg-forest-700 text-white' : 'border border-line text-ink hover:bg-surface-sunken'}`}>

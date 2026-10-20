@@ -101,7 +101,7 @@ export default async function AnalyticsPage() {
       />
       <PrintHeader
         title="Profitability analysis"
-        companyName={user.activeCompany.name}
+        companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency}
         country={user.activeCompany.country}
       />
       <AnalyticsClient

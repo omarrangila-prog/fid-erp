@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { PrintHeader } from '@/components/shared/print-header';
 import Link from 'next/link';
 import { requirePageAccessAll } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
@@ -81,6 +82,7 @@ export default async function AllocationsPage() {
           </>
         }
       />
+      <PrintHeader title="Stock Allocation" companyName={user.activeCompany.name} country={user.activeCompany.country} currency={user.activeCompany.localCurrency} />
 
       <Callout tone="info" title="One purchase, many customers">
         A container bought as one contract is often sold to several customers over several weeks. The purchase stays a

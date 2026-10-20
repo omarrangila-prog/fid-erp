@@ -74,7 +74,7 @@ export default async function ProfitabilityPage({ searchParams }: { searchParams
       />
       <PrintHeader
         title="Profitability"
-        companyName={user.activeCompany.name}
+        companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency}
         country={user.activeCompany.country}
         period={VIEWS.find((v) => v.key === active)?.label}
       />

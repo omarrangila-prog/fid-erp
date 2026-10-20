@@ -134,7 +134,7 @@ export default async function TrialBalancePage({
       />
       <PrintHeader
         title="Trial Balance"
-        companyName={user.activeCompany.name}
+        companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency}
         country={user.activeCompany.country}
       />
 

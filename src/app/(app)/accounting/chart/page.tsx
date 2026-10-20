@@ -63,7 +63,7 @@ export default async function ChartOfAccountsPage() {
       />
       <PrintHeader
         title="Chart of Accounts"
-        companyName={user.activeCompany.name}
+        companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency}
         country={user.activeCompany.country}
       />
 

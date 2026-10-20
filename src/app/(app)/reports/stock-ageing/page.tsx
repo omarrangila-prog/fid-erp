@@ -67,7 +67,7 @@ export default async function StockAgeingPage() {
     <div className="space-y-6">
       <PrintHeader
         title="Stock Ageing"
-        companyName={user.activeCompany.name}
+        companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency}
         country={user.activeCompany.country}
         period={`${rows.length} parcels · ${formatQuantityKg(totalKg)} on hand`}
       />

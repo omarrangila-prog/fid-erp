@@ -64,7 +64,7 @@ export default async function PurchaseReportPage({
           </>
         }
       />
-      <PrintHeader title="Purchase Report" companyName={user.activeCompany.name} country={user.activeCompany.country} />
+      <PrintHeader title="Purchase Report" companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency} country={user.activeCompany.country} />
 
       <div className="print:hidden">
         <DateRangePicker defaultFrom={from ?? ''} defaultTo={to ?? ''} />

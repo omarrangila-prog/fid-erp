@@ -55,7 +55,7 @@ export default async function BusinessOverviewPage() {
       />
       <PrintHeader
         title="Business Overview"
-        companyName={user.activeCompany.name}
+        companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency}
         country={user.activeCompany.country}
       />
 

@@ -75,7 +75,7 @@ export default async function SalesByPage({
           </>
         }
       />
-      <PrintHeader title={title} companyName={user.activeCompany.name} country={user.activeCompany.country} />
+      <PrintHeader title={title} companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency} country={user.activeCompany.country} />
 
       <div className="flex flex-wrap items-end gap-3 print:hidden">
         <DateRangePicker defaultFrom={fromStr} defaultTo={toStr} />

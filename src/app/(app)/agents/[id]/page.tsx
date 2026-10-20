@@ -238,7 +238,7 @@ export default async function AgentLedgerPage({
       />
       <PrintHeader
         title={`Agent ledger — ${agent.agentName}`}
-        companyName={user.activeCompany.name}
+        companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency}
         country={user.activeCompany.country}
       />
 

@@ -49,7 +49,7 @@ export default async function ReconciliationPage() {
       />
       <PrintHeader
         title="Reconciliation"
-        companyName={user.activeCompany.name}
+        companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency}
         country={user.activeCompany.country}
       />
 

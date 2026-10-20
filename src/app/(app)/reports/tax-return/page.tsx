@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { PrintHeader } from '@/components/shared/print-header';
 import Link from 'next/link';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
@@ -97,6 +98,7 @@ export default async function TaxReturnPage({
           </>
         }
       />
+      <PrintHeader title="Tax Return" companyName={user.activeCompany.name} country={user.activeCompany.country} currency={user.activeCompany.localCurrency} />
 
       <form className="flex flex-wrap items-end gap-3 print:hidden" method="get">
         <label className="flex flex-col gap-1.5">

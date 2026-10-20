@@ -74,7 +74,7 @@ export default async function AgeingPage({ searchParams }: { searchParams: Promi
           </>
         }
       />
-      <PrintHeader title={title} companyName={user.activeCompany.name} country={user.activeCompany.country} />
+      <PrintHeader title={title} companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency} country={user.activeCompany.country} />
 
       <div className="flex gap-2 print:hidden">
         <a

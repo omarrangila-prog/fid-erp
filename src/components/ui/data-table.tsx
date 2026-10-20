@@ -16,6 +16,7 @@ import { downloadExcel, type ExcelColumnType } from '@/lib/export-excel';
 import { toast } from 'sonner';
 import { ShareTrigger } from '@/components/share/share-dialog';
 import { RowSelectBox, useTableShare, type TableShareConfig } from '@/components/share/table-share';
+import { getTablePrefsAction, saveTablePrefsAction } from '@/server/actions/table-prefs-actions';
 
 export type DataColumn<T> = {
   id: string;
@@ -221,7 +222,37 @@ export function DataTable<T>({
     if (rememberedCompact !== null) setCompact(rememberedCompact);
     if (rememberedOrder) setOrder(rememberedOrder);
     loaded.current = true;
+    // Then the layout saved to the person's account, which follows them to
+    // any browser and wins over this one's. Signed out (a shared report),
+    // there is none, and the browser's stands.
+    let cancelled = false;
+    getTablePrefsAction(prefsKey)
+      .then((result) => {
+        if (cancelled || !result.ok || !result.data) return;
+        const saved = result.data;
+        if (saved.hidden) setHidden(new Set(saved.hidden));
+        if (saved.order !== undefined) setOrder(saved.order ?? null);
+        if (saved.sort !== undefined) setSort(saved.sort ?? null);
+        if (typeof saved.compact === 'boolean') setCompact(saved.compact);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) accountLoaded.current = true;
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [prefsKey]);
+
+  // Saved to the account a moment after the last change, so a run of clicks is one write.
+  const accountLoaded = React.useRef(false);
+  React.useEffect(() => {
+    if (!prefsKey || !accountLoaded.current) return;
+    const timer = window.setTimeout(() => {
+      saveTablePrefsAction(prefsKey, { hidden: [...hidden], order, sort, compact }).catch(() => undefined);
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [prefsKey, hidden, order, sort, compact]);
 
   // Written only once the remembered settings have been read, so the defaults
   // of a fresh mount never overwrite what was saved.

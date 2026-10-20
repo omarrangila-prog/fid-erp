@@ -125,7 +125,7 @@ export default async function GeneralLedgerPage({
       />
       <PrintHeader
         title="General Ledger"
-        companyName={user.activeCompany.name}
+        companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency}
         country={user.activeCompany.country}
       />
 

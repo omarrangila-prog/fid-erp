@@ -45,7 +45,7 @@ export default async function FinancialPositionPage() {
       />
       <PrintHeader
         title="Financial Position"
-        companyName={user.activeCompany.name}
+        companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency}
         country={user.activeCompany.country}
       />
 

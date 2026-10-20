@@ -90,7 +90,7 @@ export default async function StockMovementPage({
           </>
         }
       />
-      <PrintHeader title="Daily Stock Movement" companyName={user.activeCompany.name} country={user.activeCompany.country} />
+      <PrintHeader title="Daily Stock Movement" companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency} country={user.activeCompany.country} />
 
       <DateRangePicker defaultFrom={from.toISOString().slice(0, 10)} defaultTo={to.toISOString().slice(0, 10)} />
 

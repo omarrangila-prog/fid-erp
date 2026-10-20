@@ -87,7 +87,7 @@ export default async function CogsReportPage({
       />
       <PrintHeader
         title="Cost of Goods Sold"
-        companyName={user.activeCompany.name}
+        companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency}
         country={user.activeCompany.country}
       />
 

@@ -89,7 +89,7 @@ export default async function ShipmentCostPage({
           </>
         }
       />
-      <PrintHeader title="Shipment Costing" companyName={user.activeCompany.name} country={user.activeCompany.country} />
+      <PrintHeader title="Shipment Costing" companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency} country={user.activeCompany.country} />
       <OpenAllForPrint />
 
       {all.length === 0 ? (

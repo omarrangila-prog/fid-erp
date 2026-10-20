@@ -207,7 +207,7 @@ export default async function UnpaidExpensesPage({
         breadcrumbs={[{ label: 'Accounting' }, { label: 'Unpaid Expenses' }]}
         actions={<PrintButton />}
       />
-      <PrintHeader title="Unpaid Expenses" companyName={user.activeCompany.name} country={user.activeCompany.country} />
+      <PrintHeader title="Unpaid Expenses" companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency} country={user.activeCompany.country} />
 
       <Card>
         <CardContent className="pt-5">

@@ -142,7 +142,7 @@ export default async function LoadingPage() {
     <div className="print-landscape space-y-6">
       <PrintHeader
         title="Loading / Contract Follow-Up"
-        companyName={user.activeCompany.name}
+        companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency}
         country={user.activeCompany.country}
         period={`${rows.length} shipment${rows.length === 1 ? '' : 's'} · ${soldRows} sold or part sold`}
       />

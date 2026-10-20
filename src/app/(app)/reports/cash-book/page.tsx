@@ -87,7 +87,7 @@ export default async function CashBookPage({
       />
       <PrintHeader
         title={book ? `${bookName.toUpperCase()} — ${book.account.name}` : bookName}
-        companyName={user.activeCompany.name}
+        companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency}
         country={user.activeCompany.country}
         period={book ? `${period} · Currency: ${book.account.currency}` : period}
       />

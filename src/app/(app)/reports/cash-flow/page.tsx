@@ -42,7 +42,7 @@ export default async function CashFlowPage({ searchParams }: { searchParams: Pro
       />
       <PrintHeader
         title="Cash Flow"
-        companyName={user.activeCompany.name}
+        companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency}
         country={user.activeCompany.country}
       />
 

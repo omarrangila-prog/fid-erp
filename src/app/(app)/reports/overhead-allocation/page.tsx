@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { PrintHeader } from '@/components/shared/print-header';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { formatDate, formatMoney, dayParam, companyToday } from '@/lib/format';
@@ -66,6 +67,7 @@ export default async function OverheadAllocationPage({
         description="Share the company's general expenses across shipments to see a fully absorbed cost. A management view only — nothing is posted and the company accounts do not change."
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Overhead Allocation' }]}
       />
+      <PrintHeader title="Overhead Allocation" companyName={user.activeCompany.name} country={user.activeCompany.country} currency={user.activeCompany.localCurrency} />
 
       <ReportSummary
         figures={[

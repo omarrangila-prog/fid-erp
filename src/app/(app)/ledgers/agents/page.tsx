@@ -57,7 +57,7 @@ export default async function AgentLedgersPage() {
       />
       <PrintHeader
         title="Agent Balances"
-        companyName={user.activeCompany.name}
+        companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency}
         country={user.activeCompany.country}
       />
 
