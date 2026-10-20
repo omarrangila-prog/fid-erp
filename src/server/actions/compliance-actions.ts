@@ -1,5 +1,6 @@
 'use server';
 
+import { scheduleInventorySplit } from '@/server/inventory-split-hook';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { requirePermission } from '@/lib/auth/guards';
@@ -113,6 +114,7 @@ export async function saveCreditNoteAction(payload: string): Promise<DocFormStat
 export async function postCreditNoteAction(id: string): Promise<ActionResult<undefined>> {
   try {
     const user = await requirePermission(PERMISSIONS.CREDIT_NOTES_POST);
+    scheduleInventorySplit(user, 'a credit note');
     const posted = await postCreditNote({ id, companyId: user.activeCompany.id, userId: user.id });
 
     for (const path of creditPaths(posted.type)) revalidatePath(path);
@@ -127,6 +129,7 @@ export async function postCreditNoteAction(id: string): Promise<ActionResult<und
 export async function reverseCreditNoteAction(id: string, reason: string): Promise<ActionResult<undefined>> {
   try {
     const user = await requirePermission(PERMISSIONS.CREDIT_NOTES_POST);
+    scheduleInventorySplit(user, 'a reversed credit note');
     const reversed = await reverseCreditNote({ id, companyId: user.activeCompany.id, userId: user.id, reason });
 
     for (const path of creditPaths(reversed.type)) revalidatePath(path);
@@ -191,6 +194,7 @@ export async function recordStockCountAction(id: string, payload: string): Promi
 export async function postStockCountAction(id: string): Promise<ActionResult<undefined>> {
   try {
     const user = await requirePermission(PERMISSIONS.STOCK_COUNT_POST);
+    scheduleInventorySplit(user, 'a stock count');
     await postStockCount({ id, companyId: user.activeCompany.id, userId: user.id });
 
     revalidatePath(`/inventory/stock-counts/${id}`);

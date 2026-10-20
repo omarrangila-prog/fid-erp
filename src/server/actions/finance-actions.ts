@@ -1,5 +1,6 @@
 'use server';
 
+import { scheduleInventorySplit } from '@/server/inventory-split-hook';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { requirePermission, can } from '@/lib/auth/guards';
@@ -369,6 +370,7 @@ export async function saveExpenseAction(id: string | null, payload: string): Pro
     const { clientKey, ...input } = expenseSchema.parse(parseJson(payload));
     const data = { companyId: user.activeCompany.id, ...input };
 
+    scheduleInventorySplit(user, 'an edited expense');
     const result = id
       ? { id: (await updateExpense(id, data, user.id)).id, replayed: false }
       : await onceForKey({ companyId: user.activeCompany.id, userId: user.id, scope: 'EXPENSE', key: clientKey }, () =>
@@ -536,6 +538,7 @@ export async function deleteRecurringAction(id: string): Promise<ActionResult<un
 export async function postExpenseAction(id: string): Promise<ActionResult<undefined>> {
   try {
     const user = await requirePermission(PERMISSIONS.EXPENSES_POST);
+    scheduleInventorySplit(user, 'an expense');
     await postExpense({ id, companyId: user.activeCompany.id, userId: user.id });
     revalidateAll([...paths.expenses, `/finance/expenses/${id}`, '/shipments']);
     return { ok: true, data: undefined };
@@ -547,6 +550,7 @@ export async function postExpenseAction(id: string): Promise<ActionResult<undefi
 export async function reverseExpenseAction(id: string, reason: string): Promise<ActionResult<undefined>> {
   try {
     const user = await requirePermission(PERMISSIONS.EXPENSES_POST);
+    scheduleInventorySplit(user, 'a reversed expense');
     await reverseExpense({ id, companyId: user.activeCompany.id, userId: user.id, reason });
     revalidateAll([...paths.expenses, `/finance/expenses/${id}`, '/shipments']);
     return { ok: true, data: undefined };
@@ -608,6 +612,7 @@ export async function changeChequeStatusAction(chequeId: string, payload: string
 export async function deletePostedEntryAction(entryId: string, reason: string): Promise<ActionResult<undefined>> {
   try {
     const user = await requirePermission(PERMISSIONS.ACCOUNTING_POST);
+    scheduleInventorySplit(user, 'a deleted posting');
     await deletePostedEntry({ companyId: user.activeCompany.id, userId: user.id, entryId, reason });
     revalidateAll([...paths.journals, ...paths.receipts, ...paths.payments, ...paths.expenses]);
     revalidatePath('/agents');
@@ -645,6 +650,7 @@ export async function replaceJournalVoucherAction(entryId: string, payload: stri
     });
     if (!original) throw new NotFoundError('Journal entry');
 
+    scheduleInventorySplit(user, 'a deleted posting');
     await deletePostedEntry({
       companyId,
       userId: user.id,

@@ -1,5 +1,6 @@
 'use server';
 
+import { scheduleInventorySplit } from '@/server/inventory-split-hook';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { requirePermission, assertPermission, canAny } from '@/lib/auth/guards';
@@ -127,6 +128,7 @@ export async function savePurchaseContractAction(id: string | null, payload: str
       const current = await prisma.purchaseContract.findFirst({ where: { id, companyId }, select: { status: true } });
       if (current?.status === 'POSTED') {
         assertPermission(user, PERMISSIONS.PURCHASES_APPROVE);
+        scheduleInventorySplit(user, 'a purchase order edit');
         await editApprovedPurchase({ ...input, companyId, contractId: id, userId: user.id, reason: correctionReason });
         revalidatePurchaseCosting(id);
         return { ok: true, id, message: 'Purchase order corrected.' };
@@ -177,6 +179,7 @@ function revalidatePurchaseCosting(contractId: string) {
 export async function postPurchaseContractAction(id: string): Promise<ActionResult<undefined>> {
   try {
     const user = await requirePermission(PERMISSIONS.PURCHASES_APPROVE);
+    scheduleInventorySplit(user, 'a purchase order');
     await postPurchaseContract({ id, companyId: user.activeCompany.id, userId: user.id });
     revalidatePath('/purchases');
     revalidatePath(`/purchases/${id}`);
@@ -191,6 +194,7 @@ export async function postPurchaseContractAction(id: string): Promise<ActionResu
 export async function reversePurchaseContractAction(id: string, reason: string): Promise<ActionResult<undefined>> {
   try {
     const user = await requirePermission(PERMISSIONS.PURCHASES_REVERSE);
+    scheduleInventorySplit(user, 'a reversed purchase order');
     await reversePurchaseContract({ id, companyId: user.activeCompany.id, userId: user.id, reason });
     revalidatePath('/purchases');
     revalidatePath(`/purchases/${id}`);
@@ -242,6 +246,7 @@ export async function saveGoodsReceiptAction(payload: string): Promise<DocFormSt
 export async function postGoodsReceiptAction(id: string): Promise<ActionResult<undefined>> {
   try {
     const user = await requirePermission(PERMISSIONS.PURCHASES_APPROVE);
+    scheduleInventorySplit(user, 'a goods receipt');
     await postGoodsReceipt({ id, companyId: user.activeCompany.id, userId: user.id });
     revalidatePath('/goods-receipts');
     revalidatePath('/inventory');
@@ -256,6 +261,7 @@ export async function postGoodsReceiptAction(id: string): Promise<ActionResult<u
 export async function reverseGoodsReceiptAction(id: string, reason: string): Promise<ActionResult<undefined>> {
   try {
     const user = await requirePermission(PERMISSIONS.PURCHASES_REVERSE);
+    scheduleInventorySplit(user, 'a reversed goods receipt');
     await reverseGoodsReceipt({ id, companyId: user.activeCompany.id, userId: user.id, reason });
     revalidatePath('/goods-receipts');
     revalidatePath('/inventory');
@@ -289,6 +295,7 @@ export async function saveSalesInvoiceAction(id: string | null, payload: string)
     await assertCustomerInScope(user, input.customerId);
     assertWarehousesInScope(user, input.lines.map((line) => line.warehouseId));
 
+    scheduleInventorySplit(user, 'an edited sales invoice');
     const result = id
       ? await updateSalesInvoice(id, { companyId: user.activeCompany.id, ...input }, user.id)
       : await createSalesInvoice({ companyId: user.activeCompany.id, ...input }, user.id);
@@ -318,6 +325,7 @@ export async function postSalesInvoiceAction(id: string): Promise<ActionResult<u
 
     // A cash sale's receipt is raised inside postSalesInvoice, in the same
     // transaction, so there is nothing to do here beyond posting.
+    scheduleInventorySplit(user, 'a sales invoice');
     await postSalesInvoice({ id, companyId, userId: user.id });
 
     revalidatePath('/sales');
@@ -336,6 +344,7 @@ export async function reverseSalesInvoiceAction(id: string, reason: string): Pro
   try {
     const user = await requirePermission(PERMISSIONS.SALES_REVERSE);
     await assertInvoiceInScope(user, id);
+    scheduleInventorySplit(user, 'a reversed sales invoice');
     await reverseSalesInvoice({ id, companyId: user.activeCompany.id, userId: user.id, reason });
     revalidatePath('/sales');
     revalidatePath(`/sales/${id}`);
@@ -594,6 +603,7 @@ export async function undoLoadingAction(shipmentId: string, reason: string): Pro
 export async function undoArrivalAction(shipmentId: string, reason: string): Promise<DocFormState> {
   try {
     const user = await requirePermission(PERMISSIONS.SHIPMENTS_UPDATE);
+    scheduleInventorySplit(user, 'an undone arrival');
     const result = await undoArrival({ companyId: user.activeCompany.id, shipmentId, userId: user.id, reason });
     revalidatePath('/loading');
     revalidatePath('/shipments');

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
-import { requirePageAccess } from '@/lib/auth/guards';
+import { requirePageAccess, can } from '@/lib/auth/guards';
+import { RestateSplitButton } from '@/app/(app)/admin/consistency/restate-button';
 import { PERMISSIONS } from '@/lib/constants';
 import { formatMoney, formatQuantityKg } from '@/lib/format';
 import type { Decimal } from '@/lib/money';
@@ -33,6 +34,22 @@ export default async function ConsistencyPage() {
         description={`${user.activeCompany.name}: every dashboard figure against the ledger it comes from. Read-only — nothing is changed by opening this page.`}
         breadcrumbs={[{ label: 'Administration' }, { label: 'Consistency checks' }]}
       />
+      {(() => {
+        // The ledger's stock against the valuation: restated automatically after each posting that
+        // moves cost; the button is for someone who wants it done now.
+        const split = checks.find((c) => c.label.startsWith('Inventory Valuation = Inventory account'));
+        return split && !split.ok && can(user, PERMISSIONS.ACCOUNTING_POST) ? (
+          <Callout tone="info" title="Stock and cost of sales are out of step with the costing">
+            <span className="block">
+              The ledger has {figure(split.difference.abs(), split.currency)} {split.difference.isNegative() ? 'more' : 'less'} in stock than the Inventory Valuation.
+              It is restated automatically after the next posting; you can also do it now. The total cost of the coffee is not changed.
+            </span>
+            <span className="mt-2 block">
+              <RestateSplitButton />
+            </span>
+          </Callout>
+        ) : null;
+      })()}
       <div data-testid="consistency-summary">
         {failures === 0 ? (
           <Callout tone="info" title={`All ${checks.length} checks agree`}>

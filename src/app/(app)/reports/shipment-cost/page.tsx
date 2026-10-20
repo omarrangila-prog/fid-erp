@@ -12,7 +12,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
 import { Badge, StatusBadge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/feedback';
-import { PrintButton } from '@/components/shared/print-button';
 import { ReportShareButton } from '@/components/share/report-share-button';
 import { exportHref } from '@/components/shared/excel-link';
 import { ExportLinks } from '@/components/shared/export-links';
@@ -84,7 +83,6 @@ export default async function ShipmentCostPage({
         actions={
           <>
             <FavouriteStar href="/reports/shipment-cost" label="Shipment Costing" />
-            <PrintButton />
             <ReportShareButton report="shipment-costing" />
           </>
         }
@@ -211,7 +209,7 @@ function OrderSection({
           <Link href={`/shipments/${sheet.firstShipmentId}`} className="rounded-md border border-line px-2.5 py-1 font-medium text-forest-800 hover:bg-forest-50">
             View
           </Link>
-          <ExportLinks href={exportHref('shipment-cost', { order: sheet.contractId })} print={false} />
+          <ExportLinks href={exportHref('shipment-cost', { order: sheet.contractId })} />
         </span>
       </summary>
 

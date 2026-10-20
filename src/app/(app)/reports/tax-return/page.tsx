@@ -7,7 +7,6 @@ import { getTaxSettings } from '@/lib/services/tax';
 import { getTaxReturn, listTaxReturns, suggestedTaxPeriod } from '@/lib/services/tax-return';
 import { formatDate, formatDateTime, dayParam, companyToday } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
-import { PrintButton } from '@/components/shared/print-button';
 import { ReportShareButton } from '@/components/share/report-share-button';
 import { exportHref } from '@/components/shared/excel-link';
 import { ExportLinks } from '@/components/shared/export-links';
@@ -84,7 +83,6 @@ export default async function TaxReturnPage({
         actions={
           <>
             <ExportLinks href={exportHref('tax-return', { from: iso(from), to: iso(to) })} />
-            <PrintButton />
             <ReportShareButton report="tax-return" />
             {!figures.filed && can(user, PERMISSIONS.ACCOUNTING_POST) ? (
               <FileReturnButton

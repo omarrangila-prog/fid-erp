@@ -1,5 +1,6 @@
 'use server';
 
+import { scheduleInventorySplit } from '@/server/inventory-split-hook';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { requirePermission, can } from '@/lib/auth/guards';
@@ -42,6 +43,7 @@ export async function deleteShipmentAction(payload: string): Promise<ActionResul
       throw new BusinessRuleError('The request could not be read. Please try again.');
     }
     const input = schema.parse(parsed);
+    scheduleInventorySplit(user, 'a deleted shipment');
     const result = await deleteShipment({
       companyId: user.activeCompany.id,
       userId: user.id,

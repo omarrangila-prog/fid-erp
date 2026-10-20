@@ -12,7 +12,6 @@ import { CustomizePanel } from '@/components/reports/customize-panel';
 import { FavouriteStar } from '@/components/reports/report-statement';
 import { ReportSummary } from '@/components/shared/report-summary';
 import { DateRangePicker } from '@/components/shared/date-range';
-import { PrintButton } from '@/components/shared/print-button';
 import { ReportShareButton } from '@/components/share/report-share-button';
 import { PrintHeader } from '@/components/shared/print-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -85,7 +84,6 @@ export default async function StockMovementPage({
               print={false}
             />
             <CustomizePanel report="Daily Stock Movement" fields={['period']} />
-            <PrintButton />
             <ReportShareButton report="stock-movement" />
           </>
         }
