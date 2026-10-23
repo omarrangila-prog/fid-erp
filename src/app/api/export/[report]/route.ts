@@ -1078,8 +1078,6 @@ const REPORTS: Record<string, Report> = {
         totals: [`Opening balance debit ${local}`, `Opening balance credit ${local}`, `Debit total ${local}`, `Credit total ${local}`, `Closing balance debit ${local}`, `Closing balance credit ${local}`],
         columns: [
           { header: 'Account', value: (r) => r.label, width: 38 },
-          { header: 'Ledger name', value: (r) => (r.label === r.name ? '' : r.name), width: 30 },
-          { header: 'Category', value: (r) => r.type },
           { header: `Opening balance debit ${local}`, value: (r) => Number(r.openingDebitLocal), type: 'money' },
           { header: `Opening balance credit ${local}`, value: (r) => Number(r.openingCreditLocal), type: 'money' },
           { header: `Debit total ${local}`, value: (r) => Number(r.periodDebitLocal), type: 'money' },

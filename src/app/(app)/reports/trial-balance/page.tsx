@@ -5,7 +5,7 @@ import { PERMISSIONS } from '@/lib/constants';
 import { ledgerHref } from '@/lib/ledger-currency';
 import { prisma } from '@/lib/db';
 import { getTrialBalanceReport } from '@/lib/services/reports';
-import { formatMoney, formatDate, titleCase, dayParam, companyToday } from '@/lib/format';
+import { formatMoney, formatDate, dayParam, companyToday } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { CustomizePanel } from '@/components/reports/customize-panel';
 import { FavouriteStar } from '@/components/reports/report-statement';
@@ -234,7 +234,7 @@ export default async function TrialBalancePage({
                 {showUnused
                   ? 'Unused accounts — nothing brought forward, nothing moved, nothing left — are included.'
                   : 'Accounts with nothing brought forward, nothing moved and nothing left are left out; an account with any activity is always listed.'}
-                {' A system account is shown under a plain name, with its ledger name beneath. Click any account to open its ledger.'}
+                {' Click any account to open its ledger.'}
               </CardDescription>
             </div>
             <Link
@@ -288,23 +288,6 @@ export default async function TrialBalancePage({
                       ) : (
                         <span className="font-medium text-ink">{row.label}</span>
                       )}
-                      {/* What the line is made of, under the ledger's names. */}
-                      {row.accounts.length > 1 || row.accounts[0].name !== row.label ? (
-                        <span className="block text-[11px] text-ink-subtle">
-                          {row.accounts.map((a, i) => (
-                            <span key={a.accountId}>
-                              {i > 0 ? ' · ' : ''}
-                              <Link
-                                href={ledgerHref(a.accountId, currencyByAccount.get(a.accountId))}
-                                className="hover:text-gold-700"
-                              >
-                                Ledger: {a.name}
-                              </Link>
-                            </span>
-                          ))}
-                        </span>
-                      ) : null}
-                      <span className="block text-[11px] text-ink-subtle">{titleCase(row.type)}</span>
                     </TD>
                     {trial.hasOpening ? (
                       <>
