@@ -606,8 +606,8 @@ test('the statements lead with the figures they exist to give', async ({ page })
     // The statement is laid out the way an accountant expects: Income, Cost
     // of goods sold, Gross profit, Expenses, Net profit — collapsible, with
     // a total row under each section.
-    ['/reports/profit-loss', ['Sales / Revenue', 'Total Sales / Revenue', 'Less: Cost of Goods Sold', 'Gross Profit', 'Less: Operating Expenses', 'Total Operating Expenses', 'Net Profit / Loss']],
-    ['/reports/balance-sheet', ['Current assets', 'Total assets', 'Total liabilities', 'Total equity', 'Total liabilities and equity']],
+    ['/reports/profit-loss', ['Sales / Revenue', 'Total Sales / Revenue', 'Less: Cost of Goods Sold', 'Gross Profit', 'Less: Operating Expenses', 'Total Operating Expenses', 'Net Profit / Loss', 'Where the shipment expenses are']],
+    ['/reports/balance-sheet', ['Cash and bank balances', 'Accounts Payable - suppliers we owe', 'Total assets', 'Total liabilities', 'Total equity', 'Total liabilities and equity']],
   ] as const) {
     await page.goto(path, { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle', { timeout: 6_000 }).catch(() => undefined);

@@ -75,10 +75,24 @@ export default async function ProfitLossPage({
   const report = await getProfitAndLossByColumns({ companyId: user.activeCompany.id, from: fromDate, to: toDate, columnsBy, compare });
   // What the cost of goods sold is made of: the coffee, and each kind of
   // shipment expense on the coffee sold. Shown on the single-column statement.
-  const [breakdown, cogsAccount] = await Promise.all([
-    columnsBy === 'total' && !compare ? getCostOfSalesBreakdown({ companyId, from: fromDate, to: toDate }) : Promise.resolve(null),
+  // `compare` is 'none' when off — a string, so it is compared, not tested for truth.
+  const single = columnsBy === 'total' && compare === 'none';
+  const [breakdown, cogsAccount, soldToDate, recorded] = await Promise.all([
+    single ? getCostOfSalesBreakdown({ companyId, from: fromDate, to: toDate }) : Promise.resolve(null),
     prisma.account.findFirst({ where: { companyId, systemKey: 'COST_OF_GOODS_SOLD' }, select: { id: true } }),
+    // Every shipment expense recorded to the end date, and how much of it has
+    // gone out with coffee sold: the rest is still in stock (or in transit).
+    single ? getCostOfSalesBreakdown({ companyId, to: toDate }) : Promise.resolve(null),
+    single
+      ? prisma.expense.aggregate({
+          where: { companyId, status: 'POSTED', kind: 'SHIPMENT', capitaliseToLandedCost: true, expenseDate: { lte: toDate } },
+          _sum: { amountLocal: true },
+        })
+      : Promise.resolve(null),
   ]);
+  const shipmentExpenses = recorded && soldToDate
+    ? { recorded: dec(recorded._sum.amountLocal ?? 0), inStock: dec(recorded._sum.amountLocal ?? 0).minus(soldToDate.expensesTotal.local) }
+    : null;
   const { total, before, previous } = report;
   const from = fromDate.toISOString().slice(0, 10);
   const to = toDate.toISOString().slice(0, 10);
@@ -293,6 +307,24 @@ export default async function ProfitLossPage({
             currency the books are kept in; ≈ USD under each is the equivalent at every transaction&rsquo;s own rate. Every figure
             comes from posted journal lines; click an account to see them.
           </p>
+          {breakdown && shipmentExpenses ? (
+            <div className="mx-3 mt-3 rounded-md border border-line bg-surface-sunken/40 px-3 py-2 text-xs text-ink-muted" data-testid="pnl-shipment-expenses">
+              <p className="font-semibold text-ink">Where the shipment expenses are</p>
+              <p className="mt-1">
+                All shipment expenses recorded up to {formatDate(toDate)}: <span className="tnum font-semibold text-ink">{formatMoney(shipmentExpenses.recorded, local)}</span>.
+              </p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                <li>
+                  <span className="tnum font-semibold text-ink">{formatMoney(breakdown.expensesTotal.local, local)}</span> is on the coffee sold in this
+                  period — in Cost of Goods Sold above, line by line.
+                </li>
+                <li>
+                  <span className="tnum font-semibold text-ink">{formatMoney(shipmentExpenses.inStock, local)}</span> is on coffee not sold yet (in stock or
+                  in transit). It stays in Inventory on the Balance Sheet and comes into this statement when that coffee is sold.
+                </li>
+              </ul>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
       </>
