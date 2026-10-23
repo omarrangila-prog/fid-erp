@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getBalanceSheet, type BalanceSheetLine } from '@/lib/services/reports';
+import { BALANCE_SHEET_GROUPS } from '@/lib/balance-sheet-groups';
 import { formatMoney, formatDate, companyToday, dayParam } from '@/lib/format';
 import { Decimal, dec } from '@/lib/money';
 import { PageHeader } from '@/components/shared/page-header';
@@ -103,7 +104,7 @@ export default async function BalanceSheetPage({
           .filter(([key]) => showZero || !isZero(amount(now, key)) || (then ? !isZero(amount(then, key)) : false))
           .map(([key, line]) => ({
             key: `${keyPrefix}-${key}`,
-            label: line.name,
+            label: line.displayName,
             href: line.accountId ? `/reports/general-ledger?account=${line.accountId}&to=${asOf}` : undefined,
             cells: [money(amount(now, key)), ...(then ? changeCells(amount(now, key), amount(then, key)) : [])],
           }));
@@ -121,9 +122,10 @@ export default async function BalanceSheetPage({
       })
       .filter((section) => section.lines.length > 0 || showZero);
 
-  const assetSections = sectionsFor(sheet.assets.lines, before?.assets.lines, ['Current assets', 'Fixed assets'], 'asset');
-  const liabilitySections = sectionsFor(sheet.liabilities.lines, before?.liabilities.lines, ['Current liabilities', 'Long-term liabilities'], 'liability');
-  const equitySections = sectionsFor(sheet.equity.lines, before?.equity.lines, ['Equity'], 'equity');
+  // The headings of the client's requirements document (section 6), in its order.
+  const assetSections = sectionsFor(sheet.assets.lines, before?.assets.lines, [...BALANCE_SHEET_GROUPS.ASSET], 'asset');
+  const liabilitySections = sectionsFor(sheet.liabilities.lines, before?.liabilities.lines, [...BALANCE_SHEET_GROUPS.LIABILITY], 'liability');
+  const equitySections = sectionsFor(sheet.equity.lines, before?.equity.lines, [...BALANCE_SHEET_GROUPS.EQUITY], 'equity');
   const sections = [...assetSections, ...liabilitySections, ...equitySections];
 
   const totalRow = (label: string, now: Pair, then: Pair | undefined, after: string, emphasis: 'strong' | 'final') => ({

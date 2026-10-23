@@ -6,7 +6,9 @@ import { PERMISSIONS } from '@/lib/constants';
 import { toErrorResponse, NotFoundError, ForbiddenError } from '@/lib/errors';
 import { prisma } from '@/lib/db';
 import { getCostOfSalesBreakdown } from '@/lib/services/cost-of-sales-breakdown';
-import { dec } from '@/lib/money';
+import { BALANCE_SHEET_GROUPS } from '@/lib/balance-sheet-groups';
+import { clientLabel, isUnusedInPeriod } from '@/lib/trial-balance-view';
+import { dec, sum } from '@/lib/money';
 import {
   buildWorkbook,
   buildStatementWorkbook,
@@ -856,6 +858,42 @@ const REPORTS: Record<string, Report> = {
     build: async (user, query) => {
       // By order (every container of the shipment), or by one shipment record.
       const orderId = query.get('order');
+      // No order named: the overview, one line per shipment with each measure
+      // the requirements ask the Shipment Profitability Report to show.
+      if (!orderId && !query.get('shipment')) {
+        const sheets = await getOrderCostSheets(user.activeCompany.id);
+        const local = user.activeCompany.localCurrency;
+        const profit = can(user, PERMISSIONS.PROFITS_VIEW);
+        type S = (typeof sheets)[number];
+        return buildWorkbook({
+          companyName: user.activeCompany.name,
+          timeZone: user.activeCompany.timezone,
+          title: 'Shipment Profitability and Costing',
+          subtitle: `${sheets.length} shipments · ${local}`,
+          rows: sheets,
+          totals: ['Purchased KG', `Purchase value ${local}`, `Direct expenses ${local}`, `Landed cost ${local}`, 'Sold KG', `Sales value ${local}`, 'Remaining KG', `Closing stock value ${local}`, ...(profit ? [`Gross profit / loss ${local}`] : [])],
+          columns: [
+            { header: 'Shipment (ICUL/FID)', value: (r) => r.contractReference, width: 30 },
+            { header: 'Supplier', value: (r) => r.vendorName, width: 26 },
+            { header: 'Purchased KG', value: (r) => Number(r.orderedKg), type: 'quantity' as const },
+            { header: `Purchase value ${local}`, value: (r) => Number(r.goodsLocal), type: 'money' as const },
+            { header: `Direct expenses ${local}`, value: (r) => Number(r.capitalisedExpenseLocal), type: 'money' as const },
+            { header: `Landed cost ${local}`, value: (r) => Number(r.landedLocal), type: 'money' as const },
+            { header: `Landed cost / KG ${local}`, value: (r) => Number(r.costPerKgLocal), type: 'money' as const },
+            { header: 'Sold KG', value: (r) => Number(r.invoicedKg), type: 'quantity' as const },
+            { header: `Sales value ${local}`, value: (r) => Number(r.revenueLocal), type: 'money' as const },
+            { header: `Avg selling price / KG ${local}`, value: (r) => Number(r.averageSellingPriceLocal), type: 'money' as const },
+            { header: 'Remaining KG', value: (r) => Number(r.remainingKg), type: 'quantity' as const },
+            { header: `Closing stock value ${local}`, value: (r) => Number(r.remainingValueLocal), type: 'money' as const },
+            ...(profit
+              ? [
+                  { header: `Gross profit / loss ${local}`, value: (r: S) => Number(r.grossProfitLocal), type: 'money' as const },
+                  { header: 'Gross margin', value: (r: S) => Number(r.marginPct) / 100, type: 'percent' as const },
+                ]
+              : []),
+          ],
+        });
+      }
       if (orderId) {
         const sheet = (await getOrderCostSheets(user.activeCompany.id)).find((s) => s.contractId === orderId);
         if (!sheet) throw new NotFoundError('Shipment');
@@ -864,19 +902,23 @@ const REPORTS: Record<string, Report> = {
           timeZone: user.activeCompany.timezone,
           title: 'Shipment Costing',
           subtitle: `${sheet.contractReference} · ${sheet.items.length} items · ${sheet.containers} containers · landed ${sheet.localCurrency} ${Number(sheet.landedLocal).toLocaleString('en-US', { minimumFractionDigits: 2 })}${can(user, PERMISSIONS.PROFITS_VIEW) ? ` · profit ${sheet.localCurrency} ${Number(sheet.grossProfitLocal).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : ''}`,
-          rows: sheet.expenses,
-          totals: ['Amount (USD)', `Amount (${sheet.localCurrency})`],
+          // Every direct expense, by category, with what is settled and still owed — as on screen.
+          rows: [...sheet.expenses].sort((a, b) => a.category.localeCompare(b.category) || a.expenseDate.getTime() - b.expenseDate.getTime()),
+          totals: [`Original cost (${sheet.localCurrency})`, `Settled (${sheet.localCurrency})`, `Outstanding (${sheet.localCurrency})`, 'Amount (USD)'],
           columns: [
             { header: 'Date', value: (r) => r.expenseDate, type: 'date' as const },
             { header: 'Category', value: (r) => r.category, width: 28 },
             { header: 'Memo', value: (r) => r.memo ?? '', width: 32 },
-            { header: 'Container', value: (r) => r.containerNumber ?? '' },
+            { header: 'Container', value: (r) => r.containerNumber ?? 'Whole shipment' },
             { header: 'Currency', value: (r) => r.currency },
             { header: 'Amount', value: (r) => Number(r.amount), type: 'money' as const },
+            { header: `Original cost (${sheet.localCurrency})`, value: (r) => Number(r.originalLocal), type: 'money' as const },
+            { header: `Settled (${sheet.localCurrency})`, value: (r) => Number(r.settledLocal), type: 'money' as const },
+            { header: `Outstanding (${sheet.localCurrency})`, value: (r) => Number(r.outstandingLocal), type: 'money' as const },
+            { header: 'Status', value: (r) => (r.payment === 'PAID' ? 'Settled' : r.payment === 'PARTIAL' ? 'Partly settled' : 'Outstanding') },
+            { header: 'Settled from', value: (r) => r.paidFrom ?? '' },
             { header: 'Amount (USD)', value: (r) => Number(r.amountUsd), type: 'money' as const },
-            { header: `Amount (${sheet.localCurrency})`, value: (r) => Number(r.amountLocal), type: 'money' as const },
-            { header: 'In the coffee?', value: (r) => (r.capitalised ? 'Yes' : 'No — a running cost') },
-            { header: 'Paid', value: (r) => (r.paid ? (r.paidFrom ?? 'Paid') : 'Owed') },
+            { header: 'In the coffee’s cost?', value: (r) => (r.capitalised ? 'Yes' : 'No') },
           ],
         });
       }
@@ -986,24 +1028,60 @@ const REPORTS: Record<string, Report> = {
     title: 'Trial Balance',
     permission: PERMISSIONS.ACCOUNTING_VIEW,
     build: async (user, query) => {
-      const asOf = dateParam(query, 'asOf') ?? new Date();
+      // The screen's report exactly: the same period (opening, movement,
+      // closing), filters, account names and rows.
+      const companyId = user.activeCompany.id;
+      const to = dateParam(query, 'to') ?? dateParam(query, 'asOf') ?? new Date();
+      const from = dateParam(query, 'from') ?? new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), 1));
       const local = user.activeCompany.localCurrency;
-      const trial = await getTrialBalanceReport({ companyId: user.activeCompany.id, to: asOf });
+      const filters = {
+        accountType: query.get('type') || null,
+        currency: query.get('currency') || null,
+        customerId: query.get('customer') || null,
+        vendorId: query.get('vendor') || null,
+        warehouseId: query.get('warehouse') || null,
+        shipmentId: query.get('shipment') || null,
+      };
+      const filtered = Object.values(filters).some(Boolean);
+      const [trial, accounts] = await Promise.all([
+        getTrialBalanceReport({ companyId, from, to, filters }),
+        prisma.account.findMany({ where: { companyId }, orderBy: { code: 'asc' }, select: { id: true, code: true, name: true, type: true, systemKey: true } }),
+      ]);
+      const meta = new Map(accounts.map((a) => [a.id, { systemKey: a.systemKey }]));
+      const listed = new Set(trial.rows.map((r) => r.accountId));
+      const zero = dec(0);
+      const rows = query.get('view') === 'all' && !filtered
+        ? [
+            ...trial.rows,
+            ...accounts.filter((a) => !listed.has(a.id)).map((a) => ({
+              accountId: a.id, code: a.code, name: a.name, type: a.type as string,
+              debitUsd: zero, creditUsd: zero, debitLocal: zero, creditLocal: zero,
+              openingDebitUsd: zero, openingCreditUsd: zero, periodDebitUsd: zero, periodCreditUsd: zero,
+              openingDebitLocal: zero, openingCreditLocal: zero, periodDebitLocal: zero, periodCreditLocal: zero,
+            })),
+          ].sort((x, y) => x.code.localeCompare(y.code))
+        : trial.rows.filter((r) => !isUnusedInPeriod(r));
+      const scope = filtered ? ' · FILTERED: only the lines matching the filters, so the totals are of those lines' : '';
 
       return buildWorkbook({
         companyName: user.activeCompany.name,
         timeZone: user.activeCompany.timezone,
         title: 'Trial Balance',
-        subtitle: trial.isBalanced && trial.isBalancedLocal ? asAt(asOf) : `${asAt(asOf)} — OUT OF BALANCE`,
-        rows: trial.rows,
-        totals: [`Debit ${local}`, `Credit ${local}`, `Debit USD equivalent`, `Credit USD equivalent`],
+        subtitle: `${period(from, to)}${scope}${trial.isBalancedLocal || filtered ? '' : ' — OUT OF BALANCE'}`,
+        rows: rows.map((r) => ({ ...r, label: clientLabel(r, meta.get(r.accountId)) })),
+        totals: [`Opening debit ${local}`, `Opening credit ${local}`, `Period debit ${local}`, `Period credit ${local}`, `Closing debit ${local}`, `Closing credit ${local}`],
         columns: [
-          { header: 'Account', value: (r) => r.name, width: 36 },
-          { header: 'Type', value: (r) => r.type },
-          { header: `Debit ${local}`, value: (r) => Number(r.debitLocal), type: 'money' },
-          { header: `Credit ${local}`, value: (r) => Number(r.creditLocal), type: 'money' },
-          { header: 'Debit USD equivalent', value: (r) => Number(r.debitUsd), type: 'money' },
-          { header: 'Credit USD equivalent', value: (r) => Number(r.creditUsd), type: 'money' },
+          { header: 'Account', value: (r) => r.label, width: 38 },
+          { header: 'Ledger name', value: (r) => (r.label === r.name ? '' : r.name), width: 30 },
+          { header: 'Category', value: (r) => r.type },
+          { header: `Opening debit ${local}`, value: (r) => Number(r.openingDebitLocal), type: 'money' },
+          { header: `Opening credit ${local}`, value: (r) => Number(r.openingCreditLocal), type: 'money' },
+          { header: `Period debit ${local}`, value: (r) => Number(r.periodDebitLocal), type: 'money' },
+          { header: `Period credit ${local}`, value: (r) => Number(r.periodCreditLocal), type: 'money' },
+          { header: `Closing debit ${local}`, value: (r) => Number(r.debitLocal), type: 'money' },
+          { header: `Closing credit ${local}`, value: (r) => Number(r.creditLocal), type: 'money' },
+          { header: 'Closing debit USD equivalent', value: (r) => Number(r.debitUsd), type: 'money' },
+          { header: 'Closing credit USD equivalent', value: (r) => Number(r.creditUsd), type: 'money' },
         ],
       });
     },
@@ -1092,13 +1170,29 @@ const REPORTS: Record<string, Report> = {
       const local = user.activeCompany.localCurrency;
       const sheet = await getBalanceSheet({ companyId: user.activeCompany.id, asOf });
 
-      const rows: StatementRow[] = [
-        ...pnlSection('Assets', sheet.assets.lines, { usd: sheet.assets.totalUsd, local: sheet.assets.totalLocal }),
-        ...pnlSection('Liabilities', sheet.liabilities.lines, {
-          usd: sheet.liabilities.totalUsd,
-          local: sheet.liabilities.totalLocal,
+      // Under the headings of the client's requirements document, as on screen.
+      const grouped = (title: string, groups: readonly string[], section: typeof sheet.assets): StatementRow[] => [
+        { kind: 'section', label: title },
+        ...groups.flatMap((group): StatementRow[] => {
+          const lines = section.lines.filter((l) => l.group === group);
+          if (lines.length === 0) return [];
+          return [
+            { kind: 'note', label: group },
+            ...lines.map((line): StatementRow => ({ kind: 'line', label: line.displayName, code: line.code, values: [Number(line.amountLocal), Number(line.amountUsd)] })),
+            {
+              kind: 'total',
+              label: `Total ${group.toLowerCase()}`,
+              values: [Number(sum(lines.map((l) => l.amountLocal))), Number(sum(lines.map((l) => l.amountUsd)))],
+            },
+          ];
         }),
-        ...pnlSection('Equity', sheet.equity.lines, { usd: sheet.equity.totalUsd, local: sheet.equity.totalLocal }),
+        { kind: 'total', label: `Total ${title.toLowerCase()}`, values: [Number(section.totalLocal), Number(section.totalUsd)] },
+        { kind: 'spacer' },
+      ];
+      const rows: StatementRow[] = [
+        ...grouped('Assets', BALANCE_SHEET_GROUPS.ASSET, sheet.assets),
+        ...grouped('Liabilities', BALANCE_SHEET_GROUPS.LIABILITY, sheet.liabilities),
+        ...grouped('Equity', BALANCE_SHEET_GROUPS.EQUITY, sheet.equity),
         {
           kind: 'grand',
           label: 'Liabilities and equity',

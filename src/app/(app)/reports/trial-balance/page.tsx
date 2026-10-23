@@ -22,7 +22,7 @@ import { PrintHeader } from '@/components/shared/print-header';
 import { ReportSummary } from '@/components/shared/report-summary';
 import { dec, type Decimal } from '@/lib/money';
 import { transactionCurrencies } from '@/lib/company-currencies';
-import { groupForClient } from '@/lib/trial-balance-view';
+import { clientLabel, isUnusedInPeriod } from '@/lib/trial-balance-view';
 
 export const metadata: Metadata = { title: 'Trial Balance' };
 export const dynamic = 'force-dynamic';
@@ -40,7 +40,7 @@ export default async function TrialBalancePage({
     vendor?: string;
     warehouse?: string;
     shipment?: string;
-    /** "accounts" lists every ledger account; otherwise the client's view. */
+    /** "all" adds the accounts with nothing in them; otherwise they are left out. */
     view?: string;
   }>;
 }) {
@@ -51,7 +51,10 @@ export default async function TrialBalancePage({
 
   // "As at" is the closing date; a start date turns on opening and movement.
   const asOfDate = dayParam(query.to) ?? dayParam(query.asOf) ?? companyToday(user.activeCompany.timezone);
-  const fromDate = dayParam(query.from) ?? undefined;
+  // The period always has a start, so opening, movement and closing are all
+  // shown (the requirements' seven columns). The default is the first of the
+  // closing date's month — the same date the period picker shows.
+  const fromDate = dayParam(query.from) ?? new Date(Date.UTC(asOfDate.getUTCFullYear(), asOfDate.getUTCMonth(), 1));
   const filters = {
     accountType: query.type || null,
     currency: query.currency || null,
@@ -78,8 +81,12 @@ export default async function TrialBalancePage({
     getTrialBalanceReport({ companyId, from: fromDate, to: asOfDate, filters }),
     prisma.account.findMany({
       where: { companyId: user.activeCompany.id },
+      orderBy: { code: 'asc' },
       select: {
         id: true,
+        code: true,
+        name: true,
+        type: true,
         currency: true,
         systemKey: true,
         cashBankAccounts: { select: { currency: true }, orderBy: { currency: 'asc' } },
@@ -87,15 +94,36 @@ export default async function TrialBalancePage({
     }),
   ]);
   /*
-   * The client's view unless every account is asked for: system accounts in
-   * plain words, accounts that mean the same thing on one line. Display only —
-   * the totals below are read from the same rows either way.
+   * One line per ledger account, under a plain display name where the
+   * ledger's is a technical one (the ledger name beneath it). "Show unused
+   * accounts" adds the accounts with nothing brought forward, nothing moved
+   * and nothing left; an account with any of the three is always listed.
    */
-  const detailed = query.view === 'accounts';
-  const lines = detailed
-    ? trial.rows.map((row) => ({ ...row, key: row.accountId, label: row.name, accounts: [{ accountId: row.accountId, code: row.code, name: row.name }] }))
-    : groupForClient(trial.rows, new Map(accountCurrencies.map((a) => [a.id, { systemKey: a.systemKey }])));
-  const viewHref = (view: 'accounts' | null) => {
+  const showUnused = query.view === 'all';
+  const metaById = new Map(accountCurrencies.map((a) => [a.id, { systemKey: a.systemKey }]));
+  const zero = dec(0);
+  const listed = new Set(trial.rows.map((r) => r.accountId));
+  const rows = showUnused && !filtered
+    ? [
+        ...trial.rows,
+        ...accountCurrencies
+          .filter((a) => !listed.has(a.id))
+          .map((a) => ({
+            accountId: a.id, code: a.code, name: a.name, type: a.type as string,
+            debitUsd: zero, creditUsd: zero, debitLocal: zero, creditLocal: zero,
+            openingDebitUsd: zero, openingCreditUsd: zero, periodDebitUsd: zero, periodCreditUsd: zero,
+            openingDebitLocal: zero, openingCreditLocal: zero, periodDebitLocal: zero, periodCreditLocal: zero,
+          })),
+      ].sort((a, b) => a.code.localeCompare(b.code))
+    : trial.rows.filter((r) => !isUnusedInPeriod(r));
+  const lines = rows.map((row) => ({
+    ...row,
+    key: row.accountId,
+    label: clientLabel(row, metaById.get(row.accountId)),
+    accounts: [{ accountId: row.accountId, code: row.code, name: row.name }],
+  }));
+  const unusedCount = accountCurrencies.length - listed.size;
+  const viewHref = (view: 'all' | null) => {
     const params = new URLSearchParams(
       Object.entries(query).filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1] !== '' && entry[0] !== 'view'),
     );
@@ -125,7 +153,19 @@ export default async function TrialBalancePage({
           <>
             <FavouriteStar href="/reports/trial-balance" label="Trial Balance" />
             <CustomizePanel report="Trial Balance" fields={['period']} />
-            <ExportLinks href={exportHref('trial-balance', { asOf: asOfDate.toISOString().slice(0, 10) })} />
+            <ExportLinks
+              href={exportHref('trial-balance', {
+                from: fromDate.toISOString().slice(0, 10),
+                to: asOfDate.toISOString().slice(0, 10),
+                type: query.type,
+                currency: query.currency,
+                customer: query.customer,
+                vendor: query.vendor,
+                warehouse: query.warehouse,
+                shipment: query.shipment,
+                view: query.view,
+              })}
+            />
             <ReportShareButton report="trial-balance" />
           </>
         }
@@ -169,7 +209,7 @@ export default async function TrialBalancePage({
             value: formatMoney(dec(trial.totals.debitLocal).minus(trial.totals.creditLocal), local),
             lead: true,
             tone: trial.isBalancedLocal && trial.isBalanced ? 'default' : 'negative',
-            hint: detailed ? `${trial.rows.length} accounts with a balance` : `${lines.length} lines · ${trial.rows.length} accounts`,
+            hint: `${lines.length} accounts listed`,
           },
         ]}
         status={
@@ -190,20 +230,19 @@ export default async function TrialBalancePage({
             <div>
               <CardTitle>Account balances</CardTitle>
               <CardDescription>
-                {trial.hasOpening
-                  ? 'Where each account stood when the period opened, what moved through it, and where it stands now. Only accounts with a balance or a movement are listed.'
-                  : 'From the first entry to the date chosen, so the opening is nil and the movement is the whole history. Only accounts with a balance are listed.'}
-                {detailed
-                  ? ' Every ledger account, under its ledger name.'
-                  : ' In plain words: accounts that mean the same thing share a line, their debits and credits added up separately so the totals are the ledger’s to the cent.'}
+                {`Every ledger account: where it stood on ${formatDate(fromDate)}, what moved through it in the period, and where it stood on ${formatDate(asOfDate)}. `}
+                {showUnused
+                  ? 'Unused accounts — nothing brought forward, nothing moved, nothing left — are included.'
+                  : 'Accounts with nothing brought forward, nothing moved and nothing left are left out; an account with any activity is always listed.'}
+                {' A system account is shown under a plain name, with its ledger name beneath. Click any account to open its ledger.'}
               </CardDescription>
             </div>
             <Link
-              href={viewHref(detailed ? null : 'accounts')}
+              href={viewHref(showUnused ? null : 'all')}
               className="shrink-0 text-sm font-medium text-forest-800 underline-offset-2 hover:underline print:hidden"
               data-testid="tb-view-toggle"
             >
-              {detailed ? 'Simple view' : 'Show every account'}
+              {showUnused ? 'Hide unused accounts' : `Show unused accounts (${unusedCount})`}
             </Link>
           </div>
         </CardHeader>
@@ -213,7 +252,6 @@ export default async function TrialBalancePage({
               <THead>
                 <TR className="hover:bg-transparent">
                   <TH>Account</TH>
-                  <TH>Type</TH>
                   {trial.hasOpening ? (
                     <>
                       <TH numeric>Opening debit</TH>
@@ -250,14 +288,14 @@ export default async function TrialBalancePage({
                                 href={ledgerHref(a.accountId, currencyByAccount.get(a.accountId))}
                                 className="hover:text-gold-700"
                               >
-                                {a.code} {a.name}
+                                Ledger: {a.name}
                               </Link>
                             </span>
                           ))}
                         </span>
                       ) : null}
+                      <span className="block text-[11px] text-ink-subtle">{titleCase(row.type)}</span>
                     </TD>
-                    <TD className="text-xs">{titleCase(row.type)}</TD>
                     {trial.hasOpening ? (
                       <>
                         <TD numeric className="text-ink-muted">
@@ -285,7 +323,7 @@ export default async function TrialBalancePage({
               </TBody>
               <TFoot>
                 <tr>
-                  <TD colSpan={2}>Total</TD>
+                  <TD>Total</TD>
                   {trial.hasOpening ? (
                     <>
                       <TD numeric>

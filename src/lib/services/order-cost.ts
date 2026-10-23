@@ -61,6 +61,25 @@ export type OrderExpenseLine = {
   paid: boolean;
   payment: ExpensePaymentStatus;
   paidFrom: string | null;
+  /**
+   * The cost, what has been settled against it and what is still owed, in the
+   * company's currency at the cost's own rate. A cost paid later stays the
+   * same cost; its settlement only reduces what is owed.
+   */
+  originalLocal: Decimal;
+  settledLocal: Decimal;
+  outstandingLocal: Decimal;
+};
+
+/** One invoice's sale of this order's coffee. */
+export type OrderSaleLine = {
+  invoiceId: string;
+  invoiceNumber: string;
+  invoiceDate: Date;
+  customerName: string;
+  quantityKg: Decimal;
+  revenueLocal: Decimal;
+  revenueUsd: Decimal;
 };
 
 export type OrderCostSheet = {
@@ -125,6 +144,15 @@ export type OrderCostSheet = {
   lines: OrderCostLine[];
   expenses: OrderExpenseLine[];
   byCategory: Array<{ category: string; capitalised: boolean; count: number; amountUsd: Decimal; amountLocal: Decimal }>;
+  /** Every invoice that sold this order's coffee, with the KG and value from this order. */
+  sales: OrderSaleLine[];
+  /** KG on those invoices, and the average price they were sold at. */
+  invoicedKg: Decimal;
+  averageSellingPriceLocal: Decimal;
+  averageSellingPriceUsd: Decimal;
+  /** Settled and still owed of the shipment's expenses, in the company's currency. */
+  expenseSettledLocal: Decimal;
+  expenseOutstandingLocal: Decimal;
 };
 
 export async function getOrderCostSheets(companyId: string): Promise<OrderCostSheet[]> {
@@ -172,7 +200,7 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
 
   const shipmentIds = contracts.flatMap((c) => c.shipments.map((s) => s.id));
 
-  const [expenses, sales, costings] = await Promise.all([
+  const [expenses, sales, invoiceSales, costings] = await Promise.all([
     prisma.expense.findMany({
       where: { companyId, shipmentId: { in: shipmentIds }, status: 'POSTED', kind: 'SHIPMENT' },
       include: {
@@ -207,6 +235,22 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
       WHERE si."companyId" = ${companyId} AND si."status" = 'POSTED'
         AND b."shipmentId" = ANY(${shipmentIds})
       GROUP BY b."id", b."shipmentId"
+    `,
+    // The same sales, invoice by invoice, for the shipment's sales detail.
+    prisma.$queryRaw<Array<{ shipmentId: string; invoiceId: string; invoiceNumber: string; invoiceDate: Date; customerName: string; kg: string; revenueUsd: string; revenueLocal: string }>>`
+      SELECT b."shipmentId", si."id" AS "invoiceId", si."invoiceNumber", si."invoiceDate", c."customerName",
+             SUM(sil."quantityKg")::text AS kg,
+             SUM(sil."lineTotalUsd")::text AS "revenueUsd",
+             SUM(CASE WHEN si."currency" = (SELECT co."localCurrency" FROM companies co WHERE co."id" = si."companyId")
+                      THEN sil."lineTotal" ELSE sil."lineTotalUsd" * si."rateLocalPerUsd" END)::text AS "revenueLocal"
+      FROM sales_invoice_lines sil
+      JOIN sales_invoices si ON si."id" = sil."salesInvoiceId"
+      JOIN customers c ON c."id" = si."customerId"
+      JOIN batches b ON b."id" = sil."batchId"
+      WHERE si."companyId" = ${companyId} AND si."status" = 'POSTED'
+        AND b."shipmentId" = ANY(${shipmentIds})
+      GROUP BY b."shipmentId", si."id", si."invoiceNumber", si."invoiceDate", c."customerName"
+      ORDER BY si."invoiceDate", si."invoiceNumber"
     `,
     Promise.all(shipmentIds.map((shipmentId) => getBatchCostings({ companyId, shipmentId }))).then((all) =>
       new Map(all.flat().map((c) => [c.batchId, c])),
@@ -273,6 +317,9 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
           paid: settlement?.status === 'PAID',
           payment: settlement?.status ?? 'UNPAID',
           paidFrom: settlement?.paidFrom ?? null,
+          originalLocal: toMoney(settlement?.grossLocal ?? e.amountLocal),
+          settledLocal: toMoney(settlement?.paidLocal ?? 0),
+          outstandingLocal: toMoney(settlement?.outstandingLocal ?? e.amountLocal),
         };
       }),
     );
@@ -340,6 +387,21 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
     const orderFx = fx.get(contract.id) ?? { costs: [], sales: [] };
 
     const allBatchesContainers = new Set(lines.map((l) => l.containerNumber).filter(Boolean));
+    // Invoice by invoice; one invoice selling from two of this order's
+    // shipments is one line here.
+    const salesByInvoice = new Map<string, OrderSaleLine>();
+    for (const row of invoiceSales.filter((r) => mine.has(r.shipmentId))) {
+      const line = salesByInvoice.get(row.invoiceId) ?? {
+        invoiceId: row.invoiceId, invoiceNumber: row.invoiceNumber, invoiceDate: row.invoiceDate, customerName: row.customerName,
+        quantityKg: dec(0), revenueLocal: dec(0), revenueUsd: dec(0),
+      };
+      line.quantityKg = toQuantity(line.quantityKg.plus(row.kg));
+      line.revenueLocal = toMoney(line.revenueLocal.plus(row.revenueLocal));
+      line.revenueUsd = toMoney(line.revenueUsd.plus(row.revenueUsd));
+      salesByInvoice.set(row.invoiceId, line);
+    }
+    const saleLines = [...salesByInvoice.values()];
+    const invoicedKg = toQuantity(sum(saleLines.map((l) => l.quantityKg)));
 
     return {
       contractId: contract.id,
@@ -378,7 +440,8 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
       grossProfitLocal: toMoney(revenueLocal.minus(cogsLocal)),
       netProfitUsd: toMoney(grossProfitUsd.minus(periodExpenseUsd)),
       netProfitLocal: toMoney(revenueLocal.minus(cogsLocal).minus(periodExpenseLocal)),
-      marginPct: revenueUsd.greaterThan(0) ? grossProfitUsd.dividedBy(revenueUsd).times(100).toDecimalPlaces(1) : new Decimal(0),
+      // On the company's-currency figures, the ones the statement leads with.
+      marginPct: revenueLocal.greaterThan(0) ? revenueLocal.minus(cogsLocal).dividedBy(revenueLocal).times(100).toDecimalPlaces(1) : new Decimal(0),
       remainingValueUsd,
       remainingValueLocal,
       costFx: summariseFx(orderFx.costs, local),
@@ -388,6 +451,12 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
       lines,
       expenses: orderExpenses,
       byCategory: [...byCategoryMap.values()].sort((a, b) => a.category.localeCompare(b.category)),
+      sales: saleLines,
+      invoicedKg,
+      averageSellingPriceLocal: invoicedKg.greaterThan(0) ? toUnitCost(revenueLocal.dividedBy(invoicedKg)) : new Decimal(0),
+      averageSellingPriceUsd: invoicedKg.greaterThan(0) ? toUnitCost(revenueUsd.dividedBy(invoicedKg)) : new Decimal(0),
+      expenseSettledLocal: toMoney(sum(orderExpenses.map((e) => e.settledLocal))),
+      expenseOutstandingLocal: toMoney(sum(orderExpenses.map((e) => e.outstandingLocal))),
     };
   });
 }

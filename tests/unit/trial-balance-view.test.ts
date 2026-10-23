@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clientLabel, groupForClient } from '@/lib/trial-balance-view';
+import { clientLabel, isUnusedInPeriod } from '@/lib/trial-balance-view';
 import { dec } from '@/lib/money';
 import type { TrialBalanceRow } from '@/lib/services/reports';
 
@@ -53,48 +53,35 @@ const meta = new Map<string, { systemKey: string | null }>([
   ['sales', { systemKey: 'SALES_REVENUE' }],
 ]);
 
-const total = (list: Array<Pick<TrialBalanceRow, 'debitLocal' | 'creditLocal' | 'debitUsd' | 'creditUsd'>>) => ({
-  debitLocal: list.reduce((t, r) => t.plus(r.debitLocal), dec(0)).toFixed(4),
-  creditLocal: list.reduce((t, r) => t.plus(r.creditLocal), dec(0)).toFixed(4),
-  debitUsd: list.reduce((t, r) => t.plus(r.debitUsd), dec(0)).toFixed(4),
-  creditUsd: list.reduce((t, r) => t.plus(r.creditUsd), dec(0)).toFixed(4),
-});
-
 describe('the trial balance in the client’s words', () => {
-  it('names system accounts plainly, by system key', () => {
+  it('gives technical system accounts plain names, by system key', () => {
     expect(clientLabel(rows[1], meta.get('ar'))).toBe('Customer Receivables');
-    expect(clientLabel(rows[3], meta.get('stock'))).toBe('Inventory');
     expect(clientLabel(rows[4], meta.get('ap'))).toBe('Supplier Payables');
-    expect(clientLabel(rows[7], meta.get('sales'))).toBe('Sales');
+    expect(clientLabel(rows[2], meta.get('agent'))).toBe('Customer Collections Held by Agents');
+    expect(clientLabel({ name: 'Accrued Expenses' }, { systemKey: 'ACCRUED_EXPENSES' })).toBe('Unpaid Expenses');
   });
 
-  it('reads the agent control by its side: owed to the agent when in credit', () => {
-    expect(clientLabel(rows[2], meta.get('agent'))).toBe('Agent Payables');
-    expect(clientLabel({ ...rows[2], debitLocal: dec(500), creditLocal: dec(0) }, meta.get('agent'))).toBe('Agent Receivables');
+  it('never gives two different accounts the same name', () => {
+    // Agent collections and agent commission are different money.
+    expect(clientLabel({ name: 'Agent Commission Payable' }, { systemKey: 'AGENT_COMMISSION_PAYABLE' })).not.toBe(clientLabel(rows[2], meta.get('agent')));
+    // Both supplier-control accounts keep a line each; names never merge lines.
+    const labels = rows.map((r) => `${r.accountId}:${clientLabel(r, meta.get(r.accountId))}`);
+    expect(new Set(labels).size).toBe(rows.length);
   });
 
-  it('leaves the names the client chose', () => {
+  it('leaves the names that are already plain, and the names the client chose', () => {
     expect(clientLabel(rows[0], meta.get('bank'))).toBe('ATIJJARI BANK (MAD)');
     expect(clientLabel(rows[6], meta.get('gift'))).toBe('GIFT EXP');
+    expect(clientLabel(rows[3], meta.get('stock'))).toBe('Inventory — Coffee Stock');
+    expect(clientLabel(rows[7], meta.get('sales'))).toBe('Coffee Sales');
   });
 
-  it('puts accounts meaning the same thing on one line, naming every account behind it', () => {
-    const lines = groupForClient(rows, meta);
-    const payables = lines.find((l) => l.label === 'Supplier Payables')!;
-    expect(payables.accounts.map((a) => a.code)).toEqual(['2000', '2001']);
-    // Debits and credits added separately, not netted.
-    expect(payables.creditLocal.toFixed(2)).toBe('12770522.62');
-    expect(payables.debitLocal.toFixed(2)).toBe('5000.00');
-    expect(lines).toHaveLength(rows.length - 1);
-  });
-
-  it('never moves a total: the grouped report is the ledger to the cent', () => {
-    expect(total(groupForClient(rows, meta))).toEqual(total(rows));
-  });
-
-  it('keeps an asset and a liability apart even if they share a label', () => {
-    const odd = [row('x', '1', 'Suspense', 'ASSET', '10', '0'), row('y', '2', 'Suspense', 'LIABILITY', '0', '10')];
-    const lines = groupForClient(odd, new Map());
-    expect(lines).toHaveLength(2);
+  it('calls an account unused only with nothing brought forward, nothing moved and nothing left', () => {
+    const blank = { ...row('x', '1', 'Prepayments', 'ASSET', '0', '0'), periodDebitLocal: dec(0), periodCreditLocal: dec(0), periodDebitUsd: dec(0), periodCreditUsd: dec(0) };
+    expect(isUnusedInPeriod(blank)).toBe(true);
+    // Moved in the period and back to nil: shown.
+    expect(isUnusedInPeriod({ ...blank, periodDebitLocal: dec(100), periodCreditLocal: dec(100) })).toBe(false);
+    // Brought forward, nothing new: shown.
+    expect(isUnusedInPeriod({ ...blank, openingDebitLocal: dec(50), debitLocal: dec(50) })).toBe(false);
   });
 });

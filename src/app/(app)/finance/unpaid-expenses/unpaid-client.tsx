@@ -232,9 +232,9 @@ export function UnpaidExpensesClient({
         <div className="inline-flex rounded-lg border border-line bg-surface p-0.5" role="group" aria-label="Which costs">
           {(
             [
-              ['outstanding', 'Outstanding'],
-              ['settled', 'Settled'],
-              ['all', 'All'],
+              ['outstanding', 'Outstanding expenses'],
+              ['settled', 'Settled expenses'],
+              ['all', 'All expenses — cost history'],
             ] as const
           ).map(([value, label]) => (
             <button

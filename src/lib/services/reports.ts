@@ -12,6 +12,8 @@ import { resolveLedgerViewCurrency, pickCashBankCurrency } from '@/lib/ledger-cu
 import type { Tx } from '@/lib/db';
 import { getInvoicePaymentStatus } from '@/lib/invoice-payment';
 import { getBatchCostingIndex } from '@/lib/services/landed-cost';
+import { balanceSheetGroup, type BalanceSheetAccountFacts } from '@/lib/balance-sheet-groups';
+import { clientLabel } from '@/lib/trial-balance-view';
 
 const SETTLEMENT_WORDS = { UNPAID: 'Unpaid', PARTIAL: 'Partially Paid', PAID: 'Paid' } as const;
 
@@ -151,8 +153,17 @@ export async function getTrialBalanceReport(params: { companyId: string; from?: 
     const periodDebitLocal = movement ? dec(movement.debitLocal) : new Decimal(0);
     const periodCreditLocal = movement ? dec(movement.creditLocal) : new Decimal(0);
 
-    // An account that neither holds a balance nor moved is not on the report.
-    if (netUsd.isZero() && netLocal.isZero() && openingNet.isZero() && periodDebit.isZero() && periodCredit.isZero()) {
+    // An account that neither holds a balance nor moved is not on the report —
+    // in either currency. Testing only the USD side dropped an account whose
+    // movements are dirham-only (Inventory in Transit, restated in MAD): it
+    // opened October at MAD 399,724.40, emptied, and vanished from the period
+    // trial balance, leaving its opening and movement columns out of balance.
+    if (
+      netUsd.isZero() && netLocal.isZero() &&
+      openingNet.isZero() && openingNetLocal.isZero() &&
+      periodDebit.isZero() && periodCredit.isZero() &&
+      periodDebitLocal.isZero() && periodCreditLocal.isZero()
+    ) {
       continue;
     }
 
@@ -368,10 +379,63 @@ export async function getProfitAndLoss(params: {
 export type BalanceSheetSection = { title: string; lines: PnlLine[]; totalUsd: Decimal; totalLocal: Decimal };
 
 /** A line on the statement, with the sub-heading it sits under — current or non-current. */
-export type BalanceSheetLine = PnlLine & { group: string };
+export type BalanceSheetLine = PnlLine & {
+  group: string;
+  /** The plain name the statement shows (the Trial Balance's); `name` stays the ledger's. */
+  displayName: string;
+};
+
+/**
+ * What the ledger itself says about each account, for placing it under the
+ * Balance Sheet headings of the client's requirements document: its system
+ * role, whether a drawer is kept on it, whether loans were posted to it (the
+ * same test the dashboard's loan figures use), and whether it carries an
+ * entry the intercompany loan posted in both FID companies at once.
+ */
+export async function getBalanceSheetFacts(companyId: string): Promise<Map<string, BalanceSheetAccountFacts>> {
+  const [accounts, loans, related] = await Promise.all([
+    prisma.account.findMany({
+      where: { companyId },
+      select: { id: true, code: true, type: true, reportGroup: true, systemKey: true, agentId: true, _count: { select: { cashBankAccounts: true } } },
+    }),
+    prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT a."id" FROM accounts a
+       WHERE a."companyId" = ${companyId}
+         AND (lower(a."name") LIKE 'loan from%' OR lower(a."name") LIKE 'loan to%')
+      UNION
+      SELECT jl."accountId" FROM journal_lines jl JOIN journal_entries je ON je."id" = jl."journalEntryId"
+       WHERE je."companyId" = ${companyId} AND je."sourceType" = 'MANUAL' AND je."sourceId" LIKE 'LOAN%'
+         AND jl."cashBankAccountId" IS NULL`,
+    prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT DISTINCT jl."accountId" AS id FROM journal_lines jl JOIN journal_entries je ON je."id" = jl."journalEntryId"
+       WHERE je."companyId" = ${companyId} AND jl."cashBankAccountId" IS NULL
+         AND EXISTS (SELECT 1 FROM journal_entries other WHERE other."sourceId" = je."sourceId" AND other."companyId" <> je."companyId")`,
+  ]);
+  const loanIds = new Set(loans.map((r) => r.id));
+  const relatedIds = new Set(related.map((r) => r.id));
+  const control = new Set<string>([ACCOUNT_KEYS.AGENT_CLEARING, ACCOUNT_KEYS.AGENT_COMMISSION_PAYABLE, ACCOUNT_KEYS.ACCOUNTS_PAYABLE, ACCOUNT_KEYS.ACCOUNTS_RECEIVABLE]);
+  return new Map(
+    accounts.map((a) => [
+      a.id,
+      {
+        code: a.code,
+        type: a.type,
+        reportGroup: a.reportGroup,
+        systemKey: a.systemKey,
+        isCashBank: a._count.cashBankAccounts > 0,
+        // An agent's own loan account is a loan; his collections and commission controls are not.
+        isLoan: loanIds.has(a.id) || (Boolean(a.agentId) && !control.has(a.systemKey ?? '')),
+        isRelatedParty: relatedIds.has(a.id),
+      },
+    ]),
+  );
+}
 
 export async function getBalanceSheet(params: { companyId: string; asOf: Date }) {
-  const rows = await accountBalances({ companyId: params.companyId, to: params.asOf });
+  const [rows, facts] = await Promise.all([
+    accountBalances({ companyId: params.companyId, to: params.asOf }),
+    getBalanceSheetFacts(params.companyId),
+  ]);
 
   const assets: BalanceSheetLine[] = [];
   const liabilities: BalanceSheetLine[] = [];
@@ -397,18 +461,14 @@ export async function getBalanceSheet(params: { companyId: string; asOf: Date })
       accountId: row.accountId,
       code: row.code,
       name: row.name,
+      // The same plain name as the trial balance (display only; the account is untouched).
+      displayName: clientLabel(row, { systemKey: facts.get(row.accountId)?.systemKey ?? null }),
       amountUsd: toMoney(row.type === 'ASSET' ? debitMinusCreditUsd : debitMinusCreditUsd.negated()),
       amountLocal: toMoney(row.type === 'ASSET' ? debitMinusCreditLocal : debitMinusCreditLocal.negated()),
-      group:
-        row.reportGroup === 'NON_CURRENT_ASSET'
-          ? 'Fixed assets'
-          : row.reportGroup === 'NON_CURRENT_LIABILITY'
-            ? 'Long-term liabilities'
-            : row.type === 'ASSET'
-              ? 'Current assets'
-              : row.type === 'LIABILITY'
-                ? 'Current liabilities'
-                : 'Equity',
+      // The client document's headings (section 6), by what the account is.
+      group: balanceSheetGroup(
+        facts.get(row.accountId) ?? { type: row.type, reportGroup: row.reportGroup, systemKey: null, isCashBank: false, isLoan: false, isRelatedParty: false },
+      ),
     };
 
     if (row.type === 'ASSET') assets.push(line);
@@ -420,10 +480,11 @@ export async function getBalanceSheet(params: { companyId: string; asOf: Date })
     // A derived line, not an account, so there is nothing to drill into.
     accountId: '',
     code: '3900',
-    name: 'Current Period Result',
+    name: 'Current-year profit or loss',
+    displayName: 'Current-year profit or loss',
     amountUsd: toMoney(retainedThisPeriodUsd),
     amountLocal: toMoney(retainedThisPeriodLocal),
-    group: 'Equity',
+    group: 'Current-year profit or loss',
   });
 
   const section = (title: string, lines: BalanceSheetLine[]) => ({

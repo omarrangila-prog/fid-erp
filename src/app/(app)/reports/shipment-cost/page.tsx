@@ -5,12 +5,11 @@ import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, SHIPMENT_STATUS_META } from '@/lib/constants';
 import { getOrderCostSheets, type OrderCostSheet } from '@/lib/services/order-cost';
 import { formatMoney, formatDate, formatQuantityKg } from '@/lib/format';
-import { dec, sum } from '@/lib/money';
+import { dec, sum, toMoney, type Decimal } from '@/lib/money';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/shared/page-header';
-import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableWrap, TBody, TD, TFoot, TH, THead, TR } from '@/components/ui/table';
-import { Badge, StatusBadge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/feedback';
 import { ReportShareButton } from '@/components/share/report-share-button';
 import { exportHref } from '@/components/shared/excel-link';
@@ -18,7 +17,6 @@ import { ExportLinks } from '@/components/shared/export-links';
 import { FavouriteStar } from '@/components/reports/report-statement';
 import { PrintHeader } from '@/components/shared/print-header';
 import { MemoCell } from '@/components/shared/memo-cell';
-import { DualAmount } from '@/components/shared/dual-amount';
 import { businessNumber } from '@/lib/short-number';
 import { OpenAllForPrint } from '@/app/(app)/reports/shipment-cost/open-for-print';
 
@@ -65,24 +63,16 @@ export default async function ShipmentCostPage({
       )
     : all;
 
-  const totals = {
-    landedUsd: sum(sheets.map((s) => s.landedUsd)),
-    landedLocal: sum(sheets.map((s) => s.landedLocal)),
-    expenseLocal: sum(sheets.map((s) => s.expenseLocal)),
-    profitUsd: sum(sheets.map((s) => s.grossProfitUsd)),
-    profitLocal: sum(sheets.map((s) => s.grossProfitLocal)),
-    kg: sum(sheets.map((s) => s.orderedKg)),
-  };
-
   return (
-    <div className="space-y-6">
+    <div className="print-landscape space-y-6">
       <PageHeader
         title="Shipment Costing"
-        description="One row per shipment. Open a row for its containers, every expense, the landed cost and what it earned."
+        description="One line per shipment (ICUL/FID order). Click a shipment for its purchase, every direct expense with what is settled and owed, its sales, the stock left and its profit."
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Shipment Costing' }]}
         actions={
           <>
             <FavouriteStar href="/reports/shipment-cost" label="Shipment Costing" />
+            <ExportLinks href={exportHref('shipment-cost', {})} />
             <ReportShareButton report="shipment-costing" />
           </>
         }
@@ -114,22 +104,7 @@ export default async function ShipmentCostPage({
             </form>
           </div>
 
-          <div className={cn('grid gap-3 sm:grid-cols-2 print:hidden', showProfit ? 'lg:grid-cols-4' : 'lg:grid-cols-3')}>
-            {[
-              { label: 'Coffee bought', value: formatQuantityKg(totals.kg) },
-              { label: 'Costs added', value: formatMoney(totals.expenseLocal, local) },
-              { label: 'Total landed cost', value: formatMoney(totals.landedLocal, local), sub: formatMoney(totals.landedUsd, 'USD') },
-              ...(showProfit ? [{ label: 'Gross profit', value: formatMoney(totals.profitLocal, local), sub: formatMoney(totals.profitUsd, 'USD') }] : []),
-            ].map((card) => (
-              <Card key={card.label}>
-                <CardContent className="pt-5">
-                  <p className="text-xs text-ink-muted">{card.label}</p>
-                  <p className="mt-1 text-lg font-semibold tabular-nums text-ink">{card.value}</p>
-                  {card.sub ? <p className="mt-0.5 text-[11px] text-ink-subtle">{card.sub}</p> : null}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          <Overview sheets={sheets} local={local} showProfit={showProfit} />
 
           <div className="space-y-3" data-testid="shipment-costing-list">
             {sheets.map((sheet, index) => (
@@ -149,6 +124,91 @@ export default async function ShipmentCostPage({
   );
 }
 
+/**
+ * Every shipment on one line: the figures a trader reads first. Opening a
+ * shipment shows every measure the requirements list, per-KG ones included
+ * (and the Excel export carries them all on this line). Each order is counted once;
+ * the totals are of the lines above them.
+ */
+function Overview({ sheets, local, showProfit }: { sheets: OrderCostSheet[]; local: string; showProfit: boolean }) {
+  const total = (pick: (s: OrderCostSheet) => Decimal) => sum(sheets.map(pick));
+  const revenue = total((s) => s.revenueLocal);
+  const gross = total((s) => s.grossProfitLocal);
+  const money = (v: Decimal) => formatMoney(v, local);
+  return (
+    <TableWrap>
+      <Table data-testid="shipment-overview" className="text-xs [&_td]:px-2.5 [&_th]:px-2.5">
+        <THead>
+          <TR className="hover:bg-transparent">
+            <TH>Shipment</TH>
+            <TH numeric>Purchased KG</TH>
+            <TH numeric>Purchase value</TH>
+            <TH numeric>Direct expenses</TH>
+            <TH numeric>Landed cost</TH>
+            <TH numeric>Sold KG</TH>
+            <TH numeric>Sales value</TH>
+            <TH numeric>Remaining KG</TH>
+            <TH numeric>Closing stock value</TH>
+            {showProfit ? (
+              <>
+                <TH numeric>Gross profit / loss</TH>
+                <TH numeric>Gross margin</TH>
+              </>
+            ) : null}
+          </TR>
+        </THead>
+        <TBody>
+          {sheets.map((s) => (
+            <TR key={s.contractId}>
+              <TD>
+                <a href={`?open=${s.contractId}#order-${s.contractId}`} className="font-medium text-forest-800 hover:text-gold-700">
+                  {s.contractReference}
+                </a>
+                <span className="block text-[11px] text-ink-subtle">{s.vendorName}</span>
+              </TD>
+              <TD numeric>{formatQuantityKg(s.orderedKg)}</TD>
+              <TD numeric>{money(s.goodsLocal)}</TD>
+              <TD numeric>{money(s.capitalisedExpenseLocal)}</TD>
+              <TD numeric className="font-semibold">{money(s.landedLocal)}</TD>
+              <TD numeric>{formatQuantityKg(s.invoicedKg)}</TD>
+              <TD numeric>{money(s.revenueLocal)}</TD>
+              <TD numeric>{formatQuantityKg(s.remainingKg)}</TD>
+              <TD numeric>{money(s.remainingValueLocal)}</TD>
+              {showProfit ? (
+                <>
+                  <TD numeric className={cn('font-semibold', s.grossProfitLocal.isNegative() ? 'text-red-600' : 'text-gold-700')}>{money(s.grossProfitLocal)}</TD>
+                  <TD numeric>{s.revenueLocal.isZero() ? '—' : `${dec(s.marginPct).toFixed(1)}%`}</TD>
+                </>
+              ) : null}
+            </TR>
+          ))}
+        </TBody>
+        <TFoot>
+          <tr>
+            <TD>Total — {plural(sheets.length, 'shipment', 'shipments')}</TD>
+            <TD numeric>{formatQuantityKg(total((s) => s.orderedKg))}</TD>
+            <TD numeric>{money(total((s) => s.goodsLocal))}</TD>
+            <TD numeric>{money(total((s) => s.capitalisedExpenseLocal))}</TD>
+            <TD numeric>{money(total((s) => s.landedLocal))}</TD>
+            <TD numeric>{formatQuantityKg(total((s) => s.invoicedKg))}</TD>
+            <TD numeric>{money(revenue)}</TD>
+            <TD numeric>{formatQuantityKg(total((s) => s.remainingKg))}</TD>
+            <TD numeric>{money(total((s) => s.remainingValueLocal))}</TD>
+            {showProfit ? (
+              <>
+                <TD numeric>{money(gross)}</TD>
+                <TD numeric>{revenue.isZero() ? '—' : `${gross.dividedBy(revenue).times(100).toFixed(1)}%`}</TD>
+              </>
+            ) : null}
+          </tr>
+        </TFoot>
+      </Table>
+    </TableWrap>
+  );
+}
+
+const STATUS_WORDS = { PAID: 'Settled', PARTIAL: 'Partly settled', UNPAID: 'Outstanding' } as const;
+
 function OrderSection({
   sheet,
   ordinal,
@@ -164,40 +224,49 @@ function OrderSection({
 }) {
   const statuses = [...new Set(sheet.statuses)];
   const profitTone = sheet.grossProfitLocal.greaterThanOrEqualTo(0) ? 'text-gold-700' : 'text-red-600';
+  const money = (v: Decimal) => formatMoney(v, local);
+  // Every expense under its category, the category's subtotal after it.
+  const categories = [...new Set(sheet.expenses.map((e) => e.category))].sort((a, b) => a.localeCompare(b));
+  const cogsAndStock = sheet.cogsLocal.plus(sheet.remainingValueLocal);
+  // Bought but not yet received: costed, not yet in a warehouse to be sold.
+  const transitKg = sheet.orderedKg.minus(sheet.receivedKg);
+  const transitLocal = transitKg.greaterThan(0) ? toMoney(transitKg.times(sheet.costPerKgLocal)) : dec(0);
+  const unexplained = sheet.landedLocal.minus(cogsAndStock).minus(transitLocal);
+  const h3 = 'mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-muted';
   return (
     <details
-      className="group rounded-xl border border-line bg-surface shadow-card open:border-forest-300"
+      id={`order-${sheet.contractId}`}
+      className="group scroll-mt-24 rounded-xl border border-line bg-surface shadow-card open:border-forest-300"
       open={defaultOpen}
       data-testid="shipment-costing-row"
     >
       <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 [&::-webkit-details-marker]:hidden">
         <ChevronRight className="size-4 shrink-0 text-ink-muted transition-transform group-open:rotate-90" aria-hidden />
         <span className="min-w-[7rem]">
-          <span className="block text-sm font-semibold text-ink">Shipment {ordinal}</span>
-          <span className="block font-mono text-xs text-ink-muted">{sheet.contractReference}</span>
+          <span className="block text-sm font-semibold text-ink">{sheet.contractReference}</span>
+          <span className="block text-xs text-ink-muted">Shipment {ordinal} · {sheet.vendorName}</span>
         </span>
         <span className="text-xs text-ink-muted">
           {plural(sheet.items.length, 'item', 'items')} · {plural(sheet.containers, 'container', 'containers')}
-          <span className="block text-ink-subtle">{sheet.vendorName}</span>
         </span>
         <span className="tnum text-sm">
           {formatQuantityKg(sheet.orderedKg)}
-          <span className="block text-[11px] text-ink-subtle">{formatQuantityKg(sheet.remainingKg)} in stock</span>
+          <span className="block text-[11px] text-ink-subtle">{formatQuantityKg(sheet.remainingKg)} remaining</span>
         </span>
         <span className="tnum text-sm">
-          <span className="block text-[11px] text-ink-subtle">Costs added</span>
-          {formatMoney(sheet.expenseLocal, local)}
+          <span className="block text-[11px] text-ink-subtle">Direct expenses</span>
+          {money(sheet.capitalisedExpenseLocal)}
         </span>
         <span className="tnum text-sm">
           <span className="block text-[11px] text-ink-subtle">Total landed cost</span>
-          {formatMoney(sheet.landedLocal, local)}
-          <span className="block text-[11px] text-ink-subtle">{formatMoney(sheet.costPerKgLocal, local)} per KG</span>
+          {money(sheet.landedLocal)}
+          <span className="block text-[11px] text-ink-subtle">{money(sheet.costPerKgLocal)} per KG</span>
         </span>
         {showProfit ? (
           <span className={cn('tnum text-sm font-semibold', profitTone)}>
-            <span className="block text-[11px] font-normal text-ink-subtle">Profit</span>
-            {formatMoney(sheet.grossProfitLocal, local)}
-            <span className="block text-[11px] font-normal text-ink-subtle">{dec(sheet.marginPct).toFixed(1)}% margin</span>
+            <span className="block text-[11px] font-normal text-ink-subtle">Gross profit / loss</span>
+            {money(sheet.grossProfitLocal)}
+            <span className="block text-[11px] font-normal text-ink-subtle">{dec(sheet.marginPct).toFixed(1)}% of sales</span>
           </span>
         ) : null}
         <span className="flex flex-wrap gap-1">
@@ -213,53 +282,62 @@ function OrderSection({
         </span>
       </summary>
 
-      <div className="space-y-5 border-t border-line px-4 py-4">
+      <div className="space-y-6 border-t border-line px-4 py-4">
         <section>
-          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Items / containers</h3>
+          <h3 className={h3}>A. Purchase and stock, by container</h3>
           <TableWrap>
             <Table data-testid="costing-lines">
               <THead>
                 <TR className="hover:bg-transparent">
                   <TH>Item</TH>
-                  <TH>Container</TH>
-                  <TH>Lot</TH>
-                  <TH>Batch</TH>
-                  <TH numeric>KG</TH>
-                  <TH numeric>Sold</TH>
+                  <TH>Container / lot</TH>
                   <TH>Warehouse</TH>
-                  <TH numeric>Purchase USD</TH>
-                  <TH numeric>Landed USD</TH>
-                  <TH numeric>Per KG</TH>
-                  <TH>Status</TH>
+                  <TH numeric>Purchased KG</TH>
+                  <TH numeric>Sold KG</TH>
+                  <TH numeric>Remaining KG</TH>
+                  <TH numeric>Purchase value (USD)</TH>
+                  <TH numeric>Landed cost</TH>
+                  <TH numeric>Landed cost / KG</TH>
+                  <TH numeric>Stock value</TH>
                 </TR>
               </THead>
               <TBody>
                 {sheet.lines.map((line) => (
                   <TR key={line.batchId}>
                     <TD className="font-medium">{line.itemName}</TD>
-                    <TD className="font-mono text-xs">{line.containerNumber ?? '—'}</TD>
-                    <TD className="text-xs">{line.lotNumber}</TD>
-                    <TD className="text-xs">{line.batchNumber}</TD>
-                    <TD numeric>
-                      {formatQuantityKg(line.receivedKg.greaterThan(0) ? line.receivedKg : line.orderedKg)}
+                    <TD className="text-xs">
+                      <span className="font-mono">{line.containerNumber ?? '—'}</span>
+                      <span className="block text-ink-subtle">Lot {line.lotNumber}</span>
                     </TD>
-                    <TD numeric className="text-xs">{formatQuantityKg(line.soldKg)}</TD>
                     <TD className="text-xs">{line.warehouse ?? '—'}</TD>
+                    <TD numeric>{formatQuantityKg(line.receivedKg.greaterThan(0) ? line.receivedKg : line.orderedKg)}</TD>
+                    <TD numeric>{formatQuantityKg(line.soldKg)}</TD>
+                    <TD numeric>{formatQuantityKg(line.onHandKg)}</TD>
                     <TD numeric>{formatMoney(line.purchaseUsd, 'USD')}</TD>
-                    <TD numeric>{formatMoney(line.landedUsd, 'USD')}</TD>
-                    <TD numeric className="text-xs">{formatMoney(line.landedPerKgUsd, 'USD')}</TD>
-                    <TD>
-                      <StatusBadge status={line.status} meta={SHIPMENT_STATUS_META} />
-                    </TD>
+                    <TD numeric>{money(line.landedLocal)}</TD>
+                    <TD numeric>{money(line.landedPerKgLocal)}</TD>
+                    <TD numeric>{money(toMoney(line.onHandKg.times(line.landedPerKgLocal)))}</TD>
                   </TR>
                 ))}
               </TBody>
+              <TFoot>
+                <tr>
+                  <TD colSpan={3}>Total</TD>
+                  <TD numeric>{formatQuantityKg(sheet.receivedKg.greaterThan(0) ? sheet.receivedKg : sheet.orderedKg)}</TD>
+                  <TD numeric>{formatQuantityKg(sum(sheet.lines.map((l) => l.soldKg)))}</TD>
+                  <TD numeric>{formatQuantityKg(sheet.remainingKg)}</TD>
+                  <TD numeric>{formatMoney(sheet.goodsUsd, 'USD')}</TD>
+                  <TD numeric>{money(sheet.landedLocal)}</TD>
+                  <TD numeric>{money(sheet.costPerKgLocal)}</TD>
+                  <TD numeric>{money(sheet.remainingValueLocal)}</TD>
+                </tr>
+              </TFoot>
             </Table>
           </TableWrap>
         </section>
 
         <section>
-          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Direct expenses</h3>
+          <h3 className={h3}>B. Direct expenses, by category — cost, settled and outstanding</h3>
           {sheet.expenses.length === 0 ? (
             <p className="text-xs text-ink-subtle">No costs have been booked against this shipment yet.</p>
           ) : (
@@ -268,94 +346,114 @@ function OrderSection({
                 <THead>
                   <TR className="hover:bg-transparent">
                     <TH>Date</TH>
-                    <TH>Cost</TH>
+                    <TH>Category</TH>
                     <TH>Memo</TH>
                     <TH>Container</TH>
-                    <TH numeric>Amount</TH>
-                    <TH>In the coffee?</TH>
-                    <TH>Paid</TH>
+                    <TH numeric>Original cost</TH>
+                    <TH numeric>Settled</TH>
+                    <TH numeric>Outstanding</TH>
+                    <TH>Status</TH>
+                  </TR>
+                </THead>
+                {categories.map((category) => {
+                  const rows = sheet.expenses.filter((e) => e.category === category);
+                  return (
+                    <TBody key={category}>
+                      {rows.map((e) => (
+                        <TR key={e.expenseId}>
+                          <TD className="whitespace-nowrap">{formatDate(e.expenseDate)}</TD>
+                          <TD>
+                            <Link href={`/finance/expenses/${e.expenseId}`} className="font-medium text-forest-800 hover:text-gold-700">
+                              {e.category}
+                            </Link>
+                            <span className="block text-xs text-ink-subtle">
+                              {businessNumber(e.expenseNumber)}
+                              {e.currency !== local ? ` · ${formatMoney(e.amount, e.currency)}` : ''}
+                              {e.capitalised ? '' : ' · not in the coffee’s cost'}
+                            </span>
+                          </TD>
+                          <TD>
+                            <MemoCell memo={e.memo} />
+                          </TD>
+                          <TD className="font-mono text-xs">{e.containerNumber ?? 'Whole shipment'}</TD>
+                          <TD numeric>{money(e.originalLocal)}</TD>
+                          <TD numeric>{e.settledLocal.isZero() ? '—' : money(e.settledLocal)}</TD>
+                          <TD numeric className={e.outstandingLocal.greaterThan(0) ? 'font-semibold text-red-700' : undefined}>
+                            {e.outstandingLocal.isZero() ? '—' : money(e.outstandingLocal)}
+                          </TD>
+                          <TD className="text-xs text-ink-muted">
+                            {STATUS_WORDS[e.payment]}
+                            {e.paidFrom ? <span className="block text-ink-subtle">{e.paidFrom}</span> : null}
+                          </TD>
+                        </TR>
+                      ))}
+                      <TR className="bg-surface-sunken/50 hover:bg-surface-sunken/50" data-grid-total="">
+                        <TD colSpan={4} className="font-semibold">Total {category}</TD>
+                        <TD numeric className="font-semibold">{money(sum(rows.map((e) => e.originalLocal)))}</TD>
+                        <TD numeric className="font-semibold">{money(sum(rows.map((e) => e.settledLocal)))}</TD>
+                        <TD numeric className="font-semibold">{money(sum(rows.map((e) => e.outstandingLocal)))}</TD>
+                        <TD />
+                      </TR>
+                    </TBody>
+                  );
+                })}
+                <TFoot>
+                  <tr>
+                    <TD colSpan={4}>All direct expenses</TD>
+                    <TD numeric>{money(sum(sheet.expenses.map((e) => e.originalLocal)))}</TD>
+                    <TD numeric>{money(sheet.expenseSettledLocal)}</TD>
+                    <TD numeric>{money(sheet.expenseOutstandingLocal)}</TD>
+                    <TD />
+                  </tr>
+                </TFoot>
+              </Table>
+            </TableWrap>
+          )}
+          <p className="mt-2 text-[11px] text-ink-subtle">
+            Original cost is what the expense cost the shipment and stays in its cost when it is paid. Settled is what has
+            been paid or set off against it; outstanding is what is still owed. A settlement never adds a second cost.
+          </p>
+        </section>
+
+        <section>
+          <h3 className={h3}>C. Sales of this shipment’s coffee</h3>
+          {sheet.sales.length === 0 ? (
+            <p className="text-xs text-ink-subtle">Nothing from this shipment has been sold yet.</p>
+          ) : (
+            <TableWrap>
+              <Table data-testid="costing-sales">
+                <THead>
+                  <TR className="hover:bg-transparent">
+                    <TH>Date</TH>
+                    <TH>Invoice</TH>
+                    <TH>Customer</TH>
+                    <TH numeric>KG from this shipment</TH>
+                    <TH numeric>Sales value</TH>
+                    <TH numeric>Price / KG</TH>
                   </TR>
                 </THead>
                 <TBody>
-                  {sheet.expenses.map((e) => (
-                    <TR key={e.expenseId}>
-                      <TD className="whitespace-nowrap">{formatDate(e.expenseDate)}</TD>
+                  {sheet.sales.map((sale) => (
+                    <TR key={sale.invoiceId}>
+                      <TD className="whitespace-nowrap">{formatDate(sale.invoiceDate)}</TD>
                       <TD>
-                        <Link href={`/finance/expenses/${e.expenseId}`} className="font-medium text-forest-800 hover:text-gold-700">
-                          {e.category}
+                        <Link href={`/sales/${sale.invoiceId}`} className="font-medium text-forest-800 hover:text-gold-700">
+                          {businessNumber(sale.invoiceNumber)}
                         </Link>
-                        <span className="block text-xs text-ink-subtle">{businessNumber(e.expenseNumber)}</span>
                       </TD>
-                      <TD>
-                        <MemoCell memo={e.memo} />
-                      </TD>
-                      <TD className="font-mono text-xs">{e.containerNumber ?? 'Whole shipment'}</TD>
-                      <TD numeric>
-                        <DualAmount
-                          amount={e.amount}
-                          currency={e.currency}
-                          localCurrency={local}
-                          amountUsd={e.amountUsd}
-                          amountLocal={e.amountLocal}
-                          rateSource="This cost's own rate"
-                          primaryClassName="font-normal"
-                        />
-                      </TD>
-                      <TD>
-                        <Badge tone={e.capitalised ? 'success' : 'neutral'}>{e.capitalised ? 'Yes' : 'No — a running cost'}</Badge>
-                      </TD>
-                      <TD className="text-xs text-ink-muted">
-                        {e.payment === 'PAID' ? (e.paidFrom ?? 'Paid') : e.payment === 'PARTIAL' ? `Partially Settled${e.paidFrom ? ` · ${e.paidFrom}` : ''}` : 'Unpaid'}
-                      </TD>
+                      <TD>{sale.customerName}</TD>
+                      <TD numeric>{formatQuantityKg(sale.quantityKg)}</TD>
+                      <TD numeric>{money(sale.revenueLocal)}</TD>
+                      <TD numeric>{sale.quantityKg.greaterThan(0) ? money(toMoney(sale.revenueLocal.dividedBy(sale.quantityKg))) : '—'}</TD>
                     </TR>
                   ))}
                 </TBody>
-                {sheet.byCategory.length > 0 ? (
-                  <TBody>
-                    <TR className="bg-surface-sunken/40 hover:bg-surface-sunken/40">
-                      <TD colSpan={7} className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
-                        By category
-                      </TD>
-                    </TR>
-                    {sheet.byCategory.map((row) => (
-                      <TR key={`${row.category}-${row.capitalised}`}>
-                        <TD />
-                        <TD className="font-medium">{row.category}</TD>
-                        <TD className="text-xs text-ink-muted">
-                          {row.count} {row.count === 1 ? 'entry' : 'entries'}
-                        </TD>
-                        <TD />
-                        <TD numeric>
-                          <DualAmount
-                            amount={row.amountLocal}
-                            currency={local}
-                            localCurrency={local}
-                            amountUsd={row.amountUsd}
-                            rateSource="Each cost at its own rate"
-                            primaryClassName="font-normal"
-                          />
-                        </TD>
-                        <TD>
-                          <Badge tone={row.capitalised ? 'success' : 'neutral'}>{row.capitalised ? 'Yes' : 'No — a running cost'}</Badge>
-                        </TD>
-                        <TD />
-                      </TR>
-                    ))}
-                  </TBody>
-                ) : null}
                 <TFoot>
                   <tr>
-                    <TD colSpan={4}>Total expenses</TD>
-                    <TD numeric>
-                      <DualAmount
-                        amount={sheet.expenseLocal}
-                        currency={local}
-                        localCurrency={local}
-                        amountUsd={sheet.expenseUsd}
-                        rateSource="Each cost at its own rate"
-                      />
-                    </TD>
-                    <TD colSpan={2} />
+                    <TD colSpan={3}>Total sales</TD>
+                    <TD numeric>{formatQuantityKg(sheet.invoicedKg)}</TD>
+                    <TD numeric>{money(sheet.revenueLocal)}</TD>
+                    <TD numeric>{money(sheet.averageSellingPriceLocal)}</TD>
                   </tr>
                 </TFoot>
               </Table>
@@ -364,78 +462,70 @@ function OrderSection({
         </section>
 
         <section>
-          <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Costing</h3>
+          <h3 className={h3}>D. Shipment profitability</h3>
           <TableWrap className="max-w-3xl">
             <Table data-testid="costing-summary">
               <THead>
                 <TR className="hover:bg-transparent">
                   <TH />
-                  <TH numeric>Amount</TH>
+                  <TH numeric>{local}</TH>
+                  <TH numeric>≈ USD</TH>
                 </TR>
               </THead>
               <TBody>
-                {[
-                  ['Coffee, at the contract price', sheet.goodsLocal, sheet.goodsUsd],
-                  ['Costs added to the coffee', sheet.capitalisedExpenseLocal, sheet.capitalisedExpenseUsd],
-                  ['Total landed cost', sheet.landedLocal, sheet.landedUsd, 'bold'],
-                  ['Cost per KG', sheet.costPerKgLocal, sheet.costPerKgUsd],
-                  ['Cost per MT', sheet.costPerMtLocal, sheet.costPerMtUsd],
-                  ['Sales', sheet.revenueLocal, sheet.revenueUsd],
-                  ...(showProfit
-                    ? [
-                        ['Cost of what sold (COGS)', sheet.cogsLocal, sheet.cogsUsd],
-                        ['Profit / loss', sheet.grossProfitLocal, sheet.grossProfitUsd, 'profit'],
-                      ]
-                    : []),
-                  // Only when there are such costs, so an ordinary shipment's
-                  // costing stays six lines long.
-                  ...(!showProfit || dec(sheet.periodExpenseUsd).isZero()
-                    ? []
-                    : [
-                        ['Costs not added to the coffee', sheet.periodExpenseLocal, sheet.periodExpenseUsd],
-                        ['Profit after those costs', sheet.netProfitLocal, sheet.netProfitUsd, 'profit'],
-                      ]),
-                ].map(([label, localValue, usd, style]) => (
-                  <TR key={String(label)}>
-                    <TD className={cn(style ? 'font-semibold' : undefined, style === 'profit' ? profitTone : undefined)}>
-                      {String(label)}
-                    </TD>
-                    <TD numeric className={cn(style === 'profit' ? profitTone : undefined)}>
-                      <DualAmount
-                        amount={localValue as never}
-                        currency={local}
-                        localCurrency={local}
-                        amountUsd={usd as never}
-                        rateSource="Each transaction at its own rate"
-                        primaryClassName={style ? 'font-semibold' : 'font-normal'}
-                      />
-                    </TD>
+                {(
+                  [
+                    ['Purchased quantity', formatQuantityKg(sheet.orderedKg), ''],
+                    ['Purchase value (at the order’s rate)', money(sheet.goodsLocal), formatMoney(sheet.goodsUsd, 'USD')],
+                    ['Direct expenses', money(sheet.capitalisedExpenseLocal), formatMoney(sheet.capitalisedExpenseUsd, 'USD')],
+                    ['Total landed cost', money(sheet.landedLocal), formatMoney(sheet.landedUsd, 'USD'), 'bold'],
+                    ['Landed cost per KG', money(sheet.costPerKgLocal), formatMoney(sheet.costPerKgUsd, 'USD')],
+                    ['Quantity sold', formatQuantityKg(sheet.invoicedKg), ''],
+                    ['Sales value', money(sheet.revenueLocal), formatMoney(sheet.revenueUsd, 'USD')],
+                    ['Average selling price per KG', money(sheet.averageSellingPriceLocal), formatMoney(sheet.averageSellingPriceUsd, 'USD')],
+                    ...(showProfit
+                      ? [
+                          ['Cost of the coffee sold (its share of the landed cost)', money(sheet.cogsLocal), formatMoney(sheet.cogsUsd, 'USD')],
+                          ['Gross profit / loss', money(sheet.grossProfitLocal), formatMoney(sheet.grossProfitUsd, 'USD'), 'profit'],
+                          ['Gross profit / loss %', `${dec(sheet.marginPct).toFixed(1)}% of sales`, ''],
+                        ]
+                      : []),
+                    ['Quantity remaining', formatQuantityKg(sheet.remainingKg), ''],
+                    ['Closing stock value (remaining KG at landed cost)', money(sheet.remainingValueLocal), formatMoney(sheet.remainingValueUsd, 'USD')],
+                    ...(transitKg.greaterThan(0)
+                      ? [[`In transit — ${formatQuantityKg(transitKg)} not yet received`, money(transitLocal), ''] as [string, string, string]]
+                      : []),
+                    ...(!showProfit || dec(sheet.periodExpenseLocal).isZero()
+                      ? []
+                      : [
+                          ['Shipment costs not in the coffee’s cost', money(sheet.periodExpenseLocal), formatMoney(sheet.periodExpenseUsd, 'USD')],
+                          ['Profit after those costs', money(sheet.netProfitLocal), formatMoney(sheet.netProfitUsd, 'USD'), 'profit'],
+                        ]),
+                  ] as Array<[string, string, string, string?]>
+                ).map(([label, value, usd, style]) => (
+                  <TR key={label}>
+                    <TD className={cn(style ? 'font-semibold' : undefined, style === 'profit' ? profitTone : undefined)}>{label}</TD>
+                    <TD numeric className={cn(style ? 'font-semibold' : undefined, style === 'profit' ? profitTone : undefined)}>{value}</TD>
+                    <TD numeric className="text-ink-muted">{usd}</TD>
                   </TR>
                 ))}
-                {showProfit ? (
-                  <TR>
-                    <TD>Margin</TD>
-                    <TD numeric>{dec(sheet.marginPct).toFixed(1)}%</TD>
-                  </TR>
-                ) : null}
-                <TR>
-                  <TD>Remaining stock</TD>
-                  <TD numeric>
-                    {formatQuantityKg(sheet.remainingKg)} · carried at {formatMoney(sheet.remainingValueLocal, local)}
-                    <span className="block text-[11px] text-ink-subtle">≈ {formatMoney(sheet.remainingValueUsd, 'USD')}</span>
-                  </TD>
-                </TR>
               </TBody>
             </Table>
           </TableWrap>
+          {showProfit ? (
+            <p className="mt-2 max-w-3xl text-[11px] text-ink-subtle" data-testid="costing-reconciliation">
+              How the landed cost is used: {money(sheet.cogsLocal)} went with the coffee sold (in the gross profit above) and{' '}
+              {money(sheet.remainingValueLocal)} is the stock still on hand
+              {transitLocal.greaterThan(0) ? `, and ${money(transitLocal)} is coffee bought but not yet received` : ''} ={' '}
+              {money(cogsAndStock.plus(transitLocal))}
+              {unexplained.abs().lessThan('1')
+                ? `, the whole landed cost of ${money(sheet.landedLocal)}. Each direct expense is in the landed cost once, so it is never deducted a second time.`
+                : `; ${money(unexplained)} of the landed cost of ${money(sheet.landedLocal)} is in neither (stock written off or adjusted).`}{' '}
+              Sold coffee is costed at its container’s landed cost per KG — the policy the client approved; the stock left is
+              valued the same way.
+            </p>
+          ) : null}
           <FxSummary sheet={sheet} />
-          <p className="mt-2 text-[11px] text-ink-subtle">
-            {formatQuantityKg(sheet.receivedKg)} landed of {formatQuantityKg(sheet.orderedKg)} bought. Every {local} figure is
-            the sum of each transaction at its own rate. Profit counts only what has been sold; stock still on hand is not
-            counted either way until it sells. The landed cost is what the coffee is valued at — the contract price plus the
-            costs added to it — so it is the same figure the stock and the cost of sales are drawn from. A cost marked as not
-            added to the coffee is taken off the profit here instead, once, and never twice.
-          </p>
         </section>
       </div>
     </details>

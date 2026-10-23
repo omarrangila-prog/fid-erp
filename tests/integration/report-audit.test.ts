@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { prisma, resetDatabase, getContext, createMasters, getCashAccount, utcDate } from '../helpers';
+import { prisma, resetDatabase, getContext, createMasters, getCashAccount, utcDate, transaction } from '../helpers';
 import { createPurchaseContract, postPurchaseContract, reversePurchaseContract } from '@/lib/services/purchase';
 import { createGoodsReceipt, postGoodsReceipt } from '@/lib/services/goods-receipt';
 import { createSalesInvoice, postSalesInvoice } from '@/lib/services/sales';
@@ -17,6 +17,8 @@ import { getCogsReport } from '@/lib/services/profitability';
 import { getPayables } from '@/lib/services/receivables';
 import { getCostOfSalesBreakdown } from '@/lib/services/cost-of-sales-breakdown';
 import { restateInventorySplit } from '@/lib/services/inventory-split';
+import { postJournalEntry } from '@/lib/services/accounting';
+import { isUnusedInPeriod } from '@/lib/trial-balance-view';
 import { dec, sum } from '@/lib/money';
 
 /**
@@ -202,6 +204,37 @@ describe('Profit and loss: what the cost of goods sold is made of', () => {
     // which the app does after every posting.
     await restateInventorySplit({ companyId, userId: ctx.admin.id, trigger: 'test' });
     expect((await ledgerLocal('COST_OF_GOODS_SOLD')).toFixed(2)).toBe(b.totalLocal.toFixed(2));
+  });
+});
+
+describe('Trial Balance: opening, period and closing', () => {
+  it('keeps an account whose dirham-only balance emptied in the period, so every column pair balances', async () => {
+    // MAD 1,000 in Inventory in Transit before the period, cleared in it — no USD side at all.
+    const local = async (date: string, transitDebit: boolean, sourceId: string) =>
+      transaction((tx) =>
+        postJournalEntry(tx, {
+          companyId, entryDate: utcDate(date), description: 'Dirham-only restatement', sourceType: 'MANUAL', sourceId,
+          createdById: ctx.admin.id, localCurrency: 'MAD', rateLocalPerUsd: 10,
+          lines: [
+            { accountKey: 'INVENTORY_IN_TRANSIT', direction: transitDebit ? 'DEBIT' : 'CREDIT', currency: 'MAD', amount: '1000', rateToUsd: '10', localOnly: true },
+            { accountKey: 'INVENTORY', direction: transitDebit ? 'CREDIT' : 'DEBIT', currency: 'MAD', amount: '1000', rateToUsd: '10', localOnly: true },
+          ],
+        }),
+      );
+    await local('2026-04-01', true, 'tb-local-only-1');
+    await local('2026-05-10', false, 'tb-local-only-2');
+
+    const tb = await getTrialBalanceReport({ companyId, from: utcDate('2026-05-01'), to: utcDate('2026-05-31') });
+    const transit = await prisma.account.findFirstOrThrow({ where: { companyId, systemKey: 'INVENTORY_IN_TRANSIT' }, select: { id: true } });
+    const row = tb.rows.find((r) => r.accountId === transit.id);
+    expect(row, 'Inventory in Transit is on the period trial balance').toBeDefined();
+    expect(row!.openingDebitLocal.toFixed(2)).toBe('1000.00');
+    expect(row!.periodCreditLocal.toFixed(2)).toBe('1000.00');
+    expect(isUnusedInPeriod(row!)).toBe(false);
+    const t = tb.totals;
+    expect(t.openingDebitLocal.toFixed(2)).toBe(t.openingCreditLocal.toFixed(2));
+    expect(t.periodDebitLocal.toFixed(2)).toBe(t.periodCreditLocal.toFixed(2));
+    expect(t.debitLocal.toFixed(2)).toBe(t.creditLocal.toFixed(2));
   });
 });
 

@@ -464,12 +464,12 @@ test('shipment costing shows one row per order, collapsed, with its containers i
     await expect(lines).toContainText(line.lot);
   }
   await expect(three.getByTestId('costing-summary')).toContainText(/Total landed cost/);
-  await expect(three.getByTestId('costing-summary')).toContainText(/Profit \/ loss/);
+  await expect(three.getByTestId('costing-summary')).toContainText(/Gross profit \/ loss/);
 
   // Purchase cost is the order's own: 20,000 × 4.116 + 21,000 × 3.998 + 19,000 × 4.25.
   const purchase = 20000 * 4.116 + 21000 * 3.998 + 19000 * 4.25;
   const summaryText = (await three.getByTestId('costing-summary').textContent()) ?? '';
-  const coffeeUsd = summaryText.match(/Coffee, at the contract price[^U]*USD\s([\d,]+\.\d{2})/)?.[1];
+  const coffeeUsd = summaryText.match(/Purchase value \(at the order’s rate\)[^U]*USD\s([\d,]+\.\d{2})/)?.[1];
   expect(Number((coffeeUsd ?? '0').replace(/,/g, ''))).toBeCloseTo(purchase, 0);
 
   // Collapse, then open the other: six lines there.

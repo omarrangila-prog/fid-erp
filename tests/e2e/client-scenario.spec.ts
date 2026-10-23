@@ -369,7 +369,7 @@ test('the shipment cost report splits the shared charges between the lines', asy
   const main = (await page.locator('main').textContent()) ?? '';
   // The coffee, the charges added to it, and what a kilo ended up costing.
   expect(main).toMatch(/Coffee/i);
-  expect(main).toMatch(/Costs added/i);
+  expect(main).toMatch(/Direct expenses/i);
   expect(main).toMatch(/Total landed cost/i);
   expect(main).toMatch(/per KG/i);
   console.log('  shipment costing shows coffee, added costs and cost per kilo');
