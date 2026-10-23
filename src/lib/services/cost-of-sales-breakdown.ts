@@ -31,8 +31,17 @@ export type CostOfSalesBreakdown = {
   totalUsd: Decimal;
 };
 
-export async function getCostOfSalesBreakdown(params: { companyId: string; from?: Date; to?: Date }): Promise<CostOfSalesBreakdown> {
-  const lines = await getCogsReport(params);
+export async function getCostOfSalesBreakdown(params: {
+  companyId: string;
+  from?: Date;
+  to?: Date;
+  /** Only what one purchase order's coffee, or one customer's purchases, carried. */
+  contractId?: string;
+  customerId?: string;
+}): Promise<CostOfSalesBreakdown> {
+  const lines = (await getCogsReport({ companyId: params.companyId, from: params.from, to: params.to })).filter(
+    (l) => (!params.contractId || l.contractId === params.contractId) && (!params.customerId || l.customerId === params.customerId),
+  );
   const batchIds = [...new Set(lines.map((l) => l.batchId).filter((id): id is string => Boolean(id)))];
   const costing = batchIds.length ? await getBatchCostingIndex({ companyId: params.companyId, batchIds }) : new Map();
 

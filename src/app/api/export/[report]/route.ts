@@ -8,7 +8,7 @@ import { prisma } from '@/lib/db';
 import { getCostOfSalesBreakdown } from '@/lib/services/cost-of-sales-breakdown';
 import { BALANCE_SHEET_GROUPS } from '@/lib/balance-sheet-groups';
 import { agentNettedBalanceSheet, agentNettedTrialBalance, getAgentNetting } from '@/lib/services/agent-position';
-import { clientLabel, isUnusedInPeriod, isZeroAtClose, combineTrialRows, OPERATING_ROW_ID } from '@/lib/trial-balance-view';
+import { clientLabel, isUnusedInPeriod, isZeroAtClose, combineTrialRows, moveIntoOperating, OPERATING_ROW_ID } from '@/lib/trial-balance-view';
 import { dec, sum } from '@/lib/money';
 import {
   buildWorkbook,
@@ -873,7 +873,7 @@ const REPORTS: Record<string, Report> = {
           title: 'Shipment-wise Profitability',
           subtitle: `${sheets.length} shipments · ${local}`,
           rows: sheets,
-          totals: ['Purchased KG', `Purchase value ${local}`, `Direct shipment costs ${local}`, `Landed cost ${local}`, 'Quantity sold KG', `Sales value ${local}`, 'Remaining KG', `Closing stock value ${local}`, ...(profit ? [`Cost of the coffee sold ${local}`, `Gross profit ${local}`, `Other expenses allocated to the shipment ${local}`, `Net profit ${local}`] : []), `Unpaid customer balance ${local}`, `Unpaid supplier balance ${local}`, `Unpaid shipment expenses ${local}`],
+          totals: ['Purchased KG', `Purchase value ${local}`, `Direct shipment costs ${local}`, `Landed cost ${local}`, 'Quantity sold KG', `Sales value ${local}`, 'Remaining KG', `Closing stock value ${local}`, ...(profit ? [`Cost of the coffee sold ${local}`, `Gross profit ${local}`, `Direct shipment costs on the coffee sold ${local}`, `Other expenses allocated to the shipment ${local}`, `Net profit ${local}`] : []), `Unpaid customer balance ${local}`, `Unpaid supplier balance ${local}`, `Unpaid shipment expenses ${local}`],
           columns: [
             { header: 'Shipment (ICUL/FID)', value: (r) => r.contractReference, width: 30 },
             { header: 'Supplier', value: (r) => r.vendorName, width: 26 },
@@ -889,9 +889,11 @@ const REPORTS: Record<string, Report> = {
             { header: `Closing stock value ${local}`, value: (r) => Number(r.remainingValueLocal), type: 'money' as const },
             ...(profit
               ? [
-                  { header: `Cost of the coffee sold ${local}`, value: (r: S) => Number(r.cogsLocal), type: 'money' as const },
-                  { header: `Gross profit ${local}`, value: (r: S) => Number(r.grossProfitLocal), type: 'money' as const },
-                  { header: 'Gross margin', value: (r: S) => Number(r.marginPct) / 100, type: 'percent' as const },
+                  // As on screen: gross profit is sales less the coffee; the shipment costs on it follow.
+                  { header: `Cost of the coffee sold ${local}`, value: (r: S) => Number(r.coffeeSoldLocal), type: 'money' as const },
+                  { header: `Gross profit ${local}`, value: (r: S) => Number(r.revenueLocal.minus(r.coffeeSoldLocal)), type: 'money' as const },
+                  { header: 'Gross margin', value: (r: S) => (r.revenueLocal.isZero() ? 0 : Number(r.revenueLocal.minus(r.coffeeSoldLocal).dividedBy(r.revenueLocal))), type: 'percent' as const },
+                  { header: `Direct shipment costs on the coffee sold ${local}`, value: (r: S) => Number(r.soldExpenseLocal), type: 'money' as const },
                   { header: `Other expenses allocated to the shipment ${local}`, value: (r: S) => Number(r.periodExpenseLocal), type: 'money' as const },
                   { header: `Net profit ${local}`, value: (r: S) => Number(r.netProfitLocal), type: 'money' as const },
                 ]
@@ -1050,18 +1052,23 @@ const REPORTS: Record<string, Report> = {
         shipmentId: query.get('shipment') || null,
       };
       const filtered = Object.values(filters).some(Boolean);
-      const [report, netting, accounts] = await Promise.all([
+      const [report, netting, accounts, soldExpenses] = await Promise.all([
         getTrialBalanceReport({ companyId, to, filters }),
         // As on screen: each agent's accounts on one line, except on a narrowed view.
         filtered ? null : getAgentNetting(companyId, to),
         prisma.account.findMany({ where: { companyId }, orderBy: { code: 'asc' }, select: { id: true, code: true, name: true, type: true, systemKey: true, reportGroup: true } }),
+        filtered ? null : getCostOfSalesBreakdown({ companyId, to }),
       ]);
       // As on screen: the operating expenses on one line.
       const operating = new Set(accounts.filter((a) => a.type === 'EXPENSE' && a.reportGroup === REPORT_GROUPS.OPERATING).map((a) => a.id));
-      const trial = combineTrialRows(netting ? agentNettedTrialBalance(report, netting) : report, operating, {
+      const combined = combineTrialRows(netting ? agentNettedTrialBalance(report, netting) : report, operating, {
         accountId: OPERATING_ROW_ID,
         name: 'Operating Expenses',
       });
+      // As on screen: the shipment expenses on the coffee sold with the operating expenses.
+      const trial = soldExpenses
+        ? moveIntoOperating(combined, accounts.find((a) => a.systemKey === 'COST_OF_GOODS_SOLD')?.id, soldExpenses.expensesTotal)
+        : combined;
       const meta = new Map(accounts.map((a) => [a.id, { systemKey: a.systemKey }]));
       const listed = new Set(report.rows.map((r) => r.accountId));
       const zero = dec(0);

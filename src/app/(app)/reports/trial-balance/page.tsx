@@ -22,7 +22,8 @@ import { PrintHeader } from '@/components/shared/print-header';
 import { ReportSummary } from '@/components/shared/report-summary';
 import { dec, type Decimal } from '@/lib/money';
 import { transactionCurrencies } from '@/lib/company-currencies';
-import { clientLabel, combineTrialRows, isUnusedInPeriod, isZeroAtClose, OPERATING_ROW_ID } from '@/lib/trial-balance-view';
+import { clientLabel, combineTrialRows, isUnusedInPeriod, isZeroAtClose, moveIntoOperating, OPERATING_ROW_ID } from '@/lib/trial-balance-view';
+import { getCostOfSalesBreakdown } from '@/lib/services/cost-of-sales-breakdown';
 import { AGENT_ROW_PREFIX, agentNettedTrialBalance, getAgentNetting } from '@/lib/services/agent-position';
 
 export const metadata: Metadata = { title: 'Trial Balance' };
@@ -75,11 +76,13 @@ export default async function TrialBalancePage({
     getShipmentOrdinals(companyId),
   ]);
 
-  const [report, netting, accountCurrencies] = await Promise.all([
+  const [report, netting, soldExpenses, accountCurrencies] = await Promise.all([
     getTrialBalanceReport({ companyId, to: asOfDate, filters }),
     // Each agent's accounts read as one line — not on a narrowed view, where
     // only part of his entries would be in it.
     filtered ? null : getAgentNetting(companyId, asOfDate),
+    // The shipment expenses on the coffee sold, shown with the operating expenses.
+    filtered ? null : getCostOfSalesBreakdown({ companyId, to: asOfDate }),
     prisma.account.findMany({
       where: { companyId: user.activeCompany.id },
       orderBy: { code: 'asc' },
@@ -103,10 +106,13 @@ export default async function TrialBalancePage({
    */
   // The operating expenses read as one line, as on the profit and loss.
   const operating = new Set(accountCurrencies.filter((a) => a.type === 'EXPENSE' && a.reportGroup === REPORT_GROUPS.OPERATING).map((a) => a.id));
-  const trial = combineTrialRows(netting ? agentNettedTrialBalance(report, netting) : report, operating, {
+  const combined = combineTrialRows(netting ? agentNettedTrialBalance(report, netting) : report, operating, {
     accountId: OPERATING_ROW_ID,
     name: 'Operating Expenses',
   });
+  const trial = soldExpenses
+    ? moveIntoOperating(combined, accountCurrencies.find((a) => a.systemKey === 'COST_OF_GOODS_SOLD')?.id, soldExpenses.expensesTotal)
+    : combined;
   const showUnused = query.view === 'all';
   const metaById = new Map(accountCurrencies.map((a) => [a.id, { systemKey: a.systemKey }]));
   const zero = dec(0);

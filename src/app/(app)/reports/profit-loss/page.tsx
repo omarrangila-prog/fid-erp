@@ -383,6 +383,7 @@ function ScopedStatement({ p, local, company, period }: { p: ScopedPnl; local: s
                 <td className="px-3 py-1.5 text-left text-ink-muted">Gross margin</td>
                 <td className="tnum px-3 py-1.5 text-right">{p.grossMarginPct ? formatPercent(p.grossMarginPct) : '—'}</td>
               </tr>
+              {row('Operating Expenses (shipment expenses on the coffee sold)', p.shipmentExpenses, { less: true, testId: 'scoped-shipment-expenses' })}
               {p.periodCosts ? row('Other expenses allocated to the shipment', p.periodCosts, { less: true }) : null}
               {p.allocatedOverhead ? row('Allocated company overhead (management)', p.allocatedOverhead, { less: true }) : null}
               {p.netProfit ? row('Net Profit / Loss', p.netProfit, { final: true, testId: 'scoped-net' }) : null}

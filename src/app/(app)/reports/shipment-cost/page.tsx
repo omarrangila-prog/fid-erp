@@ -130,10 +130,18 @@ export default async function ShipmentCostPage({
  * (and the Excel export carries them all on this line). Each order is counted once;
  * the totals are of the lines above them.
  */
+/**
+ * Gross profit as the owner reads it: sales less the coffee itself. The
+ * shipment expenses on the coffee sold come after it, with the operating
+ * expenses, as on the profit and loss; net profit is the same either way.
+ */
+const grossOf = (s: OrderCostSheet) => ({ local: s.revenueLocal.minus(s.coffeeSoldLocal), usd: s.revenueUsd.minus(s.coffeeSoldUsd) });
+const marginOf = (s: OrderCostSheet) => (s.revenueLocal.isZero() ? null : grossOf(s).local.dividedBy(s.revenueLocal).times(100));
+
 function Overview({ sheets, local, showProfit }: { sheets: OrderCostSheet[]; local: string; showProfit: boolean }) {
   const total = (pick: (s: OrderCostSheet) => Decimal) => sum(sheets.map(pick));
   const revenue = total((s) => s.revenueLocal);
-  const gross = total((s) => s.grossProfitLocal);
+  const gross = total((s) => grossOf(s).local);
   const money = (v: Decimal) => formatMoney(v, local);
   return (
     <TableWrap data-wide-sheet>
@@ -154,6 +162,7 @@ function Overview({ sheets, local, showProfit }: { sheets: OrderCostSheet[]; loc
                 <TH numeric>Cost of the coffee sold</TH>
                 <TH numeric>Gross profit</TH>
                 <TH numeric>Gross margin</TH>
+                <TH numeric>Direct shipment costs on the coffee sold</TH>
                 <TH numeric>Other expenses allocated to the shipment</TH>
                 <TH numeric>Net profit</TH>
               </>
@@ -181,9 +190,10 @@ function Overview({ sheets, local, showProfit }: { sheets: OrderCostSheet[]; loc
               <TD numeric>{money(s.remainingValueLocal)}</TD>
               {showProfit ? (
                 <>
-                  <TD numeric>{money(s.cogsLocal)}</TD>
-                  <TD numeric className={cn('font-semibold', s.grossProfitLocal.isNegative() ? 'text-red-600' : 'text-gold-700')}>{money(s.grossProfitLocal)}</TD>
-                  <TD numeric>{s.revenueLocal.isZero() ? '—' : `${dec(s.marginPct).toFixed(1)}%`}</TD>
+                  <TD numeric>{money(s.coffeeSoldLocal)}</TD>
+                  <TD numeric className={cn('font-semibold', grossOf(s).local.isNegative() ? 'text-red-600' : 'text-gold-700')}>{money(grossOf(s).local)}</TD>
+                  <TD numeric>{marginOf(s) === null ? '—' : `${marginOf(s)!.toFixed(1)}%`}</TD>
+                  <TD numeric>{money(s.soldExpenseLocal)}</TD>
                   <TD numeric>{money(s.periodExpenseLocal)}</TD>
                   <TD numeric className={cn('font-semibold', s.netProfitLocal.isNegative() ? 'text-red-600' : 'text-gold-700')}>{money(s.netProfitLocal)}</TD>
                 </>
@@ -206,9 +216,10 @@ function Overview({ sheets, local, showProfit }: { sheets: OrderCostSheet[]; loc
             <TD numeric>{money(total((s) => s.remainingValueLocal))}</TD>
             {showProfit ? (
               <>
-                <TD numeric>{money(total((s) => s.cogsLocal))}</TD>
+                <TD numeric>{money(total((s) => s.coffeeSoldLocal))}</TD>
                 <TD numeric>{money(gross)}</TD>
                 <TD numeric>{revenue.isZero() ? '—' : `${gross.dividedBy(revenue).times(100).toFixed(1)}%`}</TD>
+                <TD numeric>{money(total((s) => s.soldExpenseLocal))}</TD>
                 <TD numeric>{money(total((s) => s.periodExpenseLocal))}</TD>
                 <TD numeric>{money(total((s) => s.netProfitLocal))}</TD>
               </>
@@ -238,7 +249,7 @@ function OrderSection({
   showProfit: boolean;
 }) {
   const statuses = [...new Set(sheet.statuses)];
-  const profitTone = sheet.grossProfitLocal.greaterThanOrEqualTo(0) ? 'text-gold-700' : 'text-red-600';
+  const profitTone = grossOf(sheet).local.greaterThanOrEqualTo(0) ? 'text-gold-700' : 'text-red-600';
   const money = (v: Decimal) => formatMoney(v, local);
   // Every expense under its category, the category's subtotal after it.
   const categories = [...new Set(sheet.expenses.map((e) => e.category))].sort((a, b) => a.localeCompare(b));
@@ -280,8 +291,8 @@ function OrderSection({
         {showProfit ? (
           <span className={cn('tnum text-sm font-semibold', profitTone)}>
             <span className="block text-[11px] font-normal text-ink-subtle">Gross profit</span>
-            {money(sheet.grossProfitLocal)}
-            <span className="block text-[11px] font-normal text-ink-subtle">{dec(sheet.marginPct).toFixed(1)}% of sales</span>
+            {money(grossOf(sheet).local)}
+            <span className="block text-[11px] font-normal text-ink-subtle">{(marginOf(sheet) ?? dec(0)).toFixed(1)}% of sales</span>
           </span>
         ) : null}
         <span className="flex flex-wrap gap-1">
@@ -505,9 +516,10 @@ function OrderSection({
                     ['Average selling price per KG', money(sheet.averageSellingPriceLocal), formatMoney(sheet.averageSellingPriceUsd, 'USD')],
                     ...(showProfit
                       ? [
-                          ['Cost of the coffee sold', money(sheet.cogsLocal), formatMoney(sheet.cogsUsd, 'USD')],
-                          ['Gross profit', money(sheet.grossProfitLocal), formatMoney(sheet.grossProfitUsd, 'USD'), 'profit'],
-                          ['Gross profit %', `${dec(sheet.marginPct).toFixed(1)}% of sales`, ''],
+                          ['Cost of the coffee sold', money(sheet.coffeeSoldLocal), formatMoney(sheet.coffeeSoldUsd, 'USD')],
+                          ['Gross profit', money(grossOf(sheet).local), formatMoney(grossOf(sheet).usd, 'USD'), 'profit'],
+                          ['Gross profit %', `${(marginOf(sheet) ?? dec(0)).toFixed(1)}% of sales`, ''],
+                          ['Direct shipment costs on the coffee sold', money(sheet.soldExpenseLocal), formatMoney(sheet.soldExpenseUsd, 'USD')],
                         ]
                       : []),
                     ['Quantity remaining', formatQuantityKg(sheet.remainingKg), ''],
@@ -541,7 +553,7 @@ function OrderSection({
           </TableWrap>
           {showProfit ? (
             <p className="mt-2 max-w-3xl text-[11px] text-ink-subtle" data-testid="costing-reconciliation">
-              How the landed cost is used: {money(sheet.cogsLocal)} went with the coffee sold (in the gross profit above) and{' '}
+              How the landed cost is used: {money(sheet.cogsLocal)} went with the coffee sold (the coffee and its direct shipment costs, above) and{' '}
               {money(sheet.remainingValueLocal)} is the stock still on hand
               {transitLocal.greaterThan(0) ? `, and ${money(transitLocal)} is coffee bought but not yet received` : ''} ={' '}
               {money(cogsAndStock.plus(transitLocal))}

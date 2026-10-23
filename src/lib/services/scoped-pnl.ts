@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import { dec, toMoney, percentage, type Decimal } from '@/lib/money';
 import { getCogsReport, getShipmentProfitability } from '@/lib/services/profitability';
 import { getProfitAndLoss } from '@/lib/services/reports';
+import { getCostOfSalesBreakdown } from '@/lib/services/cost-of-sales-breakdown';
 
 /**
  * Profit and loss for one shipment or one customer (client brief §6.8–6.9).
@@ -22,8 +23,14 @@ export type ScopedPnl = {
   /** Shipment P&L covers the shipment's whole life; customer P&L the period. */
   periodNote: string;
   revenue: ScopedPair;
+  /** The coffee itself. */
   cogs: ScopedPair;
   grossProfit: ScopedPair;
+  /**
+   * The shipment expenses that went out with the coffee sold, shown with the
+   * operating expenses — the owner's reading, as on the company statement.
+   */
+  shipmentExpenses: ScopedPair;
   grossMarginPct: Decimal | null;
   /** Period costs booked to the shipment, not capitalised into stock. */
   periodCosts: ScopedPair | null;
@@ -52,11 +59,14 @@ export async function getShipmentPnl(params: { companyId: string; contractId: st
   const rate = rows[0].rateLocalPerUsd;
   const usd = (local: Decimal) => (rate.greaterThan(0) ? local.dividedBy(rate) : null);
   const revenue = sum((r) => r.salesRevenueLocal);
-  const cogs = sum((r) => r.allocatedLandedCostLocal);
+  const landed = sum((r) => r.allocatedLandedCostLocal);
+  // Of the landed cost of what sold, the shipment expenses (the rest is the coffee).
+  const shipping = (await getCostOfSalesBreakdown({ companyId: params.companyId, contractId: params.contractId })).expensesTotal.local;
+  const cogs = landed.minus(shipping);
   const gross = revenue.minus(cogs);
   const period = sum((r) => r.otherCostsLocal);
   const overhead = sum((r) => r.allocatedOverheadLocal);
-  const net = gross.minus(period).minus(overhead);
+  const net = gross.minus(shipping).minus(period).minus(overhead);
   const company = await getProfitAndLoss({ companyId: params.companyId, from: params.from, to: params.to });
   return {
     scope: 'shipment',
@@ -65,6 +75,7 @@ export async function getShipmentPnl(params: { companyId: string; contractId: st
     revenue: pair(revenue, usd(revenue)),
     cogs: pair(cogs, usd(cogs)),
     grossProfit: pair(gross, usd(gross)),
+    shipmentExpenses: pair(shipping, usd(shipping)),
     grossMarginPct: revenue.isZero() ? null : percentage(gross, revenue),
     periodCosts: pair(period, usd(period)),
     allocatedOverhead: overhead.isZero() ? null : pair(overhead, usd(overhead)),
@@ -96,15 +107,20 @@ export async function getCustomerPnl(params: { companyId: string; customerId: st
        AND cn."creditDate" BETWEEN ${params.from}::date AND ${params.to}::date`;
   const priceCreditLocal = dec(priceCredits?.local ?? 0);
   const revenue = lines.reduce((t, l) => t.plus(l.revenueLocal), dec(0)).minus(priceCreditLocal);
-  const cogs = lines.reduce((t, l) => t.plus(l.cogsLocal), dec(0));
+  const landed = lines.reduce((t, l) => t.plus(l.cogsLocal), dec(0));
+  // Of that, the shipment expenses that went with the coffee (the rest is the coffee).
+  const shippingPart = await getCostOfSalesBreakdown({ companyId: params.companyId, from: params.from, to: params.to, customerId: params.customerId });
+  const shipping = shippingPart.expensesTotal.local;
+  const cogs = landed.minus(shipping);
   const gross = revenue.minus(cogs);
+  const net = gross.minus(shipping);
   // Each line's dollars at the rate of the order its coffee came from; with
   // a price-only credit there is no order to state it at, so no total.
   const allRated = lines.every((l) => l.rateLocalPerUsd) && priceCreditLocal.isZero();
   const usdOf = (pick: (l: (typeof lines)[number]) => Decimal) =>
     allRated ? lines.reduce((t, l) => t.plus(pick(l).dividedBy(l.rateLocalPerUsd!)), dec(0)) : null;
   const revenueUsd = usdOf((l) => l.revenueLocal);
-  const cogsUsd = usdOf((l) => l.cogsLocal);
+  const cogsUsd = usdOf((l) => l.cogsLocal)?.minus(shippingPart.expensesTotal.usd) ?? null;
   const company = await getProfitAndLoss({ companyId: params.companyId, from: params.from, to: params.to });
   return {
     scope: 'customer',
@@ -113,12 +129,13 @@ export async function getCustomerPnl(params: { companyId: string; customerId: st
     revenue: pair(revenue, revenueUsd),
     cogs: pair(cogs, cogsUsd),
     grossProfit: pair(gross, revenueUsd && cogsUsd ? revenueUsd.minus(cogsUsd) : null),
+    shipmentExpenses: pair(shipping, allRated ? shippingPart.expensesTotal.usd : null),
     grossMarginPct: revenue.isZero() ? null : percentage(gross, revenue),
     periodCosts: null,
     allocatedOverhead: null,
-    netProfit: null,
-    netMarginPct: null,
-    netNote: 'Company overheads are not allocated to customers, so there is no net profit per customer.',
+    netProfit: pair(net, revenueUsd && cogsUsd ? revenueUsd.minus(cogsUsd).minus(shippingPart.expensesTotal.usd) : null),
+    netMarginPct: revenue.isZero() ? null : percentage(net, revenue),
+    netNote: 'After the shipment expenses on what this customer bought. Company overheads are not allocated to customers.',
     unallocatedCompanyExpensesLocal: toMoney(company.totals.operatingExpensesLocal),
     soldKg: lines.reduce((t, l) => t.plus(l.quantityKg), dec(0)),
     lines: lines.length,

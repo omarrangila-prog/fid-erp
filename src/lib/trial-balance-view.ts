@@ -77,7 +77,7 @@ export function combineTrialRows<
   T extends { rows: R[]; totals: { debitLocal: Decimal; creditLocal: Decimal; debitUsd: Decimal; creditUsd: Decimal } },
 >(report: T, ids: Set<string>, line: { accountId: string; name: string }): T {
   const parts = report.rows.filter((r) => ids.has(r.accountId));
-  if (parts.length < 2) return report;
+  if (parts.length === 0) return report;
   const net = (pick: (r: R) => Decimal) => parts.reduce((t, r) => t.plus(pick(r)), new Decimal(0));
   const local = net((r) => r.debitLocal).minus(net((r) => r.creditLocal));
   const usd = net((r) => r.debitUsd).minus(net((r) => r.creditUsd));
@@ -97,4 +97,29 @@ export function combineTrialRows<
     rows,
     totals: { ...report.totals, debitLocal: total((r) => r.debitLocal), creditLocal: total((r) => r.creditLocal), debitUsd: total((r) => r.debitUsd), creditUsd: total((r) => r.creditUsd) },
   };
+}
+
+/**
+ * The shipment expenses that went out with the coffee sold, shown with the
+ * operating expenses rather than inside Cost of Goods Sold — the owner's
+ * reading, as on the profit and loss. Both lines are debits, so the totals
+ * do not move; in the ledger the expenses stay in the coffee's cost.
+ */
+export function moveIntoOperating<
+  R extends Pick<TrialBalanceRow, 'accountId' | 'code' | 'name' | 'debitLocal' | 'creditLocal' | 'debitUsd' | 'creditUsd'>,
+  T extends { rows: R[] },
+>(report: T, cogsAccountId: string | null | undefined, amount: { local: Decimal; usd: Decimal }): T {
+  const cogs = report.rows.find((r) => r.accountId === cogsAccountId);
+  if (!cogs || amount.local.isZero()) return report;
+  const existing = report.rows.find((r) => r.accountId === OPERATING_ROW_ID);
+  const rows = report.rows.map((r) => {
+    if (r.accountId === cogs.accountId) return { ...r, debitLocal: r.debitLocal.minus(amount.local), debitUsd: r.debitUsd.minus(amount.usd) };
+    if (r.accountId === OPERATING_ROW_ID) return { ...r, debitLocal: r.debitLocal.plus(amount.local), debitUsd: r.debitUsd.plus(amount.usd) };
+    return r;
+  });
+  if (!existing) {
+    const zero = new Decimal(0);
+    rows.push({ ...cogs, accountId: OPERATING_ROW_ID, name: 'Operating Expenses', code: `${cogs.code}~`, debitLocal: amount.local, debitUsd: amount.usd, creditLocal: zero, creditUsd: zero });
+  }
+  return { ...report, rows };
 }

@@ -5,6 +5,7 @@ import { getExpenseSettlements, type ExpensePaymentStatus } from '@/lib/services
 import { getOrderFxTransactions, summariseFx, type FxPair, type FxTransaction } from '@/lib/services/shipment-fx';
 import { effectiveLocalRate } from '@/lib/purchase-fx';
 import { getPayables, getReceivables } from '@/lib/services/receivables';
+import { getCostOfSalesBreakdown } from '@/lib/services/cost-of-sales-breakdown';
 
 /**
  * The costing of one shipment — the order it was bought on, with every
@@ -128,8 +129,17 @@ export type OrderCostSheet = {
   costPerMtLocal: Decimal;
   revenueUsd: Decimal;
   revenueLocal: Decimal;
+  /** The landed cost of what sold: the coffee and its share of the shipment expenses. */
   cogsUsd: Decimal;
   cogsLocal: Decimal;
+  /**
+   * Of that, the shipment expenses — shown with the operating expenses, the
+   * owner's reading — and the coffee itself, which is Cost of Goods Sold.
+   */
+  soldExpenseUsd: Decimal;
+  soldExpenseLocal: Decimal;
+  coffeeSoldUsd: Decimal;
+  coffeeSoldLocal: Decimal;
   grossProfitUsd: Decimal;
   grossProfitLocal: Decimal;
   /** Gross profit less the costs that were not added to stock. */
@@ -288,6 +298,13 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
     expensesByShipment.set(e.shipmentId, [...(expensesByShipment.get(e.shipmentId) ?? []), e]);
   }
   const fx = await getOrderFxTransactions(companyId, contracts.map((c) => c.id));
+
+  // Of each order's cost of sales, the part that is shipment expenses.
+  const soldExpenses = new Map(
+    await Promise.all(
+      contracts.map(async (c) => [c.id, (await getCostOfSalesBreakdown({ companyId, contractId: c.id })).expensesTotal] as const),
+    ),
+  );
 
   return contracts.map((contract): OrderCostSheet => {
     const records = contract.shipments;
@@ -468,6 +485,10 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
       revenueLocal,
       cogsUsd,
       cogsLocal,
+      soldExpenseUsd: soldExpenses.get(contract.id)?.usd ?? dec(0),
+      soldExpenseLocal: soldExpenses.get(contract.id)?.local ?? dec(0),
+      coffeeSoldUsd: toMoney(cogsUsd.minus(soldExpenses.get(contract.id)?.usd ?? 0)),
+      coffeeSoldLocal: toMoney(cogsLocal.minus(soldExpenses.get(contract.id)?.local ?? 0)),
       grossProfitUsd,
       grossProfitLocal: toMoney(revenueLocal.minus(cogsLocal)),
       netProfitUsd: toMoney(grossProfitUsd.minus(periodExpenseUsd)),

@@ -110,3 +110,18 @@ describe('the operating expenses on one line', () => {
     expect(out.totals.debitLocal.toFixed(2)).toBe(out.totals.creditLocal.toFixed(2));
   });
 });
+
+describe('shipment expenses on the coffee sold, with the operating expenses', () => {
+  it('moves them from Cost of Goods Sold to Operating Expenses without moving the totals', async () => {
+    const { moveIntoOperating, OPERATING_ROW_ID } = await import('@/lib/trial-balance-view');
+    const r = (accountId: string, code: string, debit: number, credit: number) => ({
+      accountId, code, name: accountId, debitLocal: dec(debit), creditLocal: dec(credit), debitUsd: dec(0), creditUsd: dec(0),
+    });
+    const report = { rows: [r('sales', '4000', 0, 9000), r('cogs', '5000', 8000, 0), r(OPERATING_ROW_ID, '5211', 1000, 0)] };
+    const out = moveIntoOperating(report, 'cogs', { local: dec(1500), usd: dec(0) });
+    expect(out.rows.find((x) => x.accountId === 'cogs')!.debitLocal.toFixed(2)).toBe('6500.00');
+    expect(out.rows.find((x) => x.accountId === OPERATING_ROW_ID)!.debitLocal.toFixed(2)).toBe('2500.00');
+    const dr = out.rows.reduce((t, x) => t.plus(x.debitLocal), dec(0));
+    expect(dr.toFixed(2)).toBe('9000.00');
+  });
+});
