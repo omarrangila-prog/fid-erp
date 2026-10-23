@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clientLabel, isUnusedInPeriod } from '@/lib/trial-balance-view';
+import { clientLabel, isUnusedInPeriod, isZeroAtClose } from '@/lib/trial-balance-view';
 import { dec } from '@/lib/money';
 import type { TrialBalanceRow } from '@/lib/services/reports';
 
@@ -83,5 +83,30 @@ describe('the trial balance in the client’s words', () => {
     expect(isUnusedInPeriod({ ...blank, periodDebitLocal: dec(100), periodCreditLocal: dec(100) })).toBe(false);
     // Brought forward, nothing new: shown.
     expect(isUnusedInPeriod({ ...blank, openingDebitLocal: dec(50), debitLocal: dec(50) })).toBe(false);
+  });
+
+  it('leaves out an account with nothing left in the books\u2019 currency, whatever USD crumb remains', () => {
+    // Inventory in Transit once everything has arrived.
+    expect(isZeroAtClose({ debitLocal: dec(0), creditLocal: dec(0) })).toBe(true);
+    expect(isZeroAtClose({ debitLocal: dec('0.01'), creditLocal: dec(0) })).toBe(false);
+    expect(isZeroAtClose({ debitLocal: dec(0), creditLocal: dec(429640) })).toBe(false);
+  });
+});
+
+describe('the operating expenses on one line', () => {
+  it('adds them into one line and keeps the trial balance balanced', async () => {
+    const { combineTrialRows } = await import('@/lib/trial-balance-view');
+    const r = (accountId: string, code: string, debit: number, credit: number) => ({
+      accountId, code, name: accountId, type: 'EXPENSE',
+      debitLocal: dec(debit), creditLocal: dec(credit), debitUsd: dec(0), creditUsd: dec(0),
+    });
+    const report = {
+      rows: [r('sales', '4000', 0, 11276.32), r('fuel', '5211', 350, 0), r('bank', '6103', 1156.32, 0), r('general', '6201', 9770, 0)],
+      totals: { debitLocal: dec(11276.32), creditLocal: dec(11276.32), debitUsd: dec(0), creditUsd: dec(0) },
+    };
+    const out = combineTrialRows(report, new Set(['fuel', 'bank', 'general']), { accountId: 'op', name: 'Operating Expenses' });
+    expect(out.rows.map((x) => x.accountId)).toEqual(['sales', 'op']);
+    expect(out.rows[1].debitLocal.toFixed(2)).toBe('11276.32');
+    expect(out.totals.debitLocal.toFixed(2)).toBe(out.totals.creditLocal.toFixed(2));
   });
 });

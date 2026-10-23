@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { requirePageAccess } from '@/lib/auth/guards';
-import { PERMISSIONS } from '@/lib/constants';
+import { PERMISSIONS, REPORT_GROUPS } from '@/lib/constants';
 import { ledgerHref } from '@/lib/ledger-currency';
 import { prisma } from '@/lib/db';
 import { getTrialBalanceReport } from '@/lib/services/reports';
@@ -22,7 +22,8 @@ import { PrintHeader } from '@/components/shared/print-header';
 import { ReportSummary } from '@/components/shared/report-summary';
 import { dec, type Decimal } from '@/lib/money';
 import { transactionCurrencies } from '@/lib/company-currencies';
-import { clientLabel, isUnusedInPeriod } from '@/lib/trial-balance-view';
+import { clientLabel, combineTrialRows, isUnusedInPeriod, isZeroAtClose, OPERATING_ROW_ID } from '@/lib/trial-balance-view';
+import { AGENT_ROW_PREFIX, agentNettedTrialBalance, getAgentNetting } from '@/lib/services/agent-position';
 
 export const metadata: Metadata = { title: 'Trial Balance' };
 export const dynamic = 'force-dynamic';
@@ -74,8 +75,11 @@ export default async function TrialBalancePage({
     getShipmentOrdinals(companyId),
   ]);
 
-  const [trial, accountCurrencies] = await Promise.all([
+  const [report, netting, accountCurrencies] = await Promise.all([
     getTrialBalanceReport({ companyId, to: asOfDate, filters }),
+    // Each agent's accounts read as one line — not on a narrowed view, where
+    // only part of his entries would be in it.
+    filtered ? null : getAgentNetting(companyId, asOfDate),
     prisma.account.findMany({
       where: { companyId: user.activeCompany.id },
       orderBy: { code: 'asc' },
@@ -86,6 +90,7 @@ export default async function TrialBalancePage({
         type: true,
         currency: true,
         systemKey: true,
+        reportGroup: true,
         cashBankAccounts: { select: { currency: true }, orderBy: { currency: 'asc' } },
       },
     }),
@@ -96,10 +101,16 @@ export default async function TrialBalancePage({
    * accounts" adds the accounts with nothing brought forward, nothing moved
    * and nothing left; an account with any of the three is always listed.
    */
+  // The operating expenses read as one line, as on the profit and loss.
+  const operating = new Set(accountCurrencies.filter((a) => a.type === 'EXPENSE' && a.reportGroup === REPORT_GROUPS.OPERATING).map((a) => a.id));
+  const trial = combineTrialRows(netting ? agentNettedTrialBalance(report, netting) : report, operating, {
+    accountId: OPERATING_ROW_ID,
+    name: 'Operating Expenses',
+  });
   const showUnused = query.view === 'all';
   const metaById = new Map(accountCurrencies.map((a) => [a.id, { systemKey: a.systemKey }]));
   const zero = dec(0);
-  const listed = new Set(trial.rows.map((r) => r.accountId));
+  const listed = new Set(report.rows.map((r) => r.accountId));
   const rows = showUnused && !filtered
     ? [
         ...trial.rows,
@@ -112,13 +123,7 @@ export default async function TrialBalancePage({
             openingDebitLocal: zero, openingCreditLocal: zero, periodDebitLocal: zero, periodCreditLocal: zero,
           })),
       ].sort((a, b) => a.code.localeCompare(b.code))
-    : trial.rows.filter((r) => !isUnusedInPeriod(r));
-  const lines = rows.map((row) => ({
-    ...row,
-    key: row.accountId,
-    label: clientLabel(row, metaById.get(row.accountId)),
-    accounts: [{ accountId: row.accountId, code: row.code, name: row.name }],
-  }));
+    : trial.rows.filter((r) => !isUnusedInPeriod(r) && !isZeroAtClose(r));
   const unusedCount = accountCurrencies.length - listed.size;
   const viewHref = (view: 'all' | null) => {
     const params = new URLSearchParams(
@@ -134,6 +139,17 @@ export default async function TrialBalancePage({
       return [row.id, cash?.currency ?? row.currency ?? null] as const;
     }),
   );
+  const lines = rows.map((row) => ({
+    ...row,
+    key: row.accountId,
+    label: clientLabel(row, metaById.get(row.accountId)),
+    // An agent's line is made of several ledgers, so it opens his agent ledger.
+    href: row.accountId.startsWith(AGENT_ROW_PREFIX)
+      ? '/ledgers/agents'
+      : row.accountId === OPERATING_ROW_ID
+        ? `/reports/profit-loss?to=${asOfDate.toISOString().slice(0, 10)}`
+        : ledgerHref(row.accountId, currencyByAccount.get(row.accountId)),
+  }));
 
   return (
     <div className="space-y-6">
@@ -271,16 +287,9 @@ export default async function TrialBalancePage({
                 {lines.map((row) => (
                   <TR key={row.key} data-testid="tb-line">
                     <TD>
-                      {row.accounts.length === 1 ? (
-                        <Link
-                          href={ledgerHref(row.accounts[0].accountId, currencyByAccount.get(row.accounts[0].accountId))}
-                          className="font-medium text-forest-800 hover:text-gold-700"
-                        >
-                          {row.label}
-                        </Link>
-                      ) : (
-                        <span className="font-medium text-ink">{row.label}</span>
-                      )}
+                      <Link href={row.href} className="font-medium text-forest-800 hover:text-gold-700">
+                        {row.label}
+                      </Link>
                     </TD>
                     {trial.hasOpening ? (
                       <>

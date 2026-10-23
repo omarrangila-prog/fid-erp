@@ -1,4 +1,5 @@
 import { ACCOUNT_KEYS } from '@/lib/constants';
+import { Decimal } from '@/lib/money';
 import type { TrialBalanceRow } from '@/lib/services/reports';
 
 /**
@@ -51,4 +52,49 @@ export function isUnusedInPeriod(row: Pick<TrialBalanceRow, 'openingDebitLocal' 
     row.openingDebitLocal, row.openingCreditLocal, row.periodDebitLocal, row.periodCreditLocal, row.debitLocal, row.creditLocal,
     row.openingDebitUsd, row.openingCreditUsd, row.periodDebitUsd, row.periodCreditUsd, row.debitUsd, row.creditUsd,
   ].every((v) => v.isZero());
+}
+
+/**
+ * Nothing left on the account at the closing date, in the books' currency.
+ * A trial balance as at a date has nothing to say about it, so it is left
+ * out — a crumb of USD equivalent from rounding does not make it a balance.
+ */
+export function isZeroAtClose(row: Pick<TrialBalanceRow, 'debitLocal' | 'creditLocal'>): boolean {
+  return row.debitLocal.isZero() && row.creditLocal.isZero();
+}
+
+/** The id the combined operating-expenses line carries. */
+export const OPERATING_ROW_ID = 'group-operating-expenses';
+
+/**
+ * Several accounts read as one line — the owner's operating expenses, all
+ * together. The line's balance is their sum; the accounts themselves are
+ * untouched and each still has its ledger. Totals are those of the lines
+ * shown, so the balance check holds.
+ */
+export function combineTrialRows<
+  R extends Pick<TrialBalanceRow, 'accountId' | 'code' | 'name' | 'type' | 'debitLocal' | 'creditLocal' | 'debitUsd' | 'creditUsd'>,
+  T extends { rows: R[]; totals: { debitLocal: Decimal; creditLocal: Decimal; debitUsd: Decimal; creditUsd: Decimal } },
+>(report: T, ids: Set<string>, line: { accountId: string; name: string }): T {
+  const parts = report.rows.filter((r) => ids.has(r.accountId));
+  if (parts.length < 2) return report;
+  const net = (pick: (r: R) => Decimal) => parts.reduce((t, r) => t.plus(pick(r)), new Decimal(0));
+  const local = net((r) => r.debitLocal).minus(net((r) => r.creditLocal));
+  const usd = net((r) => r.debitUsd).minus(net((r) => r.creditUsd));
+  const zero = new Decimal(0);
+  const combined = {
+    ...parts[0],
+    ...line,
+    debitLocal: local.greaterThan(0) ? local : zero,
+    creditLocal: local.lessThan(0) ? local.negated() : zero,
+    debitUsd: usd.greaterThan(0) ? usd : zero,
+    creditUsd: usd.lessThan(0) ? usd.negated() : zero,
+  } as R;
+  const rows = [...report.rows.filter((r) => !ids.has(r.accountId)), combined].sort((a, b) => a.code.localeCompare(b.code));
+  const total = (pick: (r: R) => Decimal) => rows.reduce((t, r) => t.plus(pick(r)), zero);
+  return {
+    ...report,
+    rows,
+    totals: { ...report.totals, debitLocal: total((r) => r.debitLocal), creditLocal: total((r) => r.creditLocal), debitUsd: total((r) => r.debitUsd), creditUsd: total((r) => r.creditUsd) },
+  };
 }

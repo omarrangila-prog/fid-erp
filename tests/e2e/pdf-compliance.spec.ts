@@ -206,11 +206,13 @@ test('14.9/14.10 the P&L answers any date range, including one day', async ({ pa
   console.log(`  P&L: year, single day (${dayExpenses.toFixed(2)} of expenses), quarterly columns, previous-year comparison`);
 });
 
-test('14.11/14.12 the trial balance shows opening, movement and closing, and debit equals credit', async ({ page }) => {
-  await page.goto(`/reports/trial-balance?from=${YEAR.from}&to=${YEAR.to}`, { waitUntil: 'domcontentloaded' });
+test('14.11/14.12 the trial balance is debit and credit as at a date, and debit equals credit', async ({ page }) => {
+  // The owner's trial balance: two columns, as QuickBooks prints it.
+  await page.goto(`/reports/trial-balance?asOf=${YEAR.to}`, { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /^Trial Balance$/ }).first()).toBeVisible({ timeout: 45_000 });
   await expect(page.getByText(/^Balanced$/).first()).toBeVisible();
-  for (const header of [/Opening/, /Debit/, /Credit/, /Closing/]) {
+  await expect(page.getByRole('columnheader', { name: /Opening|Closing/ })).toHaveCount(0);
+  for (const header of [/^Debit$/, /^Credit$/]) {
     await expect(page.getByRole('columnheader', { name: header }).first()).toBeVisible();
   }
   const totals = page.getByRole('row').filter({ hasText: /Total/ }).last();

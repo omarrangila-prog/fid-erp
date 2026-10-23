@@ -2,12 +2,13 @@ import { shortDocumentNumber } from '@/lib/short-number';
 import { getOrderCostSheets } from '@/lib/services/order-cost';
 import { NextResponse } from 'next/server';
 import { requirePermission, can } from '@/lib/auth/guards';
-import { PERMISSIONS } from '@/lib/constants';
+import { PERMISSIONS, REPORT_GROUPS } from '@/lib/constants';
 import { toErrorResponse, NotFoundError, ForbiddenError } from '@/lib/errors';
 import { prisma } from '@/lib/db';
 import { getCostOfSalesBreakdown } from '@/lib/services/cost-of-sales-breakdown';
 import { BALANCE_SHEET_GROUPS } from '@/lib/balance-sheet-groups';
-import { clientLabel, isUnusedInPeriod } from '@/lib/trial-balance-view';
+import { agentNettedBalanceSheet, agentNettedTrialBalance, getAgentNetting } from '@/lib/services/agent-position';
+import { clientLabel, isUnusedInPeriod, isZeroAtClose, combineTrialRows, OPERATING_ROW_ID } from '@/lib/trial-balance-view';
 import { dec, sum } from '@/lib/money';
 import {
   buildWorkbook,
@@ -214,7 +215,8 @@ async function vendorLedgerExport(user: SessionUser, query: URLSearchParams) {
 function pnlSection(title: string, lines: PnlLine[], total: { usd: unknown; local: unknown }, totalLabel = `Total ${title.toLowerCase()}`): StatementRow[] {
   return [
     { kind: 'section', label: title },
-    ...lines.map((line): StatementRow => ({
+    // Zero in the books' currency is nothing to show.
+    ...lines.filter((line) => !dec(line.amountLocal).isZero()).map((line): StatementRow => ({
       kind: 'line',
       label: line.name,
       code: line.code,
@@ -1048,12 +1050,20 @@ const REPORTS: Record<string, Report> = {
         shipmentId: query.get('shipment') || null,
       };
       const filtered = Object.values(filters).some(Boolean);
-      const [trial, accounts] = await Promise.all([
+      const [report, netting, accounts] = await Promise.all([
         getTrialBalanceReport({ companyId, to, filters }),
-        prisma.account.findMany({ where: { companyId }, orderBy: { code: 'asc' }, select: { id: true, code: true, name: true, type: true, systemKey: true } }),
+        // As on screen: each agent's accounts on one line, except on a narrowed view.
+        filtered ? null : getAgentNetting(companyId, to),
+        prisma.account.findMany({ where: { companyId }, orderBy: { code: 'asc' }, select: { id: true, code: true, name: true, type: true, systemKey: true, reportGroup: true } }),
       ]);
+      // As on screen: the operating expenses on one line.
+      const operating = new Set(accounts.filter((a) => a.type === 'EXPENSE' && a.reportGroup === REPORT_GROUPS.OPERATING).map((a) => a.id));
+      const trial = combineTrialRows(netting ? agentNettedTrialBalance(report, netting) : report, operating, {
+        accountId: OPERATING_ROW_ID,
+        name: 'Operating Expenses',
+      });
       const meta = new Map(accounts.map((a) => [a.id, { systemKey: a.systemKey }]));
-      const listed = new Set(trial.rows.map((r) => r.accountId));
+      const listed = new Set(report.rows.map((r) => r.accountId));
       const zero = dec(0);
       const rows = query.get('view') === 'all' && !filtered
         ? [
@@ -1065,7 +1075,7 @@ const REPORTS: Record<string, Report> = {
               openingDebitLocal: zero, openingCreditLocal: zero, periodDebitLocal: zero, periodCreditLocal: zero,
             })),
           ].sort((x, y) => x.code.localeCompare(y.code))
-        : trial.rows.filter((r) => !isUnusedInPeriod(r));
+        : trial.rows.filter((r) => !isUnusedInPeriod(r) && !isZeroAtClose(r));
       const scope = filtered ? ' · FILTERED: only the lines matching the filters, so the totals are of those lines' : '';
 
       return buildWorkbook({
@@ -1158,7 +1168,7 @@ const REPORTS: Record<string, Report> = {
         ...expenseRows,
       ];
 
-      if (pnl.otherItems.length > 0) {
+      if (pnl.otherItems.some((l) => !dec(l.amountLocal).isZero())) {
         rows.push(...pnlSection('Other Income / Expenses', pnl.otherItems, { usd: t.otherUsd, local: t.otherLocal }, 'Total Other Income / Expenses'));
       }
 
@@ -1188,14 +1198,19 @@ const REPORTS: Record<string, Report> = {
     build: async (user, query) => {
       const asOf = dateParam(query, 'asOf') ?? new Date();
       const local = user.activeCompany.localCurrency;
-      const sheet = await getBalanceSheet({ companyId: user.activeCompany.id, asOf });
+      // As on screen: each agent's accounts on one line.
+      const sheet = agentNettedBalanceSheet(
+        await getBalanceSheet({ companyId: user.activeCompany.id, asOf }),
+        await getAgentNetting(user.activeCompany.id, asOf),
+        { owedToUs: BALANCE_SHEET_GROUPS.ASSET[1], weOwe: BALANCE_SHEET_GROUPS.LIABILITY[3] },
+      );
 
       // Under the headings of the client's requirements document, as on screen.
       const grouped = (title: string, groups: readonly string[], section: typeof sheet.assets): StatementRow[] => [
         { kind: 'section', label: title },
         ...groups.flatMap((group): StatementRow[] => {
           // Every heading the requirements list, empty or not.
-          const lines = section.lines.filter((l) => l.group === group);
+          const lines = section.lines.filter((l) => l.group === group && !dec(l.amountLocal).isZero());
           return [
             { kind: 'note', label: group },
             ...lines.map((line): StatementRow => ({ kind: 'line', label: line.displayName, code: line.code, values: [Number(line.amountLocal), Number(line.amountUsd)] })),

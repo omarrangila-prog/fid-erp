@@ -135,7 +135,8 @@ export default async function ProfitLossPage({
       const line = p ? pick(p).find((l) => l.accountId === accountId) : undefined;
       return { local: dec(line?.amountLocal ?? 0), usd: dec(line?.amountUsd ?? 0) };
     };
-    const isZero = (v: Pair) => v.local.isZero() && v.usd.isZero();
+    // Zero in the books' currency is nothing to show, whatever crumb of USD equivalent is left.
+    const isZero = (v: Pair) => v.local.isZero();
 
     const lines: StatementLine[] = [...ordered.values()]
       .filter((line) => showZero || !isZero(amountIn(total, line.accountId)) || (before ? !isZero(amountIn(before, line.accountId)) : false))
@@ -213,7 +214,7 @@ export default async function ProfitLossPage({
     section('income', 'Sales / Revenue', (p) => p.revenue, (p) => ({ local: p.totals.revenueLocal, usd: p.totals.revenueUsd }), 'Total Sales / Revenue'),
     cogsSection,
     expensesSection,
-    ...(total.otherItems.length > 0 || (before?.otherItems.length ?? 0) > 0
+    ...([total, before, ...report.byColumn].some((p) => p?.otherItems.some((l) => showZero || !dec(l.amountLocal).isZero()))
       ? [section('other', 'Other Income / Expenses', (p) => p.otherItems, (p) => ({ local: p.totals.otherLocal, usd: p.totals.otherUsd }), 'Total Other Income / Expenses')]
       : []),
   ];
