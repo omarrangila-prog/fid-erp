@@ -198,13 +198,13 @@ test('shipment profitability lays out one column per shipment with a total', asy
     'Total landed cost',
     'Landed cost per KG',
     'Sold',
-    'On hand in the warehouses',
-    'Closing stock value',
+    'Remaining available for sale',
+    'Remaining inventory value \\(USD\\)',
     'Sales revenue',
     'Average selling price per KG',
     'Cost of goods sold',
-    'Gross profit',
-    'Net profit',
+    'Gross profit on sold goods',
+    'Net profit — to date until closed',
     'Gross margin',
   ]) {
     await expect(table.locator('td').filter({ hasText: new RegExp(`${measure}$`) }).first()).toBeVisible();

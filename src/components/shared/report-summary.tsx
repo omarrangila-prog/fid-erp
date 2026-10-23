@@ -35,7 +35,8 @@ export function ReportSummary({
   const columns = Math.min(figures.length, 5);
 
   return (
-    <div className="space-y-3">
+    // On paper the table carries these totals; the cards are for the screen.
+    <div className="space-y-3" data-print="hide">
       <div
         className={cn(
           'grid gap-3',

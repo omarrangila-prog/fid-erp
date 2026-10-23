@@ -78,7 +78,7 @@ async function statementFigure(page: Page, measure: RegExp): Promise<number> {
 async function companyExpenses(page: Page, from: string, to: string): Promise<number> {
   await page.goto(`/reports/profit-loss?from=${from}&to=${to}`, { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /^Profit and Loss$/ })).toBeVisible({ timeout: 45_000 });
-  const row = page.getByRole('row').filter({ hasText: /^Total expenses/ }).first();
+  const row = page.getByRole('row').filter({ hasText: /^Less: Operating Expenses/ }).first();
   await expect(row).toBeVisible();
   return money(await row.locator('td, th').last().textContent());
 }
@@ -194,7 +194,7 @@ test('14.9/14.10 the P&L answers any date range, including one day', async ({ pa
   await page.goto('/reports/profit-loss?from=2026-07-03&to=2026-07-03', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /^Profit and Loss$/ })).toBeVisible({ timeout: 45_000 });
   await expect(page.locator('main').getByText(/3 Jul 2026|Jul 3, 2026/).first()).toBeVisible({ timeout: 45_000 });
-  const dayExpenses = money(await page.getByRole('row').filter({ hasText: /^Total expenses/ }).first().locator('td, th').last().textContent());
+  const dayExpenses = money(await page.getByRole('row').filter({ hasText: /^Less: Operating Expenses/ }).first().locator('td, th').last().textContent());
   // In the company's own currency, as the statement now leads: the MAD 9,000 overhead booked that day.
   expect(dayExpenses).toBeCloseTo(9_000, 2);
   expect(Number.isNaN(yearRevenue)).toBe(false);

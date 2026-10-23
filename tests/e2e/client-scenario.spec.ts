@@ -630,14 +630,14 @@ test('the profit and loss reads like the statement the client is used to', async
   await page.goto('/reports/profit-loss?from=2026-01-01&to=2026-12-31', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /^Profit and Loss$/ })).toBeVisible({ timeout: 30_000 });
 
-  // Sections collapse to their total row, and stay collapsed on return.
-  const income = page.getByRole('button', { name: /^Income$/ });
-  await expect(income).toHaveAttribute('aria-expanded', 'true');
-  await income.click();
+  // One line per heading, as the requirements set it out; each opens to its
+  // detail, and stays open on return.
+  const income = page.getByRole('button', { name: /^Sales \/ Revenue$/ });
   await expect(income).toHaveAttribute('aria-expanded', 'false');
+  await income.click();
+  await expect(income).toHaveAttribute('aria-expanded', 'true');
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('button', { name: /^Income$/ })).toHaveAttribute('aria-expanded', 'false', { timeout: 30_000 });
-  await page.getByRole('button', { name: /^Income$/ }).click();
+  await expect(page.getByRole('button', { name: /^Sales \/ Revenue$/ })).toHaveAttribute('aria-expanded', 'true', { timeout: 30_000 });
 
   // Columns by month, and a comparison with the previous period.
   await page.getByRole('combobox', { name: 'Display columns by' }).selectOption('month');

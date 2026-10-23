@@ -329,7 +329,7 @@ export default async function ProfitLossPage({
             comes from posted journal lines; click an account to see them.
           </p>
           {breakdown && shipmentExpenses ? (
-            <div className="mx-3 mt-3 rounded-md border border-line bg-surface-sunken/40 px-3 py-2 text-xs text-ink-muted" data-testid="pnl-shipment-expenses">
+            <div className="mx-3 mt-3 rounded-md border border-line bg-surface-sunken/40 px-3 py-2 text-xs text-ink-muted" data-testid="pnl-shipment-expenses" data-callout>
               <p className="font-semibold text-ink">Where the shipment expenses are</p>
               <p className="mt-1">
                 All shipment expenses recorded up to {formatDate(toDate)}: <span className="tnum font-semibold text-ink">{formatMoney(shipmentExpenses.recorded, local)}</span>.

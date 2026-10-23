@@ -136,7 +136,7 @@ function Overview({ sheets, local, showProfit }: { sheets: OrderCostSheet[]; loc
   const gross = total((s) => s.grossProfitLocal);
   const money = (v: Decimal) => formatMoney(v, local);
   return (
-    <TableWrap>
+    <TableWrap data-wide-sheet>
       <Table data-testid="shipment-overview" className="text-xs [&_td]:px-2.5 [&_th]:px-2.5">
         <THead>
           <TR className="hover:bg-transparent">
@@ -589,7 +589,7 @@ function FxSummary({ sheet }: { sheet: OrderCostSheet }) {
           from the purchase order. Shipment costs paid in {local} are taken at their {local} amounts.
         </span>
       </p>
-      <details className="mt-1">
+      <details className="mt-1" data-print="hide">
         <summary className="cursor-pointer text-xs font-medium text-forest-800 hover:text-gold-700">View FX breakdown</summary>
         <TableWrap className="mt-2">
           <Table data-testid="fx-breakdown">

@@ -693,6 +693,15 @@
     display: none !important;
   }
 
+  /*
+   * A printed report is its columns and rows. Explanatory paragraphs go;
+   * the letterhead, the statement's own heading and anything inside a table
+   * stay.
+   */
+  main p:not(table p):not([data-statement-header] p):not(.print-letterhead p) {
+    display: none !important;
+  }
+
   /* A ledger on paper: black lines, the whole width of the sheet, nothing pinned. */
   .ledger-grid-print {
     width: 100% !important;

@@ -274,9 +274,10 @@ export function Statement({
     setOpen(readOpen(report));
   }, [report]);
 
-  function toggle(key: string) {
+  function toggle(section: StatementSectionData) {
     setOpen((prev) => {
-      const next = { ...prev, [key]: !(prev[key] ?? true) };
+      // From what is shown now: a section that starts closed opens on the first click.
+      const next = { ...prev, [section.key]: !(prev[section.key] ?? section.defaultOpen ?? true) };
       try {
         window.localStorage.setItem(OPEN_KEY(report), JSON.stringify(next));
       } catch {
@@ -331,7 +332,7 @@ export function Statement({
             const toggleButton = (
               <button
                 type="button"
-                onClick={() => toggle(section.key)}
+                onClick={() => toggle(section)}
                 aria-expanded={shown}
                 className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-ink hover:bg-surface-sunken"
               >

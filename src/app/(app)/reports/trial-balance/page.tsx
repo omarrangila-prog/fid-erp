@@ -247,7 +247,7 @@ export default async function TrialBalancePage({
           </div>
         </CardHeader>
         <CardContent className="px-0 pb-0">
-          <TableWrap className="rounded-none border-0 border-t">
+          <TableWrap className="rounded-none border-0 border-t" data-wide-sheet>
             <Table>
               <THead>
                 {/* The requirements' columns: opening balance, debit total, credit total, closing balance. */}
