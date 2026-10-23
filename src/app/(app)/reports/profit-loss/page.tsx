@@ -153,6 +153,8 @@ export default async function ProfitLossPage({
     return {
       key,
       title,
+      // The requirements' statement: one line per heading. Each opens to show what it is made of.
+      defaultOpen: false,
       lines,
       total: {
         label: totalLabel,
@@ -165,6 +167,8 @@ export default async function ProfitLossPage({
     };
   };
 
+  let shippingMoved: Pair | null = null;
+  let shippingLines: StatementLine[] = [];
   const cogsSection = section('cogs', 'Less: Cost of Goods Sold', (p) => p.costOfSales, (p) => ({ local: p.totals.costOfSalesLocal, usd: p.totals.costOfSalesUsd }), 'Total Cost of Goods Sold');
   if (breakdown && cogsAccount) {
     // The one "Cost of Goods Sold" line opened into what it is made of. The
@@ -174,32 +178,41 @@ export default async function ProfitLossPage({
     const ledger: Pair = { local: dec(ledgerLine?.amountLocal ?? 0), usd: dec(ledgerLine?.amountUsd ?? 0) };
     const timing: Pair = { local: ledger.local.minus(breakdown.totalLocal), usd: ledger.usd.minus(breakdown.totalUsd) };
     const href = `/reports/general-ledger?account=${cogsAccount.id}&from=${from}&to=${to}`;
+    // The owner's presentation: Cost of Goods Sold is the coffee itself, and
+    // the shipment expenses on the coffee sold are listed with the other
+    // expenses. Only where they are shown moves — the books keep them in the
+    // coffee's cost, and net profit is the same either way.
     const parts: StatementLine[] = [
       { key: 'cos-purchase', label: 'Coffee purchase cost (coffee sold)', href, cells: [money({ local: breakdown.purchase.local, usd: breakdown.purchase.usd })] },
-      ...breakdown.expenses.map((e) => ({
-        key: `cos-${e.key}`,
-        label: `Shipment expense — ${e.label}`,
-        href: `/reports/cogs?from=${from}&to=${to}`,
-        indent: true,
-        cells: [money({ local: e.local, usd: e.usd })],
-      })),
-      {
-        key: 'cos-expenses',
-        label: 'Total shipment expenses on the coffee sold',
-        cells: [money({ local: breakdown.expensesTotal.local, usd: breakdown.expensesTotal.usd })],
-      },
       ...(timing.local.abs().greaterThanOrEqualTo('0.01')
         ? [{ key: 'cos-timing', label: 'Stock / cost of sales correction dated in this period', href, cells: [money(timing)] }]
         : []),
     ];
     const at = cogsSection.lines.findIndex((l) => l.key === cogsAccount.id);
-    if (at >= 0) cogsSection.lines.splice(at, 1, ...parts);
+    if (at >= 0) {
+      cogsSection.lines.splice(at, 1, ...parts);
+      shippingMoved = { local: breakdown.expensesTotal.local, usd: breakdown.expensesTotal.usd };
+      shippingLines = breakdown.expenses.map((e) => ({
+        key: `ship-${e.key}`,
+        label: `Shipment expense — ${e.label}`,
+        href: `/reports/cogs?from=${from}&to=${to}`,
+        cells: [money({ local: e.local, usd: e.usd })],
+      }));
+      cogsSection.total.cells = [money({ local: total.totals.costOfSalesLocal.minus(shippingMoved.local), usd: total.totals.costOfSalesUsd.minus(shippingMoved.usd) })];
+    }
+  }
+  const expensesSection = section('expenses', 'Less: Operating Expenses', (p) => p.operatingExpenses, (p) => ({ local: p.totals.operatingExpensesLocal, usd: p.totals.operatingExpensesUsd }), 'Total Operating Expenses');
+  if (shippingMoved) {
+    expensesSection.lines.unshift(...shippingLines);
+    expensesSection.total.cells = [
+      money({ local: total.totals.operatingExpensesLocal.plus(shippingMoved.local), usd: total.totals.operatingExpensesUsd.plus(shippingMoved.usd) }),
+    ];
   }
 
   const sections: StatementSectionData[] = [
     section('income', 'Sales / Revenue', (p) => p.revenue, (p) => ({ local: p.totals.revenueLocal, usd: p.totals.revenueUsd }), 'Total Sales / Revenue'),
     cogsSection,
-    section('expenses', 'Less: Operating Expenses', (p) => p.operatingExpenses, (p) => ({ local: p.totals.operatingExpensesLocal, usd: p.totals.operatingExpensesUsd }), 'Total Operating Expenses'),
+    expensesSection,
     ...(total.otherItems.length > 0 || (before?.otherItems.length ?? 0) > 0
       ? [section('other', 'Other Income / Expenses', (p) => p.otherItems, (p) => ({ local: p.totals.otherLocal, usd: p.totals.otherUsd }), 'Total Other Income / Expenses')]
       : []),
@@ -294,16 +307,24 @@ export default async function ProfitLossPage({
             }
           />
           <Statement
-            report="profit-loss"
+            report="profit-loss-pdf"
             columns={columns}
             sections={sections}
             grandTotals={[
-              grand('Gross Profit', (p) => ({ local: p.totals.grossProfitLocal, usd: p.totals.grossProfitUsd }), 'cogs', 'strong'),
+              grand(
+                'Gross Profit',
+                (p) => ({
+                  local: p.totals.grossProfitLocal.plus(shippingMoved?.local ?? 0),
+                  usd: p.totals.grossProfitUsd.plus(shippingMoved?.usd ?? 0),
+                }),
+                'cogs',
+                'strong',
+              ),
               grand('Net Profit / Loss', (p) => ({ local: p.totals.netProfitLocal, usd: p.totals.netProfitUsd }), sections[sections.length - 1].key, 'final'),
             ]}
           />
           <p className="mt-3 px-3 text-xs text-ink-subtle">
-            Gross margin {formatPercent(total.grossMarginPct)} · net margin {formatPercent(total.netMarginPct)}. Figures in {local}, the
+            Gross margin {formatPercent(shippingMoved && !total.totals.revenueLocal.isZero() ? total.totals.grossProfitLocal.plus(shippingMoved.local).dividedBy(total.totals.revenueLocal).times(100) : total.grossMarginPct)} · net margin {formatPercent(total.netMarginPct)}. Figures in {local}, the
             currency the books are kept in; ≈ USD under each is the equivalent at every transaction&rsquo;s own rate. Every figure
             comes from posted journal lines; click an account to see them.
           </p>
@@ -316,7 +337,7 @@ export default async function ProfitLossPage({
               <ul className="mt-1 list-disc space-y-0.5 pl-5">
                 <li>
                   <span className="tnum font-semibold text-ink">{formatMoney(breakdown.expensesTotal.local, local)}</span> is on the coffee sold in this
-                  period — in Cost of Goods Sold above, line by line.
+                  period — under Operating Expenses above, line by line. In the books they are part of the coffee&rsquo;s cost; only where they are shown differs, and net profit is the same.
                 </li>
                 <li>
                   <span className="tnum font-semibold text-ink">{formatMoney(shipmentExpenses.inStock, local)}</span> is on coffee not sold yet (in stock or

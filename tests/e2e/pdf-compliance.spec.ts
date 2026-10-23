@@ -188,7 +188,7 @@ test('14.8 the optional overhead allocation can be made and withdrawn without mo
 test('14.9/14.10 the P&L answers any date range, including one day', async ({ page }) => {
   await page.goto(`/reports/profit-loss?from=${YEAR.from}&to=${YEAR.to}`, { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /^Profit and Loss$/ })).toBeVisible({ timeout: 45_000 });
-  const yearRevenue = money(await page.getByRole('row').filter({ hasText: /^Total Sales \/ Revenue/ }).first().locator('td, th').last().textContent());
+  const yearRevenue = money(await page.getByRole('row').filter({ hasText: /^Sales \/ Revenue/ }).first().locator('td, th').last().textContent());
 
   // One day only: never more than the year that contains it.
   await page.goto('/reports/profit-loss?from=2026-07-03&to=2026-07-03', { waitUntil: 'domcontentloaded' });
@@ -222,15 +222,15 @@ test('14.11/14.12 the trial balance shows opening, movement and closing, and deb
 test('14.13/14.14 the balance sheet balances, as at any date', async ({ page }) => {
   await page.goto('/reports/balance-sheet?asOf=2026-12-31', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /^Balance Sheet$/ }).first()).toBeVisible({ timeout: 45_000 });
-  await expect(page.getByText(/Assets = Liabilities \+ Equity/)).toBeVisible();
-  const assets = money(await page.getByRole('row').filter({ hasText: /^Total assets/ }).first().locator('td, th').last().textContent());
-  const both = money(await page.getByRole('row').filter({ hasText: /^Total liabilities and equity/ }).first().locator('td, th').last().textContent());
+  await expect(page.getByText(/Balance check: Total Assets = Total Liabilities \+ Total Equity/).first()).toBeVisible();
+  const assets = money(await page.getByRole('row').filter({ hasText: /^Total Assets/ }).first().locator('td, th').last().textContent());
+  const both = money(await page.getByRole('row').filter({ hasText: /^Total Liabilities plus Total Equity/ }).first().locator('td, th').last().textContent());
   expect(assets).toBeCloseTo(both, 2);
 
   // A date before the business started shows nothing rather than today's figures.
   await page.goto('/reports/balance-sheet?asOf=2019-12-31', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /^Balance Sheet$/ }).first()).toBeVisible({ timeout: 45_000 });
-  const earlyRow = page.getByRole('row').filter({ hasText: /^Total assets/ }).first();
+  const earlyRow = page.getByRole('row').filter({ hasText: /^Total Assets/ }).first();
   const early = (await earlyRow.count()) === 0 ? 0 : money(await earlyRow.locator('td, th').last().textContent());
   expect(early).toBe(0);
   console.log(`  balance sheet: assets ${assets.toFixed(2)} = liabilities + equity, historical date empty`);
@@ -273,7 +273,7 @@ test('14.18–14.20 the exports carry the same totals as the screen', async ({ p
   await page.goto(`/reports/profit-loss?from=${YEAR.from}&to=${YEAR.to}`, { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /^Profit and Loss$/ })).toBeVisible({ timeout: 45_000 });
   // The total cell reads MAD first, the USD equivalent under it; the MAD figure is the one compared.
-  const screenIncome = money((await page.getByRole('row').filter({ hasText: /^Total Sales \/ Revenue/ }).first().locator('td, th').last().innerText()).split('\n')[0]);
+  const screenIncome = money((await page.getByRole('row').filter({ hasText: /^Sales \/ Revenue/ }).first().locator('td, th').last().innerText()).split('\n')[0]);
 
   const excel = page.getByRole('link', { name: /^Excel$/ }).first();
   await expect(excel).toBeVisible();
@@ -287,7 +287,7 @@ test('14.18–14.20 the exports carry the same totals as the screen', async ({ p
   const text = await csv.text();
   expect(text).toMatch(/FID Trading International/);
   expect(text).toMatch(/2026/);
-  const incomeLine = text.split('\n').find((line) => /total income/i.test(line));
+  const incomeLine = text.split('\n').find((line) => /total sales \/ revenue/i.test(line));
   expect(incomeLine, 'the export names the same total as the screen').toBeTruthy();
   // The export leads with the books' currency, the USD equivalent in the next column.
   const firstFigure = (incomeLine ?? '').split(',').map((cell) => cell.replace(/"/g, '').trim()).find((cell) => /^-?[\d.]+$/.test(cell));

@@ -124,7 +124,7 @@ test('every report that shows figures can be taken away as a spreadsheet', async
     ['/reports/sales-by?by=customer', 'Sales by Customer'],
     ['/reports/sales-by?by=item', 'Sales by Coffee'],
     ['/reports/stock-movement', 'Daily Stock Movement'],
-    ['/reports/shipment-cost', 'Shipment Costing'],
+    ['/reports/shipment-cost', 'Shipment-wise Profitability'],
     ['/reports/inventory-valuation', 'Inventory Valuation'],
     ['/profitability?view=statement', 'Profitability'],
   ];
@@ -162,7 +162,7 @@ test('inventory valuation reads as a summary, by warehouse, and in detail', asyn
   await page.goto('/reports/inventory-valuation?view=summary', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /^Inventory Valuation Summary$/ })).toBeVisible({ timeout: 30_000 });
   for (const header of ['Item', 'Qty', 'Avg landed cost', 'Asset value']) {
-    await expect(page.getByRole('columnheader', { name: header })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: header, exact: true }).first()).toBeVisible();
   }
   const total = page.getByRole('row').filter({ hasText: /^Total/ }).first();
   await expect(total).toBeVisible();

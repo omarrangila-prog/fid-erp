@@ -185,7 +185,8 @@ test('the lender has a ledger showing what we owe them', async ({ page }) => {
 
   const main = (await page.locator('main').textContent()) ?? '';
   expect(main).toMatch(/Payable to/i);
-  expect(main).toMatch(/50,000|50000/);
+  // The ledger opens in the books' currency (MAD); the loan was USD 50,000.
+  expect(main).toMatch(/50,000|50000|461,000/);
   // Stated in a currency, not in the name of a view.
   expect(main).not.toMatch(/REPORTING\s+[\d,]/);
   console.log('  lender ledger says "Payable to"');
@@ -606,8 +607,8 @@ test('the statements lead with the figures they exist to give', async ({ page })
     // The statement is laid out the way an accountant expects: Income, Cost
     // of goods sold, Gross profit, Expenses, Net profit — collapsible, with
     // a total row under each section.
-    ['/reports/profit-loss', ['Sales / Revenue', 'Total Sales / Revenue', 'Less: Cost of Goods Sold', 'Gross Profit', 'Less: Operating Expenses', 'Total Operating Expenses', 'Net Profit / Loss', 'Where the shipment expenses are']],
-    ['/reports/balance-sheet', ['Cash and bank balances', 'Accounts Payable - suppliers we owe', 'Total assets', 'Total liabilities', 'Total equity', 'Total liabilities and equity']],
+    ['/reports/profit-loss', ['Sales / Revenue', 'Less: Cost of Goods Sold', 'Gross Profit', 'Less: Operating Expenses', 'Net Profit / Loss', 'Where the shipment expenses are']],
+    ['/reports/balance-sheet', ['Cash and bank balances', 'Accounts Payable - suppliers we owe', 'Total Assets', 'Total Liabilities', 'Total Equity', 'Total Liabilities plus Total Equity']],
   ] as const) {
     await page.goto(path, { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle', { timeout: 6_000 }).catch(() => undefined);

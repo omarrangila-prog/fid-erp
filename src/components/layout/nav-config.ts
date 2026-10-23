@@ -121,7 +121,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: 'Loading Sheet', href: '/loading', icon: ClipboardList, permissions: [PERMISSIONS.SHIPMENTS_VIEW] },
       { label: 'Shipments', href: '/shipments', icon: Ship, permissions: [PERMISSIONS.SHIPMENTS_VIEW] },
-      { label: 'Shipment Costing', href: '/reports/shipment-cost', icon: Calculator, permissions: [PERMISSIONS.SHIPMENTS_VIEW] },
+      { label: 'Shipment-wise Profitability', href: '/reports/shipment-cost', icon: Calculator, permissions: [PERMISSIONS.SHIPMENTS_VIEW] },
       { label: 'Shipment Expenses', href: '/finance/expenses?kind=SHIPMENT', icon: Receipt, permissions: [PERMISSIONS.EXPENSES_VIEW] },
     ],
   },

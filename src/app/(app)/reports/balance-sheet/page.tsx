@@ -115,12 +115,11 @@ export default async function BalanceSheetPage({
           title: group,
           lines,
           total: {
-            label: `Total ${group.toLowerCase()}`,
+            label: `Total ${group}`,
             cells: [money(totalNow), ...(totalThen !== null ? changeCells(totalNow, totalThen) : [])],
           },
         };
-      })
-      .filter((section) => section.lines.length > 0 || showZero);
+      }); // every heading the requirements list is shown, empty or not
 
   // The headings of the client's requirements document (section 4), in its order.
   const assetSections = sectionsFor(sheet.assets.lines, before?.assets.lines, [...BALANCE_SHEET_GROUPS.ASSET], 'asset');
@@ -148,7 +147,7 @@ export default async function BalanceSheetPage({
         breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Balance Sheet' }]}
         meta={
           <Badge tone={sheet.balancesLocal && sheet.balancesUsd ? 'success' : 'danger'}>
-            {sheet.balancesLocal && sheet.balancesUsd ? 'Assets = Liabilities + Equity' : 'Attention required'}
+            {sheet.balancesLocal && sheet.balancesUsd ? 'Balance check: Total Assets = Total Liabilities + Total Equity' : 'Balance check failed'}
           </Badge>
         }
         actions={
@@ -180,11 +179,11 @@ export default async function BalanceSheetPage({
             columns={columns}
             sections={sections}
             grandTotals={[
-              totalRow('Total assets', pair(sheet.assets), before ? pair(before.assets) : undefined, lastAsset, 'strong'),
-              totalRow('Total liabilities', pair(sheet.liabilities), before ? pair(before.liabilities) : undefined, lastLiability, 'strong'),
-              totalRow('Total equity', pair(sheet.equity), before ? pair(before.equity) : undefined, lastEquity, 'strong'),
+              totalRow('Total Assets', pair(sheet.assets), before ? pair(before.assets) : undefined, lastAsset, 'strong'),
+              totalRow('Total Liabilities', pair(sheet.liabilities), before ? pair(before.liabilities) : undefined, lastLiability, 'strong'),
+              totalRow('Total Equity', pair(sheet.equity), before ? pair(before.equity) : undefined, lastEquity, 'strong'),
               totalRow(
-                'Total liabilities and equity',
+                'Total Liabilities plus Total Equity',
                 liabilitiesAndEquity,
                 before ? plus(pair(before.liabilities), pair(before.equity)) : undefined,
                 lastEquity,
@@ -194,8 +193,8 @@ export default async function BalanceSheetPage({
           />
           <p className={`mt-3 px-3 text-xs ${sheet.balancesLocal ? 'text-ink-subtle' : 'font-medium text-red-700'}`} data-testid="balance-sheet-equation">
             {sheet.balancesLocal
-              ? `Assets ${formatMoney(sheet.assets.totalLocal, local)} = liabilities ${formatMoney(sheet.liabilities.totalLocal, local)} + equity ${formatMoney(sheet.equity.totalLocal, local)}. Figures in ${local}, the currency the books are kept in; ≈ USD under each is the equivalent at every transaction's own rate.`
-              : `Assets and liabilities plus equity differ by ${formatMoney(sheet.differenceLocal, local)}. The posting engine refuses unbalanced entries, so this points at data written outside the application.`}
+              ? `Balance check: Total Assets ${formatMoney(sheet.assets.totalLocal, local)} = Total Liabilities ${formatMoney(sheet.liabilities.totalLocal, local)} + Total Equity ${formatMoney(sheet.equity.totalLocal, local)}. Figures in ${local}, the currency the books are kept in; ≈ USD under each is the equivalent at every transaction's own rate.`
+              : `Balance check failed: Total Assets and Total Liabilities plus Total Equity differ by ${formatMoney(sheet.differenceLocal, local)}. The posting engine refuses unbalanced entries, so this points at data written outside the application.`}
           </p>
         </CardContent>
       </Card>

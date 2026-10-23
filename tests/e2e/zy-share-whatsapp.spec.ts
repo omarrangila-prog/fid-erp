@@ -444,7 +444,7 @@ const MATRIX: Array<{ page: string; url?: string; list?: string; pattern?: RegEx
   { page: 'Reconciliation', url: '/reports/reconciliation', kind: 'report' },
   { page: 'Analytics', url: '/reports/analytics', kind: 'report' },
   { page: 'Shipment Profitability', url: '/profitability', kind: 'report' },
-  { page: 'Shipment Costing', url: '/reports/shipment-cost', kind: 'report' },
+  { page: 'Shipment-wise Profitability', url: '/reports/shipment-cost', kind: 'report' },
   { page: 'Shipment Report (detail)', list: '/shipments', pattern: /^\/shipments\/[a-z0-9]{20,}$/, kind: 'detail' },
   { page: 'Shipments', url: '/shipments', kind: 'list' },
   { page: 'Loading Sheet', url: '/loading', kind: 'list' },

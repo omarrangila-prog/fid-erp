@@ -20,7 +20,7 @@ import { MemoCell } from '@/components/shared/memo-cell';
 import { businessNumber } from '@/lib/short-number';
 import { OpenAllForPrint } from '@/app/(app)/reports/shipment-cost/open-for-print';
 
-export const metadata: Metadata = { title: 'Shipment Costing' };
+export const metadata: Metadata = { title: 'Shipment-wise Profitability' };
 export const dynamic = 'force-dynamic';
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -66,18 +66,18 @@ export default async function ShipmentCostPage({
   return (
     <div className="print-landscape space-y-6">
       <PageHeader
-        title="Shipment Costing"
-        description="One line per shipment (ICUL/FID order). Click a shipment for its purchase, every direct expense with what is settled and owed, its sales, the stock left and its profit."
-        breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Shipment Costing' }]}
+        title="Shipment-wise Profitability"
+        description="Per shipment: sales value and quantity sold, cost of the coffee sold, direct shipment costs, other expenses allocated to the shipment, gross profit, net profit and any unpaid customer or supplier balance — with a consolidated total for all shipments. Click a shipment for its detail."
+        breadcrumbs={[{ label: 'Reports', href: '/reports' }, { label: 'Shipment-wise Profitability' }]}
         actions={
           <>
-            <FavouriteStar href="/reports/shipment-cost" label="Shipment Costing" />
+            <FavouriteStar href="/reports/shipment-cost" label="Shipment-wise Profitability" />
             <ExportLinks href={exportHref('shipment-cost', {})} />
             <ReportShareButton report="shipment-costing" />
           </>
         }
       />
-      <PrintHeader title="Shipment Costing" companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency} country={user.activeCompany.country} />
+      <PrintHeader title="Shipment-wise Profitability" companyName={user.activeCompany.name} currency={user.activeCompany.localCurrency} country={user.activeCompany.country} />
       <OpenAllForPrint />
 
       {all.length === 0 ? (
@@ -145,21 +145,21 @@ function Overview({ sheets, local, showProfit }: { sheets: OrderCostSheet[]; loc
             <TH numeric>Purchase value</TH>
             <TH numeric>Direct shipment costs</TH>
             <TH numeric>Landed cost</TH>
-            <TH numeric>Sold KG</TH>
+            <TH numeric>Quantity sold</TH>
             <TH numeric>Sales value</TH>
             <TH numeric>Remaining KG</TH>
             <TH numeric>Closing stock value</TH>
             {showProfit ? (
               <>
                 <TH numeric>Cost of the coffee sold</TH>
-                <TH numeric>Gross profit / loss</TH>
+                <TH numeric>Gross profit</TH>
                 <TH numeric>Gross margin</TH>
-                <TH numeric>Other expenses allocated</TH>
-                <TH numeric>Net profit / loss</TH>
+                <TH numeric>Other expenses allocated to the shipment</TH>
+                <TH numeric>Net profit</TH>
               </>
             ) : null}
-            <TH numeric>Customers still owe</TH>
-            <TH numeric>Still owed to supplier</TH>
+            <TH numeric>Unpaid customer balance</TH>
+            <TH numeric>Unpaid supplier balance</TH>
           </TR>
         </THead>
         <TBody>
@@ -195,7 +195,7 @@ function Overview({ sheets, local, showProfit }: { sheets: OrderCostSheet[]; loc
         </TBody>
         <TFoot>
           <tr>
-            <TD>Total — {plural(sheets.length, 'shipment', 'shipments')}</TD>
+            <TD>Consolidated total — all {plural(sheets.length, 'shipment', 'shipments')}</TD>
             <TD numeric>{formatQuantityKg(total((s) => s.orderedKg))}</TD>
             <TD numeric>{money(total((s) => s.goodsLocal))}</TD>
             <TD numeric>{money(total((s) => s.capitalisedExpenseLocal))}</TD>
@@ -279,7 +279,7 @@ function OrderSection({
         </span>
         {showProfit ? (
           <span className={cn('tnum text-sm font-semibold', profitTone)}>
-            <span className="block text-[11px] font-normal text-ink-subtle">Gross profit / loss</span>
+            <span className="block text-[11px] font-normal text-ink-subtle">Gross profit</span>
             {money(sheet.grossProfitLocal)}
             <span className="block text-[11px] font-normal text-ink-subtle">{dec(sheet.marginPct).toFixed(1)}% of sales</span>
           </span>
@@ -308,7 +308,7 @@ function OrderSection({
                   <TH>Container / lot</TH>
                   <TH>Warehouse</TH>
                   <TH numeric>Purchased KG</TH>
-                  <TH numeric>Sold KG</TH>
+                  <TH numeric>Quantity sold</TH>
                   <TH numeric>Remaining KG</TH>
                   <TH numeric>Purchase value (USD)</TH>
                   <TH numeric>Landed cost</TH>
@@ -352,7 +352,7 @@ function OrderSection({
         </section>
 
         <section>
-          <h3 className={h3}>B. Direct shipment costs (freight, insurance, clearance, handling, port, documents) — cost, settled and outstanding</h3>
+          <h3 className={h3}>B. Direct shipment costs by category (freight, insurance, clearance, handling, port, documents) — cost, settled and outstanding</h3>
           {sheet.expenses.length === 0 ? (
             <p className="text-xs text-ink-subtle">No costs have been booked against this shipment yet.</p>
           ) : (
@@ -445,7 +445,7 @@ function OrderSection({
                     <TH numeric>KG from this shipment</TH>
                     <TH numeric>Sales value</TH>
                     <TH numeric>Price / KG</TH>
-                    <TH numeric>Still owed</TH>
+                    <TH numeric>Unpaid customer balance</TH>
                   </TR>
                 </THead>
                 <TBody>
@@ -482,7 +482,7 @@ function OrderSection({
         </section>
 
         <section>
-          <h3 className={h3}>D. Shipment profitability</h3>
+          <h3 className={h3}>D. Shipment-wise Profitability</h3>
           <TableWrap className="max-w-3xl">
             <Table data-testid="costing-summary">
               <THead>
@@ -506,8 +506,8 @@ function OrderSection({
                     ...(showProfit
                       ? [
                           ['Cost of the coffee sold', money(sheet.cogsLocal), formatMoney(sheet.cogsUsd, 'USD')],
-                          ['Gross profit / loss', money(sheet.grossProfitLocal), formatMoney(sheet.grossProfitUsd, 'USD'), 'profit'],
-                          ['Gross profit / loss %', `${dec(sheet.marginPct).toFixed(1)}% of sales`, ''],
+                          ['Gross profit', money(sheet.grossProfitLocal), formatMoney(sheet.grossProfitUsd, 'USD'), 'profit'],
+                          ['Gross profit %', `${dec(sheet.marginPct).toFixed(1)}% of sales`, ''],
                         ]
                       : []),
                     ['Quantity remaining', formatQuantityKg(sheet.remainingKg), ''],
@@ -519,11 +519,11 @@ function OrderSection({
                       ? []
                       : [
                           ['Other expenses allocated to the shipment', money(sheet.periodExpenseLocal), formatMoney(sheet.periodExpenseUsd, 'USD')],
-                          ['Net profit / loss', money(sheet.netProfitLocal), formatMoney(sheet.netProfitUsd, 'USD'), 'profit'],
+                          ['Net profit', money(sheet.netProfitLocal), formatMoney(sheet.netProfitUsd, 'USD'), 'profit'],
                         ]),
-                    ['Unpaid by customers (this shipment’s sales)', money(sheet.customerOutstandingLocal), ''],
+                    ['Unpaid customer balance', money(sheet.customerOutstandingLocal), ''],
                     [
-                      'Unpaid to the coffee supplier',
+                      'Unpaid supplier balance',
                       money(sheet.supplierOutstandingLocal),
                       sheet.supplierOutstanding.isZero() ? '' : formatMoney(sheet.supplierOutstanding, sheet.supplierCurrency),
                     ],

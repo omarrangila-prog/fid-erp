@@ -202,8 +202,8 @@ export default async function TrialBalancePage({
           for. */}
       <ReportSummary
         figures={[
-          { label: 'Total debit', value: formatMoney(trial.totals.debitLocal, local), hint: `≈ ${formatMoney(trial.totals.debitUsd, 'USD')}` },
-          { label: 'Total credit', value: formatMoney(trial.totals.creditLocal, local), hint: `≈ ${formatMoney(trial.totals.creditUsd, 'USD')}` },
+          { label: 'Total debits', value: formatMoney(trial.totals.debitLocal, local), hint: `≈ ${formatMoney(trial.totals.debitUsd, 'USD')}` },
+          { label: 'Total credits', value: formatMoney(trial.totals.creditLocal, local), hint: `≈ ${formatMoney(trial.totals.creditUsd, 'USD')}` },
           {
             label: 'Difference',
             value: formatMoney(dec(trial.totals.debitLocal).minus(trial.totals.creditLocal), local),
@@ -214,7 +214,7 @@ export default async function TrialBalancePage({
         ]}
         status={
           trial.isBalancedLocal && trial.isBalanced
-            ? { label: 'Balanced', ok: true, detail: 'Every debit has a matching credit.' }
+            ? { label: 'Balanced', ok: true, detail: 'Total debits equal total credits.' }
             : {
                 label: 'Attention required',
                 ok: false,

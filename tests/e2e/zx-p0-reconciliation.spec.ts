@@ -112,7 +112,7 @@ test('a MAD drawer reads the same MAD figure on Cash & Bank, its page, the Gener
 
 test('the statements lead with MAD, the books’ own currency, with the USD equivalent under it', async () => {
   await page.goto('/reports/trial-balance', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('main')).toContainText(/Total debit\s*MAD [\d,]+\.\d{2}/, { timeout: 45_000 });
+  await expect(page.getByRole('main')).toContainText(/Total debits?\s*MAD [\d,]+\.\d{2}/, { timeout: 45_000 });
   await expect(page.getByRole('main')).toContainText(/≈ USD/);
 
   await page.goto('/reports/profit-loss', { waitUntil: 'domcontentloaded' });
@@ -121,8 +121,8 @@ test('the statements lead with MAD, the books’ own currency, with the USD equi
   expect((await net.locator('td').nth(1).innerText()).trim()).toMatch(/^-?MAD [\d,-]+\.\d{2}\n≈ USD/);
 
   await page.goto('/reports/balance-sheet', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('balance-sheet-equation')).toContainText(/Assets MAD [\d,]+\.\d{2} = liabilities MAD/, { timeout: 45_000 });
-  await expect(page.getByText('Assets = Liabilities + Equity')).toBeVisible();
+  await expect(page.getByTestId('balance-sheet-equation')).toContainText(/Total Assets MAD [\d,]+\.\d{2} = Total Liabilities MAD/, { timeout: 45_000 });
+  await expect(page.getByText('Balance check: Total Assets = Total Liabilities + Total Equity').first()).toBeVisible();
 });
 
 test('an unpaid cost set off against an agent: Settled, off the unpaid total, the agent down by exactly its amount, no cash moved', async () => {

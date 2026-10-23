@@ -464,7 +464,7 @@ test('shipment costing shows one row per order, collapsed, with its containers i
     await expect(lines).toContainText(line.lot);
   }
   await expect(three.getByTestId('costing-summary')).toContainText(/Total landed cost/);
-  await expect(three.getByTestId('costing-summary')).toContainText(/Gross profit \/ loss/);
+  await expect(three.getByTestId('costing-summary')).toContainText(/Gross profit/);
 
   // Purchase cost is the order's own: 20,000 × 4.116 + 21,000 × 3.998 + 19,000 × 4.25.
   const purchase = 20000 * 4.116 + 21000 * 3.998 + 19000 * 4.25;

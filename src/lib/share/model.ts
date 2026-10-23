@@ -150,7 +150,7 @@ export const SHARE_REPORTS = {
   // Shipments
   'shipments': { label: 'Shipments', permissions: SHIPMENTS },
   'shipment': { label: 'Shipment Report', party: 'Shipment', permissions: SHIPMENTS },
-  'shipment-costing': { label: 'Shipment Costing', party: 'Shipment', permissions: SHIPMENTS },
+  'shipment-costing': { label: 'Shipment-wise Profitability', party: 'Shipment', permissions: SHIPMENTS },
   'shipment-profitability': { label: 'Shipment Profitability', permissions: SHIPMENTS },
   'loading-sheet': { label: 'Loading Sheet', permissions: SHIPMENTS },
   'allocations': { label: 'Container Allocation', permissions: [...SHIPMENTS, ...STOCK] },

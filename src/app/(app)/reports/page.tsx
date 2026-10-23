@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS, type PermissionCode } from '@/lib/constants';
 import { PageHeader } from '@/components/shared/page-header';
@@ -75,7 +76,7 @@ const CATALOGUE: Catalogued[] = [
   { href: '/reports/purchases', title: 'Purchase Report', category: 'Purchases & suppliers', pinned: true,
     description: 'Every purchase in the period, how much has landed, and how much is still owed to the supplier.',
     keywords: 'purchase register contracts suppliers bought landed received', permission: PERMISSIONS.REPORTS_VIEW },
-  { href: '/reports/shipment-cost', title: 'Shipment Costing', category: 'Shipment & profitability', pinned: true,
+  { href: '/reports/shipment-cost', title: 'Shipment-wise Profitability', category: 'Shipment & profitability', pinned: true,
     description: 'What one shipment cost once freight, clearing and every other charge is in — per kilo, in both currencies.',
     keywords: 'shipment cost landed cost per kg freight clearing job costing', permission: PERMISSIONS.PURCHASE_COST_VIEW },
   { href: '/reports/cash-book', title: 'Cash Book & Bank Book', category: 'Cash & bank', pinned: true,
@@ -218,6 +219,65 @@ const CATALOGUE: Catalogued[] = [
     keywords: 'audit log activity user history changes', permission: PERMISSIONS.AUDIT_VIEW },
 ];
 
+/**
+ * The client's "Accounting Reports & Rules" document, section by section, in
+ * its own words — each requirement opening the report that answers it.
+ */
+type Requirement = { title: string; text: string; links: Array<{ label: string; href: string }> };
+const REQUIREMENTS: Requirement[] = [
+  {
+    title: '1. Profit & Loss (P&L)',
+    text: 'Sales / Revenue, Less: Cost of Goods Sold, Gross Profit, Less: Operating Expenses, Other Income / Expenses, Net Profit / Loss — for the selected period, by shipment, by customer, or as one consolidated total for all business to date.',
+    links: [
+      { label: 'Profit & Loss', href: '/reports/profit-loss' },
+      { label: 'All business to date', href: '/reports/profit-loss?from=2000-01-01' },
+    ],
+  },
+  {
+    title: '2. Shipment-wise Profitability',
+    text: 'Sales value and quantity sold, cost of the coffee sold, direct shipment costs, other expenses allocated to the shipment, gross profit, net profit and any unpaid customer or supplier balance — with a consolidated total for all shipments.',
+    links: [{ label: 'Shipment-wise Profitability', href: '/reports/shipment-cost' }],
+  },
+  {
+    title: '3. Stock and Cost of Goods Sold',
+    text: 'Purchase cost and direct landed costs in the cost of each coffee lot or shipment; the cost of the quantity sold in Cost of Goods Sold; unsold coffee in Inventory on the Balance Sheet.',
+    links: [
+      { label: 'Cost of Goods Sold', href: '/reports/cogs' },
+      { label: 'Inventory', href: '/inventory' },
+    ],
+  },
+  {
+    title: '4. Balance Sheet',
+    text: 'The financial position as of a selected date. Balance check: Total Assets must equal Total Liabilities plus Total Equity.',
+    links: [{ label: 'Balance Sheet', href: '/reports/balance-sheet' }],
+  },
+  {
+    title: '5. Trial Balance',
+    text: 'For every account: opening balance, debit total, credit total and closing balance. Total debits must equal total credits. For a selected period or as of a selected date.',
+    links: [{ label: 'Trial Balance', href: '/reports/trial-balance' }],
+  },
+  {
+    title: '6. Supporting Reports',
+    text: 'Ageing, statements, General Ledger, cash and bank, and inventory.',
+    links: [
+      { label: 'Accounts Receivable ageing by customer', href: '/reports/ageing' },
+      { label: 'Accounts Payable ageing by supplier', href: '/reports/ageing?side=payables' },
+      { label: 'Customer statements', href: '/ledgers/customers' },
+      { label: 'Supplier statements', href: '/ledgers/vendors' },
+      { label: 'General Ledger', href: '/reports/general-ledger?account=all' },
+      { label: 'Cash and bank report', href: '/reports/cash-book' },
+      { label: 'Bank reconciliation', href: '/finance/reconciliation' },
+      { label: 'Inventory by coffee grade, lot, warehouse, bags, and quantity', href: '/inventory' },
+    ],
+  },
+];
+
+/** The permission a link needs: the catalogue entry for the same page. */
+function permissionFor(href: string): PermissionCode {
+  const path = href.split('?')[0];
+  return (CATALOGUE.find((e) => e.href === href) ?? CATALOGUE.find((e) => e.href.split('?')[0] === path))?.permission ?? PERMISSIONS.REPORTS_VIEW;
+}
+
 export default async function ReportsPage() {
   const user = await requirePageAccess(PERMISSIONS.REPORTS_VIEW);
   const saved = await listSavedReports(user.activeCompany.id, user.id);
@@ -238,6 +298,35 @@ export default async function ReportsPage() {
         description="Every figure is calculated from posted transactions. Nothing here is a stored summary."
         breadcrumbs={[{ label: 'Reports' }]}
       />
+      <section className="rounded-xl border border-line bg-surface p-4 shadow-card sm:p-5" data-testid="accounting-reports-rules">
+        <header className="border-b border-line pb-3">
+          <h2 className="text-base font-semibold text-ink">Accounting Reports &amp; Rules</h2>
+          <p className="text-xs text-ink-muted">{user.activeCompany.name} | Requirements for the accounting software</p>
+          <p className="mt-2 text-xs text-ink-muted">
+            Scope: {user.activeCompany.name} only — every report covers this company alone. Shipment-wise reports and a company-wide total
+            for all business to date.
+          </p>
+        </header>
+        <ol className="mt-3 grid gap-3 md:grid-cols-2">
+          {REQUIREMENTS.map((r) => {
+            const links = r.links.filter((l) => can(user, permissionFor(l.href)));
+            if (links.length === 0) return null;
+            return (
+              <li key={r.title} className="min-w-0 rounded-lg border border-line/70 p-3">
+                <p className="text-sm font-semibold text-ink">{r.title}</p>
+                <p className="mt-1 text-xs text-ink-muted">{r.text}</p>
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                  {links.map((l) => (
+                    <Link key={l.href + l.label} href={l.href} className="text-xs font-medium text-forest-800 underline-offset-2 hover:text-gold-700 hover:underline">
+                      {l.label} →
+                    </Link>
+                  ))}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      </section>
       <ReportsClient reports={reports} saved={saved} />
     </div>
   );

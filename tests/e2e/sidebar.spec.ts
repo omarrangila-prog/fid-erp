@@ -131,7 +131,7 @@ test.describe('sidebar', () => {
       ['Purchases', 'Supplier Ledger', '/ledgers/vendors'],
       ['Purchases', 'Goods Receipts', '/goods-receipts'],
       ['Shipments', 'Loading Sheet', '/loading'],
-      ['Shipments', 'Shipment Costing', '/reports/shipment-cost'],
+      ['Shipments', 'Shipment-wise Profitability', '/reports/shipment-cost'],
       ['Inventory', 'Stock on Hand', '/inventory'],
       ['Inventory', 'Warehouse Transfers', '/inventory/transfers'],
       ['Cash & Bank', 'Cash Book', '/reports/cash-book'],

@@ -868,10 +868,10 @@ const REPORTS: Record<string, Report> = {
         return buildWorkbook({
           companyName: user.activeCompany.name,
           timeZone: user.activeCompany.timezone,
-          title: 'Shipment Profitability and Costing',
+          title: 'Shipment-wise Profitability',
           subtitle: `${sheets.length} shipments · ${local}`,
           rows: sheets,
-          totals: ['Purchased KG', `Purchase value ${local}`, `Direct shipment costs ${local}`, `Landed cost ${local}`, 'Sold KG', `Sales value ${local}`, 'Remaining KG', `Closing stock value ${local}`, ...(profit ? [`Cost of the coffee sold ${local}`, `Gross profit / loss ${local}`, `Other expenses allocated ${local}`, `Net profit / loss ${local}`] : []), `Customers still owe ${local}`, `Still owed to supplier ${local}`, `Unpaid shipment expenses ${local}`],
+          totals: ['Purchased KG', `Purchase value ${local}`, `Direct shipment costs ${local}`, `Landed cost ${local}`, 'Quantity sold KG', `Sales value ${local}`, 'Remaining KG', `Closing stock value ${local}`, ...(profit ? [`Cost of the coffee sold ${local}`, `Gross profit ${local}`, `Other expenses allocated to the shipment ${local}`, `Net profit ${local}`] : []), `Unpaid customer balance ${local}`, `Unpaid supplier balance ${local}`, `Unpaid shipment expenses ${local}`],
           columns: [
             { header: 'Shipment (ICUL/FID)', value: (r) => r.contractReference, width: 30 },
             { header: 'Supplier', value: (r) => r.vendorName, width: 26 },
@@ -880,7 +880,7 @@ const REPORTS: Record<string, Report> = {
             { header: `Direct shipment costs ${local}`, value: (r) => Number(r.capitalisedExpenseLocal), type: 'money' as const },
             { header: `Landed cost ${local}`, value: (r) => Number(r.landedLocal), type: 'money' as const },
             { header: `Landed cost / KG ${local}`, value: (r) => Number(r.costPerKgLocal), type: 'money' as const },
-            { header: 'Sold KG', value: (r) => Number(r.invoicedKg), type: 'quantity' as const },
+            { header: 'Quantity sold KG', value: (r) => Number(r.invoicedKg), type: 'quantity' as const },
             { header: `Sales value ${local}`, value: (r) => Number(r.revenueLocal), type: 'money' as const },
             { header: `Avg selling price / KG ${local}`, value: (r) => Number(r.averageSellingPriceLocal), type: 'money' as const },
             { header: 'Remaining KG', value: (r) => Number(r.remainingKg), type: 'quantity' as const },
@@ -888,14 +888,14 @@ const REPORTS: Record<string, Report> = {
             ...(profit
               ? [
                   { header: `Cost of the coffee sold ${local}`, value: (r: S) => Number(r.cogsLocal), type: 'money' as const },
-                  { header: `Gross profit / loss ${local}`, value: (r: S) => Number(r.grossProfitLocal), type: 'money' as const },
+                  { header: `Gross profit ${local}`, value: (r: S) => Number(r.grossProfitLocal), type: 'money' as const },
                   { header: 'Gross margin', value: (r: S) => Number(r.marginPct) / 100, type: 'percent' as const },
-                  { header: `Other expenses allocated ${local}`, value: (r: S) => Number(r.periodExpenseLocal), type: 'money' as const },
-                  { header: `Net profit / loss ${local}`, value: (r: S) => Number(r.netProfitLocal), type: 'money' as const },
+                  { header: `Other expenses allocated to the shipment ${local}`, value: (r: S) => Number(r.periodExpenseLocal), type: 'money' as const },
+                  { header: `Net profit ${local}`, value: (r: S) => Number(r.netProfitLocal), type: 'money' as const },
                 ]
               : []),
-            { header: `Customers still owe ${local}`, value: (r) => Number(r.customerOutstandingLocal), type: 'money' as const },
-            { header: `Still owed to supplier ${local}`, value: (r) => Number(r.supplierOutstandingLocal), type: 'money' as const },
+            { header: `Unpaid customer balance ${local}`, value: (r) => Number(r.customerOutstandingLocal), type: 'money' as const },
+            { header: `Unpaid supplier balance ${local}`, value: (r) => Number(r.supplierOutstandingLocal), type: 'money' as const },
             { header: `Unpaid shipment expenses ${local}`, value: (r) => Number(r.expenseOutstandingLocal), type: 'money' as const },
           ],
         });
@@ -906,7 +906,7 @@ const REPORTS: Record<string, Report> = {
         return buildWorkbook({
           companyName: user.activeCompany.name,
           timeZone: user.activeCompany.timezone,
-          title: 'Shipment Costing',
+          title: 'Shipment-wise Profitability — shipment detail',
           subtitle: `${sheet.contractReference} · ${sheet.items.length} items · ${sheet.containers} containers · landed ${sheet.localCurrency} ${Number(sheet.landedLocal).toLocaleString('en-US', { minimumFractionDigits: 2 })}${can(user, PERMISSIONS.PROFITS_VIEW) ? ` · profit ${sheet.localCurrency} ${Number(sheet.grossProfitLocal).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : ''}`,
           // Every direct expense, by category, with what is settled and still owed — as on screen.
           rows: [...sheet.expenses].sort((a, b) => a.category.localeCompare(b.category) || a.expenseDate.getTime() - b.expenseDate.getTime()),
@@ -1109,24 +1109,50 @@ const REPORTS: Record<string, Report> = {
         getCostOfSalesBreakdown({ companyId: user.activeCompany.id, from, to }),
         prisma.account.findFirst({ where: { companyId: user.activeCompany.id, systemKey: 'COST_OF_GOODS_SOLD' }, select: { id: true } }),
       ]);
-      const cogsRows = pnlSection('Less: Cost of Goods Sold', pnl.costOfSales, { usd: t.costOfSalesUsd, local: t.costOfSalesLocal }, 'Total Cost of Goods Sold');
+      // As on screen, the shipment expenses on the coffee sold are listed with
+      // the operating expenses; the books keep them in the coffee's cost.
       const ledgerCogs = pnl.costOfSales.find((l) => l.accountId === cogsAccount?.id);
+      const moved = ledgerCogs ? breakdown.expensesTotal : { local: dec(0), usd: dec(0) };
+      const cogsLocal = t.costOfSalesLocal.minus(moved.local);
+      const cogsUsd = t.costOfSalesUsd.minus(moved.usd);
+      const opexLocal = t.operatingExpensesLocal.plus(moved.local);
+      const opexUsd = t.operatingExpensesUsd.plus(moved.usd);
+      const grossLocal = t.grossProfitLocal.plus(moved.local);
+      const grossUsd = t.grossProfitUsd.plus(moved.usd);
+      const cogsRows = pnlSection('Less: Cost of Goods Sold', pnl.costOfSales, { usd: cogsUsd, local: cogsLocal }, 'Total Cost of Goods Sold');
+      const expenseRows = pnlSection('Less: Operating Expenses', pnl.operatingExpenses, { usd: opexUsd, local: opexLocal }, 'Total Operating Expenses');
       if (ledgerCogs) {
         const timingLocal = dec(ledgerCogs.amountLocal).minus(breakdown.totalLocal);
         const timingUsd = dec(ledgerCogs.amountUsd).minus(breakdown.totalUsd);
         const parts: StatementRow[] = [
           { kind: 'line', label: 'Coffee purchase cost (coffee sold)', values: [Number(breakdown.purchase.local), Number(breakdown.purchase.usd)] },
-          ...breakdown.expenses.map((e): StatementRow => ({ kind: 'line', label: `Shipment expense — ${e.label}`, values: [Number(e.local), Number(e.usd)] })),
-          { kind: 'line', label: 'Total shipment expenses on the coffee sold', values: [Number(breakdown.expensesTotal.local), Number(breakdown.expensesTotal.usd)] },
           ...(timingLocal.abs().greaterThanOrEqualTo('0.01')
             ? [{ kind: 'line', label: 'Stock / cost of sales correction dated in this period', values: [Number(timingLocal), Number(timingUsd)] } as StatementRow]
             : []),
         ];
         const at = cogsRows.findIndex((r) => r.kind === 'line' && r.label === ledgerCogs.name);
         if (at >= 0) cogsRows.splice(at, 1, ...parts);
+        // After the section heading, before the other expense accounts.
+        expenseRows.splice(
+          1,
+          0,
+          ...breakdown.expenses.map((e): StatementRow => ({ kind: 'line', label: `Shipment expense — ${e.label}`, values: [Number(e.local), Number(e.usd)] })),
+        );
       }
 
+      const pair = (local: unknown, usd: unknown) => [Number(local), Number(usd)];
       const rows: StatementRow[] = [
+        // The requirements' statement first, one line per heading, as on screen.
+        { kind: 'section', label: 'Profit & Loss (P&L)' },
+        { kind: 'line', label: 'Sales / Revenue', values: pair(t.revenueLocal, t.revenueUsd) },
+        { kind: 'line', label: 'Less: Cost of Goods Sold', values: pair(cogsLocal, cogsUsd) },
+        { kind: 'total', label: 'Gross Profit', values: pair(grossLocal, grossUsd) },
+        { kind: 'line', label: 'Less: Operating Expenses', values: pair(opexLocal, opexUsd) },
+        { kind: 'line', label: 'Other Income / Expenses', values: pair(t.otherLocal, t.otherUsd) },
+        { kind: 'total', label: 'Net Profit / Loss', values: pair(t.netProfitLocal, t.netProfitUsd) },
+        { kind: 'spacer' },
+        { kind: 'section', label: 'What each heading is made of' },
+        { kind: 'spacer' },
         // The headings the statement on screen uses, so the file and the
         // screen read as one report rather than two namings of it.
         ...pnlSection('Sales / Revenue', pnl.revenue, { usd: t.revenueUsd, local: t.revenueLocal }, 'Total Sales / Revenue'),
@@ -1134,14 +1160,11 @@ const REPORTS: Record<string, Report> = {
         {
           kind: 'total',
           label: 'Gross Profit',
-          values: [Number(t.grossProfitLocal), Number(t.grossProfitUsd)],
+          values: [Number(grossLocal), Number(grossUsd)],
         },
-        { kind: 'note', label: `Gross margin ${Number(pnl.grossMarginPct).toFixed(1)}% of revenue` },
+        { kind: 'note', label: `Gross margin ${t.revenueLocal.isZero() ? '0.0' : grossLocal.dividedBy(t.revenueLocal).times(100).toFixed(1)}% of revenue` },
         { kind: 'spacer' },
-        ...pnlSection('Less: Operating Expenses', pnl.operatingExpenses, {
-          usd: t.operatingExpensesUsd,
-          local: t.operatingExpensesLocal,
-        }, 'Total Operating Expenses'),
+        ...expenseRows,
       ];
 
       if (pnl.otherItems.length > 0) {
@@ -1180,19 +1203,19 @@ const REPORTS: Record<string, Report> = {
       const grouped = (title: string, groups: readonly string[], section: typeof sheet.assets): StatementRow[] => [
         { kind: 'section', label: title },
         ...groups.flatMap((group): StatementRow[] => {
+          // Every heading the requirements list, empty or not.
           const lines = section.lines.filter((l) => l.group === group);
-          if (lines.length === 0) return [];
           return [
             { kind: 'note', label: group },
             ...lines.map((line): StatementRow => ({ kind: 'line', label: line.displayName, code: line.code, values: [Number(line.amountLocal), Number(line.amountUsd)] })),
             {
               kind: 'total',
-              label: `Total ${group.toLowerCase()}`,
+              label: `Total ${group}`,
               values: [Number(sum(lines.map((l) => l.amountLocal))), Number(sum(lines.map((l) => l.amountUsd)))],
             },
           ];
         }),
-        { kind: 'total', label: `Total ${title.toLowerCase()}`, values: [Number(section.totalLocal), Number(section.totalUsd)] },
+        { kind: 'total', label: `Total ${title}`, values: [Number(section.totalLocal), Number(section.totalUsd)] },
         { kind: 'spacer' },
       ];
       const rows: StatementRow[] = [
@@ -1201,7 +1224,7 @@ const REPORTS: Record<string, Report> = {
         ...grouped('Equity', BALANCE_SHEET_GROUPS.EQUITY, sheet.equity),
         {
           kind: 'grand',
-          label: 'Liabilities and equity',
+          label: 'Total Liabilities plus Total Equity',
           values: [
             Number(sheet.liabilities.totalLocal.plus(sheet.equity.totalLocal)),
             Number(sheet.liabilities.totalUsd.plus(sheet.equity.totalUsd)),
@@ -1214,7 +1237,7 @@ const REPORTS: Record<string, Report> = {
       rows.push({
         kind: 'note',
         label: sheet.balancesLocal
-          ? 'Assets equal liabilities plus equity.'
+          ? 'Balance check: Total Assets equal Total Liabilities plus Total Equity.'
           : `OUT OF BALANCE by ${local} ${sheet.differenceLocal.toFixed(2)} — this needs investigating.`,
       });
 

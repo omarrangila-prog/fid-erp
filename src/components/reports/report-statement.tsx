@@ -328,23 +328,35 @@ export function Statement({
         <tbody>
           {sections.map((section) => {
             const shown = isOpen(section);
+            const toggleButton = (
+              <button
+                type="button"
+                onClick={() => toggle(section.key)}
+                aria-expanded={shown}
+                className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-ink hover:bg-surface-sunken"
+              >
+                {shown ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                {section.title}
+              </button>
+            );
             return (
               <React.Fragment key={section.key}>
+                {/* Closed, a section is one line: its heading and its total. */}
+                {!shown ? (
+                  <tr className="grid-total border-t border-line">
+                    <td className="px-1 py-2">{toggleButton}</td>
+                    {section.total.cells.map((c, i) => (
+                      <React.Fragment key={i}>{cell(c, 'font-semibold')}</React.Fragment>
+                    ))}
+                  </tr>
+                ) : (
+                <>
                 <tr className="border-t border-line">
                   <td colSpan={columns.length + 1} className="px-1 py-2">
-                    <button
-                      type="button"
-                      onClick={() => toggle(section.key)}
-                      aria-expanded={shown}
-                      className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-ink hover:bg-surface-sunken"
-                    >
-                      {shown ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-                      {section.title}
-                    </button>
+                    {toggleButton}
                   </td>
                 </tr>
-                {shown
-                  ? section.lines.length === 0
+                {section.lines.length === 0
                     ? (
                         <tr>
                           <td colSpan={columns.length + 1} className="px-8 py-1.5 text-xs text-ink-subtle">
@@ -367,14 +379,15 @@ export function Statement({
                             <React.Fragment key={i}>{cell(c)}</React.Fragment>
                           ))}
                         </tr>
-                      ))
-                  : null}
+                      ))}
                 <tr className="grid-total">
                   <td className="px-3 py-2 text-sm font-semibold uppercase tracking-wide">{section.total.label}</td>
                   {section.total.cells.map((c, i) => (
                     <React.Fragment key={i}>{cell(c, 'font-semibold')}</React.Fragment>
                   ))}
                 </tr>
+                </>
+                )}
                 {grandTotals
                   ?.filter((g) => g.after === section.key)
                   .map((g) => (
