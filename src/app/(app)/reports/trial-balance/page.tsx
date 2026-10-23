@@ -9,7 +9,7 @@ import { formatMoney, formatDate, dayParam, companyToday } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { CustomizePanel } from '@/components/reports/customize-panel';
 import { FavouriteStar } from '@/components/reports/report-statement';
-import { DateRangePicker } from '@/components/shared/date-range';
+import { AsOfPicker } from '@/components/shared/date-range';
 import { TrialBalanceFilters } from '@/app/(app)/reports/trial-balance/filters';
 import { getShipmentOrdinals, shipmentOrdinalLabel } from '@/lib/services/shipment';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -49,12 +49,9 @@ export default async function TrialBalancePage({
   const local = user.activeCompany.localCurrency;
   const companyId = user.activeCompany.id;
 
-  // "As at" is the closing date; a start date turns on opening and movement.
-  const asOfDate = dayParam(query.to) ?? dayParam(query.asOf) ?? companyToday(user.activeCompany.timezone);
-  // The period always has a start, so opening, movement and closing are all
-  // shown (the requirements' seven columns). The default is the first of the
-  // closing date's month — the same date the period picker shows.
-  const fromDate = dayParam(query.from) ?? new Date(Date.UTC(asOfDate.getUTCFullYear(), asOfDate.getUTCMonth(), 1));
+  // The owner's trial balance: every account's debit or credit balance as at
+  // one date — two columns, no opening or movement.
+  const asOfDate = dayParam(query.asOf) ?? dayParam(query.to) ?? companyToday(user.activeCompany.timezone);
   const filters = {
     accountType: query.type || null,
     currency: query.currency || null,
@@ -78,7 +75,7 @@ export default async function TrialBalancePage({
   ]);
 
   const [trial, accountCurrencies] = await Promise.all([
-    getTrialBalanceReport({ companyId, from: fromDate, to: asOfDate, filters }),
+    getTrialBalanceReport({ companyId, to: asOfDate, filters }),
     prisma.account.findMany({
       where: { companyId: user.activeCompany.id },
       orderBy: { code: 'asc' },
@@ -152,11 +149,10 @@ export default async function TrialBalancePage({
         actions={
           <>
             <FavouriteStar href="/reports/trial-balance" label="Trial Balance" />
-            <CustomizePanel report="Trial Balance" fields={['period']} />
+            <CustomizePanel report="Trial Balance" fields={['asOf']} />
             <ExportLinks
               href={exportHref('trial-balance', {
-                from: fromDate.toISOString().slice(0, 10),
-                to: asOfDate.toISOString().slice(0, 10),
+                asOf: asOfDate.toISOString().slice(0, 10),
                 type: query.type,
                 currency: query.currency,
                 customer: query.customer,
@@ -176,10 +172,7 @@ export default async function TrialBalancePage({
         country={user.activeCompany.country}
       />
 
-      <DateRangePicker
-        defaultFrom={(fromDate ?? new Date(Date.UTC(asOfDate.getUTCFullYear(), asOfDate.getUTCMonth(), 1))).toISOString().slice(0, 10)}
-        defaultTo={asOfDate.toISOString().slice(0, 10)}
-      />
+      <AsOfPicker defaultDate={asOfDate.toISOString().slice(0, 10)} />
       <TrialBalanceFilters
         customers={customers.map((c) => ({ value: c.id, label: c.customerName }))}
         vendors={vendors.map((v) => ({ value: v.id, label: v.vendorName }))}
@@ -230,7 +223,7 @@ export default async function TrialBalancePage({
             <div>
               <CardTitle>Account balances</CardTitle>
               <CardDescription>
-                {`Every ledger account: where it stood on ${formatDate(fromDate)}, what moved through it in the period, and where it stood on ${formatDate(asOfDate)}. `}
+                {`Every ledger account's balance as at ${formatDate(asOfDate)}, on the debit or the credit side. `}
                 {showUnused
                   ? 'Unused accounts — nothing brought forward, nothing moved, nothing left — are included.'
                   : 'Accounts with nothing brought forward, nothing moved and nothing left are left out; an account with any activity is always listed.'}

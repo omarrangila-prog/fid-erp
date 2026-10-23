@@ -1034,11 +1034,10 @@ const REPORTS: Record<string, Report> = {
     title: 'Trial Balance',
     permission: PERMISSIONS.ACCOUNTING_VIEW,
     build: async (user, query) => {
-      // The screen's report exactly: the same period (opening, movement,
-      // closing), filters, account names and rows.
+      // The screen's report exactly: each account's debit or credit balance
+      // as at one date, the same filters, account names and rows.
       const companyId = user.activeCompany.id;
-      const to = dateParam(query, 'to') ?? dateParam(query, 'asOf') ?? new Date();
-      const from = dateParam(query, 'from') ?? new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), 1));
+      const to = dateParam(query, 'asOf') ?? dateParam(query, 'to') ?? new Date();
       const local = user.activeCompany.localCurrency;
       const filters = {
         accountType: query.get('type') || null,
@@ -1050,7 +1049,7 @@ const REPORTS: Record<string, Report> = {
       };
       const filtered = Object.values(filters).some(Boolean);
       const [trial, accounts] = await Promise.all([
-        getTrialBalanceReport({ companyId, from, to, filters }),
+        getTrialBalanceReport({ companyId, to, filters }),
         prisma.account.findMany({ where: { companyId }, orderBy: { code: 'asc' }, select: { id: true, code: true, name: true, type: true, systemKey: true } }),
       ]);
       const meta = new Map(accounts.map((a) => [a.id, { systemKey: a.systemKey }]));
@@ -1073,19 +1072,13 @@ const REPORTS: Record<string, Report> = {
         companyName: user.activeCompany.name,
         timeZone: user.activeCompany.timezone,
         title: 'Trial Balance',
-        subtitle: `${period(from, to)}${scope}${trial.isBalancedLocal || filtered ? '' : ' — OUT OF BALANCE'}`,
+        subtitle: `${asAt(to)}${scope}${trial.isBalancedLocal || filtered ? '' : ' — OUT OF BALANCE'}`,
         rows: rows.map((r) => ({ ...r, label: clientLabel(r, meta.get(r.accountId)) })),
-        totals: [`Opening balance debit ${local}`, `Opening balance credit ${local}`, `Debit total ${local}`, `Credit total ${local}`, `Closing balance debit ${local}`, `Closing balance credit ${local}`],
+        totals: [`Debit ${local}`, `Credit ${local}`],
         columns: [
           { header: 'Account', value: (r) => r.label, width: 38 },
-          { header: `Opening balance debit ${local}`, value: (r) => Number(r.openingDebitLocal), type: 'money' },
-          { header: `Opening balance credit ${local}`, value: (r) => Number(r.openingCreditLocal), type: 'money' },
-          { header: `Debit total ${local}`, value: (r) => Number(r.periodDebitLocal), type: 'money' },
-          { header: `Credit total ${local}`, value: (r) => Number(r.periodCreditLocal), type: 'money' },
-          { header: `Closing balance debit ${local}`, value: (r) => Number(r.debitLocal), type: 'money' },
-          { header: `Closing balance credit ${local}`, value: (r) => Number(r.creditLocal), type: 'money' },
-          { header: 'Closing debit USD equivalent', value: (r) => Number(r.debitUsd), type: 'money' },
-          { header: 'Closing credit USD equivalent', value: (r) => Number(r.creditUsd), type: 'money' },
+          { header: `Debit ${local}`, value: (r) => Number(r.debitLocal), type: 'money' },
+          { header: `Credit ${local}`, value: (r) => Number(r.creditLocal), type: 'money' },
         ],
       });
     },
