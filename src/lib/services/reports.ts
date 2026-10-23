@@ -465,7 +465,7 @@ export async function getBalanceSheet(params: { companyId: string; asOf: Date })
       displayName: clientLabel(row, { systemKey: facts.get(row.accountId)?.systemKey ?? null }),
       amountUsd: toMoney(row.type === 'ASSET' ? debitMinusCreditUsd : debitMinusCreditUsd.negated()),
       amountLocal: toMoney(row.type === 'ASSET' ? debitMinusCreditLocal : debitMinusCreditLocal.negated()),
-      // The client document's headings (section 6), by what the account is.
+      // The client document's headings (section 4), by what the account is.
       group: balanceSheetGroup(
         facts.get(row.accountId) ?? { type: row.type, reportGroup: row.reportGroup, systemKey: null, isCashBank: false, isLoan: false, isRelatedParty: false },
       ),
@@ -480,11 +480,11 @@ export async function getBalanceSheet(params: { companyId: string; asOf: Date })
     // A derived line, not an account, so there is nothing to drill into.
     accountId: '',
     code: '3900',
-    name: 'Current-year profit or loss',
-    displayName: 'Current-year profit or loss',
+    name: 'Current year profit or loss',
+    displayName: 'Current year profit or loss',
     amountUsd: toMoney(retainedThisPeriodUsd),
     amountLocal: toMoney(retainedThisPeriodLocal),
-    group: 'Current-year profit or loss',
+    group: 'Current year profit or loss',
   });
 
   const section = (title: string, lines: BalanceSheetLine[]) => ({

@@ -122,7 +122,7 @@ export default async function BalanceSheetPage({
       })
       .filter((section) => section.lines.length > 0 || showZero);
 
-  // The headings of the client's requirements document (section 6), in its order.
+  // The headings of the client's requirements document (section 4), in its order.
   const assetSections = sectionsFor(sheet.assets.lines, before?.assets.lines, [...BALANCE_SHEET_GROUPS.ASSET], 'asset');
   const liabilitySections = sectionsFor(sheet.liabilities.lines, before?.liabilities.lines, [...BALANCE_SHEET_GROUPS.LIABILITY], 'liability');
   const equitySections = sectionsFor(sheet.equity.lines, before?.equity.lines, [...BALANCE_SHEET_GROUPS.EQUITY], 'equity');

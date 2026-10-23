@@ -151,7 +151,7 @@ export default async function ProfitLossPage({
     };
   };
 
-  const cogsSection = section('cogs', 'Cost of goods sold', (p) => p.costOfSales, (p) => ({ local: p.totals.costOfSalesLocal, usd: p.totals.costOfSalesUsd }), 'Total cost of goods sold');
+  const cogsSection = section('cogs', 'Less: Cost of Goods Sold', (p) => p.costOfSales, (p) => ({ local: p.totals.costOfSalesLocal, usd: p.totals.costOfSalesUsd }), 'Total Cost of Goods Sold');
   if (breakdown && cogsAccount) {
     // The one "Cost of Goods Sold" line opened into what it is made of. The
     // parts add up to the ledger's figure: any difference (a correction dated
@@ -183,11 +183,11 @@ export default async function ProfitLossPage({
   }
 
   const sections: StatementSectionData[] = [
-    section('income', 'Income', (p) => p.revenue, (p) => ({ local: p.totals.revenueLocal, usd: p.totals.revenueUsd }), 'Total income'),
+    section('income', 'Sales / Revenue', (p) => p.revenue, (p) => ({ local: p.totals.revenueLocal, usd: p.totals.revenueUsd }), 'Total Sales / Revenue'),
     cogsSection,
-    section('expenses', 'Expenses', (p) => p.operatingExpenses, (p) => ({ local: p.totals.operatingExpensesLocal, usd: p.totals.operatingExpensesUsd }), 'Total expenses'),
+    section('expenses', 'Less: Operating Expenses', (p) => p.operatingExpenses, (p) => ({ local: p.totals.operatingExpensesLocal, usd: p.totals.operatingExpensesUsd }), 'Total Operating Expenses'),
     ...(total.otherItems.length > 0 || (before?.otherItems.length ?? 0) > 0
-      ? [section('other', 'Other income and expenses', (p) => p.otherItems, (p) => ({ local: p.totals.otherLocal, usd: p.totals.otherUsd }), 'Total other')]
+      ? [section('other', 'Other Income / Expenses', (p) => p.otherItems, (p) => ({ local: p.totals.otherLocal, usd: p.totals.otherUsd }), 'Total Other Income / Expenses')]
       : []),
   ];
 
@@ -284,8 +284,8 @@ export default async function ProfitLossPage({
             columns={columns}
             sections={sections}
             grandTotals={[
-              grand('Gross profit', (p) => ({ local: p.totals.grossProfitLocal, usd: p.totals.grossProfitUsd }), 'cogs', 'strong'),
-              grand('Net profit', (p) => ({ local: p.totals.netProfitLocal, usd: p.totals.netProfitUsd }), sections[sections.length - 1].key, 'final'),
+              grand('Gross Profit', (p) => ({ local: p.totals.grossProfitLocal, usd: p.totals.grossProfitUsd }), 'cogs', 'strong'),
+              grand('Net Profit / Loss', (p) => ({ local: p.totals.netProfitLocal, usd: p.totals.netProfitUsd }), sections[sections.length - 1].key, 'final'),
             ]}
           />
           <p className="mt-3 px-3 text-xs text-ink-subtle">
@@ -315,8 +315,6 @@ function ScopedStatement({ p, local, company, period }: { p: ScopedPnl; local: s
       <td className={`tnum px-3 py-1.5 text-right ${v.local.isNegative() && (opts.strong || opts.final) ? 'text-red-600' : ''}`}>{amount(v)}</td>
     </tr>
   );
-  const grossLoss = p.grossProfit.local.isNegative();
-  const netLoss = p.netProfit?.local.isNegative() ?? false;
   return (
     <Card>
       <CardContent className="px-2 pb-4 pt-2 sm:px-4">
@@ -324,16 +322,16 @@ function ScopedStatement({ p, local, company, period }: { p: ScopedPnl; local: s
         <div className="overflow-x-auto" data-wide-sheet>
           <table className="data-grid grid-framed w-full min-w-[22rem] text-sm" data-testid="scoped-pnl">
             <tbody>
-              {row('Sales / revenue', p.revenue, { testId: 'scoped-revenue' })}
-              {row('Cost of goods sold', p.cogs, { less: true, testId: 'scoped-cogs' })}
-              {row(grossLoss ? 'Gross loss' : 'Gross profit', p.grossProfit, { strong: true, testId: 'scoped-gross' })}
+              {row('Sales / Revenue', p.revenue, { testId: 'scoped-revenue' })}
+              {row('Cost of Goods Sold', p.cogs, { less: true, testId: 'scoped-cogs' })}
+              {row('Gross Profit', p.grossProfit, { strong: true, testId: 'scoped-gross' })}
               <tr>
                 <td className="px-3 py-1.5 text-left text-ink-muted">Gross margin</td>
                 <td className="tnum px-3 py-1.5 text-right">{p.grossMarginPct ? formatPercent(p.grossMarginPct) : '—'}</td>
               </tr>
-              {p.periodCosts ? row('Shipment period costs (not in stock)', p.periodCosts, { less: true }) : null}
+              {p.periodCosts ? row('Other expenses allocated to the shipment', p.periodCosts, { less: true }) : null}
               {p.allocatedOverhead ? row('Allocated company overhead (management)', p.allocatedOverhead, { less: true }) : null}
-              {p.netProfit ? row(netLoss ? 'Net loss' : 'Net profit', p.netProfit, { final: true, testId: 'scoped-net' }) : null}
+              {p.netProfit ? row('Net Profit / Loss', p.netProfit, { final: true, testId: 'scoped-net' }) : null}
               {p.netProfit ? (
                 <tr>
                   <td className="px-3 py-1.5 text-left text-ink-muted">Net margin</td>

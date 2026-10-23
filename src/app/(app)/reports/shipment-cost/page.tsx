@@ -143,7 +143,7 @@ function Overview({ sheets, local, showProfit }: { sheets: OrderCostSheet[]; loc
             <TH>Shipment</TH>
             <TH numeric>Purchased KG</TH>
             <TH numeric>Purchase value</TH>
-            <TH numeric>Direct expenses</TH>
+            <TH numeric>Direct shipment costs</TH>
             <TH numeric>Landed cost</TH>
             <TH numeric>Sold KG</TH>
             <TH numeric>Sales value</TH>
@@ -151,10 +151,15 @@ function Overview({ sheets, local, showProfit }: { sheets: OrderCostSheet[]; loc
             <TH numeric>Closing stock value</TH>
             {showProfit ? (
               <>
+                <TH numeric>Cost of the coffee sold</TH>
                 <TH numeric>Gross profit / loss</TH>
                 <TH numeric>Gross margin</TH>
+                <TH numeric>Other expenses allocated</TH>
+                <TH numeric>Net profit / loss</TH>
               </>
             ) : null}
+            <TH numeric>Customers still owe</TH>
+            <TH numeric>Still owed to supplier</TH>
           </TR>
         </THead>
         <TBody>
@@ -176,10 +181,15 @@ function Overview({ sheets, local, showProfit }: { sheets: OrderCostSheet[]; loc
               <TD numeric>{money(s.remainingValueLocal)}</TD>
               {showProfit ? (
                 <>
+                  <TD numeric>{money(s.cogsLocal)}</TD>
                   <TD numeric className={cn('font-semibold', s.grossProfitLocal.isNegative() ? 'text-red-600' : 'text-gold-700')}>{money(s.grossProfitLocal)}</TD>
                   <TD numeric>{s.revenueLocal.isZero() ? '—' : `${dec(s.marginPct).toFixed(1)}%`}</TD>
+                  <TD numeric>{money(s.periodExpenseLocal)}</TD>
+                  <TD numeric className={cn('font-semibold', s.netProfitLocal.isNegative() ? 'text-red-600' : 'text-gold-700')}>{money(s.netProfitLocal)}</TD>
                 </>
               ) : null}
+              <TD numeric>{money(s.customerOutstandingLocal)}</TD>
+              <TD numeric>{money(s.supplierOutstandingLocal)}</TD>
             </TR>
           ))}
         </TBody>
@@ -196,10 +206,15 @@ function Overview({ sheets, local, showProfit }: { sheets: OrderCostSheet[]; loc
             <TD numeric>{money(total((s) => s.remainingValueLocal))}</TD>
             {showProfit ? (
               <>
+                <TD numeric>{money(total((s) => s.cogsLocal))}</TD>
                 <TD numeric>{money(gross)}</TD>
                 <TD numeric>{revenue.isZero() ? '—' : `${gross.dividedBy(revenue).times(100).toFixed(1)}%`}</TD>
+                <TD numeric>{money(total((s) => s.periodExpenseLocal))}</TD>
+                <TD numeric>{money(total((s) => s.netProfitLocal))}</TD>
               </>
             ) : null}
+            <TD numeric>{money(total((s) => s.customerOutstandingLocal))}</TD>
+            <TD numeric>{money(total((s) => s.supplierOutstandingLocal))}</TD>
           </tr>
         </TFoot>
       </Table>
@@ -254,7 +269,7 @@ function OrderSection({
           <span className="block text-[11px] text-ink-subtle">{formatQuantityKg(sheet.remainingKg)} remaining</span>
         </span>
         <span className="tnum text-sm">
-          <span className="block text-[11px] text-ink-subtle">Direct expenses</span>
+          <span className="block text-[11px] text-ink-subtle">Direct shipment costs</span>
           {money(sheet.capitalisedExpenseLocal)}
         </span>
         <span className="tnum text-sm">
@@ -337,7 +352,7 @@ function OrderSection({
         </section>
 
         <section>
-          <h3 className={h3}>B. Direct expenses, by category — cost, settled and outstanding</h3>
+          <h3 className={h3}>B. Direct shipment costs (freight, insurance, clearance, handling, port, documents) — cost, settled and outstanding</h3>
           {sheet.expenses.length === 0 ? (
             <p className="text-xs text-ink-subtle">No costs have been booked against this shipment yet.</p>
           ) : (
@@ -399,7 +414,7 @@ function OrderSection({
                 })}
                 <TFoot>
                   <tr>
-                    <TD colSpan={4}>All direct expenses</TD>
+                    <TD colSpan={4}>All direct shipment costs</TD>
                     <TD numeric>{money(sum(sheet.expenses.map((e) => e.originalLocal)))}</TD>
                     <TD numeric>{money(sheet.expenseSettledLocal)}</TD>
                     <TD numeric>{money(sheet.expenseOutstandingLocal)}</TD>
@@ -430,6 +445,7 @@ function OrderSection({
                     <TH numeric>KG from this shipment</TH>
                     <TH numeric>Sales value</TH>
                     <TH numeric>Price / KG</TH>
+                    <TH numeric>Still owed</TH>
                   </TR>
                 </THead>
                 <TBody>
@@ -445,6 +461,9 @@ function OrderSection({
                       <TD numeric>{formatQuantityKg(sale.quantityKg)}</TD>
                       <TD numeric>{money(sale.revenueLocal)}</TD>
                       <TD numeric>{sale.quantityKg.greaterThan(0) ? money(toMoney(sale.revenueLocal.dividedBy(sale.quantityKg))) : '—'}</TD>
+                      <TD numeric className={sale.outstandingLocal.greaterThan(0) ? 'font-medium text-red-600' : 'text-ink-subtle'}>
+                        {sale.outstandingLocal.greaterThan(0) ? money(sale.outstandingLocal) : 'Paid'}
+                      </TD>
                     </TR>
                   ))}
                 </TBody>
@@ -454,6 +473,7 @@ function OrderSection({
                     <TD numeric>{formatQuantityKg(sheet.invoicedKg)}</TD>
                     <TD numeric>{money(sheet.revenueLocal)}</TD>
                     <TD numeric>{money(sheet.averageSellingPriceLocal)}</TD>
+                    <TD numeric>{money(sheet.customerOutstandingLocal)}</TD>
                   </tr>
                 </TFoot>
               </Table>
@@ -477,7 +497,7 @@ function OrderSection({
                   [
                     ['Purchased quantity', formatQuantityKg(sheet.orderedKg), ''],
                     ['Purchase value (at the order’s rate)', money(sheet.goodsLocal), formatMoney(sheet.goodsUsd, 'USD')],
-                    ['Direct expenses', money(sheet.capitalisedExpenseLocal), formatMoney(sheet.capitalisedExpenseUsd, 'USD')],
+                    ['Direct shipment costs', money(sheet.capitalisedExpenseLocal), formatMoney(sheet.capitalisedExpenseUsd, 'USD')],
                     ['Total landed cost', money(sheet.landedLocal), formatMoney(sheet.landedUsd, 'USD'), 'bold'],
                     ['Landed cost per KG', money(sheet.costPerKgLocal), formatMoney(sheet.costPerKgUsd, 'USD')],
                     ['Quantity sold', formatQuantityKg(sheet.invoicedKg), ''],
@@ -485,7 +505,7 @@ function OrderSection({
                     ['Average selling price per KG', money(sheet.averageSellingPriceLocal), formatMoney(sheet.averageSellingPriceUsd, 'USD')],
                     ...(showProfit
                       ? [
-                          ['Cost of the coffee sold (its share of the landed cost)', money(sheet.cogsLocal), formatMoney(sheet.cogsUsd, 'USD')],
+                          ['Cost of the coffee sold', money(sheet.cogsLocal), formatMoney(sheet.cogsUsd, 'USD')],
                           ['Gross profit / loss', money(sheet.grossProfitLocal), formatMoney(sheet.grossProfitUsd, 'USD'), 'profit'],
                           ['Gross profit / loss %', `${dec(sheet.marginPct).toFixed(1)}% of sales`, ''],
                         ]
@@ -495,12 +515,19 @@ function OrderSection({
                     ...(transitKg.greaterThan(0)
                       ? [[`In transit — ${formatQuantityKg(transitKg)} not yet received`, money(transitLocal), ''] as [string, string, string]]
                       : []),
-                    ...(!showProfit || dec(sheet.periodExpenseLocal).isZero()
+                    ...(!showProfit
                       ? []
                       : [
-                          ['Shipment costs not in the coffee’s cost', money(sheet.periodExpenseLocal), formatMoney(sheet.periodExpenseUsd, 'USD')],
-                          ['Profit after those costs', money(sheet.netProfitLocal), formatMoney(sheet.netProfitUsd, 'USD'), 'profit'],
+                          ['Other expenses allocated to the shipment', money(sheet.periodExpenseLocal), formatMoney(sheet.periodExpenseUsd, 'USD')],
+                          ['Net profit / loss', money(sheet.netProfitLocal), formatMoney(sheet.netProfitUsd, 'USD'), 'profit'],
                         ]),
+                    ['Unpaid by customers (this shipment’s sales)', money(sheet.customerOutstandingLocal), ''],
+                    [
+                      'Unpaid to the coffee supplier',
+                      money(sheet.supplierOutstandingLocal),
+                      sheet.supplierOutstanding.isZero() ? '' : formatMoney(sheet.supplierOutstanding, sheet.supplierCurrency),
+                    ],
+                    ['Unpaid shipment expenses', money(sheet.expenseOutstandingLocal), ''],
                   ] as Array<[string, string, string, string?]>
                 ).map(([label, value, usd, style]) => (
                   <TR key={label}>

@@ -211,7 +211,7 @@ async function vendorLedgerExport(user: SessionUser, query: URLSearchParams) {
 }
 
 /** Statement rows for one block of a two-currency financial statement. */
-function pnlSection(title: string, lines: PnlLine[], total: { usd: unknown; local: unknown }): StatementRow[] {
+function pnlSection(title: string, lines: PnlLine[], total: { usd: unknown; local: unknown }, totalLabel = `Total ${title.toLowerCase()}`): StatementRow[] {
   return [
     { kind: 'section', label: title },
     ...lines.map((line): StatementRow => ({
@@ -221,7 +221,7 @@ function pnlSection(title: string, lines: PnlLine[], total: { usd: unknown; loca
       // The company's own currency first, as on screen; the USD equivalent beside it.
       values: [Number(line.amountLocal), Number(line.amountUsd)],
     })),
-    { kind: 'total', label: `Total ${title.toLowerCase()}`, values: [Number(total.local), Number(total.usd)] },
+    { kind: 'total', label: totalLabel, values: [Number(total.local), Number(total.usd)] },
     { kind: 'spacer' },
   ];
 }
@@ -871,13 +871,13 @@ const REPORTS: Record<string, Report> = {
           title: 'Shipment Profitability and Costing',
           subtitle: `${sheets.length} shipments · ${local}`,
           rows: sheets,
-          totals: ['Purchased KG', `Purchase value ${local}`, `Direct expenses ${local}`, `Landed cost ${local}`, 'Sold KG', `Sales value ${local}`, 'Remaining KG', `Closing stock value ${local}`, ...(profit ? [`Gross profit / loss ${local}`] : [])],
+          totals: ['Purchased KG', `Purchase value ${local}`, `Direct shipment costs ${local}`, `Landed cost ${local}`, 'Sold KG', `Sales value ${local}`, 'Remaining KG', `Closing stock value ${local}`, ...(profit ? [`Cost of the coffee sold ${local}`, `Gross profit / loss ${local}`, `Other expenses allocated ${local}`, `Net profit / loss ${local}`] : []), `Customers still owe ${local}`, `Still owed to supplier ${local}`, `Unpaid shipment expenses ${local}`],
           columns: [
             { header: 'Shipment (ICUL/FID)', value: (r) => r.contractReference, width: 30 },
             { header: 'Supplier', value: (r) => r.vendorName, width: 26 },
             { header: 'Purchased KG', value: (r) => Number(r.orderedKg), type: 'quantity' as const },
             { header: `Purchase value ${local}`, value: (r) => Number(r.goodsLocal), type: 'money' as const },
-            { header: `Direct expenses ${local}`, value: (r) => Number(r.capitalisedExpenseLocal), type: 'money' as const },
+            { header: `Direct shipment costs ${local}`, value: (r) => Number(r.capitalisedExpenseLocal), type: 'money' as const },
             { header: `Landed cost ${local}`, value: (r) => Number(r.landedLocal), type: 'money' as const },
             { header: `Landed cost / KG ${local}`, value: (r) => Number(r.costPerKgLocal), type: 'money' as const },
             { header: 'Sold KG', value: (r) => Number(r.invoicedKg), type: 'quantity' as const },
@@ -887,10 +887,16 @@ const REPORTS: Record<string, Report> = {
             { header: `Closing stock value ${local}`, value: (r) => Number(r.remainingValueLocal), type: 'money' as const },
             ...(profit
               ? [
+                  { header: `Cost of the coffee sold ${local}`, value: (r: S) => Number(r.cogsLocal), type: 'money' as const },
                   { header: `Gross profit / loss ${local}`, value: (r: S) => Number(r.grossProfitLocal), type: 'money' as const },
                   { header: 'Gross margin', value: (r: S) => Number(r.marginPct) / 100, type: 'percent' as const },
+                  { header: `Other expenses allocated ${local}`, value: (r: S) => Number(r.periodExpenseLocal), type: 'money' as const },
+                  { header: `Net profit / loss ${local}`, value: (r: S) => Number(r.netProfitLocal), type: 'money' as const },
                 ]
               : []),
+            { header: `Customers still owe ${local}`, value: (r) => Number(r.customerOutstandingLocal), type: 'money' as const },
+            { header: `Still owed to supplier ${local}`, value: (r) => Number(r.supplierOutstandingLocal), type: 'money' as const },
+            { header: `Unpaid shipment expenses ${local}`, value: (r) => Number(r.expenseOutstandingLocal), type: 'money' as const },
           ],
         });
       }
@@ -1069,17 +1075,17 @@ const REPORTS: Record<string, Report> = {
         title: 'Trial Balance',
         subtitle: `${period(from, to)}${scope}${trial.isBalancedLocal || filtered ? '' : ' — OUT OF BALANCE'}`,
         rows: rows.map((r) => ({ ...r, label: clientLabel(r, meta.get(r.accountId)) })),
-        totals: [`Opening debit ${local}`, `Opening credit ${local}`, `Period debit ${local}`, `Period credit ${local}`, `Closing debit ${local}`, `Closing credit ${local}`],
+        totals: [`Opening balance debit ${local}`, `Opening balance credit ${local}`, `Debit total ${local}`, `Credit total ${local}`, `Closing balance debit ${local}`, `Closing balance credit ${local}`],
         columns: [
           { header: 'Account', value: (r) => r.label, width: 38 },
           { header: 'Ledger name', value: (r) => (r.label === r.name ? '' : r.name), width: 30 },
           { header: 'Category', value: (r) => r.type },
-          { header: `Opening debit ${local}`, value: (r) => Number(r.openingDebitLocal), type: 'money' },
-          { header: `Opening credit ${local}`, value: (r) => Number(r.openingCreditLocal), type: 'money' },
-          { header: `Period debit ${local}`, value: (r) => Number(r.periodDebitLocal), type: 'money' },
-          { header: `Period credit ${local}`, value: (r) => Number(r.periodCreditLocal), type: 'money' },
-          { header: `Closing debit ${local}`, value: (r) => Number(r.debitLocal), type: 'money' },
-          { header: `Closing credit ${local}`, value: (r) => Number(r.creditLocal), type: 'money' },
+          { header: `Opening balance debit ${local}`, value: (r) => Number(r.openingDebitLocal), type: 'money' },
+          { header: `Opening balance credit ${local}`, value: (r) => Number(r.openingCreditLocal), type: 'money' },
+          { header: `Debit total ${local}`, value: (r) => Number(r.periodDebitLocal), type: 'money' },
+          { header: `Credit total ${local}`, value: (r) => Number(r.periodCreditLocal), type: 'money' },
+          { header: `Closing balance debit ${local}`, value: (r) => Number(r.debitLocal), type: 'money' },
+          { header: `Closing balance credit ${local}`, value: (r) => Number(r.creditLocal), type: 'money' },
           { header: 'Closing debit USD equivalent', value: (r) => Number(r.debitUsd), type: 'money' },
           { header: 'Closing credit USD equivalent', value: (r) => Number(r.creditUsd), type: 'money' },
         ],
@@ -1103,7 +1109,7 @@ const REPORTS: Record<string, Report> = {
         getCostOfSalesBreakdown({ companyId: user.activeCompany.id, from, to }),
         prisma.account.findFirst({ where: { companyId: user.activeCompany.id, systemKey: 'COST_OF_GOODS_SOLD' }, select: { id: true } }),
       ]);
-      const cogsRows = pnlSection('Cost of goods sold', pnl.costOfSales, { usd: t.costOfSalesUsd, local: t.costOfSalesLocal });
+      const cogsRows = pnlSection('Less: Cost of Goods Sold', pnl.costOfSales, { usd: t.costOfSalesUsd, local: t.costOfSalesLocal }, 'Total Cost of Goods Sold');
       const ledgerCogs = pnl.costOfSales.find((l) => l.accountId === cogsAccount?.id);
       if (ledgerCogs) {
         const timingLocal = dec(ledgerCogs.amountLocal).minus(breakdown.totalLocal);
@@ -1123,27 +1129,27 @@ const REPORTS: Record<string, Report> = {
       const rows: StatementRow[] = [
         // The headings the statement on screen uses, so the file and the
         // screen read as one report rather than two namings of it.
-        ...pnlSection('Income', pnl.revenue, { usd: t.revenueUsd, local: t.revenueLocal }),
+        ...pnlSection('Sales / Revenue', pnl.revenue, { usd: t.revenueUsd, local: t.revenueLocal }, 'Total Sales / Revenue'),
         ...cogsRows,
         {
           kind: 'total',
-          label: 'Gross profit',
+          label: 'Gross Profit',
           values: [Number(t.grossProfitLocal), Number(t.grossProfitUsd)],
         },
         { kind: 'note', label: `Gross margin ${Number(pnl.grossMarginPct).toFixed(1)}% of revenue` },
         { kind: 'spacer' },
-        ...pnlSection('Expenses', pnl.operatingExpenses, {
+        ...pnlSection('Less: Operating Expenses', pnl.operatingExpenses, {
           usd: t.operatingExpensesUsd,
           local: t.operatingExpensesLocal,
-        }),
+        }, 'Total Operating Expenses'),
       ];
 
       if (pnl.otherItems.length > 0) {
-        rows.push(...pnlSection('Other income and expenses', pnl.otherItems, { usd: t.otherUsd, local: t.otherLocal }));
+        rows.push(...pnlSection('Other Income / Expenses', pnl.otherItems, { usd: t.otherUsd, local: t.otherLocal }, 'Total Other Income / Expenses'));
       }
 
       rows.push(
-        { kind: 'grand', label: 'Net profit', values: [Number(t.netProfitLocal), Number(t.netProfitUsd)] },
+        { kind: 'grand', label: 'Net Profit / Loss', values: [Number(t.netProfitLocal), Number(t.netProfitUsd)] },
         { kind: 'note', label: `Net margin ${Number(pnl.netMarginPct).toFixed(1)}% of revenue` },
       );
 

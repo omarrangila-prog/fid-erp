@@ -6,6 +6,7 @@ import { Field } from '@/components/ui/field';
 
 export type StockFilterValues = {
   item?: string;
+  grade?: string;
   warehouse?: string;
   shipment?: string;
   batch?: string;
@@ -26,6 +27,7 @@ export function StockFilters({
   action,
   values,
   items,
+  grades = [],
   warehouses,
   shipments,
   batches,
@@ -35,6 +37,7 @@ export function StockFilters({
   action: string;
   values: StockFilterValues;
   items: Option[];
+  grades?: Option[];
   warehouses: Option[];
   shipments: Option[];
   batches: Option[];
@@ -58,6 +61,7 @@ export function StockFilters({
   return (
     <Form action={action} className="flex flex-wrap items-end gap-3 print:hidden" data-testid="stock-filters">
       {showItem ? select('item', 'Item', items) : null}
+      {showItem ? select('grade', 'Grade', grades) : null}
       {select('warehouse', 'Warehouse', warehouses)}
       {select('shipment', 'Shipment', shipments)}
       {select('container', 'Container', containers)}

@@ -369,7 +369,7 @@ test('the shipment cost report splits the shared charges between the lines', asy
   const main = (await page.locator('main').textContent()) ?? '';
   // The coffee, the charges added to it, and what a kilo ended up costing.
   expect(main).toMatch(/Coffee/i);
-  expect(main).toMatch(/Direct expenses/i);
+  expect(main).toMatch(/Direct shipment costs/i);
   expect(main).toMatch(/Total landed cost/i);
   expect(main).toMatch(/per KG/i);
   console.log('  shipment costing shows coffee, added costs and cost per kilo');
@@ -606,7 +606,7 @@ test('the statements lead with the figures they exist to give', async ({ page })
     // The statement is laid out the way an accountant expects: Income, Cost
     // of goods sold, Gross profit, Expenses, Net profit — collapsible, with
     // a total row under each section.
-    ['/reports/profit-loss', ['Income', 'Total income', 'Cost of goods sold', 'Gross profit', 'Expenses', 'Total expenses', 'Net profit']],
+    ['/reports/profit-loss', ['Sales / Revenue', 'Total Sales / Revenue', 'Less: Cost of Goods Sold', 'Gross Profit', 'Less: Operating Expenses', 'Total Operating Expenses', 'Net Profit / Loss']],
     ['/reports/balance-sheet', ['Current assets', 'Total assets', 'Total liabilities', 'Total equity', 'Total liabilities and equity']],
   ] as const) {
     await page.goto(path, { waitUntil: 'domcontentloaded' });

@@ -21,6 +21,7 @@ export function parseStockFilters(query: Record<string, string | undefined>): {
   };
   const values: StockFilterValues = {
     item: pick('item'),
+    grade: pick('grade'),
     warehouse: pick('warehouse'),
     shipment: pick('shipment'),
     batch: pick('batch'),
@@ -32,6 +33,7 @@ export function parseStockFilters(query: Record<string, string | undefined>): {
     values,
     filters: {
       itemId: values.item,
+      grade: values.grade,
       warehouseId: values.warehouse,
       shipmentId: values.shipment,
       batchId: values.batch,
@@ -45,7 +47,7 @@ export function parseStockFilters(query: Record<string, string | undefined>): {
 /** What each filter can be set to — this company's own records, nothing else. */
 export async function getStockFilterOptions(companyId: string, warehouseIds: string[] | null) {
   const [items, warehouses, shipments, batches, ordinals] = await Promise.all([
-    prisma.coffeeItem.findMany({ where: { companyId }, orderBy: { itemName: 'asc' }, select: { id: true, itemName: true } }),
+    prisma.coffeeItem.findMany({ where: { companyId }, orderBy: { itemName: 'asc' }, select: { id: true, itemName: true, grade: true } }),
     prisma.warehouse.findMany({
       where: { companyId, ...(warehouseIds ? { id: { in: warehouseIds } } : {}) },
       orderBy: { name: 'asc' },
@@ -67,6 +69,8 @@ export async function getStockFilterOptions(companyId: string, warehouseIds: str
   for (const b of batches) if (b.container) containers.set(b.container.id, b.container.containerNumber);
   return {
     items: items.map((i) => ({ id: i.id, label: i.itemName })),
+    // The grades recorded on this company's items; the value is the grade itself.
+    grades: [...new Set(items.map((i) => i.grade?.trim()).filter((g): g is string => !!g))].sort().map((g) => ({ id: g, label: g })),
     warehouses: warehouses.map((w) => ({ id: w.id, label: w.name })),
     shipments: shipments.map((s) => ({
       id: s.id,
@@ -85,6 +89,7 @@ export function describeStockFilters(
   const name = (list: Array<{ id: string; label: string }>, id?: string) => list.find((o) => o.id === id)?.label;
   return [
     values.item ? `Item: ${name(options.items, values.item) ?? '—'}` : null,
+    values.grade ? `Grade: ${values.grade}` : null,
     values.warehouse ? `Warehouse: ${name(options.warehouses, values.warehouse) ?? '—'}` : null,
     values.shipment ? `Shipment: ${name(options.shipments, values.shipment) ?? '—'}` : null,
     values.container ? `Container: ${name(options.containers, values.container) ?? '—'}` : null,

@@ -250,18 +250,28 @@ export default async function TrialBalancePage({
           <TableWrap className="rounded-none border-0 border-t">
             <Table>
               <THead>
+                {/* The requirements' columns: opening balance, debit total, credit total, closing balance. */}
+                {trial.hasOpening ? (
+                  <TR className="hover:bg-transparent">
+                    <TH />
+                    <TH numeric colSpan={2} className="text-center">Opening balance</TH>
+                    <TH numeric>Debit total</TH>
+                    <TH numeric>Credit total</TH>
+                    <TH numeric colSpan={2} className="text-center">Closing balance</TH>
+                  </TR>
+                ) : null}
                 <TR className="hover:bg-transparent">
                   <TH>Account</TH>
                   {trial.hasOpening ? (
                     <>
-                      <TH numeric>Opening debit</TH>
-                      <TH numeric>Opening credit</TH>
-                      <TH numeric>Debit movement</TH>
-                      <TH numeric>Credit movement</TH>
+                      <TH numeric>Debit</TH>
+                      <TH numeric>Credit</TH>
+                      <TH numeric>for the period</TH>
+                      <TH numeric>for the period</TH>
                     </>
                   ) : null}
-                  <TH numeric>{trial.hasOpening ? 'Closing debit' : 'Debit'}</TH>
-                  <TH numeric>{trial.hasOpening ? 'Closing credit' : 'Credit'}</TH>
+                  <TH numeric>Debit</TH>
+                  <TH numeric>Credit</TH>
                 </TR>
               </THead>
               <TBody>

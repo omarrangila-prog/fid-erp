@@ -75,6 +75,8 @@ function methodOf(paymentMethod: string): CollectionMethod {
 export type ItemProfitFilters = {
   companyId: string;
   itemId?: string;
+  /** The coffee grade, as recorded on the items. */
+  grade?: string;
   warehouseId?: string;
   shipmentId?: string;
   batchId?: string;
@@ -409,6 +411,10 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
   const company = await prisma.company.findUniqueOrThrow({ where: { id: companyId }, select: { localCurrency: true } });
   const local = company.localCurrency;
   const scope = filters.warehouseIds ?? null;
+  // A grade is the items recorded with it.
+  const gradeItems = filters.grade
+    ? (await prisma.coffeeItem.findMany({ where: { companyId, grade: filters.grade }, select: { id: true } })).map((i) => i.id)
+    : null;
 
   const from = filters.from ?? null;
   const to = filters.to ?? null;
@@ -416,6 +422,7 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
   // --- Stock: the movement ledger, per batch and warehouse ------------------
   const movementWhere: Prisma.Sql[] = [Prisma.sql`it."companyId" = ${companyId}`, Prisma.sql`b."companyId" = ${companyId}`];
   if (filters.itemId) movementWhere.push(Prisma.sql`b."itemId" = ${filters.itemId}`);
+  if (gradeItems) movementWhere.push(Prisma.sql`b."itemId" = ANY(${gradeItems}::text[])`);
   if (filters.warehouseId) movementWhere.push(Prisma.sql`it."warehouseId" = ${filters.warehouseId}`);
   if (scope) movementWhere.push(Prisma.sql`it."warehouseId" = ANY(${scope}::text[])`);
   if (filters.shipmentId) movementWhere.push(Prisma.sql`b."shipmentId" = ${filters.shipmentId}`);
@@ -458,6 +465,7 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
   // --- Sales: posted invoice lines, following the batch they sold from -----
   const lineWhere: Prisma.Sql[] = [Prisma.sql`si."companyId" = ${companyId}`, Prisma.sql`si."status" = 'POSTED'`];
   if (filters.itemId) lineWhere.push(Prisma.sql`sil."itemId" = ${filters.itemId}`);
+  if (gradeItems) lineWhere.push(Prisma.sql`sil."itemId" = ANY(${gradeItems}::text[])`);
   if (filters.warehouseId) lineWhere.push(Prisma.sql`sil."warehouseId" = ${filters.warehouseId}`);
   if (scope) lineWhere.push(Prisma.sql`sil."warehouseId" = ANY(${scope}::text[])`);
   if (filters.shipmentId) lineWhere.push(Prisma.sql`b."shipmentId" = ${filters.shipmentId}`);
@@ -628,6 +636,7 @@ export async function getItemProfitability(filters: ItemProfitFilters): Promise<
     if (!b) return false;
     return (
       (!filters.itemId || b.itemId === filters.itemId) &&
+      (!gradeItems || gradeItems.includes(b.itemId)) &&
       (!filters.shipmentId || b.shipmentId === filters.shipmentId) &&
       (!filters.batchId || b.id === filters.batchId) &&
       (!filters.containerId || b.containerId === filters.containerId)

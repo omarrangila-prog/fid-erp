@@ -4,6 +4,7 @@ import { getBatchCostings } from '@/lib/services/landed-cost';
 import { getExpenseSettlements, type ExpensePaymentStatus } from '@/lib/services/expense-settlement';
 import { getOrderFxTransactions, summariseFx, type FxPair, type FxTransaction } from '@/lib/services/shipment-fx';
 import { effectiveLocalRate } from '@/lib/purchase-fx';
+import { getPayables, getReceivables } from '@/lib/services/receivables';
 
 /**
  * The costing of one shipment — the order it was bought on, with every
@@ -80,6 +81,13 @@ export type OrderSaleLine = {
   quantityKg: Decimal;
   revenueLocal: Decimal;
   revenueUsd: Decimal;
+  /**
+   * What the customer still owes on this order's part of the invoice: the
+   * invoice's unpaid share applied to this order's sales on it, so an invoice
+   * selling from two orders splits its balance the way it split its sales.
+   */
+  outstandingLocal: Decimal;
+  status: 'UNPAID' | 'PARTIAL' | 'PAID';
 };
 
 export type OrderCostSheet = {
@@ -153,6 +161,15 @@ export type OrderCostSheet = {
   /** Settled and still owed of the shipment's expenses, in the company's currency. */
   expenseSettledLocal: Decimal;
   expenseOutstandingLocal: Decimal;
+  /** What customers still owe for this order's coffee. */
+  customerOutstandingLocal: Decimal;
+  /**
+   * What is still owed to the coffee supplier on this order, in the order's
+   * own currency and in the company's at the order's rate.
+   */
+  supplierCurrency: string;
+  supplierOutstanding: Decimal;
+  supplierOutstandingLocal: Decimal;
 };
 
 export async function getOrderCostSheets(companyId: string): Promise<OrderCostSheet[]> {
@@ -257,7 +274,13 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
     ),
   ]);
   // Paid, partly paid or unpaid: the same answer as the expense list.
-  const settlements = await getExpenseSettlements(companyId, expenses);
+  // Customer and supplier balances: the same answer as the ageing reports.
+  const [settlements, receivables, payables] = await Promise.all([
+    getExpenseSettlements(companyId, expenses),
+    getReceivables({ companyId }),
+    getPayables({ companyId }),
+  ]);
+  const receivableByInvoice = new Map(receivables.map((r) => [r.invoiceId, r]));
 
   const expensesByShipment = new Map<string, typeof expenses>();
   for (const e of expenses) {
@@ -393,7 +416,8 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
     for (const row of invoiceSales.filter((r) => mine.has(r.shipmentId))) {
       const line = salesByInvoice.get(row.invoiceId) ?? {
         invoiceId: row.invoiceId, invoiceNumber: row.invoiceNumber, invoiceDate: row.invoiceDate, customerName: row.customerName,
-        quantityKg: dec(0), revenueLocal: dec(0), revenueUsd: dec(0),
+        quantityKg: dec(0), revenueLocal: dec(0), revenueUsd: dec(0), outstandingLocal: dec(0),
+        status: receivableByInvoice.get(row.invoiceId)?.status ?? 'PAID',
       };
       line.quantityKg = toQuantity(line.quantityKg.plus(row.kg));
       line.revenueLocal = toMoney(line.revenueLocal.plus(row.revenueLocal));
@@ -401,6 +425,14 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
       salesByInvoice.set(row.invoiceId, line);
     }
     const saleLines = [...salesByInvoice.values()];
+    for (const line of saleLines) {
+      const r = receivableByInvoice.get(line.invoiceId);
+      // A share of the invoice's own figures, so no rate is applied here.
+      line.outstandingLocal = r && r.originalAmount.greaterThan(0) ? toMoney(line.revenueLocal.times(r.outstandingAmount).dividedBy(r.originalAmount)) : dec(0);
+    }
+    const supplierRows = payables.filter((p) => p.kind === 'CONTRACT' && p.contractId === contract.id);
+    const supplierValue = sum(supplierRows.map((p) => p.purchaseValue));
+    const supplierOutstanding = toMoney(sum(supplierRows.map((p) => p.outstandingAmount)));
     const invoicedKg = toQuantity(sum(saleLines.map((l) => l.quantityKg)));
 
     return {
@@ -457,6 +489,11 @@ export async function getOrderCostSheets(companyId: string): Promise<OrderCostSh
       averageSellingPriceUsd: invoicedKg.greaterThan(0) ? toUnitCost(revenueUsd.dividedBy(invoicedKg)) : new Decimal(0),
       expenseSettledLocal: toMoney(sum(orderExpenses.map((e) => e.settledLocal))),
       expenseOutstandingLocal: toMoney(sum(orderExpenses.map((e) => e.outstandingLocal))),
+      customerOutstandingLocal: toMoney(sum(saleLines.map((l) => l.outstandingLocal))),
+      supplierCurrency: supplierRows[0]?.currency ?? 'USD',
+      supplierOutstanding,
+      // The order's purchase value in the company's currency, in the share still unpaid.
+      supplierOutstandingLocal: supplierValue.greaterThan(0) ? toMoney(goodsLocal.times(supplierOutstanding).dividedBy(supplierValue)) : dec(0),
     };
   });
 }

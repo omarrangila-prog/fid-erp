@@ -188,7 +188,7 @@ test('14.8 the optional overhead allocation can be made and withdrawn without mo
 test('14.9/14.10 the P&L answers any date range, including one day', async ({ page }) => {
   await page.goto(`/reports/profit-loss?from=${YEAR.from}&to=${YEAR.to}`, { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /^Profit and Loss$/ })).toBeVisible({ timeout: 45_000 });
-  const yearRevenue = money(await page.getByRole('row').filter({ hasText: /^Total income/ }).first().locator('td, th').last().textContent());
+  const yearRevenue = money(await page.getByRole('row').filter({ hasText: /^Total Sales \/ Revenue/ }).first().locator('td, th').last().textContent());
 
   // One day only: never more than the year that contains it.
   await page.goto('/reports/profit-loss?from=2026-07-03&to=2026-07-03', { waitUntil: 'domcontentloaded' });
@@ -273,7 +273,7 @@ test('14.18–14.20 the exports carry the same totals as the screen', async ({ p
   await page.goto(`/reports/profit-loss?from=${YEAR.from}&to=${YEAR.to}`, { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: /^Profit and Loss$/ })).toBeVisible({ timeout: 45_000 });
   // The total cell reads MAD first, the USD equivalent under it; the MAD figure is the one compared.
-  const screenIncome = money((await page.getByRole('row').filter({ hasText: /^Total income/ }).first().locator('td, th').last().innerText()).split('\n')[0]);
+  const screenIncome = money((await page.getByRole('row').filter({ hasText: /^Total Sales \/ Revenue/ }).first().locator('td, th').last().innerText()).split('\n')[0]);
 
   const excel = page.getByRole('link', { name: /^Excel$/ }).first();
   await expect(excel).toBeVisible();

@@ -31,6 +31,7 @@ import { LedgerReport } from '@/components/ledger/ledger-report';
 import { getLedgerPrefs } from '@/lib/services/ledger-prefs';
 import type { LedgerColumnKey } from '@/lib/ledger-columns';
 import { windowLedger } from '@/lib/ledger-window';
+import { landedCostSourceHrefs } from '@/lib/services/journal-source-links';
 
 const GL_COLUMNS: LedgerColumnKey[] = ['reference', 'jv', 'type', 'party', 'currency'];
 
@@ -102,6 +103,13 @@ export default async function GeneralLedgerPage({
     : null;
 
   const glPrefs = await getLedgerPrefs(user.id, 'general-ledger', GL_COLUMNS);
+  // Every entry opens what it came from: a landed-cost correction its expense, order or shipment.
+  const landedIds = [
+    ...(groups ?? []).flatMap((g) => g.lines.filter((l) => l.sourceType === 'LANDED_COST').map((l) => l.sourceId)),
+    ...(ledger?.rows ?? []).filter((r) => r.sourceType === 'LANDED_COST').map((r) => r.sourceId),
+  ];
+  const landedHrefs = await landedCostSourceHrefs(companyId, landedIds);
+  const sourceHref = (type: string, id: string) => landedHrefs.get(id) ?? journalSourceHref(type, id);
 
   // What it actually opened in, for the export link and the picker.
   const selectedCurrency = ledger?.viewCurrency ?? requestedCurrency ?? 'REPORTING';
@@ -164,7 +172,7 @@ export default async function GeneralLedgerPage({
                       key: `${l.entryId}-${i}`,
                       date: l.entryDate.toISOString().slice(0, 10),
                       reference: l.reference || null,
-                      referenceHref: journalSourceHref(l.sourceType, l.sourceId),
+                      referenceHref: sourceHref(l.sourceType, l.sourceId),
                       type: titleCase(l.sourceType.replaceAll('_', ' ')),
                       memo: l.description,
                       party: l.party || null,
@@ -321,7 +329,7 @@ export default async function GeneralLedgerPage({
               key: `${row.entryId}-${index}`,
               date: row.entryDate.toISOString().slice(0, 10),
               reference: row.reference ?? businessNumber(row.entryNumber),
-              referenceHref: journalSourceHref(row.sourceType, row.sourceId),
+              referenceHref: sourceHref(row.sourceType, row.sourceId),
               jv: businessNumber(row.entryNumber),
               type: titleCase(row.sourceType),
               memo: row.description,
