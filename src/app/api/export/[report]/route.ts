@@ -7,7 +7,6 @@ import { toErrorResponse, NotFoundError, ForbiddenError } from '@/lib/errors';
 import { prisma } from '@/lib/db';
 import { getCostOfSalesBreakdown } from '@/lib/services/cost-of-sales-breakdown';
 import { BALANCE_SHEET_GROUPS } from '@/lib/balance-sheet-groups';
-import { agentNettedBalanceSheet, agentNettedTrialBalance, getAgentNetting } from '@/lib/services/agent-position';
 import { clientLabel, isUnusedInPeriod, isZeroAtClose, combineTrialRows, moveIntoOperating, OPERATING_ROW_ID } from '@/lib/trial-balance-view';
 import { dec, sum } from '@/lib/money';
 import {
@@ -1052,16 +1051,14 @@ const REPORTS: Record<string, Report> = {
         shipmentId: query.get('shipment') || null,
       };
       const filtered = Object.values(filters).some(Boolean);
-      const [report, netting, accounts, soldExpenses] = await Promise.all([
+      const [report, accounts, soldExpenses] = await Promise.all([
         getTrialBalanceReport({ companyId, to, filters }),
-        // As on screen: each agent's accounts on one line, except on a narrowed view.
-        filtered ? null : getAgentNetting(companyId, to),
         prisma.account.findMany({ where: { companyId }, orderBy: { code: 'asc' }, select: { id: true, code: true, name: true, type: true, systemKey: true, reportGroup: true } }),
         filtered ? null : getCostOfSalesBreakdown({ companyId, to }),
       ]);
       // As on screen: the operating expenses on one line.
       const operating = new Set(accounts.filter((a) => a.type === 'EXPENSE' && a.reportGroup === REPORT_GROUPS.OPERATING).map((a) => a.id));
-      const combined = combineTrialRows(netting ? agentNettedTrialBalance(report, netting) : report, operating, {
+      const combined = combineTrialRows(report, operating, {
         accountId: OPERATING_ROW_ID,
         name: 'Operating Expenses',
       });
@@ -1205,12 +1202,7 @@ const REPORTS: Record<string, Report> = {
     build: async (user, query) => {
       const asOf = dateParam(query, 'asOf') ?? new Date();
       const local = user.activeCompany.localCurrency;
-      // As on screen: each agent's accounts on one line.
-      const sheet = agentNettedBalanceSheet(
-        await getBalanceSheet({ companyId: user.activeCompany.id, asOf }),
-        await getAgentNetting(user.activeCompany.id, asOf),
-        { owedToUs: BALANCE_SHEET_GROUPS.ASSET[1], weOwe: BALANCE_SHEET_GROUPS.LIABILITY[3] },
-      );
+      const sheet = await getBalanceSheet({ companyId: user.activeCompany.id, asOf });
 
       // Under the headings of the client's requirements document, as on screen.
       const grouped = (title: string, groups: readonly string[], section: typeof sheet.assets): StatementRow[] => [

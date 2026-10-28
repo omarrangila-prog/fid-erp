@@ -3,7 +3,6 @@ import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getBalanceSheet, type BalanceSheetLine } from '@/lib/services/reports';
 import { BALANCE_SHEET_GROUPS } from '@/lib/balance-sheet-groups';
-import { agentNettedBalanceSheet, getAgentNetting } from '@/lib/services/agent-position';
 import { formatMoney, formatDate, companyToday, dayParam } from '@/lib/format';
 import { Decimal, dec } from '@/lib/money';
 import { PageHeader } from '@/components/shared/page-header';
@@ -57,15 +56,9 @@ export default async function BalanceSheetPage({
         ? new Date(Date.UTC(asOfDate.getUTCFullYear(), asOfDate.getUTCMonth(), 0))
         : null;
 
-  // Each agent's accounts on one line: what is owed between him and the company.
-  const netted = async (asOf: Date) =>
-    agentNettedBalanceSheet(await getBalanceSheet({ companyId: user.activeCompany.id, asOf }), await getAgentNetting(user.activeCompany.id, asOf), {
-      owedToUs: BALANCE_SHEET_GROUPS.ASSET[1],
-      weOwe: BALANCE_SHEET_GROUPS.LIABILITY[3],
-    });
   const [sheet, before] = await Promise.all([
-    netted(asOfDate),
-    compareDate ? netted(compareDate) : Promise.resolve(null as Sheet | null),
+    getBalanceSheet({ companyId: user.activeCompany.id, asOf: asOfDate }),
+    compareDate ? getBalanceSheet({ companyId: user.activeCompany.id, asOf: compareDate }) : Promise.resolve(null as Sheet | null),
   ]);
   const asOf = asOfDate.toISOString().slice(0, 10);
 
