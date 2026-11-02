@@ -315,4 +315,5 @@ export const CURRENCY_OPTIONS = [
   { value: 'USD', label: 'USD — US Dollar' },
   { value: 'AED', label: 'AED — UAE Dirham' },
   { value: 'MAD', label: 'MAD — Moroccan Dirham' },
+  { value: 'PKR', label: 'PKR — Pakistani Rupee' },
 ];

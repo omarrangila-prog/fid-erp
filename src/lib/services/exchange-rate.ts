@@ -54,10 +54,11 @@ export async function getRateDefaults(companyId: string, asOf?: Date) {
     select: { localCurrency: true },
   });
 
-  const [local, aed, mad] = await Promise.all([
+  const [local, aed, mad, pkr] = await Promise.all([
     getRate({ companyId, quoteCurrency: company.localCurrency, asOf }),
     getRate({ companyId, quoteCurrency: 'AED', asOf }),
     getRate({ companyId, quoteCurrency: 'MAD', asOf }),
+    getRate({ companyId, quoteCurrency: 'PKR', asOf }),
   ]);
 
   return {
@@ -73,6 +74,7 @@ export async function getRateDefaults(companyId: string, asOf?: Date) {
       USD: '1',
       AED: (aed ?? new Decimal(1)).toString(),
       MAD: (mad ?? new Decimal(1)).toString(),
+      PKR: (pkr ?? new Decimal(1)).toString(),
     } as Record<string, string>,
     /** True when no rate was on file, so the form can say so. */
     missing: local === null,

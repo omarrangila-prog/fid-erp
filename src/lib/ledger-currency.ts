@@ -34,11 +34,11 @@
  * ALL      — every line in its own currency, no running balance, because
  *             dirhams and dollars are never added together.
  */
-export const LEDGER_VIEW_CURRENCIES = ['LOCAL', 'REPORTING', 'ALL', 'USD', 'MAD', 'AED'] as const;
+export const LEDGER_VIEW_CURRENCIES = ['LOCAL', 'REPORTING', 'ALL', 'USD', 'MAD', 'AED', 'PKR'] as const;
 export type LedgerViewCurrency = (typeof LEDGER_VIEW_CURRENCIES)[number];
 
 export function parseLedgerViewCurrency(value: string | null | undefined): LedgerViewCurrency | null {
-  if (value === 'LOCAL' || value === 'REPORTING' || value === 'ALL' || value === 'USD' || value === 'MAD' || value === 'AED') return value;
+  if ((LEDGER_VIEW_CURRENCIES as readonly string[]).includes(value ?? '')) return value as LedgerViewCurrency;
   return null;
 }
 
@@ -110,7 +110,7 @@ export function ledgerDisplayCurrency(viewCurrency: string, fallback = 'USD'): s
 }
 
 export function ledgerCurrencyLabel(viewCurrency: string, mixed: boolean, localCurrency = 'MAD'): string {
-  if (mixed) return 'all currencies listed separately — USD and MAD are never added together';
+  if (mixed) return `all currencies listed separately — USD and ${localCurrency} are never added together`;
   if (viewCurrency === 'REPORTING') return 'every line at its USD value';
   if (viewCurrency === 'LOCAL') return `every line at its ${localCurrency} value, as in the trial balance`;
   return `${viewCurrency} lines only, in ${viewCurrency}`;

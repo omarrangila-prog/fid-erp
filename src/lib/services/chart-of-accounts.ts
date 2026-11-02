@@ -1198,7 +1198,9 @@ export async function ensurePorts(tx: Tx, companyId: string, country: string): P
     ? PORT_SEEDS.AE
     : name.includes('morocco') || name.includes('maroc')
       ? PORT_SEEDS.MA
-      : [];
+      : name.includes('pakistan')
+        ? PORT_SEEDS.PK
+        : [];
 
   const wanted = [...home, ...PORT_SEEDS.ORIGIN];
   const existing = await tx.port.findMany({ where: { companyId }, select: { code: true } });

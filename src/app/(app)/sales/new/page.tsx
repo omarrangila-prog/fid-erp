@@ -100,7 +100,7 @@ export default async function NewSalePage() {
     shipmentId: s.shipmentId,
   }));
 
-  const defaultCurrency = user.activeCompany.localCurrency === 'MAD' ? 'MAD' : 'USD';
+  const defaultCurrency = ['MAD', 'PKR'].includes(user.activeCompany.localCurrency) ? user.activeCompany.localCurrency : 'USD';
 
   const rates = await getRateDefaults(user.activeCompany.id);
   const invoiceNumber = await transaction((tx) => suggestSalesInvoiceNumber(tx, companyId));

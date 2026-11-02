@@ -20,9 +20,9 @@ import {
 
 const CURRENCIES = ['USD', 'MAD', 'AED', 'EUR'].map((code) => ({ value: code, label: code }));
 
-/** Morocco keeps to dirhams and dollars; elsewhere the full list. */
+/** Morocco keeps to dirhams and dollars, Pakistan to rupees and dollars; elsewhere the full list. */
 const currencyChoices = (localCurrency: string | undefined, current: string) =>
-  localCurrency?.toUpperCase() === 'MAD' ? currencyOptions(localCurrency, { keep: current, short: true }) : CURRENCIES;
+  ['MAD', 'PKR'].includes(localCurrency?.toUpperCase() ?? '') ? currencyOptions(localCurrency!, { keep: current, short: true }) : CURRENCIES;
 
 export function vendorCreateSpec(
   defaultCurrency: string,

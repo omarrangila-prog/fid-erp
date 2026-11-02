@@ -39,7 +39,7 @@ export const CURRENCY_DISPLAY_SCALE: Record<string, number> = {
   EUR: 2,
 };
 
-export const SUPPORTED_CURRENCIES = ['USD', 'AED', 'MAD'] as const;
+export const SUPPORTED_CURRENCIES = ['USD', 'AED', 'MAD', 'PKR'] as const;
 export type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
 
 export const BASE_CURRENCY = 'USD';

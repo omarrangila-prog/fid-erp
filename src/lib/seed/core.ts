@@ -110,12 +110,39 @@ export const COMPANY_SEEDS: CompanySeed[] = [
       { code: 'MA-BANK-USD', name: 'USD Bank Account', accountType: 'BANK', currency: 'USD', bankName: 'Attijariwafa Bank' },
     ],
   },
+  {
+    // Books kept in rupees; trades in rupees and dollars.
+    code: 'FID-PK',
+    name: 'FID Pakistan',
+    legalName: 'FID PAKISTAN',
+    country: 'Pakistan',
+    localCurrency: 'PKR',
+    timezone: 'Asia/Karachi',
+    docPrefix: 'FID-PK',
+    address: 'Pakistan',
+    warehouses: [{ code: 'PK-MAIN', name: 'Main Warehouse', location: 'Pakistan', isDefault: true }],
+    cashAccounts: [
+      { code: 'PK-CASH-PKR', name: 'Cash in Hand', accountType: 'CASH', currency: 'PKR' },
+      { code: 'PK-CASH-USD', name: 'Cash in Hand (USD)', accountType: 'CASH', currency: 'USD' },
+      { code: 'PK-BANK-PKR', name: 'PKR Bank Account', accountType: 'BANK', currency: 'PKR' },
+      { code: 'PK-BANK-USD', name: 'USD Bank Account', accountType: 'BANK', currency: 'USD' },
+    ],
+  },
 ];
 
 export async function seedCompanies(): Promise<string[]> {
   const ids: string[] = [];
+  for (const seed of COMPANY_SEEDS) ids.push(await seedCompany(seed));
+  return ids;
+}
 
-  for (const seed of COMPANY_SEEDS) {
+/**
+ * One company: created (or brought up to its seed), its chart of accounts,
+ * warehouses, cash and bank accounts and default settings. Safe to re-run,
+ * and safe to run for a single new company on books that already hold others.
+ */
+export async function seedCompany(seed: CompanySeed): Promise<string> {
+  {
     const company = await prisma.company.upsert({
       where: { code: seed.code },
       update: {
@@ -184,10 +211,8 @@ export async function seedCompanies(): Promise<string[]> {
       }
     }
 
-    ids.push(company.id);
+    return company.id;
   }
-
-  return ids;
 }
 
 /** Indicative rates seeded so a user is never forced to type one from scratch. */
@@ -295,6 +320,13 @@ export async function seedPinAccounts(): Promise<Array<{ name: string; company: 
       name: process.env.MOROCCO_STAFF_NAME ?? 'Morocco Staff',
       roleCode: 'DATA_ENTRY',
       companyCode: 'FID-MA',
+    },    {
+      pin: process.env.PAKISTAN_STAFF_PIN,
+      email: 'pakistan.staff@fidtrading.local',
+      isAdmin: false,
+      name: process.env.PAKISTAN_STAFF_NAME ?? 'Pakistan Staff',
+      roleCode: 'DATA_ENTRY',
+      companyCode: 'FID-PK',
     },
   ];
 

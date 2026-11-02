@@ -11,7 +11,8 @@
  */
 export function transactionCurrencies(localCurrency: string, keep?: string | null): string[] {
   const local = localCurrency.toUpperCase();
-  const list = local === 'MAD' ? ['MAD', 'USD'] : ['USD', 'AED', 'MAD'];
+  // Morocco and Pakistan each trade in their own currency and the dollar only.
+  const list = local === 'MAD' ? ['MAD', 'USD'] : local === 'PKR' ? ['PKR', 'USD'] : ['USD', 'AED', 'MAD'];
   return keep && !list.includes(keep) ? [...list, keep] : list;
 }
 
@@ -19,6 +20,7 @@ export const CURRENCY_NAMES: Record<string, string> = {
   USD: 'US Dollar',
   AED: 'UAE Dirham',
   MAD: 'Moroccan Dirham',
+  PKR: 'Pakistani Rupee',
   EUR: 'Euro',
 };
 

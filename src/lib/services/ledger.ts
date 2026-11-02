@@ -27,15 +27,24 @@ import {
 
 export type LedgerView = 'TRANSACTION' | 'USD' | 'LOCAL';
 
-export const BOOK_CURRENCIES = ['USD', 'AED', 'MAD'] as const;
+export const BOOK_CURRENCIES = ['USD', 'AED', 'MAD', 'PKR'] as const;
 export type BookCurrency = (typeof BOOK_CURRENCIES)[number];
 
 export function isBookCurrency(value: string | null | undefined): value is BookCurrency {
-  return value === 'USD' || value === 'AED' || value === 'MAD';
+  return (BOOK_CURRENCIES as readonly string[]).includes(value ?? '');
 }
 
-/** Tabs on a person/account ledger: always USD and MAD, plus AED when that book is in play. */
+/**
+ * Tabs on a person/account ledger: USD and the company's own currency, plus a
+ * party's own book where it is a third one. Morocco and Dubai keep the tabs
+ * they always had (USD, AED when in play, MAD).
+ */
 export function ledgerCurrencyTabs(localCurrency: string, partyCurrency?: string): BookCurrency[] {
+  if (localCurrency === 'PKR') {
+    const tabs: BookCurrency[] = ['USD', 'PKR'];
+    if (isBookCurrency(partyCurrency) && !tabs.includes(partyCurrency)) tabs.push(partyCurrency);
+    return tabs;
+  }
   const tabs: BookCurrency[] = ['USD', 'MAD'];
   if (localCurrency === 'AED' || partyCurrency === 'AED') tabs.splice(1, 0, 'AED');
   return tabs;

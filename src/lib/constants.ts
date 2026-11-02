@@ -1084,6 +1084,7 @@ export const TAX_REGIMES: Array<{
 }> = [
   { match: ['emirat', 'uae', 'dubai', 'ae'], label: 'VAT', standardRatePct: 5, periodMonths: 3 },
   { match: ['morocco', 'maroc', 'ma'], label: 'TVA', standardRatePct: 20, periodMonths: 1 },
+  { match: ['pakistan', 'pk'], label: 'Sales Tax', standardRatePct: 18, periodMonths: 1 },
 ];
 
 /** Somewhere we hold no statutory knowledge about: the rate has to be entered. */
@@ -1140,6 +1141,10 @@ export const PORT_SEEDS: Record<string, Array<{ code: string; name: string; coun
     { code: 'MACAS', name: 'Casablanca', country: 'Morocco' },
     { code: 'MAPTM', name: 'Tanger Med', country: 'Morocco' },
     { code: 'MAAGA', name: 'Agadir', country: 'Morocco' },
+  ],
+  PK: [
+    { code: 'PKKHI', name: 'Karachi', country: 'Pakistan' },
+    { code: 'PKBQM', name: 'Port Qasim, Karachi', country: 'Pakistan' },
   ],
   /** Loading ports, shared by both companies: this is where coffee comes from. */
   ORIGIN: [
