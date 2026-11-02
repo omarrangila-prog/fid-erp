@@ -205,8 +205,10 @@ describe('P&L by shipment and by customer (§6.8–6.9), and what is owed (§7.5
   it('states one shipment: revenue, COGS, gross, its own period costs and net — company overhead left unallocated', async () => {
     const p = (await getShipmentPnl({ companyId, contractId, ...year }))!;
     expect(f2(p.revenue.local)).toBe('487500.00');
-    expect(f2(p.cogs.local)).toBe('525000.00');
-    expect(f2(p.grossProfit.local)).toBe('-37500.00');
+    // Cost of Goods Sold is the coffee; its shipment expenses follow with the
+    // operating expenses (the owner's reading). Together they are the landed cost.
+    expect(f2(p.cogs.local.plus(p.shipmentExpenses.local))).toBe('525000.00');
+    expect(f2(p.grossProfit.local.minus(p.shipmentExpenses.local))).toBe('-37500.00');
     expect(f2(p.periodCosts!.local)).toBe('5000.00');
     expect(p.allocatedOverhead).toBeNull();
     expect(f2(p.netProfit!.local)).toBe('-42500.00');
@@ -215,15 +217,15 @@ describe('P&L by shipment and by customer (§6.8–6.9), and what is owed (§7.5
     // It agrees with the shipment's own page.
     const { sheet } = await read();
     expect(f2(p.revenue.local)).toBe(f2(sheet.revenueLocal));
-    expect(f2(p.cogs.local)).toBe(f2(sheet.cogsLocal));
+    expect(f2(p.cogs.local.plus(p.shipmentExpenses.local))).toBe(f2(sheet.cogsLocal));
   }, 300_000);
 
-  it('states one customer for the period: no net profit, since overhead is not allocated to customers', async () => {
+  it('states one customer for the period: net after its shipment expenses, no overhead allocated', async () => {
     const p = (await getCustomerPnl({ companyId, customerId, ...year }))!;
     expect(f2(p.revenue.local)).toBe('487500.00');
-    expect(f2(p.cogs.local)).toBe('525000.00');
-    expect(f2(p.grossProfit.local)).toBe('-37500.00');
-    expect(p.netProfit).toBeNull();
+    expect(f2(p.cogs.local.plus(p.shipmentExpenses.local))).toBe('525000.00');
+    // Net is after the shipment expenses on what the customer bought; no overhead.
+    expect(f2(p.netProfit!.local)).toBe('-37500.00');
     expect(p.netNote).toMatch(/not allocated to customers/);
     // Outside the period there is nothing.
     const before = (await getCustomerPnl({ companyId, customerId, from: utcDate('2025-01-01'), to: utcDate('2025-12-31') }))!;
