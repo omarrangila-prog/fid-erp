@@ -93,6 +93,8 @@ test('a ledger adjustment moves no cash, and an account can be added without lea
   await expect(form.locator('#ge-credit')).toContainText(`Adjust ${RUN}`);
   await form.locator('#ge-amount').fill('250');
   await expect(page.getByTestId('entry-preview')).toContainText(/None — no cash or bank moves/);
+  // A direct entry needs a memo.
+  await form.locator('#ge-memo').fill(`Set-off ${RUN}`);
   await page.getByTestId('post-entry').click();
   await page.waitForURL(/\/reports\/journal/, { timeout: 60_000 });
 });

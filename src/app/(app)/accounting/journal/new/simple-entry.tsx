@@ -36,6 +36,8 @@ export type EntryOption = ComboOption & {
   agentId?: string;
   /** The currencies it may carry; null takes any. */
   currencies: string[] | null;
+  /** The party's own currency (a USD supplier), offered first when it is chosen. */
+  defaultCurrency?: string;
   /** A cash or bank drawer: the entry moves money. */
   cash: boolean;
 };

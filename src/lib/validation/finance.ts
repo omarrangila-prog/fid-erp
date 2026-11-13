@@ -383,6 +383,30 @@ export const journalVoucherSchema = z.object({
     .min(2, 'A journal voucher needs at least two lines.'),
 });
 
+/**
+ * Bank to supplier, written from the journal entry screen and posted as the
+ * supplier payment it is: against the order or bill it settles, or as an
+ * advance when there is none.
+ */
+export const supplierEntrySchema = z.object({
+  clientKey: z.string().regex(/^[A-Za-z0-9-]{8,64}$/),
+  entryDate: dateString('Entry date'),
+  description: requiredText('Memo', 300),
+  reference: optionalText(80),
+  vendorId: cuid,
+  bankAccountId: cuid,
+  bankCurrency: currencyCode,
+  bankAmount: decimalString('Bank amount'),
+  supplierCurrency: currencyCode,
+  supplierAmount: decimalString('Supplier amount'),
+  rateToUsd: decimalString('Exchange rate'),
+  rateLocalPerUsd: decimalString('Local exchange rate'),
+  settles: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('DOCUMENT'), purchaseContractId: optionalCuid, expenseId: optionalCuid }),
+    z.object({ kind: z.literal('ADVANCE') }),
+  ]),
+});
+
 export const revaluationSchema = z.object({
   asOf: dateString('Revaluation date'),
   rates: z.record(z.string(), z.string()),

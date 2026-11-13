@@ -30,7 +30,7 @@ function drawPin(taken: Array<string | undefined>): string {
   }
 }
 process.env.E2E_DEVELOPER_EMAIL ??= 'developer@e2e.fid.invalid';
-process.env.E2E_DEVELOPER_PIN ??= drawPin([process.env.ADMIN_PIN, process.env.DUBAI_STAFF_PIN, process.env.MOROCCO_STAFF_PIN]);
+process.env.E2E_DEVELOPER_PIN ??= drawPin([process.env.ADMIN_PIN, process.env.DUBAI_STAFF_PIN, process.env.MOROCCO_STAFF_PIN, process.env.PAKISTAN_STAFF_PIN]);
 
 export default defineConfig({
   testDir: './tests/e2e',

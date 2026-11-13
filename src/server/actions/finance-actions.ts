@@ -17,6 +17,7 @@ import {
   settleUnpaidExpenseSchema,
   chequeStatusSchema,
   journalVoucherSchema,
+  supplierEntrySchema,
   revaluationSchema,
   cashBankTransferSchema,
   intercompanyLoanSchema,
@@ -43,6 +44,7 @@ import {
 import { postRevaluation } from '@/lib/services/revaluation';
 import { deletePostedEntry } from '@/lib/services/document-lifecycle';
 import { postJournalEntry } from '@/lib/services/accounting';
+import { getSupplierOpenItems, localDifference, postSupplierEntry, previewSupplierEntry } from '@/lib/services/supplier-payment-entry';
 import { postCashBankTransfer, postIntercompanyLoan } from '@/lib/services/cash-transfer';
 import { postLoan } from '@/lib/services/loan';
 import { allocateOverheads, withdrawOverheadAllocation } from '@/lib/services/overhead-allocation';
@@ -72,6 +74,11 @@ function toState(error: unknown): DocFormState {
   }
   const response = fail(error);
   return { ok: false, error: response.ok ? 'The action could not be completed.' : response.error };
+}
+
+function errorText(error: unknown): string {
+  const state = toState(error);
+  return state && !state.ok ? state.error : 'The action could not be completed.';
 }
 
 function parseJson(payload: string): unknown {
@@ -748,6 +755,50 @@ export async function postJournalVoucherAction(payload: string): Promise<DocForm
 
     revalidateAll(['/accounting/journal', '/reports', '/ledgers', '/ledgers/customers', '/ledgers/vendors', '/agents', '/dashboard']);
     return { ok: true, id: entry.id, message: `Journal entry ${businessNumber(entry.entryNumber)} posted.` };
+  } catch (error) {
+    return toState(error);
+  }
+}
+
+/** The supplier's open orders and bills, for "what does this pay?". */
+export async function supplierOpenItemsAction(vendorId: string) {
+  try {
+    const user = await requirePermission(PERMISSIONS.ACCOUNTING_POST);
+    return { ok: true as const, items: await getSupplierOpenItems(user.activeCompany.id, z.string().cuid().parse(vendorId)) };
+  } catch (error) {
+    return { ok: false as const, error: errorText(error) };
+  }
+}
+
+/** What a bank-to-supplier entry would post, exactly as posting writes it, then rolled back. */
+export async function previewSupplierEntryAction(payload: string) {
+  try {
+    const user = await requirePermission(PERMISSIONS.ACCOUNTING_POST);
+    await requirePermission(PERMISSIONS.PAYMENTS_POST);
+    const input = supplierEntrySchema.omit({ clientKey: true }).parse(parseJson(payload));
+    const lines = await previewSupplierEntry({ companyId: user.activeCompany.id, ...input }, user.id);
+    return { ok: true as const, lines, difference: localDifference(lines).toFixed(2) };
+  } catch (error) {
+    return { ok: false as const, error: errorText(error) };
+  }
+}
+
+/** Bank to supplier from the journal entry screen, posted as the supplier payment it is. */
+export async function postSupplierEntryAction(payload: string): Promise<DocFormState> {
+  try {
+    const user = await requirePermission(PERMISSIONS.ACCOUNTING_POST);
+    await requirePermission(PERMISSIONS.PAYMENTS_POST);
+    const { clientKey, ...input } = supplierEntrySchema.parse(parseJson(payload));
+    const result = await onceForKey(
+      { companyId: user.activeCompany.id, userId: user.id, scope: 'SUPPLIER_ENTRY', key: clientKey },
+      () => postSupplierEntry({ companyId: user.activeCompany.id, ...input }, user.id).then((r) => ({ id: r.paymentNumber })),
+    );
+    revalidateAll([...paths.payments, '/accounting/journal', '/reports', '/ledgers/vendors']);
+    return {
+      ok: true,
+      id: result.id,
+      message: result.replayed ? 'Already posted — this payment was recorded once.' : `Supplier payment ${businessNumber(result.id)} posted.`,
+    };
   } catch (error) {
     return toState(error);
   }

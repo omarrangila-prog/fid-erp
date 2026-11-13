@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function NewJournalEntryPage() {
   const user = await requirePageAccess(PERMISSIONS.ACCOUNTING_POST);
-  const { options, customers, rates, entryOptions } = await loadJournalFormOptions(user.activeCompany.id);
+  const { rates, entryOptions } = await loadJournalFormOptions(user.activeCompany.id);
   const today = toDateInputValue(companyToday(user.activeCompany.timezone));
 
   return (
@@ -40,8 +40,7 @@ export default async function NewJournalEntryPage() {
         advanced={
           <JournalForm
             embedded
-            accounts={options}
-            customers={customers}
+            accounts={entryOptions}
             localCurrency={user.activeCompany.localCurrency}
             defaultLocalRate={rates.local}
             ratesByCurrency={rates.byCurrency}

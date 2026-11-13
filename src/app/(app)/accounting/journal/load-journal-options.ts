@@ -1,7 +1,6 @@
 import { prisma } from '@/lib/db';
 import { getRateDefaults } from '@/lib/services/exchange-rate';
 import { Prisma } from '@prisma/client';
-import type { AccountOption } from '@/app/(app)/accounting/journal/new/journal-form';
 import type { EntryOption } from '@/app/(app)/accounting/journal/new/simple-entry';
 
 /**
@@ -80,7 +79,7 @@ export async function loadJournalFormOptions(companyId: string) {
   };
   const clearing = accounts.find((a) => a.systemKey === 'AGENT_CLEARING');
 
-  const options: AccountOption[] = [
+  const options = [
     ...accounts.map((account) => ({
       value: account.id,
       label: account.name,
@@ -160,6 +159,7 @@ export async function loadJournalFormOptions(companyId: string) {
           accountId: receivable.id,
           customerId: c.id,
           currencies: null,
+          defaultCurrency: c.primaryCurrency,
           cash: false,
         }))
       : []),
@@ -173,6 +173,7 @@ export async function loadJournalFormOptions(companyId: string) {
           accountId: payable.id,
           vendorId: v.id,
           currencies: null,
+          defaultCurrency: v.primaryCurrency,
           cash: false,
         }))
       : []),

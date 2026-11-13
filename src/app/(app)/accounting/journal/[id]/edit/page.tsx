@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { Callout } from '@/components/ui/feedback';
 import { JournalForm } from '@/app/(app)/accounting/journal/new/journal-form';
 import { loadJournalFormOptions } from '@/app/(app)/accounting/journal/load-journal-options';
+import type { EntryOption } from '@/app/(app)/accounting/journal/new/simple-entry';
 
 export const metadata: Metadata = { title: 'Edit Journal Entry (JV)' };
 export const dynamic = 'force-dynamic';
@@ -42,7 +43,10 @@ export default async function EditJournalVoucherPage({ params }: { params: Promi
           rateToUsd: true,
           description: true,
           agentId: true,
+          customerId: true,
+          vendorId: true,
           rateLocalPerUsd: true,
+          account: { select: { name: true, code: true, type: true, systemKey: true } },
         },
       },
     },
@@ -52,15 +56,52 @@ export default async function EditJournalVoucherPage({ params }: { params: Promi
     redirect(`/reports/journal?q=${encodeURIComponent(entry.entryNumber)}`);
   }
 
-  const { options, customers, rates } = await loadJournalFormOptions(companyId);
+  const { rates, entryOptions } = await loadJournalFormOptions(companyId);
 
   /*
-   * A line tagged with an agent was written by choosing the agent rather than
-   * the clearing account, so it opens the way it was written.
+   * Each line opens the way it was written: a customer, supplier or agent by
+   * name, anything else by its account. An account the list no longer offers
+   * (inactive, or a control account written bare) is kept as it was.
    */
-  const agentChoice = new Map(
-    options.filter((o) => o.value.startsWith('agent:') && o.agentId).map((o) => [o.agentId!, o.value]),
-  );
+  const extra: EntryOption[] = [];
+  const optionFor = (line: (typeof entry.lines)[number]) => {
+    const key = line.account.systemKey;
+    const party =
+      key === 'ACCOUNTS_RECEIVABLE' && line.customerId
+        ? `customer:${line.customerId}`
+        : key === 'ACCOUNTS_PAYABLE' && line.vendorId
+          ? `vendor:${line.vendorId}`
+          : key === 'AGENT_CLEARING' && line.agentId
+            ? `agent:${line.agentId}`
+            : key === 'AGENT_COMMISSION_PAYABLE' && line.agentId
+              ? `commission:${line.agentId}`
+              : line.accountId;
+    if (entryOptions.some((o) => o.value === party)) return party;
+    if (!extra.some((o) => o.value === line.accountId)) {
+      extra.push({
+        value: line.accountId,
+        label: line.account.name,
+        hint: line.account.type.toLowerCase(),
+        keywords: `${line.account.code} ${line.account.name}`,
+        group: 'Other liabilities',
+        accountId: line.accountId,
+        customerId: line.customerId ?? undefined,
+        vendorId: line.vendorId ?? undefined,
+        agentId: line.agentId ?? undefined,
+        currencies: null,
+        cash: false,
+      });
+    }
+    return line.accountId;
+  };
+  const initialLines = entry.lines.map((line) => ({
+    option: optionFor(line),
+    direction: Number(line.debit) > 0 ? ('DEBIT' as const) : ('CREDIT' as const),
+    amount: (Number(line.debit) > 0 ? line.debit : line.credit).toString(),
+    currency: line.currency,
+    rateToUsd: line.rateToUsd.toString(),
+    description: line.description ?? '',
+  }));
 
   return (
     <div className="space-y-6">
@@ -78,8 +119,7 @@ export default async function EditJournalVoucherPage({ params }: { params: Promi
         and the correction stay in the journal, where the change can be read.
       </Callout>
       <JournalForm
-        accounts={options}
-        customers={customers}
+        accounts={[...entryOptions, ...extra]}
         localCurrency={user.activeCompany.localCurrency}
         defaultLocalRate={rates.local}
         ratesByCurrency={rates.byCurrency}
@@ -91,14 +131,7 @@ export default async function EditJournalVoucherPage({ params }: { params: Promi
           reference: entry.reference ?? '',
           // The rate the voucher was written at, carried on its lines.
           rateLocalPerUsd: (entry.lines[0]?.rateLocalPerUsd ?? rates.local).toString(),
-          lines: entry.lines.map((line) => ({
-            accountId: (line.agentId && agentChoice.get(line.agentId)) || line.accountId,
-            direction: Number(line.debit) > 0 ? ('DEBIT' as const) : ('CREDIT' as const),
-            amount: (Number(line.debit) > 0 ? line.debit : line.credit).toString(),
-            currency: line.currency,
-            rateToUsd: line.rateToUsd.toString(),
-            description: line.description ?? '',
-          })),
+          lines: initialLines,
         }}
       />
     </div>
