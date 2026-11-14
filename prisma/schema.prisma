@@ -1011,6 +1011,11 @@ model PurchaseContractLine {
   lotNumber             String?
   batchNumber           String?
   containerNumber       String?
+  /// The physical container this line is loaded in, numbered within the
+  /// order: lines with the same slot are different coffees in one box.
+  /// Null on lines entered before containers and items were separated, which
+  /// each count as their own container as they always did.
+  containerSlot         Int?
   containerType         ContainerType @default(FT20)
   bags                  Int           @default(0)
   bagWeightKg           Decimal       @default(60) @db.Decimal(18, 3)

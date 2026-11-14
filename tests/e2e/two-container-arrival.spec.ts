@@ -67,7 +67,6 @@ test('an order of two containers starts with nothing arrived', async ({ page }) 
   await expect(supplier).toBeVisible({ timeout: 30_000 });
   await supplier.click();
   await page.getByRole('listbox').getByRole('option').first().click();
-  await page.locator('#containers').fill('2');
 
   const first = lineCard(page, 1);
   await first.getByRole('combobox').first().click();
@@ -82,7 +81,7 @@ test('an order of two containers starts with nothing arrived', async ({ page }) 
     const card = lineCard(page, index + 1);
     await card.getByLabel(/^Quantity/).fill(line.kg);
     await card.getByRole('textbox', { name: /Rate per unit|Price per unit/ }).fill('4.00');
-    await card.getByText(/Lot, batch, container and packing/).click();
+    await card.getByText(/Lot, batch and packing/).click();
     await card.getByLabel(/lot number/i).fill(line.lot);
     await card.getByLabel(/batch number/i).fill(line.batch);
     await card.getByLabel(/container number/i).fill(line.container);

@@ -248,6 +248,49 @@ export async function editApprovedPurchase(input: EditApprovedOrderInput) {
       booksChange = true;
     }
 
+    /*
+     * --- which container each coffee is in -----------------------------------
+     *
+     * A container is a box; the coffees in it are its lines. Each container
+     * on the corrected order maps to the shipment of the first kept coffee in
+     * it; a kept coffee in another shipment is moved into that one (only while
+     * nothing has happened to it), and a coffee added to a container already
+     * on the order joins its shipment rather than opening another container.
+     */
+    const slotted = totals.lines.some((l) => l.containerSlot !== null);
+    const shipmentOfSlot = new Map<number, string>();
+    if (slotted) {
+      for (const [index, line] of input.lines.entries()) {
+        const slot = totals.lines[index].containerSlot!;
+        const shipmentId = line.id ? batchesOf(line.id)[0]?.shipmentId : undefined;
+        if (shipmentId && !shipmentOfSlot.has(slot)) shipmentOfSlot.set(slot, shipmentId);
+      }
+      // A shipment can only be one container on the corrected order.
+      const slotsOfShipment = new Map<string, number>();
+      for (const [slot, shipmentId] of shipmentOfSlot) {
+        if (slotsOfShipment.has(shipmentId)) shipmentOfSlot.delete(slot);
+        else slotsOfShipment.set(shipmentId, slot);
+      }
+      for (const [index, line] of input.lines.entries()) {
+        if (!line.id) continue;
+        const slot = totals.lines[index].containerSlot!;
+        const own = batchesOf(line.id);
+        const from = own[0]?.shipmentId;
+        const to = shipmentOfSlot.get(slot);
+        if (!from || !to || from === to) {
+          if (from && !to) shipmentOfSlot.set(slot, from);
+          continue;
+        }
+        const label = describe(existingById.get(line.id)!.lineNumber);
+        if (hasMoved(line.id)) {
+          throw new BusinessRuleError(`${label} has already been received, so it cannot be moved into another container.`);
+        }
+        await moveUntouchedLine(tx, { companyId: input.companyId, contractId: before.id, batches: own, toShipmentId: to, label });
+        for (const b of own) b.shipmentId = to;
+        changes.push(`${label}: moved into container ${slot}`);
+      }
+    }
+
     // --- containers kept: what may change, and the change itself -------------
     const rowOf = new Map<number, string>(); // index in the input → line id
     for (const [index, line] of input.lines.entries()) {
@@ -285,6 +328,7 @@ export async function editApprovedPurchase(input: EditApprovedOrderInput) {
         await editContainer({
           companyId: input.companyId,
           shipmentId,
+          lineId: existing.id,
           userId: input.userId,
           quantityKg: kgChanged ? computed.quantityKg.toString() : null,
           bags: computed.bags,
@@ -307,10 +351,14 @@ export async function editApprovedPurchase(input: EditApprovedOrderInput) {
       const computed = totals.lines[index];
       // Opened the way any container added to an approved order is; its
       // money is then set from the one calculation below with the rest.
+      const slot = computed.containerSlot;
+      const intoShipmentId = slot !== null ? shipmentOfSlot.get(slot) ?? null : null;
       const added = await addContainerToOrder({
         companyId: input.companyId,
         contractId: before.id,
         userId: input.userId,
+        containerSlot: slot,
+        intoShipmentId,
         itemId: computed.itemId,
         quantityKg: computed.quantityKg.toString(),
         unitPriceKg: computed.unitPriceKg.toString(),
@@ -321,7 +369,8 @@ export async function editApprovedPurchase(input: EditApprovedOrderInput) {
         reason: input.reason ?? null,
       });
       rowOf.set(index, added.lineId);
-      changes.push(`Container ${added.lineNumber} added`);
+      if (slot !== null && !intoShipmentId) shipmentOfSlot.set(slot, added.shipmentId);
+      changes.push(intoShipmentId ? `Coffee added to container ${slot}` : `Container ${added.lineNumber} added`);
       booksChange = true;
     }
 
@@ -350,6 +399,8 @@ export async function editApprovedPurchase(input: EditApprovedOrderInput) {
           taxAmount: computed.taxAmount,
           taxAmountUsd: computed.taxAmountUsd,
           notes: computed.notes,
+          containerSlot: computed.containerSlot,
+          containers: computed.containers,
         },
       });
       // The bag count on a container still at sea is the order's to say; once
@@ -360,7 +411,9 @@ export async function editApprovedPurchase(input: EditApprovedOrderInput) {
       });
       if (own.length === 1 && dec(own[0].receivedQuantityKg).isZero()) {
         await tx.batch.update({ where: { id: own[0].id }, data: { orderedBags: computed.bags, bagWeightKg: computed.bagWeightKg } });
-        await tx.shipment.updateMany({ where: { id: own[0].shipmentId, purchaseContractLineId: lineId }, data: { bags: computed.bags } });
+        // A container's bags are its coffees' bags added up.
+        const boxBags = await tx.batch.aggregate({ where: { shipmentId: own[0].shipmentId, status: 'ACTIVE' }, _sum: { orderedBags: true } });
+        await tx.shipment.update({ where: { id: own[0].shipmentId }, data: { bags: boxBags._sum.orderedBags ?? computed.bags } });
       }
     }
 
@@ -389,7 +442,7 @@ export async function editApprovedPurchase(input: EditApprovedOrderInput) {
         totalValueUsd: totals.totalValueUsd,
         taxAmount: totals.taxAmount,
         taxAmountUsd: totals.taxAmountUsd,
-        containers: input.containers ?? input.lines.length,
+        containers: slotted ? totals.totalContainers : (input.containers ?? input.lines.length),
         totalBags: totals.totalBags,
         incoterm: input.incoterm ?? before.incoterm,
         portOfLoading: input.portOfLoading ?? null,
@@ -936,14 +989,119 @@ async function removeUntouchedContainer(
     const stillUsed = await tx.batch.count({ where: { lotId } });
     if (stillUsed === 0) await tx.lot.delete({ where: { id: lotId } });
   }
-  await tx.shipmentStatusHistory.deleteMany({ where: { shipmentId: { in: shipmentIds } } });
-  await tx.shipmentDocumentStatusHistory.deleteMany({ where: { shipmentId: { in: shipmentIds } } });
-  // A shipment still carrying another row's coffee stays.
+  // A shipment still carrying another coffee stays — a container with one
+  // item less — with its history and its totals restated.
   for (const shipmentId of shipmentIds) {
-    const stillUsed = await tx.batch.count({ where: { shipmentId } });
-    if (stillUsed === 0) await tx.shipment.delete({ where: { id: shipmentId } });
-    else await tx.shipment.updateMany({ where: { id: shipmentId, purchaseContractLineId: params.line.id }, data: { purchaseContractLineId: null } });
+    const left = await tx.batch.findMany({ where: { shipmentId }, select: { orderedQuantityKg: true, orderedBags: true, purchaseContractLineId: true } });
+    if (left.length === 0) {
+      await tx.shipmentStatusHistory.deleteMany({ where: { shipmentId } });
+      await tx.shipmentDocumentStatusHistory.deleteMany({ where: { shipmentId } });
+      await tx.shipment.delete({ where: { id: shipmentId } });
+    } else {
+      const kept = await tx.shipment.findUniqueOrThrow({ where: { id: shipmentId }, select: { purchaseContractLineId: true } });
+      await tx.shipment.update({
+        where: { id: shipmentId },
+        data: {
+          quantityKg: toQuantity(left.reduce((t, b) => t.plus(b.orderedQuantityKg), dec(0))),
+          bags: left.reduce((t, b) => t + b.orderedBags, 0),
+          ...(kept.purchaseContractLineId === params.line.id ? { purchaseContractLineId: left[0].purchaseContractLineId } : {}),
+        },
+      });
+    }
   }
   await tx.purchaseContractLine.delete({ where: { id: params.line.id } });
 }
 
+
+/**
+ * Move a coffee that nothing has happened to into another container on the
+ * same order: its batch goes to that container's shipment and takes its
+ * container number. The container it left keeps its other coffees, or goes
+ * away when it carried only this one. Refused once anything has touched it —
+ * a receipt, a sale, a cost, a payment — as taking it off the order would be.
+ */
+async function moveUntouchedLine(
+  tx: Tx,
+  params: { companyId: string; contractId: string; batches: BatchRow[]; toShipmentId: string; label: string },
+) {
+  const batchIds = params.batches.map((b) => b.id);
+  const fromIds = [...new Set(params.batches.map((b) => b.shipmentId))].filter((id) => id !== params.toShipmentId);
+  const containers = await tx.batch.findMany({ where: { id: { in: batchIds } }, select: { containerId: true } });
+  const containerIds = containers.map((c) => c.containerId).filter(Boolean) as string[];
+
+  const [receiptLines, movements, invoiceLines, expenses, shares, transfers, credits, counts, money, allocations, foreign] = await Promise.all([
+    tx.goodsReceiptLine.count({ where: { batchId: { in: batchIds } } }),
+    tx.inventoryTransaction.count({ where: { batchId: { in: batchIds } } }),
+    tx.salesInvoiceLine.count({ where: { batchId: { in: batchIds } } }),
+    tx.expense.count({ where: { OR: [{ shipmentId: { in: fromIds } }, { batchId: { in: batchIds } }, ...(containerIds.length ? [{ containerId: { in: containerIds } }] : [])] } }),
+    tx.expenseBatchShare.count({ where: { batchId: { in: batchIds } } }),
+    tx.stockTransferLine.count({ where: { batchId: { in: batchIds } } }),
+    tx.creditNoteLine.count({ where: { batchId: { in: batchIds } } }),
+    tx.stockCountLine.count({ where: { batchId: { in: batchIds } } }),
+    Promise.all([
+      tx.receipt.count({ where: { shipmentId: { in: fromIds } } }),
+      tx.payment.count({ where: { shipmentId: { in: fromIds } } }),
+      tx.goodsReceipt.count({ where: { shipmentId: { in: fromIds } } }),
+      tx.salesInvoice.count({ where: { shipmentId: { in: fromIds } } }),
+    ]).then((n) => n.reduce((a, b) => a + b, 0)),
+    tx.overheadAllocationLine.count({ where: { shipmentId: { in: fromIds } } }),
+    tx.journalLine.count({
+      where: {
+        OR: [{ shipmentId: { in: fromIds } }, { batchId: { in: batchIds } }],
+        NOT: { journalEntry: { sourceType: 'PURCHASE_CONTRACT', sourceId: params.contractId } },
+      },
+    }),
+  ]);
+  const touched = receiptLines + movements + invoiceLines + expenses + shares + transfers + credits + counts + money + allocations + foreign;
+  if (touched > 0) {
+    throw new BusinessRuleError(
+      `${params.label} already has a receipt, sale, cost or payment against it, so it cannot be moved into another container. Take those back first.`,
+    );
+  }
+
+  const target = await tx.batch.findFirst({ where: { shipmentId: params.toShipmentId, status: 'ACTIVE', containerId: { not: null } }, select: { containerId: true } });
+  await tx.batch.updateMany({ where: { id: { in: batchIds } }, data: { shipmentId: params.toShipmentId, containerId: target?.containerId ?? null } });
+  // The order's own entry names the batch; it follows it to its container.
+  await tx.journalLine.updateMany({ where: { batchId: { in: batchIds } }, data: { shipmentId: params.toShipmentId } });
+  await tx.journalLine.updateMany({ where: { shipmentId: { in: fromIds }, batchId: null }, data: { shipmentId: params.toShipmentId } });
+
+  for (const shipmentId of [...fromIds, params.toShipmentId]) {
+    const left = await tx.batch.findMany({ where: { shipmentId, status: 'ACTIVE' }, select: { orderedQuantityKg: true, orderedBags: true, purchaseContractLineId: true } });
+    if (left.length === 0) {
+      // A container emptied by the move: numbered boxes with nothing in them go too.
+      for (const c of await tx.container.findMany({ where: { shipmentId }, select: { id: true } })) {
+        if ((await tx.batch.count({ where: { containerId: c.id } })) === 0) await tx.container.delete({ where: { id: c.id } });
+        else await tx.container.update({ where: { id: c.id }, data: { shipmentId: params.toShipmentId } });
+      }
+      await tx.shipmentStatusHistory.deleteMany({ where: { shipmentId } });
+      await tx.shipmentDocumentStatusHistory.deleteMany({ where: { shipmentId } });
+      await tx.shipment.delete({ where: { id: shipmentId } });
+      continue;
+    }
+    const kg = toQuantity(left.reduce((t, b) => t.plus(b.orderedQuantityKg), dec(0)));
+    const bags = left.reduce((t, b) => t + b.orderedBags, 0);
+    const own = await tx.shipment.findUniqueOrThrow({ where: { id: shipmentId }, select: { purchaseContractLineId: true } });
+    await tx.shipment.update({
+      where: { id: shipmentId },
+      data: {
+        quantityKg: kg,
+        bags,
+        containers: 1,
+        ...(left.some((b) => b.purchaseContractLineId === own.purchaseContractLineId) ? {} : { purchaseContractLineId: left[0].purchaseContractLineId }),
+      },
+    });
+  }
+  if (target?.containerId) {
+    const box = await tx.batch.findMany({ where: { containerId: target.containerId }, select: { orderedQuantityKg: true, orderedBags: true } });
+    await tx.container.update({
+      where: { id: target.containerId },
+      data: { netWeightKg: toQuantity(box.reduce((t, b) => t.plus(b.orderedQuantityKg), dec(0))), bags: box.reduce((t, b) => t + b.orderedBags, 0) },
+    });
+  }
+  // Any container number the moved coffee carried on its own goes with the box it left.
+  for (const containerId of containerIds) {
+    if (containerId !== target?.containerId && (await tx.batch.count({ where: { containerId } })) === 0) {
+      await tx.container.delete({ where: { id: containerId } });
+    }
+  }
+}

@@ -22,6 +22,8 @@ export type LineDraft = {
   lotNumber: string;
   batchNumber: string;
   containerNumber: string;
+  /** The physical container, numbered within the order; lines sharing it are one box. */
+  containerSlot: number;
   quantity: string;
   unit: 'KG' | 'MT' | 'BAG';
   unitPrice: string;
@@ -142,9 +144,8 @@ export function computePurchaseTotalsClient(input: {
     totalValueUsd: Number(totalValueUsd),
     totalQuantityKg: Number(qty(base.reduce((a, l) => a.plus(l.quantityKg), new Decimal(0)))),
     totalBags: base.reduce((a, l) => a + l.bags, 0),
-    totalContainers: new Set(
-      input.lines.map((l) => l.containerNumber.trim()).filter((n) => n.length > 0),
-    ).size,
+    // Boxes, not rows: two coffees in one container are one container.
+    totalContainers: new Set(input.lines.map((l) => l.containerSlot)).size,
   };
 }
 
@@ -159,7 +160,7 @@ export function computePurchaseTotalsClient(input: {
  * already typed; the copies start blank, because they belong to different
  * containers.
  */
-export function splitLineIntoContainers(line: LineDraft, count: number): LineDraft[] {
+export function splitLineIntoContainers(line: LineDraft, count: number, firstNewSlot = line.containerSlot + 1): LineDraft[] {
   const n = Math.max(1, Math.floor(count));
   if (n === 1) return [line];
   const quantity = dec(line.quantity);
@@ -180,6 +181,8 @@ export function splitLineIntoContainers(line: LineDraft, count: number): LineDra
       lotNumber: index === 0 ? line.lotNumber : '',
       batchNumber: index === 0 ? line.batchNumber : '',
       containerNumber: index === 0 ? line.containerNumber : '',
+      // Each part is its own container.
+      containerSlot: index === 0 ? line.containerSlot : firstNewSlot + index - 1,
     };
   });
 }

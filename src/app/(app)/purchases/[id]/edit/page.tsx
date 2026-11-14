@@ -47,6 +47,35 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
     moved.map((b) => b.purchaseContractLineId ?? b.shipment.purchaseContractLineId).filter(Boolean) as string[],
   );
 
+  /*
+   * Which container each coffee is in. Saved on the line once the order has
+   * been entered container by container; before that, coffees that share a
+   * shipment (or a container number) are one box, and every other line its own.
+   */
+  const shipmentOfLine = new Map<string, string>();
+  if (approved) {
+    const rows = await prisma.batch.findMany({
+      where: { purchaseContractId: id, status: 'ACTIVE' },
+      orderBy: { createdAt: 'asc' },
+      select: { purchaseContractLineId: true, shipmentId: true },
+    });
+    for (const r of rows) if (r.purchaseContractLineId && !shipmentOfLine.has(r.purchaseContractLineId)) shipmentOfLine.set(r.purchaseContractLineId, r.shipmentId);
+  }
+  const slotOfLine = new Map<string, number>();
+  const slotOfKey = new Map<string, number>();
+  for (const l of contract.lines) {
+    const key =
+      l.containerSlot != null
+        ? `slot:${l.containerSlot}`
+        : shipmentOfLine.get(l.id)
+          ? `ship:${shipmentOfLine.get(l.id)}`
+          : l.containerNumber
+            ? `no:${l.containerNumber.toUpperCase()}`
+            : `line:${l.id}`;
+    if (!slotOfKey.has(key)) slotOfKey.set(key, slotOfKey.size + 1);
+    slotOfLine.set(l.id, slotOfKey.get(key)!);
+  }
+
   const [vendors, items, ports] = await Promise.all([
     prisma.vendor.findMany({
       where: { companyId, status: 'ACTIVE' },
@@ -137,6 +166,7 @@ export default async function EditPurchasePage({ params }: { params: Promise<{ i
             lotNumber: l.lotNumber ?? '',
             batchNumber: l.batchNumber ?? '',
             containerNumber: l.containerNumber ?? '',
+            containerSlot: slotOfLine.get(l.id)!,
             quantity: l.quantity.toString(),
             unit: l.unit as 'KG' | 'MT' | 'BAG',
             unitPrice: l.unitPrice.toString(),

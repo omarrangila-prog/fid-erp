@@ -35,6 +35,8 @@ export const purchaseLineSchema = z.object({
   lotNumber: optionalText(60),
   batchNumber: optionalText(60),
   containerNumber: optionalText(40),
+  /** The physical container, numbered within the order; lines sharing it are one box. */
+  containerSlot: z.coerce.number().int().min(1).max(999).optional(),
   quantity: decimalString('Quantity'),
   unit: z.enum(['KG', 'MT', 'BAG']),
   unitPrice: decimalString('Price', { allowZero: true }),

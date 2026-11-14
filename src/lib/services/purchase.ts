@@ -114,6 +114,7 @@ function lineData(totals: ReturnType<typeof computePurchaseTotals>) {
     lotNumber: l.lotNumber,
     batchNumber: l.batchNumber,
     containerNumber: l.containerNumber,
+    containerSlot: l.containerSlot,
     containerType: l.containerType,
     quantity: l.quantity,
     unit: l.unit,
@@ -317,7 +318,7 @@ export async function createPurchaseContract(input: PurchaseContractInput, userI
         totalValueUsd: totals.totalValueUsd,
         taxAmount: totals.taxAmount,
         taxAmountUsd: totals.taxAmountUsd,
-        containers: input.containers ?? totals.totalContainers,
+        containers: totals.lines.some((l) => l.containerSlot !== null) ? totals.totalContainers : (input.containers ?? totals.totalContainers),
         totalBags: totals.totalBags,
         incoterm: input.incoterm ?? 'FOB',
         portOfLoading: input.portOfLoading ?? null,
@@ -394,7 +395,7 @@ export async function updatePurchaseContract(id: string, input: PurchaseContract
         totalValueUsd: totals.totalValueUsd,
         taxAmount: totals.taxAmount,
         taxAmountUsd: totals.taxAmountUsd,
-        containers: input.containers ?? totals.totalContainers,
+        containers: totals.lines.some((l) => l.containerSlot !== null) ? totals.totalContainers : (input.containers ?? totals.totalContainers),
         totalBags: totals.totalBags,
         incoterm: input.incoterm ?? 'FOB',
         portOfLoading: input.portOfLoading ?? null,
@@ -470,7 +471,10 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
      * and batches are created. The buyer sees two containers on the order,
      * as the bill of lading will show them, without having to say so twice.
      */
-    await divideRowsByContainer(tx, contract.id, contract.containers, contract.lines);
+    // An order that says which box each coffee is in needs no dividing: its
+    // containers are the boxes it names.
+    const slotted = contract.lines.some((l) => l.containerSlot !== null);
+    if (!slotted) await divideRowsByContainer(tx, contract.id, contract.containers, contract.lines);
     const dividedLines = await tx.purchaseContractLine.findMany({
       where: { purchaseContractId: contract.id },
       orderBy: { lineNumber: 'asc' },
@@ -514,11 +518,27 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
       return share;
     };
 
+    /*
+     * One shipment per physical container. Lines that name the same box —
+     * two coffees loaded together — travel, arrive and are costed as one
+     * shipment carrying a batch for each coffee. An order entered before boxes
+     * and coffees were told apart keeps one shipment per line, as it always had.
+     */
+    const boxOf = (line: (typeof contract.lines)[number]) => (slotted ? `slot:${line.containerSlot}` : `line:${line.id}`);
+    const boxLines = new Map<string, typeof contract.lines>();
+    for (const line of contract.lines) boxLines.set(boxOf(line), [...(boxLines.get(boxOf(line)) ?? []), line]);
+    const shipmentOfBox = new Map<string, { id: string }>();
+    const containerOfBox = new Map<string, string | null>();
+
     for (const [lineIndex, line] of contract.lines.entries()) {
+      const box = boxOf(line);
+      const boxmates = boxLines.get(box)!;
+      let shipment = shipmentOfBox.get(box);
+      if (!shipment) {
       const shipmentNumber = await nextReference(tx, { companyId: params.companyId, docType: DOC_TYPES.SHIPMENT });
       const jobNumber = await nextReference(tx, { companyId: params.companyId, docType: DOC_TYPES.JOB });
 
-      const shipment = await tx.shipment.create({
+      shipment = await tx.shipment.create({
         data: {
           companyId: params.companyId,
           shipmentNumber,
@@ -527,9 +547,9 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
           purchaseContractLineId: line.id,
           vendorId: contract.vendorId,
           itemId: line.itemId,
-          quantityKg: line.quantityKg,
-          bags: line.bags,
-          containers: containersFor(line, lineIndex),
+          quantityKg: sum(boxmates.map((l) => dec(l.quantityKg))),
+          bags: boxmates.reduce((t, l) => t + l.bags, 0),
+          containers: slotted ? 1 : containersFor(line, lineIndex),
           origin: contract.origin,
           destination: contract.destination,
           portOfLoading: contract.portOfLoading,
@@ -546,10 +566,15 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
           fromStatus: null,
           toStatus: 'CONTRACT_CREATED',
           changedById: params.userId,
-          notes: `Opened from line ${line.lineNumber} of ${contract.contractReference}.`,
+          notes:
+            boxmates.length > 1
+              ? `Opened from lines ${boxmates.map((l) => l.lineNumber).join(', ')} of ${contract.contractReference} — one container.`
+              : `Opened from line ${line.lineNumber} of ${contract.contractReference}.`,
         },
       });
       opened.push({ id: shipment.id, shipmentNumber, jobNumber });
+      shipmentOfBox.set(box, shipment);
+      }
 
       /**
        * The contract may not name the coffee yet.
@@ -596,9 +621,14 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
         lotCache.set(lotNumber, lotId);
       }
 
-      // Container, when the contract states one.
-      let containerId: string | null = null;
-      if (line.containerNumber) {
+      // Container, when the contract states one — the box's, shared by every
+      // coffee in it.
+      const boxNumber = slotted ? (boxmates.find((l) => l.containerNumber)?.containerNumber ?? null) : line.containerNumber;
+      let containerId: string | null = containerOfBox.get(box) ?? null;
+      if (!containerId && boxNumber) {
+        line.containerNumber = boxNumber;
+      }
+      if (!containerId && line.containerNumber) {
         containerId = containerCache.get(line.containerNumber) ?? null;
         if (!containerId) {
           const existingContainer = await tx.container.findFirst({
@@ -620,8 +650,8 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
                   containerType: line.containerType,
                   purchaseContractId: contract.id,
                   shipmentId: shipment.id,
-                  netWeightKg: line.quantityKg,
-                  bags: line.bags,
+                  netWeightKg: sum(boxmates.map((l) => dec(l.quantityKg))),
+                  bags: boxmates.reduce((t, l) => t + l.bags, 0),
                 },
                 select: { id: true },
               })
@@ -630,6 +660,7 @@ export async function postPurchaseContract(params: { id: string; companyId: stri
           containerCache.set(line.containerNumber, containerId);
         }
       }
+      containerOfBox.set(box, containerId);
 
       const unitCostUsd = toUnitCost(
         contract.currency === 'USD' ? line.unitCostKg : dec(line.unitCostKg).dividedBy(contract.rateToUsd),
@@ -1373,6 +1404,8 @@ export async function correctPurchaseContract(params: { id: string; companyId: s
 export type EditContainerInput = {
   companyId: string;
   shipmentId: string;
+  /** The coffee to correct, when the container carries more than one. */
+  lineId?: string | null;
   userId: string;
   quantityKg?: string | number | null;
   bags?: number | null;
@@ -1407,14 +1440,22 @@ export async function editContainer(input: EditContainerInput) {
     if (!shipment) throw new NotFoundError('Shipment');
     const contract = shipment.purchaseContract;
     if (contract.status !== 'POSTED') throw new BusinessRuleError('Edit the draft order directly.');
-    if (shipment.batches.length !== 1 || !shipment.purchaseContractLineId) {
+    // One coffee in the container is corrected; a box with several names which.
+    const lineId = input.lineId ?? (shipment.batches.length === 1 ? (shipment.batches[0].purchaseContractLineId ?? shipment.purchaseContractLineId) : null);
+    const own = lineId ? shipment.batches.filter((b) => (b.purchaseContractLineId ?? shipment.purchaseContractLineId) === lineId) : [];
+    if (!lineId || own.length !== 1) {
       throw new BusinessRuleError('This shipment carries several batches. Divide it into containers first, then edit each.');
     }
-    const batch = shipment.batches[0];
+    const batch = own[0];
     if (dec(batch.receivedQuantityKg).greaterThan(0) || dec(batch.soldQuantityKg).greaterThan(0) || dec(batch.allocatedQuantityKg).greaterThan(0)) {
       throw new BusinessRuleError('This container has already been received. Correct the stock with a transfer or count, or reverse the goods receipt first.');
     }
-    const line = await tx.purchaseContractLine.findUniqueOrThrow({ where: { id: shipment.purchaseContractLineId } });
+    const line = await tx.purchaseContractLine.findUniqueOrThrow({ where: { id: lineId } });
+    // The container's totals are its coffees added up.
+    const boxTotals = async () => {
+      const rows = await tx.batch.findMany({ where: { shipmentId: shipment.id, status: 'ACTIVE' }, select: { orderedQuantityKg: true, orderedBags: true } });
+      return { quantityKg: toQuantity(sum(rows.map((r) => dec(r.orderedQuantityKg)))), bags: rows.reduce((t, r) => t + r.orderedBags, 0) };
+    };
 
     const before = {
       quantityKg: dec(line.quantityKg).toString(),
@@ -1483,7 +1524,7 @@ export async function editContainer(input: EditContainerInput) {
           purchaseCostUsd: toMoney(newKg.times(unitCostUsd)),
         },
       });
-      await tx.shipment.update({ where: { id: shipment.id }, data: { quantityKg: newKg, bags: newBags } });
+      await tx.shipment.update({ where: { id: shipment.id }, data: await boxTotals() });
 
       await postOrderAdjustment(tx, {
         contract,
@@ -1496,7 +1537,7 @@ export async function editContainer(input: EditContainerInput) {
     } else if (input.bags !== undefined && input.bags !== null && input.bags !== line.bags) {
       await tx.purchaseContractLine.update({ where: { id: line.id }, data: { bags: newBags } });
       await tx.batch.update({ where: { id: batch.id }, data: { orderedBags: newBags } });
-      await tx.shipment.update({ where: { id: shipment.id }, data: { bags: newBags } });
+      await tx.shipment.update({ where: { id: shipment.id }, data: { bags: (await boxTotals()).bags } });
       await tx.purchaseContract.update({ where: { id: contract.id }, data: { totalBags: contract.totalBags - line.bags + newBags } });
     }
 
@@ -1512,10 +1553,18 @@ export async function editContainer(input: EditContainerInput) {
         : batch.containerId
           ? (await tx.container.update({ where: { id: batch.containerId }, data: { containerNumber, netWeightKg: newKg, bags: newBags }, select: { id: true } })).id
           : (await tx.container.create({ data: { companyId: input.companyId, containerNumber, purchaseContractId: contract.id, shipmentId: shipment.id, netWeightKg: newKg, bags: newBags }, select: { id: true } })).id;
-      await tx.batch.update({ where: { id: batch.id }, data: { containerId } });
-      await tx.purchaseContractLine.update({ where: { id: line.id }, data: { containerNumber } });
+      // The number belongs to the box, so every coffee in it carries it.
+      const boxmates = shipment.batches.filter((b) => b.containerId === batch.containerId || b.id === batch.id);
+      await tx.batch.updateMany({ where: { id: { in: boxmates.map((b) => b.id) } }, data: { containerId } });
+      await tx.purchaseContractLine.updateMany({
+        where: { id: { in: boxmates.map((b) => b.purchaseContractLineId ?? line.id) } },
+        data: { containerNumber },
+      });
+      const box = await boxTotals();
+      await tx.container.update({ where: { id: containerId }, data: { netWeightKg: box.quantityKg, bags: box.bags } });
     } else if (kgChanged && batch.containerId) {
-      await tx.container.update({ where: { id: batch.containerId }, data: { netWeightKg: newKg, bags: newBags } });
+      const box = await boxTotals();
+      await tx.container.update({ where: { id: batch.containerId }, data: { netWeightKg: box.quantityKg, bags: box.bags } });
     }
 
     const lotNumber = input.lotNumber?.trim();
@@ -1661,6 +1710,13 @@ export type AddContainerInput = {
   lotNumber?: string | null;
   batchNumber?: string | null;
   reason?: string | null;
+  /** The physical container, numbered within the order. */
+  containerSlot?: number | null;
+  /**
+   * Load this coffee into a container already on the order — its shipment —
+   * rather than opening another container. The container count does not move.
+   */
+  intoShipmentId?: string | null;
 };
 
 /**
@@ -1695,7 +1751,16 @@ export async function addContainerToOrder(input: AddContainerInput) {
     const tax = toMoney(subtotal.times(taxRatePct).dividedBy(100));
     const toUsd = (amount: Decimal) => toMoney(contract.currency === 'USD' ? amount : amount.dividedBy(contract.rateToUsd));
     const lineNumber = (contract.lines.at(-1)?.lineNumber ?? 0) + 1;
-    const containerNumber = input.containerNumber?.trim() || null;
+    // Into a container already on the order: its shipment, its number.
+    const into = input.intoShipmentId
+      ? await tx.shipment.findFirst({
+          where: { id: input.intoShipmentId, companyId: input.companyId, purchaseContractId: contract.id },
+          select: { id: true, batches: { where: { status: 'ACTIVE' }, select: { containerId: true, container: { select: { containerNumber: true } } } } },
+        })
+      : null;
+    if (input.intoShipmentId && !into) throw new BusinessRuleError('That container is not on this order.');
+    const intoContainer = into?.batches.find((b) => b.containerId) ?? null;
+    const containerNumber = intoContainer?.container?.containerNumber ?? (input.containerNumber?.trim() || null);
     const lotNumber = input.lotNumber?.trim() || null;
     const batchNumber = input.batchNumber?.trim() || null;
 
@@ -1712,7 +1777,8 @@ export async function addContainerToOrder(input: AddContainerInput) {
         lineSubtotal: subtotal,
         lineTotal: subtotal,
         unitCostKg: price,
-        containers: 1,
+        containers: into ? 0 : 1,
+        containerSlot: input.containerSlot ?? null,
         lotNumber,
         batchNumber,
         containerNumber,
@@ -1726,9 +1792,10 @@ export async function addContainerToOrder(input: AddContainerInput) {
       },
     });
 
+    const shipment = into ?? (await (async () => {
     const shipmentNumber = await nextReference(tx, { companyId: input.companyId, docType: DOC_TYPES.SHIPMENT });
     const jobNumber = await nextReference(tx, { companyId: input.companyId, docType: DOC_TYPES.JOB });
-    const shipment = await tx.shipment.create({
+    const created = await tx.shipment.create({
       data: {
         companyId: input.companyId,
         shipmentNumber,
@@ -1750,8 +1817,10 @@ export async function addContainerToOrder(input: AddContainerInput) {
       },
     });
     await tx.shipmentStatusHistory.create({
-      data: { shipmentId: shipment.id, fromStatus: null, toStatus: 'CONTRACT_CREATED', changedById: input.userId, notes: `Added to ${contract.contractReference} as container ${lineNumber}.` },
+      data: { shipmentId: created.id, fromStatus: null, toStatus: 'CONTRACT_CREATED', changedById: input.userId, notes: `Added to ${contract.contractReference} as container ${lineNumber}.` },
     });
+    return created;
+    })());
 
     const traceabilityPending = !lotNumber && !batchNumber;
     const lotName = lotNumber ?? `${contract.contractReference}/${lineNumber}`;
@@ -1762,8 +1831,8 @@ export async function addContainerToOrder(input: AddContainerInput) {
     if (await tx.batch.findFirst({ where: { companyId: input.companyId, batchNumber: batchName }, select: { id: true } })) {
       throw new BusinessRuleError(`Batch ${batchName} already exists.`);
     }
-    let containerId: string | null = null;
-    if (containerNumber) {
+    let containerId: string | null = intoContainer?.containerId ?? null;
+    if (!containerId && containerNumber) {
       const existing = await tx.container.findFirst({ where: { companyId: input.companyId, containerNumber }, select: { id: true, shipmentId: true } });
       if (existing?.shipmentId && existing.shipmentId !== shipment.id) throw new BusinessRuleError(`Container ${containerNumber} is already on another shipment.`);
       containerId = existing
@@ -1807,7 +1876,7 @@ export async function addContainerToOrder(input: AddContainerInput) {
         totalValue: newTotal,
         totalValueUsd: toUsd(newTotal),
         totalBags: contract.totalBags + bags,
-        containers: contract.containers + 1,
+        containers: into ? contract.containers : contract.containers + 1,
       },
     });
 
@@ -1828,6 +1897,15 @@ export async function addContainerToOrder(input: AddContainerInput) {
       entityId: contract.id,
       after: { lineNumber, item: item.itemName, quantityKg: kg.toString(), unitPriceKg: price.toString(), containerNumber, reason: input.reason ?? null },
     });
+
+    if (into) {
+      // The container now carries one more coffee: its totals are its coffees added up.
+      const rows = await tx.batch.findMany({ where: { shipmentId: into.id, status: 'ACTIVE' }, select: { orderedQuantityKg: true, orderedBags: true } });
+      const boxKg = toQuantity(sum(rows.map((r) => dec(r.orderedQuantityKg))));
+      const boxBags = rows.reduce((t, r) => t + r.orderedBags, 0);
+      await tx.shipment.update({ where: { id: into.id }, data: { quantityKg: boxKg, bags: boxBags } });
+      if (containerId) await tx.container.update({ where: { id: containerId }, data: { netWeightKg: boxKg, bags: boxBags } });
+    }
 
     return { lineId: line.id, shipmentId: shipment.id, batchId: batch.id, lineNumber };
   });

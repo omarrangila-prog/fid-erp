@@ -28,6 +28,11 @@ export type PurchaseLineInput = {
   lotNumber?: string | null;
   batchNumber?: string | null;
   containerNumber?: string | null;
+  /**
+   * The physical container the line is loaded in, numbered within the order.
+   * Lines sharing a slot are different coffees in one box.
+   */
+  containerSlot?: number | null;
   containerType?: ContainerType;
   quantity: string | number;
   unit: EntryUnit;
@@ -77,6 +82,7 @@ type ComputedLine = {
   lotNumber: string | null;
   batchNumber: string | null;
   containerNumber: string | null;
+  containerSlot: number | null;
   containerType: ContainerType;
   quantity: Decimal;
   unit: EntryUnit;
@@ -183,6 +189,7 @@ export function computePurchaseTotals(input: {
       lotNumber: lot || batch || null,
       batchNumber: batch || lot || null,
       containerNumber: line.containerNumber?.trim() || null,
+      containerSlot: line.containerSlot ?? null,
       containerType: line.containerType ?? ('FT20' as ContainerType),
       quantity,
       unit: line.unit,
@@ -198,6 +205,40 @@ export function computePurchaseTotals(input: {
       notes: line.notes ?? null,
     };
   });
+
+  /*
+   * Containers are boxes, not lines. When the lines say which box they are in,
+   * the first coffee of each box counts it and the others in the same box do
+   * not; two coffees in one container is one container. A box keeps one
+   * container number, and one number is one box.
+   */
+  const slotted = base.some((l) => l.containerSlot !== null);
+  if (slotted) {
+    const numberOfSlot = new Map<number, string>();
+    const slotOfNumber = new Map<string, number>();
+    base.forEach((l, index) => {
+      if (l.containerSlot === null || !Number.isInteger(l.containerSlot) || l.containerSlot < 1) {
+        throw new BusinessRuleError(`Line ${index + 1}: say which container it is loaded in.`);
+      }
+      if (!l.containerNumber) return;
+      const number = l.containerNumber.toUpperCase();
+      const other = slotOfNumber.get(number);
+      if (other !== undefined && other !== l.containerSlot) {
+        throw new BusinessRuleError(`Container ${l.containerNumber} is entered on two different containers. One number is one box.`);
+      }
+      const named = numberOfSlot.get(l.containerSlot);
+      if (named && named !== number) {
+        throw new BusinessRuleError(`Container ${l.containerSlot} is given two numbers, ${named} and ${l.containerNumber}.`);
+      }
+      slotOfNumber.set(number, l.containerSlot);
+      numberOfSlot.set(l.containerSlot, number);
+    });
+    const counted = new Set<number>();
+    for (const l of base) {
+      l.containers = counted.has(l.containerSlot!) ? 0 : 1;
+      counted.add(l.containerSlot!);
+    }
+  }
 
   const freightAmount = toMoney(input.freightAmount);
   const otherCharges = toMoney(input.otherCharges ?? 0);
@@ -245,7 +286,9 @@ export function computePurchaseTotals(input: {
     grossPayable: toMoney(totalValue.plus(taxAmount)),
     totalQuantityKg: toQuantity(sum(lines.map((l) => l.quantityKg))),
     totalBags: lines.reduce((acc, l) => acc + l.bags, 0),
-    totalContainers: new Set(lines.map((l) => l.containerNumber).filter(Boolean)).size,
+    totalContainers: slotted
+      ? new Set(lines.map((l) => l.containerSlot)).size
+      : new Set(lines.map((l) => l.containerNumber).filter(Boolean)).size,
   };
 }
 

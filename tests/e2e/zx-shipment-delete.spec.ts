@@ -46,7 +46,6 @@ async function createOrder(page: Page, reference: string, containers: string[]) 
   await expect(supplier).toBeVisible({ timeout: 30_000 });
   await supplier.click();
   await page.getByRole('listbox').getByRole('option').first().click();
-  await page.locator('#containers').fill(String(n));
   const first = lineCard(page, 1);
   await first.getByRole('combobox').first().click();
   await page.getByRole('listbox').getByRole('option').first().click();
@@ -59,7 +58,7 @@ async function createOrder(page: Page, reference: string, containers: string[]) 
   }
   for (const [i, container] of containers.entries()) {
     const card = lineCard(page, i + 1);
-    await card.getByText(/Lot, batch, container and packing/).click();
+    await card.getByText(/Lot, batch and packing/).click();
     await card.getByLabel(/lot number/i).fill(`L-${container}`);
     await card.getByLabel(/batch number/i).fill(`B-${container}`);
     await card.getByLabel(/container number/i).fill(container);

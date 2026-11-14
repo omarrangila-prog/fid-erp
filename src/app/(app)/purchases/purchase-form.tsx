@@ -58,12 +58,13 @@ export type PurchaseFormDefaults = {
   lines?: LineDefaults[];
 };
 
-const emptyLine = (bagWeightKg = '60'): LineDraft => ({
+const emptyLine = (bagWeightKg = '60', containerSlot = 1, containerNumber = ''): LineDraft => ({
   key: crypto.randomUUID(),
   itemId: '',
   lotNumber: '',
   batchNumber: '',
-  containerNumber: '',
+  containerNumber,
+  containerSlot,
   quantity: '',
   unit: 'KG',
   unitPrice: '',
@@ -128,7 +129,7 @@ export function PurchaseForm({
 
   const [lines, setLines] = React.useState<LineDraft[]>(() =>
     defaults?.lines?.length
-      ? defaults.lines.map((line) => ({ ...line, notes: line.notes ?? '', key: crypto.randomUUID() }))
+      ? defaults.lines.map((line, index) => ({ ...line, containerSlot: line.containerSlot ?? index + 1, notes: line.notes ?? '', key: crypto.randomUUID() }))
       : [emptyLine()],
   );
 
@@ -165,14 +166,40 @@ export function PurchaseForm({
     [lines, header.freightAmount, header.otherCharges, header.rateToUsd, header.currency],
   );
 
-  const declaredContainers = Number(header.containers) || 0;
+  /*
+   * The order's physical containers, in the order they were added. A
+   * container is a box; its lines are the coffees in it. Adding a coffee to a
+   * container never adds a container.
+   */
+  const slots = [...new Set(lines.map((l) => l.containerSlot))];
+  const nextSlot = () => Math.max(0, ...lines.map((l) => l.containerSlot)) + 1;
+  const linesIn = (slot: number) => lines.filter((l) => l.containerSlot === slot);
+  const numberOf = (slot: number) => linesIn(slot).find((l) => l.containerNumber.trim())?.containerNumber ?? '';
+
+  function addItemTo(slot: number) {
+    setLines((prev) => {
+      const mates = prev.filter((l) => l.containerSlot === slot);
+      const line = emptyLine(mates.at(-1)?.bagWeightKg ?? '60', slot, mates.find((l) => l.containerNumber)?.containerNumber ?? '');
+      // Straight after the container's last coffee, so the box reads as one.
+      const at = prev.findLastIndex((l) => l.containerSlot === slot);
+      const next = [...prev];
+      next.splice(at + 1, 0, line);
+      return next;
+    });
+  }
+  function addContainer() {
+    setLines((prev) => [...prev, emptyLine(prev.at(-1)?.bagWeightKg ?? '60', nextSlot())]);
+  }
+  function setContainerNumber(slot: number, value: string) {
+    setLines((prev) => prev.map((l) => (l.containerSlot === slot ? { ...l, containerNumber: value } : l)));
+  }
 
   function buildPayload() {
+    // Containers numbered 1, 2, 3… in the order shown.
+    const renumber = new Map(slots.map((slot, index) => [slot, index + 1]));
     return JSON.stringify({
       ...header,
-      // Left blank, the container count is the number of rows: one row per
-      // container is the rule the form is built around.
-      containers: header.containers ? Number(header.containers) : lines.length,
+      containers: slots.length,
       dueDate: header.dueDate || undefined,
       freightAmount: header.freightAmount || '0',
       otherCharges: header.otherCharges || '0',
@@ -182,7 +209,8 @@ export function PurchaseForm({
         itemId: line.itemId,
         lotNumber: line.lotNumber,
         batchNumber: line.batchNumber,
-        containerNumber: line.containerNumber,
+        containerNumber: numberOf(line.containerSlot),
+        containerSlot: renumber.get(line.containerSlot),
         quantity: line.quantity,
         unit: line.unit,
         unitPrice: line.unitPrice,
@@ -315,16 +343,9 @@ export function PurchaseForm({
               <Field
                 label="Number of containers"
                 htmlFor="containers"
-                hint="Usually one row per container below, so each can arrive on its own."
+                hint="The physical containers below — not the number of coffees."
               >
-                <Input
-                  id="containers"
-                  inputMode="numeric"
-                  className="tnum text-right"
-                  value={header.containers}
-                  onChange={(e) => setField('containers', e.target.value)}
-                  placeholder="0"
-                />
+                <Input id="containers" className="tnum text-right" value={String(slots.length)} readOnly data-testid="po-container-count" />
               </Field>
             </div>
           </FormSection>
@@ -473,73 +494,72 @@ export function PurchaseForm({
         </CardContent>
       </Card>
 
-      {/* --- Lines ------------------------------------------------------- */}
+      {/* --- Containers and the coffees in them ----------------------------- */}
       <Card>
         <CardContent className="space-y-4 pt-5">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h3 className="text-sm font-semibold text-ink">Containers</h3>
               <p className="mt-0.5 text-xs text-ink-muted">
-                One row per container: its coffee, quantity and price, and — when the supplier has named them — its
-                container, lot and batch numbers. Each container then loads, arrives and is received on its own.
+                Each container is one physical box. Add every coffee loaded in it with <strong>+ Add Item to This Container</strong>;
+                use <strong>+ Add Another Container</strong> only for another box.
               </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setLines((prev) => [...prev, emptyLine(prev.at(-1)?.bagWeightKg ?? '60')])}
-            >
+            <Button variant="outline" size="sm" onClick={addContainer} data-testid="po-add-container">
               <Plus />
-              Add container
+              Add Another Container
             </Button>
           </div>
 
           {errors.lines ? <p className="text-xs font-medium text-red-600">{errors.lines}</p> : null}
 
-          {/*
-            A row covering several containers cannot arrive one container at a
-            time. Say so, and offer to split it, rather than let three
-            containers travel as one and surprise the reader when the first
-            lands and "the order" reads arrived.
-          */}
-          {declaredContainers > lines.length ? (
-            <Callout tone="info" title={`${declaredContainers} containers, ${lines.length} ${lines.length === 1 ? 'row' : 'rows'}`}>
-              When you save, the heavier rows are divided so every container has its own row — the same coffee and
-              price, the kilograms shared — and each then loads, arrives and is received on its own. To choose the
-              split yourself, use the control on the row.
-            </Callout>
-          ) : null}
-
           <div className="space-y-4">
-            {lines.map((line, index) => {
-              const math = totals.lines[index];
+            {slots.map((slot, slotIndex) => {
+              const mates = linesIn(slot);
+              const anyLocked = mates.some((l) => l.locked);
+              const boxKg = mates.reduce((t, l) => t + (totals.lines[lines.indexOf(l)]?.quantityKg ?? 0), 0);
               return (
-                <div key={line.key} className="rounded-xl border border-grid bg-forest-50/30 p-4">
-                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-ink-subtle">
-                      Container {index + 1}
-                    </span>
-                    <div className="flex items-center gap-1">
-                      {line.locked ? (
-                        <span className="rounded-full bg-forest-50 px-2 py-0.5 text-[11px] font-medium text-forest-700">
-                          Received
+                <div key={slot} className="rounded-xl border border-grid bg-forest-50/30 p-4" data-testid="po-container">
+                  <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+                    <div className="flex flex-wrap items-end gap-3">
+                      <span className="pb-2 text-xs font-semibold uppercase tracking-wider text-ink-subtle">
+                        <span>Container {slotIndex + 1}</span>
+                        <span className="ml-1 font-normal normal-case tracking-normal" data-testid="po-container-summary">
+                          · {mates.length} {mates.length === 1 ? 'item' : 'items'}
+                          {boxKg > 0 ? ` · ${boxKg.toLocaleString()} KG` : ''}
                         </span>
+                      </span>
+                      <Field label="Container number" htmlFor={`container-${slot}`}>
+                        <Input
+                          id={`container-${slot}`}
+                          value={numberOf(slot)}
+                          disabled={anyLocked}
+                          onChange={(e) => setContainerNumber(slot, e.target.value)}
+                          placeholder="MSCU1000001"
+                          className="w-44"
+                        />
+                      </Field>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {mates.length === 1 && !anyLocked ? (
+                        <SplitControl
+                          onSplit={(count) =>
+                            setLines((prev) => {
+                              const first = nextSlot();
+                              return prev.flatMap((l) => (l.key === mates[0].key ? splitLineIntoContainers(l, count, first) : [l]));
+                            })
+                          }
+                        />
                       ) : null}
-                      {line.locked ? null : <SplitControl
-                        onSplit={(count) =>
-                          setLines((prev) => prev.flatMap((l) => (l.key === line.key ? splitLineIntoContainers(l, count) : [l])))
-                        }
-                      />}
                       <Button
                         variant="ghost"
                         size="icon"
                         aria-label="Duplicate container"
                         onClick={() =>
                           setLines((prev) => {
-                            const copy = { ...line, key: crypto.randomUUID(), id: undefined, locked: false, batchNumber: '', containerNumber: '' };
-                            const next = [...prev];
-                            next.splice(index + 1, 0, copy);
-                            return next;
+                            const fresh = nextSlot();
+                            const copies = mates.map((l) => ({ ...l, key: crypto.randomUUID(), id: undefined, locked: false, batchNumber: '', lotNumber: '', containerNumber: '', containerSlot: fresh }));
+                            return [...prev, ...copies];
                           })
                         }
                       >
@@ -549,184 +569,230 @@ export function PurchaseForm({
                         variant="ghost"
                         size="icon"
                         aria-label="Remove container"
-                        disabled={lines.length === 1 || line.locked}
-                        onClick={() => setLines((prev) => prev.filter((l) => l.key !== line.key))}
+                        disabled={slots.length === 1 || anyLocked}
+                        onClick={() => setLines((prev) => prev.filter((l) => l.containerSlot !== slot))}
                       >
                         <Trash2 />
                       </Button>
                     </div>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                    <Field label="Coffee" required error={lineError(index, 'itemId')} className="lg:col-span-2">
-                      <MasterSelect
-                        options={itemOptions}
-                        value={line.itemId || null}
-                        disabled={line.locked}
-                        onChange={(v) => chooseItem(line.key, v)}
-                        placeholder="Choose a coffee…"
-                        invalid={Boolean(lineError(index, 'itemId'))}
-                        create={canCreateItem ? coffeeItemCreateSpec() : undefined}
-                        onCreated={(created, option) => {
-                          // A new coffee carries the record's own defaults.
-                          setItemOptions((prev) => [
-                            ...prev,
-                            { ...option, bagWeightKg: '60', defaultUnit: 'KG' },
-                          ]);
-                          chooseItem(line.key, created.id);
-                        }}
-                      />
-                    </Field>
+                  <div className="space-y-3">
+                    {mates.map((line, itemIndex) => {
+                      const math = totals.lines[lines.indexOf(line)];
+                      return (
+                        <div key={line.key} className="rounded-lg border border-line bg-surface p-3" data-testid="po-item">
+                          <div className="mb-2 flex items-center justify-between">
+                            <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">
+                              Item {itemIndex + 1}
+                              {line.locked ? (
+                                <span className="ml-2 rounded-full bg-forest-50 px-2 py-0.5 normal-case tracking-normal text-forest-700">Received</span>
+                              ) : null}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              {/* A coffee entered in the wrong box is moved, not retyped. */}
+                              {slots.length > 1 && !line.locked ? (
+                                <Select
+                                  aria-label="Move to container"
+                                  className="h-8 w-40 text-xs"
+                                  value={String(slot)}
+                                  onChange={(e) => updateLine(line.key, { containerSlot: Number(e.target.value), containerNumber: numberOf(Number(e.target.value)) })}
+                                >
+                                  {slots.map((other, otherIndex) => (
+                                    <option key={other} value={other}>
+                                      In container {otherIndex + 1}
+                                    </option>
+                                  ))}
+                                </Select>
+                              ) : null}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label="Remove item"
+                                disabled={mates.length === 1 || line.locked}
+                                onClick={() => setLines((prev) => prev.filter((l) => l.key !== line.key))}
+                              >
+                                <Trash2 />
+                              </Button>
+                            </div>
+                          </div>
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                        <Field label="Coffee" required error={lineError(lines.indexOf(line), 'itemId')} className="lg:col-span-2">
+                          <MasterSelect
+                            options={itemOptions}
+                            value={line.itemId || null}
+                            disabled={line.locked}
+                            onChange={(v) => chooseItem(line.key, v)}
+                            placeholder="Choose a coffee…"
+                            invalid={Boolean(lineError(lines.indexOf(line), 'itemId'))}
+                            create={canCreateItem ? coffeeItemCreateSpec() : undefined}
+                            onCreated={(created, option) => {
+                              // A new coffee carries the record's own defaults.
+                              setItemOptions((prev) => [
+                                ...prev,
+                                { ...option, bagWeightKg: '60', defaultUnit: 'KG' },
+                              ]);
+                              chooseItem(line.key, created.id);
+                            }}
+                          />
+                        </Field>
 
-                    {/*
-                      Whichever the supplier quoted. Demanding both meant
-                      inventing one, and an invented reference looks
-                      authoritative while matching nothing on their paperwork.
-                    */}
+                        {/*
+                          Whichever the supplier quoted. Demanding both meant
+                          inventing one, and an invented reference looks
+                          authoritative while matching nothing on their paperwork.
+                        */}
 
 
 
-                    <Field label="Quantity" required error={lineError(index, 'quantity')}>
-                      <QuantityInput
-                        unit={line.unit}
-                        value={line.quantity}
-                        disabled={line.locked}
-                        onChange={(e) => updateLine(line.key, { quantity: e.target.value })}
-                        placeholder="19200"
-                      />
-                    </Field>
+                        <Field label="Quantity" required error={lineError(lines.indexOf(line), 'quantity')}>
+                          <QuantityInput
+                            unit={line.unit}
+                            value={line.quantity}
+                            disabled={line.locked}
+                            onChange={(e) => updateLine(line.key, { quantity: e.target.value })}
+                            placeholder="19200"
+                          />
+                        </Field>
 
 
-                    <Field
-                      label={
-                        header.currency === 'USD'
-                          ? `USD Rate / ${line.unit === 'BAG' ? 'bag' : line.unit}`
-                          : `Price per ${line.unit === 'BAG' ? 'bag' : line.unit}`
-                      }
-                      required
-                      error={lineError(index, 'unitPrice')}
-                    >
-                      <MoneyInput
-                        currency={header.currency}
-                        value={line.unitPrice}
-                        onChange={(e) => updateLine(line.key, { unitPrice: e.target.value })}
-                        placeholder="4.50"
-                        aria-label={header.currency === 'USD' ? 'USD Rate per unit' : 'Price per unit'}
-                      />
-                    </Field>
-                    <Field label={header.currency === 'USD' ? 'Total USD' : `Total ${header.currency}`}>
-                      <div className="tnum flex h-10 items-center justify-end rounded-lg border border-line bg-surface px-3 text-sm font-semibold">
-                        {totals.lines[index]
-                          ? formatMoney(totals.lines[index].lineSubtotal, header.currency)
-                          : '—'}
+                        <Field
+                          label={
+                            header.currency === 'USD'
+                              ? `USD Rate / ${line.unit === 'BAG' ? 'bag' : line.unit}`
+                              : `Price per ${line.unit === 'BAG' ? 'bag' : line.unit}`
+                          }
+                          required
+                          error={lineError(lines.indexOf(line), 'unitPrice')}
+                        >
+                          <MoneyInput
+                            currency={header.currency}
+                            value={line.unitPrice}
+                            onChange={(e) => updateLine(line.key, { unitPrice: e.target.value })}
+                            placeholder="4.50"
+                            aria-label={header.currency === 'USD' ? 'USD Rate per unit' : 'Price per unit'}
+                          />
+                        </Field>
+                        <Field label={header.currency === 'USD' ? 'Total USD' : `Total ${header.currency}`}>
+                          <div className="tnum flex h-10 items-center justify-end rounded-lg border border-line bg-surface px-3 text-sm font-semibold">
+                            {totals.lines[lines.indexOf(line)]
+                              ? formatMoney(totals.lines[lines.indexOf(line)].lineSubtotal, header.currency)
+                              : '—'}
+                          </div>
+                        </Field>
+
+
                       </div>
-                    </Field>
 
+                      {/*
+                        Lot, batch, container, unit, bags and bag weight are not
+                        §1 fields. Lot and batch in particular are asked for at the
+                        goods receipt, which is when the supplier has identified
+                        the coffee — putting them on the purchase order invited
+                        somebody to invent one. They stay available for a contract
+                        that genuinely names them.
+                      */}
+                      {line.locked ? (
+                        <p className="mt-2 text-[11px] text-ink-subtle">
+                          Received — its coffee, kilograms and numbers are what the warehouse counted, and are corrected on the
+                          goods receipt. The price can still be corrected here; stock and cost of sales follow it.
+                        </p>
+                      ) : null}
+                      <details className="mt-3 rounded-lg border border-line bg-surface-sunken/40 px-3 py-2">
+                        <summary className="cursor-pointer text-xs font-medium text-ink-muted">
+                          Lot, batch and packing
+                        </summary>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        <Field
+                          label="Lot number"
+                          error={lineError(lines.indexOf(line), 'lotNumber')}
+                          hint="Only if the supplier has already named it. You are asked again when the coffee arrives."
+                        >
+                          <Input
+                            value={line.lotNumber}
+                            disabled={line.locked}
+                            onChange={(e) => updateLine(line.key, { lotNumber: e.target.value })}
+                            placeholder="Usually blank"
+                            aria-invalid={Boolean(lineError(lines.indexOf(line), 'lotNumber'))}
+                          />
+                        </Field>
+                        <Field label="Batch number" error={lineError(lines.indexOf(line), 'batchNumber')}>
+                          <Input
+                            value={line.batchNumber}
+                            disabled={line.locked}
+                            onChange={(e) => updateLine(line.key, { batchNumber: e.target.value })}
+                            placeholder="Usually blank"
+                          />
+                        </Field>
+                        <Field label="Unit">
+                          <Select
+                            value={line.unit}
+                            disabled={line.locked}
+                            onChange={(e) => updateLine(line.key, { unit: e.target.value as LineDraft['unit'] })}
+                          >
+                            <option value="KG">KG</option>
+                            <option value="MT">MT</option>
+                            <option value="BAG">Bags</option>
+                          </Select>
+                        </Field>
+                        <Field label="Bags" hint="Left blank, derived from bag weight.">
+                          <QuantityInput
+                            value={line.bags}
+                            onChange={(e) => updateLine(line.key, { bags: e.target.value })}
+                            placeholder={math ? String(math.bags) : '320'}
+                          />
+                        </Field>
+                        <Field label="Bag weight (KG)">
+                          <QuantityInput
+                            unit="KG"
+                            value={line.bagWeightKg}
+                            onChange={(e) => updateLine(line.key, { bagWeightKg: e.target.value })}
+                          />
+                        </Field>
+                        </div>
+                      </details>
 
+                      {math && math.quantityKg > 0 ? (
+                        <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-line pt-3 sm:grid-cols-4">
+                          <div>
+                            <dt className="text-[11px] text-ink-subtle">Quantity</dt>
+                            <dd className="tnum text-sm font-medium">{math.quantityKg.toLocaleString()} KG</dd>
+                          </div>
+                          <div>
+                            <dt className="text-[11px] text-ink-subtle">Goods value</dt>
+                            <dd className="tnum text-sm font-medium">
+                              {header.currency} {math.lineSubtotal.toLocaleString()}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-[11px] text-ink-subtle">Freight + charges</dt>
+                            <dd className="tnum text-sm font-medium">
+                              {header.currency} {math.allocated.toLocaleString()}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-[11px] text-ink-subtle">Landed cost / KG</dt>
+                            <dd className="tnum text-sm font-semibold text-gold-700">
+                              {header.currency} {math.unitCostKg}
+                            </dd>
+                          </div>
+                        </dl>
+                      ) : null}
+                        </div>
+                      );
+                    })}
                   </div>
 
-                  {/*
-                    Lot, batch, container, unit, bags and bag weight are not
-                    §1 fields. Lot and batch in particular are asked for at the
-                    goods receipt, which is when the supplier has identified
-                    the coffee — putting them on the purchase order invited
-                    somebody to invent one. They stay available for a contract
-                    that genuinely names them.
-                  */}
-                  {line.locked ? (
-                    <p className="mt-2 text-[11px] text-ink-subtle">
-                      Received — its coffee, kilograms and numbers are what the warehouse counted, and are corrected on the
-                      goods receipt. The price can still be corrected here; stock and cost of sales follow it.
-                    </p>
-                  ) : null}
-                  <details className="mt-3 rounded-lg border border-line bg-surface-sunken/40 px-3 py-2">
-                    <summary className="cursor-pointer text-xs font-medium text-ink-muted">
-                      Lot, batch, container and packing
-                    </summary>
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    <Field
-                      label="Lot number"
-                      error={lineError(index, 'lotNumber')}
-                      hint="Only if the supplier has already named it. You are asked again when the coffee arrives."
-                    >
-                      <Input
-                        value={line.lotNumber}
-                        disabled={line.locked}
-                        onChange={(e) => updateLine(line.key, { lotNumber: e.target.value })}
-                        placeholder="Usually blank"
-                        aria-invalid={Boolean(lineError(index, 'lotNumber'))}
-                      />
-                    </Field>
-                    <Field label="Batch number" error={lineError(index, 'batchNumber')}>
-                      <Input
-                        value={line.batchNumber}
-                        disabled={line.locked}
-                        onChange={(e) => updateLine(line.key, { batchNumber: e.target.value })}
-                        placeholder="Usually blank"
-                      />
-                    </Field>
-                    <Field label="Container number">
-                      <Input
-                        value={line.containerNumber}
-                        disabled={line.locked}
-                        onChange={(e) => updateLine(line.key, { containerNumber: e.target.value })}
-                        placeholder="MSCU1000001"
-                      />
-                    </Field>
-                    <Field label="Unit">
-                      <Select
-                        value={line.unit}
-                        disabled={line.locked}
-                        onChange={(e) => updateLine(line.key, { unit: e.target.value as LineDraft['unit'] })}
-                      >
-                        <option value="KG">KG</option>
-                        <option value="MT">MT</option>
-                        <option value="BAG">Bags</option>
-                      </Select>
-                    </Field>
-                    <Field label="Bags" hint="Left blank, derived from bag weight.">
-                      <QuantityInput
-                        value={line.bags}
-                        onChange={(e) => updateLine(line.key, { bags: e.target.value })}
-                        placeholder={math ? String(math.bags) : '320'}
-                      />
-                    </Field>
-                    <Field label="Bag weight (KG)">
-                      <QuantityInput
-                        unit="KG"
-                        value={line.bagWeightKg}
-                        onChange={(e) => updateLine(line.key, { bagWeightKg: e.target.value })}
-                      />
-                    </Field>
-                    </div>
-                  </details>
-
-                  {math && math.quantityKg > 0 ? (
-                    <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-line pt-3 sm:grid-cols-4">
-                      <div>
-                        <dt className="text-[11px] text-ink-subtle">Quantity</dt>
-                        <dd className="tnum text-sm font-medium">{math.quantityKg.toLocaleString()} KG</dd>
-                      </div>
-                      <div>
-                        <dt className="text-[11px] text-ink-subtle">Goods value</dt>
-                        <dd className="tnum text-sm font-medium">
-                          {header.currency} {math.lineSubtotal.toLocaleString()}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-[11px] text-ink-subtle">Freight + charges</dt>
-                        <dd className="tnum text-sm font-medium">
-                          {header.currency} {math.allocated.toLocaleString()}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-[11px] text-ink-subtle">Landed cost / KG</dt>
-                        <dd className="tnum text-sm font-semibold text-gold-700">
-                          {header.currency} {math.unitCostKg}
-                        </dd>
-                      </div>
-                    </dl>
-                  ) : null}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    onClick={() => addItemTo(slot)}
+                    data-testid="po-add-item"
+                  >
+                    <Plus />
+                    Add Item to This Container
+                  </Button>
                 </div>
               );
             })}

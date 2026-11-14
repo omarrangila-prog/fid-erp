@@ -160,6 +160,8 @@ export async function applyLandedCost(
       soldQuantityKg: true,
       purchaseCostUsd: true,
       capitalisedCostUsd: true,
+      purchaseContractId: true,
+      purchaseContractLineId: true,
     },
     orderBy: { batchNumber: 'asc' },
   });
@@ -214,7 +216,16 @@ export async function applyLandedCost(
      * older consignment entered before containers were recorded) counts as
      * one unit, so nothing is silently left uncosted.
      */
-    const unitOf = (b: { id: string; containerId: string | null }) => b.containerId ?? `batch:${b.id}`;
+    // A box not yet numbered is still one box: coffees the order put in the
+    // same container share its one share.
+    const lineIds = locked.map((b) => b.purchaseContractLineId).filter((id): id is string => Boolean(id));
+    const slotOf = new Map(
+      (lineIds.length ? await tx.purchaseContractLine.findMany({ where: { id: { in: lineIds } }, select: { id: true, containerSlot: true } }) : []).map((l) => [l.id, l.containerSlot]),
+    );
+    const unitOf = (b: { id: string; containerId: string | null; purchaseContractId: string; purchaseContractLineId: string | null }) => {
+      const slot = b.purchaseContractLineId ? slotOf.get(b.purchaseContractLineId) : null;
+      return b.containerId ?? (slot != null ? `slot:${b.purchaseContractId}:${slot}` : `batch:${b.id}`);
+    };
     const units: string[] = [];
     for (const batch of locked) {
       const unit = unitOf(batch);

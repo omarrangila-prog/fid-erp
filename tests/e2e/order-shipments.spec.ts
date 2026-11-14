@@ -125,7 +125,6 @@ test('one purchase order is entered with three containers, lots and batches', as
   await supplier.click();
   await page.getByRole('listbox').getByRole('option').first().click();
 
-  await page.locator('#containers').fill('3');
 
   // One row, then "Split into 3": three containers of a third each, the way
   // the order arrives from the supplier's paperwork.
@@ -143,7 +142,7 @@ test('one purchase order is entered with three containers, lots and batches', as
     await expect(card.getByLabel(/^Quantity/)).toHaveValue('20000');
     await card.getByLabel(/^Quantity/).fill(line.kg);
     await card.getByRole('textbox', { name: /Rate per unit|Price per unit/ }).fill(line.price);
-    await card.getByText(/Lot, batch, container and packing/).click();
+    await card.getByText(/Lot, batch and packing/).click();
     await card.getByLabel(/lot number/i).fill(line.lot);
     await card.getByLabel(/batch number/i).fill(line.batch);
     await card.getByLabel(/container number/i).fill(line.container);
@@ -292,7 +291,7 @@ test('a six-container order arrives five at a time and is received three at a ti
   await expect(lineCard(page, 6)).toBeVisible();
   for (let n = 1; n <= 6; n++) {
     const card = lineCard(page, n);
-    await card.getByText(/Lot, batch, container and packing/).click();
+    await card.getByText(/Lot, batch and packing/).click();
     await card.getByLabel(/container number/i).fill(`SIX-${STAMP}-${n}`);
   }
   await page.getByRole('button', { name: /^Save purchase order$/ }).click();

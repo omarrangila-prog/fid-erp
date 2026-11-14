@@ -116,7 +116,7 @@ test('a purchase order saves with no lot number and no payment term', async ({ p
 
   // Lot and batch are on the line, behind their own disclosure, and neither
   // is marked required — they are asked for at the goods receipt.
-  await page.getByText(/Lot, batch, container and packing/).first().click();
+  await page.getByText(/Lot, batch and packing/).first().click();
   const lot = page.getByLabel(/lot number/i).first();
   await expect(lot).toBeVisible();
   await expect(lot).not.toHaveAttribute('required', '');
