@@ -1,6 +1,12 @@
 import { prisma } from '@/lib/db';
 import { Decimal, dec, toMoney } from '@/lib/money';
-import { getTrialBalanceReport, getBalanceSheet, getFinancialPosition } from '@/lib/services/reports';
+import { getTrialBalanceReport, getBalanceSheet, getFinancialPosition, getProfitAndLoss, getSalesRegister, getExpenseSplit } from '@/lib/services/reports';
+import { getUnpaidExpenseLedger } from '@/lib/services/unpaid-expenses';
+import { getOrderCostSheets } from '@/lib/services/order-cost';
+import { getAgentSummaries } from '@/lib/services/agent-account';
+import { getAgentStatement } from '@/lib/services/agent-statement';
+import { LIVE_ENTRY_SQL } from '@/lib/services/journal-visibility';
+import { ACCOUNT_KEYS } from '@/lib/constants';
 import { getCompanyProfitSummary } from '@/lib/services/profitability';
 import {
   getReceivables,
@@ -24,7 +30,7 @@ import {
 
 export type ReconciliationCheck = {
   id: string;
-  group: 'Accounting' | 'Sub-ledgers' | 'Cash & bank' | 'Inventory';
+  group: 'Accounting' | 'Sub-ledgers' | 'Cash & bank' | 'Inventory' | 'Reports';
   label: string;
   /** What the two figures mean, for someone who has to fix a failure. */
   explanation: string;
@@ -32,6 +38,8 @@ export type ReconciliationCheck = {
   right: { label: string; value: string };
   differenceUsd: string;
   passed: boolean;
+  /** On a failure: the records behind the difference, so it can be traced. */
+  detail?: string[];
 };
 
 export type ReconciliationResult = {
@@ -482,6 +490,134 @@ export async function reconcile(companyId: string): Promise<ReconciliationResult
     passed: strandedCount === 0,
   });
 
+  checks.push(...(await reportChecks(companyId)));
+
   const failed = checks.filter((c) => !c.passed).length;
   return { companyId, checks, passed: checks.length - failed, failed, healthy: failed === 0 };
+}
+
+/**
+ * The same figure on different pages.
+ *
+ * The client found the dashboard, the detailed reports and the statements
+ * giving different answers to the same question. These compare, in the
+ * company's own currency and over all dates, each report figure with the
+ * ledger it should agree with — sales on the invoices, the register and the
+ * Profit and Loss; the dashboard's net profit and the statement's; the
+ * expense report and the operating expenses; the shipment costs on the
+ * vouchers, the cost sheets and the ledger; unpaid expenses; each agent's
+ * statement and his accounts. Figures with different meanings are not
+ * compared.
+ */
+async function reportChecks(companyId: string): Promise<ReconciliationCheck[]> {
+  const out: ReconciliationCheck[] = [];
+  const allTime = { from: new Date(Date.UTC(1970, 0, 1)), to: new Date(Date.UTC(9999, 11, 31)) };
+  const [company, pnl, register, profit, split, unpaid, sheets, agents] = await Promise.all([
+    prisma.company.findUniqueOrThrow({ where: { id: companyId }, select: { localCurrency: true } }),
+    getProfitAndLoss({ companyId, ...allTime }),
+    getSalesRegister({ companyId }),
+    getCompanyProfitSummary({ companyId }),
+    getExpenseSplit({ companyId }),
+    getUnpaidExpenseLedger(companyId),
+    getOrderCostSheets(companyId),
+    getAgentSummaries(companyId),
+  ]);
+  const local = company.localCurrency;
+  const add = (
+    id: string,
+    label: string,
+    explanation: string,
+    leftLabel: string,
+    left: Decimal,
+    rightLabel: string,
+    right: Decimal,
+  ) => out.push(build(id, 'Reports', label, explanation, `${leftLabel} (${local})`, left, `${rightLabel} (${local})`, right));
+
+  // Sales: the invoices themselves, less customer credit notes.
+  const docs = await prisma.$queryRaw<Array<{ sales: string }>>`
+    SELECT (COALESCE((SELECT SUM(CASE WHEN si."currency" = ${local} THEN si."subtotal" ELSE si."subtotalUsd" * si."rateLocalPerUsd" END)
+                        FROM sales_invoices si WHERE si."companyId" = ${companyId} AND si."status" = 'POSTED'), 0)
+          - COALESCE((SELECT SUM(CASE WHEN cn."currency" = ${local} THEN cn."subtotalAmount" ELSE cn."subtotalAmountUsd" * cn."rateLocalPerUsd" END)
+                        FROM credit_notes cn WHERE cn."companyId" = ${companyId} AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'), 0))::text AS sales`;
+  const invoiceSales = dec(docs[0]?.sales ?? 0);
+  add('sales-invoices-ledger', 'Sales on the invoices agree with the Profit and Loss',
+    'Every posted invoice line, less customer credit notes, against the revenue the ledger carries. A payment is never revenue, and an invoice with several lines or receipts counts once.',
+    'Posted invoices', invoiceSales, 'Profit and Loss revenue', dec(pnl.totals.revenueLocal));
+  // The register lists each invoice in its own currency, so it is compared
+  // only where every invoice is in the company's.
+  if (register.every((r) => r.currency === local)) {
+    add('sales-register-ledger', 'Sales Register agrees with the invoices',
+      'The Sales Register lists each posted invoice once; its total must be the invoices’ own.',
+      'Sales Register', register.reduce((t, r) => t.plus(r.subtotal), dec(0)), 'Posted invoices', invoiceSales);
+  }
+  add('dashboard-revenue', 'Dashboard sales agree with the Profit and Loss',
+    'The dashboard’s sales figure against the statement’s revenue for the same dates.',
+    'Dashboard', dec(profit.revenueLocal), 'Profit and Loss', dec(pnl.totals.revenueLocal));
+  add('dashboard-net-profit', 'Dashboard net profit agrees with the Profit and Loss',
+    'The dashboard’s Net Profit tile against the statement’s net profit for the same dates.',
+    'Dashboard', dec(profit.netProfitLocal), 'Profit and Loss', dec(pnl.totals.netProfitLocal));
+  // The Expense Report's costs charged to the period — general and
+  // period vouchers and journal-entry costs — against what the ledger's
+  // expense accounts were charged by the same documents: every expense line
+  // except exchange differences and the costs that went into the coffee.
+  const ledgerPeriod = await prisma.$queryRaw<Array<{ v: string }>>`
+    SELECT COALESCE(SUM(jl."debitLocal" - jl."creditLocal"), 0)::text AS v
+    FROM journal_lines jl
+    JOIN journal_entries je ON je."id" = jl."journalEntryId" AND ${LIVE_ENTRY_SQL}
+    JOIN accounts a ON a."id" = jl."accountId"
+    WHERE je."companyId" = ${companyId} AND a."type" = 'EXPENSE'
+      AND a."reportGroup" IS DISTINCT FROM 'OTHER_EXPENSE'
+      AND (CASE WHEN je."sourceType"::text = 'EXPENSE'
+                THEN a."systemKey" IS DISTINCT FROM ${ACCOUNT_KEYS.COST_OF_GOODS_SOLD}
+                ELSE a."reportGroup" IS DISTINCT FROM 'COGS' END)`;
+  add('expense-report-ledger', 'Expense Report agrees with the ledger',
+    'The costs the Expense Report says are charged to the period — general and period vouchers and costs entered as journal entries — against what those entries charged to the expense accounts.',
+    'Expense Report', dec(split.periodChargeLocal), 'Ledger expense accounts', dec(ledgerPeriod[0]?.v ?? 0));
+
+  // Direct shipment costs: on the vouchers, on the cost sheets, in the ledger.
+  const ledgerCap = await prisma.$queryRaw<Array<{ v: string }>>`
+    SELECT COALESCE(SUM(jl."debitLocal" - jl."creditLocal"), 0)::text AS v
+    FROM journal_lines jl
+    JOIN journal_entries je ON je."id" = jl."journalEntryId" AND ${LIVE_ENTRY_SQL}
+    JOIN accounts a ON a."id" = jl."accountId"
+    WHERE je."companyId" = ${companyId} AND je."sourceType" = 'EXPENSE'
+      AND a."systemKey" IN (${ACCOUNT_KEYS.INVENTORY}, ${ACCOUNT_KEYS.INVENTORY_IN_TRANSIT}, ${ACCOUNT_KEYS.COST_OF_GOODS_SOLD})`;
+  const sheetCap = sheets.reduce((t, sh) => t.plus(sh.capitalisedExpenseLocal), dec(0));
+  add('shipment-costs-sheets', 'Shipment cost sheets agree with the expense vouchers',
+    'Direct shipment costs added to the coffee, on the Shipment Costing report, against the vouchers themselves. Each voucher counts once, however many containers share it.',
+    'Shipment Costing', sheetCap, 'Expense vouchers', dec(split.capitalisedLocal));
+  add('shipment-costs-ledger', 'Shipment costs on the vouchers agree with the ledger',
+    'The same vouchers against what they wrote into stock, coffee on the way and cost of sales.',
+    'Expense vouchers', dec(split.capitalisedLocal), 'Ledger', dec(ledgerCap[0]?.v ?? 0));
+
+  // Unpaid expenses: the schedule against its control account.
+  // Agent commission is left to the agent checks: a journal entry can
+  // rightly credit it without a commission document behind it.
+  for (const r of unpaid.reconciliation) {
+    if (r.ledgerLocal === null || r.party !== 'GENERAL') continue;
+    add(`unpaid-${r.party.toLowerCase()}`, `${r.control}: the open list agrees with the ledger`,
+      'Each cost still owed, line by line, against the control account it sits in.',
+      'Open list', dec(r.scheduleLocal), 'Ledger', dec(r.ledgerLocal));
+  }
+
+  // Each agent: his statement's closing position against his lines in the
+  // ledger, read directly — the company's own cash side is not his balance,
+  // and a sale to him as a customer is.
+  for (const a of agents) {
+    const statement = await getAgentStatement({ companyId, agentId: a.agentId });
+    const closing = statement.events.length ? statement.events[statement.events.length - 1].runningNetLocal : dec(0);
+    const lines = await prisma.$queryRaw<Array<{ v: string }>>`
+      SELECT COALESCE(SUM(jl."debitLocal" - jl."creditLocal"), 0)::text AS v
+      FROM journal_lines jl
+      JOIN journal_entries je ON je."id" = jl."journalEntryId" AND ${LIVE_ENTRY_SQL}
+      JOIN accounts acc ON acc."id" = jl."accountId"
+      WHERE je."companyId" = ${companyId} AND jl."cashBankAccountId" IS NULL
+        AND (jl."agentId" = ${a.agentId}
+             OR (acc."systemKey" = 'ACCOUNTS_RECEIVABLE'
+                 AND jl."customerId" IN (SELECT cu."id" FROM customers cu WHERE cu."agentId" = ${a.agentId})))`;
+    add(`agent-${a.agentId}`, `${a.agentName}: the agent statement agrees with the ledger`,
+      'The closing position on the agent’s statement against every journal line on his balances.',
+      'Agent statement', closing, 'Ledger', dec(lines[0]?.v ?? 0));
+  }
+  return out;
 }

@@ -152,7 +152,7 @@ function Overview({ sheets, local, showProfit }: { sheets: OrderCostSheet[]; loc
             <TH numeric>Purchased KG</TH>
             <TH numeric>Purchase value</TH>
             <TH numeric>Direct shipment costs</TH>
-            <TH numeric>Landed cost</TH>
+            <TH numeric>Total landed cost (purchase + direct costs)</TH>
             <TH numeric>Quantity sold</TH>
             <TH numeric>Sales value</TH>
             <TH numeric>Remaining KG</TH>
@@ -322,7 +322,7 @@ function OrderSection({
                   <TH numeric>Quantity sold</TH>
                   <TH numeric>Remaining KG</TH>
                   <TH numeric>Purchase value (USD)</TH>
-                  <TH numeric>Landed cost</TH>
+                  <TH numeric>Total landed cost</TH>
                   <TH numeric>Landed cost / KG</TH>
                   <TH numeric>Stock value</TH>
                 </TR>

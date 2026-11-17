@@ -1326,6 +1326,81 @@ export async function getExpenseReport(params: {
 }
 
 /**
+ * Costs entered as journal entries rather than expense vouchers — fuel, bank
+ * charges, permits, gifts, agent commission — read from the ledger so the
+ * expense report holds every cost the Profit and Loss charges, not only the
+ * vouchers. Lines written by an expense voucher are left out (the voucher is
+ * already on the report), and so are cost of sales and exchange differences,
+ * which are not expenses. One journal line is one row: nothing is counted
+ * twice.
+ */
+export async function getJournalExpenseReport(params: {
+  companyId: string;
+  from?: Date;
+  to?: Date;
+  groupBy: ExpenseGrouping;
+}) {
+  const rows = await prisma.$queryRaw<Array<{ key: string; label: string; amountUsd: string; amountLocal: string; count: bigint }>>`
+    SELECT
+      CASE ${params.groupBy}
+        WHEN 'category' THEN 'account:' || a."id"
+        WHEN 'shipment' THEN COALESCE(s."id", 'unassigned')
+        WHEN 'payee' THEN 'journal'
+        WHEN 'type' THEN 'JOURNAL'
+        ELSE to_char(je."entryDate", 'YYYY-MM')
+      END AS key,
+      CASE ${params.groupBy}
+        WHEN 'category' THEN a."name"
+        WHEN 'shipment' THEN COALESCE(s."jobNumber", 'Not linked to a job')
+        WHEN 'payee' THEN 'Entered as journal entries'
+        WHEN 'type' THEN 'Expenses entered as journal entries'
+        ELSE to_char(je."entryDate", 'YYYY-MM')
+      END AS label,
+      COALESCE(SUM(jl."debitUsd" - jl."creditUsd"), 0)::text AS "amountUsd",
+      COALESCE(SUM(jl."debitLocal" - jl."creditLocal"), 0)::text AS "amountLocal",
+      COUNT(*) AS count
+    FROM journal_lines jl
+    JOIN journal_entries je ON je."id" = jl."journalEntryId" AND ${LIVE_ENTRY_SQL}
+    JOIN accounts a ON a."id" = jl."accountId"
+    LEFT JOIN shipments s ON s."id" = jl."shipmentId"
+    WHERE je."companyId" = ${params.companyId}
+      AND a."type" = 'EXPENSE'
+      AND a."reportGroup" IS DISTINCT FROM ${REPORT_GROUPS.COGS}
+      AND a."reportGroup" IS DISTINCT FROM ${REPORT_GROUPS.OTHER_EXPENSE}
+      AND je."sourceType"::text <> 'EXPENSE'
+      AND (${params.from ?? null}::date IS NULL OR je."entryDate" >= ${params.from ?? null}::date)
+      AND (${params.to ?? null}::date IS NULL OR je."entryDate" <= ${params.to ?? null}::date)
+    GROUP BY 1, 2
+    HAVING SUM(jl."debitLocal" - jl."creditLocal") <> 0 OR SUM(jl."debitUsd" - jl."creditUsd") <> 0
+    ORDER BY SUM(jl."debitLocal" - jl."creditLocal") DESC
+  `;
+  return rows.map((r) => ({
+    key: r.key,
+    label: r.label,
+    amountUsd: toMoney(r.amountUsd),
+    amountLocal: toMoney(r.amountLocal),
+    count: Number(r.count),
+  }));
+}
+
+/** Voucher and journal rows in one list: rows under the same key are one row. */
+export function mergeExpenseRows<R extends { key: string; label: string; amountUsd: Decimal; amountLocal: Decimal; count: number }>(
+  ...lists: R[][]
+): R[] {
+  const byKey = new Map<string, R>();
+  for (const row of lists.flat()) {
+    const seen = byKey.get(row.key);
+    byKey.set(
+      row.key,
+      seen
+        ? { ...seen, amountUsd: toMoney(seen.amountUsd.plus(row.amountUsd)), amountLocal: toMoney(seen.amountLocal.plus(row.amountLocal)), count: seen.count + row.count }
+        : row,
+    );
+  }
+  return [...byKey.values()].sort((a, b) => b.amountLocal.comparedTo(a.amountLocal));
+}
+
+/**
  * The two sides of the business, side by side.
  *
  * Shipment costs become the cost of the coffee and reach the profit and loss
@@ -1354,6 +1429,11 @@ export async function getExpenseSplit(params: { companyId: string; from?: Date; 
       .filter((r) => r.kind === kind && (capitalised === undefined || r.capitalised === capitalised))
       .reduce((sum, r) => sum.plus(r[field]), new Decimal(0));
 
+  const journal = await getJournalExpenseReport({ ...params, groupBy: 'type' });
+  const journalUsd = toMoney(journal.reduce((t, r) => t.plus(r.amountUsd), new Decimal(0)));
+  const journalLocal = toMoney(journal.reduce((t, r) => t.plus(r.amountLocal), new Decimal(0)));
+  const journalCount = journal.reduce((n, r) => n + r.count, 0);
+
   const capitalised = toMoney(pick('SHIPMENT', true));
   const shipmentPeriod = toMoney(pick('SHIPMENT', false));
   const general = toMoney(pick('GENERAL'));
@@ -1368,18 +1448,22 @@ export async function getExpenseSplit(params: { companyId: string; from?: Date; 
     shipmentPeriodUsd: shipmentPeriod,
     /** Overheads. Nothing to do with any consignment. */
     generalUsd: general,
-    /** What actually left the bank, which is all three together. */
-    totalSpendUsd: toMoney(capitalised.plus(shipmentPeriod).plus(general)),
-    /** What the period's profit and loss is charged, which is not the same. */
-    periodChargeUsd: toMoney(shipmentPeriod.plus(general)),
+    /** Costs entered as journal entries (fuel, bank charges, permits…): charged to the period. */
+    journalUsd,
+    /** Every cost together: the vouchers of all three kinds and the journal-entry costs. */
+    totalSpendUsd: toMoney(capitalised.plus(shipmentPeriod).plus(general).plus(journalUsd)),
+    /** What the period's profit and loss is charged as operating expenses — the statement's own figure. */
+    periodChargeUsd: toMoney(shipmentPeriod.plus(general).plus(journalUsd)),
     capitalisedLocal,
     shipmentPeriodLocal,
     generalLocal,
-    totalSpendLocal: toMoney(capitalisedLocal.plus(shipmentPeriodLocal).plus(generalLocal)),
-    periodChargeLocal: toMoney(shipmentPeriodLocal.plus(generalLocal)),
+    journalLocal,
+    totalSpendLocal: toMoney(capitalisedLocal.plus(shipmentPeriodLocal).plus(generalLocal).plus(journalLocal)),
+    periodChargeLocal: toMoney(shipmentPeriodLocal.plus(generalLocal).plus(journalLocal)),
     counts: {
       shipment: rows.filter((r) => r.kind === 'SHIPMENT').reduce((n, r) => n + Number(r.count), 0),
       general: rows.filter((r) => r.kind === 'GENERAL').reduce((n, r) => n + Number(r.count), 0),
+      journal: journalCount,
     },
   };
 }

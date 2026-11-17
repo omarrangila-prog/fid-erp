@@ -32,6 +32,8 @@ const LABELS: Partial<Record<string, string>> = {
   [ACCOUNT_KEYS.CHEQUES_ON_HAND]: 'Cheques Received, Not Banked',
   [ACCOUNT_KEYS.CHEQUES_ISSUED]: 'Cheques Issued, Not Cleared',
   [ACCOUNT_KEYS.FX_GAIN_LOSS]: 'Exchange Gain / Loss',
+  // Coffee bought and shipped, owned by FID, not yet received into a warehouse.
+  [ACCOUNT_KEYS.INVENTORY_IN_TRANSIT]: 'Coffee On the Way — Not Yet Received',
 };
 
 export type TrialBalanceAccountMeta = { systemKey: string | null };

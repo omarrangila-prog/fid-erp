@@ -242,6 +242,66 @@ export default async function AgentLedgerPage({
         country={user.activeCompany.country}
       />
 
+      {/* Everything with him in one table, each line under his name, every
+          figure opening the entries behind it. Each balance stays in its own
+          account; nothing here sets one against another. */}
+      <Card data-testid="agent-summary">
+        <CardHeader>
+          <CardTitle>{agent.agentName} — total</CardTitle>
+          <CardDescription>Everything FID has with {agent.agentName}, as one total.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="tnum text-2xl font-semibold text-ink" data-testid="agent-summary-net">
+            {formatMoney(ledger.relationship.netLocal.abs(), local)}
+            <span className="ml-2 text-sm font-medium text-ink-muted">
+              {ledger.relationship.netLocal.isZero()
+                ? 'nothing outstanding'
+                : ledger.relationship.netLocal.isPositive()
+                  ? `${agent.agentName} owes FID`
+                  : `FID owes ${agent.agentName}`}
+            </span>
+          </p>
+          <details className="text-sm">
+            <summary className="cursor-pointer text-xs font-medium text-forest-800 hover:text-gold-700">
+              Show what makes this total
+            </summary>
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full border-collapse [&_td]:border [&_td]:border-line [&_td]:px-3 [&_td]:py-2 [&_th]:border [&_th]:border-line [&_th]:px-3 [&_th]:py-2">
+                <thead className="bg-paper text-xs text-ink-muted">
+                  <tr>
+                    <th className="text-left font-medium">Balance</th>
+                    <th className="text-right font-medium">{agent.agentName} owes FID</th>
+                    <th className="text-right font-medium">FID owes {agent.agentName}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {SUMMARY_ORDER.map((key) => ({ key, part: ledger.relationship.parts.find((p) => p.key === key) }))
+                    .filter(({ part }) => part && part.direction !== 'NIL')
+                    .map(({ key, part }) => (
+                      <tr key={key}>
+                        <td>
+                          <Link href={`/agents/${agent.id}?tab=${PART_TAB[key]}`} className="text-forest-800 hover:text-gold-700 hover:underline">
+                            {SUMMARY_LABEL[key](agent.agentName)}
+                          </Link>
+                        </td>
+                        <td className="tnum text-right">{part!.balanceLocal.isPositive() ? formatMoney(part!.balanceLocal, local) : '—'}</td>
+                        <td className="tnum text-right">{part!.balanceLocal.isNegative() ? formatMoney(part!.balanceLocal.abs(), local) : '—'}</td>
+                      </tr>
+                    ))}
+                </tbody>
+                <tfoot className="font-semibold">
+                  <tr>
+                    <td>Total</td>
+                    <td className="tnum text-right">{formatMoney(ledger.relationship.owesFidLocal, local)}</td>
+                    <td className="tnum text-right">{formatMoney(ledger.relationship.fidOwesLocal, local)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </details>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 lg:grid-cols-3" data-print-drop data-testid="agent-position">
         <Card>
           <CardHeader>
@@ -260,7 +320,11 @@ export default async function AgentLedgerPage({
                   .filter((p) => p.direction === 'OWES_FID')
                   .map((p) => (
                     <React.Fragment key={p.key}>
-                      <dt className="text-ink-muted">{p.account}</dt>
+                      <dt className="text-ink-muted">
+                        <Link href={`/agents/${agent.id}?tab=${PART_TAB[p.key]}`} className="hover:text-gold-700 hover:underline">
+                          {partLabel(p)}
+                        </Link>
+                      </dt>
                       <dd className="tnum text-right">{formatMoney(p.balanceLocal, local)} Dr</dd>
                     </React.Fragment>
                   ))
@@ -282,7 +346,11 @@ export default async function AgentLedgerPage({
                 .filter((p) => p.direction === 'FID_OWES')
                 .map((p) => (
                   <React.Fragment key={p.key}>
-                    <dt className="text-ink-muted">{p.account}</dt>
+                    <dt className="text-ink-muted">
+                      <Link href={`/agents/${agent.id}?tab=${PART_TAB[p.key]}`} className="hover:text-gold-700 hover:underline">
+                        {partLabel(p)}
+                      </Link>
+                    </dt>
                     <dd className="tnum text-right">{formatMoney(p.balanceLocal.abs(), local)} Cr</dd>
                   </React.Fragment>
                 ))}
@@ -368,3 +436,40 @@ export default async function AgentLedgerPage({
     </div>
   );
 }
+
+/** Each balance opens the ledger below at the entries that made it. */
+const PART_TAB: Record<string, string> = {
+  holding: 'COLLECTIONS',
+  loanTo: 'LOANS',
+  loanFrom: 'LOANS',
+  commission: 'COMMISSION',
+  trade: 'ALL',
+  other: 'JOURNALS',
+};
+
+/**
+ * The balance's name, said the way it actually falls. A "loan from" account
+ * in debit is not money he lent: more was paid out of it than he lent. A
+ * collections account in credit is not money he holds: he has handed over or
+ * paid out more than he collected. The accounts are not touched; only the
+ * words follow the side the balance is on.
+ */
+function partLabel(p: { key: string; account: string; direction: string }): string {
+  if (p.key === 'loanFrom' && p.direction === 'OWES_FID') return 'Loan account — more paid out than he lent';
+  if (p.key === 'loanTo' && p.direction === 'FID_OWES') return 'Loan account — he repaid more than he borrowed';
+  if (p.key === 'holding' && p.direction === 'FID_OWES') return 'Customer collections — he paid or handed over more than he collected';
+  if (p.key === 'commission' && p.direction === 'OWES_FID') return 'Commission — paid more than was due';
+  return p.account;
+}
+
+/** The summary's lines, in the order the owner reads them. */
+const SUMMARY_ORDER = ['holding', 'loanTo', 'loanFrom', 'commission', 'trade', 'other'] as const;
+
+const SUMMARY_LABEL: Record<(typeof SUMMARY_ORDER)[number], (name: string) => string> = {
+  holding: (n) => `Customer money collected by ${n}`,
+  loanTo: (n) => `Loans given to ${n}`,
+  loanFrom: (n) => `Loan account — ${n}`,
+  commission: (n) => `Commission due to ${n}`,
+  trade: (n) => `Coffee ${n} bought for himself`,
+  other: (n) => `Other entries with ${n}`,
+};

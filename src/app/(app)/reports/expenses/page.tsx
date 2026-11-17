@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
-import { getExpenseReport, getExpenseSplit, type ExpenseGrouping } from '@/lib/services/reports';
+import { getExpenseReport, getExpenseSplit, getJournalExpenseReport, mergeExpenseRows, type ExpenseGrouping } from '@/lib/services/reports';
 import { dec } from '@/lib/money';
 import { formatMoney, formatDate, dayParam, companyToday } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
@@ -39,10 +39,14 @@ export default async function ExpenseReportPage({
   const toDate = dayParam(to) ?? companyToday(user.activeCompany.timezone);
   const grouping = (GROUPS.find((g) => g.key === groupBy)?.key ?? 'type') as ExpenseGrouping;
 
-  const [rows, split] = await Promise.all([
+  const [voucherRows, journalRows, split] = await Promise.all([
     getExpenseReport({ companyId: user.activeCompany.id, from: fromDate, to: toDate, groupBy: grouping }),
+    getJournalExpenseReport({ companyId: user.activeCompany.id, from: fromDate, to: toDate, groupBy: grouping }),
     getExpenseSplit({ companyId: user.activeCompany.id, from: fromDate, to: toDate }),
   ]);
+  // Every cost in one list: expense vouchers, and the costs entered as journal
+  // entries, each counted once.
+  const rows = mergeExpenseRows(voucherRows, journalRows);
 
   // In the company's own currency, as the bills were paid; USD underneath.
   const local = user.activeCompany.localCurrency;
@@ -86,7 +90,7 @@ export default async function ExpenseReportPage({
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <SplitTile
           label="Into the cost of the coffee"
           value={formatMoney(split.capitalisedLocal, local)}
@@ -106,10 +110,16 @@ export default async function ExpenseReportPage({
           note="Meals, rent, utilities, travel. Nothing to do with any consignment."
         />
         <SplitTile
-          label="Total cash spent"
+          label="Expenses entered as journal entries"
+          value={formatMoney(split.journalLocal, local)}
+          usd={formatMoney(split.journalUsd, 'USD')}
+          note="Fuel, bank charges, permits, gifts, commission — costs posted by a journal entry rather than an expense voucher."
+        />
+        <SplitTile
+          label="All expenses"
           value={formatMoney(split.totalSpendLocal, local)}
           usd={formatMoney(split.totalSpendUsd, 'USD')}
-          note={`Of which ${formatMoney(split.periodChargeLocal, local)} is charged to this period's profit. The rest is sitting in inventory.`}
+          note={`Of which ${formatMoney(split.periodChargeLocal, local)} is this period's operating expenses on the Profit and Loss. The rest went into the cost of the coffee.`}
           strong
         />
       </div>
@@ -118,8 +128,8 @@ export default async function ExpenseReportPage({
         <CardHeader>
           <CardTitle>Costs {GROUPS.find((g) => g.key === grouping)?.label.toLowerCase()}</CardTitle>
           <CardDescription>
-            Total spend, capitalised and period costs together — what left the bank, not what the profit and loss was
-            charged. The four figures above separate the two.
+            Every cost together — expense vouchers and costs entered as journal entries, each counted once. Shipment
+            costs that went into the coffee and the period&rsquo;s operating expenses are separated in the figures above.
           </CardDescription>
         </CardHeader>
         <CardContent className="px-0 pb-0">
@@ -138,7 +148,7 @@ export default async function ExpenseReportPage({
                             ? 'Expense type'
                             : 'Month'}
                   </TH>
-                  <TH numeric>Vouchers</TH>
+                  <TH numeric>Entries</TH>
                   <TH numeric>Amount {local}</TH>
                   <TH numeric>≈ USD</TH>
                   <TH numeric>Share</TH>

@@ -35,6 +35,8 @@ import {
   getGeneralLedger,
   getJournalReport,
   getExpenseReport,
+  getJournalExpenseReport,
+  mergeExpenseRows,
   getFinancialPosition,
   getForexGainLoss,
   getSalesRegister,
@@ -1453,7 +1455,11 @@ const REPORTS: Record<string, Report> = {
       const requested = query.get('groupBy') as ExpenseGrouping | null;
       const groupBy = requested && allowed.includes(requested) ? requested : 'type';
 
-      const rows = await getExpenseReport({ companyId: user.activeCompany.id, from, to, groupBy });
+      // The same rows as the screen: expense vouchers and journal-entry costs, each once.
+      const rows = mergeExpenseRows(
+        await getExpenseReport({ companyId: user.activeCompany.id, from, to, groupBy }),
+        await getJournalExpenseReport({ companyId: user.activeCompany.id, from, to, groupBy }),
+      );
       // The company's own currency first, as on the screen; USD beside it.
       const local = user.activeCompany.localCurrency;
       const total = Number(rows.reduce((sum, row) => sum.plus(dec(row.amountLocal)), dec(0)));

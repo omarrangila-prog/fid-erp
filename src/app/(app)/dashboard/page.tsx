@@ -407,12 +407,12 @@ export default async function DashboardPage() {
             label="Net Profit"
             currency={local}
             value={formatMoneyCompact(data.profit.netProfitLocal, local).replace(new RegExp(`^${local}\\s*`), '')}
-            equivalent={eq(data.profit.netProfitUsd, 'Each document at its own rate')}
+            equivalent={eq(data.profit.netProfitUsd, 'As on the Profit and Loss')}
             icon={Coins}
             tone="profit"
             deltaPct={profitDeltaPct}
             deltaLabel={`${data.profit.netMarginPct.toString()}% margin`}
-            href="/profitability"
+            href="/reports/profit-loss"
           />
         ) : null}
       </section>

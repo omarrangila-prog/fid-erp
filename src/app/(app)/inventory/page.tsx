@@ -95,10 +95,16 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
       orderBy: { name: 'asc' },
       select: { id: true, name: true },
     }),
-    prisma.batch.aggregate({
-      where: { companyId, status: 'ACTIVE' },
-      _sum: { inTransitQuantityKg: true },
-    }),
+    // Ordered and not yet received, split by where the shipment really is:
+    // loaded on a vessel (or arrived, not yet received) is on the way; a
+    // consignment not loaded yet is still awaiting shipment.
+    prisma.$queryRaw<Array<{ stage: string; kg: string }>>`
+      SELECT CASE WHEN s."status"::text IN ('CONTRACT_CREATED', 'AWAITING_LOADING') THEN 'AWAITING' ELSE 'ON_THE_WAY' END AS stage,
+             COALESCE(SUM(b."inTransitQuantityKg"), 0)::text AS kg
+      FROM batches b
+      LEFT JOIN shipments s ON s."id" = b."shipmentId"
+      WHERE b."companyId" = ${companyId} AND b."status" = 'ACTIVE'
+      GROUP BY 1`,
     getShipmentOrdinals(companyId),
     getBatchCostings({ companyId }),
   ]);
@@ -222,7 +228,9 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
           })
         : null;
   }
-  const inTransitKg = toQuantity(inTransit._sum.inTransitQuantityKg ?? 0);
+  const stageKg = (stage: string) => toQuantity(inTransit.find((r) => r.stage === stage)?.kg ?? 0);
+  const inTransitKg = stageKg('ON_THE_WAY');
+  const awaitingKg = stageKg('AWAITING');
 
   return (
     <div className="print-landscape space-y-6">
@@ -272,7 +280,12 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
             value={kg(t.availableKg)}
             sub={`${sites.length === 1 ? 'In 1 warehouse' : `Across ${sites.length} warehouses`}${t.reservedKg.greaterThan(0) ? ` · ${kg(t.reservedKg)} held for drafts` : ''}`}
           />
-          <Figure testId="total-in-transit" label="In transit" value={formatQuantityKg(inTransitKg)} sub="Owned, not yet landed" />
+          <Figure
+            testId="total-in-transit"
+            label="On the way"
+            value={formatQuantityKg(inTransitKg)}
+            sub={`Shipped, not yet received into a warehouse — not available for sale${awaitingKg.greaterThan(0) ? ` · ${formatQuantityKg(awaitingKg)} ordered, awaiting shipment` : ''}`}
+          />
           {showValue ? (
             <Figure
               testId="total-stock-value"

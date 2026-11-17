@@ -1,5 +1,7 @@
 import { getOverheadByShipment } from '@/lib/services/overhead-allocation';
 import { prisma } from '@/lib/db';
+import { getProfitAndLoss } from '@/lib/services/reports';
+import { LIVE_ENTRY_SQL } from '@/lib/services/journal-visibility';
 import { Decimal, dec, toMoney, toQuantity, toUnitCost, percentage } from '@/lib/money';
 
 /**
@@ -517,15 +519,26 @@ export async function getCompanyProfitSummary(params: { companyId: string; from?
 
   const revenue = toMoney(rows[0]?.revenue ?? 0);
   const cogs = toMoney(rows[0]?.cogs ?? 0);
-  const expenses = toMoney(rows[0]?.expenses ?? 0);
   const grossProfit = toMoney(revenue.minus(cogs));
-  const netProfit = toMoney(grossProfit.minus(expenses));
   const soldKg = toQuantity(rows[0]?.soldKg ?? 0);
-
   const revenueLocal = toMoney(rows[0]?.revenueLocal ?? 0);
-  const netProfitLocal = toMoney(
-    revenueLocal.minus(toMoney(rows[0]?.cogsLocal ?? 0)).minus(toMoney(rows[0]?.expensesLocal ?? 0)),
-  );
+
+  // Net profit is the books' own: the Profit and Loss statement for the same
+  // dates. Expense vouchers alone leave out the costs entered as journal
+  // entries (fuel, bank charges, permits…), exchange differences, and value
+  // cost of sales at the invoice's rate where the ledger holds the cost at
+  // its own — so a figure built from them disagreed with the statement it
+  // links to. Revenue and the sales' cost still come from the invoices, which
+  // the reconciliation monitor checks against the ledger.
+  const pnl = await getProfitAndLoss({
+    companyId: params.companyId,
+    from: params.from ?? new Date(Date.UTC(1970, 0, 1)),
+    to: params.to ?? new Date(Date.UTC(9999, 11, 31)),
+  });
+  const netProfit = toMoney(pnl.totals.netProfitUsd);
+  const netProfitLocal = toMoney(pnl.totals.netProfitLocal);
+  /** Everything between gross and net profit: operating expenses and other items. */
+  const expenses = toMoney(grossProfit.minus(netProfit));
 
   return {
     revenueUsd: revenue,
@@ -678,10 +691,17 @@ export async function getMonthlyProfitability(params: { companyId: string; month
        - COALESCE((SELECT SUM(cn."costOfGoodsUsd") FROM credit_notes cn
                     WHERE cn."companyId" = ${params.companyId} AND cn."status" = 'POSTED' AND cn."type" = 'CUSTOMER'
                       AND date_trunc('month', cn."creditDate") = p."month"), 0))::text AS cogs,
-      COALESCE((SELECT SUM(e."amountUsd") FROM expenses e
-                 WHERE e."companyId" = ${params.companyId} AND e."status" = 'POSTED'
-                   AND e."capitaliseToLandedCost" = false
-                   AND date_trunc('month', e."expenseDate") = p."month"), 0)::text AS expenses
+      -- What the month's Profit and Loss puts between gross and net profit:
+      -- operating expenses and other items, from the ledger — expense
+      -- vouchers and costs entered as journal entries alike.
+      COALESCE((SELECT SUM(jl."debitUsd" - jl."creditUsd")
+                 FROM journal_lines jl
+                 JOIN journal_entries je ON je."id" = jl."journalEntryId"
+                 JOIN accounts a ON a."id" = jl."accountId"
+                WHERE je."companyId" = ${params.companyId} AND ${LIVE_ENTRY_SQL}
+                  AND ((a."type" = 'EXPENSE' AND a."reportGroup" IS DISTINCT FROM 'COGS')
+                       OR (a."type" = 'INCOME' AND a."reportGroup" = 'OTHER_INCOME'))
+                  AND date_trunc('month', je."entryDate") = p."month"), 0)::text AS expenses
     FROM period p
     ORDER BY p."month"
   `;

@@ -20,7 +20,7 @@ export default async function ReconciliationPage() {
   const user = await requirePageAccess(PERMISSIONS.ACCOUNTING_VIEW);
   const result = await reconcile(user.activeCompany.id);
 
-  const groups = ['Accounting', 'Sub-ledgers', 'Cash & bank', 'Inventory'] as const;
+  const groups = ['Accounting', 'Sub-ledgers', 'Cash & bank', 'Inventory', 'Reports'] as const;
 
   return (
     <div className="space-y-6">
@@ -77,7 +77,9 @@ export default async function ReconciliationPage() {
                     ? 'Control accounts against the detail behind them.'
                     : group === 'Cash & bank'
                       ? 'Each cash and bank book against its own ledger account, in its own currency.'
-                      : 'Stock records against the movement ledger.'}
+                      : group === 'Inventory'
+                        ? 'Stock records against the movement ledger.'
+                        : `The same figure on different pages — dashboard, detailed reports and statements — in ${user.activeCompany.localCurrency}, all dates.`}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
