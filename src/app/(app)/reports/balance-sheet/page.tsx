@@ -3,6 +3,7 @@ import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getBalanceSheet, type BalanceSheetLine } from '@/lib/services/reports';
 import { BALANCE_SHEET_GROUPS } from '@/lib/balance-sheet-groups';
+import { AGENT_ROW_PREFIX, agentNettedBalanceSheet, getAgentNetting } from '@/lib/services/agent-position';
 import { formatMoney, formatDate, companyToday, dayParam } from '@/lib/format';
 import { Decimal, dec } from '@/lib/money';
 import { PageHeader } from '@/components/shared/page-header';
@@ -56,9 +57,15 @@ export default async function BalanceSheetPage({
         ? new Date(Date.UTC(asOfDate.getUTCFullYear(), asOfDate.getUTCMonth(), 0))
         : null;
 
+  // Each agent's accounts on one line: what is owed between him and the company.
+  const netted = async (asOf: Date) =>
+    agentNettedBalanceSheet(await getBalanceSheet({ companyId: user.activeCompany.id, asOf }), await getAgentNetting(user.activeCompany.id, asOf), {
+      owedToUs: BALANCE_SHEET_GROUPS.ASSET[1],
+      weOwe: BALANCE_SHEET_GROUPS.LIABILITY[3],
+    });
   const [sheet, before] = await Promise.all([
-    getBalanceSheet({ companyId: user.activeCompany.id, asOf: asOfDate }),
-    compareDate ? getBalanceSheet({ companyId: user.activeCompany.id, asOf: compareDate }) : Promise.resolve(null as Sheet | null),
+    netted(asOfDate),
+    compareDate ? netted(compareDate) : Promise.resolve(null as Sheet | null),
   ]);
   const asOf = asOfDate.toISOString().slice(0, 10);
 
@@ -106,7 +113,12 @@ export default async function BalanceSheetPage({
           .map(([key, line]) => ({
             key: `${keyPrefix}-${key}`,
             label: line.displayName,
-            href: line.accountId ? `/reports/general-ledger?account=${line.accountId}&to=${asOf}` : undefined,
+            // An agent's line is made of several accounts: it opens his page.
+            href: line.accountId?.startsWith(AGENT_ROW_PREFIX)
+              ? `/agents/${line.accountId.slice(AGENT_ROW_PREFIX.length)}`
+              : line.accountId
+                ? `/reports/general-ledger?account=${line.accountId}&to=${asOf}`
+                : undefined,
             cells: [money(amount(now, key)), ...(then ? changeCells(amount(now, key), amount(then, key)) : [])],
           }));
         const totalNow = lines.reduce((a, l) => plus(a, amount(now, l.key.slice(keyPrefix.length + 1))), zero);
