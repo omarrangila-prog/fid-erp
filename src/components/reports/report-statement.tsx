@@ -340,10 +340,13 @@ export function Statement({
                 {section.title}
               </button>
             );
+            // A section with nothing in it is not shown at all — no heading,
+            // no "nothing in this period", no zero total. Grand totals after
+            // it still are.
+            const empty = section.lines.length === 0;
             return (
               <React.Fragment key={section.key}>
-                {/* Closed, a section is one line: its heading and its total. */}
-                {!shown ? (
+                {empty ? null : /* Closed, a section is one line: its heading and its total. */ !shown ? (
                   <tr className="grid-total border-t border-line">
                     <td className="px-1 py-2">{toggleButton}</td>
                     {section.total.cells.map((c, i) => (

@@ -143,6 +143,11 @@ function Overview({ sheets, local, showProfit }: { sheets: OrderCostSheet[]; loc
   const revenue = total((s) => s.revenueLocal);
   const gross = total((s) => grossOf(s).local);
   const money = (v: Decimal) => formatMoney(v, local);
+  // A column with nothing in it on any shipment is not shown.
+  const has = (pick: (s: OrderCostSheet) => Decimal) => sheets.some((s) => !pick(s).isZero());
+  const showPeriod = has((s) => s.periodExpenseLocal);
+  const showCustomerOwed = has((s) => s.customerOutstandingLocal);
+  const showSupplierOwed = has((s) => s.supplierOutstandingLocal);
   return (
     <TableWrap data-wide-sheet>
       <Table data-testid="shipment-overview" className="text-xs [&_td]:px-2.5 [&_th]:px-2.5">
@@ -163,12 +168,12 @@ function Overview({ sheets, local, showProfit }: { sheets: OrderCostSheet[]; loc
                 <TH numeric>Gross profit</TH>
                 <TH numeric>Gross margin</TH>
                 <TH numeric>Direct shipment costs on the coffee sold</TH>
-                <TH numeric>Other expenses allocated to the shipment</TH>
+                {showPeriod ? <TH numeric>Other expenses allocated to the shipment</TH> : null}
                 <TH numeric>Net profit</TH>
               </>
             ) : null}
-            <TH numeric>Unpaid customer balance</TH>
-            <TH numeric>Unpaid supplier balance</TH>
+            {showCustomerOwed ? <TH numeric>Unpaid customer balance</TH> : null}
+            {showSupplierOwed ? <TH numeric>Unpaid supplier balance</TH> : null}
           </TR>
         </THead>
         <TBody>
@@ -194,12 +199,12 @@ function Overview({ sheets, local, showProfit }: { sheets: OrderCostSheet[]; loc
                   <TD numeric className={cn('font-semibold', grossOf(s).local.isNegative() ? 'text-red-600' : 'text-gold-700')}>{money(grossOf(s).local)}</TD>
                   <TD numeric>{marginOf(s) === null ? '—' : `${marginOf(s)!.toFixed(1)}%`}</TD>
                   <TD numeric>{money(s.soldExpenseLocal)}</TD>
-                  <TD numeric>{money(s.periodExpenseLocal)}</TD>
+                  {showPeriod ? <TD numeric>{money(s.periodExpenseLocal)}</TD> : null}
                   <TD numeric className={cn('font-semibold', s.netProfitLocal.isNegative() ? 'text-red-600' : 'text-gold-700')}>{money(s.netProfitLocal)}</TD>
                 </>
               ) : null}
-              <TD numeric>{money(s.customerOutstandingLocal)}</TD>
-              <TD numeric>{money(s.supplierOutstandingLocal)}</TD>
+              {showCustomerOwed ? <TD numeric>{money(s.customerOutstandingLocal)}</TD> : null}
+              {showSupplierOwed ? <TD numeric>{money(s.supplierOutstandingLocal)}</TD> : null}
             </TR>
           ))}
         </TBody>
@@ -220,12 +225,12 @@ function Overview({ sheets, local, showProfit }: { sheets: OrderCostSheet[]; loc
                 <TD numeric>{money(gross)}</TD>
                 <TD numeric>{revenue.isZero() ? '—' : `${gross.dividedBy(revenue).times(100).toFixed(1)}%`}</TD>
                 <TD numeric>{money(total((s) => s.soldExpenseLocal))}</TD>
-                <TD numeric>{money(total((s) => s.periodExpenseLocal))}</TD>
+                {showPeriod ? <TD numeric>{money(total((s) => s.periodExpenseLocal))}</TD> : null}
                 <TD numeric>{money(total((s) => s.netProfitLocal))}</TD>
               </>
             ) : null}
-            <TD numeric>{money(total((s) => s.customerOutstandingLocal))}</TD>
-            <TD numeric>{money(total((s) => s.supplierOutstandingLocal))}</TD>
+            {showCustomerOwed ? <TD numeric>{money(total((s) => s.customerOutstandingLocal))}</TD> : null}
+            {showSupplierOwed ? <TD numeric>{money(total((s) => s.supplierOutstandingLocal))}</TD> : null}
           </tr>
         </TFoot>
       </Table>

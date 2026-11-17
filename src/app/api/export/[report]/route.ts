@@ -1218,8 +1218,9 @@ const REPORTS: Record<string, Report> = {
       const grouped = (title: string, groups: readonly string[], section: typeof sheet.assets): StatementRow[] => [
         { kind: 'section', label: title },
         ...groups.flatMap((group): StatementRow[] => {
-          // Every heading the requirements list, empty or not.
+          // A heading with nothing under it is left out, as on screen.
           const lines = section.lines.filter((l) => l.group === group && !dec(l.amountLocal).isZero());
+          if (lines.length === 0) return [];
           return [
             { kind: 'note', label: group },
             ...lines.map((line): StatementRow => ({ kind: 'line', label: line.displayName, code: line.code, values: [Number(line.amountLocal), Number(line.amountUsd)] })),

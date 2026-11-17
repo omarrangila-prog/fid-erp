@@ -102,7 +102,7 @@ describe('one figure, every page', () => {
     const result = await reconcile(companyId);
     const reports = result.checks.filter((c) => c.group === 'Reports');
     expect(reports.map((c) => c.id)).toEqual(
-      expect.arrayContaining(['sales-invoices-ledger', 'dashboard-net-profit', 'expense-report-ledger', 'shipment-costs-ledger']),
+      expect.arrayContaining(['dashboard-net-profit', 'expense-report-ledger']),
     );
     expect(reports.filter((c) => !c.passed)).toEqual([]);
   }, 300_000);

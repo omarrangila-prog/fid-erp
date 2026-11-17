@@ -531,7 +531,11 @@ async function reportChecks(companyId: string): Promise<ReconciliationCheck[]> {
     left: Decimal,
     rightLabel: string,
     right: Decimal,
-  ) => out.push(build(id, 'Reports', label, explanation, `${leftLabel} (${local})`, left, `${rightLabel} (${local})`, right));
+  ) =>
+    // Nothing on either side: no data, nothing to show.
+    left.isZero() && right.isZero()
+      ? undefined
+      : out.push(build(id, 'Reports', label, explanation, `${leftLabel} (${local})`, left, `${rightLabel} (${local})`, right));
 
   // Sales: the invoices themselves, less customer credit notes.
   const docs = await prisma.$queryRaw<Array<{ sales: string }>>`

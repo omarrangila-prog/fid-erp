@@ -132,7 +132,7 @@ export default async function BalanceSheetPage({
             cells: [money(totalNow), ...(totalThen !== null ? changeCells(totalNow, totalThen) : [])],
           },
         };
-      }); // every heading the requirements list is shown, empty or not
+      }); // a heading with nothing under it is not shown (see the statement)
 
   // The headings of the client's requirements document (section 4), in its order.
   const assetSections = sectionsFor(sheet.assets.lines, before?.assets.lines, [...BALANCE_SHEET_GROUPS.ASSET], 'asset');

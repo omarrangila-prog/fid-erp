@@ -61,7 +61,16 @@ export default async function GeneralLedgerPage({
     },
   });
 
-  const pickerAccounts = accounts.map((row) => ({
+  // Only accounts that have entries are offered: an account with no data is not shown.
+  const used = new Set(
+    (
+      await prisma.journalLine.groupBy({
+        by: ['accountId'],
+        where: { journalEntry: { companyId } },
+      })
+    ).map((r) => r.accountId),
+  );
+  const pickerAccounts = accounts.filter((row) => used.has(row.id) || row.id === account).map((row) => ({
     id: row.id,
     code: row.code,
     name: row.name,

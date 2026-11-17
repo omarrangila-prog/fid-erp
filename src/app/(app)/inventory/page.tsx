@@ -280,12 +280,14 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
             value={kg(t.availableKg)}
             sub={`${sites.length === 1 ? 'In 1 warehouse' : `Across ${sites.length} warehouses`}${t.reservedKg.greaterThan(0) ? ` · ${kg(t.reservedKg)} held for drafts` : ''}`}
           />
+          {inTransitKg.isZero() && awaitingKg.isZero() ? null : (
           <Figure
             testId="total-in-transit"
             label="On the way"
             value={formatQuantityKg(inTransitKg)}
             sub={`Shipped, not yet received into a warehouse — not available for sale${awaitingKg.greaterThan(0) ? ` · ${formatQuantityKg(awaitingKg)} ordered, awaiting shipment` : ''}`}
           />
+          )}
           {showValue ? (
             <Figure
               testId="total-stock-value"

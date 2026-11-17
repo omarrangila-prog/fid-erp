@@ -44,8 +44,9 @@ export default async function CashBookPage({
   const user = await requirePageAccess(PERMISSIONS.CASHBANK_VIEW);
   const companyId = user.activeCompany.id;
 
+  // Only drawers and accounts with movements: one with no data is not shown.
   const accounts = await prisma.cashBankAccount.findMany({
-    where: { companyId, status: 'ACTIVE' },
+    where: { companyId, status: 'ACTIVE', OR: [{ journalLines: { some: {} } }, ...(account ? [{ id: account }] : [])] },
     orderBy: [{ accountType: 'asc' }, { name: 'asc' }],
     select: { id: true, code: true, name: true, currency: true, accountType: true },
   });

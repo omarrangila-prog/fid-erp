@@ -303,6 +303,7 @@ export default async function AgentLedgerPage({
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-3" data-print-drop data-testid="agent-position">
+        {ledger.relationship.owesFidLocal.isZero() ? null : (
         <Card>
           <CardHeader>
             <CardTitle>Receivable from {firstName}</CardTitle>
@@ -332,6 +333,8 @@ export default async function AgentLedgerPage({
             </dl>
           </CardContent>
         </Card>
+        )}
+        {ledger.relationship.fidOwesLocal.isZero() ? null : (
         <Card>
           <CardHeader>
             <CardTitle>Payable to {firstName}</CardTitle>
@@ -366,6 +369,7 @@ export default async function AgentLedgerPage({
             </dl>
           </CardContent>
         </Card>
+        )}
         <Card>
           <CardHeader>
             <CardTitle>Net position — as on the ledger below</CardTitle>

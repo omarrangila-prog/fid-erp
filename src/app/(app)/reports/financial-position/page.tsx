@@ -1,6 +1,7 @@
 import { formatBags } from '@/lib/bags';
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { dec } from '@/lib/money';
 import { requirePageAccess, can } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getFinancialPosition } from '@/lib/services/reports';
@@ -64,7 +65,7 @@ export default async function FinancialPositionPage() {
                   </TR>
                 </THead>
                 <TBody>
-                  {position.accounts.map((account) => (
+                  {position.accounts.filter((account) => !dec(account.balance).isZero()).map((account) => (
                     <TR key={account.accountId}>
                       <TD>
                         <Link
@@ -86,7 +87,7 @@ export default async function FinancialPositionPage() {
                   ))}
                 </TBody>
                 <TFoot>
-                  {position.currencyTotals.map((total) => (
+                  {position.currencyTotals.filter((total) => !dec(total.total).isZero()).map((total) => (
                     <tr key={total.currency}>
                       <TD colSpan={2}>Total {total.currency}</TD>
                       <TD numeric>{formatMoney(total.total, total.currency)}</TD>
@@ -109,7 +110,10 @@ export default async function FinancialPositionPage() {
                 { label: 'Customer receivables', value: position.receivableUsd, href: '/finance/receivables', tone: 'text-ink' },
                 { label: 'Supplier payables', value: position.payableUsd, href: '/finance/payables', tone: 'text-ink' },
                 { label: 'Cheques on hand', value: position.chequesOnHandUsd, href: '/finance/cheques', tone: 'text-ink-muted' },
-              ].map((row) => (
+              ]
+                // Nothing owed and no cheques: nothing to show.
+                .filter((row) => !dec(row.value).isZero())
+                .map((row) => (
                 <Link
                   key={row.label}
                   href={row.href}

@@ -172,6 +172,8 @@ export default async function DashboardPage() {
   const profitDeltaPct = trend(data.monthly.map((m) => ({ value: Number(m.netProfitUsd) })));
 
   // The local-currency cash position; every currency is listed in its own panel.
+  // A currency with nothing in cash or bank is not shown.
+  const cashTotals = data.position.currencyTotals.filter((c) => !dec(c.cash).isZero() || !dec(c.bank).isZero());
   const localTotals = data.position.currencyTotals.find((c) => c.currency === local);
   const localCash = dec(localTotals?.cash ?? 0).plus(localTotals?.bank ?? 0);
   // Its dollars: each movement at its own rate, from the accounts themselves.
@@ -397,7 +399,7 @@ export default async function DashboardPage() {
           equivalent={eq(localCashUsd, 'Each movement at its own rate')}
           icon={Wallet}
           tone="cash"
-          note={`${data.position.currencyTotals.length} currenc${data.position.currencyTotals.length === 1 ? 'y' : 'ies'}`}
+          note={`${cashTotals.length} currenc${cashTotals.length === 1 ? 'y' : 'ies'}`}
           href="/finance/cash-bank"
           linkLabel="View accounts"
         />
@@ -428,10 +430,10 @@ export default async function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="grid gap-3 sm:grid-cols-2">
-              {data.position.currencyTotals.length === 0 ? (
+              {cashTotals.length === 0 ? (
                 <p className="py-4 text-xs text-ink-subtle">No cash or bank movement yet.</p>
               ) : (
-                data.position.currencyTotals.map((totals) => (
+                cashTotals.map((totals) => (
                   <Link
                     key={totals.currency}
                     href="/finance/cash-bank"
@@ -444,18 +446,22 @@ export default async function DashboardPage() {
                       <Coins className="size-4 text-forest-300" />
                     </div>
                     <dl className="mt-3 grid grid-cols-2 gap-3">
-                      <div>
-                        <dt className="text-[11px] text-ink-muted">Cash</dt>
-                        <dd className="tnum text-sm font-semibold text-ink">
-                          {formatMoney(totals.cash, totals.currency)}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-[11px] text-ink-muted">Bank</dt>
-                        <dd className="tnum text-sm font-semibold text-ink">
-                          {formatMoney(totals.bank, totals.currency)}
-                        </dd>
-                      </div>
+                      {dec(totals.cash).isZero() ? null : (
+                        <div>
+                          <dt className="text-[11px] text-ink-muted">Cash</dt>
+                          <dd className="tnum text-sm font-semibold text-ink">
+                            {formatMoney(totals.cash, totals.currency)}
+                          </dd>
+                        </div>
+                      )}
+                      {dec(totals.bank).isZero() ? null : (
+                        <div>
+                          <dt className="text-[11px] text-ink-muted">Bank</dt>
+                          <dd className="tnum text-sm font-semibold text-ink">
+                            {formatMoney(totals.bank, totals.currency)}
+                          </dd>
+                        </div>
+                      )}
                     </dl>
                   </Link>
                 ))
@@ -470,6 +476,7 @@ export default async function DashboardPage() {
             <CardDescription>What would go wrong if nobody looked today.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            {data.receivables.topOverdue.length > 0 ? (
             <Link
               href="/finance/receivables"
               className="flex items-center justify-between gap-3 rounded-lg border border-line p-3 transition-colors hover:border-forest-300"
@@ -488,7 +495,9 @@ export default async function DashboardPage() {
                 {data.receivables.topOverdue.length}
               </span>
             </Link>
+            ) : null}
 
+            {data.shipments.activeCount > 0 ? (
             <Link
               href="/shipments"
               className="flex items-center justify-between gap-3 rounded-lg border border-line p-3 transition-colors hover:border-forest-300"
@@ -501,7 +510,9 @@ export default async function DashboardPage() {
               </span>
               <span className="tnum shrink-0 text-lg font-semibold text-ink">{data.shipments.activeCount}</span>
             </Link>
+            ) : null}
 
+            {data.unreadAlerts > 0 ? (
             <Link
               href="/notifications"
               className="flex items-center justify-between gap-3 rounded-lg border border-line p-3 transition-colors hover:border-forest-300"
@@ -518,6 +529,10 @@ export default async function DashboardPage() {
                 {data.unreadAlerts}
               </span>
             </Link>
+            ) : null}
+            {data.receivables.topOverdue.length === 0 && data.shipments.activeCount === 0 && data.unreadAlerts === 0 ? (
+              <p className="py-2 text-xs text-ink-subtle">Nothing needs attention today.</p>
+            ) : null}
           </CardContent>
         </Card>
       </div>

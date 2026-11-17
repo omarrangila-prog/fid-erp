@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { requirePageAccess } from '@/lib/auth/guards';
 import { PERMISSIONS } from '@/lib/constants';
 import { getExpenseReport, getExpenseSplit, getJournalExpenseReport, mergeExpenseRows, type ExpenseGrouping } from '@/lib/services/reports';
-import { dec } from '@/lib/money';
+import { dec, type Decimal } from '@/lib/money';
 import { formatMoney, formatDate, dayParam, companyToday } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { DateRangePicker } from '@/components/shared/date-range';
@@ -90,33 +90,39 @@ export default async function ExpenseReportPage({
         </div>
       </div>
 
+      {/* A figure with nothing in it is not shown. */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <SplitTile
           label="Into the cost of the coffee"
+          amount={split.capitalisedLocal}
           value={formatMoney(split.capitalisedLocal, local)}
           usd={formatMoney(split.capitalisedUsd, 'USD')}
           note="Clearing, freight, duty and the rest. Reaches the profit and loss as cost of sales when the coffee is sold, not before."
         />
         <SplitTile
           label="Shipment costs charged to the period"
+          amount={split.shipmentPeriodLocal}
           value={formatMoney(split.shipmentPeriodLocal, local)}
           usd={formatMoney(split.shipmentPeriodUsd, 'USD')}
           note="Booked to a job so it shows on that job's cost report, but not part of what the coffee cost."
         />
         <SplitTile
           label="General company expenses"
+          amount={split.generalLocal}
           value={formatMoney(split.generalLocal, local)}
           usd={formatMoney(split.generalUsd, 'USD')}
           note="Meals, rent, utilities, travel. Nothing to do with any consignment."
         />
         <SplitTile
           label="Expenses entered as journal entries"
+          amount={split.journalLocal}
           value={formatMoney(split.journalLocal, local)}
           usd={formatMoney(split.journalUsd, 'USD')}
           note="Fuel, bank charges, permits, gifts, commission — costs posted by a journal entry rather than an expense voucher."
         />
         <SplitTile
           label="All expenses"
+          amount={split.totalSpendLocal}
           value={formatMoney(split.totalSpendLocal, local)}
           usd={formatMoney(split.totalSpendUsd, 'USD')}
           note={`Of which ${formatMoney(split.periodChargeLocal, local)} is this period's operating expenses on the Profit and Loss. The rest went into the cost of the coffee.`}
@@ -206,13 +212,17 @@ function SplitTile({
   usd,
   note,
   strong,
+  amount,
 }: {
+  /** The figure itself: nothing in it, nothing shown. */
+  amount: Decimal;
   label: string;
   value: string;
   usd?: string;
   note: string;
   strong?: boolean;
 }) {
+  if (amount.isZero()) return null;
   return (
     <div className={strong ? 'rounded-xl border border-forest-200 bg-forest-50/50 p-4' : 'rounded-xl border border-line bg-surface p-4'}>
       <p className="text-xs font-medium text-ink-muted">{label}</p>
