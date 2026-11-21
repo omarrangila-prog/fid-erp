@@ -26,6 +26,9 @@ import { AttachmentPanel } from '@/components/attachments/attachment-panel';
 import { loadAttachments } from '@/components/attachments/load';
 import { PurchaseDetailToolbar } from '@/app/(app)/purchases/[id]/detail-toolbar';
 import { getWarehouseLabels } from '@/lib/services/stock';
+import { getWarehouseChoices } from '@/lib/services/container-warehouse';
+import { ChangeWarehouseButton } from '@/app/(app)/shipments/[id]/change-warehouse';
+import { warehouseScope } from '@/lib/auth/scope';
 import { getOrderOverview } from '@/lib/services/shipment';
 import { OrderShipments } from '@/app/(app)/purchases/[id]/order-shipments';
 import { SplitLineDialog, SplitRowButton } from '@/app/(app)/purchases/[id]/split-line-dialog';
@@ -106,6 +109,36 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
   const warehouseByLineId = new Map(
     receiptStatus.map((row) => [row.lineId, warehouseLabels.byBatch.get(row.batchId) || '—']),
   );
+  // "Change warehouse", once per container that still has coffee on a shelf.
+  const canMove = can(user, PERMISSIONS.INVENTORY_TRANSFER);
+  const [moveBatches, warehouseChoices] = canMove
+    ? await Promise.all([
+        prisma.batch.findMany({
+          where: { companyId, id: { in: receiptStatus.map((r) => r.batchId).filter(Boolean) as string[] } },
+          select: { id: true, containerId: true, shipmentId: true, balances: { select: { onHandKg: true } } },
+        }),
+        getWarehouseChoices(companyId, warehouseScope(user)),
+      ])
+    : [[], []];
+  const boxKey = new Map(moveBatches.map((b) => [b.id, b.containerId ? `${b.shipmentId}:${b.containerId}` : `batch:${b.id}`]));
+  const boxStock = new Map<string, boolean>();
+  const boxSize = new Map<string, number>();
+  for (const b of moveBatches) {
+    const key = boxKey.get(b.id)!;
+    boxSize.set(key, (boxSize.get(key) ?? 0) + 1);
+    if (b.balances.some((x) => dec(x.onHandKg).greaterThan(0))) boxStock.set(key, true);
+  }
+  const moveButtonForLine = new Map<string, string>();
+  {
+    const seen = new Set<string>();
+    for (const r of receiptStatus) {
+      const key = r.batchId ? boxKey.get(r.batchId) : undefined;
+      if (key && boxStock.get(key) && !seen.has(key)) {
+        seen.add(key);
+        moveButtonForLine.set(r.lineId, r.batchId!);
+      }
+    }
+  }
   const totalOrdered = receiptStatus.reduce((a, r) => a.plus(r.orderedKg), dec(0));
   const totalReceived = receiptStatus.reduce((a, r) => a.plus(r.receivedKg), dec(0));
   const fullyReceived = totalOrdered.greaterThan(0) && totalReceived.greaterThanOrEqualTo(totalOrdered);
@@ -310,7 +343,18 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
                       </TD>
                       <TD className="text-xs">{line.containerNumber ?? '—'}</TD>
                       <TD className="text-xs">
-                        {warehouseByLineId.get(line.id) || warehouseLabels.byContract.get(contract.id) || '—'}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>{warehouseByLineId.get(line.id) || warehouseLabels.byContract.get(contract.id) || '—'}</span>
+                          {moveButtonForLine.has(line.id) ? (
+                            <ChangeWarehouseButton
+                              batchId={moveButtonForLine.get(line.id)!}
+                              containerLabel={line.containerNumber ?? line.batchNumber ?? 'Container'}
+                              itemCount={boxSize.get(boxKey.get(moveButtonForLine.get(line.id)!) ?? '') ?? 1}
+                              currentWarehouses={warehouseByLineId.get(line.id) ?? ''}
+                              warehouses={warehouseChoices}
+                            />
+                          ) : null}
+                        </div>
                       </TD>
                       <TD numeric>{formatQuantityKg(line.quantityKg)}</TD>
                       <TD numeric>{line.bags.toLocaleString()}</TD>

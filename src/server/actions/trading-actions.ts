@@ -36,6 +36,8 @@ import {
   removeContainerFromOrder,
 } from '@/lib/services/purchase';
 import { editApprovedPurchase } from '@/lib/services/purchase-edit';
+import { changeContainerWarehouse } from '@/lib/services/container-warehouse';
+import { companyToday } from '@/lib/format';
 import {
   createGoodsReceipt,
   postGoodsReceipt,
@@ -857,6 +859,41 @@ export async function saveStockTransferAction(payload: string): Promise<DocFormS
     return { ok: true, id: transfer.id, message: `Transfer ${transfer.transferNumber} created.` };
   } catch (error) {
     return toState(error);
+  }
+}
+
+/**
+ * Put a container in the right warehouse, from the shipment page: what is
+ * left of it elsewhere is transferred to the chosen warehouse at once.
+ */
+export async function changeContainerWarehouseAction(
+  batchId: string,
+  toWarehouseId: string,
+): Promise<ActionResult<{ message: string }>> {
+  try {
+    const user = await requirePermission(PERMISSIONS.INVENTORY_TRANSFER);
+    const companyId = user.activeCompany.id;
+    // Both ends must be warehouses this person works in.
+    const sources = await prisma.inventoryBalance.findMany({
+      where: { companyId, batchId, onHandKg: { gt: 0 } },
+      select: { warehouseId: true },
+    });
+    assertWarehousesInScope(user, [toWarehouseId, ...sources.map((s) => s.warehouseId)]);
+    const result = await changeContainerWarehouse({
+      companyId,
+      batchId,
+      toWarehouseId,
+      transferDate: companyToday(user.activeCompany.timezone),
+      userId: user.id,
+    });
+    revalidatePath('/shipments');
+    revalidatePath('/inventory');
+    revalidatePath('/inventory/transfers');
+    revalidatePath('/dashboard');
+    const held = result.heldKg.greaterThan(0) ? ` ${result.heldKg.toFixed(3)} KG held for draft invoices stayed where it is.` : '';
+    return ok({ message: `Moved ${result.movedKg.toFixed(3)} KG to ${result.warehouseName} (${result.transfers.join(', ')}).${held}` });
+  } catch (error) {
+    return fail(error);
   }
 }
 

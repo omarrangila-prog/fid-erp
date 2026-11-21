@@ -25,6 +25,9 @@ import { getReceivables } from '@/lib/services/receivables';
 import { shortDocumentNumber } from '@/lib/short-number';
 import { getJobCostSummary, getShipmentCostSheet } from '@/lib/services/landed-cost';
 import { getBatchStock } from '@/lib/services/stock';
+import { getWarehouseChoices } from '@/lib/services/container-warehouse';
+import { ChangeWarehouseButton } from '@/app/(app)/shipments/[id]/change-warehouse';
+import { warehouseScope } from '@/lib/auth/scope';
 import { formatMoney, formatQuantityKg, formatQuantityMt, formatDate, formatDateTime, formatRate, toDateInputValue } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { Metric, MetricGrid, DetailRow } from '@/components/shared/stat-card';
@@ -210,6 +213,36 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
     // Paid, partly paid or unpaid: the same answer the invoice list gives.
     invoiceIds.length ? getReceivables({ companyId }) : Promise.resolve([]),
   ]);
+
+  // "Change warehouse", once per container: every coffee in the same box on
+  // the same shipment moves with it.
+  const canMove = can(user, PERMISSIONS.INVENTORY_TRANSFER);
+  const [batchBoxes, warehouseChoices] = canMove
+    ? await Promise.all([
+        prisma.batch.findMany({ where: { companyId, id: { in: batches.map((b) => b.batchId) } }, select: { id: true, containerId: true, shipmentId: true } }),
+        getWarehouseChoices(companyId, warehouseScope(user)),
+      ])
+    : [[], []];
+  const boxOf = new Map(batchBoxes.map((b) => [b.id, b.containerId ? `${b.shipmentId}:${b.containerId}` : `batch:${b.id}`]));
+  const boxSize = new Map<string, number>();
+  for (const key of boxOf.values()) boxSize.set(key, (boxSize.get(key) ?? 0) + 1);
+  const firstOfBox = new Set<string>();
+  {
+    const seen = new Set<string>();
+    for (const b of batches) {
+      const key = boxOf.get(b.batchId);
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        firstOfBox.add(b.batchId);
+      }
+    }
+  }
+  // A box with nothing left on the shelf has nothing to move.
+  const boxHasStock = new Map<string, boolean>();
+  for (const b of batches) {
+    const key = boxOf.get(b.batchId);
+    if (key && (b.availableKg.greaterThan(0) || b.allocatedKg.greaterThan(0))) boxHasStock.set(key, true);
+  }
   const editsByInvoice = new Map(invoiceEdits.map((e) => [e.entityId, e]));
   const receivableByInvoice = new Map(receivables.map((r) => [r.invoiceId, r]));
   // The posted sales, in the company's currency at each invoice's own rate.
@@ -670,7 +703,20 @@ export default async function ShipmentDetailPage({ params }: { params: Promise<{
                       </TD>
                       <TD>{b.lotNumber}</TD>
                       <TD className="text-xs">{b.containerNumber ?? '—'}</TD>
-                      <TD>{b.warehouseNames || '—'}</TD>
+                      <TD>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>{b.warehouseNames || '—'}</span>
+                          {canMove && firstOfBox.has(b.batchId) && boxHasStock.get(boxOf.get(b.batchId) ?? '') ? (
+                            <ChangeWarehouseButton
+                              batchId={b.batchId}
+                              containerLabel={b.containerNumber ?? b.batchNumber}
+                              itemCount={boxSize.get(boxOf.get(b.batchId) ?? '') ?? 1}
+                              currentWarehouses={b.warehouseNames}
+                              warehouses={warehouseChoices}
+                            />
+                          ) : null}
+                        </div>
+                      </TD>
                       <TD numeric>{formatQuantityKg(b.receivedKg)}</TD>
                       <TD numeric>{formatQuantityKg(b.soldKg)}</TD>
                       <TD numeric className="font-medium">{formatQuantityKg(b.availableKg)}</TD>

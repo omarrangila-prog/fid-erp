@@ -69,7 +69,7 @@ test('an order of two containers starts with nothing arrived', async ({ page }) 
   await page.getByRole('listbox').getByRole('option').first().click();
 
   const first = lineCard(page, 1);
-  await first.getByRole('combobox').first().click();
+  await first.locator('[role="combobox"]:not(select)').first().click();
   await page.getByRole('listbox').getByRole('option').first().click();
   await first.getByLabel(/^Quantity/).fill('38400');
   await first.getByRole('textbox', { name: /Rate per unit|Price per unit/ }).fill('4.00');
@@ -199,4 +199,34 @@ test('the shipment page shows the whole order, opened from either container', as
     expect(text).toMatch(/38,400(\.000)? KG/);
     console.log(`  ${href}: ${REFERENCE}, both containers, 38,400 KG`);
   }
+});
+
+test('a container booked into the wrong warehouse is moved from the shipment page', async ({ page }) => {
+  test.setTimeout(240_000);
+  await signIn(page);
+  await page.goto(orderUrl, { waitUntil: 'domcontentloaded' });
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+  const href = (await page.locator('a[href^="/shipments/"]').evaluateAll((links) => links.map((a) => a.getAttribute('href')!)))
+    .find((h) => /^\/shipments\/[\w-]+$/.test(h))!;
+  await page.goto(href, { waitUntil: 'domcontentloaded' });
+
+  const button = page.getByTestId('change-warehouse').first();
+  await expect(button).toBeVisible({ timeout: 45_000 });
+  const row = page.locator('tr', { has: button });
+  const containerNo = (await row.locator('td').nth(2).innerText()).trim();
+  const before = (await row.locator('td').nth(3).innerText()).trim();
+  await button.click();
+  const select = page.getByTestId('change-warehouse-select');
+  const options = (await select.locator('option').allInnerTexts()).slice(1);
+  test.skip(options.length === 0, 'Only one warehouse in this company');
+  await select.selectOption({ label: options[0] });
+  await page.getByTestId('change-warehouse-save').click();
+  await expect(page.getByText(/^Moved .* KG to /).first()).toBeVisible({ timeout: 60_000 });
+
+  // Still on the shipment page, and the container now reads the new warehouse.
+  await expect(page).toHaveURL(new RegExp(`${href}$`));
+  // The row in the batches table, where the button sits.
+  const moved = page.locator('tr', { has: page.getByTestId('change-warehouse') }).filter({ hasText: containerNo }).first();
+  await expect(moved.locator('td').nth(3)).toContainText(options[0], { timeout: 45_000 });
+  console.log(`  ${containerNo}: ${before} → ${options[0]}`);
 });
